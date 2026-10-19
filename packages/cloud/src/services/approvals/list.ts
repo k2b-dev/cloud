@@ -3,7 +3,7 @@ import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals } from "../..
 import type { AiTurnRunConfig } from "../../ai/types";
 import type { RuntimeAppMeta } from "../../contracts/app";
 import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
-import { CapabilityActionReviewSchema } from "../../contracts/capabilities";
+import { CapabilityActionReviewDataSchema } from "../../contracts/capabilities";
 import type { ApprovalAssurance } from ".";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
 
@@ -95,7 +95,7 @@ export const presentPendingApproval = (
   apps: readonly Pick<RuntimeAppMeta, "id" | "name" | "icon">[],
 ): PendingApproval => {
   const app = apps.find((entry) => entry.id === row.appId);
-  const review = CapabilityActionReviewSchema.nullable().safeParse(row.details);
+  const review = CapabilityActionReviewDataSchema.nullable().safeParse(row.details);
   const remember = row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
   return {
     id: row.id,

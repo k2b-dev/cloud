@@ -3,7 +3,8 @@ import { mutation } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, Chat, isStructuredDataValue, MarkdownView, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untrack } from "solid-js";
 import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_internal/capability-sentences";
-import type { CapabilityActionReview } from "../../contracts/capabilities";
+import { capabilityReviewView } from "../../capabilities/reviews";
+import type { CapabilityActionLegacyReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
@@ -37,7 +38,7 @@ import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEdit
 import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
-type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
+type ReviewDetail = NonNullable<CapabilityActionLegacyReview["details"]>[number];
 
 const reviewDetailText = (detail: ReviewDetail, locale: string): string => {
   if (detail.format === "date")
@@ -199,6 +200,7 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
   const locale = useLocale();
   const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
+  const review = () => (props.block.approval?.review ? capabilityReviewView(props.block.approval.review, { timeZone }) : undefined);
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
   const pending = () => props.block.status === "awaiting_approval";
   const actionDisabled = () => actions.actionDisabled?.() ?? false;
@@ -229,7 +231,7 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
   // The model's own reason, labelled as such, only where Cloud offered it; it adds to the app's sentence and never replaces it.
   const reason = () => (props.block.presentation?.approvalReason ? capabilityApprovalReason(props.block.args) : null);
   const description = () => {
-    const reviewMessage = props.block.approval?.review?.message.trim();
+    const reviewMessage = review()?.message.trim();
     if (reviewMessage) return reviewMessage;
     // An app Action's approval text repeats its heading and reason for text-only readers; the card shows them itself.
     if (capability()) return null;
@@ -252,10 +254,9 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
         const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
         return match ? { label: match[1], value: match[2] } : { value: line };
       });
-  const inlineReviewDetails = () =>
-    (props.block.approval?.review?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
-  const blockReviewDetails = () => (props.block.approval?.review?.details ?? []).filter((detail) => detail.display === "block");
-  const reviewLinks = () => props.block.approval?.review?.links ?? [];
+  const inlineReviewDetails = () => (review()?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
+  const blockReviewDetails = () => (review()?.details ?? []).filter((detail) => detail.display === "block");
+  const reviewLinks = () => review()?.links ?? [];
   const reviewLinkTitle = (rel: "open" | "edit" | "status" | "preview" | "download") =>
     ({
       open: t().openIn({ app: ownerName() }),

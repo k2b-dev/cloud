@@ -1,5 +1,6 @@
 import type { CapabilityClientError, CapabilityReviewClientResult } from "@k2b/cloud/capabilities";
-import type { CapabilityActionManifest, CapabilityActionReview, CapabilitySemanticLink } from "@k2b/cloud/contracts";
+import { capabilityReviewView } from "@k2b/cloud/capabilities";
+import type { CapabilityActionManifest, CapabilityActionReviewData, CapabilitySemanticLink } from "@k2b/cloud/contracts";
 import { useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import { capabilityUiMessages } from "./frontend/messages";
@@ -21,7 +22,7 @@ type ConfirmActionRunDependencies = {
     input: Record<string, unknown>;
     signal?: AbortSignal;
   }) => Promise<CapabilityReviewClientResult>;
-  confirmReview: (review: CapabilityActionReview, operation: CapabilityActionManifest) => Promise<boolean | undefined>;
+  confirmReview: (review: CapabilityActionReviewData, operation: CapabilityActionManifest) => Promise<boolean | undefined>;
   confirmDestructive: (operation: CapabilityActionManifest) => Promise<boolean | undefined>;
 };
 
@@ -76,14 +77,15 @@ const linkLabel = (link: CapabilitySemanticLink, locale: string): string => {
   );
 };
 
-export function ActionReviewContent(props: { review: CapabilityActionReview }): JSX.Element {
+export function ActionReviewContent(props: { review: CapabilityActionReviewData }): JSX.Element {
   const locale = useLocale();
+  const review = () => capabilityReviewView(props.review, { timeZone: "UTC" });
   return (
     <div class="flex flex-col gap-4">
-      <p class="m-0 whitespace-pre-wrap">{props.review.message}</p>
-      <Show when={props.review.details?.length}>
+      <p class="m-0 whitespace-pre-wrap">{review().message}</p>
+      <Show when={review().details?.length}>
         <dl class="m-0 grid gap-2">
-          <For each={props.review.details}>
+          <For each={review().details}>
             {(detail) => (
               <div>
                 <dt class="text-xs font-medium text-dimmed">{detail.label}</dt>
@@ -93,9 +95,9 @@ export function ActionReviewContent(props: { review: CapabilityActionReview }): 
           </For>
         </dl>
       </Show>
-      <Show when={props.review.links?.length}>
+      <Show when={review().links?.length}>
         <div class="flex flex-wrap gap-2">
-          <For each={props.review.links}>
+          <For each={review().links}>
             {(link) => (
               <a class="text-sm font-medium text-accent hover:underline" href={link.href}>
                 {linkLabel(link, locale())}

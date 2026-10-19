@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
-  CapabilityActionReviewSchema,
+  CapabilityActionReviewDataSchema,
   CapabilityCatalogSchema,
   capabilityResultSchema,
 } from "../contracts/capabilities";
@@ -142,7 +142,7 @@ export const reviewCapabilityAction = async <TInput = unknown>(
       body: JSON.stringify({ input: invocation.input }),
       signal: invocation.signal,
     });
-    return readCapabilityResponse(response, CapabilityActionReviewSchema);
+    return readCapabilityResponse(response, CapabilityActionReviewDataSchema);
   } catch (cause) {
     return unavailable(cause, undefined, clientLocale(options.headers));
   }
@@ -180,4 +180,10 @@ export const resolveCommand = async (
   }
 };
 
+export {
+  actionReview,
+  type CapabilityReviewForms,
+  capabilityReviewRememberScope,
+  capabilityReviewView,
+} from "./reviews";
 export { type CapabilityStreamVerb, transferCapabilityStream } from "./streams";

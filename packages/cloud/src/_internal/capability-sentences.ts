@@ -1,5 +1,14 @@
 import { dates, i18n } from "@k2b/stdlib";
-import type { CapabilityActionSentences, CapabilityPresentationCatalog } from "../contracts/capabilities";
+import type {
+  CapabilityActionOutcome,
+  CapabilityActionReceipt,
+  CapabilityActionReview,
+  CapabilityActionSentences,
+  CapabilityAskReason,
+  CapabilityPerson,
+  CapabilityPresentationCatalog,
+  CapabilitySlot,
+} from "../contracts/capabilities";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
 import { normalizeTimeZone } from "../shared/time";
 
@@ -78,12 +87,36 @@ const words = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      question: ({ sentence }: { sentence: string }) => `${sentence}?`,
+      rejected: ({ action }: { action: string }) => `Not done: ${action}`,
+      unknown: ({ action }: { action: string }) => `Not known yet whether this happened: ${action}`,
+      people: ({ count }: { count: number }) => `${count} ${new Intl.PluralRules("en").select(count) === "one" ? "person" : "people"}`,
+      sends: "I'm asking because this leaves Cloud.",
+      deletes: "I'm asking because you can't bring it back afterwards.",
+      cannot_undo: "I'm asking because you can't set this back.",
+      involves_people: "I'm asking because this involves or notifies other people.",
+      changes_access: "I'm asking because this changes who can see it.",
+      keeps_working: "I'm asking because this keeps acting without you.",
+      sensitive: "I'm asking because this concerns payments, invoices, addresses, or sign-in data.",
+      app_asks: ({ app }: { app: string }) => `I'm asking because ${app} always asks for this.`,
       yes: "yes",
       no: "no",
       more: ({ count }: { count: number }) => `${count} more`,
       why: "Why",
     },
     de: {
+      question: ({ sentence }) => `${sentence}?`,
+      rejected: ({ action }) => `Nicht ausgeführt: ${action}`,
+      unknown: ({ action }) => `Ob ${action} passiert ist, weiß ich noch nicht.`,
+      people: ({ count }) => `${count} ${new Intl.PluralRules("de").select(count) === "one" ? "Person" : "Personen"}`,
+      sends: "Ich frage, weil das Cloud verlässt.",
+      deletes: "Ich frage, weil du das danach nicht zurückholen kannst.",
+      cannot_undo: "Ich frage, weil du das nicht zurückstellen kannst.",
+      involves_people: "Ich frage, weil das andere Personen einbindet oder benachrichtigt.",
+      changes_access: "Ich frage, weil sich ändert, wer das sehen kann.",
+      keeps_working: "Ich frage, weil das ohne dich weiterwirkt.",
+      sensitive: "Ich frage, weil das Zahlungen, Rechnungen, Adressen oder Zugangsdaten betrifft.",
+      app_asks: ({ app }) => `Ich frage, weil ${app} hier jedes Mal fragt.`,
       yes: "ja",
       no: "nein",
       more: ({ count }) => `${count} weitere`,
@@ -410,4 +443,135 @@ export const capabilitySentenceFields = (input: {
     fields.set(path, { path, ...(format ? { format } : {}) });
   }
   return [...fields.values()];
+};
+
+export type CapabilitySlotSentenceContext = { locale: string; timeZone: string };
+export type CapabilitySentencePart =
+  | { kind: "text"; text: string }
+  | { kind: "chip"; name: string; slot: CapabilitySlot; label: string; full: string };
+export const capabilityPersonText = (person: CapabilityPerson): string =>
+  person.name && person.address ? `${person.name} <${person.address}>` : (person.name ?? person.address ?? "");
+
+const slotText = (slot: CapabilitySlot, context: CapabilitySlotSentenceContext, mode: "chip" | "plain" | "button" | "full"): string => {
+  const t = words.resolve([context.locale]).t;
+  switch (slot.kind) {
+    case "text":
+      return slot.value;
+    case "count": {
+      const plural = new Intl.PluralRules(context.locale).select(slot.value);
+      return `${new Intl.NumberFormat(context.locale).format(slot.value)} ${slot.noun[plural] ?? slot.noun.other}`;
+    }
+    case "person": {
+      const total = slot.total ?? slot.people.length;
+      if (mode === "button") return total === 1 ? (slot.people[0]!.name ?? slot.people[0]!.address ?? "") : t.people({ count: total });
+      const shown = mode === "full" ? slot.people : slot.people.slice(0, 3);
+      const list = shown.map((person) =>
+        mode === "chip" ? plain(person.name ?? person.address ?? "", 40, "middle") : capabilityPersonText(person),
+      );
+      const rest = total - shown.length;
+      if (rest > 0) list.push(t.more({ count: rest }));
+      return new Intl.ListFormat(context.locale, { type: "conjunction" }).format(list);
+    }
+    case "object":
+    case "place": {
+      if (mode === "button") return plain(slot.title, 24, "middle");
+      if (mode === "chip" || mode === "full") return slot.title;
+      return context.locale.toLowerCase().startsWith("de") ? `„${slot.title}“` : `“${slot.title}”`;
+    }
+    case "time": {
+      const date = (value: string) => {
+        const options = { locale: context.locale, timeZone: slot.format === "date" ? "UTC" : normalizeTimeZone(context.timeZone) };
+        return slot.format === "date" ? dates.formatDate(`${value}T12:00:00.000Z`, options) : dates.formatDateTime(value, options);
+      };
+      return slot.end ? `${date(slot.start)} – ${date(slot.end)}` : date(slot.start);
+    }
+  }
+};
+
+/** Typed slots are data, never expressions. All formatting is explicit and independent of the process zone. */
+export const capabilitySentenceParts = (
+  text: string,
+  slots: Readonly<Record<string, CapabilitySlot>>,
+  context: CapabilitySlotSentenceContext,
+): CapabilitySentencePart[] => {
+  const parts: CapabilitySentencePart[] = [];
+  let index = 0;
+  for (const match of text.matchAll(/\{([a-z][A-Za-z0-9]{0,31})\}/g)) {
+    if (match.index > index) parts.push({ kind: "text", text: text.slice(index, match.index) });
+    const name = match[1]!;
+    const slot = Object.hasOwn(slots, name) ? slots[name] : undefined;
+    if (!slot) throw new Error(`Unknown sentence slot ${name}`);
+    const label = slotText(slot, context, "chip");
+    const full = slotText(slot, context, "full");
+    parts.push(
+      slot.kind === "text" || slot.kind === "count"
+        ? { kind: "text", text: label }
+        : { kind: "chip", name, slot, label: slot.kind === "person" ? label : plain(label, 40, "middle"), full },
+    );
+    index = match.index + match[0].length;
+  }
+  if (index < text.length) parts.push({ kind: "text", text: text.slice(index) });
+  return parts;
+};
+const sentenceText = (
+  text: string,
+  slots: Readonly<Record<string, CapabilitySlot>>,
+  context: CapabilitySlotSentenceContext,
+  mode: "plain" | "button",
+  max = 400,
+): string => {
+  const render = (slotMax: number) =>
+    text.replace(/\{([a-z][A-Za-z0-9]{0,31})\}/g, (_, name: string) => {
+      const slot = Object.hasOwn(slots, name) ? slots[name] : undefined;
+      if (!slot) throw new Error(`Unknown sentence slot ${name}`);
+      return plain(slotText(slot, context, mode), slotMax, "middle");
+    });
+  let result = render(Number.MAX_SAFE_INTEGER);
+  if (Array.from(result).length > max) result = render(40);
+  return plain(result, max);
+};
+export const capabilitySentenceText = (
+  text: string,
+  slots: Readonly<Record<string, CapabilitySlot>>,
+  context: CapabilitySlotSentenceContext,
+): string => sentenceText(text, slots, context, "plain");
+export type CapabilityReviewSentenceForm =
+  | "question"
+  | "running"
+  | "done"
+  | "rejected"
+  | "notRun"
+  | "unknown"
+  | "short"
+  | "confirm"
+  | "decline";
+export const capabilityReviewSentence = (
+  review: CapabilityActionReview,
+  form: CapabilityReviewSentenceForm,
+  context: { timeZone: string },
+): string => {
+  const rendering = { locale: review.locale, timeZone: context.timeZone };
+  const t = words.resolve([review.locale]).t;
+  const action = () => capabilitySentenceText(review.sentence.action, review.slots, rendering);
+  if (form === "question") return plain(t.question({ sentence: action() }), 400);
+  if (form === "unknown") return plain(t.unknown({ action: action() }), 400);
+  if (form === "confirm" || form === "decline")
+    return sentenceText(review.sentence[form], review.slots, rendering, "button", Number.MAX_SAFE_INTEGER);
+  const template = form === "notRun" ? (review.sentence.notRun ?? review.sentence.rejected) : review.sentence[form];
+  if (template) return capabilitySentenceText(template, review.slots, rendering);
+  if (form === "short") return action();
+  return plain(t.rejected({ action: action() }), 400);
+};
+export const capabilityOutcomeSentence = (
+  review: CapabilityActionReview,
+  outcome: CapabilityActionOutcome,
+  receipt: CapabilityActionReceipt | undefined,
+  context: { timeZone: string },
+): string =>
+  outcome === "done" && receipt
+    ? capabilitySentenceText(receipt.text, receipt.slots ?? {}, { locale: review.locale, timeZone: context.timeZone })
+    : capabilityReviewSentence(review, outcome === "not_run" ? "notRun" : outcome, context);
+export const capabilityAskReasonText = (reason: CapabilityAskReason, context: { locale: string; appName: string }): string => {
+  const t = words.resolve([context.locale]).t;
+  return reason === "app_asks" ? t.app_asks({ app: context.appName }) : t[reason];
 };

@@ -1,6 +1,7 @@
 import type { Message } from "@k2b/nessi";
 import { type SQL, sql } from "bun";
 import { getCapability } from "../_internal/registry";
+import { type CapabilityActionPolicy, capabilityActionPolicy } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import {
   createMandate,
@@ -174,7 +175,14 @@ const validateTaskGrants = async (input: unknown): Promise<TaskGrant[]> => {
       (item) => item.localId === grant.capabilityId,
     );
     if (!operation) throw new Error(`Capability unavailable: ${grant.appId}.${grant.capabilityId}`);
-    if (grant.kind === "action" && (!("approval" in operation) || (operation.approval !== "none" && operation.approval !== "rememberable")))
+    const policy = entry ? capabilityActionPolicy(entry.manifest, grant.capabilityId) : undefined;
+    if (grant.kind === "action" && policy && (!("silent" in policy) || policy.routines === false))
+      throw new Error(`Capability requires interactive approval: ${grant.appId}.${grant.capabilityId}`);
+    if (
+      grant.kind === "action" &&
+      !policy &&
+      (!("approval" in operation) || (operation.approval !== "none" && operation.approval !== "rememberable"))
+    )
       throw new Error(`Capability always requires interactive approval: ${grant.appId}.${grant.capabilityId}`);
     const properties = operation.inputSchema.properties ?? {};
     for (const key of Object.keys(grant.fixedInput))
@@ -676,6 +684,7 @@ export const aiChatTasks = {
     kind: "query" | "action";
     input: unknown;
     approval?: "none" | "rememberable" | "always";
+    policy?: CapabilityActionPolicy;
   }): Promise<void> => {
     const result = await validateMandateIssueAuthority({
       mandateId: input.mandate.id,
@@ -685,6 +694,7 @@ export const aiChatTasks = {
       operation: `capability.${input.kind === "query" ? "query" : "action.run"}:${input.capabilityId}`,
       input: input.input,
       capabilityApproval: input.approval,
+      capabilityPolicy: input.policy,
     });
     if (!result.ok) {
       const policyDenied = result.error.code === "FORBIDDEN" && result.error.message === MANDATE_POLICY_DENIED_MESSAGE;

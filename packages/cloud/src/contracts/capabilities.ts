@@ -148,7 +148,8 @@ const CapabilityActionReviewDetailSchema = z
     }
   });
 
-export const CapabilityActionReviewSchema = z
+/** @deprecated removed with the next major; return CapabilityActionReview. */
+export const CapabilityActionLegacyReviewSchema = z
   .object({
     message: z.string().min(1).max(1000).describe("Plain-text description of the concrete Action consequence."),
     details: z.array(CapabilityActionReviewDetailSchema).max(20).optional(),
@@ -157,7 +158,335 @@ export const CapabilityActionReviewSchema = z
   })
   .strict();
 
+/** @deprecated removed with the next major; return CapabilityActionReview. */
+export type CapabilityActionLegacyReview = z.infer<typeof CapabilityActionLegacyReviewSchema>;
+
+export const CAPABILITY_ASK_REASONS = [
+  "sends",
+  "deletes",
+  "cannot_undo",
+  "involves_people",
+  "changes_access",
+  "keeps_working",
+  "sensitive",
+  "app_asks",
+] as const;
+export type CapabilityAskReason = (typeof CAPABILITY_ASK_REASONS)[number];
+export const CAPABILITY_REACHES = ["you", "draft", "shared"] as const;
+export type CapabilityReach = (typeof CAPABILITY_REACHES)[number];
+export const CAPABILITY_ACTION_OUTCOMES = ["running", "done", "rejected", "not_run", "unknown"] as const;
+export type CapabilityActionOutcome = (typeof CAPABILITY_ACTION_OUTCOMES)[number];
+export const CAPABILITY_MAX_REVIEW_BYTES = 32 * 1024;
+export const CapabilityActionPolicySchema = z.union([
+  z.object({ silent: z.enum(CAPABILITY_REACHES), routines: z.literal(false).optional() }).strict(),
+  z.object({ ask: z.enum(CAPABILITY_ASK_REASONS) }).strict(),
+]);
+export type CapabilityActionPolicy = z.infer<typeof CapabilityActionPolicySchema>;
+
+const reviewLine = (max: number, min = 1) =>
+  z
+    .string()
+    .min(min)
+    .max(max)
+    .refine((text) => !/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(text), "Contains unsafe characters");
+const reviewBlock = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .refine((text) => !/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(text.replace(/[\n\t]/g, "")), "Contains unsafe characters");
+export const CapabilityPersonSchema = z
+  .object({ name: reviewLine(120).optional(), address: reviewLine(320).optional(), userId: z.uuid().optional() })
+  .strict()
+  .refine((person) => person.name !== undefined || person.address !== undefined, "A person needs a name or address");
+export type CapabilityPerson = z.infer<typeof CapabilityPersonSchema>;
+const reviewTime = z.iso.datetime({ offset: true });
+const reviewDay = z.iso.date();
+const reviewIcon = z.string().regex(/^ti ti-[a-z0-9-]+$/);
+export const CapabilitySlotSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("object"),
+      title: reviewLine(200),
+      ref: CloudResourceRefSchema.optional(),
+      icon: reviewIcon.optional(),
+      gone: z.literal(true).optional(),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal("place"), title: reviewLine(200), ref: CloudResourceRefSchema.optional(), icon: reviewIcon.optional() })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("person"),
+      people: z.array(CapabilityPersonSchema).min(1).max(20),
+      total: z.number().int().min(1).max(100_000).optional(),
+    })
+    .strict()
+    .refine((slot) => slot.total === undefined || slot.total >= slot.people.length, "total is smaller than people"),
+  z
+    .object({ kind: z.literal("time"), start: z.string(), end: z.string().optional(), format: z.enum(["date", "date-time"]) })
+    .strict()
+    .superRefine((slot, ctx) => {
+      const schema = slot.format === "date" ? reviewDay : reviewTime;
+      for (const key of ["start", "end"] as const)
+        if (slot[key] !== undefined && !schema.safeParse(slot[key]).success)
+          ctx.addIssue({ code: "custom", path: [key], message: "Invalid date or time" });
+      if (slot.end && (slot.format === "date" ? slot.end < slot.start : Date.parse(slot.end) < Date.parse(slot.start)))
+        ctx.addIssue({ code: "custom", path: ["end"], message: "end precedes start" });
+    }),
+  z
+    .object({
+      kind: z.literal("count"),
+      value: z.number().int().min(0).max(1_000_000_000),
+      noun: z
+        .object({
+          zero: reviewLine(40).optional(),
+          one: reviewLine(40).optional(),
+          two: reviewLine(40).optional(),
+          few: reviewLine(40).optional(),
+          many: reviewLine(40).optional(),
+          other: reviewLine(40),
+        })
+        .strict(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("text"), value: reviewLine(200) }).strict(),
+]);
+export type CapabilitySlot = z.infer<typeof CapabilitySlotSchema>;
+const reviewSlots = z
+  .record(z.string().regex(/^[a-z][A-Za-z0-9]{0,31}$/), CapabilitySlotSchema)
+  .refine((slots) => Object.keys(slots).length <= 6, "At most 6 slots");
+const reviewTemplate = reviewLine(200).refine(
+  (text) => !/[{}]/.test(text.replace(/\{[a-z][A-Za-z0-9]{0,31}\}/g, "")),
+  "Invalid placeholder",
+);
+/** Context-free sentence rules, also used for consequence and rule sentences. */
+export const capabilitySentenceIssues = (
+  text: string,
+  slots: Readonly<Record<string, CapabilitySlot>>,
+  complete = true,
+  chips = true,
+): string[] => {
+  const names = [...text.matchAll(/\{([a-z][A-Za-z0-9]{0,31})\}/g)].map((match) => match[1]!);
+  const issues: string[] = [];
+  if (/[{}]/.test(text.replace(/\{[a-z][A-Za-z0-9]{0,31}\}/g, ""))) issues.push("Invalid placeholder");
+  for (const name of names) if (!Object.hasOwn(slots, name)) issues.push(`Unknown slot ${name}`);
+  if (complete) for (const name of Object.keys(slots)) if (!names.includes(name)) issues.push(`Missing slot ${name}`);
+  if (
+    chips &&
+    names.filter((name) => {
+      const slot = Object.hasOwn(slots, name) ? slots[name] : undefined;
+      return slot && slot.kind !== "text" && slot.kind !== "count";
+    }).length > 3
+  )
+    issues.push("At most 3 chip slots");
+  return issues;
+};
+const sentenceShape = { text: reviewTemplate, slots: reviewSlots.readonly().optional() };
+const sentenceRefinement = (sentence: { text: string; slots?: Readonly<Record<string, CapabilitySlot>> }, ctx: z.RefinementCtx) => {
+  for (const message of capabilitySentenceIssues(sentence.text, sentence.slots ?? {})) ctx.addIssue({ code: "custom", message });
+};
+export const CapabilitySentenceSchema = z.object(sentenceShape).strict().superRefine(sentenceRefinement);
+export type CapabilitySentence = z.infer<typeof CapabilitySentenceSchema>;
+export const CapabilityConsequenceSchema = z
+  .object({ ...sentenceShape, mark: z.enum(["added", "removed"]).optional() })
+  .strict()
+  .superRefine(sentenceRefinement);
+export type CapabilityConsequence = z.infer<typeof CapabilityConsequenceSchema>;
+const previewPeople = (max: number) => z.array(CapabilityPersonSchema).max(max);
+const extraCount = z.number().int().min(0).max(100_000);
+const previewZone = reviewLine(200).refine((zone) => {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}, "Invalid time zone");
+export const CapabilityPreviewSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("message"),
+      from: CapabilityPersonSchema.optional(),
+      to: previewPeople(50),
+      cc: previewPeople(50).optional(),
+      bcc: previewPeople(50).optional(),
+      more: z.object({ to: extraCount.optional(), cc: extraCount.optional(), bcc: extraCount.optional() }).strict().optional(),
+      subject: reviewLine(998, 0),
+      body: reviewBlock(10_000),
+      format: z.enum(["plain", "markdown"]),
+      truncated: z.boolean().optional(),
+      attachments: z
+        .array(
+          z
+            .object({ name: reviewLine(255), size: z.number().int().nonnegative().optional(), ref: CloudResourceRefSchema.optional() })
+            .strict(),
+        )
+        .max(50)
+        .optional(),
+      moreAttachments: extraCount.optional(),
+      sendAt: reviewTime.optional(),
+      warnings: z.array(reviewLine(300)).max(5).optional(),
+    })
+    .strict()
+    .refine(
+      (preview) =>
+        preview.to.length +
+          (preview.cc?.length ?? 0) +
+          (preview.bcc?.length ?? 0) +
+          (preview.more?.to ?? 0) +
+          (preview.more?.cc ?? 0) +
+          (preview.more?.bcc ?? 0) >
+        0,
+      "A message needs a recipient",
+    ),
+  z
+    .object({
+      kind: z.literal("event"),
+      title: reviewLine(200),
+      start: z.union([reviewDay, reviewTime]),
+      end: z.union([reviewDay, reviewTime]).optional(),
+      allDay: z.boolean().optional(),
+      timeZone: previewZone.optional(),
+      place: reviewLine(200).optional(),
+      location: reviewLine(200).optional(),
+      recurrence: reviewLine(200).optional(),
+      attendees: previewPeople(50).optional(),
+      description: reviewBlock(2000).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("task"),
+      title: reviewLine(200),
+      place: reviewLine(200).optional(),
+      due: z.union([reviewDay, reviewTime]).optional(),
+      assignees: previewPeople(20).optional(),
+      status: reviewLine(60).optional(),
+      checklist: z
+        .array(z.object({ label: reviewLine(200), done: z.boolean() }).strict())
+        .max(20)
+        .optional(),
+      tags: z.array(reviewLine(60)).max(10).optional(),
+      description: reviewBlock(2000).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("page"),
+      title: reviewLine(200),
+      place: reviewLine(200).optional(),
+      body: reviewBlock(10_000),
+      format: z.enum(["plain", "markdown"]),
+      truncated: z.boolean().optional(),
+      changes: z
+        .array(z.object({ change: z.enum(["added", "removed"]), text: reviewBlock(2000) }).strict())
+        .max(20)
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("file"),
+      name: reviewLine(255),
+      place: reviewLine(200).optional(),
+      path: reviewLine(1024).optional(),
+      size: z.number().int().nonnegative().optional(),
+      mediaType: reviewLine(120).optional(),
+      to: reviewLine(1024).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("rule"),
+      when: CapabilitySentenceSchema,
+      does: reviewBlock(4000),
+      may: z.array(CapabilityConsequenceSchema).max(12),
+      seesChat: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("fields"),
+      rows: z
+        .array(
+          z
+            .object({
+              label: reviewLine(60),
+              value: reviewBlock(2000),
+              before: reviewBlock(2000).optional(),
+              format: z.enum(["date", "date-time"]).optional(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(12),
+    })
+    .strict(),
+]);
+export type CapabilityPreview = z.infer<typeof CapabilityPreviewSchema>;
+export const CapabilityActionReviewSchema = z
+  .object({
+    locale: z.string(),
+    sentence: z
+      .object({
+        action: reviewTemplate,
+        running: reviewTemplate,
+        done: reviewTemplate,
+        confirm: reviewTemplate,
+        decline: reviewTemplate,
+        rejected: reviewTemplate.optional(),
+        notRun: reviewTemplate.optional(),
+        short: reviewTemplate.refine((text) => text.length <= 60, "short exceeds 60 characters").optional(),
+      })
+      .strict(),
+    slots: reviewSlots.readonly(),
+    preview: CapabilityPreviewSchema.optional(),
+    consequences: z.array(CapabilityConsequenceSchema).max(6).optional(),
+    ask: z.enum(CAPABILITY_ASK_REASONS).optional(),
+    reach: z.enum(CAPABILITY_REACHES).optional(),
+    effects: z.number().int().min(1).max(1000).optional(),
+    check: z
+      .object({ query: CapabilityLocalIdSchema, input: z.record(z.string(), z.unknown()) })
+      .strict()
+      .optional(),
+    scope: z.string().min(1).max(200).optional(),
+    links: z.array(CapabilitySemanticLinkSchema).max(10).optional(),
+  })
+  .strict()
+  .superRefine((review, ctx) => {
+    for (const [form, text] of Object.entries(review.sentence)) {
+      const complete = form === "action" || form === "running" || form === "done";
+      for (const message of capabilitySentenceIssues(text, review.slots, complete, form === "action"))
+        ctx.addIssue({ code: "custom", path: ["sentence", form], message });
+      if ((form === "confirm" || form === "decline") && [...text.matchAll(/\{[a-z][A-Za-z0-9]{0,31}\}/g)].length > 1)
+        ctx.addIssue({ code: "custom", path: ["sentence", form], message: "Buttons name at most one slot" });
+    }
+  });
 export type CapabilityActionReview = z.infer<typeof CapabilityActionReviewSchema>;
+export type CapabilityActionReviewData = CapabilityActionReview | CapabilityActionLegacyReview;
+export const CapabilityActionReviewDataSchema = z
+  .unknown()
+  .transform((value, ctx) => {
+    const schema =
+      value !== null && typeof value === "object" && Object.hasOwn(value, "sentence")
+        ? CapabilityActionReviewSchema
+        : CapabilityActionLegacyReviewSchema;
+    const parsed = schema.safeParse(value);
+    if (parsed.success) return parsed.data;
+    for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+    return z.NEVER;
+  })
+  .pipe(z.union([CapabilityActionReviewSchema, CapabilityActionLegacyReviewSchema]));
+export const CapabilityActionReceiptSchema = z
+  .object({ ...sentenceShape, preview: CapabilityPreviewSchema.optional() })
+  .strict()
+  .superRefine(sentenceRefinement);
+export type CapabilityActionReceipt = z.infer<typeof CapabilityActionReceiptSchema>;
+export const CapabilityActionCheckSchema = z
+  .object({ outcome: z.enum(["done", "not_done", "pending"]), receipt: CapabilityActionReceiptSchema.optional() })
+  .strict();
+export type CapabilityActionCheck = z.infer<typeof CapabilityActionCheckSchema>;
 
 export const CapabilityPageSchema = z.discriminatedUnion("hasMore", [
   z
@@ -216,6 +545,7 @@ export type CapabilityResult<T> = {
   stream?: CapabilityStream;
   /** Provider-authored, user-facing summary of the successful result. Render as escaped plain text. */
   summary?: string;
+  receipt?: CapabilityActionReceipt;
   refs?: CloudResourceReference[];
   page?: CapabilityPage;
   links?: CapabilitySemanticLink[];
@@ -237,6 +567,7 @@ export const capabilityResultSchema = <T extends z.ZodType>(
         .optional(),
       page: CapabilityPageSchema.optional(),
       links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
+      receipt: options?.consumer ? CapabilityActionReceiptSchema.optional().catch(undefined) : CapabilityActionReceiptSchema.optional(),
       presentation: options?.consumer
         ? CapabilityTablePresentationSchema.optional().catch(undefined)
         : CapabilityTablePresentationSchema.optional(),
@@ -282,7 +613,7 @@ export type CapabilityError = {
   details?: Record<string, unknown>;
 };
 export type CapabilityInvocationResult<T> = { ok: true; data: CapabilityResult<T> } | { ok: false; error: CapabilityError };
-export type CapabilityActionReviewResult = { ok: true; data: CapabilityActionReview } | { ok: false; error: CapabilityError };
+export type CapabilityActionReviewResult = { ok: true; data: CapabilityActionReviewData } | { ok: false; error: CapabilityError };
 
 export const CloudResourceViewSchema = z
   .object({
@@ -371,6 +702,8 @@ export type CapabilityUniversalSearchDefinition = {
 export type CapabilitySchemaPresentation = Readonly<Record<string, string>>;
 
 /**
+ * @deprecated removed with the next major; return per-call CapabilityActionReview sentence forms.
+ *
  * What one Action does, in words people read in approvals, receipts, and step rows. Each sentence is a
  * template: `{input.to}` inserts a field of the validated call input by its dotted schema path, and
  * `done` may also read the Action's result data with `{data.id}`. Cloud inserts values as escaped,
@@ -399,7 +732,7 @@ export type CapabilityOperationPresentationTranslation = {
   data?: CapabilitySchemaPresentation;
   /** Search-tag presentation keyed by the stable tag token. */
   searchTags?: Readonly<Record<string, { title?: string; description?: string }>>;
-  /** Actions only: the complete set of sentences in this locale. */
+  /** @deprecated removed with the next major; return per-call review forms. */
   sentences?: CapabilityActionSentences;
 };
 
@@ -413,7 +746,7 @@ export type CapabilityPresentationTranslation = {
 export type CapabilityPresentationCatalog = {
   /** Locale of the complete Type, Query, Action, search-tag, and schema presentation. */
   baseLocale: string;
-  /** Optional Action sentences in the base locale, keyed by Action local ID. */
+  /** @deprecated removed with the next major; return per-call review forms. */
   sentences?: Readonly<Record<string, CapabilityActionSentences>>;
   /** Partial presentation overlays with exact -> ancestor -> base fallback. */
   translations: Readonly<Record<string, CapabilityPresentationTranslation>>;
@@ -445,7 +778,9 @@ export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>,
   openWorld: boolean;
   stream?: CapabilityStreamDefinition;
   idempotency: CapabilityIdempotencyPolicy;
+  /** @deprecated removed with the next major; declare policy. */
   approval?: CapabilityActionApprovalPolicy;
+  policy?: CapabilityActionPolicy;
   review?: (
     input: z.output<Input>,
     context: CapabilityExecutionContext,
@@ -572,14 +907,18 @@ const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T
 /**
  * Reads what this release understands from a manifest that a newer release may have produced.
  *
- * - Unknown top-level fields are ignored. A newer release may therefore only add something at the top
- *   level; anything that restricts an existing entry belongs inside that entry.
+ * - Unknown top-level fields are ignored. Additions there must retain conservative behavior through
+ *   existing fields for older readers; Action policies carry the corresponding derived approval.
+ *   Other restrictions belong inside their entry.
  * - An entry with a field or value from a newer release is left out rather than stripped: its unknown
  *   part may change how the entry runs or who may use it, so guessing could widen access.
  * - Entries that depend on an entry that is not there follow it: a Query scoped to a missing type is
  *   left out, and a type whose reader is missing keeps no reader.
  * - A file provider with a field from a newer release is left out. Whether its operations are still
  *   there and match the contract is `fileProviderIssues`' job, which Core and consumers run.
+ *
+ * - An unreadable policy or one inconsistent with derived approval, review, or effect flags leaves
+ *   out its Action. Policies for unknown Actions are dropped.
  *
  * Every other entry stays available.
  */
@@ -594,7 +933,19 @@ const readableManifest = (value: unknown): unknown => {
   const typeIds = new Set(types.map((type) => type.localId));
   const readableQueries = queries.filter((query) => query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true);
   const queryIds = new Set(readableQueries.map((query) => query.localId));
-  const { fileProvider: sentProvider, ...rest } = sent;
+  const policies: Record<string, CapabilityActionPolicy> = {};
+  const sentPolicies = sent.policies;
+  const readableActions = actions.filter((action) => {
+    if (!sentPolicies || typeof sentPolicies !== "object" || !Object.hasOwn(sentPolicies, action.localId)) return true;
+    const parsed = CapabilityActionPolicySchema.safeParse(Object.getOwnPropertyDescriptor(sentPolicies, action.localId)?.value);
+    if (!parsed.success) return false;
+    const policy = parsed.data;
+    const approval = "silent" in policy ? "rememberable" : undefined;
+    if (action.approval !== approval || !action.review || ("silent" in policy && (action.destructive || action.openWorld))) return false;
+    policies[action.localId] = policy;
+    return true;
+  });
+  const { fileProvider: sentProvider, policies: _policies, ...rest } = sent;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   return {
     ...rest,
@@ -605,7 +956,8 @@ const readableManifest = (value: unknown): unknown => {
       return withoutReader;
     }),
     queries: readableQueries,
-    actions,
+    actions: readableActions,
+    ...(sentPolicies !== undefined ? { policies } : {}),
     commands,
   };
 };
@@ -626,6 +978,7 @@ export const CapabilityManifestSchema = z.preprocess(
     commands: z.array(CapabilityCommandManifestSchema).max(MAX_MANIFEST_ENTRIES),
     // Optional without a default: a manifest without a provider keeps the shape and hash of earlier releases.
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
+    policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),
   }),
 );
 
@@ -634,6 +987,9 @@ export type CapabilityQueryManifest = z.infer<typeof CapabilityQueryManifestSche
 export type CapabilityActionManifest = z.infer<typeof CapabilityActionManifestSchema>;
 export type CapabilitySearchTagManifest = z.infer<typeof CapabilitySearchTagManifestSchema>;
 export type CapabilityManifest = z.infer<typeof CapabilityManifestSchema>;
+
+export const capabilityActionPolicy = (manifest: CapabilityManifest, localId: string): CapabilityActionPolicy | undefined =>
+  manifest.policies && Object.hasOwn(manifest.policies, localId) ? manifest.policies[localId] : undefined;
 
 export const cloudResourceRefAppId = (ref: CloudResourceRef): string => ref.type.slice(0, ref.type.indexOf("."));
 

@@ -10,7 +10,8 @@ import {
   type ToolCallBlock,
   type ToolStreamIssue,
 } from "@k2b/nessi";
-import type { CapabilityActionReview } from "../contracts/capabilities";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import type { CapabilityActionLegacyReview } from "../contracts/capabilities";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiTurnAllowsRememberedApprovals,
@@ -590,7 +591,7 @@ describe("nessi block event mapping", () => {
       links: [{ rel: "edit" as const, href: "/app/mail/drafts/one" }],
       approvalScope: "skills",
     };
-    mapper.setApprovalReviews(new Map([["call-9", review]]));
+    mapper.setApprovalReviews(new Map([["call-9", review]]), new Map([["call-9", "skills"]]));
     const ops = mapper.translate({
       ...turn,
       type: "tool_action_request",
@@ -1400,7 +1401,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
       prepared: prepareAiTools({ tools: [] }),
       allowRememberedApprovals: false,
       rememberableCapabilityApprovals: new Map<string, string>(),
-      capabilityActionReviews: new Map<string, CapabilityActionReview>(),
+      capabilityActionReviews: new Map<string, CapabilityActionLegacyReview>(),
       approvalTargets: new Map(),
       linkedApprovals: new Map(),
       appliedSteers: [],
@@ -1542,5 +1543,41 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
     apply.mockRestore();
     flush.mockRestore();
     push.mockRestore();
+  }
+});
+
+test("executor never offers remembering a silent review that asks, even with scope", () => {
+  const mapper = createEventMapper(1, []);
+  const review = { ...reviewFixture(), scope: "mail", ask: "sends" as const };
+  mapper.setApprovalReviews(new Map([["call-9", review]]));
+  expect(
+    mapper.translate({
+      ...turn,
+      type: "tool_action_request",
+      kind: "custom_approval",
+      callId: "call-9",
+      name: "send",
+      args: {},
+      message: "Send?",
+    })[0],
+  ).toMatchObject({ type: "block_set", block: { approval: { review, allowAlways: false, allowChat: false } } });
+});
+
+test("executor ignores a scope on an asking policy and uses only authorized remember scopes", () => {
+  const review = { ...reviewFixture(), scope: "mail" };
+  for (const rememberable of [false, true]) {
+    const mapper = createEventMapper(1, []);
+    mapper.setApprovalReviews(new Map([["call-9", review]]), rememberable ? new Map([["call-9", "mail"]]) : new Map());
+    expect(
+      mapper.translate({
+        ...turn,
+        type: "tool_action_request",
+        kind: "custom_approval",
+        callId: "call-9-approval-0",
+        name: "send",
+        args: {},
+        message: "Send?",
+      })[0],
+    ).toMatchObject({ type: "block_set", block: { approval: { allowAlways: rememberable, allowChat: rememberable } } });
   }
 });

@@ -5,10 +5,24 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Deprecations and migrations
+
+## Action policies and per-call reviews replace approval and catalog sentences
+
+Action `approval`, `CapabilityActionLegacyReview`, and `presentation.sentences`
+are deprecated and will be removed with the next major release. This release
+accepts both contracts. Follow the [application migration guide](/en/docs/platform/capabilities#migrate-an-application),
+and upgrade Core before an app returns the new review or receipt shapes.
+
+The TypeScript names `CapabilityActionReview` and `CapabilityActionReviewSchema`
+now name the new review shape; the old shape is `CapabilityActionLegacyReview`
+and `CapabilityActionLegacyReviewSchema`. Code that annotated an old review
+with `CapabilityActionReview` must switch to `CapabilityActionLegacyReview`.
+The `data` in `CapabilityActionReviewResult` is now `CapabilityActionReviewData`,
+which accepts either shape.
 
 ## Cloud administrators see only granted contact books in Contacts
 

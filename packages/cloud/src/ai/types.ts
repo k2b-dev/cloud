@@ -13,7 +13,7 @@ import type {
 import type { Usage } from "@k2b/nessi/ai";
 import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
-import type { CapabilityActionReview, CapabilityActionSentences, CloudResourceRef } from "../contracts/capabilities";
+import type { CapabilityActionReviewData, CapabilityActionSentences, CloudResourceRef } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
@@ -428,7 +428,7 @@ export type AiPendingTurnAction =
       name: string;
       args: unknown;
       message?: string;
-      review?: CapabilityActionReview;
+      review?: CapabilityActionReviewData;
       allowAlways: boolean;
       /** Whether the approval can be remembered for this chat. */
       allowChat: boolean;
@@ -464,7 +464,7 @@ export type AiPendingTurnActionRecord = {
   name: string;
   args: unknown;
   message?: string;
-  review?: CapabilityActionReview;
+  review?: CapabilityActionReviewData;
   approvalScope: string;
   allowAlways: boolean;
   /** Whether the approval can be remembered for this chat; defaults to `allowAlways`. */

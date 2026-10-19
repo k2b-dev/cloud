@@ -14,6 +14,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { refreshAppBadges } from "../browser/app-badges";
+import { capabilityReviewView } from "../capabilities/reviews";
 import { coreClient } from "../clients/core";
 import {
   APPROVALS_PAGE_PATH,
@@ -23,7 +24,7 @@ import {
   ApprovalPageSchema,
   type PendingApproval,
 } from "../contracts/approvals";
-import type { CapabilityActionReview } from "../contracts/capabilities";
+import type { CapabilityActionLegacyReview } from "../contracts/capabilities";
 import { approvalMessages } from "./messages";
 
 /** How a decided request ends in this list. It stays in place as a receipt until the next load. */
@@ -41,7 +42,7 @@ const outcomeIcon = (outcome: Outcome, band = false) =>
         ? "ti ti-circle-x"
         : "ti ti-x"
       : "ti ti-info-circle";
-type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
+type ReviewDetail = NonNullable<CapabilityActionLegacyReview["details"]>[number];
 
 export type ApprovalsProps = {
   /** List the requests whose effect belongs to this app or that this app asked for. Without, every app's, grouped. */
@@ -96,8 +97,10 @@ const detailText = (detail: ReviewDetail, locale: string): string => {
   return detail.value;
 };
 
-const inlineDetails = (item: PendingApproval) => (item.review?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
-const blockDetails = (item: PendingApproval) => (item.review?.details ?? []).filter((detail) => detail.display === "block");
+const reviewView = (item: PendingApproval) => (item.review ? capabilityReviewView(item.review, { timeZone: "UTC" }) : undefined);
+const inlineDetails = (item: PendingApproval) =>
+  (reviewView(item)?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
+const blockDetails = (item: PendingApproval) => (reviewView(item)?.details ?? []).filter((detail) => detail.display === "block");
 
 function Fields(props: { item: PendingApproval }) {
   const locale = useLocale();
@@ -124,7 +127,7 @@ function Fields(props: { item: PendingApproval }) {
 /** The review's message, or the sentence's plain lines when the Action has no review. */
 function Description(props: { item: PendingApproval }) {
   const text = () => {
-    const message = props.item.review?.message.trim();
+    const message = reviewView(props.item)?.message.trim();
     if (message) return message === approvalTitle(props.item) ? null : message;
     const plain = sentenceFields(props.item)
       .filter((field) => field.label === null)

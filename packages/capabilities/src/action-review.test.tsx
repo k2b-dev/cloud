@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CapabilityActionManifest, CapabilityActionReview } from "@k2b/cloud/contracts";
+import type { CapabilityActionManifest, CapabilityActionReviewData } from "@k2b/cloud/contracts";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "./frontend/ssr-test-plugin";
@@ -19,7 +19,7 @@ const action = (overrides: Partial<CapabilityActionManifest> = {}): CapabilityAc
   ...overrides,
 });
 
-const review: CapabilityActionReview = {
+const review: CapabilityActionReviewData = {
   message: "This contact will be deleted.",
   details: [{ label: "Contact", value: "Ada Lovelace" }],
   links: [{ rel: "open", href: "/app/contacts/ada", title: "Open contact" }],
@@ -28,7 +28,7 @@ const review: CapabilityActionReview = {
 describe("capability action review", () => {
   test("loads and confirms a declared review with the exact action input", async () => {
     const reviewed: unknown[] = [];
-    const confirmed: CapabilityActionReview[] = [];
+    const confirmed: CapabilityActionReviewData[] = [];
     const decision = await confirmActionRun(
       { appId: "contacts", operation: action({ review: true }), input: { contactId: "ada" } },
       {
@@ -92,5 +92,36 @@ describe("capability action review", () => {
     expect(html).toContain("Ada Lovelace");
     expect(html).toContain('href="/app/contacts/ada"');
     expect(html).toContain("Open contact");
+  });
+  test("renders the new review through the same content surface", () => {
+    const review: CapabilityActionReviewData = {
+      locale: "en",
+      sentence: { action: "Send {subject}", running: "Sending {subject}", done: "Queued {subject}", confirm: "Send", decline: "Keep" },
+      slots: { subject: { kind: "object", title: "Meeting" } },
+      ask: "sends",
+      preview: {
+        kind: "message",
+        from: { name: "Ops", address: "ops@example.com" },
+        to: [{ name: "Lea", address: "lea@example.com" }],
+        cc: [{ address: "cc@example.com" }],
+        bcc: [{ address: "bcc@example.com" }],
+        subject: "Meeting",
+        body: "Hello",
+        format: "plain",
+        attachments: [{ name: "meeting.pdf" }],
+      },
+    };
+    const html = renderToString(() => createComponent(ActionReviewContent, { review }));
+    for (const value of [
+      "Send",
+      "Meeting",
+      "ops@example.com",
+      "lea@example.com",
+      "cc@example.com",
+      "bcc@example.com",
+      "meeting.pdf",
+      "this leaves Cloud",
+    ])
+      expect(html).toContain(value);
   });
 });

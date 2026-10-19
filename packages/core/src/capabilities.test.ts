@@ -15,7 +15,7 @@ import {
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
-  CapabilityActionReviewSchema,
+  CapabilityActionLegacyReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
@@ -431,7 +431,7 @@ describe("Core AI capabilities", () => {
     expect(taskReview).toMatchObject({ ok: true, data: { approvalScope: `task:${scheduledTask.shortId}` } });
     for (const result of results) {
       expect(result.ok).toBeTrue();
-      if (result.ok) expect(CapabilityActionReviewSchema.safeParse(result.data).success).toBeTrue();
+      if (result.ok) expect(CapabilityActionLegacyReviewSchema.safeParse(result.data).success).toBeTrue();
     }
   });
 

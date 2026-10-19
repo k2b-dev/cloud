@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
 import {
-  CapabilityActionReviewSchema,
+  CapabilityActionLegacyReviewSchema,
   CapabilityTablePresentationSchema,
   capabilityDataAtPath,
   capabilityResultSchema,
@@ -50,7 +50,7 @@ test("Markdown approval details require block display", () => {
     message: "Review access",
     details: [{ label: "Access", value: "**Read calendar**", format: "markdown", display }],
   });
-  expect(CapabilityActionReviewSchema.safeParse(review("block")).success).toBeTrue();
-  expect(CapabilityActionReviewSchema.safeParse(review("inline")).success).toBeFalse();
-  expect(CapabilityActionReviewSchema.safeParse(review()).success).toBeFalse();
+  expect(CapabilityActionLegacyReviewSchema.safeParse(review("block")).success).toBeTrue();
+  expect(CapabilityActionLegacyReviewSchema.safeParse(review("inline")).success).toBeFalse();
+  expect(CapabilityActionLegacyReviewSchema.safeParse(review()).success).toBeFalse();
 });

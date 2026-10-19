@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # API surface
@@ -349,10 +349,10 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/styles/global.css` | Supported asset | Alias for the global stylesheet | [Styling](/en/docs/frontend/styling-and-accessibility) |
 | `@k2b/cloud/cli/access` | Supported | Resource access commands | [CLI modules](/en/docs/platform/cli-modules) |
 | `@k2b/cloud/cli/capabilities` | Platform-owned | Built-in generic capability client | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability catalog, invocation, and Action review client | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability catalog, invocation, and Action review client | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability clients and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest compilation, evolution and resource-link assertions | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest, evolution, resource-link and localized review checks | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/account` | Platform-owned | Built-in account commands | — |
 | `@k2b/cloud/cli/apps` | Platform-owned | Built-in application commands | — |
 | `@k2b/cloud/cli/admin` | Platform-owned | Built-in administration commands | — |

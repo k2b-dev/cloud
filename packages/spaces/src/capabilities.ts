@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
-  type CapabilityActionReview,
+  type CapabilityActionLegacyReview,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CapabilityResult,
@@ -170,7 +170,7 @@ const truncateText = (value: string, maxBytes: number): { text: string; truncate
   return { text: chunks.join(""), truncated: true };
 };
 
-type ReviewDetails = NonNullable<CapabilityActionReview["details"]>;
+type ReviewDetails = NonNullable<CapabilityActionLegacyReview["details"]>;
 
 const spaceApprovalScope = (spaceId: string): string => `space:${spaceId}`;
 const itemApprovalScope = (itemId: string): string => `item:${itemId}`;

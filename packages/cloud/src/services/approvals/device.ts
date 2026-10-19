@@ -1,3 +1,4 @@
+import { capabilityReviewView } from "../../_internal/capability-reviews";
 import {
   APP_APPROVAL_LIMITS,
   type AppActionSummary,
@@ -5,7 +6,7 @@ import {
   appActionDigest,
   APP_ACTION_LIMITS as limits,
 } from "../../contracts/app-approval";
-import { CapabilityActionReviewSchema } from "../../contracts/capabilities";
+import { CapabilityActionReviewDataSchema } from "../../contracts/capabilities";
 import { DEFAULT_LOCALE } from "../../server/locale";
 import type { PendingApprovalRow } from "./list";
 
@@ -47,7 +48,7 @@ export const appActionView = async (
   const first = lines[0] ?? plain(row.action);
   const prefix = `${appName}: `;
   const sentence = first.startsWith(prefix) && first.length > prefix.length ? first.slice(prefix.length) : first;
-  const review = CapabilityActionReviewSchema.safeParse(row.details);
+  const review = CapabilityActionReviewDataSchema.safeParse(row.details);
   let message: string | null;
   const details: AppActionView["details"] = [];
   const detail = (label: string, value: string, format?: "date" | "date-time") => {
@@ -62,11 +63,12 @@ export const appActionView = async (
   const messages: string[] = [];
   const reviewLines = new Set<string>();
   if (review.success) {
-    const cleaned = plain(review.data.message);
+    const view = capabilityReviewView(review.data, { timeZone: "UTC" });
+    const cleaned = plain(view.message);
     if (cleaned !== sentence) messages.push(cleaned);
     reviewLines.add(cleaned);
-    for (const line of review.data.message.split(/\r?\n/)) reviewLines.add(plain(line));
-    for (const field of review.data.details ?? [])
+    for (const line of view.message.split(/\r?\n/)) reviewLines.add(plain(line));
+    for (const field of view.details ?? [])
       detail(field.label, field.value, field.format === "date" || field.format === "date-time" ? field.format : undefined);
   }
   for (const line of lines.slice(1)) {

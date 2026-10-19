@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  type CapabilityActionReview,
+  type CapabilityActionLegacyReview,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CapabilityResult,
@@ -365,7 +365,7 @@ const contactCollectionReview = (
   proposed: unknown,
   tagNames: ReadonlyMap<string, string>,
   t: ContactCapabilityMessages,
-): NonNullable<CapabilityActionReview["details"]>[number] => {
+): NonNullable<CapabilityActionLegacyReview["details"]>[number] => {
   const full = `${t.current}\n${contactCollectionReviewValue(field, current, tagNames, t)}\n\n${t.proposed}\n${contactCollectionReviewValue(
     field,
     proposed,
@@ -848,7 +848,7 @@ const reviewContactAction = async (
   describe: (
     contact: Contact,
     internalContact: Contact,
-  ) => Omit<CapabilityActionReview, "links"> | Result<never> | Promise<Omit<CapabilityActionReview, "links"> | Result<never>>,
+  ) => Omit<CapabilityActionLegacyReview, "links"> | Result<never> | Promise<Omit<CapabilityActionLegacyReview, "links"> | Result<never>>,
 ) => {
   const resolved = await resolveContactAtLevel(contactId, context, required);
   if (!resolved.ok) return resolved;
@@ -1274,7 +1274,7 @@ export const contactsCapabilities = defineCapabilities({
           message: t.createReview({ book: publicBook.name }),
           details: [
             { label: t.addressBook, value: publicBook.name },
-            ...fields.map((field): NonNullable<CapabilityActionReview["details"]>[number] => {
+            ...fields.map((field): NonNullable<CapabilityActionLegacyReview["details"]>[number] => {
               const value = data[field];
               if (field === "birthday" && typeof value === "string") {
                 return { label: contactReviewLabels(t)[field], value, format: "date" };
@@ -1329,7 +1329,7 @@ export const contactsCapabilities = defineCapabilities({
             message: t.updateReview({ contact: resolveContactName(contact) }),
             details: [
               { label: t.contact, value: resolveContactName(contact) },
-              ...changedFields.flatMap((field): NonNullable<CapabilityActionReview["details"]> => {
+              ...changedFields.flatMap((field): NonNullable<CapabilityActionLegacyReview["details"]> => {
                 const current = currentContactReviewValue(contact, field);
                 const proposed = input[field];
                 if (CONTACT_COLLECTION_FIELDS.has(field)) {

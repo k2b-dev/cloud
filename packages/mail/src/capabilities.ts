@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
-  type CapabilityActionReview,
+  type CapabilityActionLegacyReview,
   type CapabilityDefinitions,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -242,7 +242,7 @@ const bodyReviewDetails = (input: {
   label: string;
   truncatedMessage: string;
   previewWarningLabel?: string;
-}): NonNullable<CapabilityActionReview["details"]> => {
+}): NonNullable<CapabilityActionLegacyReview["details"]> => {
   const preview = truncateText(input.body, 10_000);
   return [
     ...(preview.truncated ? [{ label: input.previewWarningLabel ?? "Preview warning", value: input.truncatedMessage }] : []),
