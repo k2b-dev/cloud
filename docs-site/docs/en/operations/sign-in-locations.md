@@ -77,6 +77,8 @@ Use `reset asn --yes` to reset only ASN, or `reset --yes` to reset both types.
 Both the page and CLI use the same administrator API. One upload runs at a time
 per Core process; if another is running, wait briefly and retry. Invalid or
 oversized files leave the previous database active.
+Cloud also refuses databases with unusually large records that need more than
+32 KiB to decode; DB-IP Lite records need less than 1 KiB.
 Cancelling an upload in the page stops it before it is saved.
 
 Uploads are stored in Postgres (`geoip.databases`), so database backups

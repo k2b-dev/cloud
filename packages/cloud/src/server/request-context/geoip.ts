@@ -54,7 +54,7 @@ const isBoundedMmdbValue = (
   expandedLimit?: number,
 ): boolean => {
   if (start < base || start >= end) return false;
-  let budget = end - base;
+  let budget = expandedLimit === undefined ? Math.min(end - base, RECORD_MAX_WORK) : end - base;
   let offset = start;
   let expansionBudget = expandedLimit ?? Infinity;
   const costs = expandedLimit === undefined ? undefined : new Map<number, number>();
@@ -140,9 +140,10 @@ const isBoundedMmdbValue = (
       default:
         return false;
     }
-    // Payload bytes count as well: uncached metadata decodes a shared string once per reference.
+    // Count scalar payload bytes on first visit for records, and on every expansion for uncached metadata.
     expansionBudget -= size;
-    if (offset + size > end || expansionBudget < 0) return false;
+    if (expandedLimit === undefined) budget -= size;
+    if (offset + size > end || expansionBudget < 0 || budget < 0) return false;
     offset += size;
   }
   return true;
@@ -150,6 +151,9 @@ const isBoundedMmdbValue = (
 
 // The MMDB spec caps the metadata section, marker included, at 128 KiB.
 const METADATA_MAX_BYTES = 128 * 1024;
+// One lookup decodes at most this many value nodes plus payload bytes on first visit.
+// DB-IP City Lite's largest record needs under 1 KiB; this keeps a synchronous lookup within about two milliseconds.
+const RECORD_MAX_WORK = 32 * 1024;
 const boundedMmdbMetadataStart = (bytes: Buffer): number => {
   // Mirror mmdb-lib's backward marker scan exactly: it can skip a marker after a partial match, and the checked
   // section must be the one Reader decodes.
@@ -219,7 +223,7 @@ export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "b
           clear();
         }
       },
-      /** One cache for the whole batch: a record shared by many addresses is checked and decoded once. */
+      /** Each address decodes at most 32 KiB of new record data; a shared record is decoded once per batch. */
       getMany(addresses: readonly string[]) {
         try {
           return addresses.map((address) => reader.get(address));

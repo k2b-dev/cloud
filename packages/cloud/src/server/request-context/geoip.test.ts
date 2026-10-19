@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Reader } from "mmdb-lib";
 import * as logging from "../../services/logging";
 import { createGeoIp, hasBoundedMmdbMetadata, openGeoIpDatabase, truncateUtf8 } from "./geoip";
 import { mmdbFixture } from "./geoip.test-fixture";
@@ -237,6 +238,43 @@ describe("GeoIP", () => {
     } finally {
       logs.restore();
     }
+  });
+  test("records above 32 KiB of decode work fail closed without affecting other records", () => {
+    const logs = quiet();
+    try {
+      // Nodes plus scalar payload bytes: 32,777 units, just above 32 KiB.
+      const geo = createGeoIp(paths(mmdbFixture("city", { sharedRecordEntries: 3075 })));
+      for (let i = 0; i < 2; i++) {
+        expect(geo.lookup("8.8.8.8")).toMatchObject({ cityDatabase: true, country: null, city: null });
+        expect(geo.lookup("2a01:4f8::1")).toMatchObject({ country: "CH", city: "Zürich" });
+      }
+      expect(logs.warn).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(logs.warn.mock.calls)).not.toContain("8.8.8.8");
+    } finally {
+      logs.restore();
+    }
+  });
+  test("records just below 32 KiB of decode work still decode", () => {
+    // 32,766 units, including every node and scalar payload byte.
+    const geo = createGeoIp(paths(mmdbFixture("city", { sharedRecordEntries: 3074 })));
+    expect(geo.lookup("8.8.8.8")).toMatchObject({ country: "AT", city: "Vienna" });
+  });
+  test("a valid record with a huge array is refused instead of decoded", () => {
+    const fixture = mmdbFixture("city");
+    const dataStart = new Reader(fixture).metadata.searchTreeSize + 16;
+    const entries = 4_000_000;
+    const header = Buffer.from([0x1f, 4, 0, 0, 0]);
+    header.writeUIntBE(entries - 65821, 2, 3);
+    const bytes = Buffer.concat([
+      fixture.subarray(0, dataStart),
+      header,
+      Buffer.alloc(entries, 0x40), // Empty strings: a valid array if walked in full.
+      fixture.subarray(dataStart),
+    ]);
+    const database = openGeoIpDatabase("city", bytes)!;
+    expect(database).not.toBeNull();
+    // Without the work cap, this lookup returns all four million strings.
+    expect(() => database.get("8.8.8.8")).toThrow();
   });
   test("opens byte views at their offset", () => {
     const bytes = mmdbFixture("city");
