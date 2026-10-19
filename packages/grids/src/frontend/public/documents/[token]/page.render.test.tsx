@@ -62,6 +62,14 @@ describe("public document share page", () => {
     expect(html).toContain("/share/grids/documents/gdl_test/download");
     expect(html).toContain("Shared securely through Grids");
     expect(html).toContain("ti-file-type-pdf");
+    const icon = html.match(/<span\b([^>]*)>\s*<i class="[^"]*ti-file-type-pdf\b/)?.[1];
+    const classes = icon?.match(/\bclass="([^"]*)"/)?.[1]?.split(/\s+/);
+    expect(icon).toBeDefined();
+    expect(classes).toContain("k2b-icon-tile");
+    expect(classes).toContain("app-accent-text");
+    expect(icon).not.toMatch(/\bstyle\s*=/);
+    expect(html).not.toMatch(/color-mix\([^;"}]*--app-accent/);
+    expect(html).not.toContain("bg-[var(--ui-selected)]");
     expect(html).toContain("Download file");
     expect(html).not.toContain("Shared PDF");
     expect(html).not.toContain("A document was shared with you through Grids.");

@@ -77,7 +77,7 @@ export default ssr<AuthContext>(async (c) => {
 const ShowToolHeader = (props: { show: boolean; icon: string; name: string; description: string }) =>
   props.show ? (
     <header class="tools-tool-header flex items-center gap-3" style="view-transition-name: tool-heading">
-      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[color-mix(in_srgb,var(--app-accent)_10%,var(--ui-surface-subtle))] app-accent-text">
+      <div class="k2b-icon-tile app-accent-text h-10 w-10">
         <i class={`${props.icon} text-xl`} />
       </div>
       <div class="min-w-0">

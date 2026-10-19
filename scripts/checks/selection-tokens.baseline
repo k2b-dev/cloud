@@ -4,16 +4,9 @@
 packages/gateway-ops/src/observability/metrics/_components/MetricsCatalogue.island.tsx | selection | 1
 packages/gateway-ops/src/observability/metrics/_components/MetricsTokens.island.tsx | selection | 1
 packages/gateway-ops/src/observability/notifications/page.tsx | selection | 1
-packages/grids/src/frontend/admin.tsx | selection | 1
-packages/grids/src/frontend/public/documents/[token]/page.tsx | selection | 1
-packages/grids/src/styles/app.css | accent-mix | 1
 packages/ipa-hosts/src/frontend/HostgroupCard.tsx | selection | 1
-packages/mail/src/frontend/_components/MailComposeIntentPage.island.tsx | selection | 1
-packages/notebooks/src/styles/app.css | accent-mix | 1
 packages/oauth/src/frontend/page.tsx | selection | 1
-packages/tools/src/frontend/[tool]/page.tsx | accent-mix | 1
 packages/tools/src/frontend/tools/SpeedTest.island.tsx | selection | 1
 packages/tools/src/frontend/tools/WebhookTester.island.tsx | selection | 1
-packages/tools/src/styles/app.css | accent-mix | 2
 packages/venue/src/frontend/_components/venue-workspace/signup.tsx | selection | 1
 packages/weather/src/frontend/[id]/page.tsx | selection | 1
