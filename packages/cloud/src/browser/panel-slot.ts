@@ -4,9 +4,11 @@ import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import type { PanelPageContext } from "../contracts/panel-context";
-import { PANEL_CONTEXT_PARAM, withPanelContext } from "../contracts/panel-context-plain";
+import { isPanelShortcut, PANEL_CONTEXT_PARAM, panelProviderNeedsConsent, withPanelContext } from "../contracts/panel-context-plain";
+import { helpShortcutGroups } from "../ssr/layout-help-start";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
+import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "./command-shortcuts";
 import type { PanelRequest } from "./panel";
 import {
   PAGE_CONTEXT_CHANGED,
@@ -88,14 +90,46 @@ export function installPanelSlot(): () => void {
       return false;
     }
   };
+  const shortcuts = () =>
+    helpShortcutGroups(contextCommandsWithShortcuts())
+      .flatMap((group) =>
+        group.shortcuts.map(({ id, title, description, shortcut, scope }) => ({
+          id,
+          title,
+          ...(description ? { description } : {}),
+          shortcut,
+          ...(scope === "selection" || scope === "page" ? { scope } : {}),
+        })),
+      )
+      .filter(isPanelShortcut);
+  let lastShortcutsJson: string | undefined;
+  const canSend = () => isOpen() && allowed() && !!context && slot.dataset.state === "ready" && !!frame?.contentWindow && showsProvider();
   const sendContext = () => {
-    if (!isOpen() || !allowed() || !context || slot.dataset.state !== "ready" || !frame?.contentWindow || !showsProvider()) return;
-    frame.contentWindow.postMessage({ type: "cloud.panel.context", v: 1, context }, location.origin);
+    if (!canSend()) return;
+    const list = !panelProviderNeedsConsent(provider.id) ? shortcuts() : undefined;
+    frame?.contentWindow?.postMessage(
+      { type: "cloud.panel.context", v: 1, context, ...(list ? { shortcuts: list } : {}) },
+      location.origin,
+    );
+    if (list) lastShortcutsJson = JSON.stringify(list);
     disclosed = true;
     // A reload of the provider page renders from its address, so the address follows the live context.
     syncUrlContext(context);
   };
-  const postNull = () => frame?.contentWindow?.postMessage({ type: "cloud.panel.context", v: 1, context: null }, location.origin);
+  const postNull = () => {
+    frame?.contentWindow?.postMessage({ type: "cloud.panel.context", v: 1, context: null }, location.origin);
+    lastShortcutsJson = undefined;
+  };
+  let shortcutsPending = false;
+  const commandsChanged = () => {
+    if (shortcutsPending) return;
+    shortcutsPending = true;
+    queueMicrotask(() => {
+      shortcutsPending = false;
+      if (disposed || panelProviderNeedsConsent(provider.id) || !canSend()) return;
+      if (JSON.stringify(shortcuts()) !== lastShortcutsJson) sendContext();
+    });
+  };
   const clearContext = () => {
     if (disclosed) postNull();
   };
@@ -319,6 +353,7 @@ export function installPanelSlot(): () => void {
     clearTimer();
     frame?.remove();
     frame = null;
+    lastShortcutsJson = undefined;
     slot.dataset.state = "closed";
     if (status) status.textContent = "";
   };
@@ -349,6 +384,7 @@ export function installPanelSlot(): () => void {
     if (!replace && frame && destination(frame.src) === destination(url.href)) return;
     clearContext();
     frame?.remove();
+    lastShortcutsJson = undefined;
     // The server validates every provider path; the iframe still never leaves this origin.
     if (url.origin !== location.origin) {
       frame = null;
@@ -371,6 +407,7 @@ export function installPanelSlot(): () => void {
       clearContext();
       frame?.remove();
       frame = null;
+      lastShortcutsJson = undefined;
       loading();
       clearTimer(); // The consent read has its own bounded timeout; provider readiness starts with its load.
       void readAnswers().then(() => {
@@ -640,6 +677,7 @@ export function installPanelSlot(): () => void {
   let disposeResize = attachResize();
   collectContext();
   window.addEventListener(PAGE_CONTEXT_CHANGED, collectContext);
+  window.addEventListener(COMMANDS_CHANGED, commandsChanged);
   window.addEventListener("cloud.panel.consent", consentRequest);
   window.addEventListener("message", message);
   window.addEventListener("keydown", key);
@@ -695,6 +733,7 @@ export function installPanelSlot(): () => void {
     disposeResize();
     removeFallbackFocus();
     window.removeEventListener(PAGE_CONTEXT_CHANGED, collectContext);
+    window.removeEventListener(COMMANDS_CHANGED, commandsChanged);
     window.removeEventListener("cloud.panel.consent", consentRequest);
     window.removeEventListener("message", message);
     window.removeEventListener("keydown", key);

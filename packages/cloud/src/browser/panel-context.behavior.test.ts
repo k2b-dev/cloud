@@ -1,8 +1,10 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { HELP_SHORTCUT_TITLE_MAX_LENGTH, HELP_START_SHORTCUT_LIMIT } from "../ssr/layout-help-start";
 import { getContext, onContextChange, publishPageContext } from "./panel";
-import { PAGE_CONTEXT_COLLECT, type PageContextCollection } from "./panel-context-bridge";
+import { PAGE_CONTEXT_COLLECT, PANEL_SHORTCUTS_ELEMENT, type PageContextCollection } from "./panel-context-bridge";
 import { installPanelContextReceiver } from "./panel-context-receiver";
+import { onPanelShortcutsChange, readPanelShortcuts } from "./panel-shortcuts";
 
 let cleanup = () => {};
 afterEach(() => cleanup());
@@ -76,6 +78,105 @@ test("without URL context the first non-null message pins document identity, eve
   h.message(null);
   h.message({ ...first, pageId: "22222222-2222-4222-8222-222222222222", seq: 1 });
   expect(getContext()).toBeNull();
+});
+
+test("accepted shortcut lists live separately from page context, obey identity and seq, and clear with context", () => {
+  const h = mount();
+  const shortcuts = [{ id: "mail.edit", title: "Edit Ada", shortcut: "mod+e", scope: "selection" as const }];
+  const changed = mock((_shortcuts: unknown) => {});
+  const contextChanged = mock((_context: unknown) => {});
+  const unsubscribe = onPanelShortcutsChange(changed);
+  const unsubscribeContext = onContextChange(contextChanged);
+  expect(readPanelShortcuts()).toEqual([]);
+  const element = document.getElementById(PANEL_SHORTCUTS_ELEMENT)!;
+  expect(element.tagName).toBe("SCRIPT");
+  expect(element.getAttribute("type")).toBe("application/json");
+  const deliver = (context: unknown, list = shortcuts) => h.message(context, location.origin, undefined, { shortcuts: list });
+  deliver({ ...first, seq: 2 });
+  expect(readPanelShortcuts()).toEqual(shortcuts);
+  expect(element.textContent).toBe(JSON.stringify(shortcuts));
+  expect(getContext()).toEqual({ ...first, seq: 2 });
+  expect(contextChanged.mock.calls).toEqual([[{ ...first, seq: 2 }]]);
+  expect(changed.mock.calls).toEqual([[shortcuts]]);
+  deliver({ ...first, seq: 2 });
+  expect(changed).toHaveBeenCalledTimes(1);
+  expect(contextChanged).toHaveBeenCalledTimes(2);
+  const updated = [{ ...shortcuts[0]!, title: "Edit Grace" }];
+  deliver({ ...first, seq: 2 }, updated);
+  expect(readPanelShortcuts()).toEqual(updated);
+  expect(changed.mock.calls.at(-1)).toEqual([updated]);
+  expect(changed).toHaveBeenCalledTimes(2);
+  expect(contextChanged).toHaveBeenCalledTimes(2);
+  deliver({ ...first, seq: 1 }, []);
+  deliver({ ...first, pageId: "22222222-2222-4222-8222-222222222222", seq: 100 }, []);
+  expect(readPanelShortcuts()).toEqual(updated);
+  expect(getContext()?.seq).toBe(2);
+  expect(changed).toHaveBeenCalledTimes(2);
+  h.message({ ...first, seq: 3 });
+  expect(readPanelShortcuts()).toEqual([]);
+  expect(changed.mock.calls.at(-1)).toEqual([[]]);
+  deliver({ ...first, seq: 3 });
+  h.message(null);
+  expect(getContext()).toBeNull();
+  expect(readPanelShortcuts()).toEqual([]);
+  expect(element.textContent).toBe("[]");
+  expect(changed).toHaveBeenCalledTimes(5);
+  h.message(null);
+  expect(changed).toHaveBeenCalledTimes(5);
+  deliver({ ...first, seq: 2 });
+  expect(readPanelShortcuts()).toEqual([]);
+  expect(getContext()).toBeNull();
+  unsubscribe();
+  deliver({ ...first, seq: 4 });
+  expect(readPanelShortcuts()).toEqual(shortcuts);
+  expect(changed).toHaveBeenCalledTimes(5);
+  for (const [context] of contextChanged.mock.calls) {
+    if (context !== null) expect(context).not.toHaveProperty("shortcuts");
+  }
+  unsubscribeContext();
+});
+
+test("invalid shortcut messages reject context and shortcuts together without advancing ordering", () => {
+  const h = mount();
+  const shortcut = { id: "mail.edit", title: "Edit Ada", shortcut: "e" };
+  const shortcuts = [shortcut];
+  h.message(first, location.origin, undefined, { shortcuts });
+  const changed = mock(() => {});
+  const unsubscribe = onPanelShortcutsChange(changed);
+  const contextChanged = mock(() => {});
+  const unsubscribeContext = onContextChange(contextChanged);
+  for (const invalid of [
+    [{ ...shortcut, title: "x".repeat(HELP_SHORTCUT_TITLE_MAX_LENGTH + 1) }],
+    Array.from({ length: HELP_START_SHORTCUT_LIMIT + 1 }, () => shortcut),
+    [{ ...shortcut, extra: true }],
+    [, shortcut],
+  ]) {
+    h.message({ ...first, seq: 100 }, location.origin, undefined, { shortcuts: invalid });
+    expect(getContext()).toEqual(first);
+    expect(readPanelShortcuts()).toEqual(shortcuts);
+  }
+  h.message(null, location.origin, undefined, { shortcuts });
+  expect(getContext()).toEqual(first);
+  expect(readPanelShortcuts()).toEqual(shortcuts);
+  expect(changed).not.toHaveBeenCalled();
+  expect(contextChanged).not.toHaveBeenCalled();
+  h.message({ ...first, seq: 1 }, location.origin, undefined, { shortcuts: [] });
+  expect(getContext()?.seq).toBe(1);
+  expect(readPanelShortcuts()).toEqual([]);
+  expect(changed).toHaveBeenCalledTimes(1);
+  unsubscribe();
+  unsubscribeContext();
+});
+
+test("internal shortcut reader returns an empty list for missing, malformed or invalid DOM data", () => {
+  mount();
+  const element = document.getElementById(PANEL_SHORTCUTS_ELEMENT)!;
+  for (const text of ["{", "null", "{}", '"list"', '[{"id":"bad"}]', '[{"id":"a","title":"b","shortcut":"c","extra":true}]']) {
+    element.textContent = text;
+    expect(readPanelShortcuts()).toEqual([]);
+  }
+  element.remove();
+  expect(readPanelShortcuts()).toEqual([]);
 });
 
 test("publishers are independently collectible before the controller and dispose only their own source", async () => {
