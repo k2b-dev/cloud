@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import { cameraExif, imageBytes, jpegSegment, tinyJpeg } from "../../../../scripts/fixtures/image-metadata";
 import { logoJpeg, logoPng } from "../../test/mailbox-logo-fixtures";
+import { mailboxLogoDisplayHeight } from "../contracts";
 import { validateMailboxLogoImage } from "./mailbox-logo-image";
 
 describe("mailbox logo byte validation", () => {
@@ -33,7 +34,10 @@ describe("mailbox logo byte validation", () => {
       for (const orientation of [6, 8]) {
         const input = imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, cameraExif(orientation, little)), jpeg.subarray(2));
         for (const bytes of [input, stripImageMetadata(input)]) {
-          expect(validateMailboxLogoImage(bytes)).toMatchObject({ ok: false, error: { message: expect.stringContaining("rotated") } });
+          expect(validateMailboxLogoImage(bytes)).toMatchObject({
+            ok: false,
+            error: { message: expect.stringContaining("rotated"), mailboxLogo: { reason: "rotated" } },
+          });
         }
       }
       for (const orientation of [0, 2, 3, 4, 5, 7, 9, 65535]) {
@@ -51,7 +55,7 @@ describe("mailbox logo byte validation", () => {
         const input = imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, payload), jpeg.subarray(2));
         expect(validateMailboxLogoImage(input)).toMatchObject({
           ok: false,
-          error: { message: expect.stringContaining("damaged or truncated") },
+          error: { message: expect.stringContaining("damaged or truncated"), mailboxLogo: { reason: "damaged" } },
         });
       }
     }
@@ -59,7 +63,7 @@ describe("mailbox logo byte validation", () => {
   test("checks byte size before parsing and reads dimension limits only from headers", () => {
     expect(validateMailboxLogoImage(Buffer.alloc(102401))).toMatchObject({
       ok: false,
-      error: { status: 400, message: expect.stringContaining("100 KiB") },
+      error: { status: 400, message: expect.stringContaining("100 KiB"), mailboxLogo: { reason: "tooLarge" } },
     });
     for (const make of [logoPng, logoJpeg]) {
       for (const [width, height] of [
@@ -69,7 +73,7 @@ describe("mailbox logo byte validation", () => {
       ]) {
         expect(validateMailboxLogoImage(make(width, height))).toMatchObject({
           ok: false,
-          error: { message: expect.stringContaining(`${width}x${height}`) },
+          error: { message: expect.stringContaining(`${width}x${height}`), mailboxLogo: { reason: "tooManyPixels", width, height } },
         });
       }
       expect(validateMailboxLogoImage(make(1200, 400)).ok).toBe(true);
@@ -85,7 +89,10 @@ describe("mailbox logo byte validation", () => {
       Buffer.from("RIFFwebp"),
       Buffer.from("<html>hi</html>"),
     ]) {
-      expect(validateMailboxLogoImage(bytes)).toMatchObject({ ok: false, error: { message: expect.stringContaining("PNG or JPEG") } });
+      expect(validateMailboxLogoImage(bytes)).toMatchObject({
+        ok: false,
+        error: { message: "Unsupported logo type; upload a PNG or JPEG file", mailboxLogo: { reason: "unsupportedType" } },
+      });
     }
   });
   test("rejects polyglots, missing IEND, damaged CRCs, chunk lengths and truncated headers", () => {
@@ -166,4 +173,12 @@ test("logo metadata rejects control characters before trimming and bounds base64
   expect(updateMailboxComposeLogoInputSchema.safeParse({ content: Buffer.alloc(102400).toString("base64") }).success).toBe(true);
   for (const content of ["", "abcd=", "ab%+", "a===", "abc", "ab\nc", "YQ==\n", "YQ", "YQ==="])
     expect(updateMailboxComposeLogoInputSchema.safeParse({ content }).success).toBe(false);
+});
+
+test.each([
+  [1200, 400, 200, 67],
+  [1, 400, 1, 400],
+  [1200, 1, 1, 1],
+])("logo display height for %ix%i at %i px is %i px", (pixelWidth, pixelHeight, displayWidth, height) => {
+  expect(mailboxLogoDisplayHeight({ pixelWidth, pixelHeight, displayWidth })).toBe(height);
 });

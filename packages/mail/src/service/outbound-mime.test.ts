@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import { simpleParser } from "mailparser";
+import { renderComposeContent } from "./compose-renderer";
 import { buildMimeSource, buildMimeStream, measureMimeStream, outboundDraftSnapshotSchema, outboundRecipients } from "./outbound-mime";
 
 describe("outbound MIME", () => {
@@ -301,6 +302,29 @@ describe("outbound MIME", () => {
 test("remote content in mail: a frozen logo is a related inline part with the same CID as HTML", async () => {
   const content = Buffer.from("frozen logo bytes");
   const contentId = "logo.00000000-0000-4000-8000-000000000001@example.test";
+  const rendered = renderComposeContent({
+    body: "Hello",
+    format: "markdown",
+    customCss: "",
+    context: {
+      actor: { display_name: "Ada", email: "ada@example.test" },
+      mailbox: { name: "Support", description: "" },
+      sender: { display_name: "Support", email: "support@example.test", reply_to: "" },
+      message: { subject: "Inline logo", to: ["reader@example.test"], cc: [] },
+    },
+    renderLiquid: true,
+    signature: "{{ mailbox.logo }}",
+    logo: {
+      src: `cid:${contentId}`,
+      altText: "Support",
+      displayWidth: 200,
+      pixelWidth: 1200,
+      pixelHeight: 400,
+      byteLength: content.length,
+    },
+  });
+  expect(rendered.ok).toBe(true);
+  if (!rendered.ok) return;
   const snapshot = outboundDraftSnapshotSchema.parse({
     revision: 1,
     from: { name: "Support", address: "support@example.test" },
@@ -312,8 +336,8 @@ test("remote content in mail: a frozen logo is a related inline part with the sa
     subject: "Inline logo",
     body: "Hello",
     format: "markdown",
-    renderedHtml: `<p>Hello</p><img src="cid:${contentId}" alt="Support" width="200">`,
-    renderedText: "Hello\nSupport",
+    renderedHtml: rendered.data.html,
+    renderedText: rendered.data.text,
     inlineLogo: {
       versionId: "00000000-0000-4000-8000-000000000001",
       sha256: "a".repeat(64),
@@ -334,7 +358,7 @@ test("remote content in mail: a frozen logo is a related inline part with the sa
   expect(mime).toContain("Content-Disposition: inline");
   expect(mime).not.toMatch(/src=["']https?:/i);
   const parsed = await simpleParser(source, { skipImageLinks: true });
-  expect(parsed.html).toContain(`src="cid:${contentId}"`);
+  expect(parsed.html).toContain(`<img src="cid:${contentId}" alt="Support" width="200" height="67"`);
   expect(parsed.html).not.toMatch(/src=["']https?:/i);
   expect(parsed.attachments).toHaveLength(1);
   expect(parsed.attachments[0]).toMatchObject({

@@ -1,12 +1,13 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { fail, ok, type Result } from "@k2b/stdlib";
+import { mailboxLogoFailure } from "./mailbox-logo-errors";
 
 export const MAX_MAILBOX_LOGO_BYTES = 102400;
 export type MailboxLogoImage = { contentType: "image/png" | "image/jpeg"; width: number; height: number };
 
-const damaged = () => fail(err.badInput("The logo file is damaged or truncated"));
+const damaged = () => fail(mailboxLogoFailure("damaged"));
 const dimensions = (contentType: MailboxLogoImage["contentType"], width: number, height: number): Result<MailboxLogoImage> => {
   if (width < 1 || height < 1) return damaged();
-  if (width > 1200 || height > 400) return fail(err.badInput(`The logo is ${width}x${height} pixels; the maximum is 1200x400 pixels`));
+  if (width > 1200 || height > 400) return fail(mailboxLogoFailure("tooManyPixels", { width, height }));
   return ok({ contentType, width, height });
 };
 
@@ -21,7 +22,7 @@ const crc32 = (bytes: Uint8Array): number => {
 
 /** Header-only validation: never decode pixels or trust an upload's media type. */
 export const validateMailboxLogoImage = (bytes: Uint8Array): Result<MailboxLogoImage> => {
-  if (bytes.byteLength > MAX_MAILBOX_LOGO_BYTES) return fail(err.badInput("The logo may contain at most 100 KiB (102400 bytes)"));
+  if (bytes.byteLength > MAX_MAILBOX_LOGO_BYTES) return fail(mailboxLogoFailure("tooLarge"));
   const data = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   if (data.length > 0 && data.subarray(0, Math.min(8, data.length)).equals(pngSignature.subarray(0, Math.min(8, data.length)))) {
@@ -74,11 +75,7 @@ export const validateMailboxLogoImage = (bytes: Uint8Array): Result<MailboxLogoI
           if (found || view.getUint16(entry + 2, little) !== 3 || view.getUint32(entry + 4, little) !== 1) return damaged();
           found = true;
           if (view.getUint16(entry + 8, little) !== 1) {
-            return fail(
-              err.badInput(
-                "The logo is marked as rotated (EXIF orientation); rotate the image in an editor, save it upright, and upload it again",
-              ),
-            );
+            return fail(mailboxLogoFailure("rotated"));
           }
         }
       }
@@ -111,5 +108,5 @@ export const validateMailboxLogoImage = (bytes: Uint8Array): Result<MailboxLogoI
     }
     return damaged();
   }
-  return fail(err.badInput("Unsupported logo type; upload a PNG or JPEG file"));
+  return fail(mailboxLogoFailure("unsupportedType"));
 };

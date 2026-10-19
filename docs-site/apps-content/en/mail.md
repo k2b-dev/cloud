@@ -414,9 +414,13 @@ Use Markdown and Liquid in signatures and snippets. Type `/` to insert snippets
 only. Mail fills in snippet values when you insert them; signatures keep their
 variables until preview and send.
 
-Each mailbox can have one logo. A mailbox administrator uploads it with
-`cld mail compose logo set --file logo.png`; logo settings in the browser come
-later. Use `{{ mailbox.logo }}` in any signature to place it in new messages,
+Each mailbox can have one logo. In Mail, open the mailbox's **Settings → Writing → Logo**
+to upload or replace it, change its display width or alt text, or remove it after
+confirmation. These changes require **Manage** access; people with **Edit** access
+see the logo and its values read only. Changing the width or alt text stores a new
+version with the same image. Alternatively, upload it with
+`cld mail compose logo set --file logo.png`.
+Use `{{ mailbox.logo }}` in any signature to place it in new messages,
 replies, forwards, and older signatures still marked in the body. Mail sends
 the logo as an inline image part referenced by `cid:`, never as a remote link.
 The API, CLI, and composer previews show the same image bytes. In plain text,

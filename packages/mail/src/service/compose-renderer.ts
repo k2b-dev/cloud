@@ -6,7 +6,12 @@ import { Tokenizer, TypeGuards } from "liquidjs";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
-import { type ComposeFormattingWarning, composeTemplateVariables, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
+import {
+  type ComposeFormattingWarning,
+  composeTemplateVariables,
+  MAX_COMPOSE_FORMATTING_WARNINGS,
+  mailboxLogoDisplayHeight,
+} from "../contracts";
 import { composeRenderFailure } from "./compose-render-errors";
 import { allowedEmailInlineStyles, allowedEmailInlineStyleValue, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
 import { renderMailLiquidTemplate, validateMailLiquidTemplate } from "./template-rendering";
@@ -578,7 +583,7 @@ export const renderComposeContent = (params: {
   context: ComposeRenderContext;
   renderLiquid: boolean;
   signature?: string | null;
-  logo?: { src: string; altText: string; displayWidth: number; byteLength: number } | null;
+  logo?: { src: string; altText: string; displayWidth: number; pixelWidth: number; pixelHeight: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {
   const logoRandomPart = crypto.randomUUID().replaceAll("-", "").toUpperCase();
   const token = `MAILLOGO${logoRandomPart}`;
@@ -663,7 +668,7 @@ export const renderComposeContent = (params: {
     let logoCount = 0;
     for (let offset = html.indexOf(token); offset >= 0; offset = html.indexOf(token, offset + token.length)) logoCount += 1;
     const imageMarkup = params.logo
-      ? `<img src="" alt="${escapeAttribute(params.logo.altText)}" width="${params.logo.displayWidth}" style="display:block;border:0;height:auto;max-width:100%">`
+      ? `<img src="" alt="${escapeAttribute(params.logo.altText)}" width="${params.logo.displayWidth}" height="${mailboxLogoDisplayHeight(params.logo)}" style="display:block;border:0;height:auto;max-width:100%">`
       : "";
     if (params.logo && logoCount > 0) {
       // JPEG's prefix is one byte longer than PNG's: use that common upper bound.
