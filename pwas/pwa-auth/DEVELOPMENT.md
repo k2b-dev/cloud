@@ -53,7 +53,7 @@ Terminal sign-ins also show the client name in the title, the Cloud host, the
 login lifetime and every scope in plain words (unknown codes verbatim).
 A browser sign-in from a Cloud that announces `login-context` shows who asks
 above the code: browser and system, approximate place and network operator
-(only with GeoIP), the same-address hint, the start time and the known-browser
+(only when GeoIP knows the address), the same-address hint, the start time and the known-browser
 line, then Core's `hint` or `warn` note. `warn` makes **Deny** the main button
 and keeps a denial in place. The rows are a snapshot of the request the sheet
 opened with. A request without `context` shows the earlier sheet.

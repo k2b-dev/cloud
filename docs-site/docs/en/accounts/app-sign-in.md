@@ -83,7 +83,8 @@ show these rows above the comparison code:
   **Safari on Mac or iPad**.
 - **Approximately {city}, {country}**, or only the country; **Location unknown**
   when no place is available. **Network: {operator}**, or **Network unknown**.
-  These two rows appear only when Cloud has a location database (GeoIP).
+  These two rows appear only when Cloud's location database (GeoIP) knows the
+  address; without a database, or for an unknown address, both are left out.
   The network line names the operator; Cloud never labels a VPN or data center.
 - **Same internet address as this phone**, only when true. Its absence says
   nothing about whether the addresses match.

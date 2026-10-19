@@ -253,8 +253,8 @@ silently resend the decision.
 
 Cloud Login opts in to `login-context` on both `inbox` and `pending` reads
 only when the Cloud announces it in `/info.features`; the public SDK filters
-the signed opt-in. Upgrade **Core before Cloud Login**. No new configuration
-is required. Browser requests then show
+the signed opt-in, so Core and Cloud Login can be upgraded in either order.
+No new configuration is required. Once both support it, browser requests show
 [sign-in context](/en/docs/accounts/app-sign-in#read-the-request-details).
 Context stays optional: requests started before the Core upgrade or trimmed
 for the 8 KiB response budget can omit it. Those requests and older Clouds

@@ -58,7 +58,7 @@ Der Link gilt fünf Minuten. Teile ihn nicht außerhalb dieser Einrichtung.
 Wenn Cloud Browserdetails liefert, zeigt die App sie über dem Code:
 
 - Browser, System und Startzeit in der Zeitzone deines Telefons.
-- **Ungefähr {Ort}** und **Netz: …**, nur wenn Cloud eine Standortdatenbank hat. Das Netz nennt den Betreiber.
+- **Ungefähr {Ort}** und **Netz: …**, nur wenn die Standortdatenbank von Cloud die Adresse kennt. Das Netz nennt den Betreiber.
 - **Gleiche Internetadresse wie dieses Telefon**, nur wenn das zutrifft. Fehlt die Zeile, sagt das nichts aus.
 - **Bekannter Browser · seit …** oder **Cloud kennt diesen Browser noch nicht**. Beides fehlt in den ersten 14 Tagen nach dem Update. Bekannt heißt „hier schon angemeldet“, nicht „sicher“.
 - Ein bekannter Browser in einem neuen Land bekommt einen ruhigen Hinweis zur Länderhistorie. Bei einem neuen Browser kann **Hast du diese Anmeldung gestartet?** erscheinen. Die Warnung erscheint nur, wenn dein Konto schon Anmeldeländer hat, aber keine Anmeldung aus diesem Land in den letzten 90 Tagen. Bei kürzerer Historie gilt deren Startdatum. **Ablehnen** ist dann der Hauptknopf, **Trotzdem erlauben** bleibt verfügbar.
