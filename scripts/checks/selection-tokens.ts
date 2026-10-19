@@ -160,6 +160,46 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     subject: '<span class="tag bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">',
     reason: "Status: managed-group tag.",
   },
+  {
+    file: "packages/mail/src/styles/app.css",
+    subject: ".mail-compose-action, .mail-compose-action + .k2b-split-button__menu-trigger { --k2b-action-solid }",
+    reason: "Primary action: the one filled action in the app color (workspace R5).",
+  },
+  {
+    file: "packages/mail/src/styles/app.css",
+    subject: ".mail-compose-action, .mail-compose-action + .k2b-split-button__menu-trigger { --k2b-action-solid-hover }",
+    reason: "Primary action: the one filled action in the app color (workspace R5).",
+  },
+  {
+    file: "packages/mail/src/frontend/_components/MailSidebar.tsx",
+    subject: 'class={dropFolderId() === folder.id ? "bg-[var(--ui-selected)]" : undefined}',
+    reason: "Control: drop target under a dragged message.",
+  },
+  {
+    file: "packages/mail/src/frontend/_components/MailConversationReader.tsx",
+    subject: 'classList={{ "bg-[var(--ui-selected)]": props.detailsOpen }}',
+    reason: "Control: pressed disclosure.",
+  },
+  {
+    file: "packages/grids/src/frontend/_components/fields/FormulaReferenceWindow.island.tsx",
+    subject: 'class: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200",',
+    reason: "Data: field type color.",
+  },
+  {
+    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
+    subject: 'isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"',
+    reason: "Control: drop target under a dragged card.",
+  },
+  {
+    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
+    subject: 'isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "bg-transparent"',
+    reason: "Control: drop target under a dragged card.",
+  },
+  {
+    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
+    subject: 'active() ? "bg-[var(--ui-selected)]" : ""',
+    reason: "Control: drop target under a dragged card.",
+  },
 ];
 
 const BASELINE = "scripts/checks/selection-tokens.baseline";
@@ -304,7 +344,6 @@ const BASELINE_HEADER = [
   "# Known selection-tokens findings: <file> | <selection|accent-mix> | <count>.",
   "# Migrations lower counts and remove entries; the rule never raises counts or adds lines.",
   "# `bun scripts/check.ts selection-tokens --fix` lowers counts whose findings are gone.",
-  "# packages/filesv2 and packages/grids selection entries are tracked in #1430.",
 ];
 const countKey = (finding: Pick<SelectionFinding, "file" | "kind">) => `${finding.file} | ${finding.kind}`;
 export const formatSelectionBaseline = (counts: ReadonlyMap<string, number>): string =>

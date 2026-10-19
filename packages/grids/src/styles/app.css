@@ -478,7 +478,7 @@
   table-layout: auto;
 }
 .k2b-ui .grids-object-list-table .grids-object-list-active {
-  background: var(--k2b-selected);
+  background: var(--k2b-row-selected);
 }
 .k2b-ui .grids-object-list-table .grids-object-list-cell {
   width: 100%;

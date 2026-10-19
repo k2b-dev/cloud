@@ -20,7 +20,7 @@ describe("Mail app integration states", () => {
   test("keeps contact and Space add actions compact and semantically labelled", () => {
     const source = readFileSync(new URL("./MailConversationContext.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain('class="ti ti-user-plus text-[var(--app-accent)]"');
+    expect(source).toContain('class="ti ti-user-plus app-accent-text"');
     expect(source).toContain("title={participant.email}");
     expect(source).not.toContain("title={participant.displayName || participant.email}");
     expect(source).toContain('class="ti ti-link-plus text-[var(--k2b-action)]"');

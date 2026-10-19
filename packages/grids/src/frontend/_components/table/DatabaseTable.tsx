@@ -235,7 +235,7 @@ export default function DatabaseTable(props: Props) {
           props.showColumnSubtitles === false ? undefined : computed ? t().computed : fieldTypeLabel(field.type, locale()).toLowerCase(),
         value: (record) => record.data[field.id],
         nowrap: columnNowrap(field),
-        headerClass: computed ? "bg-[var(--ui-selected)]" : undefined,
+        headerClass: computed ? "bg-[var(--ui-surface-muted)]" : undefined,
       };
     });
 
