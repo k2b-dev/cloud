@@ -19,6 +19,7 @@ const row: PendingApprovalRow = {
   assurance: "confirm",
   sentence: "Mail: Send draft",
   details: null,
+  storedReview: null,
   createdAt: new Date("2026-10-11T10:00:00Z"),
   expiresAt: new Date("2026-10-12T10:00:00Z"),
   cursorCreatedAt: "2026-10-11T10:00:00.000000Z",

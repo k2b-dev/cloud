@@ -87,14 +87,16 @@ test("code approvals present the capability in the reader's language and the app
       },
     }),
   );
-  expect(html).toContain('ai-approval__title">Entwurf an jana@example.com erstellen</h3>');
-  expect(html).toContain("ti-mail");
-  expect(html).toContain("Mail · Wird erst nach deiner Freigabe ausgeführt");
-  expect(html).toContain("Ablehnen");
-  expect(html).toContain("Immer freigeben");
-  expect(html).toContain('aria-label="Freigabe erforderlich: Entwurf an jana@example.com erstellen"');
+  // The same card v4 question as the chat: Cloud's sentence for the call, Cloud's reason, two answers.
+  expect(html).toContain('class="k2b-chat-decision__sentence" tabindex="-1">Entwurf an jana@example.com erstellen?</p>');
+  expect(html).toContain("Ich frage, weil Mail hier jedes Mal fragt.");
+  expect(html).toContain("Entwurf erstellen</span>");
+  expect(html).toContain("Nicht ausführen</span>");
+  // A card without a chat offers nothing to remember, and Always is no longer offered.
+  expect(html).not.toContain("Immer freigeben");
+  expect(html).not.toContain("k2b-chat-decision__remember");
   expect(html).not.toContain("Mail: Entwurf erstellen");
-  expect(html).not.toMatch(/>(Reject|Action|Always approve)</);
+  expect(html).not.toMatch(/(Reject|Always approve)<\/span>/);
   signal.abort();
   expect(await pending).toBe("Run stopped");
 });
@@ -213,7 +215,10 @@ test("an approval from managed code reads as the app's localized review, never a
     }),
   );
   expect(html).toContain("Die E-Mail wird als Entwurf gespeichert und nicht gesendet.");
-  expect(html).toMatch(/<strong[^>]*>Betreff: <\/strong>(<!--[^>]*-->)*Angebot/);
+  expect(html).toContain("<dt>Betreff</dt>");
+  expect(html).toContain('<span class="cloud-action-preview__value">Angebot</span>');
+  expect(html).toContain("<dt>Inhalt</dt>");
+  expect(html).toContain('<span class="cloud-action-preview__value">Hallo\nanbei das Angebot.</span>');
   expect(html).not.toContain("Code execution requests approval");
   expect(html).not.toContain("&quot;status&quot;");
 });

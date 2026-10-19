@@ -1,62 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const domTest = isServer ? test.skip : test;
-
-const request: Extract<AiTurnBlock, { kind: "tool" }> = {
-  id: "approval",
-  callId: "approval",
-  kind: "tool",
-  name: "contacts__action__send",
-  status: "awaiting_approval",
-  args: {},
-  presentation: {
-    kind: "capability",
-    appId: "contacts",
-    appName: "Contacts",
-    appIcon: "ti ti-address-book",
-    title: "Send card",
-    capabilityKind: "action",
-  },
-  approval: { message: "Contacts: Send card", allowAlways: false },
-};
-
-domTest("an approval announces its progress and a failed decision to screen readers", async () => {
-  const dom = createDomTestHarness();
-  const { AiChatActionsProvider } = await import("./message-actions");
-  const { AiTurnBlockView } = await import("./blocks");
-  let fail!: (error: Error) => void;
-  const dispose = render(
-    () => (
-      <AiChatActionsProvider actions={{ onApproval: () => new Promise<void>((_resolve, reject) => (fail = reject)) }}>
-        <AiTurnBlockView turnId="turn" block={request} active />
-      </AiChatActionsProvider>
-    ),
-    dom.root,
-  );
-  try {
-    const status = dom.root.querySelector('[data-ai-approval-footer] [role="status"]')!;
-    // The live region exists before anything happens, so its later text is announced.
-    expect(status.textContent).toBe("");
-    const approve = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Send card")!;
-    approve.click();
-    await tick();
-    expect(dom.root.querySelector('[data-ai-approval-footer] [role="status"]')).toBe(status);
-    expect(status.textContent).toBe("Submitting");
-
-    fail(new Error("offline"));
-    await tick();
-    await tick();
-    expect(status.textContent).toBe("");
-    expect(dom.root.querySelector('[role="alert"]')?.textContent?.trim()).toBe("Could not submit. Try again.");
-  } finally {
-    dispose();
-    dom.cleanup();
-  }
-});
 
 const runCode: Extract<AiTurnBlock, { kind: "tool" }> = {
   id: "tool-run",
@@ -68,7 +17,15 @@ const runCode: Extract<AiTurnBlock, { kind: "tool" }> = {
   approval: { message: "Run report.ts", allowAlways: false },
 };
 
-const mountTurn = async (initial: AiTurnBlock[], options: { locale?: string; phase?: "running" | "waiting" | "stopped" } = {}) => {
+const mountTurn = async (
+  initial: AiTurnBlock[],
+  options: {
+    locale?: string;
+    phase?: "running" | "waiting" | "stopped" | "completed";
+    approve?: (input: unknown) => Promise<void>;
+    check?: () => Promise<AiActionCheck>;
+  } = {},
+) => {
   const dom = createDomTestHarness();
   const { createSignal } = await import("solid-js");
   const { LocaleProvider } = await import("@k2b/ui");
@@ -77,12 +34,22 @@ const mountTurn = async (initial: AiTurnBlock[], options: { locale?: string; pha
   const { layoutAiTurn } = await import("./turn-layout");
   const { createAiToolDisclosureState } = await import("./tool-disclosure");
   const [blocks, setBlocks] = createSignal(initial);
-  const [phase, setPhase] = createSignal<"running" | "waiting" | "stopped">(options.phase ?? "waiting");
+  const [phase, setPhase] = createSignal<"running" | "waiting" | "stopped" | "completed">(options.phase ?? "waiting");
   const decisions: unknown[] = [];
+  const continued: string[] = [];
   const dispose = render(
     () => (
       <LocaleProvider locale={options.locale ?? "en"}>
-        <AiChatActionsProvider actions={{ onApproval: async (_request, input) => void decisions.push(input) }}>
+        <AiChatActionsProvider
+          actions={{
+            onApproval: async (_request, input) => {
+              decisions.push(input);
+              await options.approve?.(input);
+            },
+            onContinueTurn: (message) => void continued.push(message),
+            ...(options.check ? { onCheckAction: options.check } : {}),
+          }}
+        >
           <AiTurnView
             segment={() => ({
               id: "ai-turn:turn:start",
@@ -101,9 +68,23 @@ const mountTurn = async (initial: AiTurnBlock[], options: { locale?: string; pha
   );
   const button = (label: string) => Array.from(dom.root.querySelectorAll("button")).find((node) => node.textContent?.trim() === label)!;
   const place = () => dom.root.querySelector<HTMLElement>(".ai-turn__action")!;
+  // A person chip's initials are decoration; the line reads the name.
+  const line = () => {
+    const current = place().querySelector<HTMLElement>('.k2b-chat-outcome__text[data-current="true"]');
+    if (!current) return null;
+    const copy = current.cloneNode(true) as HTMLElement;
+    for (const avatar of copy.querySelectorAll(".k2b-reference__avatar")) avatar.remove();
+    return copy.textContent?.trim() ?? null;
+  };
+  const outcome = () => place().querySelector<HTMLElement>(".k2b-chat-outcome");
+  const question = () => place().querySelector<HTMLElement>(".k2b-chat-decision__card");
   return {
     dom,
     decisions,
+    continued,
+    line,
+    outcome,
+    question,
     setBlocks,
     setPhase,
     button,
@@ -115,103 +96,159 @@ const mountTurn = async (initial: AiTurnBlock[], options: { locale?: string; pha
   };
 };
 
-domTest("a decided approval becomes a one-line receipt in its place at once, and focus stays there", async () => {
-  const view = await mountTurn([runCode]);
+const settle = async () => {
+  await tick();
+  await tick();
+  // The outcome line fills its live region a moment after it changes, so the same words spoken again are announced.
+  await new Promise((resolve) => setTimeout(resolve, 60));
+};
+
+domTest("an answer collapses the question at once to its outcome line, which takes the focus and is announced", async () => {
+  let accept!: () => void;
+  const view = await mountTurn([runCode], { approve: () => new Promise<void>((resolve) => (accept = resolve)) });
   try {
     const place = view.place();
-    expect(place.querySelector(".ai-approval")?.textContent).toContain("Runs only after you approve it");
+    expect(view.question()?.textContent).toContain("Run code?");
     const approve = view.button("Run code");
     approve.focus();
     approve.click();
-    await tick();
-    await tick();
+    await settle();
     expect(view.decisions).toEqual([{ approved: true }]);
-    // The server has not reported the decision yet; the card already is its receipt, named for what runs.
-    expect(view.place()).toBe(place);
-    expect(place.querySelector(".ai-approval")).toBeNull();
-    const receipt = place.querySelector<HTMLElement>(".ai-turn-receipt")!;
-    expect(receipt.textContent).toBe("Running: Run code");
-    expect(document.activeElement).toBe(place);
+    // The server has not answered yet; the card already is its outcome line, in the same place.
+    expect(view.question()).toBeNull();
+    const outcome = view.outcome()!;
+    expect(view.line()).toBe("Running: Run code");
+    expect(document.activeElement).toBe(outcome);
+    expect(outcome.querySelector('[role="status"]')?.textContent).toBe("Running: Run code");
 
-    // The turn reports the decision and then the outcome: the same row changes only its words.
+    // The turn reports the decision and then the outcome: the same line changes only its words.
+    accept();
     view.setBlocks([{ ...runCode, status: "running", approved: true, approval: undefined }]);
     view.setPhase("running");
-    expect(place.querySelector(".ai-turn-receipt")).toBe(receipt);
+    await settle();
+    expect(view.outcome()).toBe(outcome);
     view.setBlocks([{ ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
-    expect(place.querySelector(".ai-turn-receipt")).toBe(receipt);
-    expect(receipt.textContent).toBe("Approved: Run code");
-    expect(receipt.textContent).not.toContain("code_run");
+    await settle();
+    expect(view.place()).toBe(place);
+    expect(view.outcome()).toBe(outcome);
+    expect(view.line()).toBe("Ran code");
+    expect(outcome.querySelector('[role="status"]')?.textContent).toBe("Ran code");
   } finally {
     view.cleanup();
   }
 });
 
-domTest("a rejected approval and one a stop left open read as receipts in the reader's language", async () => {
+domTest("an answer that did not arrive says so and asks again with the focus on the sentence", async () => {
+  let attempts = 0;
+  const view = await mountTurn([runCode], {
+    locale: "de",
+    approve: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("offline");
+    },
+  });
+  try {
+    view.button("Code ausführen").click();
+    await settle();
+    expect(view.line()).toContain("Deine Antwort zu Code ausführen kam nicht an.");
+    expect(view.line()).toContain("Kam sie doch an, siehst du das Ergebnis gleich hier.");
+    view.button("Noch einmal antworten").click();
+    await settle();
+    expect(view.question()).not.toBeNull();
+    expect(document.activeElement?.classList.contains("k2b-chat-decision__sentence")).toBe(true);
+    view.button("Code ausführen").click();
+    await settle();
+    expect(view.decisions).toEqual([{ approved: true }, { approved: true }]);
+    expect(view.line()).toBe("Wird ausgeführt: Code ausführen");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("an answer whose response was lost still shows the outcome the server reports", async () => {
+  const view = await mountTurn([runCode], {
+    approve: async () => {
+      throw new Error("response lost");
+    },
+  });
+  try {
+    view.button("Run code").click();
+    await settle();
+    expect(view.line()).toContain("Your answer about Run code didn't arrive.");
+    // The server did take the answer: its outcome replaces the lost line.
+    view.setBlocks([{ ...runCode, status: "running", approved: true, approval: undefined }]);
+    view.setPhase("running");
+    await settle();
+    expect(view.line()).toBe("Running: Run code");
+    view.setBlocks([{ ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
+    await settle();
+    expect(view.line()).toBe("Ran code");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a declined question and one a stop left open read as outcome lines in the reader's language", async () => {
   const view = await mountTurn([runCode], { locale: "de" });
   try {
-    view.button("Ablehnen").click();
-    await tick();
-    await tick();
+    view.button("Nicht ausführen").click();
+    await settle();
     expect(view.decisions).toEqual([{ approved: false }]);
-    const receipt = view.place().querySelector<HTMLElement>(".ai-turn-receipt")!;
-    expect(receipt.textContent).toBe("Abgelehnt: Code ausführen");
+    const outcome = view.outcome()!;
+    expect(view.line()).toBe("Abgelehnt: Code ausführen Du hast abgelehnt.");
     view.setBlocks([{ ...runCode, status: "rejected", approval: undefined }]);
-    expect(view.place().querySelector(".ai-turn-receipt")).toBe(receipt);
-    expect(receipt.textContent).toBe("Abgelehnt: Code ausführen");
+    await settle();
+    expect(view.outcome()).toBe(outcome);
+    expect(view.line()).toBe("Abgelehnt: Code ausführen Du hast abgelehnt.");
   } finally {
     view.cleanup();
   }
 
-  const stopped = await mountTurn([{ ...runCode, status: "running", approved: true, approval: undefined }], {
+  const stopped = await mountTurn([{ ...runCode, status: "running", approved: false, approval: undefined }], {
     locale: "de",
     phase: "stopped",
   });
   try {
-    expect(stopped.place().textContent).toBe("Nicht ausgeführt: Code ausführen · gestoppt");
+    expect(stopped.line()).toBe("Nicht ausgeführt: Code ausführen Die Antwort wurde angehalten.");
+    expect(stopped.place().querySelector(".ti-circle-off")).not.toBeNull();
   } finally {
     stopped.cleanup();
   }
 });
 
-domTest("a built-in tool's approval a stop left undecided becomes a quiet receipt where its card stood", async () => {
-  const view = await mountTurn([runCode], { locale: "de" });
+domTest("a question decided in another window says so where it stood", async () => {
+  const view = await mountTurn([runCode]);
   try {
-    const place = view.place();
-    expect(place.querySelector(".ai-approval")).not.toBeNull();
-    // History records the approval as expired; the call is no Cloud action, and still keeps its place.
-    view.setBlocks([{ ...runCode, status: "running", approved: false, approval: undefined }]);
-    view.setPhase("stopped");
-    expect(view.place()).toBe(place);
-    expect(place.textContent).toBe("Nicht ausgeführt: Code ausführen · gestoppt");
-    expect(place.querySelector(".ti-circle-off")).not.toBeNull();
+    expect(view.question()).not.toBeNull();
+    view.setBlocks([{ ...runCode, status: "running", approved: true, approval: undefined }]);
+    view.setPhase("running");
+    await settle();
+    view.setBlocks([
+      { ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" }, at: "2026-10-17T12:02:00.000Z" },
+    ]);
+    await settle();
+    expect(view.line()).toContain("Ran code You approved in another window.");
+    // Nobody answered here, so the focus did not move.
+    expect(document.activeElement).not.toBe(view.outcome());
   } finally {
     view.cleanup();
   }
 });
 
-domTest("an approval a stop left undecided becomes a quiet receipt where its card stood", async () => {
-  const send: Extract<AiTurnBlock, { kind: "tool" }> = {
-    ...request,
-    presentation: { ...request.presentation!, appName: "Mail", title: "E-Mail senden" },
-    args: { to: "Tom Weber" },
-  };
-  const view = await mountTurn([send], { locale: "de" });
+domTest("an expired question offers to ask again through a visible message", async () => {
+  const view = await mountTurn([{ ...runCode, status: "running", approved: false, approval: undefined }], { phase: "completed" });
   try {
-    const place = view.place();
-    expect(place.querySelector(".ai-approval")).not.toBeNull();
-    // History rebuilds the call without its approval; the stopped turn reports it as not run, in the same place.
-    view.setBlocks([{ ...send, status: "running", approval: undefined }]);
-    view.setPhase("stopped");
-    expect(view.place()).toBe(place);
-    expect(place.querySelector(".ai-approval")).toBeNull();
-    expect(place.textContent).toBe("Nicht ausgeführt: E-Mail senden · gestoppt");
-    expect(place.querySelector(".ti-circle-off")).not.toBeNull();
+    expect(view.line()).toContain("Not run: Run code The question expired.");
+    expect(view.place().querySelector(".ti-clock-x")).not.toBeNull();
+    view.button("Ask again").click();
+    await settle();
+    expect(view.continued).toEqual(["Please ask me again: Run code"]);
   } finally {
     view.cleanup();
   }
 });
 
-domTest("code that asks again gets a new card in the same place after each decision", async () => {
+domTest("code that asks again gets a new question in the same place after each decision", async () => {
   // Code asks for approvals one after another; each request has its own call, shown on the block of the code run.
   const ask = (index: number): Extract<AiTurnBlock, { kind: "tool" }> => ({
     ...runCode,
@@ -222,26 +259,170 @@ domTest("code that asks again gets a new card in the same place after each decis
   try {
     const place = view.place();
     view.button("Run code").click();
-    await tick();
-    await tick();
-    expect(place.querySelector(".ai-turn-receipt")?.textContent).toBe("Running: Run code");
+    await settle();
+    expect(view.line()).toBe("Running: Run code");
 
     // The turn reports the decision; the code runs on and asks again.
     view.setBlocks([{ ...ask(0), status: "running", approved: true, approval: undefined }]);
     view.setPhase("running");
     view.setBlocks([{ ...ask(1), approved: true }]);
     view.setPhase("waiting");
-    expect(place.querySelector(".ai-approval")?.textContent).toContain("Step 1");
-    view.button("Reject").click();
-    await tick();
-    await tick();
+    await settle();
+    expect(view.question()?.textContent).toContain("Step 1");
+    view.button("Don't run").click();
+    await settle();
     expect(view.decisions).toEqual([{ approved: true }, { approved: false }]);
-    expect(place.querySelector(".ai-turn-receipt")?.textContent).toBe("Rejected: Run code");
+    expect(view.line()).toContain("Rejected: Run code");
 
     // A rejected request does not decide the next one either.
     view.setBlocks([{ ...ask(2), approved: true }]);
-    expect(place.querySelector(".ai-approval")?.textContent).toContain("Step 2");
+    await settle();
+    expect(view.question()?.textContent).toContain("Step 2");
     expect(view.place()).toBe(place);
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a turn stopped while it checked keeps the open outcome and its check", async () => {
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  const view = await mountTurn([{ ...mail, approval: undefined, approved: true, status: "running", check: { state: "failed" } }], {
+    phase: "stopped",
+    check: async () => ({ state: "done", at: "2026-10-17T12:03:00.000Z" }),
+  });
+  try {
+    expect(view.line()).toContain("Still not known whether this happened");
+    expect(view.button("Check again")).toBeDefined();
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a live check whose claim went stale offers to check again", async () => {
+  setSystemTime(new Date("2026-10-17T12:10:00.000Z"));
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  const view = await mountTurn(
+    [
+      {
+        ...mail,
+        approval: undefined,
+        approved: true,
+        status: "running",
+        // Two minutes old against the pinned clock: past the stale limit.
+        check: { state: "checking", at: "2026-10-17T12:08:00.000Z" },
+      },
+    ],
+    { phase: "running", check: async () => ({ state: "done", at: "2026-10-17T12:10:30.000Z" }) },
+  );
+  try {
+    expect(view.line()).toContain("Not known yet whether this happened");
+    expect(view.button("Check again")).toBeDefined();
+  } finally {
+    view.cleanup();
+    setSystemTime();
+  }
+});
+
+domTest("a check claim that arrives long after the card mounted expires on time", async () => {
+  setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  const running = { ...mail, approval: undefined, approved: true as const, status: "running" as const };
+  const view = await mountTurn([running], { phase: "running", check: async () => ({ state: "done", at: "2026-10-17T12:06:00.000Z" }) });
+  try {
+    // Five minutes later the reconnect brings a claim that is already two minutes old.
+    setSystemTime(new Date("2026-10-17T12:05:00.000Z"));
+    view.setBlocks([{ ...running, check: { state: "checking", at: "2026-10-17T12:03:00.000Z" } }]);
+    await settle();
+    expect(view.button("Check again")).toBeDefined();
+  } finally {
+    view.cleanup();
+    setSystemTime();
+  }
+});
+
+domTest("an answer given here stays this window's answer when the block returns to its parent call", async () => {
+  const child: Extract<AiTurnBlock, { kind: "tool" }> = {
+    ...runCode,
+    callId: "run-approval-0",
+    approval: { message: "Step 0", allowAlways: false },
+  };
+  const view = await mountTurn([child]);
+  try {
+    view.button("Run code").click();
+    await settle();
+    // A reconnect snapshot replaces the approval request with the code run it belongs to.
+    view.setBlocks([{ ...runCode, callId: "run", status: "running", approved: true, approval: undefined }]);
+    view.setPhase("running");
+    await settle();
+    view.setBlocks([{ ...runCode, callId: "run", status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
+    await settle();
+    expect(view.line()).toBe("Ran code");
+    expect(view.place().textContent).not.toContain("another window");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a lost answer to an earlier question never marks the next one", async () => {
+  const ask = (index: number): Extract<AiTurnBlock, { kind: "tool" }> => ({
+    ...runCode,
+    callId: `run-approval-${index}`,
+    approval: { message: `Step ${index}`, allowAlways: false },
+  });
+  let fail!: (error: Error) => void;
+  const view = await mountTurn([ask(0)], { approve: () => new Promise<void>((_resolve, reject) => (fail = reject)) });
+  try {
+    view.button("Run code").click();
+    await settle();
+    // The server took the first answer and the code asks for the next website before the first response is lost.
+    view.setBlocks([{ ...ask(1), approved: true }]);
+    await settle();
+    fail(new Error("response lost"));
+    await settle();
+    expect(view.question()?.textContent).toContain("Step 1");
+    expect(view.place().textContent).not.toContain("didn't arrive");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a check that could not settle the outcome is asked again only on request, and never repeats the call", async () => {
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  let checks = 0;
+  const view = await mountTurn(
+    [
+      {
+        ...mail,
+        approval: undefined,
+        approved: true,
+        status: "failed",
+        isError: true,
+        result: "ACTION_OUTCOME_UNKNOWN: lost",
+        check: { state: "failed" },
+        at: "2026-10-17T12:02:00.000Z",
+      },
+    ],
+    {
+      phase: "completed",
+      check: async () => {
+        checks += 1;
+        return { state: "done", at: "2026-10-17T12:03:00.000Z" };
+      },
+    },
+  );
+  try {
+    expect(view.line()).toContain("Still not known whether this happened");
+    expect(view.button("Send to Lea Berg")).toBeUndefined();
+    view.button("Check again").click();
+    await settle();
+    expect(checks).toBe(1);
+    expect(view.decisions).toEqual([]);
+    expect(view.line()).toContain("The email Maintenance window Tuesday to Lea Berg is being sent.");
+    expect(view.line()).toContain("Mail already did it. I won't run it again.");
   } finally {
     view.cleanup();
   }
@@ -286,21 +467,21 @@ const sendMail = (locale: "en" | "de"): Extract<AiTurnBlock, { kind: "tool" }> =
   approval: { message: "Acme Mail: Send email to jana@example.com", allowAlways: false },
 });
 
-domTest("an app Action's own sentences name the card, the model's labelled reason, and every receipt", async () => {
+domTest("an app Action's catalog sentences name the question and every outcome line; the model's reason never shows", async () => {
   const english = await mountTurn([sendMail("en")]);
   try {
-    const card = english.place().querySelector<HTMLElement>(".ai-approval")!;
-    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("Send email to jana@example.com");
-    expect(card.querySelector(".ai-approval__sub")?.textContent).toBe("Acme Mail · Runs only after you approve it");
-    // The model's reason adds to the app's sentence under its own label; the approval text for text-only readers is not repeated.
-    expect(card.textContent).toContain("Why: Jana asked for the offer.");
-    expect(card.textContent).not.toContain("Acme Mail: Send email to jana@example.com");
-    english.button("Send email to jana@example.com").click();
-    await tick();
-    await tick();
-    const receipt = english.place().querySelector<HTMLElement>(".ai-turn-receipt")!;
-    expect(receipt.textContent).toBe("Running: Send email to jana@example.com");
+    expect(english.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Send email to jana@example.com?");
+    expect(english.question()?.textContent).toContain("I'm asking because Acme Mail always asks for this.");
+    // Cloud's reason replaces the model's own words; the text for text-only readers is not repeated.
+    expect(english.place().textContent).not.toContain("Jana asked for the offer.");
+    expect(english.place().textContent).not.toContain("Acme Mail: Send email to jana@example.com");
+    english.button("Send email").click();
+    await settle();
+    expect(english.line()).toBe("Running: Send email to jana@example.com");
+    const outcome = english.outcome();
     english.setPhase("running");
+    await settle();
+    expect(english.outcome()).toBe(outcome);
     english.setBlocks([
       {
         ...sendMail("en"),
@@ -310,30 +491,28 @@ domTest("an app Action's own sentences name the card, the model's labelled reaso
         result: { data: { messageId: "M-42" }, summary: "Queued" },
       },
     ]);
-    expect(english.place().querySelector(".ai-turn-receipt")).toBe(receipt);
-    expect(receipt.textContent).toBe("Sent email to jana@example.com (M-42)");
+    await settle();
+    expect(english.outcome()).toBe(outcome);
+    expect(english.line()).toBe("Sent email to jana@example.com (M-42)");
   } finally {
     english.cleanup();
   }
 
   const german = await mountTurn([sendMail("de")], { locale: "de" });
   try {
-    const card = german.place().querySelector<HTMLElement>(".ai-approval")!;
-    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("E-Mail an jana@example.com senden");
-    expect(card.querySelector(".ai-approval__sub")?.textContent).toBe("Acme Mail · Wird erst nach deiner Freigabe ausgeführt");
-    expect(card.textContent).toContain("Warum: Jana hat um das Angebot gebeten.");
-    german.button("Ablehnen").click();
-    await tick();
-    await tick();
-    expect(german.place().querySelector(".ai-turn-receipt")?.textContent).toBe("E-Mail an jana@example.com nicht gesendet");
+    expect(german.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("E-Mail an jana@example.com senden?");
+    expect(german.place().textContent).not.toContain("Warum");
+    german.button("Nicht ausführen").click();
+    await settle();
+    expect(german.line()).toBe("E-Mail an jana@example.com nicht gesendet Du hast abgelehnt.");
   } finally {
     german.cleanup();
   }
 
-  // A stop before the decision leaves the app's not-run sentence; a result without the data a sentence needs keeps the generic words.
+  // A stop before the decision leaves the app's not-run sentence; a result without the data a sentence needs keeps the app's summary.
   const stopped = await mountTurn([{ ...sendMail("de"), status: "running", approval: undefined }], { locale: "de", phase: "stopped" });
   try {
-    expect(stopped.place().textContent).toBe("E-Mail an jana@example.com nicht gesendet · gestoppt");
+    expect(stopped.line()).toBe("E-Mail an jana@example.com nicht gesendet Die Antwort wurde angehalten.");
   } finally {
     stopped.cleanup();
   }
@@ -342,7 +521,7 @@ domTest("an app Action's own sentences name the card, the model's labelled reaso
     { locale: "de", phase: "stopped" },
   );
   try {
-    expect(withoutData.place().textContent).toBe("Zugestellt");
+    expect(withoutData.line()).toBe("Zugestellt");
   } finally {
     withoutData.cleanup();
   }
@@ -354,25 +533,16 @@ domTest("an Action without sentences reads as its title with its labelled fields
   plain.args = { to: [{ name: "Jana Berger", address: "jana@example.com" }, { address: "max@example.com" }] };
   const view = await mountTurn([plain], { locale: "de" });
   try {
-    const card = view.place().querySelector<HTMLElement>(".ai-approval")!;
-    expect(card.querySelector(".ai-approval__title")?.textContent).toBe("E-Mail senden · Empfänger: jana@example.com und max@example.com");
-    // No reason, no label: the card adds nothing the model did not say.
-    expect(card.textContent).not.toContain("Warum");
+    expect(view.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe(
+      "E-Mail senden · Empfänger: jana@example.com und max@example.com?",
+    );
+    expect(view.place().textContent).not.toContain("Warum");
   } finally {
     view.cleanup();
   }
-  // Input that did not come from the model, such as a call from Studio code, never reads as the model's reason.
-  const fromCode = sendMail("de");
-  fromCode.presentation = { ...fromCode.presentation!, approvalReason: undefined };
-  const code = await mountTurn([fromCode], { locale: "de" });
-  try {
-    expect(code.place().textContent).not.toContain("Warum");
-  } finally {
-    code.cleanup();
-  }
 });
 
-domTest("a value shaped like a date that is no real day never breaks the card or its receipt", async () => {
+domTest("a value shaped like a date that is no real day never breaks the question or its outcome", async () => {
   const block = sendMail("en");
   block.presentation = {
     ...block.presentation!,
@@ -382,17 +552,16 @@ domTest("a value shaped like a date that is no real day never breaks the card or
   block.args = { sendAt: "0000-00-00" };
   const view = await mountTurn([block]);
   try {
-    expect(view.place().querySelector(".ai-approval__title")?.textContent).toBe("Send email at 0000-00-00");
-    view.button("Reject").click();
-    await tick();
-    await tick();
-    expect(view.place().querySelector(".ai-turn-receipt")?.textContent).toBe("Did not send email at 0000-00-00");
+    expect(view.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Send email at 0000-00-00?");
+    view.button("Don't run").click();
+    await settle();
+    expect(view.line()).toBe("Did not send email at 0000-00-00 You declined.");
   } finally {
     view.cleanup();
   }
 });
 
-domTest("without a done sentence the receipt is the app's own summary of the call, such as a scheduled send", async () => {
+domTest("without a done sentence the outcome is the app's own summary of the call, such as a scheduled send", async () => {
   const block = sendMail("en");
   const { done: _done, ...sentences } = block.presentation!.sentences!;
   block.presentation = { ...block.presentation!, sentences };
@@ -401,7 +570,37 @@ domTest("without a done sentence the receipt is the app's own summary of the cal
     { phase: "stopped" },
   );
   try {
-    expect(view.place().textContent).toBe("Scheduled “Q4 report”.");
+    expect(view.line()).toBe("Scheduled “Q4 report”.");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a check settled elsewhere replaces this card's own older check answer", async () => {
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  const failed = {
+    ...mail,
+    approval: undefined,
+    approved: true as const,
+    status: "failed" as const,
+    isError: true,
+    result: "ACTION_OUTCOME_UNKNOWN: lost",
+    at: "2026-10-17T12:02:00.000Z",
+  };
+  const view = await mountTurn([{ ...failed, check: { state: "failed", at: "2026-10-17T12:02:00.000Z" } }], {
+    phase: "completed",
+    check: async () => ({ state: "pending", at: "2026-10-17T12:03:00.000Z" }),
+  });
+  try {
+    view.button("Check again").click();
+    await settle();
+    expect(view.line()).toContain("Mail doesn't know yet either.");
+    // Another window's check settled the call; the refreshed history carries it.
+    view.setBlocks([{ ...failed, check: { state: "done", at: "2026-10-17T12:04:00.000Z" } }]);
+    await settle();
+    expect(view.line()).toContain("Mail already did it. I won't run it again.");
+    expect(view.button("Check again")).toBeUndefined();
   } finally {
     view.cleanup();
   }
@@ -451,5 +650,28 @@ domTest("one click on a website receipt revokes the chat approval for its origin
   } finally {
     dispose();
     dom.cleanup();
+  }
+});
+
+domTest("a long text without a page of its own shows the rest in place and keeps the focus there", async () => {
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const fixture = actionFixtures("en").mail!.block;
+  const review = fixture.review!;
+  if (!("sentence" in review)) throw new Error("Expected a new review");
+  const view = await mountTurn([{ ...fixture, status: "awaiting_approval", review: { ...review, links: [] } }]);
+  try {
+    const excerpt = view.place().querySelector<HTMLElement>(".k2b-chat-preview__excerpt")!;
+    const show = view.button("Read the whole email");
+    expect(show.getAttribute("aria-controls")).toBe(excerpt.id);
+    expect(excerpt.dataset.expanded).toBeUndefined();
+    show.click();
+    await tick();
+    expect(excerpt.dataset.expanded).toBe("true");
+    expect(view.button("Read the whole email")).toBeUndefined();
+    expect(document.activeElement).toBe(excerpt);
+    // The question itself still waits for its answer.
+    expect(view.question()).not.toBeNull();
+  } finally {
+    view.cleanup();
   }
 });

@@ -15,6 +15,7 @@ import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
 import type { CapabilityActionReviewData, CapabilityActionSentences, CloudResourceRef } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
+import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
 
@@ -328,6 +329,8 @@ export type AiStoredMessage = {
       trigger: "scheduled" | "manual";
     };
     toolPresentations?: Record<string, AiToolPresentation>;
+    toolReviews?: Record<string, AiStoredActionReview>;
+    toolChecks?: Record<string, AiActionCheck>;
     /** How the person decided an approval; `expired` when the turn ended while it still waited. */
     toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
     /** Requests a website approval let through, by tool call and then by `AiWebsiteReceipt.index`. */

@@ -2042,6 +2042,7 @@ export default function AssistantWorkspace(props: Props) {
                                       />
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",
+                                    onCheckAction: (request) => chat.checkAction(request),
                                     onApproval: async (request, input) => {
                                       if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
                                     },

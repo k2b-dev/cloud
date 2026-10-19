@@ -4,13 +4,15 @@ import { openAICompatible } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
-import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileCapabilities } from "../_internal/capabilities";
+import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
 import * as registry from "../_internal/registry";
 import { approvalRoutes } from "../api/approvals";
+import * as capabilityDispatch from "../api/capabilities";
 import type { User } from "../contracts";
-import { defineCapabilities } from "../contracts/capabilities";
+import { type CapabilityActionReviewData, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
@@ -40,6 +42,7 @@ import { AiQuotaError } from "./quotas";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
 import { aiSkills } from "./skills";
+import * as conversationStore from "./store";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
@@ -469,6 +472,10 @@ suite("AI executor integration", () => {
       const onApprovalRequested = async ({ approvalId }: { approvalId: string }) => {
         expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("waiting_for_action");
         expect(await approvals.get(approvalId)).toMatchObject({ status: "pending" });
+        const stored = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.callId === "write-1")).toMatchObject({
+          review: { legacy: { question: "Original effect", rows: [] } },
+        });
         approvalEvents.push(approvalId);
         if (mode === "unchanged") throw new Error("Notification unavailable");
       };
@@ -920,6 +927,14 @@ suite("AI executor integration", () => {
         expect(reviewSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, locale, mandate: { id: task.mandateId } });
       }
       if (mode === "scoped") {
+        const stored = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: delivered.turnId });
+        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.name === "demo.write")).toMatchObject({
+          review: { legacy: { question: "Write one item.", rows: [] } },
+        });
+        const [message] = await sql<
+          { meta: unknown }[]
+        >`SELECT meta FROM ai.task_messages WHERE loop_id=${delivered.turnId} AND role='assistant' AND meta ? 'toolReviews'`;
+        expect(message?.meta).toMatchObject({ toolReviews: { "write-1": { legacy: { question: "Write one item." } } } });
         expect(executeSpy).toHaveBeenCalledTimes(1);
         expect(executeSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, actionApproval: "approved" });
       } else {
@@ -3970,6 +3985,153 @@ suite("local client in-lease results", () => {
         suspending.mockRestore();
         claims.mockRestore();
         onCompletionRequest = null;
+        completionQueue = [];
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
+});
+
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("stored Assistant Action outcomes", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
+
+  test.each([
+    { outcome: "done", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "not_done", code: "IDEMPOTENCY_UNCERTAIN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "IDEMPOTENCY_IN_PROGRESS", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "failed", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: true, claimFails: true },
+    // A timeout after dispatch proves nothing either: it is checked like a lost answer.
+    { outcome: "not_done", code: "DEADLINE_EXCEEDED", status: 504, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: true, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "INTERNAL", status: 500, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "REQUEST_CANCELLED", status: 499, legacy: false, withCheck: true, dispatched: true },
+  ] as const)(
+    "Action failure $code: $outcome, check=$withCheck, legacy=$legacy, dispatched=$dispatched",
+    async ({ outcome, code, status, legacy, withCheck, dispatched, ...failure }) => {
+      const claimFails = "claimFails" in failure && failure.claimFails;
+      const userId = await insertUser();
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.send"] });
+      const compiled = compileReviewFixture(legacy ? null : { silent: "you" });
+      const entry: CapabilityRegistryEntry = {
+        appId: "demo",
+        appName: "Demo",
+        appDescription: "Test outcomes",
+        appIcon: "ti ti-box",
+        endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+        manifest: compiled.manifest,
+      };
+      let liveReview: CapabilityActionReviewData = legacy
+        ? { message: "Original draft?", approvalScope: "one" }
+        : { ...reviewFixture(), scope: "one", ...(withCheck ? { check: { query: "check", input: { id: "original" } } } : {}) };
+      const originalReview = structuredClone(liveReview);
+      const receipt = { text: "Queued the original draft" };
+      const calls: Array<{ kind: string; capabilityId: string; review?: boolean }> = [];
+      const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([entry]);
+      const dispatch = spyOn(capabilityDispatch, "dispatchCapability").mockImplementation(async (input) => {
+        calls.push({ kind: input.kind, capabilityId: input.capabilityId, review: input.review });
+        if (input.review) return Response.json(liveReview);
+        if (input.kind === "actions") {
+          if (dispatched) input.onUpstreamAttempt?.();
+          return Response.json({ code, message: "Action failed" }, { status });
+        }
+        expect(input).toMatchObject({ kind: "queries", capabilityId: "check", input: { id: "original" }, origin: "assistant" });
+        expect(input.authority?.actor).toMatchObject({ kind: "user", user: { id: userId } });
+        // The review is already durable before either dispatch, including a call auto-approved by an old always row.
+        const stored = await aiConversations.listMessages({ conversationId: conversation.id });
+        // The claim is durable before the Query runs, so a stopped worker leaves a check that goes stale and stays checkable.
+        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.callId === "send-1")).toMatchObject({
+          review: originalReview,
+          check: { state: "checking" },
+        });
+        return outcome === "failed"
+          ? Response.json({ data: { outcome: "invalid" } })
+          : Response.json({ data: { outcome, ...(outcome === "done" ? { receipt } : {}) } });
+      });
+      const claimSpy = claimFails
+        ? spyOn(conversationStore, "claimAiToolCheck").mockRejectedValue(new Error("Transient check claim failure"))
+        : undefined;
+      const modelRequests: unknown[] = [];
+      onCompletionRequest = (body) => {
+        modelRequests.push(body);
+      };
+      try {
+        // Existing global approvals continue to apply, even though new cards no longer offer that choice.
+        await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.send", approvalScope: "one" });
+        completionQueue = [toolCallCompletion("send-1", "demo__action__send", {}), textCompletion("Checked the result")];
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelProfileId: MODEL_ID,
+          runConfig: {
+            kind: "chat",
+            input: "Send the draft",
+            locale: "en",
+            actor: { kind: "user", user: actorUser(userId) },
+            toolSource: { kind: "default", appTools: true },
+            toolApprovalContext: { actorUserId: userId },
+          },
+          userMessage: userMessage("Send the draft"),
+        });
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "outcome-exec",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed turn");
+        await createExecutor("outcome-exec", undefined, fakeValidateToolTurn).run({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          claim,
+          signal: new AbortController().signal,
+        });
+        expect(calls.filter((call) => call.kind === "actions" && !call.review)).toHaveLength(1);
+        const preDispatchFailure = !dispatched && code === "APP_UNAVAILABLE";
+        expect(calls.filter((call) => call.kind === "queries")).toHaveLength(withCheck && !preDispatchFailure && !claimFails ? 1 : 0);
+        expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toEqual([]);
+        liveReview = legacy
+          ? { message: "Changed draft?" }
+          : { ...reviewFixture(), sentence: { ...reviewFixture().sentence, action: "Changed {subject} to {to}" } };
+        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        const block = buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send-1");
+        expect(block).toMatchObject({ review: legacy ? { legacy: { question: "Original draft?", rows: [] } } : originalReview });
+        if (claimFails) {
+          expect(claimSpy).toHaveBeenCalledTimes(1);
+          expect(block).toMatchObject({ status: "failed", isError: true });
+          expect(JSON.stringify(block)).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(modelRequests.at(-1))).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(modelRequests.at(-1))).not.toContain("Transient check claim failure");
+        } else if (withCheck && !preDispatchFailure) {
+          expect(block).toMatchObject({ check: { state: outcome }, status: outcome === "done" ? "completed" : "failed" });
+          if (outcome === "done")
+            expect(block).toMatchObject({ check: { receipt }, result: { receipt, data: null, outcomeCheck: "done" }, isError: false });
+          else expect(JSON.stringify(block)).toContain(outcome === "not_done" ? "ACTION_NOT_DONE" : "ACTION_OUTCOME_UNKNOWN");
+        } else {
+          if (block?.kind !== "tool") throw new Error("Expected tool block");
+          expect(block.check).toBeUndefined();
+          expect(block).toMatchObject({ status: "failed" });
+          expect(JSON.stringify(block)).toContain(preDispatchFailure ? "APP_UNAVAILABLE" : "ACTION_OUTCOME_UNKNOWN");
+          if (preDispatchFailure) expect(JSON.stringify(block)).not.toContain("ACTION_OUTCOME_UNKNOWN");
+        }
+      } finally {
+        claimSpy?.mockRestore();
+        onCompletionRequest = null;
+        dispatch.mockRestore();
+        registrySpy.mockRestore();
         completionQueue = [];
         await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
         await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;

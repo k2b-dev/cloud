@@ -4,7 +4,12 @@ import { type SQL, sql } from "bun";
 import { type CapabilityActionReviewData, CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
+import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
+
+export { AI_TOOL_CHECK_STALE_MS };
+
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
+import { projectSettledAiToolChecks } from "./capability-result";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
@@ -570,6 +575,13 @@ const conversationRunStatus = (status: AiTurnStatus | null | undefined, browserP
 const todoMessageJson = () => sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (message #>> '{}')::jsonb ELSE message END)`;
 const todoMetaJson = () => sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
 
+/** What a copied message keeps of its meta: its todo plan, and its calls' reviews and checks, so a fork reads the same. */
+const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_object(
+  'todoPlan', ${todoMetaJson()}->'todoPlan',
+  'toolReviews', ${todoMetaJson()}->'toolReviews',
+  'toolChecks', ${todoMetaJson()}->'toolChecks'
+)), '{}'::jsonb)`;
+
 // A scheduled result arriving during an interactive turn becomes context on the next turn.
 const visibleToTurn = (turnId?: string) => sql`(
   ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ? 'scheduledTask', false) OR seq < ALL (
@@ -969,6 +981,114 @@ export const recordAiWebsiteReceipts = async (input: {
   `;
 };
 
+/** Reviews and outcome checks belong to the assistant message containing the call, including scheduled turns. */
+const recordAiToolMeta = async (
+  input: { conversationId: string; turnId: string; callId: string },
+  key: "toolReviews" | "toolChecks",
+  value: AiStoredActionReview | AiActionCheck,
+  db = sql,
+): Promise<void> => {
+  let written = false;
+  for (const table of ["ai.messages", "ai.task_messages"]) {
+    const rows = await db<{ id: string }[]>`
+      UPDATE ${db(table)}
+      SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+        ${key}::text, COALESCE(meta->${key}::text, '{}'::jsonb) ||
+          jsonb_build_object(${input.callId}::text, ${JSON.stringify(value)}::text::jsonb)
+      )
+      WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
+        AND role = 'assistant'
+        AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+      RETURNING id`;
+    written ||= rows.length > 0;
+  }
+  if (!written) throw new Error("AI tool call message is unavailable.");
+};
+
+export const recordAiToolReview = (input: { conversationId: string; turnId: string; callId: string; review: AiStoredActionReview }) =>
+  recordAiToolMeta(input, "toolReviews", input.review);
+
+export const recordAiToolCheck = (input: { conversationId: string; turnId: string; callId: string; check: AiActionCheck }, db = sql) =>
+  recordAiToolMeta(input, "toolChecks", input.check, db);
+
+/**
+ * Writes one call's check only where `allowed` holds for its current state, in one statement per table, so two Core
+ * replicas or the executor and a person's re-check can never both hold a check, and a settled result is never replaced.
+ */
+const writeAiToolCheckWhere = async (
+  input: { conversationId: string; turnId: string; callId: string },
+  check: AiActionCheck,
+  allowed: (current: SQL.Query<unknown>) => SQL.Query<unknown>,
+): Promise<boolean> => {
+  let written = false;
+  for (const table of ["ai.messages", "ai.task_messages"]) {
+    const current = sql`meta->'toolChecks'->${input.callId}::text`;
+    const rows = await sql<{ id: string }[]>`
+      UPDATE ${sql(table)}
+      SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+        'toolChecks', COALESCE(meta->'toolChecks', '{}'::jsonb) ||
+          jsonb_build_object(${input.callId}::text, ${JSON.stringify(check)}::text::jsonb)
+      )
+      WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
+        AND role = 'assistant'
+        AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+        AND (${allowed(current)})
+      RETURNING id`;
+    written ||= rows.length > 0;
+  }
+  return written;
+};
+
+/**
+ * Claims the check of one call: stores `checking` at `at`, which is the claim's token, when no check holds and none
+ * settled. A call without any check yet may be claimed only with `first`, which the executor uses after an unknown
+ * outcome. A `checking` older than `staleBefore` belonged to a worker or request that stopped and may be taken over.
+ */
+export const claimAiToolCheck = (input: {
+  conversationId: string;
+  turnId: string;
+  callId: string;
+  at: string;
+  staleBefore: string;
+  first?: boolean;
+}): Promise<boolean> =>
+  writeAiToolCheckWhere(
+    input,
+    { state: "checking", at: input.at },
+    (current) => sql`
+      ${input.first ? sql`${current} IS NULL OR` : sql``}
+      ${current}->>'state' IN ('pending', 'failed')
+      OR (${current}->>'state' = 'checking' AND COALESCE(${current}->>'at', '') < ${input.staleBefore}::text)`,
+  );
+
+/** Stores the result of the claim made at `claimedAt`, only while that claim still holds. */
+export const settleAiToolCheck = (input: {
+  conversationId: string;
+  turnId: string;
+  callId: string;
+  claimedAt: string;
+  check: AiActionCheck;
+}): Promise<boolean> =>
+  writeAiToolCheckWhere(
+    input,
+    input.check,
+    (current) => sql`${current}->>'state' = 'checking' AND ${current}->>'at' = ${input.claimedAt}::text`,
+  );
+
+/** The stored check of one call, or null. */
+export const readAiToolCheck = async (input: { conversationId: string; turnId: string; callId: string }): Promise<AiActionCheck | null> => {
+  for (const table of ["ai.messages", "ai.task_messages"]) {
+    const [row] = await sql<{ check: AiActionCheck | null }[]>`
+      SELECT meta->'toolChecks'->${input.callId}::text AS check FROM ${sql(table)}
+      WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
+        AND role = 'assistant'
+        AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+      LIMIT 1`;
+    if (row?.check) return row.check;
+  }
+  return null;
+};
+
 /** Insert a message inside an open conversation-lock transaction and bump the conversation. */
 const insertMessageLocked = async (
   input: {
@@ -1268,7 +1388,7 @@ export const aiConversations: AiConversationService = {
         SELECT
           short_id, ${target.id}::uuid, seq, kind, role, message, search_text, loop_id,
           model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason,
-          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END,
+          ${copiedMessageMetaJson()},
           created_at
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}::uuid
@@ -2596,7 +2716,7 @@ export const aiConversations: AiConversationService = {
           stop_reason,
           loop_aggregate,
           loop_done_reason,
-          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END,
+          ${copiedMessageMetaJson()},
           created_at
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}
@@ -2919,10 +3039,33 @@ export const aiConversations: AiConversationService = {
     `;
     if (!rows[0]) return null;
     // The waits let a reconnecting client show work time without time spent waiting for the user.
-    const waits = await activeTurnWaits(rows[0].id);
+    const [waits, metadata] = await Promise.all([
+      activeTurnWaits(rows[0].id),
+      sql<{ tool_reviews: Record<string, AiStoredActionReview> | null; tool_checks: Record<string, AiActionCheck> | null }[]>`
+        SELECT meta->'toolReviews' AS tool_reviews, meta->'toolChecks' AS tool_checks
+        FROM (
+          SELECT meta, seq, conversation_id, loop_id, role FROM ai.messages
+          UNION ALL
+          SELECT meta, seq, conversation_id, loop_id, role FROM ai.task_messages
+        ) messages
+        WHERE conversation_id = ${input.conversationId}
+          AND loop_id = ${rows[0].id}
+          AND role = 'assistant'
+          AND (meta ? 'toolReviews' OR meta ? 'toolChecks')
+        ORDER BY seq ASC
+      `,
+    ]);
+    // A person may re-check while the model continues. Durable checks outrank the worker's earlier live snapshot.
+    const reviews = new Map(metadata.flatMap((row) => Object.entries(row.tool_reviews ?? {})));
+    const checks = new Map(metadata.flatMap((row) => Object.entries(row.tool_checks ?? {})));
     return {
       turn: rowToTurn(rows[0]),
-      liveBlocks: rowToLiveBlocks(rows[0]),
+      liveBlocks: rowToLiveBlocks(rows[0]).map((block) => {
+        if (block.kind !== "tool") return block;
+        const review = reviews.get(block.callId);
+        const check = checks.get(block.callId);
+        return { ...block, ...(review ? { review } : {}), ...(check ? { check } : {}) };
+      }),
       liveSeq: Number(rows[0].live_seq ?? 0),
       actionWaitMs: Math.max(0, Math.round(waits.actionWaitMs)),
       waitingSince: waits.waitingSince,
@@ -3635,7 +3778,7 @@ export const aiConversations: AiConversationService = {
       if (input.background && input.turnId) {
         const own = await aiConversations.listTurnMessages({ conversationId: input.conversationId, loopId: input.turnId });
         const context = input.background.context;
-        return [...context, ...own.map((row) => ({ seq: context.length + row.seq, kind: row.kind, message: row.message }))];
+        return [...context, ...projectSettledAiToolChecks(own.map((row) => ({ ...row, seq: context.length + row.seq })))];
       }
       // Results delivered after this turn started belong to the next turn's context.
       // Compare durable message sequences rather than wall-clock timestamps.
@@ -3649,20 +3792,23 @@ export const aiConversations: AiConversationService = {
           `
           ).map(rowToMessage)
         : await aiConversations.listContextMessages({ conversationId: input.conversationId });
-      return rows.map((row) => ({
-        seq: row.seq,
-        kind: row.kind,
-        message:
-          input.turnInput !== undefined && input.turnId === row.loopId && row.message.role === "user" && !row.meta?.steerId
-            ? {
-                role: "user" as const,
-                content:
-                  typeof input.turnInput === "string"
-                    ? [{ type: "text" as const, text: input.turnInput }]
-                    : input.turnInput.map((part) => (typeof part === "string" ? { type: "text" as const, text: part } : part)),
-              }
-            : row.message,
-      }));
+      return projectSettledAiToolChecks(
+        rows.map((row) => ({
+          seq: row.seq,
+          kind: row.kind,
+          meta: row.meta,
+          message:
+            input.turnInput !== undefined && input.turnId === row.loopId && row.message.role === "user" && !row.meta?.steerId
+              ? {
+                  role: "user" as const,
+                  content:
+                    typeof input.turnInput === "string"
+                      ? [{ type: "text" as const, text: input.turnInput }]
+                      : input.turnInput.map((part) => (typeof part === "string" ? { type: "text" as const, text: part } : part)),
+                }
+              : row.message,
+        })),
+      );
     },
     append: async (message, opts) => {
       // Initial input and durable steering are already persisted transactionally before Nessi appends them.

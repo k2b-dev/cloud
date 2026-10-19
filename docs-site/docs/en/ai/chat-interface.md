@@ -89,6 +89,7 @@ export function ItemChat(props: {
           onApproval: async (request, input) => {
             await chat.respondToApproval(request, input);
           },
+          onCheckAction: (request) => chat.checkAction(request),
           onFrontendToolResult: async (request, result) => {
             await chat.submitFrontendToolResult(request, result);
           },
@@ -111,7 +112,7 @@ The controller exposes:
 - messages, active turn, and stream status;
 - history and timeline loading;
 - send, steer, abort, retry, fork, and compaction;
-- approval and frontend-tool actions;
+- approval, outcome-check, and frontend-tool actions;
 - file URLs and file counts;
 - one error state for the active chat.
 
@@ -368,46 +369,35 @@ order:
    message; its texts stay in the work line.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
-   A pending approval is a calm card with a warning tint and no border: its
-   title says what will happen in the owning app's words, such as "Send email
-   to jana@example.com", with "Mail · Runs only after you approve it" below, then
-   the review text and fields, and Reject next to the action itself. When the
-   model gave a reason, it follows under its own label, such as "Why: Jana
-   asked for the offer."; it never replaces the app's sentence. The title wraps
-   instead of being cut off. On phones the fields stack under their labels and
-   the two buttons share the width; a long action name ends in an ellipsis on
-   its button rather than pushing the card wider, while the title above shows
-   it in full. When code asks for approval again, each new request is a new
-   card in the same place.
-   A receipt is one line in the reader's language, never the raw tool name.
-   Once the call has an outcome, the receipt ends with its time, such as
-   "· 10:42"; older history without a recorded time shows none. Pass the reader's
-   time zone, such as `timeZone: getTimeZone(c)` from the page, to
-   `createAiChatTimeline` so server-rendered history shows the same times as
-   the browser. Without it, times and dates in the chat use the browser's zone
-   and UTC on the server.
-   A Cloud action reads as the sentence its app declares for the outcome, such
-   as "Sent email to jana@example.com", else as the action's own summary with its
-   links. Without either, it names the call with the app's approval sentence
-   or with its title and up to two labelled fields, such as "Done: Send email ·
-   Recipients: jana@example.com". Cloud's own tools word themselves the same way:
-   "Approved: Run code" for an approved tool that is not a Cloud action,
-   "Running: Send email to jana@example.com" while it runs, "Did not send email to
-   jana@example.com" or "Rejected: Send email" after a rejection, "Failed: Send
-   email", and "Email to jana@example.com not sent · stopped" or "Not run: Send
-   email · stopped" when the turn ended before the call ran. An approval still
-   waiting when the turn ends reads the same, also for a tool that is not a
-   Cloud action, such as "Not run: Run code · stopped", or "Not run: Run code"
-   after a time limit or an expired wait. See
-   [Word Actions for people](/en/docs/platform/capabilities#word-actions-for-people)
-   for how an app declares these sentences. Once the server accepts a decision, the card turns
-   into its receipt in place, before the turn reports the call; later updates
-   change only the receipt's words. If the decision was made in that card,
-   focus stays on its place without scrolling. An approved call carries `approved: true` on its
-   tool block, live and in history, so its receipt survives a reload, also when
-   the turn ended before the call returned. A call whose approval still waited
-   when the turn ended carries `approved: false` in history. Links without a
-   title read "Open", "Edit", or "Download" in the reader's language.
+   The question and result use the same card: a sentence with typed chips,
+   Cloud's reason line, a preview of the thing, two answers naming the deed and
+   target, and one outcome line. The model's `approvalReason` is not shown.
+   Reasons come from the review or declared policy; legacy reviews and Actions
+   without a policy read `app_asks`. On phones the card wraps within the chat.
+   Where offered, the quiet **Yes, and don't ask again in this chat** link
+   remembers the reviewed scope. **Always approve** is no longer offered;
+   earlier choices still apply until the next major release.
+
+   Cloud stores the review with the tool call before asking, so reloads keep
+   the sentence, chips, and preview even after the app changes. Legacy reviews
+   keep their original question and details. The outcome is running, done,
+   rejected, not run, or unknown. A receipt states only what the app confirmed.
+   A pending approval at the end of a stopped turn reads as not run. A question
+   nobody answered before its turn ended reads as expired and offers **Ask
+   again**, which sends a visible message through `onContinueTurn`. An answer
+   that did not reach the server says so and offers **Answer again**.
+
+   After an unknown outcome, a review's `check` Query runs once. `done` and
+   `not_done` settle the card; `pending` and failed checks keep the unknown
+   line. **Check again** runs only this Query once per press, never the Action.
+   Without a check, there is no repeat button. Connect `onCheckAction` to the
+   controller's `checkAction`; propagate failures to the card. See
+   [Tools and approvals](/en/docs/ai/tools-and-approvals#read-an-action-outcome).
+
+   Outcome times use the reader's zone. Pass `timeZone: getTimeZone(c)` from
+   the page to `createAiChatTimeline` so history and the first browser render
+   agree. Old history without a time shows none. Links without titles read
+   "Open", "Edit", or "Download" in the reader's language.
 
 A turn without tool calls or compaction, such as a plain answer, a steering
 marker, or an answer with only reasoning, has no work line. Its texts form the
@@ -601,26 +591,21 @@ wird wiederhergestellt**) without the shimmer. Earlier rows keep their place,
 and the next turn event removes the row while the model's output continues in
 the turn's places.
 
-Approval prompts span the available message column and lead with the owning
-application's name and icon. The primary control names the concrete action;
-review labels are emphasized and explanatory copy appears only when it adds
-information beyond that action name. Approval content stays on a neutral
-surface and the decision controls sit in a separate footer at the bottom-right.
-The action is a split button whose
-**Details** menu item renders validated arguments in a separate full-width
-structured-data panel below the prompt. Details are technical verification,
-not a substitute for consequence-critical review content in the card itself.
+Action cards span the message column. The sentence wraps and keeps its typed
+chips; the preview and two decision buttons stay within that width on phones.
+Every value needed to decide belongs in the review. Technical arguments, when
+available, are secondary to the reviewed consequence.
 
 ## Handle frontend tools
 
-Pass approval, frontend-tool, retry, continue, fork, message-feedback, and file
+Pass approval, outcome-check, frontend-tool, retry, continue, fork, message-feedback, and file
 handlers through `AiChatActionsProvider`. Rich Cloud blocks remain Cloud-owned JSX inside the
 generic timeline.
 
 Applications hosting code-triggered approvals can render the same public
 `AiTurnBlockView` from `@k2b/cloud/ai/ui`, inside `AiChatActionsProvider`.
-Provide an active tool block in `awaiting_approval` state with the server-reviewed
-message, details, and `allowAlways` value. Route `onApproval` back to the
+Provide an active tool block in `awaiting_approval` state with its stored `review`
+and pending approval metadata. Route `onApproval` back to the
 permission-aware server operation. This renderer does not authorize execution:
 the server must correlate the request to its user and resource, enforce current
 permissions, and reject changed or already-resolved requests. Repeat the review

@@ -1128,6 +1128,11 @@ An installation with a large backlog drains it over time. PostgreSQL reuses
 the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
 See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
 
+### Assistant approval choices
+
+**Always approve** is no longer offered on Assistant questions; choices made
+earlier still apply until the next major release.
+
 ### Record why routines stop
 
 This release gives every paused routine and every routine that needs its owner
