@@ -65,7 +65,7 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
-Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
+Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu unless `addOpensCommands` opens the command list; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
@@ -559,7 +559,7 @@ type ChatComposerProps = {
   runningSubmitIntent?: "steer" | "queue"; onStop?: () => void | Promise<void>;
   onError?: (error: unknown) => void; state?: ChatComposerState; attachments?: readonly ChatAttachment[];
   onAttachmentsChange?: (attachments: readonly ChatAttachment[]) => void; fileSelection?: ChatFileSelection;
-  onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; models?: readonly ChatModelOption[];
+  onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; addOpensCommands?: boolean; models?: readonly ChatModelOption[];
   selectedModelId?: string | null; onModelChange?: (modelId: string) => void;
   commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData;
   commandSections?: readonly ChatCommandSection[]; commandScopes?: readonly ChatCommandScope[];
@@ -761,6 +761,33 @@ control its ranges with `mentions` and `onMentionsChange`. The submitted text is
 untrimmed so UTF-16 range offsets remain valid. A modified reference becomes
 plain text; undo/redo restores both text and reference identity.
 
+Set `addOpensCommands` to let **+** open the same list as `/`, with a search
+field on top. This works in both composer variants when `commands` or
+`searchCommands` is provided. The search field takes focus and owns the
+combobox attributes; the textarea keeps its text. Typing filters the same rows,
+and Tab on a scope row writes its narrowing word into the search field.
+Ctrl/⌘+Enter closes the list and sends, as it does from the textarea.
+The panel keeps its opening height while results change.
+
+A reference inserts at the textarea caret stored when **+** was pressed. If
+text was selected, it inserts at the selection's end and preserves that text.
+A space separates the name from a preceding non-whitespace character, and a
+space follows the name. Reference ranges cover only the name; undo restores
+text and reference identity in one step. If the draft becomes shorter while
+the list is open, insertion stays within its current length.
+
+Escape, **+** again, Back on a phone, or an outside press closes the list and
+restores the textarea's focus and selection. An outside press with any pointer
+type acts only to close the list; it does not activate anything underneath.
+Pressing the textarea closes the list and lets that press place the caret.
+Moving focus elsewhere, such as with Shift+Tab, closes without taking focus
+back. Changing `draftKey` closes the list too.
+
+With this option, `menuActions` are not shown. Offer those actions as command
+rows and file selection as a row with `attachFiles: true`. That row uses
+`fileSelection`, including its `choose` callback. Closing a picker without a
+choice restores the draft and the stored selection.
+
 Pass the task list through `accessory`. An empty conditional accessory reserves no
 row or spacing, including after mount. Suggestions use that same location and
 restore the task list without changing its open state. Without an accessory, they
@@ -808,7 +835,9 @@ and shows the surface with a ring while it has focus; only its paint changes.
 Formatting, emoji, and the microphone sit inside the field at its end. Send is
 dimmed until there is something to send. With `fileSelection` alone, the
 attach button opens the file choice directly; with `menuActions`, it opens the
-add menu. The footer props of the assistant prompt (`models`, `modelDetails`,
+add menu. With `addOpensCommands` and commands available, **+** opens the
+command list and its search field instead; offer file selection as an
+`attachFiles` row. The footer props of the assistant prompt (`models`, `modelDetails`,
 `contextUsage`, `contextActions`, `contextPopupAction`, `footerTools`,
 `submitTools`, `footerContent`) have no place in this row and are not rendered.
 

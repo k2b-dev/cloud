@@ -10886,6 +10886,62 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 @keyframes k2b-chat-command-placeholder { 50% { opacity: 0.45; } }
 
+/* Opened from "+": the panel is the surface, with the search field on top and the list scrolling below it. It keeps
+   the height it opened with (the script sets `--k2b-chat-command-held`), so neither the field nor the first row moves
+   while the person types or rows arrive; the space above the composer still bounds it. */
+.k2b-ui .k2b-chat-composer-accessory[data-search] {
+  display: flex;
+  flex-direction: column;
+  height: var(--k2b-chat-command-held, auto);
+  max-height: min(27rem, var(--k2b-chat-command-space, 27rem));
+  overflow: hidden;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+}
+.k2b-ui .k2b-chat-composer-accessory[data-search] > .k2b-chat-composer__commands {
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+  align-content: start;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+/* An inset field on the panel, aligned with the rows below it. It holds the focus the whole time the panel is open,
+   so the caret marks it and no ring adds a box inside the panel. */
+.k2b-ui .k2b-chat-composer__command-search {
+  display: flex;
+  height: 2.25rem;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.375rem 0.375rem 0;
+  padding: 0 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-muted);
+  background: var(--k2b-surface-muted);
+}
+.k2b-ui .k2b-chat-composer__command-search > i { flex: none; font-size: 1rem; }
+.k2b-ui .k2b-chat-composer__command-search > input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+}
+.k2b-ui .k2b-chat-composer__icon-action[aria-haspopup="listbox"][aria-expanded="true"] {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
 /* On a phone the command list is a sheet directly above the field and the
    keyboard: as wide as the composer's column (the script measures how far it
    reaches past the composer), rounded at the top, flush with the composer's
@@ -10938,6 +10994,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
   .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-end {
     height: 1.25rem;
+  }
+  /* From "+", the panel is the sheet and the list scrolls inside it, below the search field. */
+  .k2b-ui .k2b-chat-composer-accessory[data-search] {
+    max-height: calc(var(--k2b-chat-command-space, 24rem) - var(--k2b-chat-command-safe-top, 0px));
+    border-width: 1px 0 0;
+    border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
+    box-shadow: var(--k2b-shadow-sheet);
+    overscroll-behavior: contain;
+    animation: k2b-chat-command-sheet-enter var(--k2b-motion-sheet) var(--k2b-ease-out);
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-search] > .k2b-chat-composer__commands {
+    max-height: none;
+    border-width: 0;
+    border-radius: 0;
+    box-shadow: none;
+    animation: none;
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-search] .k2b-chat-composer__command-search {
+    height: 2.75rem;
+    margin: 0.75rem max(0.5rem, env(safe-area-inset-right, 0px)) 0 max(0.5rem, env(safe-area-inset-left, 0px));
   }
 }
 @keyframes k2b-chat-command-sheet-enter {
@@ -13692,6 +13768,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui .k2b-choice-search > input,
   .k2b-ui .k2b-emoji-picker__search > input,
+  .k2b-ui .k2b-chat-composer__command-search > input,
   .k2b-ui .k2b-pin-input__digit {
     font-size: max(1rem, 16px);
     line-height: 1.25rem;
