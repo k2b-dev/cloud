@@ -5,9 +5,11 @@ const SCROLL_PRESERVE_SELECTOR = "[data-scroll-preserve]";
 /** Where an installed page swap keeps its per-document state (see nav-swap.ts). */
 export const swapKey = Symbol.for("@k2b/ssr/nav-swap");
 
+type SharedSwap = typeof globalThis & { [swapKey]?: { active?: AbortController; counter: number } };
+
 /** Any newer navigation wins over a pending page swap. Without an installed swap this does nothing. */
 export const cancelPageSwap = (): void => {
-  const shared: typeof globalThis & { [swapKey]?: { active?: AbortController } } = globalThis;
+  const shared: SharedSwap = globalThis;
   shared[swapKey]?.active?.abort();
 };
 
@@ -107,6 +109,10 @@ export const resolveNavigationUrl = (href: string): URL => new URL(href, documen
  */
 export const navigate = (href: string, options: EnhancedNavigateOptions = {}): void => {
   cancelPageSwap();
+  // A page swap that commits before a deferred commit runs is the newer navigation; without install both stay undefined.
+  const shared: SharedSwap = globalThis;
+  const swap = shared[swapKey];
+  const page = swap?.counter;
   const url = resolveNavigationUrl(href);
   if (url.origin !== window.location.origin) {
     documentNavigate(url.href, { replace: options.replace });
@@ -118,6 +124,7 @@ export const navigate = (href: string, options: EnhancedNavigateOptions = {}): v
   const target = `${url.pathname}${url.search}${url.hash}`;
 
   const commit = () => {
+    if (swap && swap.counter !== page) return;
     const hasExplicitState = Object.prototype.hasOwnProperty.call(options, "state");
     const state = hasExplicitState ? options.state : options.replace ? window.history.state : null;
 

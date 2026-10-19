@@ -1233,3 +1233,28 @@ test.each(["native", "stopped", "prevented"])("a %s hash-link popstate after a s
   expect(reload).toHaveBeenCalledTimes(kind === "prevented" ? 1 : 0);
   expect(window.history.state).toEqual(kind === "prevented" ? null : current);
 });
+
+test("a deferred navigate() commit that a newer swap overtook does not push its URL", async () => {
+  install();
+  const pending: (() => void | Promise<void>)[] = [];
+  Object.defineProperty(document, "startViewTransition", {
+    configurable: true,
+    value: (callback: () => void | Promise<void>) => pending.push(callback),
+  });
+  try {
+    navigate("/app/old?tab=2");
+    spyOn(globalThis, "fetch").mockResolvedValue(response());
+    await swapPage("/app/new");
+    expect(pending).toHaveLength(1);
+    await pending[0]!();
+    expect(window.location.pathname).toBe("/app/new");
+    expect(window.location.search).toBe("");
+    expect(window.history.state["@k2b/ssr/nav"]).toMatch(/:2$/);
+    // A navigate() from the new page still commits after its own deferral.
+    navigate("/app/new?tab=3");
+    await pending[1]!();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/app/new?tab=3");
+  } finally {
+    Reflect.deleteProperty(document, "startViewTransition");
+  }
+});
