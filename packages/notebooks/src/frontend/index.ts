@@ -1,4 +1,4 @@
-import { type AuthContext, auth } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
 import notebookAttachmentsPage from "./[id]/attachments/page";
@@ -7,9 +7,14 @@ import notebookTagPage from "./[id]/tags/[tag]/page";
 import notebooksAdminPage from "./admin";
 import notebooksPage from "./page";
 
-export const adminPages = new Hono<AuthContext>().get("/", auth.requireRole("admin", ssr.access), ...notebooksAdminPage);
+export const adminPages = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
+  .get("/", auth.requireRole("admin", ssr.access), ...notebooksAdminPage);
 
 export default new Hono<AuthContext>()
+  .use("/", middleware.noTransform())
+  .use("/:id", middleware.noTransform())
+  .use("/:id/*", middleware.noTransform())
   .get("/", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notebooksPage)
   // Both `/notebooks/:id` and `/notebooks/:id/notes/:noteId` hit the same
   // SSR handler — the latter just supplies a `noteId` route param. The

@@ -8,6 +8,7 @@ import {
   getTimeZone,
   hasPermission,
   jsonResponse,
+  middleware,
   rateLimit,
   requiresAuth,
   respond,
@@ -562,6 +563,20 @@ const resolveItemFilter = async <T extends { tagIds?: string[]; columnIds?: stri
 import widgetRoutes from "./widgets";
 
 const app = new Hono<AuthContext>()
+  // Assignee, claimant and reaction names remain live after their authors lose Space access.
+  .use("/:id/items", middleware.noTransform())
+  .use("/:id/items/*", middleware.noTransform())
+  .use("/items/:itemId", middleware.noTransform())
+  .use("/items/:itemId/*", middleware.noTransform())
+  .use("/resolve", middleware.noTransform())
+  .use("/resolve/*", middleware.noTransform())
+  .use("/workspace/view", middleware.noTransform())
+  .use("/workspace/view/*", middleware.noTransform())
+  .use("/:id/settings-context", middleware.noTransform())
+  .use("/:id/settings-context/*", middleware.noTransform())
+  .use("/", middleware.noTransform())
+  .use("/overview/search", middleware.noTransform())
+  .use("/overview/search/*", middleware.noTransform())
   .route("/widget", widgetRoutes)
   .route("/live", spacesLive.routes(spacesLiveChannels))
   .route("/ws", legacyLiveRoutes)
@@ -3241,6 +3256,7 @@ const CalendarItemListSchema = z.array(CalendarItemSchema);
 const OverlapItemListSchema = z.array(OverlapItemSchema);
 
 const calendarApp = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(auth.requireRole("authenticated"))
 
   .get(

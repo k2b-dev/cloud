@@ -4,9 +4,12 @@ import { SettingUnreadableError, settingsService } from "@k2b/cloud/services";
 import { session } from "@k2b/cloud/services/session";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { ok } from "@k2b/stdlib";
+import { stubRouterInfrastructure } from "../../../scripts/fixtures/no-transform";
 
 test("Gateway Ops forwards explicit replacement and preserves unreadable conflicts", async () => {
   const limit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
+  // The compression router guard may have imported ./api first, so the real limiter can still run.
+  const infrastructure = stubRouterInfrastructure();
   const clock = spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-02T03:04:05Z"));
   const user = buildProjectedUser({
     id: "00000000-0000-4000-8000-000000000001",
@@ -39,6 +42,6 @@ test("Gateway Ops forwards explicit replacement and preserves unreadable conflic
     expect((await request(true)).status).toBe(200);
     expect(update).toHaveBeenLastCalledWith({ key, value: "new", replaceUnreadable: true });
   } finally {
-    for (const spy of [update, authenticate, clock, limit]) spy.mockRestore();
+    for (const spy of [update, authenticate, clock, limit, ...infrastructure]) spy.mockRestore();
   }
 });

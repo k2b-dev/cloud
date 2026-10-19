@@ -1,8 +1,7 @@
-import { type AuthContext, auth, getLocale, rateLimit } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware, rateLimit } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { ssr } from "../config";
-import { gridsService } from "../service";
 import documentTemplatePage from "./[baseId]/document/[documentTableId]/[documentTemplateId]/page";
 import documentsPage from "./[baseId]/documents/page";
 import baseDetailPage from "./[baseId]/page";
@@ -13,7 +12,6 @@ import tableRecordsPage from "./[baseId]/table/[tableId]/page";
 import viewRecordsPage from "./[baseId]/table/[tableId]/view/[viewId]/page";
 import adminPage from "./admin";
 import customAppPage from "./custom-app/page";
-import { resolveGridsMessages } from "./messages";
 import indexPage from "./page";
 import { publicDocumentLinkDownload } from "./public/documents/[token]/download";
 import publicDocumentPage from "./public/documents/[token]/page";
@@ -22,6 +20,7 @@ import recordEventFailuresPage from "./record-event-failures";
 
 /** Admin pages mounted at `/admin/grids` — platform-admin only. */
 export const adminRoutes = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .get("/", auth.requireRole("admin", ssr.access), ...adminPage)
   .get("/:baseId/record-event-failures", auth.requireRole("admin", ssr.access), ...recordEventFailuresPage);
 
@@ -32,6 +31,7 @@ const auditRequestContext = (c: Context<AuthContext>) => ({
 
 /** Public pages mounted at `/share/grids` — anonymous-friendly. */
 export const publicRoutes = new Hono<AuthContext>()
+  .use("/documents/*", middleware.noTransform())
   .get("/forms/:token", auth.requireRole("*"), ...publicFormPage)
   .get("/documents/:token/download", rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }), auth.requireRole("*"), (c) =>
     publicDocumentLinkDownload(c, auditRequestContext(c)),
@@ -40,6 +40,7 @@ export const publicRoutes = new Hono<AuthContext>()
 
 /** Standalone published Apps mounted at `/apps`. */
 export const customAppRoutes = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .get("/:shortId/:pageId", auth.requireRole("*"), ...customAppPage)
   .get("/:shortId", auth.requireRole("*"), ...customAppPage);
 
@@ -58,6 +59,7 @@ export const customAppRoutes = new Hono<AuthContext>()
  *   /:base                               → workspace shell/default redirect
  */
 export default new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .get("/", auth.requireRole("user", ssr.access), ...indexPage)
   // Old edit URLs redirect to the canonical in-context edit mode.
   .get("/:baseId/table/:tableId/view/:viewId/edit", auth.requireRole("user", ssr.access), (c) =>
