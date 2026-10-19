@@ -1121,6 +1121,21 @@ test.each([
   expect(document.title).toBe("old");
 });
 
+test("relative head stylesheets keep where they loaded after a swap into another directory", async () => {
+  document.querySelector('link[rel="stylesheet"]')!.setAttribute("href", "theme.css");
+  install();
+  const page = (label: string, href: string) => html(label).replace('href="/base.css"', `href="${href}"`);
+  const fetch = spyOn(globalThis, "fetch").mockResolvedValue(response(page("new", "../theme.css"), {}, "https://example.test/app/sub/new"));
+  await swapPage("/app/sub/new");
+  expect(window.location.pathname).toBe("/app/sub/new");
+  // The kept sheet is still /app/theme.css: `theme.css` from here would be /app/sub/theme.css.
+  fetch.mockResolvedValue(response(page("other", "theme.css"), {}, "https://example.test/app/sub/other"));
+  await swapPage("/app/sub/other");
+  expect(assign).toHaveBeenCalledTimes(1);
+  expect(assign).toHaveBeenCalledWith("https://example.test/app/sub/other");
+  expect(document.title).toBe("new");
+});
+
 test("an early 403 on the current URL with a hash reloads without changing history", async () => {
   install();
   window.history.replaceState(window.history.state, "", "/app/old#section");

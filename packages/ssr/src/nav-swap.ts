@@ -12,6 +12,8 @@ type SwapState = {
   /** The page marker of the shown server page; island-owned state may leave it undefined. */
   currentPage: unknown;
   trusted: boolean;
+  /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
+  headBase: string;
   fragment?: { event: MouseEvent; href: string };
 };
 const swappedKey = Symbol.for("@k2b/ssr/nav-swap/swapped");
@@ -125,6 +127,8 @@ export function installPageSwap(): () => void {
     counter: 0,
     // A reload keeps the entry's marker; that document then also shares history with other server pages.
     currentPage: marker(window.history.state),
+    // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
+    headBase: navigation?.name || window.location.href,
     // Only a fresh document without a swap can trust unmarked island entries.
     trusted: shared[swappedKey] !== document && (navigation === undefined || ("type" in navigation && navigation.type === "navigate")),
     uninstall: () => {
@@ -306,7 +310,8 @@ export async function swapPage(href: string, options: { replace?: boolean } = {}
       prefix !== document.querySelector("script[data-ssr-assets]")?.getAttribute("data-ssr-assets") ||
       (!prefix && wrappers(parsed.root).length > 0) ||
       !compatibleBase(fetched, finalUrl) ||
-      stylesheets(document, document.baseURI) !== stylesheets(fetched, baseOf(fetched, finalUrl))
+      stylesheets(document, document.querySelector("base[href]") ? document.baseURI : state.headBase) !==
+        stylesheets(fetched, baseOf(fetched, finalUrl))
     ) {
       fail();
       return;
