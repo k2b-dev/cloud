@@ -26,8 +26,11 @@ export default function MailRecipientInput(props: {
   const [query, setQuery] = createSignal("");
   const [suggestions, setSuggestionList] = createSignal<RecipientSuggestion[]>([]);
   const [activeIndex, setActiveIndex] = createSignal(-1);
-  const setSuggestions = (next: RecipientSuggestion[]) => {
+  /** The query the shown list answers; while a newer lookup is pending the list stays visible but not keyboard-selectable. */
+  let suggestionsQuery = "";
+  const setSuggestions = (next: RecipientSuggestion[], forQuery = "") => {
     setActiveIndex(-1);
+    suggestionsQuery = forQuery;
     setSuggestionList(next);
   };
   const [loading, setLoading] = createSignal(false);
@@ -59,6 +62,7 @@ export default function MailRecipientInput(props: {
   const handleSuggestionKey = (event: KeyboardEvent): boolean => {
     const count = suggestions().length;
     if (count === 0) return false;
+    if (event.key !== "Escape" && suggestionsQuery !== query().trim()) return false;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
@@ -196,7 +200,7 @@ export default function MailRecipientInput(props: {
             merged.push({ label: item.displayName ?? address, address, context: null, source: "mailbox" });
           }
         }
-        setSuggestions(merged);
+        setSuggestions(merged, value);
       } catch (error) {
         if (!disposed && controller === request && !(error instanceof DOMException && error.name === "AbortError")) {
           setSuggestions([]);

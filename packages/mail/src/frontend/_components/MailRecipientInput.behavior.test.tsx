@@ -220,6 +220,9 @@ if (!isServer)
       input.value = "grace@example.test";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       expect(input.getAttribute("aria-activedescendant")).toBeNull();
+      // The old list answers another query, so the arrow keys cannot pick from it before the new lookup ends.
+      press(input, "ArrowDown");
+      expect(input.getAttribute("aria-activedescendant")).toBeNull();
       press(input, "Enter");
       expect(recipients).toEqual(["grace@example.test"]);
       recipients = [];
