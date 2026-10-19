@@ -1,10 +1,10 @@
 import type {
-  AiOpenQuestion,
-  AiOpenQuestions,
   AiChatTaskView,
   AiConversation,
   AiConversationPage,
   AiConversationTimelineEntry,
+  AiOpenQuestion,
+  AiOpenQuestions,
   AiProject,
   AiPublicModelProfile,
   AiSettingsError,
@@ -105,10 +105,10 @@ import {
   assistantConversationIdFromHref,
   assistantMessageHref,
   assistantMessageSeqFromHref,
-  assistantQuestionAnchorFromHref,
-  assistantQuestionHref,
   assistantProjectHref,
   assistantProjectIdFromHref,
+  assistantQuestionAnchorFromHref,
+  assistantQuestionHref,
 } from "./assistant-navigation";
 import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
@@ -800,8 +800,10 @@ export default function AssistantWorkspace(props: Props) {
   /** Lands on the question the URL names, after a reload or Back, once its chat shows it. */
   const landOnQuestion = async (anchor: string) => {
     const navigation = navigationRequest;
+    const jump = questionJump;
     const conversationId = chat.activeConversationId();
-    const current = () => navigation === navigationRequest && chat.activeConversationId() === conversationId;
+    // A jump the person starts meanwhile wins, also one within this chat.
+    const current = () => navigation === navigationRequest && jump === questionJump && chat.activeConversationId() === conversationId;
     // After the frame in which the composer takes the page's first focus.
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     if (current()) await waitingFocus.focus(anchor, current);

@@ -629,6 +629,29 @@ describe("Waiting for you", () => {
     }
   }, 60_000);
 
+  test("a jump started while a reload still looks for a question that is gone keeps its focus", async () => {
+    const { page, unexpected, close } = await open(desktop, { locale: "de", scenario: "three" });
+    try {
+      await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&question=tool-gone");
+      await strip(page).waitFor();
+      // The landing looks for the gone question for 60 frames, then gives the focus to the composer.
+      await strip(page).locator(".assistant-waiting__entry").nth(1).click();
+      await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence focused");
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            let frames = 0;
+            const tick = () => (++frames > 90 ? resolve() : requestAnimationFrame(tick));
+            requestAnimationFrame(tick);
+          }),
+      );
+      expect(await focusedSentence(page)).toBe("tool-del-1");
+      expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
   for (const view of [desktop, phone, panel])
     test(`the slash list at ${view.name} opens over the row without moving it or the field`, async () => {
       const { page, close } = await open(view, { locale: "de", scenario: "three" });
