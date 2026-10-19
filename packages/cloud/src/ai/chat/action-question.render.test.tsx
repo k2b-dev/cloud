@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { createDomTestHarness } from "../../../../ui/test/dom";
 import { capabilityActionReviewIssues } from "../../_internal/capability-reviews";
 import { CapabilityActionCallReviewSchema } from "../../contracts/capabilities";
 import type { AiTurnBlock } from "../protocol";
@@ -62,20 +63,21 @@ const renderTurn = (
     }),
   );
 
-/** Visible text without tags, so assertions read like the card. */
-const text = (html: string) =>
-  html
-    .replace(/<!--[^>]*-->/g, "")
-    // A person chip's initials are decoration; screen readers and people read the name.
-    .replace(/<span class="k2b-reference__avatar" aria-hidden="true">.*?<\/span><\/span>/g, "")
-    .replace(/<\/(dt|p|li|div|button|a|b)>/g, "</$1> ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, " ");
+/** Only for reading the HTML: the render itself runs without browser globals. */
+const parser = (() => {
+  const dom = createDomTestHarness();
+  dom.cleanup();
+  return new dom.window.DOMParser();
+})();
+
+/** Visible text, parsed rather than stripped, so assertions read like the card. */
+const text = (html: string) => {
+  const body = parser.parseFromString(html, "text/html").body;
+  // A person chip's initials are decoration; screen readers and people read the name.
+  for (const avatar of body.querySelectorAll(".k2b-reference__avatar")) avatar.remove();
+  for (const element of body.querySelectorAll("dt, p, li, div, button, a, b")) element.after(" ");
+  return (body.textContent ?? "").replace(/\s+/g, " ");
+};
 
 const decided = (block: ToolBlock, patch: Partial<ToolBlock>): ToolBlock => ({
   ...block,
