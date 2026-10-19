@@ -132,11 +132,19 @@ export const createBaseStore = ({
     },
     async database(row: StoreRow, db: typeof sql) {
       const database = names(row).database;
-      const [exists] = await this.query(`EXISTS DATABASE ${database}`);
+      // CREATE DATABASE can survive a rollback of this step. An empty database
+      // still needs version 0 even when Postgres retains the old schema ledger.
+      const [exists] = await this.query(`EXISTS TABLE ${database}._sources`);
       if (!Number(exists?.result)) await db`UPDATE pulse.base_stores SET schema_version=0 WHERE base_id=${row.base_id}::uuid`;
       await this.query(`CREATE DATABASE IF NOT EXISTS ${database}`);
     },
     async schema(row: StoreRow, db: typeof sql) {
+      if (row.schema_version === 0) {
+        // Rebuilding an empty database invalidates every control-plane mirror.
+        // Commit these flags with the first schema version, so retries cannot lose them.
+        await db`UPDATE pulse.sources SET mirror_pending=true WHERE base_id=${row.base_id}::uuid AND NOT deleted`;
+        await db`UPDATE pulse.metric_series SET mirrored=false WHERE base_id=${row.base_id}::uuid`;
+      }
       for (const version of BASE_SCHEMA_VERSIONS) {
         if (row.schema_version >= version.version) continue;
         for (const statement of version.statements(ctx(row))) await this.query(statement);

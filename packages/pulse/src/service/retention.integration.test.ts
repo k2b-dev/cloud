@@ -13,6 +13,32 @@ suiteFor(
   "clickhouse",
 )("Pulse sealed raw partition retention", () => {
   beforeAll(installFixtureStore, 30000);
+  test("expired series are tombstoned before their registry budget is freed, with failed inserts retried", async () => {
+    const f = await writeFixture("series-tombstone");
+    try {
+      await f.stopMerges();
+      await sql`UPDATE pulse.base_stores SET max_series=1 WHERE base_id=${f.base.id}::uuid`;
+      assertWrite(await f.write({ metrics: [{ name: "load", value: 1, dimensions: { host: "old" } }] }));
+      const replacement = { metrics: [{ name: "load", value: 2, dimensions: { host: "new" } }] };
+      expect(await f.write(replacement)).toMatchObject({ ok: false, error: { status: 400 } });
+      await sql`UPDATE pulse.metric_series SET last_seen_at=${new Date("2025-01-01T00:00:00Z")},last_sample_at=${new Date("2025-01-01T00:00:00Z")} WHERE base_id=${f.base.id}::uuid`;
+      const run = createRetention({ store: f.store });
+      f.failInsert(1);
+      await expect(run(f.base.id)).rejects.toThrow();
+      expect(await sql`SELECT id FROM pulse.metric_series WHERE base_id=${f.base.id}::uuid`).toHaveLength(1);
+      expect(await f.read("series")).toHaveLength(1);
+      f.recover();
+      expect((await run(f.base.id)).registryRecords).toBe(2);
+      expect(await f.read("series")).toHaveLength(0);
+      expect(await sql`SELECT id FROM pulse.metric_series WHERE base_id=${f.base.id}::uuid`).toHaveLength(0);
+      // Same frozen acceptance time: the tombstone must still outrank the original mirror.
+      expect(await f.read("_series", "deleted", "FINAL")).toEqual([{ deleted: 1 }]);
+      assertWrite(await f.write(replacement));
+      expect(await f.read("series", "dimensions")).toEqual([{ dimensions: JSON.stringify({ host: "new" }) }]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("#7 sealed hours reject writes, whole days require sealing, and lag reaches the admin contract", async () => {
     const f = await writeFixture("retention"),
       run = createRetention({ store: f.store });

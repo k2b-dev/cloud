@@ -161,6 +161,8 @@ export const BASE_SCHEMA_VERSIONS = [
         AS SELECT state_key, variant_key, value, dimensions, resource_key, source_id, updated_at, version FROM ${db}._states_current`,
         `CREATE OR REPLACE VIEW ${db}.states DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT state_key, variant_key, ${columns.map((c) => `argMax(tuple(src.${c}), tuple(src.updated_at, src.version)).1 AS ${c}`).join(", ")} FROM ${db}._states_current AS src GROUP BY state_key, variant_key`,
         `CREATE OR REPLACE VIEW ${db}.sources DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT id, short_id, kind, name FROM (SELECT id, argMax(src.short_id,src.version) AS short_id, argMax(src.kind,src.version) AS kind, argMax(src.name,src.version) AS name, argMax(src.deleted,src.version) AS deleted FROM ${db}._sources AS src GROUP BY id) WHERE deleted=0`,
+        `ALTER TABLE ${db}._series ADD COLUMN IF NOT EXISTS deleted UInt8 DEFAULT 0`,
+        `CREATE OR REPLACE VIEW ${db}.series DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT series_id, metric, type, unit, source_id, resource_key, resource_type, resource_id, dimensions FROM ${db}._series FINAL WHERE deleted=0`,
       ];
     },
   },

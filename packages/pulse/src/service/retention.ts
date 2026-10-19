@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { assertStoreName } from "../store/base-schema";
 import { baseStore } from "../store/base-store";
 import { dropExpiredRawPartition } from "../store/maintenance";
 import { requireBaseWritable } from "./access-control";
@@ -85,9 +86,22 @@ export const createRetention =
           DELETE FROM pulse.metric_hours h USING victims v WHERE h.base_id=${base.id}::uuid AND h.hour=v.hour`;
         result.hourRecords += hours.count;
         // T1 refreshes last_seen_at before any insert, preserving series identities for pending retries.
-        const series =
-          await tx`WITH victims AS(SELECT id FROM pulse.metric_series WHERE base_id=${base.id}::uuid AND coalesce(last_seen_at,created_at)<${registryCutoff} AND (last_sample_at IS NULL OR last_sample_at<${registryCutoff}) LIMIT ${BATCH})
-          DELETE FROM pulse.metric_series s USING victims v WHERE s.id=v.id`;
+        const expiredSeries = await tx<{ id: string }[]>`SELECT id FROM pulse.metric_series
+          WHERE base_id=${base.id}::uuid AND coalesce(last_seen_at,created_at)<${registryCutoff}
+          AND (last_sample_at IS NULL OR last_sample_at<${registryCutoff}) ORDER BY id LIMIT ${BATCH} FOR UPDATE`;
+        const seriesIds = expiredSeries.map((s) => s.id);
+        if (seriesIds.length) {
+          const database = assertStoreName(b.database_name, store.prefix);
+          // FINAL keeps the current mirror. A strictly higher version wins before and after merges,
+          // including retries after the ClickHouse insert succeeded but the SQL transaction failed.
+          await store.query(
+            `INSERT INTO ${database}._series (series_id,metric,type,unit,source_id,resource_key,resource_type,resource_id,dimensions,version,deleted)
+            SELECT series_id,metric,type,unit,source_id,resource_key,resource_type,resource_id,dimensions,version+1,toUInt8(1)
+            FROM ${database}._series FINAL WHERE series_id IN {series:Array(UUID)}`,
+            { series: `[${seriesIds.map((id) => `'${id}'`).join(",")}]` },
+          );
+        }
+        const series = await tx`DELETE FROM pulse.metric_series WHERE id=ANY(${sql.array(seriesIds, "UUID")})`;
         const defs =
           await tx`WITH victims AS(SELECT id FROM pulse.metric_defs d WHERE base_id=${base.id}::uuid AND NOT EXISTS(SELECT 1 FROM pulse.metric_series s WHERE s.metric_id=d.id) LIMIT ${BATCH}) DELETE FROM pulse.metric_defs d USING victims v WHERE d.id=v.id`;
         const kinds =

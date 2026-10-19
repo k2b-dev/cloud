@@ -156,6 +156,12 @@ export const registerIngestBatch = async (params: {
     const s = seriesByKey.get(JSON.stringify([m.name, m.seriesKey]));
     return s?.last_sample_at && Date.parse(m.ts) < s.last_sample_at.getTime() ? [{ series_id: s.id, ts: m.ts }] : [];
   });
+  // Commit the high-water mark in T1: ClickHouse samples survive a later T2 rollback.
+  // Compare against the previous mark above; an ahead-of-store mark only adds a bounded lookup.
+  if (batch.metrics.length)
+    await db`UPDATE pulse.metric_series s SET last_sample_at=greatest(s.last_sample_at,i.ts)
+    FROM (SELECT name,"seriesKey",max(ts) AS ts FROM jsonb_to_recordset((${JSON.stringify(batch.metrics)}::jsonb #>> '{}')::jsonb) AS i(name text,"seriesKey" text,ts timestamptz) GROUP BY name,"seriesKey") i,pulse.metric_defs d
+    WHERE d.base_id=${baseId}::uuid AND d.name=i.name AND s.metric_id=d.id AND s.series_key=i."seriesKey"`;
   const touched = batch.metrics.map((m) => m.ts);
   if (late.length) {
     const database = assertStoreName(params.database, store.prefix);
@@ -300,8 +306,8 @@ export const writePreparedIngestBatchInTransaction = async (params: {
     SELECT ${baseId}::uuid,key,"variantKey",ts,hash,version FROM jsonb_to_recordset((${JSON.stringify([...updates.values()])}::jsonb #>> '{}')::jsonb) AS i(key text,"variantKey" text,ts timestamptz,hash text,version bigint)
     ON CONFLICT(base_id,state_key,variant_key) DO UPDATE SET updated_at=EXCLUDED.updated_at,value_hash=EXCLUDED.value_hash,version=EXCLUDED.version`;
   if (batch.metrics.length)
-    await db`UPDATE pulse.metric_series s SET mirrored=true,last_seen_at=greatest(s.last_seen_at,${now}::timestamptz),last_sample_at=greatest(s.last_sample_at,i.ts)
-    FROM (SELECT name,"seriesKey",max(ts) AS ts FROM jsonb_to_recordset((${JSON.stringify(batch.metrics)}::jsonb #>> '{}')::jsonb) AS i(name text,"seriesKey" text,ts timestamptz) GROUP BY name,"seriesKey") i,pulse.metric_defs d
+    await db`UPDATE pulse.metric_series s SET mirrored=true,last_seen_at=greatest(s.last_seen_at,${now}::timestamptz)
+    FROM (SELECT DISTINCT name,"seriesKey" FROM jsonb_to_recordset((${JSON.stringify(batch.metrics)}::jsonb #>> '{}')::jsonb) AS i(name text,"seriesKey" text)) i,pulse.metric_defs d
     WHERE d.base_id=${baseId}::uuid AND d.name=i.name AND s.metric_id=d.id AND s.series_key=i."seriesKey"`;
   const maxTs = [...batch.metrics, ...batch.events, ...batch.states].reduce((max, s) => (s.ts > max ? s.ts : max), "");
   await db`UPDATE pulse.sources SET last_seen_at=${now}::timestamptz,last_data_at=greatest(last_data_at,${maxTs}::timestamptz),updated_at=${now}::timestamptz WHERE id=${sourceId}::uuid`;

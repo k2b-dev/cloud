@@ -12,6 +12,42 @@ suiteFor(
   "clickhouse",
 )("Pulse ClickHouse hourly values", () => {
   beforeAll(installFixtureStore, 30000);
+  test("a partial write preserves the watermark so an earlier counter dirties and repairs its successor hour", async () => {
+    const f = await writeFixture("partial-counter"),
+      run = createHourlyRollup({ store: f.store });
+    const expire = () =>
+      sql`UPDATE pulse.metric_hours SET lease_until=${new Date(f.clock().getTime() - 1)} WHERE base_id=${f.base.id}::uuid`;
+    try {
+      await f.stopMerges();
+      // _series and _samples succeed; _events fails and rolls back T2 only.
+      f.failInsert(3);
+      expect(
+        await f.write({
+          metrics: [{ name: "requests", type: "counter", value: 30, ts: "2026-10-17T10:05:00Z" }],
+          events: [{ kind: "failed" }],
+        }),
+      ).toMatchObject({ ok: false, error: { status: 503 } });
+      expect(await f.read("samples", "value")).toEqual([{ value: 30 }]);
+      f.recover();
+      await expire();
+      await run(f.base.id);
+      expect(await f.read("rollups", "increase")).toEqual([{ increase: 0 }]);
+      f.setTime("2026-10-17T12:00:00.001Z");
+      assertWrite(await f.writeB({ metrics: [{ name: "requests", type: "counter", value: 10, ts: "2026-10-17T08:05:00Z" }] }));
+      const dirty = await sql<
+        { hour: Date }[]
+      >`SELECT hour FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid AND state='dirty' ORDER BY hour`;
+      expect(dirty.map((r) => r.hour.toISOString())).toEqual(["2026-10-17T08:00:00.000Z", "2026-10-17T10:00:00.000Z"]);
+      await expire();
+      await run(f.base.id);
+      await run(f.base.id);
+      expect(await f.read("rollups", "increase,increase_seconds", "ORDER BY bucket DESC LIMIT 1")).toEqual([
+        { increase: 20, increase_seconds: 7200 },
+      ]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("#3 sparse counters, resets, late corrections, empty hours, and a predecessor after the raw partition is dropped", async () => {
     const f = await writeFixture("rollups"),
       run = createHourlyRollup({ store: f.store });

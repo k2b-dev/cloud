@@ -25,6 +25,9 @@ convention still needs a check or a test.
 | --- | --- | --- |
 | A late domain refusal becomes an infrastructure failure | An ingest reservation commits, then T2 returns a service conflict that a catch-all replaces with 503. | Test: Pulse `service/ingest-controls.integration.test.ts` raises a T2 service refusal after a keyed T1 and expects its own 409. |
 | A merge changes the winning observation | A deduplicated view orders by observation time, but physical replacement orders only by acceptance; later merges silently discard the correct state. | Test: Pulse `service/state-transitions.integration.test.ts` checks state timestamp priority before and after a forced merge and schema replay. |
+| A rollback loses evidence of an external write | A sample survives in ClickHouse while a later insert rolls back its Postgres watermark, so an earlier sample misses its successor hour. | Test: Pulse `service/metric-rollups.integration.test.ts` fails after the sample insert, then checks that an earlier counter dirties and repairs the successor hour. |
+| A registry deletion leaves a visible mirror | Retention frees the Postgres series budget while the ClickHouse series remains visible. | Test: Pulse `service/retention.integration.test.ts` checks failed tombstone inserts, immediate view removal with merges stopped, and reuse of the freed budget. |
+| A schema rebuild keeps stale mirror acknowledgements | A recreated database is empty while Postgres still says its sources and series are mirrored. | Test: Pulse `service/source-mirror.integration.test.ts` rebuilds missing and empty databases through provision and clear, retries source mirrors, and re-mirrors series on the next write. |
 | A mutation’s refresh re-creates a rendered entity’s element | Refetched objects replace retained elements, losing focus and hover and leaving box reads detached. | Tests: Spaces kanban and detail claim tests use `keptThrough()` from `packages/ui/test/browser.ts` to check element identity and height; the held-card test distinguishes a retained card from one leaving its column ([#1391](https://github.com/k2b-dev/cloud/issues/1391)). |
 | A pinned color base drifts from the surface an element uses | A constant pins the background a derived color is mixed over. A shell change moves the element to another token, so the fill no longer matches the contract while value-only drift tests stay green. | Test: `packages/cloud/src/ssr/app-color.test.ts` reads the `.k2b-ui .k2b-app-workspace__sidebar` background declaration from @k2b/ui and checks that the navigation fill's base equals what it resolves to in both themes. |
 | A restored entity shows twice, or a test reads it page-wide | Undo or a refresh puts an item back while the leaving copy still shows, or a page-wide role locator matches two elements. `expect(promise).resolves` hides why the read failed. | Test: the Spaces tray Undo and refresh tests use `mostAtOnce()` from `packages/ui/test/browser.ts`. Convention: scope reads to the entity's row and await reads directly ([#1450](https://github.com/k2b-dev/cloud/issues/1450)). |
@@ -639,6 +642,13 @@ convention still needs a check or a test.
 - **Root cause:** A scrape retained a transaction while ingest reserved another connection, store settings and notification lookups could do the same, seals lived only in pruned rows, retry guidance assumed a key could apply retroactively, and fixtures shared instance health.
 - **Error class:** Pool starvation; lost durable invariants; misleading retry recovery; environment-dependent test contamination.
 - **Guard:** Pulse's two-connection scrape regression, pruned-seal/clear regression, exact partial-write error assertion, injected disk-query fixture guard, and poisoned-health fixture reset regression.
+
+## Pulse watermarks and mirror recovery
+
+- **What happened:** Partial writes left incorrect counter increases; expired series stayed visible; recreated databases lost their source listings.
+- **Root cause:** The watermark committed after external inserts, retention deleted only the registry, and schema rebuilds retained mirror acknowledgements. A database creation surviving a rollback also let the old schema ledger skip the rebuild.
+- **Error class:** Lost evidence of an external write; registry and mirror divergence; stale mirror acknowledgements.
+- **Guard:** Pulse's partial-counter rollup, series tombstone and budget, and missing-database mirror recovery integration tests reproduce each failure before its fix.
 
 ## Add a lesson
 
