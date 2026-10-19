@@ -113,7 +113,7 @@ packages/ui/src/inputs/date-picker-optional-time.browser.test.ts | 2
 packages/ui/src/inputs/date-picker-today.browser.test.ts | 2
 packages/ui/src/inputs/date-picker-weekend.browser.test.ts | 6
 packages/ui/src/inputs/emoji/emoji-picker.browser.test.ts | 6
-packages/ui/src/inputs/signature-input.browser.test.ts | 44
+packages/ui/src/inputs/signature-input.browser.test.ts | 43
 packages/ui/src/layout/app-overview-host.browser.test.ts | 2
 packages/ui/src/layout/container-field-parts.browser.test.ts | 7
 packages/ui/src/layout/detail-float.browser.test.ts | 7
