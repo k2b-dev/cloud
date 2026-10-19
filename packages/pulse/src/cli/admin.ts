@@ -28,11 +28,15 @@ const readPassword = async (flags: { passwordFile?: string; passwordStdin: boole
     throw new Error("Password must be 1–256 characters without control characters.");
   return password;
 };
+/** Request refusals the store API answers with a fixed code; the CLI names them with the page's fix hint. */
+const REQUEST_CODES = new Set(["PASSWORD_REQUIRED", "STORE_BUSY", "INVALID_INPUT", "STORE_NOT_CONFIGURED"]);
 const request = async <T>(ctx: CloudCliContext, path = "", init?: RequestInit): Promise<T> => {
   const response = await ctx.fetch(`/api/pulse/admin/store${path}`, init);
-  const value = await response.json();
+  const value = await response.json().catch(() => null);
   if (!response.ok) {
     if (value?.code === "STORE_CHECK_FAILED" && value.status) reportCheck(ctx, value.status);
+    if (typeof value?.code === "string" && REQUEST_CODES.has(value.code))
+      throw new Error(`${value.code}: ${storeFixHint(value.code, ctx.options.locale)}`);
     // Fixed errors only; never relay a remote message containing request data.
     throw new Error(`Pulse store request failed (${response.status}).`);
   }

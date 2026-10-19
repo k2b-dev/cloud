@@ -919,6 +919,15 @@ describe("Pulse data store administration", () => {
       await unlink(path);
     }
   });
+  test.each(["STORE_NOT_CONFIGURED", "PASSWORD_REQUIRED", "STORE_BUSY"])("a %s refusal names its code and fix", async (code) => {
+    const { storeFixHint } = await import("./frontend/admin/messages");
+    const context = createContext(["admin", "store", "check"], {}, [jsonResponse({ code }, code === "PASSWORD_REQUIRED" ? 400 : 409)]);
+    await expect(pulseCli.run(context.ctx)).rejects.toThrow(`${code}: ${storeFixHint(code)}`);
+  });
+  test("an unknown refusal stays a generic request failure", async () => {
+    const context = createContext(["admin", "store", "check"], {}, [jsonResponse({ code: "SOMETHING_REMOTE", message: "leak" }, 500)]);
+    await expect(pulseCli.run(context.ctx)).rejects.toThrow("Pulse store request failed (500).");
+  });
   for (const ok of [true, false])
     test(`store set --password-file has no secret output (ok=${ok})`, async () => {
       const path = join(tmpdir(), `pulse-store-cli-${crypto.randomUUID()}.password`);

@@ -63,3 +63,8 @@ without admin privileges or inherited admin roles, and without rights to change
 settings profiles, roles, quotas or row policies. `CLICKHOUSE_ERROR:<code>`
 means ClickHouse refused the check for another reason, such as memory; check its
 log and resources, then run `check` again.
+
+Request refusals also name their code and fix: `STORE_NOT_CONFIGURED` when
+`check` runs before a connection is saved, `PASSWORD_REQUIRED` when `set`
+changes the address or user without password input, `STORE_BUSY` while another
+save runs, and `INVALID_INPUT` for a malformed address, user or password.
