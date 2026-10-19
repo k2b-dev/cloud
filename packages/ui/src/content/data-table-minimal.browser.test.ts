@@ -148,6 +148,23 @@ for (const theme of ["light", "dark"])
       }
     });
 
+    test("a loading fill-height table keeps row heights when its rows arrive and announces the wait politely", async () => {
+      const page = await load(theme, "fill=1&loading=1");
+      try {
+        const rows = () =>
+          page.locator("tbody tr.k2b-data-table__row").evaluateAll((items) => items.map((row) => row.getBoundingClientRect().height));
+        expect(await rows()).toEqual([44, 44, 44]);
+        await page.waitForFunction(() =>
+          document.querySelector('[data-k2b-live] [aria-live="polite"]')?.textContent?.includes("Loading rows"),
+        );
+        await page.evaluate("window.showRows()");
+        await page.waitForFunction(() => !document.querySelector("[data-loading]"));
+        expect(await rows()).toEqual([44, 44, 44]);
+      } finally {
+        await page.context().close();
+      }
+    });
+
     test("loading and real rows share geometry in normal and compact density", async () => {
       for (const [density, height] of [
         ["normal", 44],

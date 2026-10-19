@@ -22,7 +22,7 @@ test("only tables wider than eight columns carry data-wide in SSR", () => {
   expect(renderToString(() => table(9))).toContain('data-wide="true"');
 });
 
-test("loading renders bounded row-height placeholders with column alignment and polite status", () => {
+test("loading renders bounded row-height placeholders with column alignment and a loading caption", () => {
   for (const [requested, expected] of [
     [undefined, 5],
     [3.9, 3],
@@ -38,7 +38,8 @@ test("loading renders bounded row-height placeholders with column alignment and 
     expect(html.match(/k2b-data-table__skeleton/g)?.length).toBe(expected * 2);
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('aria-busy="true"');
-    expect(html).toContain('role="status" aria-live="polite"');
+    // The caption names the waiting table; the polite announcement goes through the shared live region in the browser.
+    expect(html).toContain('<caption class="k2b-sr-only">Loading rows</caption>');
     expect(html).toContain('data-align="right"');
     expect(html).toContain("Loading rows");
     expect(html).not.toContain("No records");

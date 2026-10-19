@@ -8,6 +8,7 @@ import {
   For,
   type JSX,
   Match,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -15,6 +16,7 @@ import {
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { announce } from "../feedback/announce";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -491,6 +493,16 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     });
   });
 
+  // Announced once per wait, outside the region that `aria-busy` keeps quiet.
+  createEffect(
+    on(
+      () => !!props.loading && props.rows.length === 0,
+      (waiting) => {
+        if (waiting) announce(dataTableMessages().loadingRows);
+      },
+    ),
+  );
+
   createEffect(() => {
     const rowsLength = props.rows.length;
     const nextHasMore = !!props.hasMore;
@@ -542,9 +554,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
             data-wide={props.columns.length > WIDE_TABLE_COLUMNS ? "true" : undefined}
           >
             <Show when={props.loading}>
-              <caption class="k2b-sr-only" role="status" aria-live="polite">
-                {dataTableMessages().loadingRows}
-              </caption>
+              {/* Names the table while it waits; the announcement goes through the shared live region outside the busy region. */}
+              <caption class="k2b-sr-only">{dataTableMessages().loadingRows}</caption>
             </Show>
             <thead class="k2b-data-table__head" data-sticky={props.stickyHeader === false ? undefined : "true"}>
               <tr class="k2b-data-table__head-row">
@@ -591,6 +602,12 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                         </tr>
                       )}
                     </For>
+                    {/* The spacer takes the spare height while loading too, so rows keep their height when data arrives. */}
+                    <Show when={props.fillHeight}>
+                      <tr aria-hidden="true">
+                        <td class="k2b-data-table__fill" colspan={props.columns.length} />
+                      </tr>
+                    </Show>
                   </Show>
                 }
               >
