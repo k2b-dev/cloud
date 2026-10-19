@@ -754,7 +754,10 @@ suite("AI chat tasks", () => {
       const stale = (await aiChatTasks.get({ userId: user!.id, taskId: older!.short_id }))!;
       expect(stale).toMatchObject({ reasonCode: "failed", reasonAction: null });
       expect(toAiChatTaskView(stale).reason).toEqual({ code: "failed", at: stale.reasonAt! });
-      await expect(sql`UPDATE ai.chat_tasks SET reason_action = ${"A".repeat(201)} WHERE short_id = ${older!.short_id}`).rejects.toThrow();
+      // A Bun SQL query is lazy: execute() starts it so `rejects` sees the CHECK failure.
+      await expect(
+        sql`UPDATE ai.chat_tasks SET reason_action = ${"A".repeat(201)} WHERE short_id = ${older!.short_id}`.execute(),
+      ).rejects.toThrow("ai_chat_tasks_reason_action_length_check");
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
