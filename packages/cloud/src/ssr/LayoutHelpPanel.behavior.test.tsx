@@ -250,6 +250,9 @@ else {
       update(context("spaces", ["first"]));
       // These are the exact snapshot element and event written by the validated context receiver.
       script(PANEL_SHORTCUTS_ELEMENT, [
+        { id: "cloud.search", title: "Open global search", shortcut: "mod+k" },
+        { id: "cloud.help", title: "Open shortcut help", shortcut: "shift+/" },
+        { id: "cloud.panel", title: "Open or close the panel", shortcut: "mod+j" },
         { id: "spaces.new", title: "New Space", shortcut: "mod+n" },
         { id: "spaces.delete", title: "Delete selected", shortcut: "delete", scope: "selection" },
       ]);
@@ -284,4 +287,59 @@ else {
       fixture.cleanup();
     }
   });
+
+  for (const beforeMount of [false, true])
+    test(`panel shortcuts use the host snapshot ${beforeMount ? "received before mount" : "after mount"} and restore the seed for null context`, async () => {
+      const fixture = await setup();
+      const { dom, help } = fixture;
+      const script = (id: string, value: unknown) => {
+        let element = dom.document.getElementById(id);
+        if (!element) {
+          element = dom.document.createElement("script");
+          element.id = id;
+          element.setAttribute("type", "application/json");
+          dom.document.body.append(element);
+        }
+        element.textContent = JSON.stringify(value);
+      };
+      const context = { v: 1, seq: 1, pageId: "22222222-2222-4222-8222-222222222222", app: "spaces" };
+      const snapshot = [
+        { id: "cloud.panel", title: "Open or close the panel", shortcut: "mod+j" },
+        { id: "spaces.new", title: "New Space", shortcut: "mod+n" },
+      ];
+      const titles = (scope: string) =>
+        [...dom.root.querySelectorAll(`[data-help-shortcut-group="${scope}"] .help-shortcut-title`)].map((el) => el.textContent);
+      const seed = ["Open global search", "Open shortcut help", "Open or close the panel"];
+      script(PANEL_CONTEXT_ELEMENT, context);
+      script(PANEL_SHORTCUTS_ELEMENT, beforeMount ? snapshot : []);
+      const dispose = render(
+        () => <help.LayoutHelpPanel documents={documents} app={{ id: "spaces", name: "Spaces" }} platform="other" />,
+        dom.root,
+      );
+      try {
+        if (!beforeMount) {
+          expect(titles("everywhere")).toEqual(seed);
+          // An accepted empty snapshot can emit only the context event.
+          window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
+          expect(titles("everywhere")).toEqual([]);
+          script(PANEL_SHORTCUTS_ELEMENT, snapshot);
+          window.dispatchEvent(new Event(PANEL_SHORTCUTS_CHANGED));
+        }
+        expect(titles("everywhere")).toEqual(["Open or close the panel"]);
+        expect(titles("app")).toEqual(["New Space"]);
+
+        script(PANEL_SHORTCUTS_ELEMENT, []);
+        window.dispatchEvent(new Event(PANEL_SHORTCUTS_CHANGED));
+        expect(titles("everywhere")).toEqual([]);
+        expect(titles("app")).toEqual([]);
+
+        script(PANEL_CONTEXT_ELEMENT, null);
+        window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
+        expect(titles("everywhere")).toEqual(seed);
+        expect(titles("app")).toEqual([]);
+      } finally {
+        dispose();
+        fixture.cleanup();
+      }
+    });
 }

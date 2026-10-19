@@ -22,7 +22,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
-import { onContextChange, openPanel } from "../browser/panel";
+import { getContext, onContextChange, openPanel } from "../browser/panel";
 import { onPanelShortcutsChange, readPanelShortcuts } from "../browser/panel-shortcuts";
 import { HELP_ACCESS_LEVELS, HELP_KINDS } from "../shared/help";
 import { appAccentStyle } from "./app-appearance";
@@ -123,16 +123,27 @@ const StartShortcuts = (props: { appName?: string; panel?: boolean; platform?: K
   const shell = props.panel ? undefined : useShellData();
   const seed: HelpShortcutCommand[] =
     props.panel || shell ? shellShortcuts(platformMessages.resolve([locale()]).t, { panel: props.panel || !!shell?.panel }) : [];
+  let received = false;
   const read = (): HelpShortcutCommand[] => {
-    const commands = props.panel ? readPanelShortcuts() : contextCommandsWithShortcuts();
+    // Once received, the host list is authoritative: omitted shortcuts must stay omitted.
+    if (props.panel) return received && getContext() !== null ? readPanelShortcuts() : seed;
+    const commands = contextCommandsWithShortcuts();
     return [...seed.filter((command) => !commands.some((other) => other.id === command.id)), ...commands];
   };
   const [commands, setCommands] = createSignal<HelpShortcutCommand[]>(props.panel ? seed : read());
   onMount(() => {
     const update = () => setCommands(read());
+    if (props.panel) {
+      received = readPanelShortcuts().length > 0;
+      const receive = () => {
+        received = true;
+        update();
+      };
+      onCleanup(onPanelShortcutsChange(receive));
+      onCleanup(onContextChange(receive));
+    }
     update();
-    if (props.panel) onCleanup(onPanelShortcutsChange(update));
-    else {
+    if (!props.panel) {
       window.addEventListener(COMMANDS_CHANGED, update);
       onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
     }
