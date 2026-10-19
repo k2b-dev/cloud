@@ -36,7 +36,6 @@ import {
   CapabilityErrorSchema,
   CapabilityIdempotencyKeySchema,
   type CapabilityOrigin,
-  CapabilitySemanticLinkSchema,
   capabilityActionPolicy,
   capabilityResultJsonSchema,
 } from "../contracts/capabilities";
@@ -629,35 +628,26 @@ const runCapabilityDispatch = async (
     ? CapabilityActionReviewDataSchema
     : schemaValidator(`${operation.schemaHash}:result`, capabilityResultJsonSchema(operation.dataSchema));
   const parsedResult = resultValidator?.safeParse(upstreamBody.data);
-  const receipt =
-    upstreamBody.data !== null && typeof upstreamBody.data === "object"
-      ? Object.getOwnPropertyDescriptor(upstreamBody.data, "receipt")?.value
-      : undefined;
-  const links = z
-    .array(CapabilitySemanticLinkSchema)
-    .safeParse(
-      upstreamBody.data !== null && typeof upstreamBody.data === "object"
-        ? Object.getOwnPropertyDescriptor(upstreamBody.data, "links")?.value
-        : undefined,
-    );
+  const field = (value: unknown, key: string): unknown =>
+    value !== null && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  const receipt = field(upstreamBody.data, "receipt");
+  const links = field(upstreamBody.data, "links");
   const reviewIssues = params.review
     ? capabilityActionReviewIssues(upstreamBody.data, reviewContext)
     : receipt === undefined
       ? []
       : params.kind === "queries"
         ? ["Queries cannot return a receipt"]
-        : capabilityActionReceiptIssues(receipt, { ...reviewContext, links: links.success ? links.data : undefined });
-  if (!params.review && params.kind === "queries" && !("idempotency" in operation) && capabilityQueryChecksActionOutcome(operation)) {
-    const data =
-      upstreamBody.data !== null && typeof upstreamBody.data === "object"
-        ? Object.getOwnPropertyDescriptor(upstreamBody.data, "data")?.value
-        : undefined;
-    const nestedReceipt = data !== null && typeof data === "object" ? Object.getOwnPropertyDescriptor(data, "receipt")?.value : undefined;
-    if (nestedReceipt !== undefined)
-      reviewIssues.push(
-        ...capabilityActionReceiptIssues(nestedReceipt, { ...reviewContext, links: links.success ? links.data : undefined }),
-      );
-  }
+        : capabilityActionReceiptIssues(receipt, links);
+  const nestedReceipt = field(field(upstreamBody.data, "data"), "receipt");
+  if (
+    !params.review &&
+    params.kind === "queries" &&
+    nestedReceipt !== undefined &&
+    !("idempotency" in operation) &&
+    capabilityQueryChecksActionOutcome(operation)
+  )
+    reviewIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
   if (!resultValidator || !parsedResult?.success || reviewIssues.length > 0) {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.outsideResultSchema({ appId: params.appId }), 502);

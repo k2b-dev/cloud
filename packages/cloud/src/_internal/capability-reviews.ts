@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 import { capabilityPreviewIssues, capabilityReviewFormIssues } from "../capabilities/reviews";
 import {
   CAPABILITY_REACHES,
@@ -7,7 +7,7 @@ import {
   CapabilityActionReceiptSchema,
   CapabilityActionReviewDataSchema,
   type CapabilityQueryManifest,
-  type CapabilitySemanticLink,
+  CapabilitySemanticLinkSchema,
 } from "../contracts/capabilities";
 import { localeFallbackChain } from "../shared/locale";
 import { capabilityHash, projectSchema } from "./capability-schemas";
@@ -70,10 +70,11 @@ export const capabilityActionReviewIssues = (review: unknown, context: Capabilit
   );
   return [...new Set(issues)];
 };
-export const capabilityActionReceiptIssues = (
-  receipt: unknown,
-  context: CapabilityReviewContext & { links?: readonly CapabilitySemanticLink[] },
-): string[] => {
+/** A receipt's own rules; completeness links are the result envelope's top-level `links`. */
+export const capabilityActionReceiptIssues = (receipt: unknown, links: unknown): string[] => {
   const parsed = CapabilityActionReceiptSchema.safeParse(receipt);
-  return parsed.success ? capabilityPreviewIssues(parsed.data.preview, context.links) : schemaIssues(parsed.error);
+  const resultLinks = z.array(CapabilitySemanticLinkSchema).safeParse(links);
+  return parsed.success
+    ? capabilityPreviewIssues(parsed.data.preview, resultLinks.success ? resultLinks.data : undefined)
+    : schemaIssues(parsed.error);
 };

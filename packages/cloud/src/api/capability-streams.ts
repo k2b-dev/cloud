@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
+import { capabilityActionReceiptIssues } from "../_internal/capability-reviews";
 import { getCapability } from "../_internal/registry";
 import { recordCapabilityExecution } from "../capabilities/executions";
 import { exactStream } from "../capabilities/stream-body";
@@ -242,6 +243,17 @@ export async function dispatchCapabilityStream(
       const nested =
         verb === "write" ? parsed.data : "state" in parsed.data && parsed.data.state === "completed" ? parsed.data.result : null;
       if (nested && typeof nested === "object" && "stream" in nested) {
+        await record(502, "STREAM_FAILED");
+        return denied(502, "STREAM_FAILED");
+      }
+      // The same receipt rules as an ordinary Action result, so a stream completion cannot skip them.
+      if (
+        nested &&
+        typeof nested === "object" &&
+        "receipt" in nested &&
+        nested.receipt !== undefined &&
+        (grant.kind !== "actions" || capabilityActionReceiptIssues(nested.receipt, "links" in nested ? nested.links : undefined).length > 0)
+      ) {
         await record(502, "STREAM_FAILED");
         return denied(502, "STREAM_FAILED");
       }

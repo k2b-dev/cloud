@@ -34,7 +34,6 @@ import {
   type CapabilityQueryManifest,
   type CapabilityResourceTypeDefinition,
   type CapabilitySearchTagDefinition,
-  CapabilitySemanticLinkSchema,
   type CapabilityStreamDefinition,
   type CapabilityUniversalSearchDefinition,
   capabilityActionPolicy,
@@ -1235,29 +1234,19 @@ export const validateCapabilityResult = (
   onInvalidResult?: (error: unknown) => void,
 ): Result<unknown, ServiceError> => {
   const parsed = operation.resultSchema.safeParse(result);
-  const receipt = result !== null && typeof result === "object" ? Object.getOwnPropertyDescriptor(result, "receipt")?.value : undefined;
-  const links = result !== null && typeof result === "object" ? Object.getOwnPropertyDescriptor(result, "links")?.value : undefined;
-  const parsedLinks = z.array(CapabilitySemanticLinkSchema).safeParse(links);
+  const field = (value: unknown, key: string): unknown =>
+    value !== null && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  const receipt = field(result, "receipt");
+  const links = field(result, "links");
   const receiptIssues =
     receipt === undefined
       ? []
       : "idempotency" in operation.manifest
-        ? capabilityActionReceiptIssues(receipt, {
-            ...compiledReviewContext(compiled, operation.manifest.localId),
-            links: parsedLinks.success ? parsedLinks.data : undefined,
-          })
+        ? capabilityActionReceiptIssues(receipt, links)
         : ["Queries cannot return a receipt"];
-  if (!("idempotency" in operation.manifest) && capabilityQueryChecksActionOutcome(operation.manifest)) {
-    const data = result !== null && typeof result === "object" ? Object.getOwnPropertyDescriptor(result, "data")?.value : undefined;
-    const nestedReceipt = data !== null && typeof data === "object" ? Object.getOwnPropertyDescriptor(data, "receipt")?.value : undefined;
-    if (nestedReceipt !== undefined)
-      receiptIssues.push(
-        ...capabilityActionReceiptIssues(nestedReceipt, {
-          ...compiledReviewContext(compiled, operation.manifest.localId),
-          links: parsedLinks.success ? parsedLinks.data : undefined,
-        }),
-      );
-  }
+  const nestedReceipt = field(field(result, "data"), "receipt");
+  if (!("idempotency" in operation.manifest) && nestedReceipt !== undefined && capabilityQueryChecksActionOutcome(operation.manifest))
+    receiptIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
   if (!parsed.success || receiptIssues.length > 0) {
     try {
       onInvalidResult?.(
