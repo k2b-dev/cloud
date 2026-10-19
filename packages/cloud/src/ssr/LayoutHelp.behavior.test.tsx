@@ -359,6 +359,28 @@ else {
     ),
   ];
 
+  test("hub and related article icons use shared tiles with app ink and no inline styles", async () => {
+    const reader = await setup("page", undefined, "/app/spaces/help", html, { documents: startDocuments });
+    try {
+      const expectTiles = (selector: string) => {
+        const icons = reader.dom.document.querySelectorAll(selector);
+        expect(icons.length, selector).toBeGreaterThan(0);
+        for (const icon of icons) {
+          expect(icon.classList.contains("k2b-icon-tile"), selector).toBe(true);
+          expect(icon.classList.contains("app-accent-text"), selector).toBe(true);
+          expect(icon.hasAttribute("style"), selector).toBe(false);
+        }
+      };
+      expectTiles(".help-start-tile-icon");
+      expectTiles(".help-start-row-icon");
+      reader.button("Task 9").click();
+      await until(() => !!reader.dom.document.querySelector(".help-article-related-icon"));
+      expectTiles(".help-article-related-icon");
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
   test("start: only task articles become eight ordered tiles; every remaining task follows in the overflow list", async () => {
     const reader = await setup("page", undefined, "/app/spaces/help", html, { documents: startDocuments });
     try {

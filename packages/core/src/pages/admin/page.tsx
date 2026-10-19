@@ -108,10 +108,7 @@ export default ssr<AuthContext>(async (c) => {
               class="paper group flex min-h-44 flex-col justify-between p-4 transition-colors hover:paper-highlighted focus-visible:outline-none focus-visible:[box-shadow:var(--ui-focus)] lg:col-span-2"
             >
               <div>
-                <span
-                  class="grid size-9 place-items-center rounded-[var(--ui-radius-control)] text-[var(--ui-app-accent-text)]"
-                  style="background-color: color-mix(in srgb, var(--app-accent) 12%, var(--ui-surface))"
-                >
+                <span class="k2b-icon-tile size-9 text-[var(--ui-app-accent-text)]">
                   <i class={`${primaryDestination.icon} text-lg`} aria-hidden="true" />
                 </span>
                 <p class="mt-4 text-[10px] font-medium text-dimmed">{primaryDestination.eyebrow}</p>
