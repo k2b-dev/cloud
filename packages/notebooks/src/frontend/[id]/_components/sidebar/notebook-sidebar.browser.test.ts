@@ -403,9 +403,12 @@ describe("One notebook sidebar with quick filters", () => {
       try {
         const before = await frame(page);
         const favorites = page.getByRole("button", { name: "Favorites" });
+        await settled(page);
         const idle = await favorites.evaluate((element) => getComputedStyle(element).backgroundColor);
         await favorites.click();
         expect(await favorites.getAttribute("aria-pressed")).toBe("true");
+        // The chip fades its fill in; a read during the fade sees the idle fill.
+        await settled(page);
         expect(await favorites.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(idle);
         expect((await listed(page)).map((row) => row.id)).toEqual(["Reels1", "Exam01"]);
         // At most two tags follow the date.
