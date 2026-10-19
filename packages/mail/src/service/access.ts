@@ -15,6 +15,7 @@ import { accounts, audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
 import { auditActorFromRequest, capByCredentialScopes, isResourceBoundToMailbox, type MailRequestContext, userBackedActor } from "./auth";
+import { enqueueMailInvalidation, mailLive } from "./live";
 
 type SqlClient = typeof sql;
 
@@ -493,6 +494,12 @@ const deleteGrantLinks = async (db: SqlClient, mailboxId: string, accessId: stri
   await db`DELETE FROM mail.mailbox_assigned_access WHERE mailbox_id = ${mailboxId}::uuid AND access_id = ${accessId}::uuid`;
 };
 
+/** Publishes the live update an access change wrote, once it committed. */
+const wakeOnSuccess = <T>(result: Result<T>): Result<T> => {
+  if (result.ok) mailLive.wake();
+  return result;
+};
+
 const grantMailboxAccessWithAuthority = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -531,6 +538,8 @@ const grantMailboxAccessWithAuthority = async (params: {
           },
           tx,
         );
+        // An open page of a reader whose permission this changes reloads it.
+        await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
 
         const [row] = await tx<DbAccess[]>`
           SELECT id, user_id, group_id, service_account_id, authenticated_only, permission, created_at, ${scope}::text AS scope
@@ -545,7 +554,7 @@ const grantMailboxAccessWithAuthority = async (params: {
       return resolved;
     },
     () => err.internal("Failed to grant mailbox access"),
-  );
+  ).then(wakeOnSuccess);
 };
 
 const lockAccessEntries = async (mailboxId: string, db: SqlClient): Promise<DbAccess[]> =>
@@ -608,9 +617,10 @@ const updateMailboxAccessWithAuthority = async (params: {
           },
           tx,
         );
+        await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
       }),
     () => err.internal("Failed to update mailbox access"),
-  );
+  ).then(wakeOnSuccess);
 
 const revokeMailboxAccessWithAuthority = async (params: {
   context: MailRequestContext;
@@ -638,9 +648,10 @@ const revokeMailboxAccessWithAuthority = async (params: {
           },
           tx,
         );
+        await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
       }),
     () => err.internal("Failed to revoke mailbox access"),
-  );
+  ).then(wakeOnSuccess);
 
 export const listMailboxAccess = (context: MailRequestContext, mailboxId: string): Promise<Result<MailboxAccessEntry[]>> =>
   listMailboxAccessWithAuthority(context, mailboxId, "mailbox_admin");

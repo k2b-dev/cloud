@@ -10,6 +10,7 @@ import {
   unavailableProviderLimitSnapshot,
 } from "../contracts";
 import { migrate } from "../migrate";
+import { grantMailboxAccess, revokeMailboxAccess, updateMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { attachProviderBinding } from "./bindings";
 import { imapSmtpConnector } from "./connectors";
@@ -228,6 +229,27 @@ suite("Mail frame writers invalidate open mailboxes", () => {
     await clear(mailboxId);
     expect((await disableSenderIdentity(params)).ok).toBe(false);
     expect(await pending(mailboxId)).toEqual([]);
+  });
+
+  test("granting, changing and revoking mailbox access each notify both scopes", async () => {
+    const mailboxId = await mailbox();
+    const reader = `mail-frame-reader-${crypto.randomUUID()}`;
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, admin)
+      VALUES (${reader}, 'local', 'user', 'Frame reader', false) RETURNING id
+    `;
+    try {
+      let accessId = "";
+      await change(mailboxId, async () => {
+        accessId = unwrap(
+          await grantMailboxAccess({ context, mailboxId, principal: { type: "user", userId: row!.id }, permission: "write" }),
+        ).id;
+      });
+      await change(mailboxId, async () => unwrap(await updateMailboxAccess({ context, mailboxId, accessId, permission: "read" })));
+      await change(mailboxId, async () => unwrap(await revokeMailboxAccess({ context, mailboxId, accessId })));
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${row!.id}::uuid`;
+    }
   });
 
   for (const operation of ["create", "update", "delete"] as const)
