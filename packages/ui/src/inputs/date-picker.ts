@@ -69,13 +69,17 @@ export const msUntilNextDay = (now: Date, context?: DateContext): number => {
   return delay > 0 ? delay : 60_000;
 };
 
+/** Whether `value` is a date key such as `2026-10-24`, a date without a time. */
+export const isDateKey = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
 export const parseDateValue = (value: string | null | undefined, context?: DateContext): Date => {
   if (!value) return dates.today(pickerContext(context));
   return dates.parseCalendarDate(value.slice(0, 10), pickerContext(context));
 };
 
+/** A date key names a calendar day, so it is formatted at noon UTC in UTC: no runtime or picker zone can move it. */
 export const displayDate = (value: string | null | undefined, context?: DateContext): string =>
-  value ? dates.formatDate(`${value.slice(0, 10)}T12:00`, pickerContext(context)) : "";
+  value ? dates.formatDate(`${value.slice(0, 10)}T12:00:00.000Z`, { ...pickerContext(context), timeZone: "UTC" }) : "";
 
 const localDateTimeInput = (value: string): string => {
   if (!hasInstantOffset(value)) return value.slice(0, 16);
@@ -135,9 +139,28 @@ export const filterTimeInput = (value: string): string => {
 export const orderedRange = (start: string, end: string): DateRangeValue =>
   end.localeCompare(start) < 0 ? { start: end, end: start } : { start, end };
 
-export const previewRange = (range: DateRangeValue, preview: string | null): DateRangeValue => {
-  if (!range.start || range.end || !preview) return range;
-  return orderedRange(range.start, preview);
+/**
+ * The range a click picks. A click starts a complete one-day range on its day, and it becomes the anchor; the next
+ * click on another day extends the range from the anchor, whichever side it lies on. A click on the anchor keeps the
+ * one-day range. After an extension, the next click starts a new one-day range.
+ */
+export const pickRangeDay = (
+  range: DateRangeValue,
+  anchor: string | null,
+  day: string,
+): { range: DateRangeValue; anchor: string | null } => {
+  if (rangeAnchor(range, anchor) && day !== anchor) return { range: orderedRange(anchor!, day), anchor: null };
+  return { range: { start: day, end: day }, anchor: day };
+};
+
+/** The anchor that the next click extends from: only while the range is still the one-day range of its click. */
+export const rangeAnchor = (range: DateRangeValue, anchor: string | null): string | null =>
+  anchor && range.start === anchor && range.end === anchor ? anchor : null;
+
+/** The range shown while the pointer or focus rests on `preview`: the extension that a click there would pick. */
+export const previewRange = (range: DateRangeValue, anchor: string | null, preview: string | null): DateRangeValue => {
+  const from = rangeAnchor(range, anchor);
+  return from && preview ? orderedRange(from, preview) : range;
 };
 
 export const inRange = (day: string, range: DateRangeValue): boolean =>
@@ -150,5 +173,21 @@ export const formatDateOnlyRangeDuration = (range: DateRangeValue, context?: Dat
   const start = Date.parse(`${dateKey(range.start, context)}T00:00:00.000Z`);
   const end = Date.parse(`${dateKey(range.end, context)}T00:00:00.000Z`);
   const days = Math.floor(Math.abs(end - start) / 86_400_000) + 1;
-  return `${days} ${days === 1 ? "day" : "days"}`;
+  return new Intl.NumberFormat(pickerContext(context).locale ?? "en", { style: "unit", unit: "day", unitDisplay: "long" }).format(days);
+};
+
+/**
+ * The weekend bands of a week row: one band per run of adjacent weekend columns, as a zero-based start column and a
+ * number of columns. Saturday and Sunday in a week from Monday are one band of two; in a week from Sunday they are
+ * two bands at both ends.
+ */
+export const weekendBands = (weekend: readonly boolean[]): { start: number; span: number }[] => {
+  const bands: { start: number; span: number }[] = [];
+  weekend.forEach((isWeekend, column) => {
+    if (!isWeekend) return;
+    const last = bands.at(-1);
+    if (last && last.start + last.span === column) last.span += 1;
+    else bands.push({ start: column, span: 1 });
+  });
+  return bands;
 };

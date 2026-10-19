@@ -5,6 +5,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import type { MailSearchExpression, SearchRequest } from "../contracts";
 import { mailFolderPaths } from "../folder-tree";
+import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
 import { conversationVisibleTo, type MailboxAccess, messageVisibleTo } from "./access";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import { type MailRequestContext, userBackedActor } from "./auth";
@@ -734,21 +735,6 @@ const isConversationOnlyExpression = (expression: MailSearchExpression): boolean
   return expression.type === "text" && ["comment", "reference", "tag"].includes(expression.field);
 };
 
-const guaranteedFolderIds = (expression: MailSearchExpression): string[] | null => {
-  if (expression.type === "folder_id") return [expression.folderId];
-  if (expression.type === "not") return null;
-  if (expression.type === "and") {
-    const ids = expression.expressions.flatMap((child) => guaranteedFolderIds(child) ?? []);
-    return ids.length > 0 ? [...new Set(ids)] : null;
-  }
-  if (expression.type === "or") {
-    const scopes = expression.expressions.map(guaranteedFolderIds);
-    if (scopes.some((scope) => scope === null)) return null;
-    return [...new Set(scopes.flatMap((scope) => scope ?? []))];
-  }
-  return null;
-};
-
 const parseAddressRows = (value: unknown[] | string): Array<{ name: string | null; address: string }> => {
   const rows = typeof value === "string" ? (JSON.parse(value) as unknown[]) : value;
   return rows.flatMap((row) => {
@@ -1034,7 +1020,7 @@ const runSearch = async (params: {
         )`
     : visiblePlacement;
   const sourceMailboxPredicate = conversationOnly ? sql`seed_conversation.mailbox_id = ${params.mailboxId}::uuid` : sql`true`;
-  const folderIds = guaranteedFolderIds(params.expression);
+  const folderIds = guaranteedMailSearchFolderIds(params.expression);
   const unreadFolderPredicate = folderIds
     ? sql`unread_placement.folder_id IN (
         SELECT value::uuid

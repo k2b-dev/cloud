@@ -16,7 +16,7 @@ import {
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { type MessageInspector, type MessageSourcePreview, messageInspectorSchema, messageSourcePreviewSchema } from "../../contracts";
-import type { MessageDetail } from "../../service/messages";
+import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
@@ -29,7 +29,7 @@ const subscriptionsHref = (mailboxId: string, listKey: string): string =>
 
 function MailMessageInspectorDialog(props: {
   mailboxId: string;
-  messages: MessageDetail[];
+  messages: MailWorkspaceMessage[];
   initialMessageId: string;
   initialTab: InspectorTab;
   close: () => void;
@@ -44,7 +44,7 @@ function MailMessageInspectorDialog(props: {
         { value: "source", label: messages().source, icon: "ti ti-code" },
       ] as const,
   );
-  const messageOptionLabel = (message: MessageDetail, index: number): string =>
+  const messageOptionLabel = (message: MailWorkspaceMessage, index: number): string =>
     `${index + 1}. ${message.subject.trim() || messages().noSubject}`;
   const [selectedMessageId, setSelectedMessageId] = createSignal(props.initialMessageId);
   const [tab, setTab] = createSignal<InspectorTab>(props.initialTab);
@@ -444,7 +444,7 @@ function MailMessageInspectorDialog(props: {
 
 export const openMailMessageInspector = (params: {
   mailboxId: string;
-  messages: MessageDetail[];
+  messages: MailWorkspaceMessage[];
   initialMessageId: string;
   initialTab?: InspectorTab;
 }) =>

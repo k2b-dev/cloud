@@ -22,6 +22,7 @@ export {
 export { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
+export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
 export { getAiChatQuotas } from "./chat-quotas";
@@ -34,11 +35,22 @@ export {
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
+  chatTaskName,
   getChatTaskTimezone,
   normalizeChatTaskSchedule,
   toAiChatTaskOccurrenceView,
   toAiChatTaskView,
 } from "./chat-task-contracts";
+export {
+  CHAT_TASK_REASON_CODES,
+  type ChatTaskReason,
+  type ChatTaskReasonCode,
+  chatTaskLocale,
+  chatTaskNeedsNewTime,
+  chatTaskReasonSentence,
+  chatTaskReasonState,
+  chatTaskStopSentence,
+} from "./chat-task-reasons";
 export {
   type AiChatTask,
   AiChatTaskIdempotencyConflictError,

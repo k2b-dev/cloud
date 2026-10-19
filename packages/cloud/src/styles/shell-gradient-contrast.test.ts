@@ -107,12 +107,15 @@ describe("shell gradient contrast for built-in and extreme app colors", () => {
         ];
         const secondary = rgb(token(ui, "--k2b-text-secondary", dark));
         const text = rgb(token(ui, "--k2b-text", dark));
-        // The open item is the surface in light and the app's sidebar selection fill in dark, labelled with the
-        // app ink; app-color.ts derives both from the accent.
-        expect(selectedBackground).toEqual(["var(--k2b-surface)", "var(--ui-app-selected-nav)"]);
+        // The open item is the surface in light and the accent over the muted surface in dark, labelled with
+        // the app ink; app-color.ts derives both as shellSelected.
+        expect(selectedBackground).toEqual([
+          "var(--k2b-surface)",
+          "color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 17%, var(--ui-surface-muted))",
+        ]);
         expect(declarations(shell, "--cloud-shell-selected-text")).toEqual(["var(--ui-app-accent-text)"]);
         const colors = appColors(appearance.accent)[dark ? "dark" : "light"];
-        const selected = rgb(dark ? colors.selectedNav : token(ui, "--k2b-surface", dark));
+        const selected = rgb(colors.shellSelected);
         const selectedText = rgb(colors.ink);
         // The phone canvas behind the title row: the app's own gradient, capped.
         const strength = Math.min(dark ? Math.round(appearance.strength / 2) / 100 : appearance.strength / 100, phoneCap(dark));

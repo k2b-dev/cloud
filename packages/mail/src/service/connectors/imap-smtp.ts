@@ -858,9 +858,12 @@ const existingMessageState = (message: FetchMessageObject): RemoteMessageState =
 };
 
 /** Reads a selected message's state. imapflow asks for Gmail labels only when the server offers X-GM-EXT-1. */
-export const fetchRemoteMessageState = async (client: Pick<ImapFlow, "fetchOne">, uid: number): Promise<RemoteMessageState> => {
+export const fetchRemoteMessageState = async (client: Pick<ImapFlow, "fetchOne" | "search">, uid: number): Promise<RemoteMessageState> => {
   const message = await client.fetchOne(uid, MESSAGE_STATE_QUERY, { uid: true });
-  if (!message) return { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
+  if (!message) {
+    await confirmAbsentUids(client, [uid]);
+    return { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
+  }
   return existingMessageState(message);
 };
 
@@ -875,6 +878,29 @@ export const imapUidSet = (uids: readonly number[]): string => {
     start = end + 1;
   }
   return ranges.join(",");
+};
+
+/**
+ * A read that could not prove which messages are gone. ImapFlow's code for a throttled command, so
+ * the work counts as transient: a command retries before its effect and reconciles after it.
+ */
+const unconfirmedAbsence = (foundUids?: number[]): Error =>
+  foundUids
+    ? Object.assign(new Error("The provider did not return a message that is still in the folder"), { code: "ETHROTTLE", foundUids })
+    : Object.assign(new Error("Message absence could not be confirmed; the provider may be limiting requests"), { code: "ETHROTTLE" });
+
+// ImapFlow ends FETCH empty after its ETHROTTLE retries run out, and SEARCH returns false
+// on command failure. Neither answer proves absence without a successful UID search.
+const listedUids = async (client: Pick<ImapFlow, "search">, uids: readonly number[]): Promise<number[]> => {
+  if (uids.length === 0) return [];
+  const found = await client.search({ uid: imapUidSet(uids) }, { uid: true });
+  if (!Array.isArray(found)) throw unconfirmedAbsence();
+  return found.filter((uid) => uids.includes(uid));
+};
+
+const confirmAbsentUids = async (client: Pick<ImapFlow, "search">, missing: readonly number[]): Promise<void> => {
+  const stillListed = await listedUids(client, missing);
+  if (stillListed.length > 0) throw unconfirmedAbsence(stillListed);
 };
 
 export const selectUidBatch = async (params: {
@@ -992,7 +1018,8 @@ const fetchEnvelopeBatch = async (
               search: async (probeLow, probeHigh) => {
                 const matches = await client.search({ uid: `${probeLow}:${probeHigh}` }, { uid: true });
                 assertSelectedMailbox(client, request.uidValidity);
-                return matches || [];
+                if (!Array.isArray(matches)) throw unconfirmedAbsence();
+                return matches;
               },
             });
         const fetched: FetchMessageObject[] = [];
@@ -1035,6 +1062,11 @@ const fetchEnvelopeBatch = async (
             fetched.push(message);
           }
           assertSelectedMailbox(client, request.uidValidity);
+          const returned = new Set(fetched.map((message) => message.uid));
+          await confirmAbsentUids(
+            client,
+            selected.uids.filter((uid) => !returned.has(uid)),
+          );
         }
         fetched.sort((left, right) => right.uid - left.uid);
         const messages = await Promise.all(fetched.map((message) => mapFetchedEnvelope(message, request)));
@@ -1146,6 +1178,13 @@ const fetchUidWindow = async (
           });
         }
         assertSelectedMailbox(client, uidValidity);
+        // Reconciliation retires what this window leaves out, so one SEARCH of the same range
+        // proves that the FETCH answer lists every message the folder still has.
+        const found = await client.search({ uid: `${Math.max(1, lowUid)}:${Math.max(1, highUid)}` }, { uid: true });
+        if (!Array.isArray(found)) throw unconfirmedAbsence();
+        const returned = new Set(entries.map((entry) => entry.uid));
+        const unreturned = found.filter((uid) => !returned.has(uid));
+        if (unreturned.length > 0) throw unconfirmedAbsence(unreturned);
         return entries.sort((left, right) => left.uid - right.uid);
       } finally {
         lock.release();
@@ -1154,16 +1193,18 @@ const fetchUidWindow = async (
     signal,
   );
 
-type SourceDownloadClient = SelectedMailboxClient & {
-  // imapflow resolves an empty object when FETCH returns no message, although its types promise one.
-  download(uid: number, part: undefined, options: { uid: true }): Promise<Partial<DownloadObject>>;
-};
+type SourceDownloadClient = SelectedMailboxClient &
+  Pick<ImapFlow, "search" | "fetchOne"> & {
+    // imapflow resolves an empty object when FETCH returns no message, although its types promise one.
+    download(uid: number, part: undefined, options: { uid: true }): Promise<Partial<DownloadObject>>;
+  };
 
 /**
- * Streams the requested sources of the selected folder in order. A UID the provider answers
- * without a source yields nothing, so the caller decides what the missing message means instead
- * of losing the rest of the batch. A consumer that resolves "stop" leaves the remaining sources
- * unfetched.
+ * Streams the requested sources of the selected folder in order. An absent UID or a listed message
+ * whose partial-source probe answers metadata without a source yields nothing for the caller's
+ * missing-source budget. A probe with a source retries the download; an empty retry or an
+ * unanswered probe fails transiently without using that budget. A recovered source streams normally.
+ * A consumer that resolves "stop" leaves the remaining sources unfetched.
  */
 export const downloadSelectedSources = async (
   client: SourceDownloadClient,
@@ -1171,11 +1212,16 @@ export const downloadSelectedSources = async (
   consume: (source: SourceDownload) => Promise<void | "stop">,
 ): Promise<void> => {
   for (const request of requests) {
-    const download = await client.download(request.uid, undefined, { uid: true });
+    let download = await client.download(request.uid, undefined, { uid: true });
     if (!download.content || !download.meta) {
       // imapflow also answers every download with an empty object once the connection has closed.
       assertSelectedMailbox(client, request.uidValidity);
-      continue;
+      if ((await listedUids(client, [request.uid])).length === 0) continue;
+      const message = await client.fetchOne(request.uid, { uid: true, source: { start: 0, maxLength: 1 } }, { uid: true });
+      if (!message) throw unconfirmedAbsence([request.uid]);
+      if (message.source === undefined) continue;
+      download = await client.download(request.uid, undefined, { uid: true });
+      if (!download.content || !download.meta) throw unconfirmedAbsence([request.uid]);
     }
     const source = { ...request, expectedSize: download.meta.expectedSize ?? null, stream: download.content };
     try {
@@ -1499,12 +1545,14 @@ const findMessageById = async (
       const lock = await client.getMailboxLock(folderPath, { readOnly: true });
       try {
         const matches = await client.search({ header: { "message-id": messageId } }, { uid: true });
-        if (!matches || matches.length === 0) return [];
+        if (!Array.isArray(matches)) throw unconfirmedAbsence();
+        if (matches.length === 0) return [];
         const expected = normalizeMessageId(messageId);
         const exact: number[] = [];
         for (const uid of matches.slice(-100)) {
           const message = await client.fetchOne(uid, { uid: true, envelope: true }, { uid: true });
-          if (message && normalizeMessageId(message.envelope?.messageId) === expected) exact.push(uid);
+          if (!message) await confirmAbsentUids(client, [uid]);
+          else if (normalizeMessageId(message.envelope?.messageId) === expected) exact.push(uid);
         }
         return exact.sort((left, right) => left - right);
       } finally {
@@ -1524,6 +1572,10 @@ const getMessageStates = async (config: ProviderConnectionInput, messages: Remot
     for await (const message of client.fetch(imapUidSet(messages.uids), MESSAGE_STATE_QUERY, { uid: true })) {
       if (requested.has(message.uid)) states.set(message.uid, existingMessageState(message));
     }
+    await confirmAbsentUids(
+      client,
+      messages.uids.filter((uid) => !states.has(uid)),
+    );
     return states;
   });
 

@@ -68,7 +68,7 @@ describe("Markdown callout contrast", () => {
       for (const type of types) {
         const tone = type === "note" ? "neutral" : type;
         const callout = page.locator(`.k2b-callout[data-tone="${tone}"]`);
-        await expect(callout.locator('svg.k2b-callout__icon[aria-hidden="true"]').count()).resolves.toBe(1);
+        expect(await callout.locator('svg.k2b-callout__icon[aria-hidden="true"]').count()).toBe(1);
         const ratios = await contrast(callout);
         expect(ratios.title, `${theme} ${type} title`).toBeGreaterThanOrEqual(4.5);
         expect(ratios.icon, `${theme} ${type} icon`).toBeGreaterThanOrEqual(3);

@@ -48,6 +48,10 @@ test("the mount probe counts initial empty clients as well as SSR islands, after
       expect(time).toBeGreaterThan(0);
       expect(time).toBeLessThanOrEqual(performance.now());
     }
+    // Mount windows start at the clear-and-render setter and end after the synchronous render.
+    expect(window.__cloudPerf.started.size).toBe(2);
+    for (const [element, started] of window.__cloudPerf.started)
+      expect(started).toBeLessThanOrEqual(window.__cloudPerf.mounted.get(element) ?? Number.NaN);
   } finally {
     if (innerHtml) Object.defineProperty(Element.prototype, "innerHTML", innerHtml);
     if (observer) Object.defineProperty(globalThis, "PerformanceObserver", observer);
@@ -136,7 +140,12 @@ test("interruption keeps completed profiles and the active profile's samples in 
       return { metrics, encodings: { js: ["br"], css: ["br"] } };
     },
   });
-  await expect(browsers.measure("https://localhost:4100/faq", "session", 2, results)).rejects.toThrow("test interruption");
+  const error = await browsers.measure("https://localhost:4100/faq", "session", 2, results).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBeInstanceOf(Error);
+  expect(String(error)).toContain("test interruption");
   expect(results).toHaveLength(2);
   expect(results[0]).toMatchObject({ profile: "desktop", status: "ok", samples: [metrics, metrics] });
   expect(results[0]?.metrics?.ttiMs).toEqual({ median: 100, min: 100, max: 100 });

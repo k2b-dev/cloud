@@ -46,3 +46,6 @@ account types, FreeIPA, app sign-in, Linux identities and lifecycle maintenance.
 
 Configure sender profiles and application access through
 [Outgoing mail](/en/docs/operations/outgoing-mail).
+
+See [Sign-in locations](/en/docs/operations/sign-in-locations) for the bundled
+location snapshot, its license, and its privacy and proxy requirements.

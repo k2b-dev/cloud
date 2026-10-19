@@ -2,6 +2,7 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Tag } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
+import { formatDeadline } from "@/presentation/deadline";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
@@ -53,7 +54,7 @@ const formatSchedule = (item: SpaceItem, dateConfig?: DateContext) => {
   if (item.startsAt && item.endsAt) {
     return `${dates.formatDateTime(item.startsAt, dateConfig)} – ${dates.formatDateTime(item.endsAt, dateConfig)}`;
   }
-  if (item.deadline) return dates.formatDateTime(item.deadline, dateConfig);
+  if (item.deadline) return formatDeadline(item.deadline, dateConfig);
   return "—";
 };
 

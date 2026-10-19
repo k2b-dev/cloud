@@ -6,6 +6,7 @@ import {
   ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
   chatTaskCreateFingerprint,
+  chatTaskNeedsNewTime,
   getChatTaskTimezone,
   normalizeChatTaskSchedule,
   ChatTaskScheduleInputSchema as ScheduleInputSchema,
@@ -13,7 +14,7 @@ import {
   toAiChatTaskView,
 } from "@k2b/cloud/ai";
 import { CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, err, fail, getLocale, ok, rateLimit, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, err, fail, getLocale, middleware, ok, rateLimit, respond, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { aiChatTaskRuntime, nextChatTaskRuns, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
@@ -23,6 +24,7 @@ const APP_ID = "core";
 const CreateSchema = z
   .object({
     chatId: AiConversationIdSchema,
+    title: z.string().trim().min(1).max(80).optional(),
     prompt: z.string().trim().min(1).max(10_000),
     schedule: ScheduleInputSchema,
     grants: ChatTaskGrantsSchema.default([]),
@@ -30,14 +32,15 @@ const CreateSchema = z
   .strict();
 const UpdateSchema = z
   .object({
+    title: z.string().trim().min(1).max(80).optional(),
     prompt: z.string().trim().min(1).max(10_000).optional(),
     schedule: ScheduleInputSchema.optional(),
     grants: ChatTaskGrantsSchema.optional(),
   })
   .strict()
   .refine(
-    (value) => value.prompt !== undefined || value.schedule !== undefined || value.grants !== undefined,
-    "Provide a prompt, schedule or grants",
+    (value) => value.title !== undefined || value.prompt !== undefined || value.schedule !== undefined || value.grants !== undefined,
+    "Provide a title, prompt, schedule or grants",
   );
 const ListSchema = z
   .object({
@@ -57,6 +60,7 @@ const reconcileSoon = (): void => {
 };
 
 export const aiChatTaskRoutes = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(rateLimit())
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())
@@ -156,6 +160,8 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
         userId: owner,
         chatId: input.chatId,
         prompt: input.prompt,
+        title: input.title,
+        locale: getLocale(c),
         grants: input.grants,
         ...normalized,
         idempotencyKey: idempotencyKey.data,
@@ -211,6 +217,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
       userId: owner,
       taskId: parsed.data,
       prompt: input.prompt,
+      title: input.title,
       grants: input.grants,
       ...normalized,
     });
@@ -235,7 +242,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     const current = await aiChatTasks.get({ userId: owner, taskId: parsed.data });
     if (!current) return respond(c, fail(err.notFound("Task")));
     if (current.state !== "active" && current.state !== "paused")
-      return respond(c, fail(err.conflict(`Task ${current.shortId} cannot be paused while ${current.state}`)));
+      return respond(c, fail(err.conflict(`Task “${current.name}” cannot be paused while ${current.state}`)));
     const task = await aiChatTasks.setState({ userId: owner, taskId: parsed.data, state: "paused" });
     if (!task) return respond(c, fail(err.conflict("Task state changed; read it and retry")));
     reconcileSoon();
@@ -248,10 +255,10 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     if (!parsed.success) return respond(c, fail(err.badInput("Invalid task ID")));
     const current = await aiChatTasks.get({ userId: owner, taskId: parsed.data });
     if (!current) return respond(c, fail(err.notFound("Task")));
-    if (current.state === "needs_attention" && current.schedule.kind === "once")
-      return respond(c, fail(err.conflict(`Task ${current.shortId} needs a new future schedule before it can resume`)));
+    if (chatTaskNeedsNewTime(current))
+      return respond(c, fail(err.conflict(`Task “${current.name}” needs a new future schedule before it can resume`)));
     if (current.state === "completed")
-      return respond(c, fail(err.conflict(`Task ${current.shortId} cannot be resumed while ${current.state}`)));
+      return respond(c, fail(err.conflict(`Task “${current.name}” cannot be resumed while ${current.state}`)));
     const task = await aiChatTasks.setState({ userId: owner, taskId: parsed.data, state: "active" });
     if (!task) return respond(c, fail(err.conflict("Task state changed; read it and retry")));
     reconcileSoon();

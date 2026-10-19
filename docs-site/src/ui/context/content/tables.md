@@ -47,6 +47,7 @@ numbers, including bigint, and `Date` values stay on one line; strings wrap.
 `white-space` set by `cellContentClass` itself wins over `nowrap`.
 
 Pass `getRowId` when selection or stable row identity matters. Use `selectedRowId` for a selected record, not the row index.
+Selected rows use `--k2b-row-selected` without changing text weight or row geometry.
 
 The default cell renderer displays missing values as an em dash, dates with the current locale, and booleans as Yes or No.
 
@@ -119,13 +120,30 @@ Do not filter or sort a paginated result in the browser. The client does not own
 
 ## Presentation
 
+Rows follow the minimal Grids reference: no row lines, grid, or zebra striping;
+44px rows (40px compact); a hover fill; a small muted header at weight 500 with
+no line underneath; numbers aligned right with tabular figures. Tables with
+more than 8 columns automatically get a hairline between body rows, the
+approved exception for wide editing tables. There is no prop to change this.
+`data-table-minimal.browser.test.ts` pins this threshold and presentation.
+
+Pass `loading` for the initial read. With no rows, `loadingRows` renders
+row-height placeholders (default 5, clamped to an integer from 1 to 50).
+A refresh keeps existing rows until their replacement arrives. The region is
+busy while loading and announces “Loading rows” in the inherited locale.
+Without rows the table cannot infer that a column is numeric, so set
+`align: "right"` on numeric columns of a loading table; otherwise their
+headings move to the right when the first rows arrive.
+
 Use `density="compact"` for dense operational tables. Headers are sticky unless `stickyHeader={false}`. `footer` accepts values and an optional cell renderer for server-computed totals.
 
 `DataTable` owns its scroll viewport and keeps sticky headers aligned. Avoid
 wrapping it in a second scrolling container.
 
 Use `surface="paper"` for a standalone bordered table and `surface="plain"`
-when a surrounding section owns the border. Set it explicitly whenever the
+when a surrounding section owns the border. Inside `AppWorkspace.Main` the
+table sits on Main's surface with `surface="plain"`; see
+[Paper](/en/ui/surfaces/paper). Set it explicitly whenever the
 table also has a custom `class`. The class sizes the outer table shell; the
 component keeps scrolling on its inner viewport. Bound a scrolling table with
 `height`, `max-height`, or a correctly sized `min-h-0 flex-1` region instead of
@@ -164,6 +182,7 @@ type DataTableProps<T> = {
   selectedRowId?: string | null; rowClass?: string | ((row: T) => string | undefined); hoverRows?: boolean;
   onRowClick?: (row: T) => void; onRowDoubleClick?: (row: T) => void; renderCell?: DataTableRenderCell<T>;
   renderHeader?: DataTableRenderHeader<T>; footer?: DataTableFooter<T>; hasMore?: boolean;
+  loading?: boolean; loadingRows?: number;
   loadingMore?: boolean; onLoadMore?: () => void; empty?: JSX.Element; density?: "compact" | "normal";
   stickyHeader?: boolean; highlightColumns?: boolean; verticalAlign?: "top" | "middle" | "bottom";
   cellContentClass?: string; fillHeight?: boolean; surface?: "paper" | "plain"; class?: string;
@@ -190,7 +209,7 @@ type DataTablePanelFooterProps = {
 
 The four panel types correspond to `DataTable.Panel`, `.Header`, `.Controls`, and `.Footer`. All row callbacks receive the original row. Footer values are keyed by **column id**. `getRowId` returns a stable string. `onLoadMore` returns `void`; expose request state through `loadingMore` and append rows after success.
 
-Defaults: `density="normal"`, `stickyHeader=true`, `verticalAlign="middle"`. Use `onRowClick`/`onRowDoubleClick` only for real row actions; selection remains controlled through `selectedRowId`. `scrollPreserveKey={false}` disables restoration for the table. `fillHeight` makes the table fill a bounded parent's height. `hoverRows` defaults to whether a row callback exists; `highlightColumns` defaults on when row hover is enabled. Omitted `surface` is paper without a custom class and plain with one, so set it explicitly when styling. `rowClass` styles rows, `tableClass` the table, `scrollClass` the scroll container, and `class` its outer shell. Pass `scrollClass="k2b-detail-trail"` to keep column widths beside a [floating workspace detail](/en/ui/layout/workspace#floating-detail). The scroller narrows and scrolls the table at its width without the panel; closing returns the full width without extra space. Under the tablet drawer the scroller gets the drawer's width as space at its end instead.
+Defaults: `density="normal"`, `stickyHeader=true`, `verticalAlign="middle"`. Use `onRowClick`/`onRowDoubleClick` only for real row actions; selection remains controlled through `selectedRowId`. `scrollPreserveKey={false}` disables restoration for the table. `fillHeight` makes the table fill a bounded parent's height. `hoverRows` defaults to whether a row callback exists; `highlightColumns` defaults on when row hover is enabled. Omitted `surface` is paper without a custom class and plain with one, so set it explicitly when styling. `rowClass` styles rows, `tableClass` the table, `scrollClass` the scroll container, and `class` its outer shell. Pass `scrollClass="k2b-detail-trail"` to keep column widths beside a [workspace detail](/en/ui/layout/workspace#detail-and-panel). The scroller narrows and scrolls the table at its width without the panel; closing returns the full width without extra space. Under an open waiting drawer the scroller gets the drawer's width as space at its end instead.
 
 ## Accessibility
 

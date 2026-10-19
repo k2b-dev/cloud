@@ -82,6 +82,98 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  test("a failed navigation names each failed request with its error", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const start = new URL("/start", server.url).href;
+      const offline = new URL("/offline", server.url).href;
+      expect((await page.goto(start))?.status()).toBe(200);
+      await context.setOffline(true);
+      const error = await page.goto(offline).catch((error: unknown) => error);
+      if (!(error instanceof Error)) throw new Error("Expected the offline navigation to fail");
+      const reason = browserName === "webkit" ? "WebKit encountered an internal error" : "net::ERR_INTERNET_DISCONNECTED";
+      expect(error.message).toContain(`Requests failed:\nGET ${offline}: ${reason}`);
+      // Offline WebKit fails loads with the error that a crashed network process gives every open load (#1431).
+      expect(error.message.includes("WebKit internal error: WebKit fails every open load this way")).toBe(browserName === "webkit");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  test.skipIf(Boolean(process.env.TEST_BROWSER_ENDPOINT?.trim()))(
+    "a browser that hangs on close is killed and gone within the hook budget, and the next launch starts at once",
+    async () => {
+      const childPids = () => {
+        const result = Bun.spawnSync(["pgrep", "-P", String(process.pid)]);
+        if (result.exitCode !== 0 && result.exitCode !== 1) throw new Error(`pgrep failed: ${new TextDecoder().decode(result.stderr)}`);
+        return new Set(new TextDecoder().decode(result.stdout).split(/\s+/).filter(Boolean).map(Number));
+      };
+      let hung: Browser | undefined;
+      let next: Browser | undefined;
+      let pid: number | undefined;
+      try {
+        const before = childPids();
+        hung = await launchBrowser();
+        const added = [...childPids()].filter((child) => !before.has(child));
+        pid = added[0];
+        const browserPid = pid;
+        expect(added).toHaveLength(1);
+        if (browserPid === undefined) throw new Error("The launched browser has no child pid");
+        const page = await hung.newPage();
+        await page.setContent("<p>ready to close</p>");
+        expect(await page.locator("p").textContent()).toBe("ready to close");
+        process.kill(-browserPid, "SIGSTOP");
+
+        const lines: string[] = [];
+        const originalError = console.error;
+        const closing = performance.now();
+        try {
+          console.error = (...args: unknown[]) => {
+            lines.push(args.map(String).join(" "));
+          };
+          await hung.close();
+        } finally {
+          console.error = originalError;
+        }
+        const closeMs = performance.now() - closing;
+        // It waited the 2 s graceful budget, then killed, all inside Bun's 5 s hook timeout.
+        expect(closeMs).toBeGreaterThanOrEqual(1990);
+        expect(closeMs).toBeLessThan(5000);
+        expect(() => process.kill(-browserPid, 0)).toThrow(/ESRCH/);
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toMatch(
+          new RegExp(
+            `^launchBrowser: ${browserName} close did not finish within \\d+ ms; killed process group ${browserPid}, gone after \\d+ ms$`,
+          ),
+        );
+        pid = undefined;
+
+        const launching = performance.now();
+        next = await launchBrowser();
+        expect(performance.now() - launching).toBeLessThan(4000);
+        const nextPage = await next.newPage();
+        await nextPage.setContent("<p>ready after the kill</p>");
+        expect(await nextPage.locator("p").textContent()).toBe("ready after the kill");
+        await next.close();
+      } finally {
+        try {
+          if (pid !== undefined) {
+            try {
+              process.kill(-pid, "SIGCONT");
+              process.kill(-pid, "SIGKILL");
+            } catch (error) {
+              if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+            }
+          }
+        } finally {
+          await Promise.all([hung?.close(), next?.close()]);
+        }
+      }
+    },
+    20_000,
+  );
+
   test(`the shared ${browserName} browser recovers after a test times out`, async () => {
     const child = Bun.spawn([process.execPath, "test", import.meta.path], {
       env: { ...process.env, UI_BROWSER_RECOVERY_CHILD: "1" },

@@ -12,8 +12,8 @@ export const parseContactsPage = (value: string | undefined): number => {
   return parsed;
 };
 
-export const loadFavoriteKeysForContacts = (userId: string, contacts: Contact[]): Promise<string[]> =>
-  contactsService.favorite.listKeysForContacts({ userId, contacts });
+export const loadFavoriteKeysForContacts = (actor: RequestActor, contacts: Contact[]): Promise<string[]> =>
+  contactsService.favorite.listKeysForContacts({ actor, contacts });
 
 export const loadContactBookPermissions = async (config: { books: ContactBook[]; actor: RequestActor; accessSubject: AccessSubject }) => {
   const entries = await Promise.all(

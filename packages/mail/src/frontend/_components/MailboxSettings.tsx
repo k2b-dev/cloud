@@ -453,6 +453,7 @@ export default function MailboxSettings(props: {
                   initialDefaults={compose().defaults}
                   initialStyle={compose().style}
                   identities={compose().identities}
+                  onDirtyChange={(dirty) => setChildDirty("logo", dirty)}
                   onTemplatesChange={(templates) =>
                     props.onContextChange((context) =>
                       context.compose ? { ...context, compose: { ...context.compose, templates } } : context,

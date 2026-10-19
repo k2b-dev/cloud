@@ -396,6 +396,10 @@ const issueUserGrant = async (
   }
 };
 
+// If-None-Match uses weak comparison, including lists and the wildcard.
+const matchesEtag = (header: string | undefined, etag: string): boolean =>
+  header?.trim() === "*" || (header?.match(/(?:W\/)?"[^"]*"/g) ?? []).some((tag) => tag.replace(/^W\//, "") === etag.replace(/^W\//, ""));
+
 /** OAuth 2.0 / OpenID Connect routes mounted at root-level standard paths. */
 const app = new Hono<AuthContext>()
   .get("/.well-known/openid-configuration", async (c) => {
@@ -412,7 +416,7 @@ const app = new Hono<AuthContext>()
       const etag = `"${new Bun.CryptoHasher("sha256").update(JSON.stringify(jwks)).digest("hex").slice(0, 32)}"`;
       c.header("Cache-Control", "public, max-age=300, must-revalidate");
       c.header("ETag", etag);
-      if (c.req.header("if-none-match") === etag) return c.body(null, 304);
+      if (matchesEtag(c.req.header("if-none-match"), etag)) return c.body(null, 304);
       return c.json(jwks);
     } catch (err) {
       log.error("Failed to get JWKS", {

@@ -36,7 +36,7 @@ this service set.
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
-| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
+| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; the gateway keeps cross-site requests and subresource loads uncompressed. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
 | Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
@@ -208,6 +208,14 @@ header through unchanged. Traefik replaces it by default; do not enable
 `forwardedHeaders.trustedIPs`. To verify, sign in from two networks: rate
 limits and audit entries must show different addresses, not the proxy's.
 
+A public proxy or CDN in front of the gateway that is absent from
+`GATEWAY_TRUSTED_PROXIES`, such as Cloudflare, makes Core see the proxy's
+address. Sign-in places and network names will then describe the proxy instead
+of the person when those details are used; see
+[Sign-in locations](/en/docs/operations/sign-in-locations). Private-network
+proxy addresses are ignored by the place lookup, but those proxies still need
+to be trusted for rate limits.
+
 ## Assign configuration to the correct service
 
 Inject secrets at runtime, never into image build arguments, browser bundles,
@@ -300,7 +308,7 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming and must not buffer or compress streamed responses, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes. The gateway compresses HTML and JSON itself with Brotli or gzip according to `Accept-Encoding`, while preserving streaming. Ingress compression of these responses is not needed. Proxies and ingress must pass `Cache-Control: no-transform` responses through without compression or any other transformation. Ingress must pass `Content-Encoding` through, preserve WebSockets, and must not buffer or compress SSE or NDJSON streams, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
@@ -560,6 +568,10 @@ Provision and [connect ClickHouse](#provide-clickhouse-for-pulse) before the
 later releases that move telemetry there. No data moves in this release, and
 an unset store does not change startup or existing Pulse features.
 
+### Upgrade Spaces task deadlines
+
+Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.
+
 ### Upgrade Spaces user claims and assignments
 
 Spaces now assigns a person when they claim a task. On each start, an
@@ -615,6 +627,24 @@ saved goes out without its signature. Rolling Mail back keeps the column and
 has the same effect for drafts saved after the update. After the rollout, open
 a new message in a mailbox with a default signature and check that the preview
 shows the signature below the text.
+
+### Mail mailbox logos
+
+On its next start, Mail adds `mail.mailbox_logo_versions`,
+`mail.mailboxes.logo_version_id`, and
+`mail.outbox_submissions.inline_logo_version_id`. No configuration change is
+needed. Roll all Mail replicas together: an older replica ignores the frozen
+logo in a queued message and sends HTML whose `cid:` image has no inline part.
+A rollback has the same limitation for messages queued with logos.
+
+Logos count toward the Mail database share, at most 100 KiB per immutable
+version. Unused versions are removed hourly; current logos and versions still
+needed by queued messages or Sent-copy retries are retained. Local sent copies
+retain their inline images in the deduplicated Mail blob store, independently
+of logo versions. After upgrading,
+upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
+schedule it. Check that the local copy shows the logo before provider sync,
+then send it and check that it arrives as an inline image without a remote image link.
 
 ### Mail storage for kept conversations
 
@@ -1049,7 +1079,7 @@ and `idx_ai_turns_background_finished`.
 The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
 to `ai.turns` while it builds; allow for a longer build on large installations.
 The routine recovery tick then
-deletes completed and failed runs older than 90 days, their background turns
+deletes completed, failed and stopped runs older than 90 days, their background turns
 with tool calls, and their run transcripts (`ai.task_messages`) in batches of
 100 per minute. Queued and running runs, finished runs whose turns are still
 active, and chat result messages stay.
@@ -1064,6 +1094,43 @@ same 90-day clock, measured from when the turn finished.
 An installation with a large backlog drains it over time. PostgreSQL reuses
 the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
 See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
+
+### Record why routines stop
+
+This release gives every paused routine and every routine that needs its owner
+a reason. It needs no configuration change. The first Core start adds the
+columns `reason_code`, `reason_at`, `title`, and `locale` to `ai.chat_tasks`,
+fills the reason and locale of existing routines once, and adds the constraint
+`ai_chat_tasks_reason_state_check`. Adding the constraint locks
+`ai.chat_tasks` while it checks the existing rows.
+
+Earlier Core and Assistant processes write such states without a reason, which
+the constraint rejects. Stop them before the new Core starts instead of
+running both versions side by side. Before rolling Core back to an earlier
+release, run the following in the Cloud database:
+
+```sql
+ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS ai_chat_tasks_reason_state_check;
+```
+
+See [Routine names and stop reasons](/en/docs/ai/structured-and-background-ai#routine-names-and-stop-reasons).
+
+### Check the app's review before a routine changes anything
+
+Routines whose calls the app would ask about now stop with **Braucht dich** /
+**Needs you** instead of running. Before each Action with
+`approval: "rememberable"`, a routine asks the app's review. When the review
+gives no approval scope, fails, or is missing, the Action does not run, and
+the routine shows which Action needs the person. It needs no configuration
+change.
+
+The first Core start adds the column `reason_action` to `ai.chat_tasks` and the
+constraint `ai_chat_tasks_reason_action_length_check`, which only limits the
+action name to 200 characters. The change is backward-compatible: an earlier
+Core can run beside the new one and can be rolled back to without SQL. An
+earlier Core or Assistant still runs such Actions without the review, so
+finish the rollout of both before you rely on the stop. See
+[Routine Action reviews](/en/docs/ai/structured-and-background-ai#routine-action-reviews).
 
 ### Approve OAuth sign-ins in Cloud Login
 

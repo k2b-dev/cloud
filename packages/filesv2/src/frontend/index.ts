@@ -1,4 +1,4 @@
-import { type AuthContext, auth, rateLimit } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware, rateLimit } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
 import { FilegateError } from "@k2b/filegate";
 import { Hono } from "hono";
@@ -11,6 +11,16 @@ import { publicInboxPage, publicSharePage } from "./public-pages";
 import { filesUrl } from "./urls";
 
 export default new Hono<AuthContext>()
+  .use("/app/filesv2/*", (c, next) => {
+    // Editor launches embed a private WOPI token or download lease beside the stored filename.
+    if (c.req.query("view") === "edit" && c.req.query("file")) return middleware.noTransform()(c, next);
+    return next();
+  })
+  .use("/admin/filesv2/*", (c, next) => {
+    // Share owners cannot read other owners' private notes in the administrative share list.
+    if (c.req.query("view") === "shares") return middleware.noTransform()(c, next);
+    return next();
+  })
   .get("/app/filesv2", auth.requireRole("user", ssr.access), ...filesPage)
   .get("/app/filesv2/ref/:id", auth.requireRole("user", ssr.access), async (c) => {
     try {
@@ -27,6 +37,8 @@ export default new Hono<AuthContext>()
   // Each open streams a stored file, bounded like the Files API.
   .use("/app/filesv2/pdf/*", rateLimit())
   .route("/", pdfPage)
+  // A share's public note sits next to file names that writers of the shared folder choose without holding the link.
+  .use("/share/filesv2/*", middleware.noTransform())
   .get("/share/filesv2/s/:token", auth.requireRole("*"), ...publicSharePage)
   .get("/share/filesv2/inbox/:token", auth.requireRole("*"), ...publicInboxPage)
   .get("/admin/filesv2", auth.requireRole("admin", ssr.access), ...adminPage)

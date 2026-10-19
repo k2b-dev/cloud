@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AiProjectLastAdminError, aiProjects } from "../ai/projects";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, respond, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 
 const ListProjectsSchema = z
   .object({
@@ -20,6 +21,7 @@ const lastAdminConflict = (c: Parameters<typeof respond>[0], error: AiProjectLas
 
 export const createAdminAiProjectsRoutes = (authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin")) =>
   new Hono<AuthContext>()
+    .use("*", noTransform())
     .use("*", authenticate)
     .get("/", v("query", ListProjectsSchema), async (c) => {
       const query = c.req.valid("query");

@@ -307,7 +307,7 @@ describe("Cloud layouts SSR", () => {
     expect(bar).toContain('href="/"');
     expect(bar).toContain('data-tab="home"');
     const start = bar.match(/<a href="\/"[^>]*>([\s\S]*?)<\/a>/)?.[1];
-    expect(start).toContain("<span>Home</span>");
+    expect(start).toContain('<span class="k2b-truncate-fade">Home</span>');
     for (const app of badgeApps) expect(bar).toContain(`href="${app.nav.href}"`);
     // The page trail travels as JSON that cannot end its script element or carry markup.
     const source = html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "";

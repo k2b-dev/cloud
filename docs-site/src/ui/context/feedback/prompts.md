@@ -93,7 +93,7 @@ await deleteProject("atlas");
 - `select`;
 - `tags`;
 - `boolean`;
-- `datetime`, with optional date-only mode;
+- `datetime`, with a date-only mode (`dateOnly`) or an optional time (`optionalTime`, see [date pickers](/en/ui/input/date-picker#add-a-time-only-when-needed));
 - `info`, which displays content and is excluded from the result.
 
 Fields share `label`, `description`, `placeholder`, `required`, `default`, and a `validate` function where applicable. Form-state validation checks required values, text-length and tag-count constraints, and the custom validator. Errors appear when the form is first submitted and follow each change after that. A required boolean field must be checked. Number bounds and PIN length configure their controls but do not create additional form-state error messages. The built-in messages follow the document locale ("At least 3 characters" / "Mindestens 3 Zeichen"); a `validate` result is shown as returned, so the app localizes it.
@@ -302,6 +302,7 @@ type FieldSchema =
   | (PromptFieldBase<string> & {
       type: "datetime";
       dateOnly?: boolean;
+      optionalTime?: boolean;
     })
   | {
       type: "info";
@@ -357,7 +358,11 @@ type DialogCore = {
 `undefined` by default; `cancelBehavior="ignore"` disables those dismissals.
 `initialFocus` defaults to `"first-input"` and applies in the next animation
 frame after the dialog opens. Focus that the content or a person moved before
-that frame stays where it went. `setDismissHandler` routes Escape
+that frame stays where it went. Until then, a dialog that opens over the page
+has the browser's own pick: the content's `autofocus` element, or else its
+first focusable element. A target that must take keys as the dialog opens,
+such as a document that Page Down scrolls, carries `autofocus` as well as
+being the `initialFocus` target. `setDismissHandler` routes Escape
 and backdrop through the application's async guard; that handler must call
 `close()` to complete dismissal. `dialogCore.close` addresses the top dialog.
 Opening requires a browser and throws without `document`.

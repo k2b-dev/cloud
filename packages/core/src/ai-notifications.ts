@@ -1,5 +1,12 @@
 import { type BoundNotificationMap, lazySync, notification } from "@k2b/cloud";
-import { AI_SHORT_ID_PATTERN } from "@k2b/cloud/ai";
+import {
+  AI_SHORT_ID_PATTERN,
+  CHAT_TASK_REASON_CODES,
+  type ChatTaskReasonCode,
+  chatTaskLocale,
+  chatTaskName,
+  chatTaskReasonSentence,
+} from "@k2b/cloud/ai";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { coreSettings, getFreeIpaConfig, logger, notifications, trace } from "@k2b/cloud/services";
 import { toPgTextArray } from "@k2b/cloud/services/postgres";
@@ -31,7 +38,7 @@ const notificationMessages = i18n.define({
       responseReady: "Assistant response ready",
       responseFinished: "Your Assistant response has finished.",
       responseEmail: ({ target }: { target: string }) => `Your Assistant response has finished. Open it at ${target}`,
-      taskAttention: ({ taskId }: { taskId: string }) => `Routine ${taskId} needs attention`,
+      taskAttention: ({ name }: { name: string }) => `“${name}” needs you`,
     },
     de: {
       costWarning: "Kostenwarnung für Hintergrund-AI",
@@ -45,7 +52,7 @@ const notificationMessages = i18n.define({
       responseReady: "Antwort des Assistenten ist bereit",
       responseFinished: "Die Antwort des Assistenten ist fertig.",
       responseEmail: ({ target }) => `Die Antwort des Assistenten ist fertig. Öffne sie unter ${target}`,
-      taskAttention: ({ taskId }) => `Routine ${taskId} braucht deine Aufmerksamkeit`,
+      taskAttention: ({ name }) => `„${name}“ braucht dich`,
     },
   },
 });
@@ -126,12 +133,15 @@ export const AI_NOTIFICATIONS = {
     delivery: { recommended: ["browser"] },
     data: z.object({
       conversationId: z.string().regex(AI_SHORT_ID_PATTERN),
-      taskId: z.string().regex(AI_SHORT_ID_PATTERN),
-      error: z.string(),
+      name: z.string(),
+      code: z.enum(CHAT_TASK_REASON_CODES),
+      at: z.string(),
+      action: z.string().max(200).optional(),
+      timeZone: z.string(),
     }),
-    render: ({ conversationId, taskId, error }, { locale }) => ({
-      title: text(locale).taskAttention({ taskId }),
-      body: error,
+    render: ({ conversationId, name, code, at, action, timeZone }, { locale }) => ({
+      title: text(locale).taskAttention({ name }),
+      body: chatTaskReasonSentence({ code, at, action }, { locale, timeZone }),
       targetHref: `/app/assistant?conversation=${encodeURIComponent(conversationId)}`,
     }),
   }),
@@ -150,7 +160,14 @@ type TaskAttentionCandidate = {
   conversation_id: string;
   task_id: string;
   user_id: string;
-  error: string;
+  title: string | null;
+  chat_title: string;
+  prompt: string;
+  locale: string | null;
+  timezone: string;
+  reason_code: ChatTaskReasonCode;
+  reason_at: Date;
+  reason_action: string | null;
 };
 
 type AiNotificationRecoverySummary = {
@@ -221,9 +238,10 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     const candidates = await sql<TaskAttentionCandidate[]>`
       SELECT occurrence.id AS occurrence_id,
              conversation.short_id AS conversation_id,
-             task.short_id AS task_id,
+             task.id AS task_id,
              task.sponsor_user_id AS user_id,
-             occurrence.error
+             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at,
+             CASE WHEN task.reason_code = 'needs_approval' THEN task.reason_action END AS reason_action
       FROM ai.chat_task_occurrences occurrence
       JOIN ai.chat_tasks task ON task.id = occurrence.task_id
       JOIN ai.conversations conversation ON conversation.id = task.conversation_id
@@ -231,13 +249,15 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
       WHERE occurrence.state = 'failed'
         AND occurrence.completed_at >= definition.first_seen_at
         AND occurrence.error IS NOT NULL
-        AND task.state = 'needs_attention'
+        AND task.state = 'needs_attention' AND task.reason_code IN ('failed', 'rights_changed', 'needs_approval')
         AND (${input.occurrenceId ?? null}::uuid IS NULL OR occurrence.id = ${input.occurrenceId ?? null}::uuid)
         AND NOT EXISTS (
           SELECT 1
           FROM notifications.events event
           WHERE event.definition_id = ${definitions.taskNeedsAttention.id}
-            AND event.idempotency_key = 'occurrence:' || occurrence.id::text
+            AND (event.idempotency_key = 'routine:' || task.id::text || ':' || task.reason_code || ':' ||
+              floor(extract(epoch FROM task.reason_at) * 1000)::bigint::text
+              OR event.idempotency_key = 'occurrence:' || occurrence.id::text)
         )
         AND NOT EXISTS (
           SELECT 1
@@ -257,9 +277,16 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
       try {
         await notifications.send(definitions.taskNeedsAttention, {
           recipient: { userId: candidate.user_id },
-          data: { conversationId: candidate.conversation_id, taskId: candidate.task_id, error: candidate.error },
-          idempotencyKey: `occurrence:${candidate.occurrence_id}`,
-          locale,
+          data: {
+            conversationId: candidate.conversation_id,
+            name: chatTaskName({ title: candidate.title, chatTitle: candidate.chat_title, prompt: candidate.prompt }),
+            code: candidate.reason_code,
+            at: new Date(candidate.reason_at).toISOString(),
+            action: candidate.reason_action ?? undefined,
+            timeZone: candidate.timezone,
+          },
+          idempotencyKey: `routine:${candidate.task_id}:${candidate.reason_code}:${new Date(candidate.reason_at).getTime()}`,
+          locale: chatTaskLocale(candidate.locale, locale),
         });
         sent += 1;
       } catch (error) {

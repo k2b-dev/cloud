@@ -59,7 +59,32 @@ COPY styles.css ./
 RUN bun run packages/cloud/scripts/build.ts
 
 # ──────────────────────────────────────────────────────────────────────
-# Stage 4: runtime — only the bundled output + bun runtime.
+# Stage 4: geoip-snapshot — archived DB-IP gzip files.
+# ──────────────────────────────────────────────────────────────────────
+# Data only: .github/mirror-images.sh pushes it for linux/amd64, maybe as an
+# index with an attestation, so every target platform takes that manifest.
+FROM --platform=linux/amd64 ghcr.io/k2b-dev/mirror/dbip-lite:2026-10 AS geoip-snapshot
+
+# ──────────────────────────────────────────────────────────────────────
+# Stage 5: geoip — pinned snapshot, independent of application sources.
+# ──────────────────────────────────────────────────────────────────────
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS geoip
+ARG APP_ID
+# DB-IP Lite, CC BY 4.0; attribution in THIRD_PARTY_NOTICES.md.
+# Only Core reads it; every build mounts the snapshot, but only Core checks and unpacks it.
+# DB-IP keeps only two months; .github/mirror-images.sh keeps every pinned month in the mirror.
+# bun scripts/geoip-snapshot.ts moves the pin.
+RUN --mount=type=bind,from=geoip-snapshot,target=/snapshot set -eu; mkdir -p /geoip; \
+    if [ "$APP_ID" = "core" ]; then \
+      cd /snapshot; \
+      echo "c839d407f85a1e0bddba354cef16b2c398182d1c34ed8d985555dce134b36b14  dbip-city-lite.mmdb.gz" | sha256sum -c -; \
+      echo "6cdde02baa8c1bd619ab84c2e505ecd91d45288b5a87faadf1b7c41525a17a94  dbip-asn-lite.mmdb.gz" | sha256sum -c -; \
+      gunzip -c dbip-city-lite.mmdb.gz > /geoip/dbip-city-lite.mmdb; \
+      gunzip -c dbip-asn-lite.mmdb.gz > /geoip/dbip-asn-lite.mmdb; \
+    fi
+
+# ──────────────────────────────────────────────────────────────────────
+# Stage 6: runtime — only the bundled output + bun runtime.
 # ──────────────────────────────────────────────────────────────────────
 FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
 WORKDIR /app
@@ -74,6 +99,9 @@ ENV NODE_ENV=production \
     CLOUD_RELEASE=${CLOUD_RELEASE} \
     CLOUD_CLI_CHROMIUM=/usr/bin/chromium
 COPY --from=build --chown=bun:bun /app/dist ./
+# Bun.mmap opens files read-write, so the runtime user owns them like dist;
+# Core maps them privately and never writes.
+COPY --from=geoip --chown=bun:bun /geoip /app/geoip
 USER bun
 
 EXPOSE 3000

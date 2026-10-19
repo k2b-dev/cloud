@@ -1,6 +1,7 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { ok } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../config";
 import { contactsService } from "../service";
@@ -72,19 +73,27 @@ export default ssr<AuthContext>(async (c) => {
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
   });
-  const [permissions, internalNotesPage, internalFavoriteKeys, internalGlobalTags] = await Promise.all([
+  const [permissions, notesResult, internalFavoriteKeys, internalGlobalTags] = await Promise.all([
     loadContactBookPermissions({ books: internalBooks, actor: c.get("actor"), accessSubject: c.get("accessSubject") }),
     selectedContact
       ? contactsService.contact.notes.listPage({
           bookId: selectedContact.bookId,
           contactId: selectedContact.id,
-          viewerUserId: user.id,
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
           pagination: { page: 1, perPage: 30 },
         })
-      : Promise.resolve({ items: [], page: 1, perPage: 30, total: 0, hasNext: false }),
-    loadFavoriteKeysForContacts(user.id, selectedContact ? [...internalContacts, selectedContact] : internalContacts),
-    contactsService.tag.listForBooks({ bookIds: internalBooks.map((book) => book.id) }),
+      : Promise.resolve(ok({ items: [], page: 1, perPage: 30, total: 0, hasNext: false })),
+    loadFavoriteKeysForContacts(c.get("actor"), selectedContact ? [...internalContacts, selectedContact] : internalContacts),
+    contactsService.tag.listForBooks({
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
+      bookIds: internalBooks.map((book) => book.id),
+    }),
   ]);
+  if (!notesResult.ok) return ssr.error(c, notesResult.error.code === "NOT_FOUND" ? 404 : 403);
+  const internalNotesPage = notesResult.data;
+  if (!internalGlobalTags.ok) return ssr.error(c, internalGlobalTags.error.code === "NOT_FOUND" ? 404 : 403);
   const favoriteContacts = selectedContact ? [...internalContacts, selectedContact] : internalContacts;
   const [books, contacts, projectedSelected, initialNoteItems, favoriteKeys, globalTags] = await Promise.all([
     projectBooks(internalBooks),
@@ -92,7 +101,7 @@ export default ssr<AuthContext>(async (c) => {
     selectedContact ? projectContacts([selectedContact]) : Promise.resolve([]),
     projectNotes(internalNotesPage.items),
     projectFavoriteKeys(favoriteContacts, internalFavoriteKeys),
-    projectTags(internalGlobalTags),
+    projectTags(internalGlobalTags.data),
   ]);
   const initialNotesPage = { ...internalNotesPage, items: initialNoteItems };
   const selectedPublicContact = projectedSelected[0] ?? null;

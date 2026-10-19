@@ -19,11 +19,14 @@ import {
   aiChatTasks,
   aiConversations,
   aiSkills,
+  CHAT_TASK_REASON_CODES,
   ChatTaskGrantsSchema,
   ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
+  chatTaskNeedsNewTime,
+  chatTaskReasonSentence,
   isConversationResourceCursor,
   normalizeChatTaskSchedule,
   toAiChatTaskOccurrenceView,
@@ -95,6 +98,15 @@ const CHAT_MESSAGE_TOOL_NAME = aiCapabilityId(CORE_APP_ID, "ai.chat.message");
 const ChatTaskCreateInputSchema = z
   .object({
     chatId: ChatIdSchema,
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        'Short name of the routine in the user\'s language, for example "Neue Rechnungen eintragen". People see it in notifications and lists.',
+      ),
     prompt: z.string().trim().min(1).max(10_000).describe("Exact prompt to deliver to this chat when the routine runs."),
     grants: ChatTaskGrantsSchema.default([]).describe(
       "Routine grants: capability query/action, HTTP requests or Studio RSQL database operations. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval capabilities cannot be granted.",
@@ -106,6 +118,15 @@ const ChatTaskCreateInputSchema = z
 const ChatTaskUpdateInputSchema = z
   .object({
     taskId: ChatTaskIdSchema,
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        'Short name of the routine in the user\'s language, for example "Neue Rechnungen eintragen". People see it in notifications and lists.',
+      ),
     prompt: z.string().trim().min(1).max(10_000).optional().describe("Replacement prompt delivered when the routine runs."),
     grants: ChatTaskGrantsSchema.optional().describe("Replacement full grant list; requires user review. Omit to retain existing grants."),
     schedule: ChatTaskScheduleInputSchema.optional().describe("Replacement one-time or recurring schedule."),
@@ -113,8 +134,8 @@ const ChatTaskUpdateInputSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.prompt === undefined && value.schedule === undefined && value.grants === undefined)
-      context.addIssue({ code: "custom", message: "Provide a prompt, schedule or grants" });
+    if (value.title === undefined && value.prompt === undefined && value.schedule === undefined && value.grants === undefined)
+      context.addIssue({ code: "custom", message: "Provide a title, prompt, schedule or grants" });
     if (value.schedule !== undefined && value.timezone === undefined)
       context.addIssue({ code: "custom", path: ["timezone"], message: "Provide the runtime timezone with a schedule" });
     if (value.schedule === undefined && value.timezone !== undefined)
@@ -137,6 +158,9 @@ const ChatTaskDataSchema = z
     id: ChatTaskIdSchema,
     chatId: ChatIdSchema,
     chatTitle: z.string(),
+    title: z.string().nullable(),
+    name: z.string(),
+    reason: z.object({ code: z.enum(CHAT_TASK_REASON_CODES), sentence: z.string() }).nullable(),
     prompt: z.string(),
     grants: ChatTaskGrantsSchema,
     schedule: z.union([z.object({ kind: z.literal("once"), runAt: z.string() }), z.object({ kind: z.literal("cron"), cron: z.string() })]),
@@ -155,7 +179,7 @@ const ChatTaskDetailDataSchema = z
         id: ChatTaskOccurrenceIdSchema,
         scheduledFor: z.string(),
         trigger: z.enum(["scheduled", "manual"]),
-        state: z.enum(["queued", "running", "completed", "failed"]),
+        state: z.enum(["queued", "running", "completed", "failed", "stopped"]),
         error: z.string().nullable(),
         createdAt: z.string(),
         completedAt: z.string().nullable(),
@@ -171,7 +195,19 @@ const ChatTaskListItemDataSchema = ChatTaskDataSchema.extend({
 const appSessionTaskError = (context: Pick<CapabilityExecutionContext, "actor">) =>
   isAppSessionActor(context.actor) ? fail(err.forbidden("Use Cloud on the web for this.")) : null;
 
-const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
+const taskData = (task: AiChatTask, locale: string): z.infer<typeof ChatTaskDataSchema> => ({
+  title: task.title,
+  name: task.name,
+  reason:
+    task.reasonCode && task.reasonAt
+      ? {
+          code: task.reasonCode,
+          sentence: chatTaskReasonSentence(
+            { code: task.reasonCode, at: task.reasonAt, action: task.reasonAction ?? undefined },
+            { locale, timeZone: task.timezone },
+          ),
+        }
+      : null,
   id: task.shortId,
   chatId: task.chatId,
   chatTitle: task.chatTitle,
@@ -198,7 +234,7 @@ const referenceMessages = i18n.define({
       active: "Active",
       paused: "Paused",
       completed: "Completed",
-      needs_attention: "Needs attention",
+      needs_attention: "Needs you",
       recurring: "Recurring",
       chat: "AI conversation",
     },
@@ -206,7 +242,7 @@ const referenceMessages = i18n.define({
       active: "Aktiv",
       paused: "Pausiert",
       completed: "Abgeschlossen",
-      needs_attention: "Eingriff erforderlich",
+      needs_attention: "Braucht dich",
       recurring: "Wiederkehrend",
       chat: "KI-Chat",
     },
@@ -222,7 +258,7 @@ const taskReference = (task: AiChatTask, locale: string) => {
   return {
     type: "core.ai.task",
     id: task.shortId,
-    title: task.prompt.trim().slice(0, 500),
+    title: task.name,
     preview: `${t[task.state]} · ${schedule} · ${task.timezone}`,
     icon: "ti ti-calendar-clock",
   };
@@ -243,22 +279,24 @@ const chatReference = (chat: AiConversation) => ({
 });
 const taskUpdateSummary = (input: z.infer<typeof ChatTaskUpdateInputSchema>, task: AiChatTask, locale: string): string => {
   const { t } = coreCapabilityMessages(locale);
-  const chat = task.chatTitle;
-  if (input.prompt !== undefined && input.schedule !== undefined) return t.taskInstructionsAndScheduleChanged({ chat });
-  if (input.prompt !== undefined) return t.taskInstructionsChanged({ chat });
-  if (input.schedule !== undefined) return t.taskScheduleChanged({ chat });
-  return t.taskGrantsChanged({ chat });
+  const name = task.name;
+  if (input.title !== undefined && input.prompt === undefined && input.schedule === undefined && input.grants === undefined)
+    return t.taskRenamed({ name: task.name });
+  if (input.prompt !== undefined && input.schedule !== undefined) return t.taskInstructionsAndScheduleChanged({ name });
+  if (input.prompt !== undefined) return t.taskInstructionsChanged({ name });
+  if (input.schedule !== undefined) return t.taskScheduleChanged({ name });
+  return t.taskGrantsChanged({ name });
 };
 const invalidTaskState = (task: AiChatTask, action: "pause" | "resume" | "run"): string | null => {
   if (action === "pause")
-    return task.state === "active" || task.state === "paused" ? null : `Task ${task.shortId} cannot be paused while ${task.state}`;
+    return task.state === "active" || task.state === "paused" ? null : `Task “${task.name}” cannot be paused while ${task.state}`;
   if (action === "resume")
-    return task.state === "needs_attention" && task.schedule.kind === "once"
-      ? `Task ${task.shortId} needs a new future schedule before it can resume`
+    return chatTaskNeedsNewTime(task)
+      ? `Task “${task.name}” needs a new future schedule before it can resume`
       : task.state === "paused" || task.state === "needs_attention" || task.state === "active"
         ? null
-        : `Task ${task.shortId} cannot be resumed while ${task.state}`;
-  return task.state === "active" ? null : `Task ${task.shortId} cannot run while ${task.state}`;
+        : `Task “${task.name}” cannot be resumed while ${task.state}`;
+  return task.state === "active" ? null : `Task “${task.name}” cannot run while ${task.state}`;
 };
 
 const ChatsSearchInputSchema = z
@@ -815,7 +853,7 @@ export const aiCapabilities = defineCapabilities({
         const tasks = await aiChatTasks.list({ userId: context.user.id, ...input, offset, limit: input.limit + 1 });
         const items = tasks.slice(0, input.limit);
         return ok({
-          data: items.map((task) => ({ ...taskData(task), ref: { type: "core.ai.task" as const, id: task.shortId } })),
+          data: items.map((task) => ({ ...taskData(task, context.locale), ref: { type: "core.ai.task" as const, id: task.shortId } })),
           refs: items.map((task) => taskReference(task, context.locale)),
           page: capabilityPage(tasks.length > input.limit ? String(offset + input.limit) : undefined),
         });
@@ -835,7 +873,7 @@ export const aiCapabilities = defineCapabilities({
               taskId: ChatTaskIdSchema,
               scheduledFor: z.string(),
               trigger: z.enum(["scheduled", "manual"]),
-              state: z.enum(["queued", "running", "completed", "failed"]),
+              state: z.enum(["queued", "running", "completed", "failed", "stopped"]),
               error: z.string().nullable(),
               resultText: z.string().nullable(),
               createdAt: z.string(),
@@ -854,11 +892,11 @@ export const aiCapabilities = defineCapabilities({
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
           data: {
-            task: taskData(detail.task),
+            task: taskData(detail.task, context.locale),
             occurrence: toAiChatTaskOccurrenceView(detail.occurrence, detail.task.shortId),
             messages: detail.messages.map((message) => z.json().parse(message)),
           },
-          summary: detail.occurrence.resultText ?? detail.occurrence.error ?? t.taskRunState({ state: t[detail.occurrence.state] }),
+          summary: detail.occurrence.resultText ?? t.taskRunState({ state: t[detail.occurrence.state] }),
           refs: [taskReference(detail.task, context.locale)],
         });
       },
@@ -877,7 +915,7 @@ export const aiCapabilities = defineCapabilities({
         const occurrences = (await aiChatTasks.listOccurrences({ userId: context.user.id, taskId: input.id })) ?? [];
         return ok({
           data: {
-            task: taskData(task),
+            task: taskData(task, context.locale),
             occurrences: occurrences.map((occurrence) => ({
               id: occurrence.shortId,
               scheduledFor: occurrence.scheduledFor,
@@ -890,7 +928,7 @@ export const aiCapabilities = defineCapabilities({
           },
           summary: coreCapabilityMessages(context.locale).t.taskRead({
             state: referenceMessages.resolve([context.locale]).t[task.state],
-            chat: task.chatTitle,
+            name: task.name,
           }),
           refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
@@ -1430,9 +1468,10 @@ export const aiCapabilities = defineCapabilities({
           const normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
           const { t } = coreCapabilityMessages(context.locale);
           return ok({
-            message: t.taskCreate({ chat: `${chat.title} (${chat.shortId})` }),
+            message: t.taskCreate({ chat: chat.title }),
             details: [
-              { label: t.chat, value: `${chat.title} (${chat.shortId})` },
+              ...(input.title ? [{ label: t.name, value: input.title }] : []),
+              { label: t.chat, value: chat.title },
               { label: t.schedule, value: scheduleLabel(normalized.schedule, normalized.timezone, context.locale) },
               { label: t.instructions, value: input.prompt, display: "block" },
               await taskGrantReview(input.grants, context.locale),
@@ -1455,8 +1494,8 @@ export const aiCapabilities = defineCapabilities({
           });
           if (replay)
             return ok({
-              data: taskData(replay),
-              summary: coreCapabilityMessages(context.locale).t.taskCreated({ chat: replay.chatTitle }),
+              data: taskData(replay, context.locale),
+              summary: coreCapabilityMessages(context.locale).t.taskCreated({ name: replay.name }),
               refs: [taskReference(replay, context.locale), taskChatReference(replay, context.locale)],
               links: [{ rel: "open", href: chatHref(replay.chatId) }],
             });
@@ -1477,6 +1516,8 @@ export const aiCapabilities = defineCapabilities({
             userId: context.user.id,
             chatId: input.chatId,
             prompt: input.prompt,
+            title: input.title,
+            locale: context.locale,
             grants: input.grants,
             ...normalized,
             idempotencyKey: context.idempotencyKey,
@@ -1489,8 +1530,8 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.notFound("Chat"));
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
-          data: taskData(task),
-          summary: coreCapabilityMessages(context.locale).t.taskCreated({ chat: task.chatTitle }),
+          data: taskData(task, context.locale),
+          summary: coreCapabilityMessages(context.locale).t.taskCreated({ name: task.name }),
           refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
@@ -1516,9 +1557,10 @@ export const aiCapabilities = defineCapabilities({
           const normalized = input.schedule ? await normalizeChatTaskSchedule(input.schedule, input.timezone) : null;
           const { t } = coreCapabilityMessages(context.locale);
           return ok({
-            message: t.taskUpdate({ id: task.shortId }),
+            message: t.taskUpdate({ name: task.name }),
             details: [
-              { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
+              ...(input.title ? [{ label: t.name, value: input.title }] : []),
+              { label: t.chat, value: task.chatTitle },
               {
                 label: t.schedule,
                 value: scheduleLabel(normalized?.schedule ?? task.schedule, normalized?.timezone ?? task.timezone, context.locale),
@@ -1546,13 +1588,14 @@ export const aiCapabilities = defineCapabilities({
           userId: context.user.id,
           taskId: input.taskId,
           prompt: input.prompt,
+          title: input.title,
           grants: input.grants,
           ...normalized,
         });
         if (!task) return fail(err.notFound("Task"));
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
-          data: taskData(task),
+          data: taskData(task, context.locale),
           summary: taskUpdateSummary(input, task, context.locale),
           refs: [taskReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
@@ -1576,7 +1619,7 @@ export const aiCapabilities = defineCapabilities({
         if (stateError) return fail(err.conflict(stateError));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: t.taskPause({ id: task.shortId }),
+          message: t.taskPause({ name: task.name }),
           details: [
             { label: t.task, value: task.prompt, display: "block" },
             { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
@@ -1598,8 +1641,8 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.conflict("Task state changed; read it and retry"));
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
-          data: taskData(task),
-          summary: coreCapabilityMessages(context.locale).t.taskPaused({ chat: task.chatTitle }),
+          data: taskData(task, context.locale),
+          summary: coreCapabilityMessages(context.locale).t.taskPaused({ name: task.name }),
           refs: [taskReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
@@ -1623,7 +1666,7 @@ export const aiCapabilities = defineCapabilities({
         if (stateError) return fail(err.conflict(stateError));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: t.taskResume({ id: task.shortId }),
+          message: t.taskResume({ name: task.name }),
           details: [
             { label: t.task, value: task.prompt, display: "block" },
             { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
@@ -1646,8 +1689,8 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.conflict("Task state changed; read it and retry"));
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
-          data: taskData(task),
-          summary: coreCapabilityMessages(context.locale).t.taskResumed({ chat: task.chatTitle }),
+          data: taskData(task, context.locale),
+          summary: coreCapabilityMessages(context.locale).t.taskResumed({ name: task.name }),
           refs: [taskReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
@@ -1657,7 +1700,7 @@ export const aiCapabilities = defineCapabilities({
       title: "Run an Assistant routine now",
       description: "Queue one manual occurrence without changing the future schedule.",
       input: ChatTaskIdInputSchema,
-      data: z.object({ id: ChatTaskOccurrenceIdSchema, state: z.enum(["queued", "running", "completed", "failed"]) }),
+      data: z.object({ id: ChatTaskOccurrenceIdSchema, state: z.enum(["queued", "running", "completed", "failed", "stopped"]) }),
       destructive: false,
       openWorld: false,
       idempotency: "required",
@@ -1669,9 +1712,9 @@ export const aiCapabilities = defineCapabilities({
         if (stateError) return fail(err.conflict(stateError));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: t.taskRun({ id: task.shortId }),
+          message: t.taskRun({ name: task.name }),
           details: [
-            { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
+            { label: t.chat, value: task.chatTitle },
             { label: t.instructions, value: task.prompt, display: "block" },
           ],
         });
@@ -1696,7 +1739,7 @@ export const aiCapabilities = defineCapabilities({
         void aiChatTaskRuntime.recover().catch(() => undefined);
         return ok({
           data: { id: occurrence.shortId, state: occurrence.state },
-          summary: coreCapabilityMessages(context.locale).t.taskQueued({ chat: task.chatTitle }),
+          summary: coreCapabilityMessages(context.locale).t.taskQueued({ name: task.name }),
           refs: [taskReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
@@ -1716,9 +1759,9 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.notFound("Task"));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: t.taskDelete({ id: task.shortId }),
+          message: t.taskDelete({ name: task.name }),
           details: [
-            { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
+            { label: t.chat, value: task.chatTitle },
             { label: t.instructions, value: task.prompt, display: "block" },
             { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
           ],
@@ -1736,7 +1779,7 @@ export const aiCapabilities = defineCapabilities({
           result: deleted
             ? ok({
                 data: { deleted: true as const },
-                summary: coreCapabilityMessages(context.locale).t.taskDeleted({ chat: task.chatTitle }),
+                summary: coreCapabilityMessages(context.locale).t.taskDeleted({ name: task.name }),
               })
             : fail(err.notFound("Task")),
         });

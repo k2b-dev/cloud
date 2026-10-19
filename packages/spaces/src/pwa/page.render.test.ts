@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,7 +45,8 @@ const person: User = {
 const guest: User = { ...person, id: "22222222-2222-4222-8222-222222222222", uid: "gast", profile: "guest", roles: ["guest"] };
 const shell: RuntimeAppMeta = { id: "pwa", name: "Mobile app", icon: "ti ti-device-mobile", description: "", routes: ["/pwa"] };
 
-const today = new Date();
+setSystemTime(new Date("2026-10-24T12:00:00Z"));
+const today = new Date("2026-10-24T12:00:00Z");
 const at = (hours: number) => {
   const date = new Date(today);
   date.setUTCHours(hours, 0, 0, 0);
@@ -61,6 +62,7 @@ const item = (shortId: string, title: string, extra: Partial<OverviewWork["items
   startsAt: null,
   endsAt: null,
   deadline: null,
+  deadlineAllDay: false,
   ...extra,
 });
 const counts = { mine: 2, today: 2, upcoming: 4 };
@@ -87,6 +89,7 @@ afterEach(() => {
 });
 afterAll(() => {
   for (const spy of spies) spy.mockRestore();
+  setSystemTime();
 });
 
 const signIn = (kind: "app" | "web", account: User = person) => {
@@ -145,7 +148,7 @@ describe("Spaces in the mobile app", () => {
     expect(document.querySelector('.k2b-tab-bar a[aria-current="page"]')?.getAttribute("href")).toBe("/pwa/spaces");
     expect(document.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe("For me 2");
     expect(rows(document)).toEqual([
-      { title: "Order the tents", space: "Summer fair", check: "Mark “Order the tents” as done", when: "Jan 2, 2026" },
+      { title: "Order the tents", space: "Summer fair", check: "Mark “Order the tents” as done", when: "Fri, Jan 2, 09:00" },
       { title: "Write the flyer", space: "Summer fair", check: "Mark “Write the flyer” as done", when: null },
     ]);
     expect(document.querySelector(".spaces-pwa__when")?.hasAttribute("data-overdue")).toBe(true);
@@ -163,7 +166,7 @@ describe("Spaces in the mobile app", () => {
     expect(document.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe("Today 2");
     expect(rows(document)).toEqual([
       { title: "Set-up meeting", space: "Summer fair", check: null, when: "09:00–10:00" },
-      { title: "Call the bakery", space: "Summer fair", check: "Mark “Call the bakery” as done", when: "23:00" },
+      { title: "Call the bakery", space: "Summer fair", check: "Mark “Call the bakery” as done", when: "Sat, Oct 24, 23:00" },
     ]);
     expect(document.querySelector(".spaces-pwa__event")?.getAttribute("aria-label")).toBe("Event");
   });

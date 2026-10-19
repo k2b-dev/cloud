@@ -346,7 +346,7 @@ describe("compose renderer", () => {
       renderLiquid: true,
     });
 
-    expect(rendered).toEqual({ ok: true, data: { html: null, text: "O'Reilly & Partners", formattingWarnings: [] } });
+    expect(rendered).toEqual({ ok: true, data: { logoUsed: false, html: null, text: "O'Reilly & Partners", formattingWarnings: [] } });
   });
 
   test("accepts known Liquid variables and logic but rejects unknown variables", () => {
@@ -417,12 +417,12 @@ describe("compose renderer", () => {
       context,
       renderLiquid: true,
     });
-    expect(allowed).toEqual({ ok: true, data: { html: null, text: "Ada Lovelace".repeat(100), formattingWarnings: [] } });
+    expect(allowed).toEqual({ ok: true, data: { logoUsed: false, html: null, text: "Ada Lovelace".repeat(100), formattingWarnings: [] } });
 
     // Leftover marks do not count as signatures, however many a hand edit leaves.
     for (const body of [`${"\u2063".repeat(10_000)}text`, `text${"\u2064".repeat(10_000)}`]) {
       const leftovers = renderComposeContent({ body, format: "plain", customCss: "", context, renderLiquid: true });
-      expect(leftovers).toEqual({ ok: true, data: { html: null, text: "text", formattingWarnings: [] } });
+      expect(leftovers).toEqual({ ok: true, data: { logoUsed: false, html: null, text: "text", formattingWarnings: [] } });
     }
   });
 
@@ -532,7 +532,7 @@ describe("compose renderer", () => {
         context: { ...context, actor: { ...context.actor, display_name: "Ada\u2064\u2063 Lovelace" } },
         renderLiquid: true,
       });
-      expect(rendered).toEqual({ ok: true, data: { html: null, text: "Ada Lovelace", formattingWarnings: [] } });
+      expect(rendered).toEqual({ ok: true, data: { logoUsed: false, html: null, text: "Ada Lovelace", formattingWarnings: [] } });
     });
   });
 
@@ -786,7 +786,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
 
   test("plain text ignores even unparseable stored CSS without warnings", () => {
     const rendered = renderComposeContent({ body: "Hello", format: "plain", customCss: "p { color:", context, renderLiquid: false });
-    expect(rendered).toEqual({ ok: true, data: { html: null, text: "Hello", formattingWarnings: [] } });
+    expect(rendered).toEqual({ ok: true, data: { logoUsed: false, html: null, text: "Hello", formattingWarnings: [] } });
   });
 
   test("uses the built-in design when valid mailbox CSS exceeds the inline-work budget (#991)", () => {
@@ -899,7 +899,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       renderLiquid: true,
     });
 
-    expect(rendered).toEqual({ ok: true, data: { html: null, text: "Hello Ada Lovelace", formattingWarnings: [] } });
+    expect(rendered).toEqual({ ok: true, data: { logoUsed: false, html: null, text: "Hello Ada Lovelace", formattingWarnings: [] } });
   });
 
   test("keeps phone links and drops a tel: link that holds no phone number", () => {
@@ -1023,7 +1023,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     expect(composeFormattingWarnings(many, "markdown")).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
     const warning = composeFormattingWarnings(`<${"x".repeat(200)}>t`, "markdown")[0];
     expect(warning?.code).toBe("unsupported_element");
-    if (warning && warning.code !== "ignored_mailbox_css") expect(warning.element).toHaveLength(64);
+    if (warning && "element" in warning) expect(warning.element).toHaveLength(64);
   });
 });
 
@@ -1105,7 +1105,12 @@ describe("separate draft signatures", () => {
     const params = { signature: "Regards {{ sender.email }}", format: "plain" as const, customCss: "", context, renderLiquid: false };
     expect(renderComposeContent({ ...params, body: "Answer\n\nAda wrote:\n> Original" })).toEqual({
       ok: true,
-      data: { html: null, text: "Answer\n\nRegards support@example.test\n\nAda wrote:\n> Original", formattingWarnings: [] },
+      data: {
+        logoUsed: false,
+        html: null,
+        text: "Answer\n\nRegards support@example.test\n\nAda wrote:\n> Original",
+        formattingWarnings: [],
+      },
     });
     expect(renderComposeContent({ ...params, body: "> Original\n\nAnswer" })).toMatchObject({
       ok: true,
@@ -1257,4 +1262,269 @@ describe("separate draft signatures", () => {
     const body = "Regards {{ actor.display_name }}  \n\n";
     expect(withoutSignatureSegments(body, "Regards {{ actor.display_name }}")).toBe(body);
   });
+});
+
+describe("mailbox signature logos", () => {
+  const logo = {
+    src: "cid:logo.00000000-0000-4000-8000-000000000001@example.test",
+    altText: 'Team "<>& $&',
+    displayWidth: 234,
+    pixelWidth: 1200,
+    pixelHeight: 400,
+    byteLength: 68,
+  };
+  const render = (input: Partial<Parameters<typeof renderComposeContent>[0]> = {}) =>
+    renderComposeContent({
+      body: "Hello",
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: true,
+      signature: "{{ mailbox.logo }}",
+      logo,
+      ...input,
+    });
+  test("checks the plain-text size of repeated alt text before expanding it", () => {
+    const signature = "{% for i in (1..100) %}{% for j in (1..100) %}{{ mailbox.logo }}{% endfor %}{% endfor %}";
+    const wide = { ...logo, altText: "\u20ac".repeat(200) };
+    expect(render({ format: "plain", signature, logo: wide })).toMatchObject({
+      ok: false,
+      error: { composeRender: { reason: "tooLarge" } },
+    });
+    expect(render({ format: "plain", signature: "{{ mailbox.logo }} {{ mailbox.logo }}", logo: wide })).toMatchObject({
+      ok: true,
+      data: { text: `Hello\n\n${wide.altText} ${wide.altText}` },
+    });
+  });
+  test("inserts one trusted CID image after sanitizing and keeps literal alt text in plain text", () => {
+    const result = render();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.logoUsed).toBe(true);
+    expect(result.data.html?.match(/<img /g)).toHaveLength(1);
+    expect(result.data.html).toContain(
+      `<img src="${logo.src}" alt="Team &#34;&#60;&#62;&#38; $&#38;" width="234" height="78" style="display:block;border:0;height:auto;max-width:100%">`,
+    );
+    expect(result.data.text).toContain(logo.altText);
+    expect(result.data.html).not.toContain("MAILLOGO");
+    expect(result.data.text).not.toContain("MAILLOGO");
+  });
+  test("reserves the rounded logo box in a data URL preview without remote images", () => {
+    const result = render({
+      logo: { ...logo, src: "data:image/png;base64,aGVsbG8=", displayWidth: 200 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.html?.match(/<img /g)).toHaveLength(1);
+    expect(result.data.html).toContain(
+      '<img src="data:image/png;base64,aGVsbG8=" alt="Team &#34;&#60;&#62;&#38; $&#38;" width="200" height="67" style="display:block;border:0;height:auto;max-width:100%">',
+    );
+    expect(result.data.html).not.toMatch(/src=["']https?:/i);
+  });
+  test("budgets repeated logos as data URLs before allocating images in both delivery modes", () => {
+    const byteLength = 100 * 1024;
+    for (const mode of ["cid", "data"] as const) {
+      const src = mode === "cid" ? logo.src : `data:image/png;base64,${Buffer.alloc(byteLength).toString("base64")}`;
+      let sourceReads = 0;
+      const largeLogo = {
+        ...logo,
+        byteLength,
+        get src() {
+          sourceReads += 1;
+          return src;
+        },
+      };
+      expect(render({ signature: "{{ mailbox.logo }}".repeat(30), logo: largeLogo })).toMatchObject({
+        ok: false,
+        error: { composeRender: { reason: "tooLarge" } },
+      });
+      expect(sourceReads).toBe(0);
+      const two = render({ signature: "{{ mailbox.logo }}".repeat(2), logo: largeLogo });
+      expect(two).toMatchObject({ ok: true });
+      if (two.ok) expect(two.data.html?.match(/<img /g)).toHaveLength(2);
+    }
+  });
+  test("counts inserted images toward the HTML element budget", () => {
+    expect(render({ signature: "{{ mailbox.logo }}".repeat(999) })).toMatchObject({
+      ok: false,
+      error: { composeRender: { reason: "tooComplex" } },
+    });
+  });
+  test("accepts exact tags and whitespace control in selected and stored signatures", () => {
+    for (const tag of [
+      "{{ mailbox.logo }}",
+      "{{mailbox.logo}}",
+      "{{- mailbox.logo -}}",
+      "{{- mailbox.logo }}",
+      "{{ mailbox.logo -}}",
+      "{{\nmailbox.logo\n}}",
+    ]) {
+      expect(validateComposeTemplateSource(tag)).toMatchObject({ ok: true });
+      const selected = render({ signature: tag });
+      expect(selected).toMatchObject({ ok: true, data: { logoUsed: true } });
+      if (selected.ok) expect(selected.data.html).toContain(`<img src="${logo.src}"`);
+      const segment = markComposeTemplateSegment(tag);
+      expect(hasUnrenderedTemplateSyntax(segment)).toBe(false);
+      const legacy = render({ signature: null, body: segment });
+      expect(legacy).toMatchObject({ ok: true, data: { logoUsed: true } });
+      if (legacy.ok) expect(legacy.data.html).toContain(`<img src="${logo.src}"`);
+    }
+    expect(renderComposeTemplateSource("left  {{- mailbox.logo -}}  right", context, "markdown")).toEqual({ ok: true, data: "leftright" });
+  });
+  test.each([
+    ["{% assign x = '{{ mailbox.logo }}' %}{{ x | slice: 0, 12 }}", "{{ mailbox.l"],
+    ['{% assign x = "{{ mailbox.logo }}" %}{{ x | truncate: 12 }}', "{{ mailbo..."],
+    ['{{ "{{ mailbox.logo }}" | downcase }}', "{{ mailbox.logo }}"],
+    ["{% raw %}{{ mailbox.logo }}{% endraw %}", "{{ mailbox.logo }}"],
+  ])("renders logo syntax inside Liquid literals as text: %s", (signature, literal) => {
+    expect(validateComposeTemplateSource(signature)).toMatchObject({ ok: true });
+    for (const format of ["plain", "markdown"] as const) {
+      const result = render({ signature, format });
+      expect(result).toMatchObject({ ok: true, data: { logoUsed: false, text: `Hello\n\n${literal}` } });
+      if (!result.ok) continue;
+      expect(result.data.html ?? "").not.toContain("<img");
+      if (format === "markdown") expect(result.data.html).toContain(literal);
+      expect(result.data.html ?? "").not.toMatch(/maillogo/i);
+      expect(result.data.text).not.toMatch(/maillogo/i);
+    }
+  });
+  test("replaces only the real output when a string contains identical logo syntax", () => {
+    const result = render({ signature: '{% assign x = "{{ mailbox.logo }}" %}{{ x }} / {{ mailbox.logo }}' });
+    expect(result).toMatchObject({ ok: true, data: { logoUsed: true, text: `Hello\n\n{{ mailbox.logo }} / ${logo.altText}` } });
+    if (!result.ok) return;
+    expect(result.data.html).toContain("{{ mailbox.logo }} / ");
+    expect(result.data.html?.match(/<img /g)).toHaveLength(1);
+    expect(result.data.html).not.toMatch(/maillogo/i);
+    expect(result.data.text).not.toMatch(/maillogo/i);
+  });
+  test("rejects filters, conditions, assignments and bracket access to the logo", () => {
+    for (const signature of [
+      "{{ mailbox.logo | downcase }}",
+      "{% if mailbox.logo %}x{% endif %}",
+      "{% assign l = mailbox.logo %}{{ l }}",
+      '{{ mailbox["logo"] }}',
+    ]) {
+      expect(validateComposeTemplateSource(signature)).toMatchObject({
+        ok: false,
+        error: { message: expect.stringContaining('variable "mailbox.logo" is not available') },
+      });
+      expect(render({ signature })).toMatchObject({ ok: false });
+      expect(renderComposeTemplateSource(signature, context, "markdown")).toMatchObject({ ok: false });
+    }
+  });
+  test("rejects oversized unterminated Liquid output before scanning URL contexts", () => {
+    const source = "{{".repeat(40_000);
+    const start = performance.now();
+    const result = validateComposeTemplateSource(source);
+    const elapsed = performance.now() - start;
+    expect(result.ok).toBe(false);
+    expect(elapsed).toBeLessThan(500);
+  });
+  test("rejects any capture tag alongside an exact logo tag", () => {
+    for (const capture of [
+      "{% capture sig %}{{ mailbox.logo }}{% endcapture %}{{ sig | downcase }}",
+      "{%- capture sig -%}{{- mailbox.logo -}}{%- endcapture -%}{{ sig | downcase }}",
+      "{% liquid\n capture sig\n echo 'other text'\n endcapture\n%}{{ mailbox.logo }}",
+      "{%- liquid\n\tcapture sig\n echo 'other text'\n endcapture\n-%}{{ mailbox.logo }}",
+      "{% capture other %}Unrelated{% endcapture %}{{ mailbox.logo }}",
+    ]) {
+      expect(validateComposeTemplateSource(capture)).toMatchObject({
+        ok: false,
+        error: { message: "{{ mailbox.logo }} cannot be used together with capture" },
+      });
+      expect(render({ signature: capture })).toMatchObject({
+        ok: false,
+        error: { composeRender: { reason: "signatureFailed" } },
+      });
+    }
+    expect(validateComposeTemplateSource("{% capture sig %}Regards{% endcapture %}{{ sig | downcase }}").ok).toBe(true);
+    expect(validateComposeTemplateSource("{{ mailbox.logo }} capture {% assign capture = 'text' %}{{ capture }}").ok).toBe(true);
+    expect(validateComposeTemplateSource('{% assign x = "{% capture sig %}" %}{{ mailbox.logo }}').ok).toBe(true);
+    expect(validateComposeTemplateSource("{% raw %}{% capture sig %}{% endraw %}{{ mailbox.logo }}").ok).toBe(true);
+    expect(validateComposeTemplateSource('{% capture sig %}{{ "{{ mailbox.logo }}" }}{% endcapture %}{{ sig }}').ok).toBe(true);
+  });
+  test("fails closed when a rendered logo marker is transformed", () => {
+    const randomPart = "ABCDEF01234546789ABCDEF012345678";
+    const token = `MAILLOGO${randomPart}`;
+    const uuid = spyOn(crypto, "randomUUID").mockReturnValue("abcdef01-2345-4678-9abc-def012345678");
+    try {
+      for (const format of ["plain", "markdown"] as const) {
+        for (const marker of [
+          token.toLowerCase(),
+          `MAILLOGO${randomPart.toLowerCase()}`,
+          randomPart,
+          `changed${randomPart.toLowerCase()}`,
+        ]) {
+          const result = render({
+            format,
+            signature: "{{ mailbox.logo }} {{ actor.display_name }}",
+            context: { ...context, actor: { ...context.actor, display_name: marker } },
+          });
+          expect(result).toMatchObject({ ok: false, error: { composeRender: { reason: "signatureFailed" } } });
+          expect(render({ format, signature: null, body: marker })).toMatchObject({
+            ok: false,
+            error: { composeRender: { reason: "signatureFailed" } },
+          });
+        }
+        expect(render({ format, signature: "{{ mailbox.logo }} {{ mailbox.logo }}" })).toMatchObject({ ok: true });
+        // Ordinary text that merely looks like the marker prefix is the writer's own text.
+        expect(render({ format, body: "MailLogo MAILLOGO11112222" })).toMatchObject({ ok: true });
+      }
+    } finally {
+      uuid.mockRestore();
+    }
+  });
+  test("removes an unavailable logo and reports its formatting warning", () => {
+    for (const format of ["plain", "markdown"] as const) {
+      const result = render({ logo: null, format });
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.data.logoUsed).toBe(true);
+      expect(result.data.formattingWarnings).toEqual([{ code: "missing_mailbox_logo" }]);
+      expect(result.data.html ?? "").not.toContain("<img");
+      expect(result.data.html ?? "").not.toContain("MAILLOGO");
+      expect(result.data.text).toBe("Hello");
+    }
+  });
+  test("plain signatures use alt text and legacy signature segments use the same image", () => {
+    const plain = render({ format: "plain" });
+    expect(plain).toMatchObject({ ok: true, data: { html: null, text: `Hello\n\n${logo.altText}`, logoUsed: true } });
+    const legacy = render({ signature: null, body: markComposeTemplateSegment("{{ mailbox.logo }}") });
+    expect(legacy).toMatchObject({ ok: true, data: { logoUsed: true, text: logo.altText } });
+    if (legacy.ok) expect(legacy.data.html).toContain(`<img src="${logo.src}"`);
+  });
+  test("snippets render the logo empty, even if the caller supplies a value", () => {
+    const logoContext = { ...context, mailbox: { ...context.mailbox, logo: "unexpected" } };
+    for (const format of ["plain", "markdown"] as const)
+      expect(renderComposeTemplateSource("{{ mailbox.logo }}", logoContext, format)).toEqual({ ok: true, data: "" });
+  });
+  test("rejects logo output in link destinations, titles, references and HTML tags", () => {
+    for (const signature of [
+      "[x]({{ mailbox.logo }})",
+      '[Contact](https://example.test "{{ mailbox.logo }}")',
+      "[Contact]: {{ mailbox.logo }}",
+      '<a href="{{ mailbox.logo }}">x</a>',
+    ]) {
+      expect(validateComposeTemplateSource(signature).ok).toBe(false);
+      expect(render({ signature }).ok).toBe(false);
+    }
+  });
+  test("keeps rejecting user images and remote CSS images alongside the trusted logo", () => {
+    const body = '![remote](https://example.test/logo.png)\n\n<img src="https://example.test/raw.png">';
+    const result = render({ body });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.html?.match(/<img /g)).toHaveLength(1);
+    expect(result.data.html).not.toContain('src="http');
+    expect(composeFormattingWarnings(body, "markdown")).toContainEqual({ code: "unsupported_element", element: "img" });
+    for (const value of ['url("https://example.test/logo.png")', 'image-set("https://example.test/logo.png" 1x)']) {
+      expect(validateComposeCss(`p { background: ${value}; }`).ok).toBe(false);
+    }
+  });
+});
+
+test("missing mailbox logo warnings have English and German reader text", async () => {
+  const { describeComposeFormattingWarning } = await import("../compose-formatting-messages");
+  expect(describeComposeFormattingWarning({ code: "missing_mailbox_logo" }, "en")).toContain("no logo is uploaded");
+  expect(describeComposeFormattingWarning({ code: "missing_mailbox_logo" }, "de")).toContain("keines hochgeladen");
 });

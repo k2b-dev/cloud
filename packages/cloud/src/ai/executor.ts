@@ -19,6 +19,7 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
+import { authorizeBackgroundActionWith } from "./background-review";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { type AiCapabilityCatalogEntry, createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
@@ -27,12 +28,7 @@ import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
-import {
-  createCloudAiCodeTools,
-  createCloudAiLocalBashTool,
-  createCloudAiLocalTools,
-  createConfiguredDefaultCloudAiTools,
-} from "./default-tools";
+import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import {
@@ -690,10 +686,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
               accessSubject: aiChatAccessSubject(config.actor),
               allowedDataBoundaries: config.modelPolicy?.allowedDataBoundaries,
             })),
-            // Cloud runs the code tools itself; only tools a client must run wait for that client to declare them.
-            ...[createCloudAiLocalBashTool(), ...createCloudAiLocalTools(), ...createCloudAiCodeTools()].filter(
-              (tool) => tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name),
-            ),
+            ...createAiTurnCodeAndClientTools(config),
           ]
         : [],
     toolApprovalContext: config.toolApprovalContext,
@@ -997,11 +990,7 @@ export class AiTurnExecutor {
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
     const allowed = allowedTools === null ? null : new Set(allowedTools);
-    const activeTools = toolsSupported
-      ? runtimeTools.filter(
-          (tool) => (!allowed || allowed.has(tool.def.name)) && !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
-        )
-      : [];
+    const activeTools = toolsSupported ? runtimeTools.filter((tool) => !allowed || allowed.has(tool.def.name)) : [];
     let audioUnavailableInstruction: string | undefined;
     if (
       defaultToolSource &&
@@ -1192,7 +1181,7 @@ export class AiTurnExecutor {
       );
       return;
     }
-    const authorizeBackground =
+    const authorizeBackgroundMandate =
       config.background && config.mandate
         ? async (entry: AiCapabilityCatalogEntry, args: unknown) => {
             try {
@@ -1245,7 +1234,37 @@ export class AiTurnExecutor {
                   }),
               }
             : {}),
-          authorizeBackground,
+          authorizeBackground: authorizeBackgroundMandate
+            ? async (entry, args, context) => {
+                await authorizeBackgroundActionWith(
+                  {
+                    turnId,
+                    mandate: config.mandate!,
+                    appId: entry.appId,
+                    capabilityId: entry.operation.localId,
+                    kind: entry.kind,
+                    args,
+                    approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+                    hasReview: entry.kind === "action" && "review" in entry.operation && entry.operation.review === true,
+                    action: entry.display.title,
+                    review: () =>
+                      capabilityAuthority
+                        ? reviewAiCapability({
+                            conversationId,
+                            authority: capabilityAuthority,
+                            mandate: config.mandate,
+                            locale: promptLocale,
+                            entry,
+                            args,
+                            context,
+                          })
+                        : Promise.resolve(null),
+                    signal: context.signal,
+                  },
+                  () => authorizeBackgroundMandate(entry, args),
+                );
+              }
+            : undefined,
           onReview: (callId, review) => {
             capabilityActionReviews.set(callId, review);
             if (review.approvalScope) rememberableCapabilityApprovals.set(callId, review.approvalScope);
@@ -1254,7 +1273,7 @@ export class AiTurnExecutor {
             ? {
                 execute: async (entry, args, context) => {
                   try {
-                    await authorizeBackground?.(entry, args);
+                    await authorizeBackgroundMandate?.(entry, args);
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,

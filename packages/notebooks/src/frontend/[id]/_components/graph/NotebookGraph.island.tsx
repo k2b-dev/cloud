@@ -18,7 +18,12 @@ import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
-import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
+import {
+  createNavigationHidden,
+  keepFocusAfterShowingNavigation,
+  NOTEBOOK_NAVIGATION_ID,
+  setNavigationHidden,
+} from "../sidebar/navigation-visibility";
 import CircleDisplay from "./CircleDisplay";
 import GraphList from "./GraphList";
 import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
@@ -290,9 +295,9 @@ export default function NotebookGraph(props: Props) {
   return (
     <div ref={root} class="notebook-graph" data-display={display() ?? undefined} data-list={state().list ? "" : undefined}>
       <Toolbar label={t().graphTools} class="notebook-graph__head">
-        {/* The navigation sidebar sits beside the graph from lg up; between md and lg the toggle only brings a hidden
-            navigation back, as the editor's does. Phones keep the header's menu. */}
-        <div ref={navigationToggle} class={`hidden shrink-0 ${navigationHidden() ? "md:flex" : "lg:flex"}`}>
+        {/* The navigation sidebar sits beside the graph from a 64 rem app host; below that, from md, the toggle only
+            brings a hidden navigation back. Phones keep the header's menu (app.css). */}
+        <div ref={navigationToggle} class="notebooks-navigation-toggle" data-navigation-hidden={navigationHidden() ? "" : undefined}>
           <Tooltip.Anchor content={navigationLabel()}>
             <IconButton
               label={navigationLabel()}
@@ -303,18 +308,10 @@ export default function NotebookGraph(props: Props) {
               onClick={() => {
                 const showing = navigationHidden();
                 setNavigationHidden(!showing);
-                // Between md and lg the toggle hides itself once the navigation is back. Focus moves into the
-                // navigation when it can take it there, else to the graph's search, never to the page start.
-                if (showing)
-                  requestAnimationFrame(() => {
-                    if (!navigationToggle || navigationToggle.getClientRects().length) return;
-                    const navigation = document.getElementById(NOTEBOOK_NAVIGATION_ID);
-                    for (const element of navigation?.querySelectorAll<HTMLElement>("a[href], button:not(:disabled)") ?? []) {
-                      element.focus();
-                      if (document.activeElement === element) return;
-                    }
-                    navigationToggle.closest(".notebook-graph")?.querySelector<HTMLInputElement>(".notebook-graph__head input")?.focus();
-                  });
+                if (showing && navigationToggle)
+                  keepFocusAfterShowingNavigation(navigationToggle, () =>
+                    root.querySelector<HTMLInputElement>(".notebook-graph__head input")?.focus(),
+                  );
               }}
             >
               <i

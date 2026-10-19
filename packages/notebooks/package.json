@@ -66,6 +66,7 @@
     "@types/sanitize-html": "catalog:",
     "bun-plugin-tailwind": "catalog:",
     "playwright": "catalog:",
+    "sharp": "0.35.4",
     "typescript": "catalog:"
   },
   "license": "AGPL-3.0-or-later"

@@ -80,7 +80,7 @@ describe("AppWorkspace.SidebarSwitcher", () => {
   test("the optional description is visible and joins the screen reader purpose", () => {
     const html = render({ description: "team@example.com" });
     expect(html).toContain("data-description");
-    expect(html).toContain("<small>team@example.com</small>");
+    expect(html).toContain('<small class="k2b-truncate-fade">team@example.com</small>');
     expect(html).toMatch(/class="k2b-sr-only">team@example.com, Switch notebook<\/span>/);
     expect(render()).not.toContain("data-description");
   });

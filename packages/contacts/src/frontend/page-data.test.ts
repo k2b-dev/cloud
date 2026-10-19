@@ -4,8 +4,15 @@ import { type ContactBook, contactsService } from "../service";
 import * as access from "../service/access";
 import * as booksService from "../service/books";
 import * as contacts from "../service/contacts";
+import * as favorites from "../service/favorites";
 import * as publicResources from "../service/public-resources";
-import { loadContactBookPermissions, parseContactsPage, parseContactsQueryOptions, resolveSelectedContact } from "./page-data";
+import {
+  loadContactBookPermissions,
+  loadFavoriteKeysForContacts,
+  parseContactsPage,
+  parseContactsQueryOptions,
+  resolveSelectedContact,
+} from "./page-data";
 
 describe("contacts page state", () => {
   test("normalizes invalid page values", () => {
@@ -84,4 +91,10 @@ test("SSR selection checks the shared permission before loading a contact outsid
   permission.mockResolvedValue("read");
   expect(await resolveSelectedContact(selection)).toBeNull();
   expect(get).toHaveBeenCalledWith({ bookId: "internal-book", id: "internal-contact" });
+});
+
+test("SSR favorite projection derives user identity from the actor and skips machine actors", async () => {
+  const keys = spyOn(favorites, "listKeysForContacts").mockResolvedValue([]);
+  expect(await loadFavoriteKeysForContacts(actor, [])).toEqual([]);
+  expect(keys).not.toHaveBeenCalled();
 });

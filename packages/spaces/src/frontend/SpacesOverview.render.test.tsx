@@ -57,6 +57,7 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
                 title: "Ship overview",
                 priority: "urgent",
                 deadline: "2026-08-21T08:00:00.000Z",
+                deadlineAllDay: false,
                 startsAt: null,
                 endsAt: null,
               },

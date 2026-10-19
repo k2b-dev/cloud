@@ -2,10 +2,16 @@ import { EMAIL_HTML_ALLOWED_ATTRIBUTES, EMAIL_HTML_SANITIZE_OPTIONS, EMAIL_HTML_
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { convert } from "html-to-text";
 import juice from "juice";
+import { Tokenizer, TypeGuards } from "liquidjs";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
-import { type ComposeFormattingWarning, composeTemplateVariables, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
+import {
+  type ComposeFormattingWarning,
+  composeTemplateVariables,
+  MAX_COMPOSE_FORMATTING_WARNINGS,
+  mailboxLogoDisplayHeight,
+} from "../contracts";
 import { composeRenderFailure } from "./compose-render-errors";
 import { allowedEmailInlineStyles, allowedEmailInlineStyleValue, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
 import { renderMailLiquidTemplate, validateMailLiquidTemplate } from "./template-rendering";
@@ -33,6 +39,37 @@ const COMPOSE_SEGMENT_MARKS = /[\u2063\u2064]/g;
 // A segment is a start mark followed by an end mark with no other mark between them; every other mark is a leftover.
 const COMPOSE_SEGMENT = /\u2063([^\u2063\u2064]*)\u2064/g;
 const COMPOSE_SEGMENT_OR_LEFTOVER_MARK = /(\u2063[^\u2063\u2064]*\u2064)|[\u2063\u2064]/g;
+
+// Logo tags are owned by Mail, never evaluated as Liquid variables or filters.
+const LIQUID_COMPOSE_VARIABLES = Object.keys(composeTemplateVariables).filter((variable) => variable !== "mailbox.logo");
+const replaceLogoTags = (source: string, value: string) => {
+  const parts: string[] = [];
+  let cursor = 0;
+  let hasLogo = false;
+  let hasCapture = false;
+  // Mail's Liquid renderer uses the default delimiters, operators and whitespace options.
+  // Top-level tokens preserve quoted strings and raw blocks as Liquid sees them.
+  for (const token of new Tokenizer(source).readTopLevelTokens()) {
+    if (TypeGuards.isTagToken(token)) {
+      if (
+        token.name === "capture" ||
+        (token.name === "liquid" && token.tokenizer.readLiquidTagTokens().some((line) => line.name === "capture"))
+      ) {
+        hasCapture = true;
+      }
+    }
+    if (!TypeGuards.isOutputToken(token) || token.content !== "mailbox.logo") continue;
+    hasLogo = true;
+    const before = source.slice(cursor, token.begin);
+    parts.push(token.trimLeft ? before.trimEnd() : before, value);
+    cursor = token.end;
+    if (token.trimRight) {
+      while (cursor < source.length && /\s/.test(source[cursor] ?? "")) cursor += 1;
+    }
+  }
+  parts.push(source.slice(cursor));
+  return { source: parts.join(""), hasLogo, hasCapture };
+};
 
 const ALLOWED_TAGS = new Set<string>(EMAIL_HTML_TAGS);
 const withoutSegmentMarks = (attribs: sanitizeHtml.Attributes): sanitizeHtml.Attributes =>
@@ -235,6 +272,7 @@ export type RenderedComposeContent = {
   formattingWarnings: ComposeFormattingWarning[];
   html: string | null;
   text: string;
+  logoUsed: boolean;
 };
 
 const isMarkdownLinkDestination = (source: string, offset: number, length: number): boolean =>
@@ -280,11 +318,29 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
   if (source.includes(COMPOSE_SEGMENT_START) || source.includes(COMPOSE_SEGMENT_END)) {
     return fail(err.badInput("Email template contains reserved control characters"));
   }
-  const valid = validateMailLiquidTemplate(source, {
-    allowedVariables: Object.keys(composeTemplateVariables),
+  let replaced: ReturnType<typeof replaceLogoTags>;
+  try {
+    replaced = replaceLogoTags(source, "");
+  } catch {
+    // Report malformed input through the existing Liquid validation error; a source the tokenizer rejects never renders.
+    const invalid = validateMailLiquidTemplate(source, { allowedVariables: LIQUID_COMPOSE_VARIABLES, output: "markdown" });
+    return invalid.ok ? fail(err.badInput("Email template is invalid")) : invalid;
+  }
+  // Liquid validation bounds and parses the source before the URL-context scan.
+  const valid = validateMailLiquidTemplate(replaced.source, {
+    allowedVariables: LIQUID_COMPOSE_VARIABLES,
     output: "markdown",
   });
-  if (!valid.ok) return valid;
+  // Capture turns output into a filterable value, including inside a Liquid block.
+  if (replaced.hasLogo && replaced.hasCapture) {
+    return fail(err.badInput("{{ mailbox.logo }} cannot be used together with capture"));
+  }
+  if (!valid.ok) {
+    if (valid.error.message.includes('"mailbox.logo" is not available')) {
+      return fail(err.badInput(`${valid.error.message} Use {{ mailbox.logo }} alone, without filters or Liquid tags.`));
+    }
+    return valid;
+  }
   for (const match of source.matchAll(/{{[\s\S]*?}}/g)) {
     const offset = match.index;
     if (
@@ -442,10 +498,16 @@ const fillComposeTemplate = (
   context: ComposeRenderContext,
   output: "plain" | "markdown" | "editable_markdown",
   renderTimeoutMs?: number,
+  logoToken = "",
 ): Result<string> => {
-  const rendered = renderMailLiquidTemplate(source, context, output === "editable_markdown" ? "editable_markdown" : "markdown", {
-    renderTimeoutMs,
-  });
+  const rendered = renderMailLiquidTemplate(
+    replaceLogoTags(source, logoToken).source,
+    context,
+    output === "editable_markdown" ? "editable_markdown" : "markdown",
+    {
+      renderTimeoutMs,
+    },
+  );
   if (!rendered.ok && "reason" in rendered.error && rendered.error.reason === "render_too_large") {
     return fail(composeRenderFailure("tooLarge"));
   }
@@ -469,6 +531,7 @@ const renderComposeTemplateSegments = (
   context: ComposeRenderContext,
   format: "plain" | "markdown",
   budget: { remainingMs: number },
+  logoToken: string,
 ): Result<string> => {
   let outputBytes = 0;
   let segmentCount = 0;
@@ -482,7 +545,7 @@ const renderComposeTemplateSegments = (
       }
       if (isSignatureTemplate(part.text)) {
         const renderStart = performance.now();
-        const rendered = fillComposeTemplate(part.text, context, format, Math.max(0, budget.remainingMs));
+        const rendered = fillComposeTemplate(part.text, context, format, Math.max(0, budget.remainingMs), logoToken);
         budget.remainingMs -= performance.now() - renderStart;
         if (!rendered.ok) return "composeRender" in rendered.error ? rendered : fail(composeRenderFailure("signatureFailed"));
         // A filled-in value may itself contain a mark; it must not reach the message.
@@ -520,10 +583,14 @@ export const renderComposeContent = (params: {
   context: ComposeRenderContext;
   renderLiquid: boolean;
   signature?: string | null;
+  logo?: { src: string; altText: string; displayWidth: number; pixelWidth: number; pixelHeight: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {
+  const logoRandomPart = crypto.randomUUID().replaceAll("-", "").toUpperCase();
+  const token = `MAILLOGO${logoRandomPart}`;
+  const context = params.context;
   const budget = { remainingMs: MAX_COMPOSE_RENDER_MS };
   const renderedSource = params.renderLiquid
-    ? renderComposeTemplateSegments(params.body, params.context, params.format, budget)
+    ? renderComposeTemplateSegments(params.body, context, params.format, budget, token)
     : ok(params.body.replace(COMPOSE_SEGMENT_MARKS, ""));
   if (!renderedSource.ok) return renderedSource;
   let source = renderedSource.data;
@@ -532,14 +599,34 @@ export const renderComposeContent = (params: {
     const valid = validateComposeTemplateSource(params.signature);
     if (!valid.ok) return fail(composeRenderFailure("signatureFailed"));
     const start = performance.now();
-    const signature = fillComposeTemplate(params.signature, params.context, params.format, Math.max(0, budget.remainingMs));
+    const signature = fillComposeTemplate(params.signature, context, params.format, Math.max(0, budget.remainingMs), token);
     budget.remainingMs -= performance.now() - start;
     if (!signature.ok) return "composeRender" in signature.error ? signature : fail(composeRenderFailure("signatureFailed"));
     parts = { ...splitQuotedHistory(source), signature: signature.data.replace(COMPOSE_SEGMENT_MARKS, "") };
     source = [parts.reply, parts.signature, parts.history].filter(Boolean).join("\n\n");
   }
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
-  if (params.format === "plain") return ok({ html: null, text: source, formattingWarnings: [] });
+  // Only intact tokens may reach replacement; transformed or truncated markers must never be sent.
+  if (source.replaceAll(token, "").toUpperCase().includes(logoRandomPart)) {
+    return fail(composeRenderFailure("signatureFailed"));
+  }
+  const requestedLogo = source.includes(token);
+  const logoWarnings: ComposeFormattingWarning[] = requestedLogo && !params.logo ? [{ code: "missing_mailbox_logo" }] : [];
+  if (params.format === "plain") {
+    if (!requestedLogo) return ok({ html: null, text: source, formattingWarnings: logoWarnings, logoUsed: false });
+    const altText = params.logo?.altText ?? "";
+    // Check the expanded size before allocating it: a loop can repeat the placeholder many times.
+    const occurrences = source.split(token).length - 1;
+    if (sourceBytes(source) + occurrences * (sourceBytes(altText) - token.length) > MAX_RENDERED_SOURCE_BYTES) {
+      return fail(composeRenderFailure("tooLarge"));
+    }
+    return ok({
+      html: null,
+      text: source.replaceAll(token, () => altText).trimEnd(),
+      formattingWarnings: logoWarnings,
+      logoUsed: true,
+    });
+  }
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
 
@@ -561,14 +648,54 @@ export const renderComposeContent = (params: {
       formattingWarnings = [{ code: "ignored_mailbox_css" }];
     }
     if (!inlined.ok) return inlined;
-    const html = inlined.data;
+    let html = inlined.data;
+    if (requestedLogo) {
+      // Strip tokens from parsed attributes before replacing text nodes. User HTML
+      // and Markdown images have already been rejected by the final sanitizer.
+      const stripToken = (attribs: sanitizeHtml.Attributes) =>
+        Object.fromEntries(Object.entries(attribs).map(([key, value]) => [key, value.replaceAll(token, "")]));
+      html = sanitizeHtml(html, {
+        ...INLINED_EMAIL_SANITIZE_OPTIONS,
+        transformTags: {
+          "*": (tagName, attribs) => ({ tagName, attribs: stripToken(attribs) }),
+          a: (tagName, attribs) => EMAIL_HTML_SANITIZE_OPTIONS.transformTags.a(tagName, stripToken(attribs)),
+        },
+      });
+    }
+    const logoUsed = requestedLogo && html.includes(token);
+    // Charge every surviving occurrence as a data URL even when sending CID HTML.
+    // Check before reading/escaping the image source or allocating expanded HTML.
+    let logoCount = 0;
+    for (let offset = html.indexOf(token); offset >= 0; offset = html.indexOf(token, offset + token.length)) logoCount += 1;
+    const imageMarkup = params.logo
+      ? `<img src="" alt="${escapeAttribute(params.logo.altText)}" width="${params.logo.displayWidth}" height="${mailboxLogoDisplayHeight(params.logo)}" style="display:block;border:0;height:auto;max-width:100%">`
+      : "";
+    if (params.logo && logoCount > 0) {
+      // JPEG's prefix is one byte longer than PNG's: use that common upper bound.
+      const imageBytes = sourceBytes(imageMarkup) + "data:image/jpeg;base64,".length + 4 * Math.ceil(params.logo.byteLength / 3);
+      if (sourceBytes(html) + logoCount * (imageBytes - token.length) > MAX_RENDERED_SOURCE_BYTES) {
+        return fail(composeRenderFailure("tooLarge"));
+      }
+      if ((html.match(/<[a-z][^>]*>/gi)?.length ?? 0) + logoCount > MAX_EMAIL_HTML_ELEMENTS) {
+        return fail(composeRenderFailure("tooComplex"));
+      }
+    }
+    const src = params.logo && logoCount > 0 ? escapeAttribute(params.logo.src) : "";
+    const image = imageMarkup.replace('src=""', () => `src="${src}"`);
+    if (sourceBytes(html) + logoCount * (sourceBytes(image) - token.length) > MAX_RENDERED_SOURCE_BYTES) {
+      return fail(composeRenderFailure("tooLarge"));
+    }
+    const text = convert(html, {
+      wordwrap: false,
+      selectors: [{ selector: "a", options: { hideLinkHrefIfSameAsText: true } }],
+    })
+      .trimEnd()
+      .replaceAll(token, () => params.logo?.altText ?? "");
     return ok({
-      formattingWarnings,
-      html,
-      text: convert(html, {
-        wordwrap: false,
-        selectors: [{ selector: "a", options: { hideLinkHrefIfSameAsText: true } }],
-      }).trimEnd(),
+      formattingWarnings: [...formattingWarnings, ...logoWarnings].slice(0, MAX_COMPOSE_FORMATTING_WARNINGS),
+      html: html.replaceAll(token, () => image),
+      text: requestedLogo && !params.logo ? text.trimEnd() : text,
+      logoUsed,
     });
   } catch {
     return fail(composeRenderFailure("conversionFailed"));
@@ -659,7 +786,7 @@ const formattingWarnings = (body: string): ComposeFormattingWarning[] => {
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES || !validateMarkdownSourceComplexity(source).ok) return [];
 
   const warnings = new Map<string, ComposeFormattingWarning>();
-  const add = (warning: Exclude<ComposeFormattingWarning, { code: "ignored_mailbox_css" }>) => {
+  const add = (warning: Exclude<ComposeFormattingWarning, { code: "ignored_mailbox_css" | "missing_mailbox_logo" }>) => {
     const key = `${warning.code}:${warning.element}:${warning.attribute ?? ""}`;
     if (warnings.size < MAX_COMPOSE_FORMATTING_WARNINGS && !warnings.has(key)) warnings.set(key, warning);
   };

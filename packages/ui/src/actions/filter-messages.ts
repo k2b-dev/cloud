@@ -6,9 +6,13 @@ const filterMessages = i18n.define({
   messages: {
     en: {
       filterActions: "Filter actions",
+      filters: "Filters",
+      reset: "Reset",
     },
     de: {
       filterActions: "Filteraktionen",
+      filters: "Filter",
+      reset: "Zurücksetzen",
     },
   },
 });

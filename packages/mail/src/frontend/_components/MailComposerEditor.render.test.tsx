@@ -92,6 +92,27 @@ describe("MailComposerEditor", () => {
     expect(html).not.toContain("Email leaves out");
   });
 
+  test("shows the server's logo image and lets the preview load images only from data: URLs", () => {
+    const logo =
+      '<img src="data:image/png;base64,aGVsbG8=" alt="Example Team" width="200" height="67" style="display:block;border:0;height:auto;max-width:100%">';
+    const html = renderEditor("markdown", panes("preview", "preview"), false, {
+      html: `<p>Kind regards</p>${logo}`,
+      text: "Kind regards\n\nExample Team",
+      formattingWarnings: [],
+    });
+    const srcdoc = /<iframe[^>]* srcdoc="([^"]*)"/
+      .exec(html)?.[1]
+      ?.replaceAll("&quot;", '"')
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&amp;", "&");
+
+    expect(srcdoc).toContain("content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\"");
+    expect(srcdoc?.indexOf("Content-Security-Policy")).toBeLessThan(srcdoc?.indexOf("<img") ?? 0);
+    expect(srcdoc).toContain('alt="Example Team" width="200" height="67"');
+    expect(srcdoc).not.toMatch(/src=["']https?:/i);
+  });
+
   test("lists the formatting that email leaves out below the preview, in English and German", () => {
     const preview: ComposePreview = {
       html: "<p>Preview body</p>",

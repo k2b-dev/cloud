@@ -37,6 +37,7 @@ import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
 import feedbackHoverPreview from "./feedback/hover-preview.md" with { type: "text" };
 import feedbackInstallGuide from "./feedback/install-guide.md" with { type: "text" };
+import feedbackMovedHint from "./feedback/moved-hint.md" with { type: "text" };
 import feedbackPrompts from "./feedback/prompts.md" with { type: "text" };
 import feedbackToast from "./feedback/toast.md" with { type: "text" };
 import feedbackTooltip from "./feedback/tooltip.md" with { type: "text" };
@@ -77,6 +78,7 @@ import layoutPanes from "./layout/panes.md" with { type: "text" };
 import layoutPermissions from "./layout/permissions.md" with { type: "text" };
 import layoutPrint from "./layout/print.md" with { type: "text" };
 import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text" };
+import layoutResizeSeparator from "./layout/resize-separator.md" with { type: "text" };
 import layoutScrollArea from "./layout/scroll-area.md" with { type: "text" };
 import layoutSettingsModal from "./layout/settings-modal.md" with { type: "text" };
 import layoutTabBar from "./layout/tab-bar.md" with { type: "text" };
@@ -143,6 +145,7 @@ const catalogContextSources = {
   "layout/discussion": { file: "layout/discussion.md", content: layoutDiscussion },
   "layout/page-title": { file: "layout/page-title.md", content: layoutPageTitle },
   "layout/panes": { file: "layout/panes.md", content: layoutPanes },
+  "layout/resize-separator": { file: "layout/resize-separator.md", content: layoutResizeSeparator },
   "layout/scroll-area": { file: "layout/scroll-area.md", content: layoutScrollArea },
   "layout/pull-to-refresh": { file: "layout/pull-to-refresh.md", content: layoutPullToRefresh },
   "layout/overview": { file: "layout/overview.md", content: layoutOverview },
@@ -162,6 +165,7 @@ const catalogContextSources = {
   "feedback/blocks": { file: "feedback/blocks.md", content: feedbackBlocks },
   "feedback/badges": { file: "feedback/badges.md", content: feedbackBadges },
   "feedback/toast": { file: "feedback/toast.md", content: feedbackToast },
+  "feedback/moved-hint": { file: "feedback/moved-hint.md", content: feedbackMovedHint },
   "feedback/tooltip": { file: "feedback/tooltip.md", content: feedbackTooltip },
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import {
   type AiChatTask,
   type AiChatTaskOccurrence,
@@ -83,6 +83,12 @@ const chat: AiConversation = {
 };
 
 const scheduledTask: AiChatTask = {
+  title: null,
+  name: "Release planning",
+  locale: null,
+  reasonCode: null,
+  reasonAt: null,
+  reasonAction: null,
   id: "88888888-8888-4888-8888-888888888888",
   shortId: "tSk234",
   chatId: chat.shortId,
@@ -155,7 +161,11 @@ const storedMessage = (seq: number, message: AiStoredMessage["message"], overrid
   ...overrides,
 });
 
-afterEach(() => mock.restore());
+beforeEach(() => setSystemTime(new Date("2026-04-07T09:00:00.000Z")));
+afterEach(() => {
+  mock.restore();
+  setSystemTime();
+});
 
 describe("Core AI capabilities", () => {
   test("every declared Type has a reader open-link case or an explicit reason", async () => {
@@ -450,7 +460,7 @@ describe("Core AI capabilities", () => {
     expect(listOccurrences).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       ok: true,
-      data: { summary: "Read a routine in “Release planning” (Active)." },
+      data: { summary: "Read the routine “Release planning” (Active)." },
     });
   });
 
@@ -683,7 +693,7 @@ describe("Core AI capabilities", () => {
     }
     expect(results["ai.task.update"]).toMatchObject({
       ok: true,
-      data: { summary: `Changed the instructions of a routine in “${chat.title}”.` },
+      data: { summary: `Changed the instructions of the routine “${chat.title}”.` },
     });
     expect(results["ai.chat.message"]).toMatchObject({ ok: true, data: { summary: "Sent a message to “Target chat”." } });
   });
@@ -940,7 +950,7 @@ test("task reference metadata uses the request locale with English fallback", as
     expect(result.data.refs?.[0]).toMatchObject({
       type: "core.ai.task",
       id: scheduledTask.shortId,
-      title: scheduledTask.prompt,
+      title: scheduledTask.name,
       icon: "ti ti-calendar-clock",
     });
     expect(result.data.refs?.[0]?.preview).toStartWith(prefix);
@@ -968,9 +978,9 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
   ).toMatchObject({
     ok: true,
     data: {
-      message: `Routine in ${chat.title} (${chat.shortId}) anlegen.`,
+      message: `Routine in ${chat.title} anlegen.`,
       details: [
-        { label: "Chat", value: `${chat.title} (${chat.shortId})` },
+        { label: "Chat", value: chat.title },
         { label: "Zeitplan", value: "5. Jan. 2099, 09:30 (Europe/Berlin)" },
         { label: "Auftrag", value: scheduledTask.prompt },
         { label: "Das erlaubst du dieser Routine" },
@@ -980,7 +990,7 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
   expect(await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, german)).toMatchObject({
     ok: true,
     data: {
-      message: "Routine tSk234 pausieren.",
+      message: "Routine „Release planning“ pausieren.",
       details: [
         { label: "Routine", value: scheduledTask.prompt },
         { label: "Zeitplan", value: "Wiederkehrend: 0 9 * * 1 (Europe/Berlin)" },
@@ -1028,7 +1038,7 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
     await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, { ...context, locale: "fr" }),
   ).toMatchObject({
     ok: true,
-    data: { message: "Pause routine tSk234.", details: [{ label: "Routine" }, { label: "Schedule" }] },
+    data: { message: "Pause routine “Release planning”.", details: [{ label: "Routine" }, { label: "Schedule" }] },
   });
 });
 
@@ -1045,4 +1055,57 @@ test("revoking the caller's last Skill access does not offer an unreadable ref o
     context,
   );
   expect(result).toEqual({ ok: true, data: { data: { changed: true } } });
+});
+
+test("routine reads word their reason in the reader's locale and expose stopped runs", async () => {
+  spyOn(aiChatTasks, "get").mockResolvedValue({
+    ...scheduledTask,
+    title: "Neue Rechnungen",
+    name: "Neue Rechnungen",
+    locale: "en",
+    state: "needs_attention",
+    reasonCode: "rights_changed",
+    reasonAt: "2026-04-07T13:45:00.000Z",
+    lastError: "Raw English error",
+  });
+  spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([{ ...taskOccurrence, state: "stopped" }]);
+  const result = await aiCapabilities.queries["ai.task.read"].run({ id: scheduledTask.shortId }, { ...context, locale: "de" });
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      data: {
+        task: {
+          title: "Neue Rechnungen",
+          name: "Neue Rechnungen",
+          reason: { code: "rights_changed", sentence: "Was sie darf, hat sich geändert. Bitte neu bestätigen." },
+          lastError: "Raw English error",
+        },
+        occurrences: [{ state: "stopped" }],
+      },
+    },
+  });
+});
+
+test("routine reads include the refused action in the localized approval reason", async () => {
+  spyOn(aiChatTasks, "get").mockResolvedValue({
+    ...scheduledTask,
+    state: "needs_attention",
+    reasonCode: "needs_approval",
+    reasonAt: "2026-10-18T09:00:00.000Z",
+    reasonAction: "Aufgabe zuweisen",
+  });
+  spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([]);
+  expect(await aiCapabilities.queries["ai.task.read"].run({ id: scheduledTask.shortId }, { ...context, locale: "de" })).toMatchObject({
+    ok: true,
+    data: {
+      data: {
+        task: {
+          reason: {
+            code: "needs_approval",
+            sentence: "Wollte Aufgabe zuweisen. Das macht der Assistant nur mit dir, und Routinen fragen nie.",
+          },
+        },
+      },
+    },
+  });
 });

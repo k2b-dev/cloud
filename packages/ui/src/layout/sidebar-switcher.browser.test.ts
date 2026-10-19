@@ -395,12 +395,16 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
               return {
                 height: element.getBoundingClientRect().height,
                 line: Number.parseFloat(getComputedStyle(name).lineHeight),
-                clamped: name.scrollHeight > name.clientHeight,
+                clamped: name.scrollHeight > name.clientHeight || name.scrollWidth > name.clientWidth,
+                textOverflow: getComputedStyle(name).textOverflow,
+                mask: getComputedStyle(name).maskImage,
               };
             });
-            // Two name lines are reserved for every name; a long one ends with an ellipsis after them, or after one beside a fact.
+            // Two name lines are reserved for every name; a long one fades out after them, or after one beside a fact.
             expect(size.height).toBe(2 * size.line);
             expect(size.clamped).toBe(long);
+            expect(size.textOverflow).not.toBe("ellipsis");
+            expect(size.mask).toContain("linear-gradient");
             expect(await page.locator(trigger).getAttribute("title")).toBe(long ? fullName : "Work");
             expect(await page.locator(trigger).getAttribute("aria-label")).toBe(long ? fullName : "Work");
             const before = await geometry(page);

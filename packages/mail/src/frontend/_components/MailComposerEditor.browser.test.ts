@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { ComposeFormattingWarning } from "../../contracts";
+import { renderComposeContent } from "../../service/compose-renderer";
 import type { MailComposerEditorHarnessOptions, MailComposerHarnessOptions } from "./MailComposerEditor.browser-harness";
 
 // Whether the hint about removed HTML leaves the previewed message in place and stays on screen on a phone is a
@@ -273,5 +274,99 @@ describe("Mail composer action bar", () => {
         }
       }, 30_000);
     }
+  }
+});
+
+describe("Mail composer preview with the mailbox logo", () => {
+  /** The server's preview HTML for a signature with the mailbox logo, from Mail's own renderer. */
+  const previewWithLogo = (logo: { dataUrl: string; byteLength: number }, src = logo.dataUrl) => {
+    const rendered = renderComposeContent({
+      body: "First paragraph of the message.",
+      format: "markdown",
+      customCss: "",
+      renderLiquid: true,
+      signature: "Kind regards\n\n{{ mailbox.logo }}\n\nExample Team",
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Offer", to: ["reader@example.test"], cc: [] },
+      },
+      logo: { src, altText: "Example Team", displayWidth: 200, pixelWidth: 600, pixelHeight: 200, byteLength: logo.byteLength },
+    });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The preview did not render");
+    return rendered.data.html;
+  };
+  const drawLogo = (page: Page) =>
+    page.evaluate(async () => {
+      const canvas = new OffscreenCanvas(600, 200);
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = "#0f766e";
+      context.beginPath();
+      context.arc(100, 100, 72, 0, Math.PI * 2);
+      context.fill();
+      const blob = await canvas.convertToBlob({ type: "image/png" });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return { dataUrl: `data:image/png;base64,${btoa(binary)}`, byteLength: bytes.byteLength };
+    });
+  const preview = (page: Page) => page.frameLocator('iframe[sandbox=""]');
+  const logoBox = async (page: Page) => {
+    const rect = await preview(page).locator('img[alt="Example Team"]').boundingBox();
+    if (!rect) throw new Error("The previewed logo is not visible");
+    return rect;
+  };
+  const closingBox = async (page: Page) => {
+    const rect = await preview(page).getByText("Example Team", { exact: true }).last().boundingBox();
+    if (!rect) throw new Error("The text below the logo is not visible");
+    return rect;
+  };
+
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`shows the logo from a data URL in the box the server reserves on ${label}`, async () => {
+      const page = await load({ context, theme: "dark", locale: "en" });
+      try {
+        await page.waitForSelector('iframe[sandbox=""]');
+        const logo = await drawLogo(page);
+
+        // An image whose size is not known yet takes the box the server's width and height attributes reserve. An image
+        // without a size of its own stands in for one still loading: the preview allows only data: URLs, which load at
+        // once, and a broken image ignores the attributes in WebKit.
+        const sizeless = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E";
+        await page.evaluate((html) => window.setPreviewHtml(html), previewWithLogo(logo, sizeless));
+        await preview(page).locator('img[alt="Example Team"]').waitFor();
+        const pending = await logoBox(page);
+        const pendingClosing = await closingBox(page);
+
+        await page.evaluate((html) => window.setPreviewHtml(html), previewWithLogo(logo));
+        const image = preview(page).locator('img[alt="Example Team"]');
+        await image.evaluate((element: HTMLImageElement) => element.decode());
+        expect(await image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(600);
+        expect(await image.getAttribute("src")).toBe(logo.dataUrl);
+        expect(await image.getAttribute("width")).toBe("200");
+        expect(await image.getAttribute("height")).toBe("67");
+        const sources = await preview(page)
+          .locator("img")
+          .evaluateAll((images) => images.map((element) => element.getAttribute("src") ?? ""));
+        expect(sources.every((source) => source.startsWith("data:image/"))).toBe(true);
+
+        const loaded = await logoBox(page);
+        expect(loaded.width).toBe(200);
+        // The attribute height is rounded; the loaded image keeps its exact 3:1 ratio.
+        expect(Math.abs(loaded.height - pending.height)).toBeLessThan(0.5);
+        expect(Math.abs((await closingBox(page)).y - pendingClosing.y)).toBeLessThan(0.5);
+        // The preview is the recipient's white paper, also in dark mode.
+        expect(await page.locator('iframe[sandbox=""]').evaluate((frame) => getComputedStyle(frame).backgroundColor)).toBe(
+          "rgb(255, 255, 255)",
+        );
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
   }
 });

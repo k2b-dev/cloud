@@ -13,7 +13,7 @@ const WidgetCompositionDemo = () => (
       { kind: "component", name: "WidgetStat", from: "@k2b/ui" },
       { kind: "component", name: "WidgetStatus", from: "@k2b/ui" },
     ]}
-    description="Widgets compose server-rendered presentation blocks. Header, row, and pill links remain native and independently focusable."
+    description="Widget header icons sit in soft chips of the host accent. Status icons keep their status colors. Header, row, and pill links remain native and independently focusable."
     code={`import {
   Widget, WidgetHero, WidgetList,
   WidgetPills, WidgetStat, WidgetStatus,

@@ -298,6 +298,10 @@ export type AiStoredMessage = {
       sourceHref?: string;
     };
     scheduledTask?: {
+      reason?: import("./chat-task-reasons").ChatTaskReason;
+      /** The message text is only the reason sentence; the chat words the reason itself instead. */
+      reasonOnly?: true;
+      stop?: { cause: "paused" | "deleted"; done: string[] };
       taskId: string;
       occurrenceId: string;
       scheduledFor: string;
@@ -613,6 +617,11 @@ export type AiConversationFileSnapshot = {
 };
 
 export type AiBackgroundRunContext = {
+  scheduledFor?: string;
+  trigger?: "scheduled" | "manual";
+  timezone?: string;
+  stopDeliveredAt?: string;
+  needsApproval?: { action: string };
   taskId: string;
   occurrenceId: string;
   context: Array<{ seq: number; kind: "message" | "summary"; message: Message }>;
@@ -977,7 +986,10 @@ export type AiConversationService = {
     seq: number;
   }): Promise<boolean>;
   /** Record an abort wish. The caller finalizes ownerless turns itself. */
-  requestTurnAbort(input: { conversationId: string; turnId: string; reason?: string }): Promise<AiTurnAbortRequest>;
+  requestTurnAbort(
+    input: { conversationId: string; turnId: string; reason?: string },
+    options?: { db: import("bun").SQL },
+  ): Promise<AiTurnAbortRequest>;
   completeTurn(input: {
     conversationId: string;
     turnId: string;

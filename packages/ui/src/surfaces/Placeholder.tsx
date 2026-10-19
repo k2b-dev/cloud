@@ -1,10 +1,12 @@
 import { type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { Button } from "../actions/Button";
+import { useUiMessages } from "../intl/messages";
 import { Paper } from "./Paper";
 
 export type PlaceholderAlign = "center" | "left";
 export type PlaceholderSurface = "none" | "paper";
-export type PlaceholderState = "empty" | "loading" | "error";
+export type PlaceholderState = "empty" | "no-results" | "no-access" | "loading" | "error";
 /** `compact` stacks inside a section, `inline` is one row in a list or sidebar, `panel` fills a work area. */
 export type PlaceholderVariant = "compact" | "inline" | "panel";
 
@@ -13,6 +15,7 @@ export type PlaceholderProps = {
   description?: JSX.Element;
   icon?: string;
   action?: JSX.Element;
+  onRetry?: () => void;
   align?: PlaceholderAlign;
   surface?: PlaceholderSurface;
   state?: PlaceholderState;
@@ -21,10 +24,21 @@ export type PlaceholderProps = {
 };
 
 export default function Placeholder(props: PlaceholderProps): JSX.Element {
+  const messages = useUiMessages();
   const align = () => props.align ?? "center";
   const state = () => props.state ?? "empty";
   const variant = () => props.variant ?? "compact";
-  const icon = () => props.icon ?? (state() === "loading" ? "ti ti-loader-2" : state() === "error" ? "ti ti-alert-circle" : undefined);
+  const icon = () =>
+    props.icon ??
+    (state() === "loading"
+      ? "ti ti-loader-2"
+      : state() === "error"
+        ? "ti ti-alert-circle"
+        : state() === "no-results"
+          ? "ti ti-search-off"
+          : state() === "no-access"
+            ? "ti ti-lock"
+            : undefined);
 
   return (
     <Dynamic
@@ -40,7 +54,14 @@ export default function Placeholder(props: PlaceholderProps): JSX.Element {
     >
       <Show when={icon()}>
         {(iconClass) => (
-          <span class="k2b-placeholder__icon">
+          // Quiet states share the chip; loading and error keep the same icon box without it.
+          <span
+            class={
+              ["empty", "no-results", "no-access"].includes(state()) && variant() !== "inline"
+                ? "k2b-placeholder__icon k2b-icon-tile"
+                : "k2b-placeholder__icon"
+            }
+          >
             <i class={iconClass()} aria-hidden="true" />
           </span>
         )}
@@ -51,8 +72,15 @@ export default function Placeholder(props: PlaceholderProps): JSX.Element {
       <Show when={props.description}>
         <div class="k2b-placeholder__description">{props.description}</div>
       </Show>
-      <Show when={props.action}>
-        <div class="k2b-placeholder__action">{props.action}</div>
+      <Show when={props.action || (state() === "error" && props.onRetry)}>
+        <div class="k2b-placeholder__action">
+          {props.action}
+          <Show when={state() === "error" && props.onRetry}>
+            <Button type="button" size="sm" variant="secondary" onClick={() => props.onRetry?.()}>
+              {messages().tryAgain}
+            </Button>
+          </Show>
+        </div>
       </Show>
     </Dynamic>
   );

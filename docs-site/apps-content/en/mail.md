@@ -64,7 +64,7 @@ secrets.
 ## Understand the working model
 
 We recommend **Needs action** as your inbox: the work status (**Needs action**, **Waiting for reply**, **Done**) is your queue; folders are filing.
-Every incoming message sets **Needs action** and clears **Show later** once Mail loads it, whatever its folder. A confirmed human reply sets **Waiting for reply**.
+Every incoming message sets **Needs action** and clears **Show later** once Mail loads it or gives up loading it, whatever its folder. A confirmed human reply sets **Waiting for reply**.
 Moving, archiving, filing, and marking read change no work status. Follow-up and assignment views span folders; see [Choose where a folder's mail appears](#choose-where-a-folders-mail-appears) for folder visibility.
 **Assigned to me** and **Unassigned** leave out **Done** and **Later** conversations.
 
@@ -105,7 +105,7 @@ Create it with `cld --json mail automation create --definition-file newsletter.y
 For important mail, add no status step: incoming mail already sets **Needs action**.
 
 In the guided editor, **AI classify** starts with **Important**, **Routine**, and an If branch: **Set status → Needs action** for **Important**, **Set status → Done** otherwise. Add **Move to folder** to the **Routine** branch to file it too.
-An automation's **Done** or **Waiting for reply** covers only its triggering message: loading it later does not reopen it, but any other incoming message sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
+An automation's **Done** or **Waiting for reply** covers only its triggering message, even if Mail loads it later or gives up loading it. Other incoming mail sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
 When several automations match, the oldest decides the folder. Another skips its read step if the message has left its folder or is being moved. Keep read and move in one automation, with read first; the local status step can share that path.
 For existing mail, enable a saved automation without AI steps, then run `cld --json mail automation backfill start <automation-id> --revision <revision> --yes`. One backfill hands over at most 100 messages; `limited` means run it again. For moving only, see [`cld mail sender move`](#automate-mail-from-the-terminal).
 
@@ -414,6 +414,34 @@ Use Markdown and Liquid in signatures and snippets. Type `/` to insert snippets
 only. Mail fills in snippet values when you insert them; signatures keep their
 variables until preview and send.
 
+Each mailbox can have one logo. In Mail, open the mailbox's **Settings → Writing → Logo**
+to upload or replace it, change its display width or alt text, or remove it after
+confirmation. These changes require **Manage** access; people with **Edit** access
+see the logo and its values read only. Changing the width or alt text stores a new
+version with the same image. Alternatively, upload it with
+`cld mail compose logo set --file logo.png`.
+Use `{{ mailbox.logo }}` in any signature to place it in new messages,
+replies, forwards, and older signatures still marked in the body. Mail sends
+the logo as an inline image part referenced by `cid:`, never as a remote link.
+The API, CLI, and composer previews show the same image bytes. In plain text,
+the placeholder becomes the logo's alt text. In snippets it stays empty.
+Use the logo tag alone: filters, conditions, and assignments using `mailbox.logo`
+are rejected. Whitespace variations such as `{{mailbox.logo}}` and
+`{{- mailbox.logo -}}` are supported. Each image occurrence counts toward the
+same preview and send size limit; reduce repeated logos if the message is too large.
+
+Upload a PNG or JPEG of at most 100 KiB (102400 bytes) and 1200×400 pixels.
+Mail removes private image metadata, including camera and GPS details, before
+storing the logo. JPEG files marked as rotated are rejected; save the image upright first.
+Display width defaults to 200 px; `--width` accepts 1–600 px. Alt text is
+required and defaults to the trimmed mailbox name; use `--alt` to change it
+(1–200 characters, no control characters). `cld mail compose logo get` shows
+the current logo; `cld mail compose logo remove --yes` removes it. Without a
+logo, the placeholder stays empty and preview warns that the logo is missing.
+The provider's Drafts copy has no signature and therefore no logo. A message
+keeps the logo it had when it was queued for sending, including scheduled
+messages and retries, even if an administrator later replaces or removes the logo.
+
 API and Assistant clients choose the signature with `signatureTemplateId` on
 draft create, update, or patch. Pass a template ID for that signature or `null`
 for none. Omit the field to use the sender's default on create or keep the
@@ -426,6 +454,7 @@ current choice on update or patch. Never write a signature into the body.
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |
 | `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.logo` | The mailbox logo as an inline image in signatures; empty when the mailbox has no logo and in snippets |
 | `mailbox.name` | Mailbox name |
 | `mailbox.description` | Mailbox description; empty when not set |
 | `message.subject` | Subject of the draft |

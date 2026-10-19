@@ -2,6 +2,7 @@ import {
   type AuthContext,
   auth,
   getLocale,
+  middleware,
   REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
   REQUEST_IDLE_TIMEOUT_SECONDS,
   rateLimit,
@@ -16,12 +17,24 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { publicErrorMessage } from "./api/messages";
 import { EntryQuerySchema, PublicBrowseQuerySchema, PublicUploadInputSchema, UploadIdSchema } from "./contracts";
+import { publicUploadPath, publicUploadRateLimit } from "./public-upload-rate-limit";
 import { FilesError, filesService } from "./service";
 import { setShareAccessCookie, shareAccessCookie } from "./share-access-cookie";
 
 /** Public routes re-resolve the share and enforce its optional password on every call. */
 export const publicApi = new Hono<AuthContext>()
-  .use("*", rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }))
+  // A share's public note sits next to file names that writers of the shared folder choose without holding the link.
+  .use("*", middleware.noTransform())
+  .use(
+    "*",
+    rateLimit({
+      keyBy: "ip",
+      limitPerSecond: 10,
+      windowSecs: 60,
+      routes: [{ method: "POST", path: publicUploadPath, disabled: true }],
+    }),
+  )
+  .use("*", publicUploadRateLimit)
   .use("*", auth.requireRole("*"))
   .use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");

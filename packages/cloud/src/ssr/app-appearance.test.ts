@@ -9,7 +9,7 @@ const apps: RuntimeAppMeta[] = [
 
 test("accent scopes emit the six computed app color properties", () => {
   expect(appAccentStyle("#14b8a6")).toBe(
-    "--app-accent:#14b8a6;--app-ink-light:#0d7469;--app-ink-dark:#14b8a6;--app-selected-light:#effaf9;--app-selected-dark:#112c2e;--app-selected-nav-light:#deeeed;--app-selected-nav-dark:#1e3d3f",
+    "--app-accent:#14b8a6;--app-ink-light:#0d7b6f;--app-ink-dark:#14b8a6;--app-selected-light:#effaf9;--app-selected-dark:#112c2e;--app-selected-nav-light:#e8f8f6;--app-selected-nav-dark:#123133",
   );
 });
 

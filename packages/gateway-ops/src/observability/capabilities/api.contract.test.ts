@@ -14,7 +14,7 @@ test("every capability history route is admin-only, rate limited and read-only",
 });
 
 test("the page and the API are mounted behind the same admin gate", async () => {
-  const source = await Bun.file(new URL("../../index.ts", import.meta.url)).text();
+  const source = await Bun.file(new URL("../../router.ts", import.meta.url)).text();
 
   expect(source).toContain('.get("/admin/observability/capabilities", auth.requireRole("admin", ssr.access), ...capabilitiesPage)');
   expect(source).toContain('.route("/api/gateway/capabilities", capabilitiesApiRoutes)');

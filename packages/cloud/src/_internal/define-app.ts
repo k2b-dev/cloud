@@ -89,7 +89,7 @@ import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
-import { canonicalRoute, isOwnNavBadge } from "./registry-validation";
+import { canonicalRoute, isOwnAppPath } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
 import { servePublicAsset } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
@@ -144,6 +144,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
     label: string;
     links: ReadonlyArray<{ label: string; href: string; icon: string }>;
   }>;
+  panel?: AppMeta["panel"];
   nav?: {
     href: string;
     match?: string;
@@ -371,9 +372,29 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
 /** The badge route is read by the browser through the gateway, so it must be one of this app's own paths. */
 const validateAppNavBadge = (opts: Pick<AppOptions, "id" | "routes" | "nav">): void => {
   const badge = opts.nav?.badge;
-  if (badge !== undefined && !isOwnNavBadge(badge, opts.routes)) {
+  if (badge !== undefined && !isOwnAppPath(badge, opts.routes)) {
     throw new Error(`App "${opts.id}" declares nav.badge "${badge}"; it must be a same-origin path below one of its routes`);
   }
+};
+
+const validateAppPanel = (opts: Pick<AppOptions, "id" | "routes" | "panel">): AppMeta["panel"] => {
+  const panel = opts.panel;
+  if (panel === undefined) return undefined;
+  if (!panel || typeof panel !== "object" || Array.isArray(panel)) throw new Error(`App "${opts.id}" declares panel; it must be an object`);
+  if (typeof panel.href !== "string" || !isOwnAppPath(panel.href, opts.routes)) {
+    throw new Error(`App "${opts.id}" declares panel.href "${panel.href}"; it must be a same-origin path below one of its routes`);
+  }
+  for (const field of ["label", "icon"] as const) {
+    if (typeof panel[field] !== "string" || !panel[field].trim())
+      throw new Error(`App "${opts.id}" declares panel.${field}; it must be a non-empty string`);
+  }
+  if (
+    panel.requiresRoles !== undefined &&
+    (!Array.isArray(panel.requiresRoles) || !panel.requiresRoles.every((role) => typeof role === "string"))
+  ) {
+    throw new Error(`App "${opts.id}" declares panel.requiresRoles; it must be an array of strings`);
+  }
+  return { ...panel, requiresRoles: panel.requiresRoles ? [...panel.requiresRoles] : undefined };
 };
 
 export const defineApp = <
@@ -391,6 +412,7 @@ export const defineApp = <
   const cliModules = validateAppCliModules(opts.id, opts.cli);
   const pwaPart = validateAppPwaPart(opts);
   validateAppNavBadge(opts);
+  const panel = validateAppPanel(opts);
 
   // ── 0. Register declared settings into the runtime registry ──────────
   // SETTINGS_MAP is the single source of truth for validation in store.ts
@@ -528,6 +550,7 @@ export const defineApp = <
     legalLinks: opts.legalLinks ? [...opts.legalLinks] : undefined,
     searchLinks: opts.searchLinks?.map((link) => ({ ...link, keywords: link.keywords ? [...link.keywords] : undefined })),
     pwa: pwaPart,
+    panel,
     widgets: compileWidgetDeclarations(opts.id, opts.widgets),
     settingKeys: opts.settings ? Object.keys(opts.settings) : undefined,
     openapi: opts.openapi,
@@ -626,6 +649,9 @@ export const defineApp = <
         searchLinks: meta.searchLinks,
         pwa: meta.pwa
           ? { href: meta.pwa.href, requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined }
+          : undefined,
+        panel: meta.panel
+          ? { ...meta.panel, requiresRoles: meta.panel.requiresRoles ? [...meta.panel.requiresRoles] : undefined }
           : undefined,
         widgets: meta.widgets?.map((widget) => ({
           ...widget,

@@ -243,6 +243,19 @@ export const migrate = async (): Promise<void> => {
       )
     )
   `.simple();
+
+  await sql`
+    ALTER TABLE spaces.items ADD COLUMN IF NOT EXISTS deadline_date DATE NULL;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = 'spaces.items'::regclass AND conname = 'items_deadline_one_kind'
+      ) THEN
+        ALTER TABLE spaces.items ADD CONSTRAINT items_deadline_one_kind CHECK (deadline IS NULL OR deadline_date IS NULL);
+      END IF;
+    END $$;
+  `.simple();
+
   await sql`ALTER TABLE spaces.items DROP COLUMN IF EXISTS email_thread_id`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS spaces.task_work (

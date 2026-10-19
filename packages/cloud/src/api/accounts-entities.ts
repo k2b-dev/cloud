@@ -14,6 +14,7 @@ import {
   UserProviderSchema,
 } from "../contracts";
 import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAuth, respond, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { accountsAppService as accountsService } from "../services";
 
 const EntitiesListResponseSchema = z.object({
@@ -91,7 +92,7 @@ type AccountsEntitiesRouteDependencies = {
 };
 
 export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRouteDependencies = {}) =>
-  new Hono<AuthContext>().get(
+  new Hono<AuthContext>().use("/entities/*", noTransform()).get(
     "/entities",
     dependencies.authenticate ?? auth.requireRole("authenticated"),
     dependencies.requireUser ?? auth.requireUser(),

@@ -294,6 +294,36 @@ suite("Contacts book grants on every application surface (#1234 option B)", () =
     });
   });
 
+  test("a Cloud admin without a grant is denied for tags, notes, favorites, and import but can administer book access", async () => {
+    const base = `/api/contacts/books/${b.shortId}`;
+    for (const path of [`${base}/tags`, `${base}/contacts/${b.contactId}/notes`, `/api/contacts/favorites/${b.shortId}/${b.contactId}`])
+      expect((await app.request(path, { headers: admin.headers })).status).toBe(403);
+    const body = JSON.stringify({ format: "vcard", content: "BEGIN:VCARD\nVERSION:3.0\nFN:X\nEND:VCARD" });
+    expect(
+      (
+        await app.request(`${base}/import/preview`, {
+          method: "POST",
+          headers: {
+            ...admin.headers,
+            "content-type": "application/json",
+            "content-length": String(new TextEncoder().encode(body).length),
+          },
+          body,
+        })
+      ).status,
+    ).toBe(403);
+    const administration = `/api/contacts/admin/books/${b.shortId}/access`;
+    expect((await app.request(administration, { headers: admin.headers })).status).toBe(200);
+    const grantee = await person("Administration regression grantee");
+    const response = await app.request(administration, {
+      method: "POST",
+      headers: { ...admin.headers, "content-type": "application/json" },
+      body: JSON.stringify({ principal: { type: "user", userId: grantee.id }, permission: "read" }),
+    });
+    expect(response.status).toBe(200);
+    // afterAll removes all grants for fixture users, including this HTTP-created one.
+  });
+
   test.each(["reader", "stranger", "admin reader", "owner"] as const)("a %s follows only their book grant", async (kind) => {
     const subject = { reader, stranger, "admin reader": adminReader, owner }[kind];
     await expectAgreement(subject, b, kind !== "stranger", kind === "owner");
