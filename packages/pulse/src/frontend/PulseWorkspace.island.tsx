@@ -8,6 +8,7 @@ import { navigatePulseWorkspace } from "./workspace/navigation";
 import PulseSidebar from "./workspace/PulseSidebar";
 import SourcesView, { SourcesDetailPanel, type SourcesViewProps } from "./workspace/SourcesView";
 import { createSourceController } from "./workspace/source-controller";
+import { installSourceRefresh } from "./workspace/source-refresh";
 import type { PulseWorkspaceProps } from "./workspace/types";
 import { createPulseWorkspaceQueries } from "./workspace/workspace-queries";
 
@@ -41,6 +42,15 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       ?.error();
     if (error) throw error;
   };
+  // Only the sources and the open source change with collection; the base list refreshes on demand.
+  installSourceRefresh({
+    active: () => activeView() === "sources" && !loading(),
+    refresh: async () => {
+      await Promise.all([queries.baseData.refresh(), ...(selectedSourceId() ? [queries.sourceDetail.refresh()] : [])]);
+      const error = [queries.baseData, queries.sourceDetail].find((query) => query.error())?.error();
+      if (error) throw error;
+    },
+  });
   const { openSettings } = createBaseController({
     bases,
     selectedBase,

@@ -36,8 +36,12 @@ const scrapeJob = lazySync((sync) =>
   }),
 );
 
+/** A retention job queued by the previous version has no input; it starts from the first base instead of failing. */
+export const retentionCursor = (input: { after: string | null } | undefined): string | null => input?.after ?? null;
+
 const retentionJob = lazySync((sync) =>
-  sync.job<{ after: string | null }>({
+  // Jobs queued by the previous version carry no input; they start from the first base.
+  sync.job<{ after: string | null } | undefined>({
     id: "pulse:retention",
     delivery: { ackWaitMs: 5 * 60_000, maxAttempts: 3, backoffMs: [60_000, 120_000] },
   }),
@@ -137,7 +141,7 @@ export const pulseRuntime = {
             category: "job",
           },
           async () => {
-            const result = await runRetentionBatch(undefined, context.input.after);
+            const result = await runRetentionBatch(undefined, retentionCursor(context.input));
             return result;
           },
           { summarize: (result) => result },

@@ -23,13 +23,21 @@ const views = [
   { width: 390, height: 844, touch: true },
   { width: 1440, height: 900, touch: false },
 ];
-const open = async (view: (typeof views)[number], props: PulseWorkspaceProps, locale = "de") => {
+const open = async (
+  view: (typeof views)[number],
+  props: PulseWorkspaceProps,
+  locale = "de",
+  answer: (url: string) => { status: number; json: unknown } = () => ({ status: 500, json: { code: "UNEXPECTED" } }),
+) => {
   const tab = await browser.newPage({ viewport: { width: view.width, height: view.height }, isMobile: view.touch, hasTouch: view.touch });
-  // Nothing on this page may call an API: the server snapshot covers every read.
+  // Timers are frozen at the fixture's time: the first frame comes from the server snapshot, and a refresh runs
+  // only when a test advances the clock.
+  await tab.clock.install({ time: new Date("2026-10-19T12:40:00.000Z") });
+  await tab.clock.pauseAt(new Date("2026-10-19T12:40:00.000Z"));
   const calls: string[] = [];
   await tab.route(`${origin}/api/**`, (route) => {
-    calls.push(route.request().url());
-    return route.fulfill({ status: 500, json: { code: "UNEXPECTED" } });
+    calls.push(new URL(route.request().url()).pathname);
+    return route.fulfill(answer(route.request().url()));
   });
   await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: page(props, locale) }));
   await tab.goto(`${origin}/app/pulse/Lad001${props.initialRouteState.view === "coming-back" ? "/dashboards" : "/sources"}`);
@@ -82,12 +90,43 @@ describe("Pulse base page after the cut", () => {
         const hint = await tab.getByText("Dashboards und Fragen kommen zurück").first().boundingBox();
         expect(await tab.getByRole("button", { name: "Zu den Quellen" }).isVisible()).toBe(true);
         expect(await overflow(tab)).toBeLessThanOrEqual(0);
-        // Nothing loads after the first frame, so the hint stays where it was two frames later.
-        await tab.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        // Nothing loads after the first frame, so the hint stays where it was a few frames later.
+        await tab.clock.runFor(100);
         expect(await tab.getByText("Dashboards und Fragen kommen zurück").first().boundingBox()).toEqual(hint);
       } finally {
         await tab.close();
       }
+    }
+  }, 60_000);
+
+  test("an open sources view refreshes the status every 5 seconds and keeps every row in place", async () => {
+    const recovered = workspaceFixture.initialSources.map((source) =>
+      source.id === "Src004" ? { ...source, status: { ...source.status, throttled: false, throttledAt: null } } : source,
+    );
+    const { tab, calls } = await open(views[1]!, workspaceFixture, "de", (url) =>
+      new URL(url).pathname === "/api/pulse/bases/Lad001/sources" ? { status: 200, json: recovered } : { status: 500, json: {} },
+    );
+    try {
+      const throttled = () =>
+        tab.evaluate(
+          () =>
+            [...document.querySelectorAll(".k2b-status-badge__label")].filter(
+              (label) => label.textContent === "Gedrosselt" && label.checkVisibility(),
+            ).length,
+        );
+      expect(await throttled()).toBe(1);
+      const rows = () => tab.evaluate(() => [...document.querySelectorAll("tbody tr")].map((row) => row.getBoundingClientRect().top));
+      const before = await rows();
+      await tab.clock.runFor(4_900);
+      expect(calls).toEqual([]);
+      await tab.clock.runFor(200);
+      // The response arrives over the real network; poll from the test side, whose timers are not frozen.
+      for (let attempt = 0; attempt < 50 && (await throttled()) > 0; attempt++) await Bun.sleep(100);
+      expect(await throttled()).toBe(0);
+      expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
+      expect(await rows()).toEqual(before);
+    } finally {
+      await tab.close();
     }
   }, 60_000);
 });
