@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { sql } from "bun";
+import { SQL, sql } from "bun";
 import { requireInfra, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { installIngestControlsFixture } from "./ingest-controls.test-fixture";
 
@@ -20,6 +20,67 @@ suiteFor(
   "valkey",
   "clickhouse",
 )("Pulse scrape write transactions", () => {
+  test("scrapes exceed a two-connection pool without nested reservations; one source has one claimant", async () => {
+    const f = await writeFixture("scrape-small-pool");
+    const database = new SQL({ max: 2 });
+    const ids = Array.from({ length: 6 }, (_, i) => `40000000-0000-4000-8000-00000000000${i}`);
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const arrived = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let requests = 0;
+    const endpoint = Bun.serve({
+      port: 0,
+      fetch: async () => {
+        requests++;
+        entered();
+        await gate;
+        return new Response("# TYPE probe gauge\nprobe 42\n");
+      },
+    });
+    const pending: Promise<unknown>[] = [];
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      for (const id of ids)
+        await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name,endpoint_url,scrape_interval_seconds)
+        VALUES(${id}::uuid,${id.replaceAll("-", "").slice(-6)},${f.base.id}::uuid,'metrics','Pool fixture',${`http://127.0.0.1:${endpoint.port}/metrics`},60)`;
+      await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${f.base.id}::uuid,'127.0.0.1')`;
+      const deps = { database, clock: f.clock, ingestBatch: createIngestWriter({ database, store: f.store, clock: f.clock }) };
+      const scrape = (sourceId: string) => runMetricsSourceScrape({ baseId: f.base.id, sourceId }, deps);
+      const deadline = new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Scrapes starved the SQL pool")), 10000);
+      });
+      const first = scrape(ids[0]!);
+      pending.push(first);
+      await Promise.race([
+        arrived,
+        deadline,
+        first.then(() => {
+          throw new Error("Scrape finished before fetching");
+        }),
+      ]);
+      expect(await Promise.race([scrape(ids[0]!), deadline])).toMatchObject({ ok: false, error: { status: 409 } });
+      expect(requests).toBe(1);
+      const rest = ids.slice(1).map(scrape);
+      pending.push(...rest);
+      release();
+      const results = await Promise.race([Promise.all([first, ...rest]), deadline]);
+      expect(results.every((result) => result.ok)).toBe(true);
+      expect(requests).toBe(ids.length);
+      expect(await sql`SELECT id FROM pulse.sources WHERE base_id=${f.base.id}::uuid AND scrape_lease_until IS NOT NULL`).toHaveLength(0);
+      expect(await f.read("samples", "count() AS n")).toEqual([{ n: ids.length }]);
+    } finally {
+      clearTimeout(timeout);
+      release();
+      endpoint.stop(true);
+      await database.close({ timeout: 1 });
+      await Promise.allSettled(pending);
+      await f.cleanup();
+    }
+  }, 30000);
   test("a scrape commits T1 independently, stores in ClickHouse, and keeps endpoint failures on the configured interval", async () => {
     const f = await writeFixture("scrape");
     let available = true;

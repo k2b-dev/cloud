@@ -45,8 +45,10 @@ its Bearer credential and an `Idempotency-Key` from the first attempt. Persist
 the body and key. Pulse reserves the key before writing; the same key and batch
 return the same successful counts during its 24-hour lifetime. A pending retry
 writes the same row identities with the original acceptance time. Different
-content returns 409. A failed unkeyed batch can be partly stored; adding a key
-afterwards cannot deduplicate its earlier rows.
+content returns 409. A failed unkeyed batch can be partly stored, and sending
+it again can store those parts twice. Adding a key afterwards cannot deduplicate
+its earlier rows. Send every batch with an `Idempotency-Key` from the first
+attempt to retry safely.
 
 `cld pulse ingest --source <source> --file <path>` uses authenticated base
 access and has no idempotency flag. Use the source-token HTTP route when safe

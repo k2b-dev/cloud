@@ -11,7 +11,7 @@ import { lockStateIdentities } from "./state-transitions";
 import { normalizeDimensions } from "./telemetry-values";
 
 export type PulseSqlClient = typeof sql;
-export type IngestStore = Pick<typeof baseStore, "prefix" | "query" | "clock">;
+export type IngestStore = Pick<typeof baseStore, "prefix" | "query" | "clock" | "prepare">;
 export const valueHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export const deterministicRowId = (sourceId: string, key: string, collection: string, ordinal: number): string => {
   const hex = valueHash([sourceId, key, collection, ordinal]);

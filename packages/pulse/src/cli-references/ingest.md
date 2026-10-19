@@ -119,9 +119,10 @@ retrying it uses the same acceptance time and row identities, so it writes the
 same rows. Completed retries do not consume quota again.
 
 Without a key, a failed batch can already be partly stored. Its error includes
-**The batch may be partly stored**. Repeated events can duplicate; adding a key
-after the first failure cannot deduplicate that earlier attempt. Do not claim
-that an unkeyed retry is safe.
+**The batch may be partly stored, and sending it again can store those parts
+twice**. Adding a key after the first failure cannot deduplicate that earlier
+attempt. Send every batch with an `Idempotency-Key` from the first attempt to
+retry safely.
 
 | Outcome | HTTP response |
 | --- | --- |

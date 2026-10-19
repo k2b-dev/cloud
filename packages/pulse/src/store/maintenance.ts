@@ -1,11 +1,12 @@
 import type { sql } from "bun";
-import { recordInstanceDisk, recordStorageThreshold, recordStoreOutage } from "../service/store-health";
+import { notificationLocale, recordInstanceDisk, recordStorageThreshold, recordStoreOutage } from "../service/store-health";
 import { assertStoreName } from "./base-schema";
 import { BaseOperationSuperseded, baseStore, loadStoreRow, type StoreRow } from "./base-store";
 import { StoreQueryError } from "./client";
 
 /** Verify before any new checkpoint. Never repairs or removes measurement data. */
 export const verifyBaseCheckpoint = async (baseId: string, store = baseStore, restoreReader = false) => {
+  store = { ...store, query: await store.prepare() };
   let matched = false;
   await store.step(baseId, "reconcile", "verify_checkpoint", async (row, db) => {
     let reason: "database_missing" | "checkpoint_mismatch" | null = null;
@@ -51,6 +52,7 @@ export const acceptCheckpoint = async (row: StoreRow, db: typeof sql, clock = ()
   await db`UPDATE pulse.base_stores SET checkpoint_id=pending_checkpoint_id,pending_checkpoint_id=NULL,checkpoint_at=${clock()} WHERE base_id=${row.base_id}::uuid AND pending_checkpoint_id IS NOT NULL`;
 };
 export const writeBaseCheckpoint = async (baseId: string, id: string, store = baseStore) => {
+  store = { ...store, query: await store.prepare() };
   const row = await loadStoreRow(baseId);
   if (!row || row.write_block_reason) return;
   if (!(await verifyBaseCheckpoint(baseId, store))) return;
@@ -75,12 +77,14 @@ export const measureInstanceDisk = async (store = baseStore) => {
   }
 };
 export const measureBaseUsage = async (baseId: string, store = baseStore) => {
+  store = { ...store, query: await store.prepare() };
+  const locale = await notificationLocale();
   await store.step(baseId, "reconcile", "usage", async (row, db) => {
     const [size] = await store.query(
       "SELECT sum(bytes_on_disk) AS bytes, sum(rows) AS rows FROM system.parts WHERE active AND database={database:String}",
       { database: row.database_name },
     );
-    await recordStorageThreshold(baseId, Number(size?.bytes ?? 0), store.clock(), db);
+    await recordStorageThreshold(baseId, Number(size?.bytes ?? 0), store.clock(), db, locale);
     await db`UPDATE pulse.base_stores SET usage_bytes=${Number(size?.bytes ?? 0)},usage_rows=${Number(size?.rows ?? 0)},usage_measured_at=${store.clock()} WHERE base_id=${baseId}::uuid`;
   });
 };

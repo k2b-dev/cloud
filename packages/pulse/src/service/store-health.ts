@@ -42,24 +42,30 @@ const cloudAdmins = async (): Promise<string[]> => {
     if (!result.pagination.has_next) return ids;
   }
 };
-const enqueue = async (db: typeof sql, ids: string[], notice: Notice, locale?: string) => {
+export const notificationLocale = (locale?: string): Promise<string> =>
+  locale ? Promise.resolve(locale) : settings.get<string>("app.locale");
+const enqueue = async (db: typeof sql, ids: string[], notice: Notice, locale: string) => {
   if (!ids.length) return;
-  const language = locale ?? (await settings.get<string>("app.locale"));
   for (const id of ids)
     await db`INSERT INTO pulse.notification_outbox(kind,user_id,data,locale)
-    VALUES(${notice.kind},${id}::uuid,(${JSON.stringify(notice.data)}::jsonb #>> '{}')::jsonb,${language})`;
+    VALUES(${notice.kind},${id}::uuid,(${JSON.stringify(notice.data)}::jsonb #>> '{}')::jsonb,${locale})`;
 };
 
 /** Called only after the failed store transaction has rolled back. The singleton row serializes replicas. */
-export const recordStoreOutage = async (now: Date, database = sql, locale?: string) =>
-  database.begin(async (tx) => {
+export const recordStoreOutage = async (now: Date, database = sql, locale?: string) => {
+  const language = await notificationLocale(locale);
+  const admins = await cloudAdmins();
+  return database.begin(async (tx) => {
     const opened = await tx`INSERT INTO pulse.store_instance(singleton,outage_started_at) VALUES(true,${now})
     ON CONFLICT(singleton) DO UPDATE SET outage_started_at=EXCLUDED.outage_started_at
     WHERE pulse.store_instance.outage_started_at IS NULL RETURNING singleton`;
-    if (opened.length) await enqueue(tx, await cloudAdmins(), { kind: "storeUnavailable", data: {} }, locale);
+    if (opened.length) await enqueue(tx, admins, { kind: "storeUnavailable", data: {} }, language);
   });
+};
 
 export const recordInstanceDisk = async (free: number, total: number, now: Date, database = sql, locale?: string) => {
+  const language = await notificationLocale(locale);
+  const admins = total > 0 && free / total < 0.1 ? await cloudAdmins() : [];
   const recovered = await database.begin(async (tx) => {
     await tx`INSERT INTO pulse.store_instance(singleton) VALUES(true) ON CONFLICT DO NOTHING`;
     const [prior] = await tx<
@@ -70,14 +76,14 @@ export const recordInstanceDisk = async (free: number, total: number, now: Date,
       disk_low_at=CASE WHEN ${low} THEN coalesce(disk_low_at,${now}) ELSE NULL END,
       last_outage_ended_at=CASE WHEN outage_started_at IS NOT NULL THEN ${now} ELSE last_outage_ended_at END,outage_started_at=NULL WHERE singleton`;
     if (low && !prior?.disk_low_at)
-      await enqueue(tx, await cloudAdmins(), { kind: "storeDiskLow", data: { freePercent: (free / total) * 100 } }, locale);
+      await enqueue(tx, admins, { kind: "storeDiskLow", data: { freePercent: (free / total) * 100 } }, language);
     return Boolean(prior?.outage_started_at);
   });
   if (recovered) log.info("Pulse data store recovered");
 };
 
 /** Runs within the usage measurement's locked base-store transaction. */
-export const recordStorageThreshold = async (baseId: string, usage: number, now: Date, db: typeof sql, locale?: string) => {
+export const recordStorageThreshold = async (baseId: string, usage: number, now: Date, db: typeof sql, locale: string) => {
   const [prior] = await db<{ storage_bytes: string; storage_exceeded_at: Date | null; name: string }[]>`
     SELECT s.storage_bytes,s.storage_exceeded_at,b.name FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE s.base_id=${baseId}::uuid FOR UPDATE OF s`;
   if (!prior) return;

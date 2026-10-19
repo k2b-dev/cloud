@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { decryptSecret, logger } from "@k2b/cloud/services";
-import { sql, type TransactionSQL } from "bun";
+import { sql } from "bun";
 import type { MetricType, PulseIngestBatch, PulseMetric } from "../contracts";
 import { metricFamilyIncluded } from "../metric-filters";
 import { requireBaseWritable } from "./access-control";
@@ -39,7 +39,7 @@ type MetricsSourceConfig = {
 
 const markSourceError = async (
   params: { sourceId: string; message: string | null },
-  db: TransactionSQL,
+  db: typeof sql,
   clock: () => Date = () => new Date(),
 ): Promise<void> => {
   const now = clock();
@@ -66,7 +66,7 @@ const logSourceScrapeRecordFailure = (params: { baseId: string; sourceId: string
 
 const recordFailedSourceScrape = async (
   params: { baseId: string; sourceId: string; startedAt: Date; message: string },
-  db: TransactionSQL,
+  db: typeof sql,
   clock: () => Date = () => new Date(),
 ): Promise<void> => {
   await recordSourceScrape(
@@ -91,7 +91,7 @@ const recordIngestResult = async (
     result: IngestResult;
     warning?: string | null;
   },
-  db: TransactionSQL,
+  db: typeof sql,
   clock: () => Date = () => new Date(),
 ): Promise<void> => {
   if (params.result.ok) {
@@ -131,15 +131,14 @@ const recordSourceScrape = async (
     counts?: IngestCounts;
     errorMessage?: string | null;
   },
-  db: TransactionSQL,
+  db: typeof sql,
   clock: () => Date = () => new Date(),
 ): Promise<void> => {
   const finishedAt = clock();
   const durationMs = Math.max(0, finishedAt.getTime() - params.startedAt.getTime());
   const counts = scrapeCounts(params.counts);
   try {
-    await db.savepoint(async (tx) => {
-      await tx`
+    await db`
       INSERT INTO pulse.source_scrapes (
         base_id,
         source_id,
@@ -165,7 +164,6 @@ const recordSourceScrape = async (
         ${params.errorMessage ?? null}
       )
     `;
-    });
   } catch (error) {
     // Scrape history is diagnostic; never make the scrape itself fail because
     // the audit row could not be persisted.
@@ -259,7 +257,7 @@ const parsePrometheusSampleLine = (line: string): { name: string; value: number;
 
 const loadMetricsSourceConfig = async (
   params: { baseId: string; sourceId: string },
-  db: TransactionSQL,
+  db: typeof sql,
 ): Promise<MetricsSourceConfig | null> => {
   const [source] = await db<{ endpoint_url: string | null; bearer_token_encrypted: string | null; config: { metricFilters?: string[] } }[]>`
     SELECT s.endpoint_url, s.bearer_token_encrypted, s.config
@@ -303,6 +301,15 @@ export const fetchPrometheusMetrics = async (
   if (!response.ok) return response;
   const parsed = parsePrometheusMetrics(response.data, new URL(source.endpointUrl).host, source.metricFilters);
   if (parsed.sampleCount > MAX_SCRAPE_SAMPLES) return fail(err.badInput(`Metrics endpoint exceeds the ${MAX_SCRAPE_SAMPLES} sample limit`));
+  // A scrape that keeps nothing is a visible source error, never a silent success.
+  if (parsed.metrics.length === 0 && parsed.refusedHistograms.length === 0)
+    return fail(
+      err.badInput(
+        source.metricFilters?.length
+          ? `No metric family on the endpoint matches the metric filters (${parsed.skippedSamples} skipped)`
+          : `Metrics endpoint returned no supported samples (${parsed.skippedSamples} skipped)`,
+      ),
+    );
   return ok(parsed);
 };
 
@@ -400,7 +407,7 @@ const scrapeSource = async (
     slotTs?: number;
   },
   deps: MetricsScraperDeps,
-  db: TransactionSQL,
+  db: typeof sql,
 ): Promise<Result<IngestCounts>> => {
   const clock = deps.clock ?? (() => new Date());
   const startedAt = clock();
@@ -465,13 +472,22 @@ const scrapeSource = async (
 export const runMetricsSourceScrape = async (
   params: { baseId: string; sourceId: string; slotTs?: number },
   deps: MetricsScraperDeps,
-): Promise<Result<IngestCounts>> =>
-  (deps.database ?? sql).begin(async (tx) => {
-    const [claim] = await tx<
-      { claimed: boolean }[]
-    >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`pulse.scrape:${params.sourceId}`}, 0)) AS claimed`;
-    if (!claim?.claimed) return fail(err.conflict("A scrape for this source is already running"));
-    const active = await requireBaseWritable(params.baseId, tx);
-    if (!active.ok) return active;
-    return scrapeSource(params, deps, tx);
-  });
+): Promise<Result<IngestCounts>> => {
+  const db = deps.database ?? sql;
+  const active = await requireBaseWritable(params.baseId, db);
+  if (!active.ok) return active;
+  const now = (deps.clock ?? (() => new Date()))();
+  // The fetch is bounded to 15s and ingest to its existing 10-minute lease.
+  // Commit the claim before either operation can need another pooled connection.
+  const leaseUntil = new Date(now.getTime() + 15_000 + 10 * 60_000);
+  const [claim] = await db`UPDATE pulse.sources SET scrape_lease_until=${leaseUntil}
+    WHERE id=${params.sourceId}::uuid AND base_id=${params.baseId}::uuid
+      AND (scrape_lease_until IS NULL OR scrape_lease_until<=${now}) RETURNING id`;
+  if (!claim) return fail(err.conflict("A scrape for this source is already running"));
+  try {
+    return await scrapeSource(params, deps, db);
+  } finally {
+    // An expired claimant must never release a newer scrape's lease.
+    await db`UPDATE pulse.sources SET scrape_lease_until=NULL WHERE id=${params.sourceId}::uuid AND scrape_lease_until=${leaseUntil}`;
+  }
+};

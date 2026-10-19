@@ -25,8 +25,15 @@ export const fixturePolicy: PulsePolicy = {
 const password = "obviously-fake-base-store-fixture-password";
 export const fixtureConnection = () => ({ url: clickhouseTestAdmin().url, user: `${clickhouseTestPrefix}service`, password });
 export const fixtureClock = () => new Date("2026-10-17T12:00:00.000Z");
-export const fixtureStore = () =>
-  createBaseStore({ prefix: clickhouseTestPrefix, connection: async () => fixtureConnection(), clock: fixtureClock });
+export const fixtureStore = (clock = fixtureClock) => {
+  const store = createBaseStore({ prefix: clickhouseTestPrefix, connection: async () => fixtureConnection(), clock });
+  const query = store.query;
+  store.query = async (statement, params, connection) => {
+    if (/\bsystem\.disks\b/i.test(statement)) throw new Error("Tests must inject disk measurements");
+    return query(statement, params, connection);
+  };
+  return store;
+};
 export const installFixtureStore = async () => {
   await migrate();
   const hash = await hashServicePassword(password);

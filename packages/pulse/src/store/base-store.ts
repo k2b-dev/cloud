@@ -60,8 +60,8 @@ export const createBaseStore = ({
   beforeStep?: (operation: StoreOperation, step: string) => void | Promise<void>;
 } = {}) => {
   StorePrefix.parse(prefix);
-  const query = async (query: string, params?: Record<string, string | number>) => {
-    const value = await connection();
+  const query = async (query: string, params?: Record<string, string | number>, resolved?: Awaited<ReturnType<typeof connection>>) => {
+    const value = resolved === undefined ? await connection() : resolved;
     if (!value) throw new BaseStoreError("STORE_NOT_CONFIGURED");
     return clickhouseQuery({
       ...value,
@@ -85,10 +85,16 @@ export const createBaseStore = ({
     if (expected.database !== row.database_name || expected.readUser !== row.read_user) throw new BaseStoreError("STORE_UNREACHABLE");
     return { database: assertStoreName(row.database_name, prefix), reader: assertStoreName(row.read_user, prefix, true) };
   };
-  return {
+  const store = {
     prefix,
     clock,
     query,
+    /** Resolve settings before reserving a SQL connection, including on a cold cache. */
+    async prepare() {
+      const value = await connection();
+      const query = this.query;
+      return (statement: string, params?: Record<string, string | number>) => query(statement, params, value);
+    },
     /** Lock one step, then re-read. A delete can supersede a clear between any two steps. */
     async step(
       baseId: string,
@@ -126,43 +132,43 @@ export const createBaseStore = ({
     },
     async database(row: StoreRow, db: typeof sql) {
       const database = names(row).database;
-      const [exists] = await query(`EXISTS DATABASE ${database}`);
+      const [exists] = await this.query(`EXISTS DATABASE ${database}`);
       if (!Number(exists?.result)) await db`UPDATE pulse.base_stores SET schema_version=0 WHERE base_id=${row.base_id}::uuid`;
-      await query(`CREATE DATABASE IF NOT EXISTS ${database}`);
+      await this.query(`CREATE DATABASE IF NOT EXISTS ${database}`);
     },
     async schema(row: StoreRow, db: typeof sql) {
       for (const version of BASE_SCHEMA_VERSIONS) {
         if (row.schema_version >= version.version) continue;
-        for (const statement of version.statements(ctx(row))) await query(statement);
+        for (const statement of version.statements(ctx(row))) await this.query(statement);
         await db`UPDATE pulse.base_stores SET schema_version=${version.version} WHERE base_id=${row.base_id}::uuid`;
         // One version per committed step; later versions re-read the durable ledger.
         return;
       }
     },
     async ttl(row: StoreRow) {
-      for (const statement of baseTtlStatements(ctx(row))) await query(statement);
+      for (const statement of baseTtlStatements(ctx(row))) await this.query(statement);
     },
     async reader(row: StoreRow) {
       const { reader } = names(row);
       if (!row.read_password_encrypted) throw new BaseStoreError("STORE_UNREACHABLE");
       const hash = await hashServicePassword(await decryptSecret<string>(row.read_password_encrypted));
       const identification = `IDENTIFIED WITH sha256_hash BY '${hash.sha256Hex}' SALT '${hash.saltHex}' SETTINGS PROFILE '${prefix}read_${row.profile}'`;
-      await query(`CREATE USER IF NOT EXISTS ${reader} ${identification}`);
-      await query(`ALTER USER ${reader} ${identification}`);
+      await this.query(`CREATE USER IF NOT EXISTS ${reader} ${identification}`);
+      await this.query(`ALTER USER ${reader} ${identification}`);
     },
     async grants(row: StoreRow) {
       const { database, reader } = names(row);
-      for (const view of READ_VIEWS) await query(`GRANT SELECT ON ${database}.${q(view)} TO ${reader}`);
+      for (const view of READ_VIEWS) await this.query(`GRANT SELECT ON ${database}.${q(view)} TO ${reader}`);
     },
     async truncate(row: StoreRow) {
       const { database } = names(row);
-      for (const table of DATA_TABLES) await query(`TRUNCATE TABLE IF EXISTS ${database}.${q(table)}`);
+      for (const table of DATA_TABLES) await this.query(`TRUNCATE TABLE IF EXISTS ${database}.${q(table)}`);
     },
     async dropReader(row: StoreRow) {
-      await query(`DROP USER IF EXISTS ${names(row).reader}`);
+      await this.query(`DROP USER IF EXISTS ${names(row).reader}`);
     },
     async dropDatabase(row: StoreRow) {
-      await query(`DROP DATABASE IF EXISTS ${names(row).database} SYNC`);
+      await this.query(`DROP DATABASE IF EXISTS ${names(row).database} SYNC`);
     },
     async readUserCredentials(baseId: string) {
       const row = await loadStoreRow(baseId);
@@ -171,6 +177,7 @@ export const createBaseStore = ({
       return { user: row.read_user, password: await decryptSecret<string>(row.read_password_encrypted) };
     },
   };
+  return store;
 };
 export const baseStore = createBaseStore();
 export const readUserCredentials = baseStore.readUserCredentials;

@@ -142,14 +142,21 @@ const BASE_DATA_CLEAR_STEPS: Array<{ phase: string; run: (baseId: string, db: ty
 ];
 
 export const createBaseLifecycle =
-  (store = baseStore) =>
+  (configuredStore = baseStore) =>
   async (baseId: string): Promise<{ done: boolean }> => {
+    const store = { ...configuredStore, query: await configuredStore.prepare() };
     const initial = await loadStoreRow(baseId);
     if (!initial || initial.state === "failed") return { done: true };
     const operation = initial.state === "active" ? "reconcile" : initial.operation;
     if (!operation) return { done: true };
     const step = (name: string, run: (row: StoreRow, db: typeof sql) => Promise<void>) =>
-      store.step(baseId, operation, name, run, operation === "reconcile" ? undefined : initial.updated_at_version);
+      store.step(
+        baseId,
+        operation,
+        name,
+        (row, db) => run.call(store, row, db),
+        operation === "reconcile" ? undefined : initial.updated_at_version,
+      );
     try {
       if (operation === "delete") {
         await step("drop_reader", store.dropReader);
@@ -193,6 +200,7 @@ export const createBaseLifecycle =
       }
       await step("active", async (_row, db) => {
         await db`UPDATE pulse.base_stores SET state='active',operation=NULL,attempts=0,last_error=NULL,last_error_at=NULL,reconcile_needed=CASE WHEN updated_at::text=${initial.updated_at_version} THEN false ELSE reconcile_needed END,
+        sealed_before=CASE WHEN ${operation === "clear"} THEN NULL ELSE sealed_before END,
         write_block_reason=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_block_reason END,
         write_blocked_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_blocked_at END,updated_at=now() WHERE base_id=${baseId}::uuid`;
         if (operation === "clear") {

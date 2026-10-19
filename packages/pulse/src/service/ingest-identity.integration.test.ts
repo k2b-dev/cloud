@@ -64,7 +64,11 @@ suiteFor(
       f.failInsert(2);
       expect(await f.write({ metrics: [{ name: "new", value: 3 }], events: [{ kind: "new" }] })).toMatchObject({
         ok: false,
-        error: { status: 503, message: expect.stringContaining("batch may be partly stored") },
+        error: {
+          status: 503,
+          message:
+            "Pulse data store is unavailable. The batch may be partly stored, and sending it again can store those parts twice. Send every batch with an Idempotency-Key from the first attempt to retry safely.",
+        },
       });
     } finally {
       await f.cleanup();

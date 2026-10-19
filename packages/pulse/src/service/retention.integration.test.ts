@@ -46,6 +46,37 @@ suiteFor(
       await f.cleanup();
     }
   }, 60000);
+  test("pruning seals survives retention extensions, and clear resets the watermark", async () => {
+    const f = await writeFixture("pruned-seal"),
+      run = createRetention({ store: f.store });
+    const ts = "2026-10-14T10:05:00Z";
+    try {
+      assertWrite(await f.write({ metrics: [{ name: "load", value: 1, ts }] }));
+      await sql`UPDATE pulse.bases SET retention_days=1,rollup_retention_days=1 WHERE id=${f.base.id}::uuid`;
+      await sql`UPDATE pulse.metric_hours SET state='clean',lease_until=NULL WHERE base_id=${f.base.id}::uuid`;
+      const pruned = await run(f.base.id);
+      expect(pruned).toMatchObject({ sealedHours: 1, rawPartitions: 1, hourRecords: 1 });
+      expect(await sql`SELECT hour FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid`).toHaveLength(0);
+      expect(await f.read("samples", "count() AS n")).toEqual([{ n: 0 }]);
+      await sql`UPDATE pulse.bases SET retention_days=30 WHERE id=${f.base.id}::uuid`;
+      expect(await f.write({ metrics: [{ name: "load", value: 2, ts }] })).toMatchObject({
+        ok: false,
+        error: { status: 400, message: "Metric hour is sealed after raw retention" },
+      });
+      expect(await f.read("samples", "count() AS n")).toEqual([{ n: 0 }]);
+      const { createBaseLifecycle } = await import("./base-lifecycle");
+      await sql`UPDATE pulse.base_stores SET state='clearing',operation='clear' WHERE base_id=${f.base.id}::uuid`;
+      const clear = createBaseLifecycle(f.store);
+      for (let i = 0; i < 20; i++) if ((await clear(f.base.id)).done) break;
+      expect((await sql`SELECT state,sealed_before FROM pulse.base_stores WHERE base_id=${f.base.id}::uuid`)[0]).toMatchObject({
+        state: "active",
+        sealed_before: null,
+      });
+      assertWrite(await f.write({ metrics: [{ name: "load", value: 3, ts }] }));
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("registries and scrape history expire but current state keys remain", async () => {
     const f = await writeFixture("registry-retention");
     try {

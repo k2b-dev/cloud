@@ -30,7 +30,7 @@ Sende einen `Idempotency-Key` ab dem ersten Versuch. Behalte Inhalt und Schlüss
 - **Batchgröße:** Höchstens 500 Metriken, 500 Ereignisse und 500 Zustände; insgesamt 1.500 Einträge und 5 MiB codiertes Batch-JSON.
 - **Anfrageschlüssel:** Pulse reserviert ihn vor dem Schreiben. Derselbe Schlüssel und Batch liefern 24 Stunden lang dasselbe erfolgreiche Ergebnis.
 - **Ausstehender Batch:** Wiederhole ihn mit demselben Schlüssel, um dieselben Zeilen zu schreiben. Anderer Inhalt mit diesem Schlüssel ergibt 409.
-- **Ohne Schlüssel:** Ein fehlgeschlagener Batch kann bereits teilweise gespeichert sein; der Fehler nennt das. Wiederholte Ereignisse können doppelt vorkommen.
+- **Ohne Schlüssel:** Ein fehlgeschlagener Batch kann bereits teilweise gespeichert sein; der Fehler nennt das. Beim erneuten Senden können diese Teile doppelt gespeichert werden. Ein nachträglich ergänzter Schlüssel verhindert diese Duplikate nicht. Sende jeden Batch ab dem ersten Versuch mit einem `Idempotency-Key`, damit du ihn sicher wiederholen kannst.
 - **Quote:** Werte und Bytes teilen sich ein Kontingent pro Base über Quellen und Replikate hinweg. Eine 429-Antwort enthält `Retry-After`.
 - **Speicherausfall:** Eine 503-Antwort enthält `Retry-After`. Abrufe protokollieren den Fehler; die Cloud-Administration erhält eine Benachrichtigung pro Ausfall.
 :::

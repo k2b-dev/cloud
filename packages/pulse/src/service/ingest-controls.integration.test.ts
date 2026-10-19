@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { SQL, sql } from "bun";
 import { requireInfra, requireInfraUrl, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { installIngestControlsFixture } from "./ingest-controls.test-fixture";
 
@@ -20,6 +20,56 @@ suiteFor(
   "valkey",
   "clickhouse",
 )("Pulse quota and store protection", () => {
+  test("write fixtures discard another suite's disk-low measurement", async () => {
+    await sql`INSERT INTO pulse.store_instance(singleton,free_bytes,total_bytes,disk_low_at)
+      VALUES(true,1,100,'2026-10-17T12:00:00Z') ON CONFLICT(singleton)
+      DO UPDATE SET free_bytes=1,total_bytes=100,disk_low_at='2026-10-17T12:00:00Z'`;
+    const f = await writeFixture("isolated-disk");
+    try {
+      expect(await sql`SELECT singleton FROM pulse.store_instance`).toHaveLength(0);
+      assertWrite(await f.write({ events: [{ kind: "host-independent" }] }));
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
+  test("notification recipients resolve before a one-connection transaction is reserved", async () => {
+    const { accounts } = await import("@k2b/cloud/services");
+    const f = await writeFixture("notification-small-pool");
+    const database = new SQL({ max: 1 });
+    const userId = "10000000-0000-4000-8000-000000000007";
+    const list = accounts.users.list;
+    const lookup = spyOn(accounts.users, "list").mockImplementation(async (params) => {
+      await database`SELECT 1`;
+      return list(params);
+    });
+    let pending: Promise<unknown> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${userId}::uuid,${userId},'local','user',true)`;
+      pending = (async () => {
+        await recordStoreOutage(f.clock(), database, "en");
+        await recordInstanceDisk(9, 100, f.clock(), database, "en");
+      })();
+      await Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Notification lookups starved the SQL pool")), 5000);
+        }),
+      ]);
+      expect(await sql<{ kind: string }[]>`SELECT kind FROM pulse.notification_outbox WHERE user_id=${userId}::uuid ORDER BY kind`).toEqual(
+        [{ kind: "storeDiskLow" }, { kind: "storeUnavailable" }],
+      );
+    } finally {
+      clearTimeout(timeout);
+      await database.close({ timeout: 1 });
+      await Promise.allSettled([pending]);
+      lookup.mockRestore();
+      await recordInstanceDisk(50, 100, f.clock());
+      await sql`DELETE FROM pulse.notification_outbox WHERE user_id=${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      await f.cleanup();
+    }
+  }, 30000);
   test("#6 two replicas share both buckets; done keys cost nothing; Valkey down fails closed", async () => {
     const f = await writeFixture("quota"),
       a = createIngestQuota(requireInfraUrl("valkey")),

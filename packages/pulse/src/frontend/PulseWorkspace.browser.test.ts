@@ -46,7 +46,10 @@ describe("Pulse base page after the cut", () => {
         await tab.getByText("Newsletter-Skript").first().waitFor();
         for (const name of ["Shop-Server", "Shop-Bestellungen", "Traefik", "Newsletter-Skript"])
           expect(await tab.getByText(name, { exact: true }).first().isVisible()).toBe(true);
-        expect(await tab.getByText("Gedrosselt").first().isVisible()).toBe(true);
+        // Phones show the status inside the source cell; it must be fully inside the viewport, never scrolled away.
+        const throttled = await tab.getByText("Gedrosselt").filter({ visible: true }).first().boundingBox();
+        expect(throttled).not.toBeNull();
+        expect((throttled?.x ?? 0) + (throttled?.width ?? 0)).toBeLessThanOrEqual(view.width);
         expect(await overflow(tab)).toBeLessThanOrEqual(0);
         expect(calls).toEqual([]);
       } finally {

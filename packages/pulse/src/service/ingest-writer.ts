@@ -199,6 +199,7 @@ export const createIngestWriter = ({
     let reserved = false,
       writing = false;
     try {
+      const connectedStore = { ...store, query: await store.prepare() };
       // T1 is deliberately a separate, committed transaction.
       const preflight = await database.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout='30s'`.simple();
@@ -254,7 +255,7 @@ export const createIngestWriter = ({
           database: base.database_name,
           batch: prepared,
           db: tx,
-          store,
+          store: connectedStore,
           now,
         });
         await tx`UPDATE pulse.sources SET last_accepted_at=greatest(last_accepted_at,${acceptedAt}) WHERE id=${params.sourceId}::uuid`;
@@ -289,10 +290,10 @@ export const createIngestWriter = ({
           db: tx,
           // Leave the full request timeout before T1's lease expires, even if SQL locks delayed T2.
           store: {
-            ...store,
+            ...connectedStore,
             query: async (statement, params) => {
               if (clock().getTime() + 30_000 >= now.getTime() + 10 * 60_000) throw new Error("Ingest write lease expired; retry");
-              return store.query(statement, params);
+              return connectedStore.query(statement, params);
             },
           },
           now: clock(),
@@ -335,7 +336,7 @@ export const createIngestWriter = ({
           status: 503,
           message:
             !key && writing
-              ? "Pulse data store is unavailable. The batch may be partly stored. Send it again with an Idempotency-Key to retry without duplicates."
+              ? "Pulse data store is unavailable. The batch may be partly stored, and sending it again can store those parts twice. Send every batch with an Idempotency-Key from the first attempt to retry safely."
               : key
                 ? "Pulse data store is unavailable. Retry this batch with the same Idempotency-Key."
                 : "Pulse data store is unavailable. Retry this batch with an Idempotency-Key.",

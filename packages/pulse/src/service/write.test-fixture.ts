@@ -1,7 +1,6 @@
 import { sql } from "bun";
 import { clickhouseTestPrefix } from "../../../../scripts/fixtures/test-clickhouse";
-import { createBaseStore } from "../store/base-store";
-import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore } from "../store/base-store.test-fixture";
+import { cleanupFixtureBase, fixtureBase, fixtureStore } from "../store/base-store.test-fixture";
 import { StoreQueryError } from "../store/client";
 import { quoteIdentifier as q } from "../store/validation";
 import { createBaseLifecycle } from "./base-lifecycle";
@@ -9,6 +8,7 @@ import { deterministicRowId } from "./ingest-bulk";
 import { createIngestWriter } from "./ingest-writer";
 
 export const writeFixture = async (name: string) => {
+  await sql`DELETE FROM pulse.store_instance`;
   let instant = new Date("2026-10-17T12:00:00Z");
   const clock = () => new Date(instant);
   const base = await fixtureBase(deterministicRowId(clickhouseTestPrefix, name, "base", 0));
@@ -17,14 +17,14 @@ export const writeFixture = async (name: string) => {
   await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name,created_at,updated_at) VALUES(${sourceId}::uuid,${sourceId.replaceAll("-", "").slice(0, 6)},${base.id}::uuid,'http_ingest','Write fixture',${clock()},${clock()})`;
   let inserts = 0,
     abortAt: number | null = null;
-  const store = createBaseStore({ prefix: clickhouseTestPrefix, connection: async () => fixtureConnection(), clock });
+  const store = fixtureStore(clock);
   const query = store.query;
-  store.query = async (statement, params) => {
+  store.query = async (statement, params, connection) => {
     if (statement.startsWith("INSERT INTO") && ++inserts === abortAt) throw new StoreQueryError("unreachable");
-    return query(statement, params);
+    return query(statement, params, connection);
   };
   // Independent store/ingest instances share no caches or deduplication state.
-  const other = createBaseStore({ prefix: clickhouseTestPrefix, connection: async () => fixtureConnection(), clock });
+  const other = fixtureStore(clock);
   const writer = createIngestWriter({ store, clock }),
     writerB = createIngestWriter({ store: other, clock });
   const write = (batch: Parameters<typeof writer>[0]["batch"], idempotencyKey?: string) =>

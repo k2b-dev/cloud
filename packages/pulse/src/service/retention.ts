@@ -19,8 +19,17 @@ export type RetentionResult = {
 };
 
 export const createRetention =
-  ({ store = baseStore, database = sql, clock = store.clock }: { store?: IngestStore; database?: typeof sql; clock?: () => Date } = {}) =>
+  ({
+    store: configuredStore = baseStore,
+    database = sql,
+    clock = configuredStore.clock,
+  }: {
+    store?: IngestStore;
+    database?: typeof sql;
+    clock?: () => Date;
+  } = {}) =>
   async (baseId?: string, after: string | null = null): Promise<RetentionResult> => {
+    const store = { ...configuredStore, query: await configuredStore.prepare() };
     const now = clock();
     const result: RetentionResult = {
       phase: "done",
@@ -64,8 +73,15 @@ export const createRetention =
         const scrapes =
           await tx`WITH victims AS(SELECT id FROM pulse.source_scrapes WHERE base_id=${base.id}::uuid AND started_at<${rawCutoff} LIMIT ${BATCH}) DELETE FROM pulse.source_scrapes s USING victims v WHERE s.id=v.id`;
         result.scrapeRecords += scrapes.count;
-        const hours =
-          await tx`WITH victims AS(SELECT hour FROM pulse.metric_hours WHERE base_id=${base.id}::uuid AND state='sealed' AND hour+interval '1 hour'<=${registryCutoff} LIMIT ${BATCH})
+        // Preserve the seal before discarding its individual rows. Do not advance
+        // past an outstanding dirty/clean hour, even when it predates a sealed one.
+        await tx`UPDATE pulse.base_stores SET sealed_before=greatest(sealed_before,
+          (SELECT max(hour)+interval '1 hour' FROM pulse.metric_hours h WHERE h.base_id=${base.id}::uuid
+            AND state='sealed' AND hour+interval '1 hour'<=${registryCutoff}
+            AND hour<coalesce((SELECT min(hour) FROM pulse.metric_hours WHERE base_id=${base.id}::uuid AND state<>'sealed'),'infinity'::timestamptz)))
+          WHERE base_id=${base.id}::uuid`;
+        const hours = await tx`WITH victims AS(SELECT hour FROM pulse.metric_hours WHERE base_id=${base.id}::uuid AND state='sealed'
+            AND hour<(SELECT sealed_before FROM pulse.base_stores WHERE base_id=${base.id}::uuid) LIMIT ${BATCH})
           DELETE FROM pulse.metric_hours h USING victims v WHERE h.base_id=${base.id}::uuid AND h.hour=v.hour`;
         result.hourRecords += hours.count;
         // T1 refreshes last_seen_at before any insert, preserving series identities for pending retries.

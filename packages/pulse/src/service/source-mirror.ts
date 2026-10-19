@@ -5,8 +5,9 @@ import { requireBaseActive } from "./access-control";
 import { type IngestStore, insertStoreRows } from "./ingest-bulk";
 
 /** Commit changes first. Deleted sources remain pending tombstones until their mirror succeeds. */
-export const mirrorPendingSources = async (baseId: string, store: IngestStore = baseStore, sourceId?: string) =>
-  sql.begin(async (tx) => {
+export const mirrorPendingSources = async (baseId: string, store: IngestStore = baseStore, sourceId?: string) => {
+  store = { ...store, query: await store.prepare() };
+  return sql.begin(async (tx) => {
     const active = await requireBaseActive(baseId, tx);
     if (!active.ok) return;
     const [base] = await tx<{ database_name: string }[]>`SELECT database_name FROM pulse.base_stores WHERE base_id=${baseId}::uuid`;
@@ -34,6 +35,7 @@ export const mirrorPendingSources = async (baseId: string, store: IngestStore = 
     await tx`DELETE FROM pulse.sources WHERE id=ANY(${sql.array(ids, "UUID")}) AND deleted`;
     await tx`UPDATE pulse.sources SET mirror_pending=false WHERE id=ANY(${sql.array(ids, "UUID")}) AND NOT deleted`;
   });
+};
 export const tryMirrorSource = async (baseId: string, sourceId: string) => {
   try {
     await mirrorPendingSources(baseId, baseStore, sourceId);

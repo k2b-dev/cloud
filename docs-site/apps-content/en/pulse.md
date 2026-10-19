@@ -108,8 +108,9 @@ acceptance time before writing measurements. For its 24-hour lifetime:
 
 Keep the body and key until delivery completes. Without a key, a failed batch
 can already be partly stored. The error says **The batch may be partly
-stored**; resending events can duplicate them. Adding a key afterwards cannot
-remove rows from the first attempt.
+stored, and sending it again can store those parts twice**. Adding a key
+afterwards cannot deduplicate the first attempt. Send every batch with an
+`Idempotency-Key` from the first attempt to retry safely.
 
 Invalid input or registry caps return `400`, missing ingest access `403`, an
 unknown source `404`, and a disabled source, busy or blocked base, or conflicting

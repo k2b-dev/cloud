@@ -9,6 +9,10 @@ export const HOUR_MS = 3_600_000;
 export const markMetricHoursDirty = async (baseId: string, timestamps: readonly string[], db: typeof sql, now: Date): Promise<void> => {
   const hours = [...new Set(timestamps.map((ts) => new Date(Math.floor(Date.parse(ts) / HOUR_MS) * HOUR_MS).toISOString()))].sort();
   if (!hours.length) return;
+  const [base] = await db<{ sealed_before: Date | null }[]>`SELECT sealed_before FROM pulse.base_stores WHERE base_id=${baseId}::uuid`;
+  const sealedBefore = base?.sealed_before?.getTime();
+  if (sealedBefore !== undefined && hours.some((hour) => Date.parse(hour) < sealedBefore))
+    throw err.badInput("Metric hour is sealed after raw retention");
   const rows = await db`INSERT INTO pulse.metric_hours(base_id,hour,state,revision,lease_until,updated_at)
     SELECT ${baseId}::uuid,hour::timestamptz,'dirty',1,${new Date(now.getTime() + 10 * 60_000)}::timestamptz,${now}::timestamptz
     FROM unnest(${sql.array(hours, "TEXT")}) hour ORDER BY hour
@@ -40,8 +44,9 @@ export const hourlyRollupSql = (database: string, prefix: string) => {
 };
 export const createHourlyRollup =
   ({ store = baseStore, database = sql, clock = store.clock }: { store?: IngestStore; database?: typeof sql; clock?: () => Date } = {}) =>
-  async (baseId?: string): Promise<{ buckets: number; done: boolean }> =>
-    database.begin(async (tx) => {
+  async (baseId?: string): Promise<{ buckets: number; done: boolean }> => {
+    const connectedStore = { ...store, query: await store.prepare() };
+    return database.begin(async (tx) => {
       const now = clock();
       await tx`SET LOCAL statement_timeout='30s'`.simple();
       await tx`SET LOCAL lock_timeout='30s'`.simple();
@@ -65,7 +70,7 @@ export const createHourlyRollup =
         { database_name: string; retention_days: number }[]
       >`SELECT s.database_name,b.retention_days FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.id=${candidate.base_id}::uuid`;
       if (!base) return { buckets: 0, done: false };
-      await store.query(hourlyRollupSql(base.database_name, store.prefix), {
+      await connectedStore.query(hourlyRollupSql(base.database_name, store.prefix), {
         start: candidate.hour.getTime(),
         end: candidate.hour.getTime() + HOUR_MS,
         cutoff: now.getTime() - base.retention_days * 86_400_000,
@@ -75,6 +80,7 @@ export const createHourlyRollup =
       await tx`UPDATE pulse.metric_hours SET state='clean',updated_at=${now}::timestamptz WHERE base_id=${candidate.base_id}::uuid AND hour=${candidate.hour} AND state='dirty' AND revision=${hour.revision}::bigint`;
       return { buckets: 1, done: false };
     });
+  };
 export const runHourlyRollup = createHourlyRollup();
 
 export const sealExpiredMetricHour = async (baseId?: string, now = new Date()): Promise<number> =>
