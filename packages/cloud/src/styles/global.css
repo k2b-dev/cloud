@@ -118,9 +118,8 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
       55%,
     color-mix(in srgb, var(--app-canvas-to, var(--color-zinc-400)) var(--cloud-shell-strength), var(--ui-canvas))
   );
-  /* On color the open item is the surface; on the surface it is tinted. Its
-     label is the app ink, which app-color.ts keeps at AA on the surface and on
-     the app's selection fills. */
+  /* On color the open item is the surface in light and tinted in dark. Its
+     label is the app ink, which app-color.ts keeps at AA on both fills. */
   --cloud-shell-selected: var(--k2b-surface);
   --cloud-shell-selected-text: var(--ui-app-accent-text);
 }
@@ -128,7 +127,9 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
 .dark .cloud-app-canvas {
   --cloud-shell-strength: 22%;
   --cloud-shell-via-strength: 12%;
-  --cloud-shell-selected: var(--ui-app-selected-nav);
+  /* The navigation share over the muted surface, which stays apart from the
+     dark bar; app-color.ts derives the same fill as shellSelected. */
+  --cloud-shell-selected: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 17%, var(--ui-surface-muted));
 }
 
 :root {

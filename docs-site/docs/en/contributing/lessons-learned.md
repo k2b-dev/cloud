@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Lessons learned
@@ -27,6 +27,7 @@ convention still needs a check or a test.
 | Rate-limit scope and budget mismatch | Multi-request uploads exhaust the public page budget; per-link keys let clients bypass the upload cap by spraying tokens. | Tests: Files `public-rate-limit.integration.test.ts` checks the per-client (IPv6 /64) upload budget, token spraying and page isolation; `public-inbox.behavior.test.tsx` checks automatic waits and the terminal rate-limit message ([#1168](https://github.com/k2b-dev/cloud/issues/1168)). |
 | Remote content in mail | A sent message or its preview loads an image from a remote address, so opening it tells the sender's server who read it and when. Mail images come only from stored bytes, sent as an inline `cid:` part and previewed as a `data:` URL. | Test: Mail `outbound-mime.test.ts` (the logo is a `multipart/related` inline part whose `Content-ID` matches the HTML, no `http(s)` image source) and `compose-renderer.test.ts` (Markdown images, `<img>`, and CSS `url()` or `image-set()` stay rejected). |
 | Derived theme text color without a contrast guarantee | A fixed CSS mix derives text from an app accent, so a light accent such as yellow falls below 4.5:1 on the surfaces it sits on. | Test: `packages/cloud/src/ssr/app-color.test.ts` checks the computed ink of every declared app accent and edge accents against each listed background in both themes, and pins the background constant and the `:root` defaults to `tokens.css` and `@k2b/ui` ([#1205](https://github.com/k2b-dev/cloud/issues/1205)). No check covers other text colors derived in CSS yet. |
+| A pinned color base drifts from the surface an element uses | A constant pins the background a derived color is mixed over. A shell change moves the element to another token, so the fill no longer matches the contract while value-only drift tests stay green. | Test: `packages/cloud/src/ssr/app-color.test.ts` reads the `.k2b-ui .k2b-app-workspace__sidebar` background declaration from @k2b/ui and checks that the navigation fill's base equals what it resolves to in both themes. |
 | A mutation’s refresh re-creates a rendered entity’s element | Refetched objects replace retained elements, losing focus and hover and leaving box reads detached. | Tests: Spaces kanban and detail claim tests use `keptThrough()` from `packages/ui/test/browser.ts` to check element identity and height; the held-card test distinguishes a retained card from one leaving its column ([#1391](https://github.com/k2b-dev/cloud/issues/1391)). |
 | A restored entity shows twice, or a test reads it page-wide | Undo or a refresh puts an item back while the leaving copy still shows, or a page-wide role locator matches two elements. `expect(promise).resolves` hides why the read failed. | Test: the Spaces tray Undo and refresh tests use `mostAtOnce()` from `packages/ui/test/browser.ts`. Convention: scope reads to the entity's row and await reads directly ([#1450](https://github.com/k2b-dev/cloud/issues/1450)). |
 | Session URL in a server-side export | A server-side renderer gets a URL that only a signed-in browser can load, so the content silently disappears. | Tests: Notebooks `book-renderer.test.ts` checks that print HTML for every documented image form has no app, API, or `attach://` URL; `note-pdf-images.integration.test.ts` checks embedded images with `pdfimages` and zero requests with `gotenberg-trap.ts` ([#1280](https://github.com/k2b-dev/cloud/issues/1280)). |
@@ -531,6 +532,13 @@ convention still needs a check or a test.
 - **Root cause:** Fixed CSS mixes adjusted every accent by the same amount without checking background contrast.
 - **Error class:** Derived theme text color without a contrast guarantee.
 - **Guard:** `app-color.test.ts` checks every declared app accent and edge colors against theme and selection surfaces, pins surface and default token values, and verifies the mildest passing clamp step. SSR and compiled stylesheet tests pin emission and scoped theme mappings.
+
+### The selected navigation row stayed grey on the white sidebar
+
+- **What happened:** After the workspace became one white surface ([#1468](https://github.com/k2b-dev/cloud/pull/1468)), the selected sidebar row and the selected stacked chip still looked grey.
+- **Root cause:** The sidebar moved to `--k2b-surface`, but `app-color.ts` still mixed the navigation fill over the old muted background. The drift test checked the muted token's value, not the background the sidebar declares. The dark shell also borrowed the navigation fill for the open app, so moving the fill to the darker surface would have made that item disappear into the dark bar.
+- **Error class:** A pinned color base drifts from the surface an element uses.
+- **Guard:** `packages/cloud/src/ssr/app-color.test.ts` reads the sidebar's background declaration from @k2b/ui and checks its resolved base and hover in both themes. The shell's dark open item has its own fill, `shellSelected`, which `shell-gradient-contrast.test.ts` pins to its CSS declaration.
 
 ### Read fallback written back
 

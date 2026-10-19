@@ -8,8 +8,9 @@ const fillShares = {
 
 /**
  * Opaque theme backgrounds checked for readable app ink; a test pins them to
- * tokens.css and @k2b/ui. `sidebar` is the workspace sidebar
- * (`--k2b-surface-muted`) and `sidebarHover` its row hover over it; `subtle`,
+ * tokens.css and @k2b/ui. `sidebar` is the workspace sidebar's own background
+ * (`--k2b-surface` since the one-surface workspace); a test reads that
+ * declaration from @k2b/ui. `sidebarHover` is its row hover over it; `subtle`,
  * `muted`, `hover`, and `platformSelected` are the `--ui-surface-subtle`,
  * `--ui-surface-muted`, `--ui-hover`, and blue `--ui-selected` fills app ink
  * also sits on.
@@ -18,8 +19,8 @@ export const appColorSurfaces = {
   light: {
     canvas: "#fafafa",
     surface: "#ffffff",
-    sidebar: "#f4f4f5",
-    sidebarHover: "#e8e8e9",
+    sidebar: "#ffffff",
+    sidebarHover: "#f3f3f3",
     subtle: "#f8f8f8",
     muted: "#f3f4f3",
     raised: "#ffffff",
@@ -29,8 +30,8 @@ export const appColorSurfaces = {
   dark: {
     canvas: "#090d12",
     surface: "#11151b",
-    sidebar: "#20242a",
-    sidebarHover: "#2b2f34",
+    sidebar: "#11151b",
+    sidebarHover: "#1d2026",
     subtle: "#161a20",
     muted: "#20242a",
     raised: "#181d24",
@@ -72,13 +73,17 @@ export const mixHex = (a: HexColor, b: HexColor, share: number): HexColor => {
     .join("")}`;
 };
 
-/** Derive selection fills and the nearest AA-readable app ink in each theme. */
+/** Derive selection fills, the shell's open-app fill, and the nearest AA-readable app ink in each theme. */
 export const appColors = (accent: HexColor) => {
   const forTheme = (theme: keyof typeof appColorSurfaces) => {
     const surfaces = appColorSurfaces[theme];
     const selected = mixHex(accent, surfaces.surface, fillShares[theme].selected);
     const selectedNav = mixHex(accent, surfaces.sidebar, fillShares[theme].selectedNav);
-    const backgrounds = [...Object.values(surfaces), selected, selectedNav];
+    // Cloud's shell marks the open app on its app-colored bar (global.css):
+    // with the surface in light, and in dark with the navigation share over the
+    // muted surface, which stays apart from the dark bar.
+    const shellSelected = theme === "light" ? surfaces.surface : mixHex(accent, surfaces.muted, fillShares.dark.selectedNav);
+    const backgrounds = [...Object.values(surfaces), selected, selectedNav, shellSelected];
     const toward = theme === "light" ? "#000000" : "#ffffff";
     let ink: HexColor = toward;
     for (let i = 100; i >= 0; i--) {
@@ -88,7 +93,7 @@ export const appColors = (accent: HexColor) => {
         break;
       }
     }
-    return { ink, selected, selectedNav };
+    return { ink, selected, selectedNav, shellSelected };
   };
   return { light: forTheme("light"), dark: forTheme("dark") };
 };
