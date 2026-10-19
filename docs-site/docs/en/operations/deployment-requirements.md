@@ -27,6 +27,30 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Prepare for browser confirmation of new access
+
+Deploy updated Core and OAuth together: start Core first, then OAuth, as in
+[Start the new release and verify it](#start-the-new-release-and-verify-it).
+OAuth adds the database columns that Core reads for the confirmation, so new
+OAuth sign-ins fail until updated OAuth has started. New OAuth refresh families
+require confirmation from a browser sign-in in the last ten minutes, or a terminal
+Cloud Login approval bound to the exact grant. Existing refresh rotation keeps
+working without another browser sign-in. The browser flow of `cld login` always
+shows consent.
+Ensure the normal browser sign-in methods remain available for confirmation.
+
+People must create personal API keys and passkeys in the browser. Automation
+that created personal API keys using OAuth tokens or API keys now receives
+`403 BROWSER_SIGN_IN_REQUIRED`; create those keys in `/me/developer` instead.
+An older browser sign-in receives `403 REAUTHENTICATE` and requires signing in
+again. Resource and standalone service-account keys are unchanged.
+
+New browser-confirmed OAuth access sends a **New access** notice with email and
+browser delivery recommended. Keep the installation timezone and outgoing mail
+configured. Failed notice preparation is retried by Core maintenance in batches
+of at most 100 families; a notice failure does not fail a completed sign-in.
+See [the migration steps](/en/docs/reference/deprecations-and-migrations#confirm-new-personal-access-in-a-browser).
+
 ## Upgrade Core and Action callers before applications use typed Action reviews
 
 Applications built with this release may declare Action policies and return
@@ -1251,16 +1275,19 @@ Notebook, or application-schema upgrade checks.
    checks Core's authority before its migrations. Check every service's private
    readiness and its registered public route; gateway health alone is not enough.
    The supplied Compose orders OAuth after Core, but does not impose that order
-   on every other application. Core signs device-authorization grants, so an
-   OAuth release with device sign-in needs Core from the same release; with an
-   older Core, device sign-in fails with `server_error` while other flows keep
-   working.
+   on every other application. Core and OAuth must run the same new release;
+   OAuth sign-ins and refreshes fail until both are updated. Update every
+   application built on `@k2b/cloud` to enforce the live account-epoch check.
 3. Sign in again with the installation's normal account method. Check logout
    and re-login, an authorized app page, global search, a dashboard widget, and
    a Notebook edit that survives reconnect and reload. If OAuth is used, test an
    existing client's authorization and refresh flow through the real HTTPS
    ingress. Old browser sessions and old OAuth access/ID tokens are rejected;
-   client registrations, client secrets, and refresh grants are retained.
+   client registrations and client secrets are retained. Existing OAuth sign-ins
+   of people end once, including their refresh grants and unredeemed codes.
+   Run `cld login` again and reconnect MCP clients and other apps. See
+   [OAuth sign-ins end once on upgrade](/en/docs/reference/deprecations-and-migrations#oauth-sign-ins-end-once-on-upgrade)
+   for rolling-update behavior.
 4. Check startup logs and the
    [JSON metadata repairs](/en/docs/operations/repair-jsonb-containers). Those
    repairs run on startup; no blanket manual repair or database reset is needed.

@@ -333,6 +333,63 @@ describe("OAuth authorization pages in a browser", () => {
       }
     }, 60_000);
 
+    test(`Confirm identity takes Allow's place in the same row, also in German, at ${width} px`, async () => {
+      for (const [plain, reauthenticate] of [
+        ["confirm", "confirmReauthenticate"],
+        ["consent", "consentReauthenticate"],
+      ] as const) {
+        for (const locale of ["en", "de"] as const) {
+          const context = `${reauthenticate} ${locale} at ${width} px`;
+          const slots = async (state: AuthorizationState) => {
+            const page = await open(state, locale, viewport);
+            try {
+              const row = await page.evaluate(() =>
+                Array.from(document.querySelectorAll<HTMLElement>("main form :is(button, a)"), (control) => {
+                  const box = control.getBoundingClientRect();
+                  return {
+                    name: control.tagName === "A" ? "confirm" : (control as HTMLButtonElement).value,
+                    left: box.left,
+                    top: box.top,
+                    width: box.width,
+                    height: box.height,
+                    fits: control.scrollWidth <= control.clientWidth,
+                  };
+                }),
+              );
+              const order: string[] = [];
+              for (let step = 0; step < 12 && order.length < 2; step += 1) {
+                await page.keyboard.press("Tab");
+                const name = await page.evaluate(() => {
+                  const active = document.activeElement;
+                  if (!active?.closest("main form")) return null;
+                  return active.tagName === "A" ? "confirm" : (active as HTMLButtonElement).value;
+                });
+                if (name) order.push(name);
+              }
+              return { row, order };
+            } finally {
+              await page.close();
+            }
+          };
+          const before = await slots(plain);
+          const after = await slots(reauthenticate);
+          expect(
+            after.row.map((control) => control.name),
+            context,
+          ).toEqual(["deny", "confirm"]);
+          expect(after.order, context).toEqual(["deny", "confirm"]);
+          const [deny, confirm] = after.row;
+          const allow = before.row[1]!;
+          // The same cell as Allow: same column, size, and row as Deny.
+          expect(confirm!.top, context).toBe(deny!.top);
+          expect(confirm!.left, context).toBe(allow.left);
+          expect(confirm!.width, context).toBe(allow.width);
+          expect(confirm!.height, context).toBe(allow.height);
+          expect(confirm!.fits, context).toBe(true);
+        }
+      }
+    }, 60_000);
+
     test(`the approved page ends with a visible status that says the tab can be closed at ${width} px`, async () => {
       for (const [locale, title, body] of [
         ["en", "Device connected", "You can close this tab now."],

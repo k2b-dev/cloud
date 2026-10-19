@@ -429,7 +429,11 @@ is active and belongs to the account, and that the account's authentication
 epoch still matches. As with browser completion, app approval must still be
 enabled, and the request and device must belong to the current issuer.
 Revocation, signing out everywhere, disabling app approval or changing the
-issuer between approval and issuance prevents tokens. Approved terminal evidence
+issuer between approval and issuance prevents tokens. Approve and Deny both
+record the request's authentication epoch on the linked OAuth grant. After the
+account is signed out everywhere, an earlier approval cannot be redeemed, and
+the terminal receives `invalid_grant`; a denial still reaches it as
+`access_denied`. Approved terminal evidence
 stays until issuance consumes it or the linked OAuth authorization row is deleted,
 even when that row has expired. Existing browser approvals of OAuth device grants
 keep their current behavior.
@@ -738,9 +742,12 @@ To replace a lost device, revoke it and then pair a new one with
 ### What revocation ends
 
 Revocation before completion prevents even an approved request from being used.
-Completion's database commit is the authorization boundary: later revocation
-does not cancel issuance already authorized or existing sessions. Those
-sessions end when they expire or when the account is signed out everywhere.
+Revoking an individual device after completion's database commit does not
+cancel session issuance already authorized or existing sessions. Signing the
+account out everywhere ends an approval that completion consumed but has not
+yet turned into a session: completion answers HTTP 409 with code `CONFLICT`,
+and the browser starts a new login. It also ends existing sessions and OAuth
+sign-ins, including user access tokens at their next request.
 
 When Cloud signs an account out everywhere, it also revokes every paired
 device of that account, including devices paired while the Cloud used another

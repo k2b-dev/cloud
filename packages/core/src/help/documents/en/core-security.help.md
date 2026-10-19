@@ -93,6 +93,18 @@ When you reset your password with **Reset password** on the sign-in page, Cloud 
 
 Pairing, renaming, and revoking can ask you to confirm your identity. Sign in with the same account, without signing out first. Pairing then opens again automatically.
 
+## Confirm new access {icon="shield-lock"}
+
+Create personal API keys under **Developer → API keys** and passkeys under
+**Sign-in → Passkeys** in a browser. Your browser sign-in must be from the last
+ten minutes. If Cloud asks you to confirm your identity, sign in again with the
+same account, without signing out first. The dialog then opens again.
+
+When you connect the command line using the browser flow of `cld login`, Cloud
+always asks for consent. Other apps requesting lasting access need the
+same recent confirmation. A **New access** notice names the command line or
+app and the time. If this was not you, contact your administrator.
+
 ## Protect your account {icon="shield-lock"}
 
 :::warning Never share recovery links or API keys

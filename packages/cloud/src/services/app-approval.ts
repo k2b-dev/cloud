@@ -195,7 +195,7 @@ export type AppTerminalLogins = {
     input: {
       deviceAuthorizationId: string;
       clientId: string;
-      user: Pick<AccountRow, "id" | "uid" | "provider" | "profile">;
+      user: Pick<AccountRow, "id" | "uid" | "provider" | "profile" | "auth_epoch">;
       decision: "approve" | "deny";
     },
   ): Promise<boolean>;
@@ -886,7 +886,7 @@ export const createAppApprovalService = (
         await record(tx, "login.consume", user.id, device.id, { requestId: id });
         // This commit is the authorization boundary. A later issuance/network
         // failure requires a new login, never replay of the consumed approval.
-        return { userId: user.id, deviceName: device.name };
+        return { userId: user.id, authEpoch: Number(row.auth_epoch), deviceName: device.name };
       });
     },
   };

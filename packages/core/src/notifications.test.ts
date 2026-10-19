@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { coreSettings, SIGN_IN_METHODS } from "@k2b/cloud/services";
 import { prepareNotificationEmail } from "@k2b/cloud/services/notifications/email-frame";
+import * as settings from "@k2b/cloud/services/settings";
 import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { app } from "./config";
 
@@ -73,6 +74,39 @@ test("pending approval notifications are browser-recommended, localized, and ope
     expect((await notice.email!({ count: 2 }, { locale: "en" })).content).toContain("https://cloud.example.test/me/approvals");
   } finally {
     url.mockRestore();
+  }
+});
+
+test("new-access notices are user-bound and localize command line and application access", async () => {
+  const notice = app.notifications.oauthNewAccess;
+  expect(notice.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+  expect(notice.recipient).toBe("user");
+  expect(Object.keys(notice.data.shape).sort()).toEqual(["clientName", "createdAt", "kind"]);
+  const setting = spyOn(settings, "get").mockResolvedValue("Europe/Berlin");
+  try {
+    const data = { kind: "command_line" as const, clientName: "Cloud CLI", createdAt: "2026-10-06T12:03:00.000Z" };
+    for (const [locale, title] of [
+      ["en", "New access for the command line"],
+      ["de", "Neuer Zugang für die Kommandozeile"],
+    ] as const) {
+      const rendered = await notice.render(data, { locale: locale! });
+      expect(rendered.title).toBe(title);
+      expect(rendered.targetHref).toBe("/me/security");
+      expect(rendered.body).toContain("14:03");
+      expect(rendered.body).toContain("(Europe/Berlin)");
+      setting.mockResolvedValueOnce("Europe/Berlin").mockResolvedValueOnce("https://cloud.example.test/");
+      const email = await notice.email!(data, { locale: locale! });
+      expect(email.subject).toBe(title);
+      expect(email.content).toBe(`${rendered.body} https://cloud.example.test/me/security`);
+    }
+    expect((await notice.render({ ...data, kind: "app", clientName: "Notes" }, { locale: "en" })).title).toBe(
+      "Notes has access to your account",
+    );
+    expect((await notice.render({ ...data, kind: "app", clientName: "Notizen" }, { locale: "de" })).title).toBe(
+      "Notizen hat Zugriff auf dein Konto",
+    );
+  } finally {
+    setting.mockRestore();
   }
 });
 

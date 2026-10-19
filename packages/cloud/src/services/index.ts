@@ -256,3 +256,4 @@ export {
   type NewBrowserSignInNotice,
   type NewBrowserSignInNotifier,
 } from "./known-browsers";
+export { LASTING_ACCESS_SIGN_IN_SECONDS, requireConfirmedBrowserSignIn } from "./session/recent";

@@ -11,7 +11,7 @@ import { accounts } from "../services/accounts";
 import { approvalScopeFromToolName, approvals } from "../services/approvals";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { session } from "../services/session/index";
-import { createTestAppSession, createTestSession } from "../services/session/session.test-fixture";
+import { createTestAppSession, createTestBrowserSignIn, createTestSession } from "../services/session/session.test-fixture";
 import * as platformSettings from "../services/settings";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
 import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAiToolApproval } from "./approvals";
@@ -540,7 +540,11 @@ suiteFor(
     const userId = await insertUser();
     const user = await accounts.users.get({ id: userId });
     if (!user) throw new Error("Missing fixture user");
-    const created = await serviceAccountCredentials.createUserApiToken({ user, name: "AI stream" });
+    const created = await serviceAccountCredentials.createUserApiToken({
+      browserSignIn: await createTestBrowserSignIn(user.id),
+      user,
+      name: "AI stream",
+    });
     if (!created.ok) throw new Error(created.error.message);
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const abort = new AbortController();
@@ -643,7 +647,11 @@ suiteFor("database", "nats")("chat and website approvals", () => {
     const userId = await insertUser();
     const user = await accounts.users.get({ id: userId });
     if (!user) throw new Error("Missing fixture user");
-    const created = await serviceAccountCredentials.createUserApiToken({ user, name: "Website approvals" });
+    const created = await serviceAccountCredentials.createUserApiToken({
+      browserSignIn: await createTestBrowserSignIn(user.id),
+      user,
+      name: "Website approvals",
+    });
     if (!created.ok) throw new Error(created.error.message);
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const other = await aiConversations.createConversation({ ownerUserId: userId });

@@ -16,7 +16,7 @@ import { createAiNotificationService } from "./ai-notifications";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
-import identityOAuthIssuanceRoutes from "./api/identity-oauth-issuance";
+import { createIdentityOAuthIssuanceRoutes } from "./api/identity-oauth-issuance";
 import { aiCapabilities } from "./capabilities";
 import { app } from "./config";
 import { coreHelp } from "./help";
@@ -46,7 +46,7 @@ const router = new Hono<AuthContext>()
   .route("/api/ai/live", aiLive.routes(aiLiveChannels))
   .route("/api/_internal/identity/v1", identityInvocationRoutes)
   .route("/api/_internal/identity/v1", identityMandateRoutes)
-  .route("/api/_internal/identity/v1", identityOAuthIssuanceRoutes)
+  .route("/api/_internal/identity/v1", createIdentityOAuthIssuanceRoutes({ notifyNewAccess: notificationSender.sendOAuthNewAccess }))
   .route("/api/_internal/identity/v1", identityOAuthDeviceApprovalRoutes)
   .route("/api", coreApi)
   // The mobile app's phone-side identity endpoints; only Core receives the device key.

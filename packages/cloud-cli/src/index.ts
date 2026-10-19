@@ -2872,7 +2872,11 @@ const waitForOAuthCode = async (
       const error = url.searchParams.get("error");
       if (error) {
         const message = url.searchParams.get("error_description") ?? error;
-        rejectCode(new CliError(message));
+        rejectCode(
+          error === "access_denied"
+            ? new CliError("Sign-in was denied in the browser.", 1, "Die Anmeldung wurde im Browser abgelehnt.")
+            : new CliError(message),
+        );
         return error === "access_denied"
           ? loginPageResponse("denied", { locale: pageLocale })
           : loginPageResponse("failed", { locale: pageLocale, detail: message });
@@ -2902,6 +2906,7 @@ const waitForOAuthCode = async (
   const url = authorizationUrl.toString();
 
   try {
+    printBrowserConfirmation(locale);
     printLine(text(locale, `Login URL:\n${url}`, `Anmelde-URL:\n${url}`));
     if (!open || envLacksLocalBrowser()) {
       printLine(
@@ -2965,6 +2970,22 @@ const oauthErrorCode = async (response: Response): Promise<{ error: string; desc
   };
 };
 
+const printBrowserConfirmation = (locale: string): void =>
+  printLine(
+    text(
+      locale,
+      "Confirm this sign-in in the browser. If your browser sign-in is older than 10 minutes, Cloud asks you to sign in again first.",
+      "Bestätige diese Anmeldung im Browser. Ist deine Anmeldung im Browser älter als 10 Minuten, fragt Cloud dich zuerst nach einer neuen Anmeldung.",
+    ),
+  );
+
+const confirmLoginAgain = (): CliError =>
+  new CliError(
+    "Run `cld login` again and confirm the sign-in in the browser.",
+    1,
+    "Führe `cld login` erneut aus und bestätige die Anmeldung im Browser.",
+  );
+
 /** RFC 8628: show a code, then poll until the person approves it in any browser. */
 const signInWithDeviceCode = async (server: string, scope: string, requestLocale?: string, ttl?: number): Promise<OAuthTokenResponse> => {
   const locale = requestLocale ?? "en";
@@ -2992,6 +3013,7 @@ const signInWithDeviceCode = async (server: string, scope: string, requestLocale
   }
   const device = parseDeviceAuthorization(await readJson<unknown>(started));
 
+  printBrowserConfirmation(locale);
   printLine(
     text(
       locale,
@@ -3024,6 +3046,7 @@ const signInWithDeviceCode = async (server: string, scope: string, requestLocale
       throw new CliError("Sign-in was denied in the browser.", 1, "Die Anmeldung wurde im Browser abgelehnt.");
     }
     if (error === "expired_token") break;
+    if (error === "invalid_grant") throw confirmLoginAgain();
     throw new CliError(
       `Device sign-in failed: ${description ?? error}`,
       1,
@@ -3234,13 +3257,13 @@ const signInWithBrowser = async (
     code_verifier: verifier,
     ...(ttl !== undefined ? { ttl: String(ttl) } : {}),
   });
-  return readOAuthTokenResponse(
-    await fetchOAuth(joinUrl(server, "/oauth/token"), {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body,
-    }),
-  );
+  const response = await fetchOAuth(joinUrl(server, "/oauth/token"), {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!response.ok && (await oauthErrorCode(response.clone())).error === "invalid_grant") throw confirmLoginAgain();
+  return readOAuthTokenResponse(response);
 };
 
 /** Store a fresh OAuth login in the profile, replacing and revoking the previous one. */

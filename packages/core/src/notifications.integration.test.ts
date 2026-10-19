@@ -5,8 +5,9 @@ import { sql } from "bun";
 import { databaseSuite, testFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { userNotifications } from "@k2b/cloud/services/notifications/user";
+import { notifyPendingOAuthNewAccess } from "./api/identity-oauth-device-approval";
 import { app } from "./config";
-import { createCoreNotificationSender } from "./notifications";
+import { createCoreNotificationSender, type OAuthNewAccessNotice } from "./notifications";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
 const suite = databaseSuite();
@@ -220,6 +221,77 @@ suite("Core new-browser sign-in notification handoff", () => {
     } finally {
       await sql`DELETE FROM notifications.events WHERE recipient_user_id = ${userId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+});
+
+suite("Core new-access notification delivery", () => {
+  beforeAll(async () => {
+    await registerNotificationDefinitions(app.meta.id, app.notifications);
+  });
+
+  test("records one configured-locale event per family", async () => {
+    const userId = crypto.randomUUID(),
+      familyId = crypto.randomUUID();
+    await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES (${userId}::uuid,${userId},'local','user')`;
+    const sender = createCoreNotificationSender(app.notifications);
+    const notice = { familyId, userId, kind: "command_line" as const, clientName: "Cloud CLI", createdAt: "2026-10-06T12:03:00.000Z" };
+    try {
+      await sender.sendOAuthNewAccess(notice);
+      await sender.sendOAuthNewAccess(notice);
+      const expected = await app.notifications.oauthNewAccess.render(notice, { locale: await settings.get<string>("app.locale") });
+      const events = await sql`SELECT idempotency_key,target_href,title FROM notifications.events
+        WHERE definition_id=${app.notifications.oauthNewAccess.id} AND recipient_user_id=${userId}::uuid`;
+      expect(events).toEqual([{ idempotency_key: `oauth-new-access:${familyId}`, target_href: "/me/security", title: expected.title }]);
+    } finally {
+      await sql`DELETE FROM notifications.events WHERE recipient_user_id=${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test("a failed preparation leaves the family pending and maintenance sends it on the next run", async () => {
+    const userId = crypto.randomUUID(),
+      familyId = crypto.randomUUID(),
+      clientId = crypto.randomUUID();
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,mail) VALUES (${userId}::uuid,${userId},'local','user',${`${userId}@example.test`})`;
+    await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences) VALUES ('New access test',${clientId},'{}',ARRAY['openid','offline_access'],ARRAY['cloud'])`;
+    await sql`INSERT INTO oauth.refresh_token_families(id,client_id,user_id,auth_epoch,scopes,audiences,status,expires_at)
+      VALUES (${familyId}::uuid,${clientId},${userId}::uuid,0,ARRAY['openid','offline_access'],ARRAY['cloud'],'active',now()+interval '1 hour')`;
+    const sender = createCoreNotificationSender({
+      ...app.notifications,
+      oauthNewAccess: {
+        ...app.notifications.oauthNewAccess,
+        email: async () => {
+          throw new Error("Settings unavailable");
+        },
+      },
+    });
+    const data = { familyId, userId, kind: "app" as const, clientName: "New access test", createdAt: "2026-10-06T12:03:00.000Z" };
+    try {
+      await expect(sender.sendOAuthNewAccess(data)).rejects.toThrow("could not be prepared");
+      const failing = async (notice: OAuthNewAccessNotice) => {
+        if (notice.familyId !== familyId) throw new Error("Not this test's family");
+        await sender.sendOAuthNewAccess(notice);
+      };
+      await notifyPendingOAuthNewAccess(failing);
+      const [pending] = await sql`SELECT notified_at FROM oauth.refresh_token_families WHERE id=${familyId}::uuid`;
+      expect(pending.notified_at).toBeNull();
+      // With no destination configured, preparation completes without reaching an outgoing provider.
+      await sql`UPDATE auth.users SET mail=NULL WHERE id=${userId}::uuid`;
+      const retry = createCoreNotificationSender(app.notifications);
+      await notifyPendingOAuthNewAccess(async (notice) => {
+        if (notice.familyId !== familyId) throw new Error("Not this test's family");
+        await retry.sendOAuthNewAccess(notice);
+      });
+      const [sent] = await sql`SELECT notified_at FROM oauth.refresh_token_families WHERE id=${familyId}::uuid`;
+      expect(sent.notified_at).toBeInstanceOf(Date);
+      const events =
+        await sql`SELECT id FROM notifications.events WHERE recipient_user_id=${userId}::uuid AND definition_id=${app.notifications.oauthNewAccess.id}`;
+      expect(events).toHaveLength(1);
+    } finally {
+      await sql`DELETE FROM notifications.events WHERE recipient_user_id=${userId}::uuid`;
+      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
 });

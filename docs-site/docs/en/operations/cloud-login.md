@@ -249,7 +249,9 @@ does not deny a request; open it again from its Cloud card. Compare its code
 with the waiting browser, and explicitly approve or deny it.
 A failing Cloud does not block the others. After an uncertain response, check
 the original browser and start a new sign-in if needed; Cloud Login does not
-silently resend the decision.
+silently resend the decision. If the account is signed out everywhere before
+browser completion, its earlier approval cannot create a session; start a new
+sign-in.
 
 Cloud Login opts in to `login-context` on both `inbox` and `pending` reads
 only when the Cloud announces it in `/info.features`; the public SDK filters
@@ -272,7 +274,9 @@ One tap approves exactly these scopes for that lifetime, with no scope
 downgrade in the sheet; people who want fewer rights sign in with
 `cld login --scope`.
 Uncertain and expired endings direct the user to the terminal to check the
-result or start again. Upgrade **Core, then OAuth, then Cloud Login**; see
+result or start again. If the account is signed out everywhere before the
+terminal finishes, its earlier approval no longer counts; run `cld login`
+again. Upgrade **Core, then OAuth, then Cloud Login**; see
 [Approve a terminal sign-in](./app-approval.md#approve-a-terminal-sign-in).
 
 Actions appear below the sign-ins in each Cloud card, with the app's name,

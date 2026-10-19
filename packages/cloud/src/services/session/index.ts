@@ -157,7 +157,10 @@ const revokeToken = async (token: string, requestId?: string | null): Promise<vo
   }
 };
 
+export class SessionEpochChangedError extends Error {}
+
 export type SessionIssueOptions = {
+  authEpoch?: number;
   ttlSeconds: number;
   /** Only web session.create supplies browser persistence, never mobile issuance. */
   knownBrowser?: Pick<
@@ -209,6 +212,7 @@ const insertFamily = async (
     throw new HTTPException(403, { message: "This account category is disabled. Contact an administrator." });
   const epoch = Number(user.auth_epoch);
   if (!Number.isSafeInteger(epoch) || epoch < 0) throw new Error("User auth_epoch is invalid");
+  if (options.authEpoch !== undefined && epoch !== options.authEpoch) throw new SessionEpochChangedError();
   if (options.pwaDeviceId) {
     // Device revocation locks the same user row first, so a revoked device never gets a new family.
     const [device] = await tx`
@@ -388,6 +392,8 @@ export const session = {
       device?: string | null;
       /** Null means this sign-in announces nothing, including during maintenance. */
       notify: NewBrowserSignInNotifier | null;
+      /** Account epoch an earlier approval was bound to; issuance fails when sign-out everywhere moved it. */
+      authEpoch?: number;
     },
   ): Promise<string> => {
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
@@ -397,6 +403,7 @@ export const session = {
     const { browser, os, country, city } = describeRequest(c);
     const { token: clientToken, notice } = await issueJwtSession(c, userId, {
       ttlSeconds,
+      authEpoch: signIn.authEpoch,
       knownBrowser: {
         cookie,
         browser,

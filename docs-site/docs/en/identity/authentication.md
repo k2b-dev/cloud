@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Request identity
@@ -186,10 +186,10 @@ Successful browser sign-ins also set a separate 90-day
 [browser cookie](/en/docs/operations/sign-in-locations#browser-cookie) that is
 kept on sign-out; it does not authenticate requests.
 
-Signing out removes the current session. Revoking all sessions for a user
-with `auth.session.revokeAllForUser` invalidates every older session and also
-revokes the account's paired
-[sign-in devices](/en/docs/operations/app-approval#what-revocation-ends).
+Signing out of one browser ends only that session. Signing an account out
+everywhere with `auth.session.revokeAllForUser` invalidates every older session,
+ends its OAuth sign-ins and access tokens at the next request, and revokes its
+paired [sign-in devices](/en/docs/operations/app-approval#what-revocation-ends).
 
 After credential verification, Core completes browser sign-in through
 `/auth/continue`. If the account has not accepted the terms yet, the new session
@@ -197,9 +197,8 @@ cannot authorize application requests until the user confirms there. This
 applies to every browser sign-in method; applications do not collect consent
 themselves. See [First use](/en/docs/accounts#before-your-first-use).
 
-Revocation takes effect without waiting for the token to expire. OAuth grants,
-API credentials and background mandates have separate lifecycles; signing out
-of the browser does not revoke them.
+Revocation takes effect without waiting for tokens to expire. API keys and
+background mandates keep their own lifecycles.
 
 An application should not read the cookie value or use `sessionToken` as a
 domain identifier.
@@ -207,6 +206,25 @@ domain identifier.
 The browser session JWT is not a delegation credential. Background work and
 application-to-application calls use operation-bound invocation credentials;
 they must not persist or replay a browser cookie.
+
+## Confirm new access in a browser
+
+New passkeys and personal API keys require a browser sign-in from the last ten
+minutes. Cloud checks the session again in the transaction that stores the key
+or passkey, so starting registration before the window ends is not enough.
+
+OAuth access tokens, personal API keys, background mandates, and mobile app
+sessions cannot create these credentials. The account API answers `403` with
+`BROWSER_SIGN_IN_REQUIRED`. Create API keys in **Developer → API keys**
+(`/me/developer`) and passkeys in **Sign-in → Passkeys** using a browser.
+
+An older or no longer valid browser sign-in returns `403` with
+`REAUTHENTICATE`. Sign in again with the same account, then repeat the action.
+These error codes stay the same in every language.
+
+New OAuth refresh-token families require the same recent browser confirmation;
+see [OAuth clients and flows](/en/docs/identity/oauth). Rotating an existing
+refresh token does not require another browser sign-in.
 
 ## App sessions (preview)
 
@@ -237,13 +255,16 @@ App sessions never carry the installation `admin` role, also not in calls to
 other applications. A service that reloads the user to confirm the role must
 treat the request actor's roles as the upper bound and never add `admin` back.
 
-The mobile app cannot create sign-in methods, API keys, or background
-authority, because they would keep working after the phone is removed:
+The mobile app cannot create access that would keep working after the phone
+is removed:
 
+- passkeys and personal API keys follow the
+  [browser confirmation rule](#confirm-new-access-in-a-browser) above and return
+  `403` with `BROWSER_SIGN_IN_REQUIRED`;
 - Core's account API answers `403` with
   `{ "code": "FORBIDDEN", "message": "Use Cloud on the web for this." }` for
-  passkeys, personal API keys, password changes, account deletion, SSH public
-  keys, background mandates, and browser push endpoints;
+  password changes, account deletion, SSH public keys, background mandates,
+  and browser push endpoints;
 - resource API keys of Spaces, Notebooks, Contacts, Pulse, and Venue, scheduled
   Assistant tasks (create, change, resume), and Mail incoming automations with
   Spaces steps answer the same `403`;

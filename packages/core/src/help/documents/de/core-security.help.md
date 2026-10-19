@@ -93,6 +93,20 @@ Setzt du dein Passwort mit **Passwort zurücksetzen** auf der Anmeldeseite zurü
 
 Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität verlangen. Melde dich mit demselben Konto an, ohne dich vorher abzumelden. Die Kopplung öffnet sich danach automatisch wieder.
 
+## Neuen Zugang bestätigen {icon="shield-lock"}
+
+Lege persönliche API-Schlüssel unter **Entwicklung → API-Schlüssel** und
+Passkeys unter **Anmeldung → Passkeys** im Browser an. Deine Browser-Anmeldung
+muss aus den letzten zehn Minuten stammen. Bittet Cloud dich, deine Identität zu
+bestätigen, melde dich mit demselben Konto erneut an, ohne dich vorher
+abzumelden. Der Dialog öffnet sich danach wieder.
+
+Verbindest du die Kommandozeile über den Browser-Ablauf von `cld login`, fragt
+Cloud immer nach deiner Zustimmung. Andere Apps mit dauerhaftem Zugang brauchen
+dieselbe aktuelle Bestätigung. Eine Benachrichtigung über den neuen Zugang nennt die
+Kommandozeile oder App und den Zeitpunkt. Warst du das nicht, wende dich
+an die Administration.
+
 ## Konto schützen {icon="shield-lock"}
 
 :::warning Gib Wiederherstellungslinks und API-Schlüssel nie weiter

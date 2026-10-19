@@ -1,4 +1,4 @@
-import { Button, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import { oauthMessages } from "../messages";
 import { consentScopeLabel } from "../scope-labels";
@@ -58,21 +58,47 @@ export function CautionNote(props: { children: JSX.Element }) {
   );
 }
 
+/** Why the person signs in again before allowing: plain text with one icon, like the caution. */
+export function ReauthenticateNote() {
+  const t = useMessages();
+  return (
+    <p class="mt-6 flex items-start gap-2 text-sm text-secondary" data-testid="oauth-reauthenticate">
+      <i class="ti ti-shield-lock mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
+      <span>{t().confirmIdentityHint}</span>
+    </p>
+  );
+}
+
 /**
  * Deny and Allow as two equal buttons in one row, Allow last and primary. The
  * row keeps its order on phones, so the reading and focus order stay the same.
+ * When the browser sign-in is too old for access that stays signed in,
+ * "Confirm identity" takes Allow's place and opens the sign-in that leads back
+ * to this page; Deny keeps working.
  */
-export function DecisionForm(props: { action: string; request: string }) {
+export function DecisionForm(props: { action: string; request: string; userCode?: string; reauthenticateHref?: string | null }) {
   const t = useMessages();
   return (
     <form method="post" action={props.action} class="mt-6 grid grid-cols-2 gap-3">
       <input type="hidden" name="request" value={props.request} />
+      <Show when={props.userCode}>{(code) => <input type="hidden" name="user_code" value={code()} />}</Show>
       <Button type="submit" name="decision" value="deny" variant="secondary" size="lg" class="w-full">
         {t().deny}
       </Button>
-      <Button type="submit" name="decision" value="approve" size="lg" class="w-full">
-        {t().allowAccess}
-      </Button>
+      <Show
+        when={props.reauthenticateHref}
+        fallback={
+          <Button type="submit" name="decision" value="approve" size="lg" class="w-full">
+            {t().allowAccess}
+          </Button>
+        }
+      >
+        {(href) => (
+          <ButtonLink href={href()} size="lg" class="w-full" data-testid="oauth-confirm-identity">
+            {t().confirmIdentity}
+          </ButtonLink>
+        )}
+      </Show>
     </form>
   );
 }

@@ -369,8 +369,9 @@ suite("live routes", () => {
     try {
       const signer = await prepareIdentitySigner("oauth");
       const { issuer } = await getIdentityRuntimeConfig();
+      const [account] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${hal.id}::uuid`;
       const token = (scope: string) =>
-        new SignJWT({ token_use: "access", client_id: clientId, id: hal.id, scope })
+        new SignJWT({ token_use: "access", client_id: clientId, id: hal.id, auth_epoch: Number(account!.auth_epoch), scope })
           .setProtectedHeader({ alg: "RS256", kid: signer.kid })
           .setIssuer(issuer)
           .setAudience("cloud")

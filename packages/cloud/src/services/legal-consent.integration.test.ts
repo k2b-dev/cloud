@@ -155,7 +155,12 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
         },
       },
     });
-    const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue({ userId, deviceName: "Jana’s phone" });
+    const [epoch] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
+    const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue({
+      userId,
+      authEpoch: Number(epoch!.auth_epoch),
+      deviceName: "Jana’s phone",
+    });
     await settings.set("freeipa.enable", true);
     await settings.set("user.app_approval.enabled", true);
     try {

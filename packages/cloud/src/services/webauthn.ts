@@ -16,6 +16,7 @@ import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { logger } from "./logging";
 import { isUniqueViolation, toPgTextArray } from "./postgres";
+import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "./session/recent";
 import { coreSettings } from "./settings/api";
 
 const CHALLENGE_TTL_SECONDS = 300;
@@ -185,6 +186,7 @@ export const beginRegistration = async (params: { user: User }): Promise<Result<
 
 export const finishRegistration = async (params: {
   user: User;
+  browserSignIn: { userId: string; sid: string };
   name: string;
   response: RegistrationResponseJSON;
 }): Promise<Result<WebAuthnPasskey>> => {
@@ -221,6 +223,16 @@ export const finishRegistration = async (params: {
 
   try {
     return sql.begin(async (tx) => {
+      if (params.browserSignIn.userId !== params.user.id) return fail(err.forbidden("The browser sign-in belongs to another account."));
+      try {
+        await requireConfirmedBrowserSignIn(tx, params.browserSignIn, (code) => {
+          throw new ConfirmedBrowserSignInError(code);
+        });
+      } catch (error) {
+        if (error instanceof ConfirmedBrowserSignInError) return fail({ code: error.code, status: 403, message: error.message });
+        throw error;
+      }
+
       const [row] = await tx<DbPasskeyRow[]>`
         INSERT INTO auth.webauthn_credentials (
           user_id,

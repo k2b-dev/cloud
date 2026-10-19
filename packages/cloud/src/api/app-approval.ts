@@ -25,6 +25,7 @@ import {
   type createAppApprovalService,
 } from "../services/app-approval";
 import { type NewBrowserSignInNotifier, readBrowserCookie } from "../services/known-browsers";
+import { SessionEpochChangedError } from "../services/session";
 import { appNameIn } from "../ssr/runtime";
 import { createDeviceActions } from "./app-approval-actions";
 
@@ -157,8 +158,13 @@ export const createAppApprovalRoutes = (
       v("json", AppLoginReferenceSchema),
       async (c) => {
         const input = c.req.valid("json");
-        const { userId, deviceName } = await service.consumeLogin(input.requestId, input.browserSecret);
-        await auth.session.create(c, userId, { method: "cloud_login", device: deviceName, notify: options.notify });
+        const { userId, authEpoch, deviceName } = await service.consumeLogin(input.requestId, input.browserSecret);
+        try {
+          await auth.session.create(c, userId, { method: "cloud_login", device: deviceName, notify: options.notify, authEpoch });
+        } catch (error) {
+          if (error instanceof SessionEpochChangedError) throw new AppApprovalError("CONFLICT", 409);
+          throw error;
+        }
         return c.body(null, 204);
       },
     );

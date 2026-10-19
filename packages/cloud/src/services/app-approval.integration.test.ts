@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { type Server, sql } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
@@ -52,6 +52,16 @@ import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
 
 const deviceActions = createDeviceActions((id, _locale) => id);
+
+const withFrozenTime = async (run: () => Promise<void>) => {
+  const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
+  setSystemTime(clock!.now);
+  try {
+    await run();
+  } finally {
+    setSystemTime();
+  }
+};
 
 // Never migrate or mutate the development installation.
 const suite = suiteFor("database", "valkey");
@@ -481,7 +491,11 @@ suite("isolated app approval protocol", () => {
     expect(await service.deviceCommand(await proof(stranger, { operation: "pending" }), deviceActions)).toMatchObject({ requests: [] });
     await approve(a, started.requestId);
     await expect(cloudB.consumeLogin(started.requestId, started.browserSecret)).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(await service.consumeLogin(started.requestId, started.browserSecret)).toEqual({ userId: owner.id, deviceName: "Test device" });
+    expect(await service.consumeLogin(started.requestId, started.browserSecret)).toEqual({
+      userId: owner.id,
+      authEpoch: expect.any(Number),
+      deviceName: "Test device",
+    });
   });
 
   test("signed commands reject replay, body tampering, wrong clock and request mixups", async () => {
@@ -784,6 +798,48 @@ suite("isolated app approval protocol", () => {
     for (const result of [known, unknown, disabled])
       expect(AppLoginStatusSchema.parse(await service.browserStatus(result.requestId, result.browserSecret)).state).toBe("pending");
   });
+
+  test("completion refuses an approval consumed before the account epoch changes", () =>
+    withFrozenTime(async () => {
+      const owner = await account();
+      try {
+        const device = await enroll(owner);
+        const started = await service.startLogin(owner.uid, "login");
+        await approve(device, started.requestId);
+        // Keep the real service's consume-and-commit boundary, then move the epoch before session creation.
+        const racingRoutes = createAppApprovalRoutes(
+          { notify: async () => {} },
+          {
+            ...service,
+            consumeLogin: async (id, token) => {
+              const consumed = await service.consumeLogin(id, token);
+              const [before] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${owner.id}::uuid`;
+              expect(consumed).toEqual({ userId: owner.id, authEpoch: Number(before!.auth_epoch), deviceName: "Test device" });
+              await session.revokeAllForUser(owner.id);
+              return consumed;
+            },
+          },
+        );
+        const response = await racingRoutes.request("/login/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: cfg.issuer },
+          body: JSON.stringify({ requestId: started.requestId, browserSecret: started.browserSecret }),
+        });
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ code: "CONFLICT" });
+        expect(response.headers.has("set-cookie")).toBe(false);
+        expect(
+          await sql`
+        SELECT sf.sid FROM auth.session_families sf JOIN auth.users u ON u.id = sf.user_id
+        WHERE u.id = ${owner.id}::uuid AND sf.auth_epoch = u.auth_epoch
+      `,
+        ).toHaveLength(0);
+        const [approval] = await sql<{ state: string }[]>`SELECT state FROM auth.app_logins WHERE id = ${started.requestId}::uuid`;
+        expect(approval?.state).toBe("consumed");
+      } finally {
+        await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
+      }
+    }));
 
   test("HTTP completion sets a Cloud-only cookie and CORS exposes only device endpoints", async () => {
     const owner = await account(),
