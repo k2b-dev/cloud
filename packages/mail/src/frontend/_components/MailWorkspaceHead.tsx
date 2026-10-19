@@ -40,10 +40,14 @@ export function MailboxHeadFilters(props: {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   const url = () => mailRouteUrl(props.requestUrl);
-  const activeTagId = () => (props.search.expression?.type === "local_tag_id" ? props.search.expression.tagId : null);
+  /** The searched tag, while the Tag chip can name it; a deleted tag stays a Search chip with its summary. */
+  const activeTagId = () => {
+    const expression = props.search.expression;
+    return expression?.type === "local_tag_id" && props.localTags.some((tag) => tag.id === expression.tagId) ? expression.tagId : null;
+  };
   const searchSummary = () => {
     const expression = props.search.expression;
-    if (!expression || expression.type === "local_tag_id") return null;
+    if (!expression || activeTagId()) return null;
     return summarizeMailSearchExpression(expression, locale(), { folders: props.folders, tags: props.localTags });
   };
   const chooseTag = (value: string[]) => {

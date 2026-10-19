@@ -138,3 +138,38 @@ test.skipIf(isServer)("pin and hide save preferences, reorder rows and roll back
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("live counts and a rename update the open mailbox's row in place, so its focus stays", () => {
+  const dom = createDomTestHarness();
+  const m = modules!;
+  const [needsAction, setNeedsAction] = createSignal(2);
+  const [name, setName] = createSignal("Support");
+  const dispose = render(
+    () =>
+      createComponent(m.default, {
+        ...m.mailSidebarFixture({ counts: [{ mailboxId: "Box001", unread: 4, needsAction: 9 }] }),
+        get open() {
+          const base = m.openMailboxFixture();
+          return { ...base, mailboxName: name(), viewCounts: { ...base.viewCounts, needs_action: needsAction() } };
+        },
+      }),
+    dom.root,
+  );
+  const link = () => dom.root.querySelector<HTMLAnchorElement>('[data-mailbox="Box001"] a[href="/app/mail/Box001"]')!;
+  try {
+    const before = link();
+    before.focus();
+    // The open mailbox follows the page: its Needs action count, and no unread dot as old as the page.
+    expect(dom.root.querySelector('[data-mailbox="Box001"] .mail-sidebar-needs-action')?.textContent).toBe("2");
+    expect(dom.root.querySelector('[data-mailbox="Box001"] .mail-sidebar-unread-dot')).toBeNull();
+    setNeedsAction(5);
+    setName("Renamed support");
+    expect(link()).toBe(before);
+    expect(dom.document.activeElement).toBe(before);
+    expect(dom.root.querySelector('[data-mailbox="Box001"] .mail-sidebar-needs-action')?.textContent).toBe("5");
+    expect(link().textContent).toContain("Renamed support");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

@@ -4,7 +4,7 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, createNavigation, IconButton, type NavigationItem, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, getOwner, onCleanup, runWithOwner, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, getOwner, onCleanup, runWithOwner, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type { ConversationView, DeletedMailbox, DeletedMailboxPage, Mailbox } from "../../contracts";
@@ -93,28 +93,29 @@ export default function MailSidebar(
   const overviewText = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
   const formatCount = (count: number) => count.toLocaleString(locale());
 
+  // Only the open mailbox's ID decides the rows: live counts and a rename update the row in place, so a focused row
+  // keeps its focus.
+  const openMailboxId = createMemo(() => props.open?.mailboxId ?? null);
   // The open mailbox stays listed even when the readable-mailbox list leaves it out.
   const listed = createMemo<MailSidebarMailbox[]>(() => {
-    const open = props.open;
-    if (!open) return props.mailboxes;
-    // The open mailbox's name follows the page, so a rename shows at once.
-    if (props.mailboxes.some((mailbox) => mailbox.id === open.mailboxId))
-      return props.mailboxes.map((mailbox) => (mailbox.id === open.mailboxId ? { ...mailbox, name: open.mailboxName } : mailbox));
-    return [
-      { id: open.mailboxId, name: open.mailboxName, health: "active", healthReason: null, receivingAddress: null },
-      ...props.mailboxes,
-    ];
+    const openId = openMailboxId();
+    if (!openId || props.mailboxes.some((mailbox) => mailbox.id === openId)) return props.mailboxes;
+    const name = untrack(() => props.open?.mailboxName ?? "");
+    return [{ id: openId, name, health: "active", healthReason: null, receivingAddress: null }, ...props.mailboxes];
   });
+  /** The open mailbox's name follows the page, so a rename shows at once. */
+  const mailboxName = (mailbox: MailSidebarMailbox) => (isOpen(mailbox.id) ? (props.open?.mailboxName ?? mailbox.name) : mailbox.name);
   const ordered = createMemo(() => orderMailboxes(listed(), props.preferences.pinnedMailboxIds()));
   const visibleMailboxes = createMemo(() => ordered().filter((mailbox) => !props.preferences.isHidden(mailbox.id)));
   const hiddenMailboxes = createMemo(() => ordered().filter((mailbox) => props.preferences.isHidden(mailbox.id)));
   const countsById = createMemo(() => new Map(props.counts.map((entry) => [entry.mailboxId, entry])));
-  const isOpen = (mailboxId: string) => props.open?.mailboxId === mailboxId;
+  const isOpen = (mailboxId: string) => openMailboxId() === mailboxId;
   const stats = (mailboxId: string) => {
     const counted = countsById().get(mailboxId) ?? { unread: 0, needsAction: 0 };
-    // The open mailbox's own count follows its live view counts, as its Needs action tab does.
+    // The open mailbox follows the page: its Needs action count is the tab's live count, and its folders below show
+    // their live unread counts, so the row draws no unread dot that would only be as old as the page.
     const open = props.open;
-    return open?.mailboxId === mailboxId ? { ...counted, needsAction: open.viewCounts.needs_action } : counted;
+    return open?.mailboxId === mailboxId ? { unread: 0, needsAction: open.viewCounts.needs_action } : counted;
   };
 
   // The open mailbox's commands, for the command palette.
@@ -167,7 +168,7 @@ export default function MailSidebar(
     const scope = rowScope();
     const hadFocus = rowHasFocus(mailbox.id, scope);
     if (!props.preferences.change(mailbox.id, "pinned", pin)) return;
-    setAnnouncement(pin ? overviewText().pinned({ name: mailbox.name }) : overviewText().unpinned({ name: mailbox.name }));
+    setAnnouncement(pin ? overviewText().pinned({ name: mailboxName(mailbox) }) : overviewText().unpinned({ name: mailboxName(mailbox) }));
     restoreFocus(hadFocus, rowLink(mailbox.id, scope));
   };
   const toggleHidden = (mailbox: MailSidebarMailbox) => {
@@ -178,7 +179,9 @@ export default function MailSidebar(
     const position = visible.findIndex((item) => item.id === mailbox.id);
     const neighborId = (visible[position + 1] ?? visible[position - 1])?.id;
     if (!props.preferences.change(mailbox.id, "hidden", hide)) return;
-    setAnnouncement(hide ? overviewText().mailboxHidden({ name: mailbox.name }) : overviewText().mailboxShown({ name: mailbox.name }));
+    setAnnouncement(
+      hide ? overviewText().mailboxHidden({ name: mailboxName(mailbox) }) : overviewText().mailboxShown({ name: mailboxName(mailbox) }),
+    );
     if (hide) props.onMailboxHidden?.(mailbox.id);
     // A hidden row lands in the collapsed Hidden section: focus the row that took its place, or that section once the
     // list is empty. A shown row stays reachable, so focus follows it.
@@ -456,7 +459,7 @@ export default function MailSidebar(
       <>
         <AppWorkspace.SidebarItem
           href={`/app/mail/${mailbox.id}`}
-          title={[mailbox.name, mailboxOverviewSubtitle(mailbox, locale()), ...countLabels()].join(" · ")}
+          title={[mailboxName(mailbox), mailboxOverviewSubtitle(mailbox, locale()), ...countLabels()].join(" · ")}
           active={Boolean(rowOpen()) && !placeActive()}
           class="mail-sidebar-mailbox"
           data={{
@@ -471,7 +474,7 @@ export default function MailSidebar(
                 when={!hidden()}
                 fallback={
                   <IconButton
-                    label={overviewText().showMailbox({ name: mailbox.name })}
+                    label={overviewText().showMailbox({ name: mailboxName(mailbox) })}
                     size="xs"
                     variant="text"
                     onClick={() => toggleHidden(mailbox)}
@@ -481,7 +484,11 @@ export default function MailSidebar(
                 }
               >
                 <IconButton
-                  label={pinned() ? overviewText().unpinMailbox({ name: mailbox.name }) : overviewText().pinMailbox({ name: mailbox.name })}
+                  label={
+                    pinned()
+                      ? overviewText().unpinMailbox({ name: mailboxName(mailbox) })
+                      : overviewText().pinMailbox({ name: mailboxName(mailbox) })
+                  }
                   size="xs"
                   variant="text"
                   aria-pressed={pinned()}
@@ -490,7 +497,7 @@ export default function MailSidebar(
                   <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
                 </IconButton>
                 <IconButton
-                  label={overviewText().hideMailbox({ name: mailbox.name })}
+                  label={overviewText().hideMailbox({ name: mailboxName(mailbox) })}
                   size="xs"
                   variant="text"
                   onClick={() => toggleHidden(mailbox)}
@@ -499,7 +506,9 @@ export default function MailSidebar(
                 </IconButton>
               </Show>
               <Show when={rowOpen()}>
-                {(current) => <MailboxMenuButton menu={current().menu} size="xs" label={messages().mailboxMenu({ name: mailbox.name })} />}
+                {(current) => (
+                  <MailboxMenuButton menu={current().menu} size="xs" label={messages().mailboxMenu({ name: mailboxName(mailbox) })} />
+                )}
               </Show>
             </AppWorkspace.SidebarItemActions>
           }
@@ -510,7 +519,7 @@ export default function MailSidebar(
               <span class="mail-sidebar-unread-dot" />
             </Show>
           </AppWorkspace.SidebarItemIcon>
-          <AppWorkspace.SidebarItemLabel marquee={false}>{mailbox.name}</AppWorkspace.SidebarItemLabel>
+          <AppWorkspace.SidebarItemLabel marquee={false}>{mailboxName(mailbox)}</AppWorkspace.SidebarItemLabel>
           <AppWorkspace.SidebarItemMeta>
             <Show when={health()}>
               {(problem) => (
@@ -588,7 +597,7 @@ export default function MailSidebar(
     const open = isOpen(mailbox.id) ? props.open : null;
     return {
       id: `mailbox:${mailbox.id}`,
-      label: mailbox.name,
+      label: mailboxName(mailbox),
       icon: props.preferences.isPinned(mailbox.id) ? "ti ti-flag" : "ti ti-mail",
       href: `/app/mail/${mailbox.id}`,
       active: Boolean(open) && !placeActive(),

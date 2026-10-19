@@ -53,3 +53,11 @@ test("head Search chip summarizes structured conditions, including deleted tags 
   expect(deleted).toContain("deleted tag");
   expect(deleted).not.toContain("Gone01");
 });
+test("a search for one deleted tag stays a Search chip that names it, because the Tag chip cannot", () => {
+  for (const localTags of [[tag], []]) {
+    const html = filters({ type: "local_tag_id", tagId: "Gone01" }, localTags);
+    expect(html).toContain("Search");
+    expect(html).toContain("deleted tag");
+    expect(html).not.toContain("Gone01");
+  }
+});
