@@ -307,7 +307,7 @@ const phone: View = { name: "390", width: 390, height: 844, touch: true };
 // The side panel the Assistant moves into: a 22 rem column at the right edge of a wide screen.
 const panel: View = { name: "panel", width: 1440, height: 900, touch: false, column: "22rem" };
 
-const open = async (view: View, state: State, options: { theme?: "light" | "dark"; path?: string } = {}) => {
+const open = async (view: View, state: State, options: { theme?: "light" | "dark"; path?: string; slowChat?: ChatId } = {}) => {
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch,
@@ -350,7 +350,11 @@ const open = async (view: View, state: State, options: { theme?: "light" | "dark
       return route.fulfill({ json: { conversations: conversationsOf(state), projects: [], doneCount: 0, questions: questionsOf(state) } });
     }
     const chat = /^\/api\/ai\/conversations\/(Wart42|Tops42|Urlb42)$/.exec(url.pathname);
-    if (chat) return route.fulfill({ json: detailOf(state, chat[1] as ChatId) });
+    if (chat) {
+      // A chat that takes a moment to open, for presses while it loads.
+      if (chat[1] === options.slowChat) await new Promise((done) => setTimeout(done, 500));
+      return route.fulfill({ json: detailOf(state, chat[1] as ChatId) });
+    }
     // The chat's stream stays open and quiet.
     if (url.pathname.endsWith("/stream")) return;
     if (url.pathname === "/api/approvals") return route.fulfill({ json: { items: [], nextCursor: null, count: 0, elsewhere: 0 } });
@@ -606,6 +610,24 @@ describe("Waiting for you", () => {
         await close();
       }
     }, 60_000);
+
+  test("a second press while the other chat opens keeps the chat it started from in the history", async () => {
+    const { page, unexpected, close } = await open(desktop, { locale: "de", scenario: "three" }, { slowChat: "Tops42" });
+    try {
+      await strip(page).waitFor();
+      // By the question, since the entry drops "in Team Ops Wochenplanung" once that chat is the open one.
+      const entry = strip(page).locator('[data-question="req-routine"]');
+      await entry.click();
+      await entry.click();
+      await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
+      await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence focused");
+      await page.goBack();
+      await page.waitForURL(/\?conversation=Wart42$/);
+      expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
 
   for (const view of [desktop, phone, panel])
     test(`the slash list at ${view.name} opens over the row without moving it or the field`, async () => {

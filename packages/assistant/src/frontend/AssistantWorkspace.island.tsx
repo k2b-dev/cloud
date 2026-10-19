@@ -775,7 +775,10 @@ export default function AssistantWorkspace(props: Props) {
     const jump = ++questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
     revealRequest++;
-    const here = waitingConversationId() === question.conversationId;
+    // The committed URL decides: a chat that is still opening from an earlier jump has no history entry yet.
+    const here =
+      waitingConversationId() === question.conversationId &&
+      assistantConversationIdFromHref(window.location.href) === question.conversationId;
     // A newer jump, any navigation and leaving the workspace end this one, also while it waits for the card.
     const navigation = here ? navigationRequest : ++navigationRequest;
     const current = () => jump === questionJump && navigation === navigationRequest && waitingConversationId() === question.conversationId;
