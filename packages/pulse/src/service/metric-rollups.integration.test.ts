@@ -46,6 +46,40 @@ suiteFor(
       await f.cleanup();
     }
   }, 60000);
+  test("a deferred dirty predecessor beyond the raw cutoff uses raw values instead of its stale rollup", async () => {
+    const f = await writeFixture("rollup-deferred-predecessor"),
+      run = createHourlyRollup({ store: f.store });
+    const expire = () => sql`UPDATE pulse.metric_hours SET lease_until=${f.clock()} WHERE base_id=${f.base.id}::uuid`;
+    try {
+      await f.stopMerges();
+      assertWrite(await f.write({ metrics: [{ name: "requests", type: "counter", value: 10, ts: "2026-10-15T10:05:00Z" }] }));
+      await expire();
+      expect(await run(f.base.id)).toEqual({ buckets: 1, done: false });
+      expect(await f.read("rollups", "last_value")).toEqual([{ last_value: 10 }]);
+      f.setTime("2026-10-17T12:00:00.001Z");
+      assertWrite(
+        await f.writeB({
+          metrics: [
+            { name: "requests", type: "counter", value: 20, ts: "2026-10-15T10:15:00Z" },
+            { name: "requests", type: "counter", value: 30, ts: "2026-10-17T10:05:00Z" },
+          ],
+        }),
+      );
+      await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${f.base.id}::uuid`;
+      await expire();
+      await sql`UPDATE pulse.metric_hours SET lease_until=${new Date(f.clock().getTime() + 3_600_000)}
+        WHERE base_id=${f.base.id}::uuid AND hour=${new Date("2026-10-15T10:00:00Z")}`;
+      expect(await run(f.base.id)).toEqual({ buckets: 1, done: false });
+      expect(await f.read("rollups", "last_value,increase", "ORDER BY bucket")).toEqual([
+        { last_value: 10, increase: 0 },
+        { last_value: 30, increase: 10 },
+      ]);
+      const hours = await sql<{ state: string }[]>`SELECT state FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid ORDER BY hour`;
+      expect(hours.map((hour) => hour.state)).toEqual(["dirty", "clean"]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("a sparse counter uses retained raw history after its shorter-lived rollup expires", async () => {
     const f = await writeFixture("rollup-shorter-ttl"),
       run = createHourlyRollup({ store: f.store });

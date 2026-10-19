@@ -82,8 +82,8 @@ export const createHourlyRollup =
         const [dirty] = await tx<{ hour: Date | null }[]>`SELECT min(hour) AS hour FROM pulse.metric_hours
         WHERE base_id=${candidate.base_id}::uuid AND state='dirty' AND hour<${candidate.hour}`;
         const cutoff = now.getTime() - base.retention_days * 86_400_000;
-        // Dirty raw history wins, then clean rollups strictly before start; scan older retained raw only below the rollup TTL floor.
-        const rawFrom = Math.min(candidate.hour.getTime(), Math.max(dirty?.hour?.getTime() ?? candidate.hour.getTime(), cutoff));
+        // Dirty hours retain raw samples beyond the cutoff; use them instead of stale predecessor rollups.
+        const rawFrom = Math.min(candidate.hour.getTime(), dirty?.hour?.getTime() ?? candidate.hour.getTime());
         const rollupFloor =
           base.rollup_retention_days >= base.retention_days
             ? 0
