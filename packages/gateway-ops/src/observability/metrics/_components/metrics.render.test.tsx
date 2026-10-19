@@ -39,8 +39,18 @@ const renderTokens = (tokens: MetricsToken[], timeZone: string) =>
     }),
   );
 
+/** Drops Solid's hydration comments, repeated until none is left. */
+const withoutComments = (html: string) => {
+  let current = html;
+  for (let previous = ""; previous !== current; ) {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, "");
+  }
+  return current;
+};
+
 const expectNeutralTag = (html: string, label: string, count = 1) => {
-  const tags = [...html.replace(/<!--[\s\S]*?-->/g, "").matchAll(/<span class="([^"]*\btag\b[^"]*)">([^<]*)<\/span>/g)].filter(
+  const tags = [...withoutComments(html).matchAll(/<span class="([^"]*\btag\b[^"]*)">([^<]*)<\/span>/g)].filter(
     (match) => match[2] === label,
   );
   expect(tags).toHaveLength(count);

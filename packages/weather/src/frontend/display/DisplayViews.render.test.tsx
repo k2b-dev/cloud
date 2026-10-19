@@ -46,15 +46,26 @@ const data: WeatherDataPayload = {
   daily: [],
 };
 const props = { data, location: "Ulm", state: "Baden-Württemberg", zoom: 1 as const, now, refreshSeconds: 60, refreshedAt: now };
+/** Drops Solid's hydration comments, repeated until none is left. */
+const withoutComments = (html: string) => {
+  let current = html;
+  for (let previous = ""; previous !== current; ) {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, "");
+  }
+  return current;
+};
 const render = (child: () => ReturnType<typeof createComponent>) =>
-  renderToString(() =>
-    createComponent(LocaleProvider, {
-      locale: "en",
-      get children() {
-        return child();
-      },
-    }),
-  ).replace(/<!--[\s\S]*?-->/g, "");
+  withoutComments(
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return child();
+        },
+      }),
+    ),
+  );
 
 const expectDimmed = (elements: string[], count: number) => {
   expect(elements).toHaveLength(count);
