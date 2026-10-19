@@ -223,14 +223,6 @@ export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "b
           clear();
         }
       },
-      /** Each address decodes at most 32 KiB of new record data; a shared record is decoded once per batch. */
-      getMany(addresses: readonly string[]) {
-        try {
-          return addresses.map((address) => reader.get(address));
-        } finally {
-          clear();
-        }
-      },
     };
   } catch {
     return null;

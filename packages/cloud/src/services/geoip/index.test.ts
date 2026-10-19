@@ -293,26 +293,21 @@ test("shared pointer containers stay bounded during upload probes and lookups", 
   expect(database.get("8.8.8.8")).not.toBe(result);
 });
 
-test("an upload probe decodes a record that every address shares once, while lookups still decode it fresh", () => {
-  const bytes = mmdbFixture("city", { sharedRecordEntries: 2_000 });
+test("an upload probe keeps no decoded record from one address to the next", () => {
+  // Distinct large records would otherwise add up in memory across the 1,030 probe addresses.
+  const bytes = mmdbFixture("city", { sharedRecordEntries: 3_074 });
   const get = spyOn(Reader.prototype, "get");
   try {
     const started = performance.now();
     expect(parseGeoIpUpload(bytes).kind).toBe("city");
-    const probeMs = performance.now() - started;
-    console.info(`Shared large record upload probe: ${probeMs.toFixed(2)} ms`);
-    expect(probeMs).toBeLessThan(500);
-    // The first two probe addresses share a record. Identity also catches repeated decoding on fast machines.
+    console.info(`Upload probe with a record near the work cap: ${(performance.now() - started).toFixed(2)} ms`);
+    // The first two probe addresses share a record, and each lookup decodes it afresh.
     expect(get.mock.results[0]?.value).toMatchObject({ city: { names: { en: "Vienna" } } });
-    expect(get.mock.results[1]?.value).toBe(get.mock.results[0]?.value);
+    expect(get.mock.results[1]?.value).toEqual(get.mock.results[0]?.value);
+    expect(get.mock.results[1]?.value).not.toBe(get.mock.results[0]?.value);
   } finally {
     get.mockRestore();
   }
-  const database = openGeoIpDatabase("city", bytes)!;
-  const [first, second] = database.getMany(["1.2.3.4", "2000::"]);
-  expect(first).toMatchObject({ city: { names: { en: "Vienna" } } });
-  expect(second).toBe(first);
-  expect(database.get("1.2.3.4")).not.toBe(first);
 });
 
 test("an upload probe refuses a record above the per-lookup work cap", () => {
