@@ -547,6 +547,18 @@ describe(`Spaces shared head in ${browserName}`, () => {
       await target.focus();
       await page.keyboard.press("ArrowRight");
       const right = await resizedPast(target, "above", before);
+      // A step starts from the sidebar's rendered width, so the next key waits until the layout shows the last one.
+      await target.evaluate(
+        (handle) =>
+          new Promise<void>((resolve) => {
+            const sidebar = document.getElementById(handle.getAttribute("aria-controls") ?? "");
+            const check = () =>
+              sidebar && Math.round(sidebar.getBoundingClientRect().width) === Number(handle.getAttribute("aria-valuenow"))
+                ? resolve()
+                : requestAnimationFrame(check);
+            check();
+          }),
+      );
       await page.keyboard.press("ArrowLeft");
       expect(await resizedPast(target, "below", right)).toBeLessThan(right);
     } finally {
