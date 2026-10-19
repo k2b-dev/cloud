@@ -17,13 +17,14 @@ const rangeUrl = (url: URL, range: TelemetryRange): string => {
 
 import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatRatio as fmtRatio, formatDateTime } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { type AppRuntimeStatus, buildAppRuntimeStatuses } from "../app-runtime-status";
 import { ssr } from "../config";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
 import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../observability/telemetry/service";
 import { listRegisteredAppStatus, type RegisteredAppStatus } from "../registered-apps";
 import { AppIcon } from "./AppIcon";
+import RangeTabs from "./RangeTabs";
 import RemoveRegisteredAppButton from "./RemoveRegisteredAppButton.island";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -214,19 +215,12 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{isRoutesPage ? t.gatewayRoutesDescription : t.gatewayAppsDescription}</p>
         </div>
 
-        <nav class="flex flex-wrap items-center gap-1" aria-label={t.trafficWindow}>
-          <span class="mr-1 text-[10px] text-dimmed">{t.trafficWindow}</span>
-          {TELEMETRY_RANGE_KEYS.map((option) => (
-            <ButtonLink
-              href={rangeUrl(url, option)}
-              variant={option === range ? "primary" : "secondary"}
-              size="sm"
-              aria-current={option === range ? "true" : undefined}
-            >
-              {option}
-            </ButtonLink>
-          ))}
-        </nav>
+        <RangeTabs
+          caption={t.trafficWindow}
+          label={t.trafficWindow}
+          current={range}
+          items={TELEMETRY_RANGE_KEYS.map((option) => ({ id: option, href: rangeUrl(url, option) }))}
+        />
 
         {/* ── Stats — see skills/cloud-app/references/frontend.md § Stats ── */}
         <StatGrid columns={6}>

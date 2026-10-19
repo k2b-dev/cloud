@@ -8,10 +8,11 @@ import {
   NumberInput,
   PanelDialog,
   panelDialogOptions,
+  SegmentedControl,
   TextInput,
   toast,
 } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { ShareView } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
@@ -153,22 +154,7 @@ function ShareForm(props: {
             />
             <fieldset class="flex flex-col gap-2">
               <legend class="text-sm font-medium">{b().shareValidity}</legend>
-              <div class="flex flex-wrap gap-1" role="radiogroup" aria-label={b().shareValidity}>
-                <For each={options}>
-                  {(option) => (
-                    <Button
-                      type="button"
-                      size="sm"
-                      role="radio"
-                      aria-checked={validity() === option.value}
-                      variant={validity() === option.value ? "primary" : "secondary"}
-                      onClick={() => setValidity(option.value)}
-                    >
-                      {option.label}
-                    </Button>
-                  )}
-                </For>
-              </div>
+              <SegmentedControl<Validity> ariaLabel={b().shareValidity} options={options} value={validity} onValueChange={setValidity} />
             </fieldset>
             <Show when={props.kind === "inbox"}>
               <NumberInput label={b().maxFileSize} value={maxFileSize} onValueChange={setMaxFileSize} min={1} step={1} required />
