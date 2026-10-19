@@ -228,7 +228,8 @@ only decrease; `bun scripts/check.ts settle-reads --fix` lowers counts and
 removes entries when findings are gone. A line comment `// settled: <reason>`
 on the same line or directly above allows a read whose subject is the first
 frame or the unsettled moment, such as a read of the server-rendered frame.
-The reason must be non-empty.
+The reason must be non-empty. On a read inside a helper, it also covers the
+helper's callers.
 
 The `cookie-store` check rejects direct `cookies()` reads in tests, browser
 suites, and browser harnesses. Use `storedCookie(page, name)` for cookies that

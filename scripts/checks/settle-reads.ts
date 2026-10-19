@@ -180,26 +180,6 @@ export const checkSettleReadsSource = (file: string, source: string): Finding[] 
     return events;
   };
 
-  for (let round = 0; round <= helpers.length; round++) {
-    let changed = false;
-    const next = new Map<BodyFunction, Summary>();
-    for (const fn of helpers) {
-      const summary: Summary = { leadingRead: false, end: "none" };
-      if (fn.body)
-        for (const event of eventsIn(fn.body)) {
-          if (event.kind === "read") {
-            if (summary.end === "none") summary.leadingRead = true;
-          } else summary.end = event.kind;
-        }
-      if (fn.type && mentions(fn.type, new Set(["Page"])) && summary.end !== "settle") summary.end = "action";
-      const previous = summaries.get(fn);
-      if (!previous || previous.leadingRead !== summary.leadingRead || previous.end !== summary.end) changed = true;
-      next.set(fn, summary);
-    }
-    for (const [fn, summary] of next) summaries.set(fn, summary);
-    if (!changed) break;
-  }
-
   // AST comment ranges keep markers in strings and template text out of the opt-outs.
   const optOuts = new Map<number, boolean>();
   const collectComments = (node: ts.Node): void => {
@@ -217,6 +197,30 @@ export const checkSettleReadsSource = (file: string, source: string): Finding[] 
     ts.forEachChild(node, collectComments);
   };
   collectComments(sourceFile);
+  const lineOf = (call: ts.CallExpression) => sourceFile.getLineAndCharacterOfPosition(call.getStart(sourceFile)).line + 1;
+  const optedOut = (line: number) => optOuts.get(line) || optOuts.get(line - 1);
+
+  for (let round = 0; round <= helpers.length; round++) {
+    let changed = false;
+    const next = new Map<BodyFunction, Summary>();
+    for (const fn of helpers) {
+      const summary: Summary = { leadingRead: false, end: "none" };
+      if (fn.body)
+        for (const event of eventsIn(fn.body)) {
+          if (event.kind === "read") {
+            // An opted-out read in a helper is exempt wherever the helper is called.
+            if (summary.end === "none" && !optedOut(lineOf(event.call))) summary.leadingRead = true;
+          } else summary.end = event.kind;
+        }
+      if (fn.type && mentions(fn.type, new Set(["Page"])) && summary.end !== "settle") summary.end = "action";
+      const previous = summaries.get(fn);
+      if (!previous || previous.leadingRead !== summary.leadingRead || previous.end !== summary.end) changed = true;
+      next.set(fn, summary);
+    }
+    for (const [fn, summary] of next) summaries.set(fn, summary);
+    if (!changed) break;
+  }
+
   const findings: Finding[] = [];
   for (const body of calls.keys()) {
     let dirty = false;
@@ -224,8 +228,8 @@ export const checkSettleReadsSource = (file: string, source: string): Finding[] 
       if (kind === "action") dirty = true;
       if (kind === "settle") dirty = false;
       if (kind !== "read" || !dirty) continue;
-      const line = sourceFile.getLineAndCharacterOfPosition(call.getStart(sourceFile)).line + 1;
-      if (optOuts.get(line) || optOuts.get(line - 1)) continue;
+      const line = lineOf(call);
+      if (optedOut(line)) continue;
       const emptyReason = optOuts.has(line) || optOuts.has(line - 1);
       findings.push({ file, line, message: emptyReason ? `${message}; the // settled: reason must be non-empty.` : message });
     }

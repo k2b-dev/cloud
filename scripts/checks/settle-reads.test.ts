@@ -390,3 +390,15 @@ test("parses .ts files as TypeScript, so a generic arrow does not hide later rea
   const source = `const fixture = <T>(value: T) => value;\nasync () => { await page.click("p"); await page.locator("p").boundingBox(); };`;
   expect(check(source)).toEqual([2]);
 });
+
+test("an opted-out read in a helper is exempt at its call sites", () => {
+  expect(
+    check(`const firstFrame = (page) =>
+  // settled: the server-rendered frame is the subject.
+  page.evaluate(() => getComputedStyle(document.body).opacity);
+const layout = (page) =>
+  // settled:
+  page.evaluate(() => getComputedStyle(document.body).opacity);
+async function sample() { await page.goto(url); await firstFrame(page); await layout(page); }`),
+  ).toEqual([7]);
+});
