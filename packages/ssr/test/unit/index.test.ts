@@ -7,10 +7,10 @@ describe("createConfig() cache busting", () => {
     const response = await html(() => "content");
     const output = await response.text();
     expect(output).not.toContain("modulepreload");
-    expect(output).toContain('<script type="module">const p=');
+    expect(output).toContain('<script type="module" data-ssr-assets=');
 
     expect(output).toBe(
-      `<style>solid-client,solid-island{display:contents}</style>\n<script type="module">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`,
+      `<style>solid-client,solid-island{display:contents}</style>\n<script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`,
     );
   });
 
@@ -19,7 +19,7 @@ describe("createConfig() cache busting", () => {
     const response = await html(() => "content");
     const output = await response.text();
     expect(output).not.toContain("modulepreload");
-    expect(output).toContain('<script type="module">const p=');
+    expect(output).toContain('<script type="module" data-ssr-assets=');
 
     expect(output).toContain('const p="/_ssr"');
     expect(output).not.toContain("?v=");
@@ -30,7 +30,7 @@ describe("createConfig() cache busting", () => {
     const response = await html(() => "content");
     const output = await response.text();
     expect(output).not.toContain("modulepreload");
-    expect(output).toContain('<script type="module">const p=');
+    expect(output).toContain('<script type="module" data-ssr-assets=');
 
     expect(output).toContain('const p="/docs/_ssr"');
     expect(output).toMatch(/globalThis\.__SSR_CONFIG=\{"ssrPath":"\/docs\/_ssr","reloadId":"[0-9a-f-]{36}"\}/);
@@ -41,7 +41,7 @@ describe("createConfig() cache busting", () => {
     const response = await html(() => "content");
     const output = await response.text();
     expect(output).not.toContain("modulepreload");
-    expect(output).toContain('<script type="module">const p=');
+    expect(output).toContain('<script type="module" data-ssr-assets=');
 
     expect(output).toContain('const p="/docs/_ssr/0"');
   });
