@@ -79,6 +79,85 @@ const marker = "/*"; const style = "var(--ui-selected)"; // bg-blue-100
   ).toEqual([[5, ".a { background }"]]);
 });
 
+test("raw-accent ink and focus utilities retain their source line and subject", () => {
+  const utilities = [
+    "text-[var(--app-accent)]",
+    "hover:text-[var(--app-accent)]/80",
+    "focus-visible:outline-[var(--app-accent)]",
+    "ring-(--app-accent)",
+    "dark:!ring-[var(--app-accent)]/50",
+    "dark:!border-[var(--app-accent,var(--color-blue-500))]/50",
+    "outline-(--app-accent)",
+    "text-(--app-accent)/80!",
+    "border-(--app-accent)",
+    ...["x", "y", "t", "r", "b", "l", "s", "e"].map((side) => `focus:!border-${side}-[var(--app-accent)]`),
+  ];
+  const lines = utilities.map((utility) => `  <span class="${utility}" />`);
+  const findings = check(`// A reintroduced raw accent\n${lines.join("\n")}`);
+  expect(findings.map(({ kind, line, subject }) => ({ kind, line, subject }))).toEqual(
+    lines.map((source, index) => ({ kind: "accent-raw", line: index + 2, subject: source.trim() })),
+  );
+  expect(findings[0]!.message).toContain("--ui-app-accent-text");
+  expect(findings[0]!.message).toContain("--ui-focus, focus-ui, --k2b-focus-ring");
+  expect(findings[0]!.message).toContain("--ui-app-accent-border");
+});
+
+test("raw-accent CSS reports only ink, outline and border-color declarations outside mixes", () => {
+  expect(
+    check(
+      `.a:focus-visible { outline: 2px solid var(--app-accent); }
+.b { color: var(--app-accent, red); }
+.c { outline-color: var(--app-accent) }
+.d { border-color: var(--app-accent) }
+.e { color: color-mix(in srgb, var(--app-accent) 80%, black); }
+.f { outline: color-mix(in srgb, var(--app-accent) 80%, black) var(--app-accent , red); }
+.g:hover { @apply text-[var(--app-accent)] bg-[var(--app-accent)]; }`,
+      cssFile,
+    ).map(({ kind, line, subject }) => [kind, line, subject]),
+  ).toEqual([
+    ["accent-raw", 1, ".a:focus-visible { outline }"],
+    ["accent-raw", 2, ".b { color }"],
+    ["accent-raw", 3, ".c { outline-color }"],
+    ["accent-raw", 4, ".d { border-color }"],
+    ["accent-mix", 5, ".e { color }"],
+    ["accent-mix", 6, ".f { outline }"],
+    ["accent-raw", 6, ".f { outline }"],
+    ["accent-raw", 7, ".g:hover { @apply }"],
+  ]);
+});
+
+test("raw-accent detection permits backgrounds, token definitions, semantic ink and longer names", () => {
+  expect(
+    check(
+      `.mail-unread-dot {
+  background: var(--app-accent);
+  background-color: var(--app-accent);
+  box-shadow: 0 0 2px var(--app-accent);
+  fill: var(--app-accent);
+  border: 1px solid var(--app-accent);
+  --ui-app-accent-border: var(--app-accent, var(--color-blue-500));
+  color: var(--ui-app-accent-text);
+  color: var(--app-accent-ink);
+  outline-color: var(--app-accent-ink);
+}
+/* .comment { color: var(--app-accent); } */`,
+      cssFile,
+    ),
+  ).toEqual([]);
+  expect(
+    check(`bg-[var(--app-accent)] text-[var(--ui-app-accent-text)] text-[var(--app-accent-ink)]
+foo-text-[var(--app-accent)] foo-ring-(--app-accent) border-(--app-accent-ink)
+// text-[var(--app-accent)]
+/* outline-(--app-accent) */`),
+  ).toEqual([]);
+  expect(
+    check(
+      ":root { color: var(--app-accent); outline: 2px solid var(--app-accent); outline-color: var(--app-accent); border-color: var(--app-accent); }",
+      "packages/cloud/src/styles/tokens.css",
+    ),
+  ).toEqual([]);
+});
+
 test("CSS subjects include normalized selectors, declaration properties, utilities and nested preludes", () => {
   expect(
     check(
@@ -210,6 +289,25 @@ test("exceeding a baseline reports every finding for that file/kind and fix neve
     await writeFile(join(root, file), '"bg-blue-50";\n"var(--ui-selected)";');
     expect(await locations()).toEqual([`${file}:1`, `${file}:2`]);
     expect(await locations(true)).toEqual([`${file}:1`, `${file}:2`]);
+    expect(await readFile(join(root, baseline), "utf8")).toBe(formatSelectionBaseline(counts));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("baseline accepts accent-raw and a raised count fails without increasing the baseline", async () => {
+  const counts = new Map([[`${file} | accent-raw`, 1]]);
+  const source = '<a class="text-[var(--app-accent)]">Mail</a>';
+  const { root, run } = await workspace({ [file]: source }, counts);
+  try {
+    expect(await run()).toEqual([]);
+    await writeFile(join(root, file), `${source}\n<span class="ring-(--app-accent)" />`);
+    const expected = [
+      { file: join(root, file), line: 1, kind: "accent-raw" },
+      { file: join(root, file), line: 2, kind: "accent-raw" },
+    ];
+    expect(await run()).toMatchObject(expected);
+    expect(await run(true)).toMatchObject(expected);
     expect(await readFile(join(root, baseline), "utf8")).toBe(formatSelectionBaseline(counts));
   } finally {
     await rm(root, { recursive: true, force: true });

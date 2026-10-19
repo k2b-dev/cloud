@@ -1,6 +1,7 @@
 import {
   APP_APPROVAL_LIMITS,
   type AppDeviceInbox,
+  type AppDeviceInboxWithChanges,
   type AppLoginContext,
   AppLoginContextSchema,
   type AppPendingLogin,
@@ -89,8 +90,9 @@ export const buildLoginContext = ({ request, browser, countries, trust, now }: L
   });
 };
 
-type LoginListResponse = AppDeviceInbox | { requests: AppPendingLogin[]; pollAfterSeconds: number };
-/** Keep every login: trim Actions first, then context from the last login backwards.
+type LoginListResponse = AppDeviceInbox | AppDeviceInboxWithChanges | { requests: AppPendingLogin[]; pollAfterSeconds: number };
+/** Keep every login: trim Actions first, then device changes, then context from the last login backwards.
+ * Trimmed changes stay pending and show once the inbox has room.
  * Return a copy so callers and tests can retain the original snapshot. */
 export const trimAppLoginResponse = <T extends LoginListResponse>(response: T, budget: number = APP_APPROVAL_LIMITS.bodyBytes): T => {
   const result = { ...response };
@@ -101,6 +103,13 @@ export const trimAppLoginResponse = <T extends LoginListResponse>(response: T, b
     while (result.actions.length && bytes() > budget) {
       result.actions.pop();
       result.moreActions++;
+    }
+    if ("changes" in result) {
+      result.changes = [...result.changes];
+      while (result.changes.length && bytes() > budget) {
+        result.changes.pop();
+        result.moreChanges++;
+      }
     }
   } else result.requests = result.requests.map((login) => ({ ...login }));
   const logins = "logins" in result ? result.logins : result.requests;

@@ -82,7 +82,10 @@ mock.module("./authenticator", () => ({
       bindings: () => bindings,
       states: () =>
         Object.fromEntries(
-          bindings.map((binding) => [binding.id, { requests: [], actions: waitingAction ? [actionView] : [], moreActions: 0 }]),
+          bindings.map((binding) => [
+            binding.id,
+            { requests: [], changes: [], actions: waitingAction ? [actionView] : [], moreChanges: 0, moreActions: 0 },
+          ]),
         ),
       now: Date.now,
       online: () => true,
@@ -100,6 +103,7 @@ mock.module("./authenticator", () => ({
         return actionView;
       },
       act: noop,
+      decideChange: noop,
       decide: noop,
       revoke: noop,
       syncPush: noop,

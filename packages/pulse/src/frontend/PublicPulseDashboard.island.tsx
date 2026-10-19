@@ -37,7 +37,7 @@ export default function PublicPulseDashboard(props: Props) {
     <Show
       when={refreshIntervalSeconds()}
       fallback={
-        <span class="inline-flex h-8 w-8 items-center justify-center text-zinc-500 dark:text-zinc-400">
+        <span class="inline-flex h-8 w-8 items-center justify-center text-dimmed">
           <i class="ti ti-player-pause text-sm" />
           <span class="sr-only">{t().manualRefresh}</span>
         </span>
