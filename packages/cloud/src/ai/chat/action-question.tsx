@@ -99,10 +99,14 @@ const formatWhen = (value: string, locale: string, timeZone: string, withTime = 
 const rangeText = (start: string, end: string | undefined, locale: string, timeZone: string, allDay?: boolean): string => {
   const from = formatWhen(start, locale, timeZone, !allDay);
   if (!end) return from;
+  // An all-day event never shows an end time, even when its bounds are instants.
   const sameDay =
-    !DAY.test(start) && !DAY.test(end) && formatWhen(start, locale, timeZone, false) === formatWhen(end, locale, timeZone, false);
+    !allDay &&
+    !DAY.test(start) &&
+    !DAY.test(end) &&
+    formatWhen(start, locale, timeZone, false) === formatWhen(end, locale, timeZone, false);
   const to = sameDay ? dates.formatTime(end, { locale, timeZone }) : formatWhen(end, locale, timeZone, !allDay);
-  return `${from} – ${to}`;
+  return to === from ? from : `${from} – ${to}`;
 };
 
 const personRow = (person: CapabilityPerson) => ({

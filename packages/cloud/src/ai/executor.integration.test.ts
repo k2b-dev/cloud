@@ -4040,8 +4040,10 @@ suiteFor(
         expect(input.authority?.actor).toMatchObject({ kind: "user", user: { id: userId } });
         // The review is already durable before either dispatch, including a call auto-approved by an old always row.
         const stored = await aiConversations.listMessages({ conversationId: conversation.id });
+        // The open outcome is durable before the Query runs, so a stopped worker leaves it checkable.
         expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.callId === "send-1")).toMatchObject({
           review: originalReview,
+          check: { state: "pending" },
         });
         return outcome === "failed"
           ? Response.json({ data: { outcome: "invalid" } })

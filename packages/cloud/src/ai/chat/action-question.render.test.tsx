@@ -216,6 +216,22 @@ describe("card v4 question", () => {
       }
   });
 
+  test("an all-day event names its day only, without an end time", () => {
+    const block = actionFixtures("en").del!.block;
+    const review = block.review;
+    if (!review || !("sentence" in review) || review.preview?.kind !== "event") throw new Error("event fixture missing");
+    const allDay = {
+      ...block,
+      review: {
+        ...review,
+        preview: { ...review.preview, allDay: true, start: "2026-10-17T08:00:00.000Z", end: "2026-10-17T20:00:00.000Z" },
+      },
+    };
+    const visible = text(renderTurn(allDay, "en"));
+    expect(visible).toContain("Oct 17, 2026 · all day");
+    expect(visible).not.toMatch(/– \d{1,2}:\d{2}/);
+  });
+
   test("a delete asks with the danger answer; a Skill keeps its instruction and changes", () => {
     const del = renderTurn(actionFixtures("de").del!.block, "de");
     expect(del).toContain('data-variant="danger"');

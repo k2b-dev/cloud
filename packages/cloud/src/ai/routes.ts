@@ -1265,7 +1265,8 @@ export const aiRoutes = (() => {
               check: review.check,
               catalog,
               authority,
-              locale: getLocale(c),
+              // The receipt joins the stored review's sentence, so it is asked for in that language.
+              locale: review.locale,
               context: { callId, signal: c.req.raw.signal },
             });
             await recordAiToolCheck({ ...target, check }, db);

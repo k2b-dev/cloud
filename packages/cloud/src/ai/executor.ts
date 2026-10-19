@@ -1345,13 +1345,22 @@ export class AiTurnExecutor {
                               `The outcome is unknown after ${error.code}; do not retry automatically.`,
                             );
                       if (!review || !("sentence" in review) || !review.check || !context.callId) throw unknown;
+                      // Durable first: if this worker stops during the Query, history keeps an open outcome that the
+                      // person can check again, instead of a call with no check at all.
+                      await recordAiToolCheck({
+                        conversationId,
+                        turnId,
+                        callId: context.callId,
+                        check: { state: "pending", at: new Date().toISOString() },
+                      });
                       await pipeline.setToolCheck(context.callId, { state: "checking" });
                       const check = await checkAiCapability({
                         conversationId,
                         turnId,
                         authority: capabilityAuthority!,
                         mandate: config.mandate,
-                        locale: promptLocale,
+                        // The receipt joins the review's sentence, so it is asked for in the review's language.
+                        locale: review.locale,
                         entry,
                         check: review.check,
                         catalog: buildAiCapabilityCatalog([entry.app], promptLocale),
