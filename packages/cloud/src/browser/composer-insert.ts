@@ -6,19 +6,19 @@ import { type CloudResourcePickerItem, openCloudResourcePicker } from "./resourc
 
 export {
   type CloudComposerCatalog,
-  type CloudComposerCommand,
   type CloudComposerCatalogState,
+  type CloudComposerCommand,
   type CloudSearchTag,
   createCloudComposerCatalog,
   loadCloudComposerCatalog,
 } from "./composer-catalog";
 
 export {
-  type OpenComposerCommandOptions,
-  type CloudCommandMenuOptions,
   type CloudCommandMenu,
-  openComposerCommand,
+  type CloudCommandMenuOptions,
   cloudCommandMenu,
+  type OpenComposerCommandOptions,
+  openComposerCommand,
 } from "./composer-open";
 
 export type CloudInsertMenuOptions = {
