@@ -75,6 +75,7 @@ import { capabilityMessages } from "../shared/capability-messages";
 import { normalizeLocale } from "../shared/locale";
 import { escapeHtml } from "../shared/markdown/shared";
 import { type CloudThemePreference, readThemePreferenceFromCookieHeader, themeBootstrapScript } from "../shared/theme";
+import { appAccentStyle } from "../ssr/app-appearance";
 import { appFaviconHref } from "./app-favicon";
 import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
@@ -110,7 +111,7 @@ export type PageOptions = {
   pwa?: { name: string };
 };
 
-type ResolvedPageOptions = PageOptions & { performanceRoute?: string; themePreference?: CloudThemePreference };
+type ResolvedPageOptions = PageOptions & { performanceRoute?: string; themePreference?: CloudThemePreference; appAccent?: string };
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -434,7 +435,8 @@ export const defineApp = <
     // Every island instance already mounts inside its own error boundary; this
     // only gives the fallback Cloud's look and the reader's language.
     errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
-    template: ({ body, scripts, title, description, theme, themePreference, lang, performanceRoute, pwa }) => {
+    template: ({ body, scripts, title, description, theme, themePreference, lang, performanceRoute, pwa, appAccent }) => {
+      const accentStyle = appAccentStyle(appAccent);
       const fixed = theme !== undefined;
       const resolved = theme ?? (themePreference === "light" || themePreference === "dark" ? themePreference : undefined);
       // App pages paint the canvas before any stylesheet and give it to the
@@ -488,7 +490,7 @@ export const defineApp = <
     <link rel="stylesheet" href="/public/global.css?v=${v}">${head.styles}
     <script>${themeBootstrapScript}</script>
   </head>
-  <body class="k2b-ui" data-k2b-app-workspace-controller="global">
+  <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""} data-k2b-app-workspace-controller="global">
     ${body}
   </body>
   ${scripts}
