@@ -388,6 +388,25 @@ describe("Mail draft session", () => {
       expect(trace.map((entry) => entry.status)).not.toContain("readonly");
     };
 
+    test("disposing while an acquire is pending releases the granted token exactly once", async () => {
+      let grant: (() => void) | undefined;
+      acquireAnswer = () =>
+        new Promise<Response>((resolve) => {
+          grant = () => resolve(Response.json({ ...lease, token: "disposed-token" }));
+        });
+      const state = await mountSession();
+      expect(grant).toBeDefined();
+      expect(state.session.lease()).toBeNull();
+
+      dispose();
+      grant?.();
+      await flush();
+
+      expect(requests.filter((r) => r.method === "DELETE" && r.url.endsWith(`/drafts/${DRAFT_ID}/lease`)).map((r) => r.body)).toEqual([
+        { token: "disposed-token" },
+      ]);
+    });
+
     test("own lease expired while the tab was hidden silently acquires again", async () => {
       const state = await mountSession();
       state.trace.length = 0;

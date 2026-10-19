@@ -1,3 +1,4 @@
+import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { localizedComposeRenderMessage } from "./compose-render-errors";
 import { localizedMailboxLogoMessage } from "./mailbox-logo-errors";
 
@@ -39,6 +40,10 @@ const genericGermanMessage = (error: HumanFacingError): string => {
   if (error.code === "NOT_FOUND") return "Die angeforderte Mail-Ressource wurde nicht gefunden";
   if (error.code === "PROVIDER_BUSY") return "Die Synchronisierung läuft gerade. Versuche es in einem Moment erneut.";
   if (error.code === "CONFLICT") return "Der aktuelle Stand hat sich geändert. Lade die Daten neu und versuche es erneut.";
+  if (error.code === DRAFT_LEASE_ERROR_CODES.HELD) return "Dieser Entwurf ist gerade in einer anderen Sitzung geöffnet.";
+  if (error.code === DRAFT_LEASE_ERROR_CODES.NOT_OWNED)
+    return "Die Bearbeitung dieses Entwurfs ist abgelaufen. Lade den Entwurf neu und versuche es erneut.";
+  if (error.code === DRAFT_LEASE_ERROR_CODES.BUSY) return "Der Entwurf wird gerade aktualisiert. Versuche es gleich erneut.";
   if (error.code === "FORBIDDEN") return "Du hast nicht die erforderliche Berechtigung";
   if (error.status === 429) return "Zu viele Anfragen. Versuche es gleich erneut.";
   if (error.status === 503) return "Mail ist vorübergehend nicht verfügbar. Versuche es gleich erneut.";

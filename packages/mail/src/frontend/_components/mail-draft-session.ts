@@ -301,14 +301,22 @@ export const createMailDraftSession = (options: {
         const result = await recoverDraftLeaseRequest({
           run: async (): Promise<DraftLeaseResult> => {
             try {
-              const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].lease.$post(
-                {
-                  param: { mailboxId: options.mailboxId, draftId: currentDraft.id },
-                  json: { takeover, editorId },
-                },
-                { init: { signal: controller.signal } },
-              );
-              return response.ok ? { kind: "ok", lease: await response.json() } : leaseAnswer(response);
+              const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].lease.$post({
+                param: { mailboxId: options.mailboxId, draftId: currentDraft.id },
+                json: { takeover, editorId },
+              });
+              if (!response.ok) return leaseAnswer(response);
+              const grantedLease = await response.json();
+              if (controller.signal.aborted || options.isDisposed() || generation !== heartbeatGeneration) {
+                await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].lease
+                  .$delete({
+                    param: { mailboxId: options.mailboxId, draftId: currentDraft.id },
+                    json: { token: grantedLease.token },
+                  })
+                  .catch(() => undefined);
+                return { kind: "failed" };
+              }
+              return { kind: "ok", lease: grantedLease };
             } catch (error) {
               if (controller.signal.aborted) throw error;
               return { kind: "unavailable" };
