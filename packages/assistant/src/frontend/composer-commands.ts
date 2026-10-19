@@ -430,16 +430,17 @@ const recentLimitReason = (partCount: number, locale: string) =>
     ? assistantMessages.resolve([locale]).t.attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS })
     : undefined;
 
+/** Tags whose references the Assistant reads itself under another type: Studio apps are sent as `assistant.artifact`. */
+const OWN_RECENT_TYPES: Readonly<Record<string, string>> = { "assistant:studio-app": "assistant.artifact" };
+
 /**
  * A tag scope such as "/notiz" lists recent references of its kind: those whose type is the tag's app and whose local
- * type id equals the tag (`notebooks:note` ↔ `notebooks.note`). The Assistant reads Studio apps itself, as
- * `assistant.artifact`. Other references appear only in unscoped search.
+ * type id equals the tag (`notebooks:note` ↔ `notebooks.note`). Other references appear only in unscoped search.
  */
 const recentInTagScope = (scope: string, ref: CloudResourceRef) => {
   if (!scope.startsWith("cloud-tag:")) return false;
-  const [appId, tag] = scope.slice("cloud-tag:".length).split(":");
-  if (appId === "assistant" && tag === "studio-app") return ref.type === "assistant.artifact";
-  return ref.type === `${appId}.${tag}`;
+  const tagKey = scope.slice("cloud-tag:".length);
+  return ref.type === (OWN_RECENT_TYPES[tagKey] ?? tagKey.replace(":", "."));
 };
 
 /** The menu lists at most three task states of 100 each, so one key per listable task fits. */

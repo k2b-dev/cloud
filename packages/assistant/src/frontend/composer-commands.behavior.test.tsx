@@ -1090,6 +1090,15 @@ test("/notiz q3 lists the matching recent notes above the search row; other kind
   expect(h.labels()).toEqual(["Q3-Planung", "Retro Q3", "Projekt Notizen", "Notizen durchsuchen"]);
 });
 
+test("/studio lists recent Studio apps, which the Assistant sends as assistant.artifact", async () => {
+  const app = recentItem("assistant.artifact", "A1", "Umsatz Q3", { kind: "Studio-App", preview: undefined, appName: "Assistent" });
+  const h = await mountWithRecent({ recent: [app, ...recentItems] });
+  h.type("/studio q3");
+  await settled();
+  expect(h.labels()[0]).toBe("Umsatz Q3");
+  expect(h.labels()).not.toContain("Q3-Planung");
+});
+
 test("a late answer never inserts Recent into the open list; the next opening shows it", async () => {
   let answer!: () => void;
   const gate = new Promise<void>((resolve) => {
