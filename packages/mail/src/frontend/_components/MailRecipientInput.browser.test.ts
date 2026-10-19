@@ -73,6 +73,8 @@ const contactSuggestions = [
     updatedAt: lastSeenAt,
   },
 ];
+/** Whether the page under test has a registered contact directory app. */
+let contactsRegistered = false;
 /** Holds the mailbox answer until the test releases it, so the loading state is measured while it lasts. */
 let mailboxGate: Promise<void> | undefined;
 const server = Bun.serve({
@@ -94,7 +96,8 @@ const server = Bun.serve({
       return Response.json({
         conversationId: "Conv01",
         participants: [{ email: "ada.lovelace@example.test", displayName: "Ada Lovelace" }],
-        contacts: { status: "ready", items: [], matchedEmails: [], nextCursor: null },
+        // Like the server, which resolves the same registry: no provider app means `absent`.
+        contacts: { status: contactsRegistered ? "ready" : "absent", items: [], matchedEmails: [], nextCursor: null },
         spaces: { status: "ready", items: [], truncated: false },
       });
     return new Response(
@@ -126,6 +129,7 @@ const capture = async (page: Page, name: string) => {
 };
 
 const load = async (options: MailRecipientHarnessOptions & { context?: BrowserContextOptions }) => {
+  contactsRegistered = options.contacts;
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
   page.setDefaultTimeout(10_000);
   const errors: string[] = [];

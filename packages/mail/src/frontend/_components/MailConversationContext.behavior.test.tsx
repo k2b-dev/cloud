@@ -213,10 +213,11 @@ test.skipIf(isServer)("a failed contact-mutation code load neither creates a con
 
 if (!isServer)
   test.each([
-    ["absent directory", false, "unavailable", false],
-    ["registered provider failure", true, "unavailable", true],
-    ["server reports absent", true, "absent", false],
-  ] as const)("contact section: %s", async (_label, mapped, status, visible) => {
+    ["absent directory", false, "absent", false, false],
+    ["registered provider failure", true, "unavailable", true, true],
+    ["server reports absent", true, "absent", false, false],
+    ["provider installed since the page loaded", false, "ready", true, false],
+  ] as const)("contact section: %s", async (_label, mapped, status, visible, failed) => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     const requests: string[] = [];
@@ -251,10 +252,8 @@ if (!isServer)
       for (let i = 0; i < 100 && !dom.root.textContent?.includes("Spaces task"); i++) await Bun.sleep(10);
       expect(dom.root.querySelector('section[aria-label="Spaces"]')).not.toBeNull();
       expect(Boolean(dom.root.querySelector('section[aria-label="Contacts"]'))).toBe(visible);
-      expect(dom.root.textContent?.includes("Contacts unavailable")).toBe(visible);
-      expect(Boolean(Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Retry")))).toBe(
-        visible,
-      );
+      expect(dom.root.textContent?.includes("Contacts unavailable")).toBe(failed);
+      expect(Boolean(Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Retry")))).toBe(failed);
       expect(requests.every((url) => url.includes("/context"))).toBe(true);
     } finally {
       dispose();

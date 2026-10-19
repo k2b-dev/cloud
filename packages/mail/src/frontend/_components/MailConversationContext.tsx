@@ -66,6 +66,13 @@ export default function MailConversationContext(props: {
     return { ...first, contacts: { ...first.contacts, items: [...contacts.values()], matchedEmails: [...matchedEmails], nextCursor } };
   });
 
+  // The page's directory decides the first frame; once loaded, the current answer wins, so a provider installed since
+  // the page loaded shows its contacts and one removed since hides them.
+  const showContacts = createMemo(() => {
+    const current = context();
+    return current ? current.contacts.status !== "absent" : contactDirectory.resolve !== null;
+  });
+
   const participantRows = createMemo(() => {
     const current = context();
     if (!current || current.contacts.status !== "ready") return [];
@@ -264,7 +271,7 @@ export default function MailConversationContext(props: {
 
   return (
     <>
-      <Show when={contactDirectory.resolve !== null && context()?.contacts.status !== "absent"}>
+      <Show when={showContacts()}>
         <section aria-label={messages().contacts} class="bg-[var(--ui-surface)] p-3">
           <Show
             when={context()}
