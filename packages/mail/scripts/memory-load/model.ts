@@ -1,7 +1,18 @@
 import { Readable } from "node:stream";
 
-// Derived from the measured guard workload (#1549); the owner confirms the final threshold.
-export const GUARD_PEAK_ABOVE_BASELINE_MIB = 400;
+/**
+ * Peak RSS above baseline that the guard run (`--profile guard`, loads in GUARD_LOADS) may reach.
+ * Measured on Linux x64 with glibc (#1549), four runs before the processing memory budget:
+ * 482-633 MiB; six runs with it: 391-491 MiB. GC timing moves single runs by about 100 MiB, so
+ * the limit keeps about 70 MiB above the highest run with the budget and fails most runs without.
+ */
+export const GUARD_PEAK_ABOVE_BASELINE_MIB = 560;
+/**
+ * The guard measures hydration beside live API reads. Attachment extraction is left out: its
+ * memory is native (anydoc) and glibc keeps those pages, so its peak varies more than the budget
+ * changes it. The `incident` profile still measures it.
+ */
+export const GUARD_LOADS = "hydration,api";
 
 export const MiB = 1024 * 1024;
 export const loads = ["hydration", "extraction", "api", "folders"] as const;

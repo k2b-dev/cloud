@@ -836,6 +836,15 @@ export const hydrateMessageFromSource = async (params: {
   }
 
   const processing: { sourceBlob?: StoredBlob } = {};
+  const sourceFailed = new AbortController();
+  let sourceError: Error | undefined;
+  const onSourceError = (error: Error): void => {
+    sourceError ??= error;
+    sourceFailed.abort(sourceError);
+    if (!params.source.destroyed) params.source.destroy(sourceError);
+  };
+  // ImapFlow can emit an error without ending its download stream while admission waits.
+  params.source.on("error", onSourceError);
 
   try {
     const sourceBytes = Math.max(Number(claimed.size_bytes), params.expectedSize ?? 0);
@@ -843,9 +852,10 @@ export const hydrateMessageFromSource = async (params: {
       {
         weightBytes: estimateHydrationWorkingSet({ sourceBytes, htmlBytes: hydrationHtmlBytes(claimed.mime_structure, sourceBytes) }) || 1,
         label: "hydration",
-        signal: params.signal,
+        signal: AbortSignal.any([...(params.signal ? [params.signal] : []), sourceFailed.signal]),
       },
       async () => {
+        if (sourceError) throw sourceError;
         const mimeStructure = parseMimeStructure(claimed.mime_structure);
         const parser = new MailParser({
           skipHtmlToText: false,
@@ -1116,6 +1126,7 @@ export const hydrateMessageFromSource = async (params: {
       },
     );
   } catch (error) {
+    error = sourceError ?? error;
     params.source.destroy();
     const transportChanged = normalizeErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED";
     if (transportChanged) {
@@ -1166,5 +1177,7 @@ export const hydrateMessageFromSource = async (params: {
       }
     }
     throw error;
+  } finally {
+    params.source.off("error", onSourceError);
   }
 };

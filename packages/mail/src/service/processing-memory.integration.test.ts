@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { applyTestRuntimeEnv } from "../../../../scripts/fixtures/test-infra-env";
-import { GUARD_PEAK_ABOVE_BASELINE_MIB, MiB } from "../../scripts/memory-load/model";
+import { GUARD_LOADS, GUARD_PEAK_ABOVE_BASELINE_MIB, MiB } from "../../scripts/memory-load/model";
 import { MAIL_PROCESSING_MEMORY_BUDGET_BYTES } from "./processing-memory-budget";
 
 const summarySchema = z.object({
@@ -19,7 +19,6 @@ const summarySchema = z.object({
     storedAttachments: z.number(),
     missingAttachments: z.number(),
   }),
-  finalState: z.object({ extractionUnsettled: z.number() }),
   peakAboveBaseline: z.number(),
   processingMemory: z.object({
     inFlightBytes: z.number(),
@@ -47,7 +46,18 @@ suiteFor(
     // CLOUD_TEST_DATABASE_URL is only the administrative target. The load runner creates
     // its own random mail_*_test database before the default SQL handle's first query.
     const child = Bun.spawn(
-      [process.execPath, "--no-env-file", join(root, "packages/mail/scripts/memory-load.ts"), "--profile", "guard", "--json", "--out", out],
+      [
+        process.execPath,
+        "--no-env-file",
+        join(root, "packages/mail/scripts/memory-load.ts"),
+        "--profile",
+        "guard",
+        "--only",
+        GUARD_LOADS,
+        "--json",
+        "--out",
+        out,
+      ],
       { cwd: root, env, stdout: "pipe", stderr: "pipe" },
     );
     let timedOut = false;
@@ -76,7 +86,6 @@ suiteFor(
         peakLimit: GUARD_PEAK_ABOVE_BASELINE_MIB * MiB,
         processingMemory: summary.processingMemory,
         correctness: summary.correctnessTotals,
-        extractionUnsettled: summary.finalState.extractionUnsettled,
       };
       const diagnostic = `${summaryPath}\n${JSON.stringify(numbers)}`;
       try {
@@ -86,9 +95,10 @@ suiteFor(
         expect(summary.correctnessTotals.complete, diagnostic).toBe(summary.manifestTotals.messages);
         expect(summary.correctnessTotals, diagnostic).toMatchObject({ failed: 0, pending: 0, missingMessages: 0, missingAttachments: 0 });
         expect(summary.correctnessTotals.storedAttachments, diagnostic).toBe(summary.correctnessTotals.generatedAttachments);
-        expect(summary.finalState.extractionUnsettled, diagnostic).toBe(0);
         expect(summary.peakAboveBaseline, diagnostic).toBeLessThanOrEqual(GUARD_PEAK_ABOVE_BASELINE_MIB * MiB);
         expect(summary.processingMemory, diagnostic).toMatchObject({ inFlightBytes: 0, inFlightCount: 0, waiting: 0 });
+        // Hydration reserved through the budget; without it the high-water would stay 0.
+        expect(summary.processingMemory.highWaterBytes, diagnostic).toBeGreaterThan(0);
         expect(summary.processingMemory.highWaterBytes, diagnostic).toBeLessThanOrEqual(
           Math.max(MAIL_PROCESSING_MEMORY_BUDGET_BYTES, summary.processingMemory.largestAloneBytes),
         );

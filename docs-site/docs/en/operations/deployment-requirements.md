@@ -29,14 +29,25 @@ this service set.
 
 ## Size Mail for large messages
 
-Mail processes large messages and attachment text within a fixed per-process
-working-set budget of **256 MiB**. Large items wait their turn and run one at a
-time when they exceed that budget; no message is skipped. This budget covers
-estimated processing memory beside the process baseline and API traffic.
+Each Mail process loads message bodies and extracts attachment text within one
+processing budget of **256 MiB**. Mail estimates the memory of each message or
+attachment from its size before it starts. Work waits in arrival order until it
+fits. A message or attachment larger than the budget runs alone. Mail never
+skips a message because of the budget. Large messages can take longer to
+appear, and the server answers pages and API requests while they wait.
 
-Use a container memory limit of **1.5 GiB** for Mail. Where availability matters,
-run at least **two Mail replicas**: while a single replica restarts, Mail pages
-and API requests return **Bad Gateway** until it is ready.
+The budget comes on top of the process's own memory. A running Mail process
+uses about 350–450 MiB. One large message can need more than the budget on
+its own: about six times its size plus forty times the size of its HTML part.
+A 40 MiB message with 6 MiB of HTML needs about 500 MiB.
+
+Give Mail a container memory limit of at least **1.5 GiB**. With 1 GiB, a
+burst of large messages can still exceed the limit, and the container is
+killed and restarted.
+
+While the only Mail replica restarts, Mail pages and API requests return
+**Bad Gateway** until it is ready again. Where availability matters, run at
+least **two Mail replicas**.
 
 ## Prepare for browser confirmation of new access
 

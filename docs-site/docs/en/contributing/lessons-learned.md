@@ -112,10 +112,10 @@ convention still needs a check or a test.
 
 ### Large Mail messages exhausted container memory (#1549)
 
-- **What happened:** Mail 0.43.0 was OOMKilled at a 1 GiB container limit while hydrating messages up to about 34 MiB and extracting attachments ([#1549](https://github.com/k2b-dev/cloud/issues/1549)). The measured guard workload added about 650 MiB above baseline.
+- **What happened:** Mail 0.43.0 was OOMKilled at a 1 GiB container limit while hydrating messages up to about 34 MiB and extracting attachments ([#1549](https://github.com/k2b-dev/cloud/issues/1549)). In the production image, the `incident` load case of `packages/mail/scripts/memory-load.ts` reached about 1,040 MiB RSS before the fix and about 790 MiB after it.
 - **Root cause:** Four hydration workers could parse large messages together. HTML sanitizing added 30–38 times the HTML size, and CSV extraction built all Markdown before truncating it. Blob chunk copies and read-ahead added allocation churn.
 - **Error class:** Concurrency bounded by count, not by memory.
-- **Guard:** `processing-memory-budget.test.ts` checks one shared weighted FIFO budget, oversized work running alone, cancellation and release after failure. `processing-memory.integration.test.ts` runs the memory guard workload and checks peak RSS, the budget high-water and complete messages and attachments. Blob streaming keeps one pending chunk and bounds read-ahead.
+- **Guard:** `processing-memory-budget.test.ts` checks one shared weighted FIFO budget, oversized work running alone, cancellation and release after failure. `processing-memory.integration.test.ts` runs the memory guard workload and checks peak RSS, the budget high-water and complete messages and attachments. Blob streaming keeps one pending chunk and bounds read-ahead. `message-hydration-admission.integration.test.ts` checks that a download error emitted before admission cancels the waiter, destroys the source and releases the claim with the original retryable error; an emitted error alone does not end an ImapFlow download stream.
 
 ### Changing chats kept the destination composer read-only
 

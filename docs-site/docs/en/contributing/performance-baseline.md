@@ -477,12 +477,18 @@ fixtures. API traffic uses the real Hono app in process. IMAP is simulated:
 these results include neither browser cost nor HTTP socket or provider latency.
 
 `packages/mail/src/service/processing-memory.integration.test.ts` runs the
-`guard` profile in a child process with a 300-second test timeout. It requires
-database, NATS and Valkey test targets and uses its own disposable database.
-It checks that every generated message completes, no attachments are missing,
-extraction settles, and peak RSS above baseline stays within
-`GUARD_PEAK_ABOVE_BASELINE_MIB` (currently 400 MiB, pending final measurement).
-The estimated processing high-water must stay within 256 MiB, except for an
-oversized item running alone. Failures report the summary path and key numbers.
-The unit tests in `processing-memory-budget.test.ts` check FIFO admission,
-byte limits, oversized items, cancellation and release after failure.
+`guard` profile with hydration and API traffic in a child process, with a
+300-second test timeout. It requires database, NATS and Valkey test targets
+and uses its own disposable database. It checks that every generated message
+completes and no attachment is missing, and that peak RSS above baseline stays
+within `GUARD_PEAK_ABOVE_BASELINE_MIB` (560 MiB). On Linux x64 with glibc,
+that run peaked at 482–633 MiB in four runs before the processing memory
+budget and at 391–491 MiB in six runs with it, so the limit fails most runs
+without the budget. Hydration must reserve through the budget, and the
+estimated processing high-water must stay within 256 MiB, except for an item
+above the budget that runs alone. Attachment
+extraction stays out of this run: its memory is native and glibc keeps those
+pages, so its peak varies more than the budget changes it. The `incident`
+profile measures it. Failures report the summary path and key numbers. The
+unit tests in `processing-memory-budget.test.ts` check FIFO admission, byte
+limits, oversized items, cancellation and release after failure.
