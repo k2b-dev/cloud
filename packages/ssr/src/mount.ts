@@ -124,6 +124,8 @@ export const disposeIslands = (root: ParentNode): void => {
     try {
       dispose();
     } catch (error) {
+      // Solid's disposer stops at a throwing cleanup before it empties the wrapper.
+      element.replaceChildren();
       globalThis.reportError(error);
     } finally {
       mounted.delete(element);

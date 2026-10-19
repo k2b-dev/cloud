@@ -86,9 +86,11 @@ for (const navigationApi of [true, false]) {
       expect(await result).toBeUndefined();
     });
 
-    test("disposal listening moves with the window even for a dialog without history", async () => {
+    test("disposal listening moves with the window, without the old press, even for a dialog without history", async () => {
       const core = createDialogCore();
       const remove = spyOn(window, "removeEventListener");
+      // A press in the old window must not claim dialogs opened in the new one.
+      trigger().button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       dom.cleanup();
       dom = createDomTestHarness();
       const { parent, button } = trigger("a");
@@ -292,6 +294,52 @@ for (const navigationApi of [true, false]) {
       await settle();
       expect(go).not.toHaveBeenCalled();
       expect(history.length).toBe(length);
+    });
+
+    test("a dialog disposed while an earlier Back is on its way settles only after that Back lands", async () => {
+      // Registered before the core, so it sees the traversal even when the core stops its propagation.
+      let landed = false;
+      const onLanded = () => {
+        landed = true;
+      };
+      window.addEventListener("popstate", onLanded, { capture: true });
+      const core = createDialogCore();
+      const a = trigger("a");
+      a.button.focus();
+      const first = core.open(view("First"), { history: true });
+      document.querySelector<HTMLButtonElement>("dialog > div:last-child button")!.focus();
+      let closeSecond = () => {};
+      const second = core.open(
+        (close) => {
+          closeSecond = close;
+          return view("Second")();
+        },
+        { history: true },
+      );
+      // A real browser traverses after the current task; Happy DOM would traverse inside go().
+      const go = Object.getPrototypeOf(history).go.bind(history);
+      const deferred = spyOn(history, "go").mockImplementation((delta) => {
+        setTimeout(() => {
+          if (navigationApi) navigation.dispatchEvent(Object.assign(new Event("navigate"), { navigationType: "traverse" }));
+          go(delta);
+        }, 10);
+      });
+      closeSecond();
+      expect(core.isOpen()).toBe(true);
+      // The synthetic Back that removes the second entry starts at the next microtask.
+      await Promise.resolve();
+      expect(deferred).toHaveBeenCalledWith(-1);
+      expect(landed).toBe(false);
+      dispose(a.parent);
+      expect(core.isOpen()).toBe(false);
+      let landedAtSettle: boolean | undefined;
+      void first.then(() => {
+        landedAtSettle = landed;
+      });
+      expect(await second).toBeUndefined();
+      expect(await first).toBeUndefined();
+      expect(landedAtSettle).toBe(true);
+      window.removeEventListener("popstate", onLanded, { capture: true });
     });
 
     test("the disposal window resets at the next microtask and normal close still goes Back", async () => {

@@ -292,7 +292,10 @@ test("a throwing cleanup is reported and later wrappers still dispose", async ()
   const reported = spyOn(globalThis, "reportError").mockImplementation(() => {});
   expect(() => disposeIslands(document)).not.toThrow();
   expect(reported).toHaveBeenCalledWith(expect.objectContaining({ message: "cleanup failed" }));
+  expect(broken.childNodes.length).toBe(0);
   expect(healthy.childNodes.length).toBe(0);
+  disposeIslands(document);
+  expect(reported).toHaveBeenCalledTimes(1);
   mountIslands(broken);
   expect(broken.textContent).toBe("broken");
 });

@@ -137,7 +137,8 @@ skips unregistered or already-mounted wrappers. Disposal dispatches a bubbling,
 non-cancelable `ssr:island-dispose` event with `detail: { id }` on each wrapper
 before running its Solid disposer and forgetting it. Call disposal while the
 wrappers are still in the document so window listeners receive the event.
-A disposer error goes to `reportError()` and does not stop later wrappers.
+A disposer error goes to `reportError()`, still empties its wrapper, and does
+not stop later wrappers.
 
 Solid disposal runs component and fallback `onCleanup` and effect cleanups and
 empties the wrapper, including while an error fallback is displayed. The outer

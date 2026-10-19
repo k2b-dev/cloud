@@ -265,6 +265,8 @@ export const createDialogCore = () => {
   let listening: { window: Window; navigation?: Navigation } | undefined;
   const listen = () => {
     if (listening?.window === window) return;
+    // A press in another window never names the island that opens a dialog here.
+    lastInteraction = undefined;
     listening?.window.removeEventListener("popstate", onPopState, { capture: true });
     listening?.window.removeEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
     listening?.window.removeEventListener("pointerdown", onInteraction, { capture: true });
@@ -568,11 +570,12 @@ export const createDialogCore = () => {
       };
       entry.resolve = (value) => {
         options.signal?.removeEventListener("abort", abort);
-        if (entry.historyId === undefined) {
+        if (!options.history) {
           resolve(value as T | undefined);
           return;
         }
         // After every pending history sync, so a caller that navigates or opens the next dialog finds the history settled.
+        // This holds for a marker forgotten during island disposal too, while an earlier synthetic Back is on its way.
         queueMicrotask(() => void historySettled().then(() => resolve(value as T | undefined)));
       };
       const closeTyped: DialogClose<T> = (result) => {
