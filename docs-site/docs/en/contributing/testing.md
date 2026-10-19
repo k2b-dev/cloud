@@ -174,7 +174,10 @@ when findings are gone.
 A test waits for the state it needs: poll with a deadline, await an event,
 a recorded close, or a log. A fixed sleep assumes the state arrived and is
 still there. The live-routes slow-client test waits for the server's `1013`
-close before it resumes the client.
+close before it resumes the client. A test about the moment before a debounce
+or delay fires acts in the same task as the trigger, as the Notebooks Timeline
+scroll-restore test does, because a check after a real-time wait that the delay
+has not fired yet fails on a slow runner.
 
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
 with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
