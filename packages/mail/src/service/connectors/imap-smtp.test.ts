@@ -861,7 +861,7 @@ describe("IMAP source download interruption", () => {
     const fixture = serve();
     const { client, lock } = await connect(fixture.server.port);
     try {
-      let result: { bytes: number; error: unknown } | null = null;
+      const results: Array<{ bytes: number; error: unknown }> = [];
       await downloadSelectedSources(client, [{ key: "message-7", uidValidity: "10", uid: 7 }], async (download) => {
         // The consumer waits (as hydration waits for memory) until ImapFlow pauses on backpressure.
         let seen = -1;
@@ -872,11 +872,11 @@ describe("IMAP source download interruption", () => {
         const closed = new Promise((resolve) => client.once("close", resolve));
         for (const socket of fixture.sockets) socket.end();
         await closed;
-        result = await drain(download.stream);
+        results.push(await drain(download.stream));
       });
       // ImapFlow 2.0.7 ends the content stream without an error here; the source is incomplete.
-      expect(result).toMatchObject({ error: { code: "IMAP_CONNECTION_LOST" } });
-      expect(result!.bytes).toBeLessThan(source.length);
+      expect(results).toMatchObject([{ error: { code: "IMAP_CONNECTION_LOST" } }]);
+      expect(results[0]!.bytes).toBeLessThan(source.length);
     } finally {
       lock.release();
       await client.logout().catch(() => undefined);
@@ -888,12 +888,12 @@ describe("IMAP source download interruption", () => {
     const fixture = serve();
     const { client, lock } = await connect(fixture.server.port);
     try {
-      let result: { bytes: number; error: unknown } | null = null;
+      const results: Array<{ bytes: number; error: unknown }> = [];
       await downloadSelectedSources(client, [{ key: "message-7", uidValidity: "10", uid: 7 }], async (download) => {
         await Bun.sleep(100);
-        result = await drain(download.stream);
+        results.push(await drain(download.stream));
       });
-      expect(result).toEqual({ bytes: source.length, error: null });
+      expect(results).toEqual([{ bytes: source.length, error: null }]);
     } finally {
       lock.release();
       await client.logout().catch(() => undefined);
