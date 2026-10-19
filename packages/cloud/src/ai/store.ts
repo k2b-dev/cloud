@@ -1,7 +1,7 @@
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
 import { type SQL, sql } from "bun";
-import { type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
+import { type CapabilityActionReviewData, CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
@@ -485,9 +485,9 @@ const parseJsonValue = <T>(value: unknown): T => {
   return value as T;
 };
 
-const parseCapabilityActionReview = (value: unknown): CapabilityActionReview | undefined => {
+const parseCapabilityActionReview = (value: unknown): CapabilityActionReviewData | undefined => {
   if (value === null || value === undefined) return undefined;
-  const parsed = CapabilityActionReviewSchema.safeParse(parseJsonValue(value));
+  const parsed = CapabilityActionReviewDataSchema.safeParse(parseJsonValue(value));
   return parsed.success ? parsed.data : undefined;
 };
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { CapabilityActionReview } from "../contracts/capabilities";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import type { CapabilityActionReviewData } from "../contracts/capabilities";
 import { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 import { aiChatTasks } from "./chat-tasks";
 
@@ -20,7 +21,7 @@ const fixture = () => ({
     approval: "rememberable" as "none" | "rememberable" | "always",
     hasReview: true,
     action: "Create task",
-    review: mock<() => Promise<CapabilityActionReview | null>>(async () => ({ message: "Create task?" })),
+    review: mock<() => Promise<CapabilityActionReviewData | null>>(async () => ({ message: "Create task?" })),
   },
 });
 
@@ -139,4 +140,71 @@ describe("authorizeBackgroundAction", () => {
   test("approval error has the stable code and exact message", () => {
     expect(new AiBackgroundApprovalRequiredError("Create task")).toMatchObject({ code: "NEEDS_APPROVAL", message });
   });
+});
+
+for (const policy of [{ ask: "sends" }, { silent: "you", routines: false }, { silent: "you" }] as const) {
+  for (const asks of [false, true])
+    test(`policy background gate ${JSON.stringify(policy)} review asks=${asks}`, async () => {
+      const { input, markNeedsApproval } = fixture();
+      const review = { ...reviewFixture(), ...(asks ? { ask: "sends" as const } : {}) };
+      input.review.mockResolvedValue(review);
+      const run = mock(async () => {});
+      const call = async () => {
+        await authorizeBackgroundAction({ ...input, policy });
+        await run();
+      };
+      if ("ask" in policy || ("routines" in policy && policy.routines === false) || asks) {
+        await expect(call()).rejects.toMatchObject({ code: "NEEDS_APPROVAL" });
+        expect(run).not.toHaveBeenCalled();
+        expect(markNeedsApproval).toHaveBeenCalledTimes(1);
+        if ("ask" in policy || ("routines" in policy && policy.routines === false)) expect(input.review).not.toHaveBeenCalled();
+      } else {
+        await call();
+        expect(run).toHaveBeenCalledTimes(1);
+        expect(markNeedsApproval).not.toHaveBeenCalled();
+      }
+    });
+}
+
+test("a policy routine refuses missing or failing reviews", async () => {
+  for (const outcome of ["missing", "failing"] as const) {
+    const { input, markNeedsApproval } = fixture();
+    markNeedsApproval.mockClear();
+    if (outcome === "missing") input.hasReview = false;
+    if (outcome === "failing") input.review.mockRejectedValue(new Error("Unavailable"));
+    await expect(authorizeBackgroundAction({ ...input, policy: { silent: "you" } })).rejects.toMatchObject({
+      code: "NEEDS_APPROVAL",
+    });
+    expect(markNeedsApproval).toHaveBeenCalledTimes(1);
+  }
+});
+
+for (const outcome of ["before", "throws", "returns"] as const)
+  test(`policy review cancellation ${outcome} rethrows the abort without marking approval`, async () => {
+    const { input, markNeedsApproval } = fixture();
+    const controller = new AbortController();
+    const abort = new DOMException("Routine stopped", "AbortError");
+    if (outcome === "before") controller.abort(abort);
+    else
+      input.review.mockImplementation(async () => {
+        controller.abort(abort);
+        if (outcome === "throws") throw new Error("Review cancelled");
+        return reviewFixture();
+      });
+    await expect(authorizeBackgroundAction({ ...input, policy: { silent: "you" }, signal: controller.signal })).rejects.toBe(abort);
+    if (outcome === "before") expect(input.review).not.toHaveBeenCalled();
+    else expect(input.review).toHaveBeenCalledTimes(1);
+    expect(markNeedsApproval).not.toHaveBeenCalled();
+  });
+
+test("an ungrantable policy stops as needs_approval before a stale mandate grant can authorize it", async () => {
+  for (const policy of [{ ask: "sends" }, { silent: "you", routines: false }] as const) {
+    const { input, authorizeCapability, markNeedsApproval } = fixture();
+    authorizeCapability.mockClear();
+    authorizeCapability.mockRejectedValue(new Error("Stale grant denied"));
+    await expect(authorizeBackgroundAction({ ...input, policy })).rejects.toMatchObject({ code: "NEEDS_APPROVAL" });
+    expect(authorizeCapability).not.toHaveBeenCalled();
+    expect(input.review).not.toHaveBeenCalled();
+    expect(markNeedsApproval).toHaveBeenCalled();
+  }
 });

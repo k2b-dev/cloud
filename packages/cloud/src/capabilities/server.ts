@@ -6,7 +6,7 @@ import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabiliti
 import { env } from "../config/env";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
-  CapabilityActionReviewSchema,
+  CapabilityActionReviewDataSchema,
   type CapabilityOrigin,
   capabilityResultSchema,
 } from "../contracts/capabilities";
@@ -263,7 +263,7 @@ export const reviewCapabilityAction = async <TInput = unknown>(
         locale: caller.locale ?? undefined,
         origin: caller.origin ?? "app",
       });
-      return readCapabilityResponse(outcome, CapabilityActionReviewSchema);
+      return readCapabilityResponse(outcome, CapabilityActionReviewDataSchema);
     }
     const response = await (caller.transport ?? fetch)(
       new Request(
@@ -276,7 +276,7 @@ export const reviewCapabilityAction = async <TInput = unknown>(
         { body: JSON.stringify({ input: invocation.input }) },
       ),
     );
-    return readCapabilityResponse(response, CapabilityActionReviewSchema);
+    return readCapabilityResponse(response, CapabilityActionReviewDataSchema);
   } catch (cause) {
     return unavailable(cause, undefined, caller.locale ?? undefined);
   }
@@ -312,3 +312,10 @@ export async function transferCapabilityStream(
   }
   return caller.transport ? caller.transport(request) : fetch(request, { redirect: "error" });
 }
+
+export {
+  actionReview,
+  type CapabilityReviewForms,
+  capabilityReviewRememberScope,
+  capabilityReviewView,
+} from "./reviews";

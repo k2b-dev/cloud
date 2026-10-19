@@ -1,4 +1,4 @@
-import type { CapabilityActionReview } from "../contracts/capabilities";
+import type { CapabilityActionPolicy, CapabilityActionReviewData } from "../contracts/capabilities";
 import { aiChatTasks } from "./chat-tasks";
 
 export class AiBackgroundApprovalRequiredError extends Error {
@@ -19,10 +19,11 @@ type BackgroundActionInput = {
   capabilityId: string;
   kind: "query" | "action";
   args: unknown;
+  policy?: CapabilityActionPolicy;
   approval?: "none" | "rememberable" | "always";
   hasReview: boolean;
   action: string;
-  review: () => Promise<CapabilityActionReview | null>;
+  review: () => Promise<CapabilityActionReviewData | null>;
   signal?: AbortSignal;
 };
 
@@ -30,7 +31,12 @@ type BackgroundActionInput = {
 export const authorizeBackgroundActionWith = async (
   input: BackgroundActionInput,
   authorizeCapability: typeof aiChatTasks.authorizeCapability,
-): Promise<CapabilityActionReview | null> => {
+): Promise<CapabilityActionReviewData | null> => {
+  // These declarations can never be granted to a routine. Stop with the approval state even if a stale grant exists.
+  if (input.kind === "action" && input.policy && (!("silent" in input.policy) || input.policy.routines === false)) {
+    await aiChatTasks.markNeedsApproval({ turnId: input.turnId, action: input.action });
+    throw new AiBackgroundApprovalRequiredError(input.action);
+  }
   await authorizeCapability({
     mandate: input.mandate,
     appId: input.appId,
@@ -38,15 +44,16 @@ export const authorizeBackgroundActionWith = async (
     kind: input.kind,
     input: input.args,
     approval: input.approval,
+    ...(input.policy ? { policy: input.policy } : {}),
   });
-  if (input.kind === "query" || input.approval === "none") return null;
+  if (input.kind === "query" || (!input.policy && input.approval === "none")) return null;
   input.signal?.throwIfAborted();
-  if (input.approval !== "rememberable") {
+  if (!input.policy && input.approval !== "rememberable") {
     await aiChatTasks.markNeedsApproval({ turnId: input.turnId, action: input.action });
     throw new AiBackgroundApprovalRequiredError(input.action);
   }
-  let review: CapabilityActionReview | null = null;
-  if (input.hasReview) {
+  let review: CapabilityActionReviewData | null = null;
+  if (input.hasReview && !input.signal?.aborted) {
     try {
       review = await input.review();
     } catch {
@@ -55,10 +62,11 @@ export const authorizeBackgroundActionWith = async (
     }
   }
   input.signal?.throwIfAborted();
-  if (review?.approvalScope) return review;
+  if (review && (input.policy ? "sentence" in review && review.ask === undefined : !("sentence" in review) && review.approvalScope))
+    return review;
   await aiChatTasks.markNeedsApproval({ turnId: input.turnId, action: input.action });
   throw new AiBackgroundApprovalRequiredError(input.action);
 };
 
-export const authorizeBackgroundAction = (input: BackgroundActionInput): Promise<CapabilityActionReview | null> =>
+export const authorizeBackgroundAction = (input: BackgroundActionInput): Promise<CapabilityActionReviewData | null> =>
   authorizeBackgroundActionWith(input, aiChatTasks.authorizeCapability);

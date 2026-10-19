@@ -14,6 +14,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { refreshAppBadges } from "../browser/app-badges";
+import { capabilityReviewView } from "../capabilities/reviews";
 import { coreClient } from "../clients/core";
 import {
   APPROVALS_PAGE_PATH,
@@ -96,8 +97,11 @@ const detailText = (detail: ReviewDetail, locale: string): string => {
   return detail.value;
 };
 
-const inlineDetails = (item: PendingApproval) => (item.review?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
-const blockDetails = (item: PendingApproval) => (item.review?.details ?? []).filter((detail) => detail.display === "block");
+// Keep SSR and the first client render identical; the next card slice adds the reader's zone.
+const reviewView = (item: PendingApproval) => (item.review ? capabilityReviewView(item.review, { timeZone: "UTC" }) : undefined);
+const inlineDetails = (item: PendingApproval) =>
+  (reviewView(item)?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
+const blockDetails = (item: PendingApproval) => (reviewView(item)?.details ?? []).filter((detail) => detail.display === "block");
 
 function Fields(props: { item: PendingApproval }) {
   const locale = useLocale();
@@ -124,7 +128,7 @@ function Fields(props: { item: PendingApproval }) {
 /** The review's message, or the sentence's plain lines when the Action has no review. */
 function Description(props: { item: PendingApproval }) {
   const text = () => {
-    const message = props.item.review?.message.trim();
+    const message = reviewView(props.item)?.message.trim();
     if (message) return message === approvalTitle(props.item) ? null : message;
     const plain = sentenceFields(props.item)
       .filter((field) => field.label === null)

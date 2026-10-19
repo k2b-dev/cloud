@@ -1,11 +1,11 @@
 import type { z } from "zod";
-import type { CapabilityActionReview, CapabilityCatalog, CapabilityErrorSchema, CapabilityResult } from "../contracts/capabilities";
+import type { CapabilityActionReviewData, CapabilityCatalog, CapabilityErrorSchema, CapabilityResult } from "../contracts/capabilities";
 
 export type CapabilityKind = "query" | "action";
 export type CapabilityClientError = z.infer<typeof CapabilityErrorSchema> & { status: number };
 export type CapabilityResultState<T> = { ok: true; data: T } | { ok: false; error: CapabilityClientError };
 export type CapabilityClientResult<T> = CapabilityResultState<CapabilityResult<T>>;
-export type CapabilityReviewClientResult = CapabilityResultState<CapabilityActionReview>;
+export type CapabilityReviewClientResult = CapabilityResultState<CapabilityActionReviewData>;
 export type CapabilityCatalogClientResult = CapabilityResultState<CapabilityCatalog>;
 export type CapabilityCatalogApp = CapabilityCatalog["apps"][number];
 export type CapabilityCatalogAppClientResult = CapabilityResultState<CapabilityCatalogApp | null>;

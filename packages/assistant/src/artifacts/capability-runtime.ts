@@ -2,13 +2,14 @@ import { aiConversations, authorizeBackgroundAction, hasRememberedAiToolApproval
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
   type CapabilityCaller,
+  capabilityReviewRememberScope,
   getCapabilityActionWording,
   getCapabilityCatalogApp,
   invokeCapability,
   reviewCapabilityAction,
   transferCapabilityStream,
 } from "@k2b/cloud/capabilities/server";
-import { CapabilityActionReviewSchema, CapabilityStreamSchema } from "@k2b/cloud/contracts";
+import { CapabilityActionReviewDataSchema, CapabilityStreamSchema, capabilityActionPolicy } from "@k2b/cloud/contracts";
 import {
   APPROVAL_MAX_WAIT_MS,
   approvalAssurance,
@@ -45,7 +46,7 @@ const Prepared = z.object({
   approval: z.enum(["none", "rememberable"]).nullable(),
   resource: z.object({ id: CodeResourceId, title: z.string() }).optional(),
   title: z.string(),
-  review: CapabilityActionReviewSchema.nullable(),
+  review: CapabilityActionReviewDataSchema.nullable(),
   allowAlways: z.boolean(),
   scope: z.string().nullable(),
   /** Locale the person reviewed in; revalidation reviews in it again so a language switch is not a changed consequence. */
@@ -102,6 +103,7 @@ async function operation(name: string, locale?: string | null) {
     localId,
     operation: (query ?? action)!,
     action,
+    policy: capabilityActionPolicy(catalog.data.manifest, localId),
     kind: query ? ("query" as const) : ("action" as const),
   };
 }
@@ -179,6 +181,7 @@ export const runtimeCapabilities = {
             kind: target.kind,
             args: request.input,
             approval: target.action.approval,
+            policy: target.policy,
             hasReview: target.action.review === true,
             action: target.operation.title,
             review: getReview,
@@ -187,7 +190,7 @@ export const runtimeCapabilities = {
         : target.action?.review
           ? await getReview()
           : null;
-    const scope = target.action?.approval === "rememberable" ? (review?.approvalScope ?? null) : null;
+    const scope = review ? (capabilityReviewRememberScope(review, target.action?.approval) ?? null) : null;
     const prepared = Prepared.parse({
       appId: target.appId,
       localId: target.localId,
@@ -293,14 +296,14 @@ async function resolveCapability(
     throw new ArtifactError("CONFLICT");
   // Approval applies to the reviewed consequence, not a changed action.
   // The routine gate already reviewed this call. Interactive approvals still revalidate their reviewed consequence.
-  let currentReview: z.infer<typeof CapabilityActionReviewSchema> | null = background ? prepared.review : null;
+  let currentReview: z.infer<typeof CapabilityActionReviewDataSchema> | null = background ? prepared.review : null;
   if (!background && target.action?.review) {
     const response = await reviewCapabilityAction(
       { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
       { ...caller, locale: prepared.locale ?? caller.locale },
     );
     if (!response.ok) throw new Error(response.error.message);
-    currentReview = CapabilityActionReviewSchema.parse(response.data);
+    currentReview = CapabilityActionReviewDataSchema.parse(response.data);
   }
   if (approvalReviewDigest(currentReview) !== approvalReviewDigest(prepared.review)) throw new ArtifactError("CONFLICT");
   if (decision.remember && (!prepared.allowAlways || (resource && resource.permission !== "admin")))
@@ -378,7 +381,7 @@ async function claimExecution(
   row: Row,
   decision: { approved: boolean },
   identity: ArtifactIdentity,
-  review: z.infer<typeof CapabilityActionReviewSchema> | null,
+  review: z.infer<typeof CapabilityActionReviewDataSchema> | null,
   automatic: boolean,
 ): Promise<boolean> {
   const actor = user(identity);

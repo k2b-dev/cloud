@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { assertResourceOpenLink } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
+  CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CapabilityResult,
@@ -906,9 +907,10 @@ test("reviews stay within the review bounds and never scan storage bases", async
   const long = "a".repeat(4000);
   const reviewed = await rename({ baseId: "home", path: long, name: "b".repeat(255) }, context);
   if (!reviewed.ok) throw new Error("expected a review");
-  expect(reviewed.data.message.length).toBeLessThanOrEqual(1000);
-  expect(reviewed.data.message).toContain("…");
-  expect(reviewed.data.details).toContainEqual({ label: "Path", value: long });
+  const review = CapabilityActionReviewSchema.parse(reviewed.data);
+  expect(review.message.length).toBeLessThanOrEqual(1000);
+  expect(review.message).toContain("…");
+  expect(review.details).toContainEqual({ label: "Path", value: long });
   expect(basesCalls).toBe(0);
 });
 

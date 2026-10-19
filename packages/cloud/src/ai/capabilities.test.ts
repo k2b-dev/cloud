@@ -5,7 +5,12 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
-import { type CapabilityActionReview, CapabilityActionReviewSchema, defineCapabilities } from "../contracts/capabilities";
+import {
+  type CapabilityActionReview,
+  type CapabilityActionReviewData,
+  CapabilityActionReviewSchema,
+  defineCapabilities,
+} from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { parseMandatePolicy } from "../services/mandates/policy";
@@ -1175,7 +1180,7 @@ describe("AI capability catalog", () => {
     expect(called).toBe("contacts.list");
 
     const approvalMessages: string[] = [];
-    const actionReviews: Array<{ callId: string; review: CapabilityActionReview }> = [];
+    const actionReviews: Array<{ callId: string; review: CapabilityActionReviewData }> = [];
     let actionExecutions = 0;
     const actionPrepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
