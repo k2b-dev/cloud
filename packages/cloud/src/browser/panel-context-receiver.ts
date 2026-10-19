@@ -37,12 +37,14 @@ export function installPanelContextReceiver(): () => void {
       seq = context.seq;
     }
     // Null revokes the current context without forgetting document identity or ordering.
-    element.textContent = JSON.stringify(context);
+    const contextJson = JSON.stringify(context);
+    const contextChanged = element.textContent !== contextJson;
+    element.textContent = contextJson;
     const shortcuts = JSON.stringify(context ? (event.data.shortcuts ?? []) : []);
     const shortcutsChanged = shortcutsElement.textContent !== shortcuts;
     shortcutsElement.textContent = shortcuts;
     if (shortcutsChanged) window.dispatchEvent(new Event(PANEL_SHORTCUTS_CHANGED));
-    window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
+    if (contextChanged || !shortcutsChanged) window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
   };
   window.addEventListener("message", receive);
   return () => window.removeEventListener("message", receive);

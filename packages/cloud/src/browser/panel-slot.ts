@@ -4,7 +4,7 @@ import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import type { PanelPageContext } from "../contracts/panel-context";
-import { PANEL_CONTEXT_PARAM, panelProviderNeedsConsent, withPanelContext } from "../contracts/panel-context-plain";
+import { isPanelShortcut, PANEL_CONTEXT_PARAM, panelProviderNeedsConsent, withPanelContext } from "../contracts/panel-context-plain";
 import { helpShortcutGroups } from "../ssr/layout-help-start";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
@@ -91,20 +91,26 @@ export function installPanelSlot(): () => void {
     }
   };
   const shortcuts = () =>
-    helpShortcutGroups(contextCommandsWithShortcuts()).flatMap((group) =>
-      group.shortcuts.map(({ id, title, description, shortcut, scope }) => ({
-        id,
-        title,
-        ...(description ? { description } : {}),
-        shortcut,
-        ...(scope ? { scope } : {}),
-      })),
-    );
+    helpShortcutGroups(contextCommandsWithShortcuts())
+      .flatMap((group) =>
+        group.shortcuts.map(({ id, title, description, shortcut, scope }) => ({
+          id,
+          title,
+          ...(description ? { description } : {}),
+          shortcut,
+          ...(scope === "selection" || scope === "page" ? { scope } : {}),
+        })),
+      )
+      .filter(isPanelShortcut);
   let lastShortcutsJson: string | undefined;
+  const canSend = () => isOpen() && allowed() && !!context && slot.dataset.state === "ready" && !!frame?.contentWindow && showsProvider();
   const sendContext = () => {
-    if (!isOpen() || !allowed() || !context || slot.dataset.state !== "ready" || !frame?.contentWindow || !showsProvider()) return;
+    if (!canSend()) return;
     const list = !panelProviderNeedsConsent(provider.id) ? shortcuts() : undefined;
-    frame.contentWindow.postMessage({ type: "cloud.panel.context", v: 1, context, ...(list ? { shortcuts: list } : {}) }, location.origin);
+    frame?.contentWindow?.postMessage(
+      { type: "cloud.panel.context", v: 1, context, ...(list ? { shortcuts: list } : {}) },
+      location.origin,
+    );
     if (list) lastShortcutsJson = JSON.stringify(list);
     disclosed = true;
     // A reload of the provider page renders from its address, so the address follows the live context.
@@ -120,7 +126,7 @@ export function installPanelSlot(): () => void {
     shortcutsPending = true;
     queueMicrotask(() => {
       shortcutsPending = false;
-      if (disposed || panelProviderNeedsConsent(provider.id)) return;
+      if (disposed || panelProviderNeedsConsent(provider.id) || !canSend()) return;
       if (JSON.stringify(shortcuts()) !== lastShortcutsJson) sendContext();
     });
   };

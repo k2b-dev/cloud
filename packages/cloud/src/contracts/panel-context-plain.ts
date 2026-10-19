@@ -4,6 +4,7 @@ import {
   HELP_SHORTCUT_KEYS_MAX_LENGTH,
   HELP_SHORTCUT_TITLE_MAX_LENGTH,
   HELP_START_SHORTCUT_LIMIT,
+  type HelpShortcut,
 } from "../ssr/layout-help-start";
 import type { PanelContextMessage, PanelPageContext } from "./panel-context";
 
@@ -69,6 +70,17 @@ export function isPanelPageContext(value: unknown): value is PanelPageContext {
   );
 }
 
+export function isPanelShortcut(value: unknown): value is HelpShortcut {
+  return (
+    exactKeys(value, ["id", "title", "shortcut"], ["description", "scope"]) &&
+    text(value.id, 1, HELP_SHORTCUT_ID_MAX_LENGTH) &&
+    text(value.title, 1, HELP_SHORTCUT_TITLE_MAX_LENGTH) &&
+    (value.description === undefined || text(value.description, 0, HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH)) &&
+    text(value.shortcut, 1, HELP_SHORTCUT_KEYS_MAX_LENGTH) &&
+    (value.scope === undefined || value.scope === "selection" || value.scope === "page")
+  );
+}
+
 export function isPanelContextMessage(value: unknown): value is PanelContextMessage {
   if (!exactKeys(value, ["type", "v", "context"], ["shortcuts"])) return false;
   const { shortcuts } = value;
@@ -80,17 +92,8 @@ export function isPanelContextMessage(value: unknown): value is PanelContextMess
       (value.context !== null &&
         Array.isArray(shortcuts) &&
         shortcuts.length <= HELP_START_SHORTCUT_LIMIT &&
-        Array.from({ length: shortcuts.length }, (_, index) => index).every((index) => {
-          const item: unknown = shortcuts[index];
-          return (
-            index in shortcuts &&
-            exactKeys(item, ["id", "title", "shortcut"], ["description", "scope"]) &&
-            text(item.id, 1, HELP_SHORTCUT_ID_MAX_LENGTH) &&
-            text(item.title, 1, HELP_SHORTCUT_TITLE_MAX_LENGTH) &&
-            (item.description === undefined || text(item.description, 0, HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH)) &&
-            text(item.shortcut, 1, HELP_SHORTCUT_KEYS_MAX_LENGTH) &&
-            (item.scope === undefined || item.scope === "selection" || item.scope === "page")
-          );
-        })))
+        Array.from({ length: shortcuts.length }, (_, index) => index).every(
+          (index) => index in shortcuts && isPanelShortcut(shortcuts[index]),
+        )))
   );
 }

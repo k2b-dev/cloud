@@ -50,8 +50,9 @@ export const HELP_SHORTCUT_ID_MAX_LENGTH = 180;
 export const HELP_SHORTCUT_TITLE_MAX_LENGTH = 120;
 // Row tooltip: the platform's plain-text Action review message bound.
 export const HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH = 1000;
-// command-shortcuts grammar: four modifiers (ctrl+alt+shift+meta+, 20 chars) + a KeyboardEvent.key (about 20).
-export const HELP_SHORTCUT_KEYS_MAX_LENGTH = 40;
+// command-shortcuts grammar: five distinct modifier tokens "ctrl+alt+shift+meta+mod+" (24 chars)
+// plus the longest standard KeyboardEvent.key name "TVAudioDescriptionMixDown" (25 chars).
+export const HELP_SHORTCUT_KEYS_MAX_LENGTH = 49;
 export type HelpShortcut = { id: string; title: string; description?: string; shortcut: string; scope?: "selection" | "page" };
 export type HelpShortcutCommand = { id: string; title: string; description?: string; shortcut?: string; scope?: "selection" | "page" };
 /**

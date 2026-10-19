@@ -117,6 +117,9 @@ test("shortcut rows are capped across groups in everywhere, app, selection order
 
 test("shortcut bounds drop invalid rows before the cap and accept exact length boundaries", () => {
   const command = { id: "app.edit", title: "Edit", description: "", shortcut: "e" };
+  const longest = { ...command, shortcut: "ctrl+alt+shift+meta+mod+TVAudioDescriptionMixDown" };
+  expect(longest.shortcut).toHaveLength(HELP_SHORTCUT_KEYS_MAX_LENGTH);
+  expect(helpShortcutGroups([longest]).flatMap((g) => g.shortcuts)).toEqual([longest]);
   const limits = [
     ["id", HELP_SHORTCUT_ID_MAX_LENGTH],
     ["title", HELP_SHORTCUT_TITLE_MAX_LENGTH],

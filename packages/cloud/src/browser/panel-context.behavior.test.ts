@@ -101,11 +101,17 @@ test("accepted shortcut lists live separately from page context, obey identity a
   deliver({ ...first, seq: 2 });
   expect(changed).toHaveBeenCalledTimes(1);
   expect(contextChanged).toHaveBeenCalledTimes(2);
+  const updated = [{ ...shortcuts[0]!, title: "Edit Grace" }];
+  deliver({ ...first, seq: 2 }, updated);
+  expect(readPanelShortcuts()).toEqual(updated);
+  expect(changed.mock.calls.at(-1)).toEqual([updated]);
+  expect(changed).toHaveBeenCalledTimes(2);
+  expect(contextChanged).toHaveBeenCalledTimes(2);
   deliver({ ...first, seq: 1 }, []);
   deliver({ ...first, pageId: "22222222-2222-4222-8222-222222222222", seq: 100 }, []);
-  expect(readPanelShortcuts()).toEqual(shortcuts);
+  expect(readPanelShortcuts()).toEqual(updated);
   expect(getContext()?.seq).toBe(2);
-  expect(changed).toHaveBeenCalledTimes(1);
+  expect(changed).toHaveBeenCalledTimes(2);
   h.message({ ...first, seq: 3 });
   expect(readPanelShortcuts()).toEqual([]);
   expect(changed.mock.calls.at(-1)).toEqual([[]]);
@@ -114,16 +120,16 @@ test("accepted shortcut lists live separately from page context, obey identity a
   expect(getContext()).toBeNull();
   expect(readPanelShortcuts()).toEqual([]);
   expect(element.textContent).toBe("[]");
-  expect(changed).toHaveBeenCalledTimes(4);
+  expect(changed).toHaveBeenCalledTimes(5);
   h.message(null);
-  expect(changed).toHaveBeenCalledTimes(4);
+  expect(changed).toHaveBeenCalledTimes(5);
   deliver({ ...first, seq: 2 });
   expect(readPanelShortcuts()).toEqual([]);
   expect(getContext()).toBeNull();
   unsubscribe();
   deliver({ ...first, seq: 4 });
   expect(readPanelShortcuts()).toEqual(shortcuts);
-  expect(changed).toHaveBeenCalledTimes(4);
+  expect(changed).toHaveBeenCalledTimes(5);
   for (const [context] of contextChanged.mock.calls) {
     if (context !== null) expect(context).not.toHaveProperty("shortcuts");
   }

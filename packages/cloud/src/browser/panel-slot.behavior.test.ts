@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { PanelPageContext } from "../contracts/panel-context";
+import { isPanelContextMessage } from "../contracts/panel-context-plain";
 import { type ContextAwareCommand, registerContextAwareCommand } from "./command-bridge";
 
 if (isServer) test.skip("requires browser conditions and solid-dom-preload", () => {});
@@ -696,6 +697,56 @@ else {
       const decoded = decodeURIComponent(url);
       expect(decoded).not.toContain("shortcuts");
       expect(decoded).not.toContain("Edit Ada");
+    }
+  });
+
+  test("Core shortcut lists omit invalid scopes and drop only malformed commands", async () => {
+    const h = setupCore();
+    const invalidScope: unknown = "global";
+    const invalidTitle: unknown = 42;
+    registerShortcut("mail.edit", "e", { scope: "selection" });
+    registerShortcut("mail.open", "o", { scope: invalidScope as ContextAwareCommand["scope"] });
+    registerShortcut("mail.invalid", "i", { title: invalidTitle as string });
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    await Promise.resolve();
+    expect(post).toHaveBeenCalledTimes(1);
+    const message = post.mock.calls[0]?.[0];
+    expect(isPanelContextMessage(message)).toBe(true);
+    expect(message).toEqual({
+      type: "cloud.panel.context",
+      v: 1,
+      context: pageContext,
+      shortcuts: [
+        { id: "mail.open", title: "mail.open", shortcut: "o" },
+        { id: "mail.edit", title: "mail.edit", shortcut: "e", scope: "selection" },
+      ],
+    });
+  });
+
+  test("Core collects no shortcuts and posts nothing on command bursts while not ready or closed", async () => {
+    const h = setupCore();
+    registerShortcut("mail.edit", "e");
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    const collect = mock(() => {});
+    window.addEventListener("cloud.command.collect", collect);
+    try {
+      commandBurst();
+      await Promise.resolve();
+      expect(collect).not.toHaveBeenCalled();
+      expect(post).not.toHaveBeenCalled();
+      ready(h);
+      handlePanelRequest({ action: "close" });
+      collect.mockClear();
+      post.mockClear();
+      commandBurst();
+      await Promise.resolve();
+      expect(collect).not.toHaveBeenCalled();
+      expect(post).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("cloud.command.collect", collect);
     }
   });
 
