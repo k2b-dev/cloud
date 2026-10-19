@@ -6,9 +6,9 @@ import { createBaseController } from "./workspace/base-controller";
 import ComingBackView from "./workspace/ComingBackView";
 import { navigatePulseWorkspace } from "./workspace/navigation";
 import PulseSidebar from "./workspace/PulseSidebar";
+import { installPeriodicRefresh } from "./workspace/periodic-refresh";
 import SourcesView, { SourcesDetailPanel, type SourcesViewProps } from "./workspace/SourcesView";
 import { createSourceController } from "./workspace/source-controller";
-import { installPeriodicRefresh } from "./workspace/periodic-refresh";
 import type { PulseWorkspaceProps } from "./workspace/types";
 import { createPulseWorkspaceQueries } from "./workspace/workspace-queries";
 

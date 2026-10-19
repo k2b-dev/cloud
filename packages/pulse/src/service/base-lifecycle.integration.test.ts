@@ -247,10 +247,16 @@ suite("Pulse per-base store lifecycle", () => {
       await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${source}::uuid,${newShortId()},${base.id}::uuid,'http_ingest','Preserved source')`;
       await sql`INSERT INTO auth.service_accounts(name,kind,app_id,resource_type,resource_id) VALUES('Source token fixture','resource_bound','pulse','pulse_source',${(await sql`SELECT short_id FROM pulse.sources WHERE id=${source}::uuid`)[0]!.short_id})`;
       await store.query(`INSERT INTO ${q(base.database)}._events(id,ts,kind,version) VALUES(generateUUIDv4(),now64(3),'marker',1)`);
-      await sql`UPDATE pulse.base_stores SET state='clearing',operation='clear' WHERE base_id=${base.id}::uuid`;
+      // A base over its storage threshold: after the clear, ingest must not refuse it until the next usage scan.
+      await sql`UPDATE pulse.base_stores SET state='clearing',operation='clear',usage_bytes=storage_bytes,usage_rows=1,usage_measured_at=now(),storage_exceeded_at=now() WHERE base_id=${base.id}::uuid`;
       await runUntilDone(() => createBaseLifecycle(store)(base.id));
       const [count] = await store.query(`SELECT count() AS n FROM ${q(base.database)}._events`);
       expect(Number(count?.n)).toBe(0);
+      expect(
+        (
+          await sql`SELECT usage_bytes,usage_rows,usage_measured_at,storage_exceeded_at FROM pulse.base_stores WHERE base_id=${base.id}::uuid`
+        )[0],
+      ).toEqual({ usage_bytes: null, usage_rows: null, usage_measured_at: null, storage_exceeded_at: null });
       expect((await sql`SELECT id FROM pulse.sources WHERE id=${source}::uuid`).length).toBe(1);
       const [tokens] =
         await sql`SELECT count(*)::int AS n FROM auth.service_accounts WHERE kind='resource_bound' AND resource_id=(SELECT short_id FROM pulse.sources WHERE id=${source}::uuid)`;

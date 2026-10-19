@@ -476,11 +476,13 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
 
+  // Settings reads use the global pool: never wait for a second connection inside the locked transaction.
+  const policy = await readBasePolicy();
   const queued = await sql.begin(async (tx): Promise<Result<void>> => {
     await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
     const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!authorized.ok) return authorized;
-    await insertBaseStore(params.baseId, await readBasePolicy(), tx);
+    await insertBaseStore(params.baseId, policy, tx);
     await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1,state='deleting',operation='delete',attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases

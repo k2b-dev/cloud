@@ -201,6 +201,10 @@ export const createBaseLifecycle =
       await step("active", async (_row, db) => {
         await db`UPDATE pulse.base_stores SET state='active',operation=NULL,attempts=0,last_error=NULL,last_error_at=NULL,reconcile_needed=CASE WHEN updated_at::text=${initial.updated_at_version} THEN false ELSE reconcile_needed END,
         sealed_before=CASE WHEN ${operation === "clear"} THEN NULL ELSE sealed_before END,
+        usage_bytes=CASE WHEN ${operation === "clear"} THEN NULL ELSE usage_bytes END,
+        usage_rows=CASE WHEN ${operation === "clear"} THEN NULL ELSE usage_rows END,
+        usage_measured_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE usage_measured_at END,
+        storage_exceeded_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE storage_exceeded_at END,
         write_block_reason=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_block_reason END,
         write_blocked_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_blocked_at END,updated_at=now() WHERE base_id=${baseId}::uuid`;
         if (operation === "clear") {
