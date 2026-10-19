@@ -513,15 +513,46 @@ describe(`Spaces shared head in ${browserName}`, () => {
       await page.mouse.down();
       await page.mouse.move(box.x + box.width / 2 + 48, box.y + box.height / 2);
       await page.mouse.up();
-      const dragged = Number(await target.getAttribute("aria-valuenow"));
-      expect(dragged).toBeGreaterThan(before);
+      // The handle reports its width after the resize settles, so each step waits for the value it moves to.
+      const value = () => target.evaluate((handle) => Number(handle.getAttribute("aria-valuenow")));
+      const settled = (compare: "above" | "below", than: number) =>
+        target.evaluate(
+          (handle, [direction, limit]) =>
+            new Promise<number>((resolve, reject) => {
+              const started = performance.now();
+              const check = () => {
+                const now = Number(handle.getAttribute("aria-valuenow"));
+                if (direction === "above" ? now > limit : now < limit) resolve(now);
+                else if (performance.now() - started > 5000) reject(new Error(`aria-valuenow stayed ${now}`));
+                else requestAnimationFrame(check);
+              };
+              check();
+            }),
+          [compare, than] as const,
+        );
+      const dragged = await settled("above", before);
+      // A drag commits its width after the pointer ends; a key pressed before that commit is overwritten.
+      await target.evaluate(
+        (handle) =>
+          new Promise<void>((resolve) => {
+            let last = handle.getAttribute("aria-valuenow");
+            let still = 0;
+            const check = () => {
+              const now = handle.getAttribute("aria-valuenow");
+              still = now === last ? still + 1 : 0;
+              last = now;
+              if (still >= 10) resolve();
+              else requestAnimationFrame(check);
+            };
+            check();
+          }),
+      );
       await target.focus();
       await page.keyboard.press("ArrowRight");
-      const right = Number(await target.getAttribute("aria-valuenow"));
-      expect(right).toBeGreaterThan(dragged);
+      const right = await settled("above", dragged);
       await page.keyboard.press("ArrowLeft");
-      // The keys step on the handle's grid, so ArrowLeft narrows from wherever ArrowRight ended.
-      expect(Number(await target.getAttribute("aria-valuenow"))).toBeLessThan(right);
+      expect(await settled("below", right)).toBeLessThan(right);
+      expect(await value()).toBeLessThan(right);
     } finally {
       await page.context().close();
     }

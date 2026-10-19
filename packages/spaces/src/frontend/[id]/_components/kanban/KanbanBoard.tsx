@@ -1659,7 +1659,7 @@ export default function KanbanBoard(props: Props) {
                                     }
                                     data-spaces-kanban-card-tint={firstTag() ? "" : undefined}
                                     style={firstTag() ? { "--spaces-card-tag": firstTag()!.color } : undefined}
-                                    class={`spaces-kanban-card k2b-progressive-row relative rounded-[var(--ui-radius-control)] px-3 py-2.5 any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${isDraggingThis() ? "opacity-40" : ""} ${props.canWrite ? "select-none [-webkit-touch-callout:none]" : ""}`}
+                                    class={`spaces-kanban-card k2b-progressive-row relative rounded-[var(--ui-radius-control)] p-2.5 any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${isDraggingThis() ? "opacity-40" : ""} ${props.canWrite ? "select-none [-webkit-touch-callout:none]" : ""}`}
                                   >
                                     <Show when={props.canWrite}>
                                       <Show
@@ -1756,7 +1756,7 @@ export default function KanbanBoard(props: Props) {
                                         row keeps the chips' height, so the first reaction does not grow a card whose row has room. */}
                                     <div
                                       data-spaces-kanban-card-footer
-                                      class={`pointer-events-none relative z-[1] mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 ${props.canWrite ? "min-h-6 pr-6 any-pointer-coarse:pr-8" : ""}`}
+                                      class={`pointer-events-none relative z-[1] mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 ${props.canWrite ? "min-h-6 pr-6 any-pointer-coarse:pr-8" : ""}`}
                                     >
                                       {/* The metadata lies outside the link, so it describes the link: a focused card still says its status,
                                           deadline, and people. The reactions are their own controls and stay out of it. */}
