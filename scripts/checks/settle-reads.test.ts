@@ -334,3 +334,17 @@ test("fix lowers known counts without adding a new file or hiding its reads", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("resolves a helper name in the scope that declares it", () => {
+  // A browser-side `box` inside an evaluate callback does not hide the Node-side reader of the same name.
+  expect(
+    check(`
+const box = (page) => page.locator("p").boundingBox();
+async function sample() {
+  await page.evaluate(() => { const box = () => 1; return box(); });
+  await page.click("p");
+  await box(page);
+}
+`),
+  ).toEqual([6]);
+});

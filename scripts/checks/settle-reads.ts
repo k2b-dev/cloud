@@ -82,24 +82,41 @@ const deviceCall = (expression: ts.Expression): boolean => {
 export const checkSettleReadsSource = (file: string, source: string): Finding[] => {
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const functions: BodyFunction[] = [];
-  const named = new Map<string, BodyFunction>();
+  // A helper belongs to the block, function, or file that declares it; a name resolves to the nearest one.
+  const declared = new Map<ts.Node, Map<string, BodyFunction>>();
+  const helpers: BodyFunction[] = [];
+  const declare = (name: string, fn: BodyFunction): void => {
+    let scope = fn.parent;
+    while (!ts.isBlock(scope) && !ts.isSourceFile(scope) && !ts.isModuleBlock(scope) && !isBodyFunction(scope)) scope = scope.parent;
+    const names = declared.get(scope) ?? new Map<string, BodyFunction>();
+    names.set(name, fn);
+    declared.set(scope, names);
+    helpers.push(fn);
+  };
+  const resolve = (identifier: ts.Identifier): BodyFunction | undefined => {
+    for (let node: ts.Node | undefined = identifier.parent; node; node = node.parent) {
+      const fn = declared.get(node)?.get(identifier.text);
+      if (fn) return fn;
+    }
+    return undefined;
+  };
   const collect = (node: ts.Node): void => {
     if (isBodyFunction(node) && node.body) {
       functions.push(node);
-      if (ts.isFunctionDeclaration(node) && node.name) named.set(node.name.text, node);
+      if (ts.isFunctionDeclaration(node) && node.name) declare(node.name.text, node);
       if (
         (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
         ts.isVariableDeclaration(node.parent) &&
         ts.isIdentifier(node.parent.name)
       ) {
-        named.set(node.parent.name.text, node);
+        declare(node.parent.name.text, node);
       }
     }
     ts.forEachChild(node, collect);
   };
   collect(sourceFile);
 
-  const summaries = new Map<string, Summary>();
+  const summaries = new Map<BodyFunction, Summary>();
   const calls = new Map<ts.Node, ts.CallExpression[]>();
   for (const body of [sourceFile, ...functions.flatMap((fn) => (fn.body ? [fn.body] : []))]) calls.set(body, callsIn(body));
 
@@ -110,13 +127,14 @@ export const checkSettleReadsSource = (file: string, source: string): Finding[] 
       const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined;
       const propertyCall = ts.isPropertyAccessExpression(callee);
       const callback = call.arguments[0];
-      const summary = ts.isIdentifier(callee) ? summaries.get(callee.text) : undefined;
+      const helper = ts.isIdentifier(callee) ? resolve(callee) : undefined;
+      const summary = helper && summaries.get(helper);
       if (
         summary?.leadingRead ||
         name === "boundingBox" ||
         ((name === "evaluate" || name === "evaluateAll") &&
           callback &&
-          readsInBrowser(isBodyFunction(callback) ? callback : ts.isIdentifier(callback) ? named.get(callback.text) : undefined))
+          readsInBrowser(isBodyFunction(callback) ? callback : ts.isIdentifier(callback) ? resolve(callback) : undefined))
       )
         events.push({ kind: "read", call });
       if (
@@ -133,10 +151,10 @@ export const checkSettleReadsSource = (file: string, source: string): Finding[] 
     return events;
   };
 
-  for (let round = 0; round <= named.size; round++) {
+  for (let round = 0; round <= helpers.length; round++) {
     let changed = false;
-    const next = new Map<string, Summary>();
-    for (const [name, fn] of named) {
+    const next = new Map<BodyFunction, Summary>();
+    for (const fn of helpers) {
       const summary: Summary = { leadingRead: false, end: "none" };
       if (fn.body)
         for (const event of eventsIn(fn.body)) {
@@ -145,11 +163,11 @@ export const checkSettleReadsSource = (file: string, source: string): Finding[] 
           } else summary.end = event.kind;
         }
       if (fn.type && mentions(fn.type, new Set(["Page"])) && summary.end !== "settle") summary.end = "action";
-      const previous = summaries.get(name);
+      const previous = summaries.get(fn);
       if (!previous || previous.leadingRead !== summary.leadingRead || previous.end !== summary.end) changed = true;
-      next.set(name, summary);
+      next.set(fn, summary);
     }
-    for (const [name, summary] of next) summaries.set(name, summary);
+    for (const [fn, summary] of next) summaries.set(fn, summary);
     if (!changed) break;
   }
 

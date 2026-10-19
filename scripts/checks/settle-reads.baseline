@@ -13,7 +13,7 @@ packages/assistant/src/frontend/composer-insert.browser.test.ts | 1
 packages/chat/src/frontend/ChatWorkspace.browser.test.ts | 7
 packages/chat/src/styles/app-host.browser.test.ts | 2
 packages/cloud/src/access/PermissionEditor.browser.test.ts | 3
-packages/cloud/src/ai/chat/live-turn.browser.test.ts | 54
+packages/cloud/src/ai/chat/live-turn.browser.test.ts | 59
 packages/cloud/src/ai/chat/view-block.browser.test.ts | 22
 packages/cloud/src/approvals/Approvals.browser.test.ts | 3
 packages/cloud/src/browser/CloudResourceSearch.browser.test.ts | 1
