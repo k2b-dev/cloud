@@ -777,8 +777,10 @@ bun run test --integration
 ```
 
 `--integration` first prepares the test database by running Core setup and every application migration (idempotent, a few seconds), then runs only the integration files, one fresh global per file. `--shard <n>/<total>` splits
-the suites across parallel jobs, which is how the gate runs them; `--exclude <name>`
-leaves out suites whose name or path matches, and `--filter <name>` keeps only those.
+the suites across parallel jobs, balanced by measured suite time, which is how
+the gate runs them. `--max-minutes <m>` fails a run that takes longer than m
+minutes. `--exclude <name>` leaves out suites whose name or path matches, and
+`--filter <name>` keeps only those.
 
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right
@@ -878,6 +880,17 @@ Gotenberg. Path-filtered jobs, such as the Grids certification, the WebKit
 browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
+
+Unit and WebKit tests run in five shards each, balanced by
+`scripts/test-weights.json`: measured seconds per suite, longest first. An
+unknown suite counts as the median of its table. Each shard prints its
+predicted and actual time. It fails with an annotation when it runs longer
+than 20 of its 30 minutes, even when every suite passed. To refresh the weights,
+run `bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest
+green merge-queue runs. Add a shard when the printed slowest shard exceeds
+15 minutes. One third of the job limit stays in reserve because setup and
+GitHub's job finalization count against it. Finalization took up to about
+5 minutes during a GitHub Actions incident.
 
 The `packed` job packs `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with
 `npm pack`, using the same file list as `npm publish`. It installs them in a
@@ -1072,7 +1085,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in three shards with `bun run test --browser`, against
+them again in WebKit in five shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
