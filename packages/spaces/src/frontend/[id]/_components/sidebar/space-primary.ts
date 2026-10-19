@@ -1,5 +1,5 @@
 import { commandPath } from "@k2b/cloud/contracts/commands";
-import { SPACES_DETAIL_NAVIGATION_EVENT, type SpacesDetailNavigation } from "../workspace/workspace-events";
+import { SPACES_DETAIL_NAVIGATION_EVENT, SPACES_DETAIL_STATE_EVENT, type SpacesDetailNavigation } from "../workspace/workspace-events";
 import type { SpaceContext } from "./types";
 
 export const spacePrimaryHref = (ctx: Pick<SpaceContext, "query" | "currentView"> & { space: { id: string } }) => {
@@ -20,14 +20,21 @@ export const syncSpacePrimaryHref = (document: Document, ctx: Parameters<typeof 
     if (url.pathname !== path) return;
     document.querySelector("a[data-workspace-primary]")?.setAttribute("href", spacePrimaryHref({ ...ctx, query: url.search.slice(1) }));
   };
-  sync(new URL(window.location.href));
+  const syncLocation = () => sync(new URL(window.location.href));
+  syncLocation();
   const onCommitted = (event: Event) => {
     if (!(event instanceof CustomEvent)) return;
     const detail: SpacesDetailNavigation = event.detail;
     if (detail.history === "none") sync(new URL(detail.href, window.location.origin));
   };
   window.addEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted);
-  return () => window.removeEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted);
+  window.addEventListener(SPACES_DETAIL_STATE_EVENT, syncLocation);
+  window.addEventListener("popstate", syncLocation);
+  return () => {
+    window.removeEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted);
+    window.removeEventListener(SPACES_DETAIL_STATE_EVENT, syncLocation);
+    window.removeEventListener("popstate", syncLocation);
+  };
 };
 
 /** Preserve native links before hydration, reloads, and modified clicks. */

@@ -1,6 +1,11 @@
 import { expect, mock, test } from "bun:test";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
-import { reconcileSpacesDetailRoute, SPACES_DETAIL_NAVIGATION_EVENT, type SpacesDetailNavigation } from "../workspace/workspace-events";
+import {
+  reconcileSpacesDetailRoute,
+  SPACES_DETAIL_NAVIGATION_EVENT,
+  SPACES_DETAIL_STATE_EVENT,
+  type SpacesDetailNavigation,
+} from "../workspace/workspace-events";
 import { interceptSpacePrimaryClick, spacePrimaryHref, syncSpacePrimaryHref } from "./space-primary";
 
 test("primary command links fall back to the current view when the query is too long", () => {
@@ -93,6 +98,36 @@ test("primary href follows the current URL on mount and only committed navigatio
     stop();
     reconcileSpacesDetailRoute("/app/spaces/Space01?q=after-cleanup");
     expect(anchor.getAttribute("href")).toBe(href);
+  } finally {
+    stop();
+    dom.cleanup();
+  }
+});
+
+test.each([SPACES_DETAIL_STATE_EVENT, "popstate"])("primary href follows the current item on %s and stops after cleanup", (eventName) => {
+  const dom = createDomTestHarness();
+  const ctx = { space: { id: "Space01" }, query: "view=list&item=Item01", currentView: "list" as const };
+  const anchor = dom.document.createElement("a");
+  anchor.setAttribute("data-workspace-primary", "");
+  anchor.setAttribute("href", spacePrimaryHref(ctx));
+  dom.root.append(anchor);
+  window.history.replaceState(null, "", `/app/spaces/Space01?${ctx.query}`);
+  const stop = syncSpacePrimaryHref(dom.document, ctx);
+  const dispatch = () =>
+    window.dispatchEvent(
+      eventName === SPACES_DETAIL_STATE_EVENT
+        ? new CustomEvent(eventName, { detail: { itemId: "Item02", occurrenceId: null, selectionId: "Item02" } })
+        : new Event(eventName),
+    );
+  try {
+    expect(new URL(anchor.href).searchParams.get("item")).toBe("Item01");
+    window.history.pushState(null, "", "/app/spaces/Space01?view=list&item=Item02");
+    dispatch();
+    expect(new URL(anchor.href).searchParams.get("item")).toBe("Item02");
+    stop();
+    window.history.replaceState(null, "", "/app/spaces/Space01?view=list&item=Item03");
+    dispatch();
+    expect(new URL(anchor.href).searchParams.get("item")).toBe("Item02");
   } finally {
     stop();
     dom.cleanup();
