@@ -615,11 +615,15 @@ describe(`Mail SSR and hydration shell in ${browserName}`, () => {
         const label = element.querySelector(".k2b-app-workspace__sidebar-item-label")!;
         const range = document.createRange();
         range.selectNodeContents(label);
-        const action = element.querySelector(".k2b-app-workspace__sidebar-item-actions button[aria-haspopup]")!.getBoundingClientRect();
-        return { textEnd: range.getBoundingClientRect().right, actionStart: action.x, actionWidth: action.width };
+        // The leftmost row action: the name may run into its padding, where the label fades, but not past its middle.
+        const actions = Array.from(
+          element.querySelectorAll('.k2b-app-workspace__sidebar-item-actions button:not([role="menuitem"])'),
+          (button) => button.getBoundingClientRect(),
+        ).filter((box) => box.width > 0);
+        const first = actions.reduce((left, box) => (box.x < left.x ? box : left));
+        return { textEnd: range.getBoundingClientRect().right, actionMiddle: first.x + first.width / 2 };
       });
-      expect(fit.actionWidth).toBeGreaterThan(0);
-      expect(fit.textEnd).toBeLessThanOrEqual(fit.actionStart);
+      expect(fit.textEnd).toBeLessThanOrEqual(fit.actionMiddle);
     } finally {
       await close(page);
     }
