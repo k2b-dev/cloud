@@ -1,4 +1,13 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  beforeEach as pinClockBeforeEach,
+  afterEach as restoreClockAfterEach,
+  setSystemTime,
+  test,
+} from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -217,13 +226,19 @@ describe("Mail workspace hint for folders whose mail stays inside them", () => {
           initialUserPreferences: readMailUserPreferencesFromCookieHeader(cookie, MAILBOX_ID),
           initialTheme: readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...data.mailbox, receivingAddress: overrides.receivingAddress ?? null }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+            mailboxCounts: [],
+          },
         }),
       dom.root,
     );
   };
   const hint = () => dom.root.querySelector("[data-mail-folder-only-hint]");
 
-  test("the switcher head shows the receiving address instead of the default sender", () => {
+  test("the mailbox row tooltip shows the receiving address instead of the default sender", () => {
     mount({
       receivingAddress: "incoming@example.test",
       identities: [
@@ -268,16 +283,16 @@ describe("Mail workspace hint for folders whose mail stays inside them", () => {
         },
       ],
     });
-    const head = dom.root.querySelector(".k2b-sidebar-switcher__trigger");
-    expect(head?.textContent).toContain("incoming@example.test");
-    expect(head?.textContent).not.toContain("outgoing@example.test");
+    const head = dom.root.querySelector(`[data-mailbox="${MAILBOX_ID}"]`);
+    expect(head?.getAttribute("title")).toContain("incoming@example.test");
+    expect(head?.getAttribute("title")).not.toContain("outgoing@example.test");
   });
 
-  test("the switcher head omits an address when the mailbox has no receiving connection", () => {
+  test("the mailbox row tooltip omits an address when the mailbox has no receiving connection", () => {
     mount({ receivingAddress: null });
-    const head = dom.root.querySelector(".k2b-sidebar-switcher__trigger");
-    expect(head?.textContent).toContain("Support");
-    expect(head?.textContent).not.toContain("@");
+    const head = dom.root.querySelector(`[data-mailbox="${MAILBOX_ID}"]`);
+    expect(head?.getAttribute("title")).toContain("Support");
+    expect(head?.getAttribute("title")).not.toContain("@");
   });
 
   test("names the first such folder in a combined view and moves on to the next once dismissed", () => {
@@ -305,3 +320,6 @@ describe("Mail workspace hint for folders whose mail stays inside them", () => {
     expect(hint()).toBeNull();
   });
 });
+
+pinClockBeforeEach(() => setSystemTime(new Date("2026-10-14T10:00:00.000Z")));
+restoreClockAfterEach(() => setSystemTime());

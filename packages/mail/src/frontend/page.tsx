@@ -95,7 +95,13 @@ export default ssr<AuthContext>(async (c) => {
   const initialFocus = focusResult.ok ? await projectSsrFocusOverview(focusResult.data) : null;
   const directory = await requestContactDirectory(c);
   return () => (
-    <Layout c={c} printHint={t.printHint} title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}>
+    <Layout
+      c={c}
+      printHint={t.printHint}
+      // One sidebar for Focus and every mailbox: the same width, never collapsed, as on the mailbox page.
+      workspaceSidebarCollapsible={false}
+      title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}
+    >
       <MailOverview
         mailboxes={publicMailboxes}
         initialFocus={initialFocus}

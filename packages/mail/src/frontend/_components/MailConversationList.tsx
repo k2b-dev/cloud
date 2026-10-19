@@ -6,7 +6,6 @@ import {
   Button,
   ButtonLink,
   createHoverPreview,
-  Dropdown,
   FilterChip,
   HoverPreview,
   IconButton,
@@ -103,7 +102,6 @@ export default function MailConversationList(props: {
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
   onNavigateItem: (href: string, item: MailListItem, activation: "keyboard" | "pointer") => void | Promise<void>;
   onToggleSelectionMode: () => void;
-  onListModeChange: (mode: MailListMode) => void;
   onToggleSelection: (item: MailListItem, range: boolean) => void;
   onClearSelection: () => void;
   onAddTags?: () => void | Promise<void>;
@@ -356,7 +354,8 @@ export default function MailConversationList(props: {
           fallback={
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="truncate text-base font-semibold text-primary">
+                {/* The sidebar and the head's tabs name the list: its heading stays for assistive technology and focus. */}
+                <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="sr-only">
                   {props.title}
                 </h1>
                 <p class="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-dimmed">
@@ -385,32 +384,6 @@ export default function MailConversationList(props: {
                   </IconButton>
                 </Tooltip.Anchor>
               </Show>
-              <Dropdown.Root
-                position="bottom-right"
-                width="14rem"
-                items={[
-                  {
-                    label: messages().conversationView,
-                    icon: props.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
-                    action: () => props.onListModeChange("conversations"),
-                  },
-                  {
-                    label: messages().messageView,
-                    icon: props.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
-                    action: () => props.onListModeChange("messages"),
-                  },
-                ]}
-              >
-                <Dropdown.Trigger
-                  iconOnly
-                  type="button"
-                  variant="ghost"
-                  label={messages().chooseListView}
-                  tooltip={props.listMode === "conversations" ? messages().conversationView : messages().messageView}
-                >
-                  <i class="ti ti-layout-list" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
               <Tooltip.Anchor content={messages().searchFilters}>
                 <IconButton
                   type="button"
@@ -492,21 +465,6 @@ export default function MailConversationList(props: {
             iconOnly
           />
         </form>
-        <Show when={structuredSummary()}>
-          {(summary) => (
-            <button
-              type="button"
-              class="mail-search-summary"
-              aria-label={`${messages().editStructuredSearch}: ${summary()}`}
-              title={summary()}
-              aria-busy={searchBuilderLoading() ? "true" : undefined}
-              onClick={openAdvancedSearch}
-            >
-              <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-filter-check"} aria-hidden="true" />
-              <span class="mail-search-summary__text">{summary()}</span>
-            </button>
-          )}
-        </Show>
         <Show when={healthPresentation()}>
           {(health) => (
             <NoticeCard

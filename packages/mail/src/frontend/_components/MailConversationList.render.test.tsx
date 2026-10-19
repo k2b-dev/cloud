@@ -50,7 +50,7 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       onNavigate: () => {},
       onNavigateItem: () => {},
       onToggleSelectionMode: () => {},
-      onListModeChange: () => {},
+
       onToggleSelection: () => {},
       onClearSelection: () => {},
       onAddTags: () => {},
@@ -81,44 +81,14 @@ describe("Mail conversation list", () => {
     expect(html).toContain("Needs action");
   });
 
-  test("names the tag of a structured search and never shows its ID", () => {
-    const search = JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" });
-    const requestUrl = `/app/mail/Box001?${new URLSearchParams({ search })}`;
-    const summary = (html: string) => /class="mail-search-summary__text"[^>]*>([^<]*)</.exec(html)?.[1];
-    const tag = { id: "Tag001", name: "Invoices", color: "#0f766e" } as Parameters<typeof MailConversationList>[0]["localTags"][number];
-
-    expect(summary(renderList({ requestUrl, localTags: [tag] }))).toBe("Has tag “Invoices”");
-    expect(summary(renderList({ requestUrl, localTags: [] }))).toBe("Has a deleted tag");
-  });
-
-  test.each([
-    ["?q=quick", "saved"],
-    ["?search=invalid&q=quick", "saved"],
-    [
-      `?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "text", field: "from", query: "structured", match: "exact" }, sort: "newest" }), q: "quick" })}`,
-      "structured",
-    ],
-  ])("search summary keeps structured, saved-view, quick-search precedence: %s", (query, expected) => {
+  test("keeps the list heading for focus and performance, with search controls and no duplicate summary", () => {
     const html = renderList({
-      requestUrl: `/app/mail/Box001${query}`,
-      activeSavedViewId: "View01",
-      savedViews: [
-        {
-          id: "View01",
-          mailboxId: "Box001",
-          scope: "private",
-          ownerUserId: "user-1",
-          name: "Saved",
-          filter: { expression: { type: "text", field: "subject", query: "saved", match: "words" }, sort: "newest" },
-          revision: 1,
-          createdAt: "2026-10-01T00:00:00.000Z",
-          updatedAt: "2026-10-01T00:00:00.000Z",
-        },
-      ],
+      requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" }) })}`,
     });
-    const summary = /class="mail-search-summary__text"[^>]*>([^<]*)</.exec(html)?.[1];
-    expect(summary).toContain(expected);
-    expect(summary).not.toContain("quick");
+    expect(html).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
+    expect(html).toContain('aria-label="Search filters"');
+    expect(html).not.toContain("mail-search-summary");
+    expect(html).not.toContain('aria-label="Choose list view"');
   });
 
   test("explains a failed search instead of showing service text", () => {

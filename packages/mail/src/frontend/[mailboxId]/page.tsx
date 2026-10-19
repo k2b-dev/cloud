@@ -10,6 +10,7 @@ import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/work
 import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "../_components/mail-workspace-preferences";
 import MailWorkspace from "../MailWorkspace.island";
+import { loadMailSidebarData } from "../mail-sidebar-data";
 import { mailPageMessages } from "../pages-messages";
 import { projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
@@ -33,9 +34,11 @@ export default ssr<AuthContext>(async (c) => {
   const workspacePreferences = readMailWorkspacePreferences(cookieHeader);
   const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
   const themePreference = readThemePreferenceFromCookieHeader(cookieHeader);
-  const [internalData, spacesIntegration] = await Promise.all([
+  // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
+  const [internalData, spacesIntegration, sidebar] = await Promise.all([
     loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
     getSpacesMailIntegrationAvailability(),
+    loadMailSidebarData(context),
   ]);
   if (!internalData.ok) return ssr.error(c, internalData.error.status);
   const data = await projectMailboxPageData(internalData.data);
@@ -63,6 +66,7 @@ export default ssr<AuthContext>(async (c) => {
         initialUserPreferences={userPreferences}
         initialTheme={themePreference === "system" ? null : themePreference}
         calendarIntegrationAvailable={spacesIntegration.invitations}
+        sidebar={sidebar}
       />
     </Layout>
   );

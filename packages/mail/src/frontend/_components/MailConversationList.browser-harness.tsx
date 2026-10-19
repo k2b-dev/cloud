@@ -258,7 +258,6 @@ window.mountMailList = (options) => {
                     open(new URL(href, location.href).searchParams.get("conversation"));
                   }}
                   onToggleSelectionMode={noop}
-                  onListModeChange={noop}
                   onToggleSelection={noop}
                   onClearSelection={noop}
                   onAddTags={noop}

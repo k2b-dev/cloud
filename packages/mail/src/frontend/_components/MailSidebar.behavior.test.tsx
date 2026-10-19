@@ -1,0 +1,140 @@
+import { expect, test } from "bun:test";
+import { createComponent, createSignal } from "solid-js";
+import { delegateEvents, isServer, render } from "solid-js/web";
+import { createDomTestHarness } from "../../../../ui/test/dom";
+import { mailTestFolder } from "./mail-list-test-fixtures";
+
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return {
+      ...(await import("./mail-sidebar.fixture")),
+      ...(await import("./mail-mailbox-preferences")),
+      ...(await import("./MailSidebar")),
+      api: (await import("../../api/client")).apiClient,
+      ui: await import("@k2b/ui"),
+    };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
+test.skipIf(isServer)("More toggles Archive, Trash and Junk and stays expanded while one is current", () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
+  const m = modules!;
+  const [active, setActive] = createSignal<string | null>(null);
+  const dispose = render(
+    () =>
+      createComponent(m.default, {
+        ...m.mailSidebarFixture(),
+        get open() {
+          return m.openMailboxFixture({
+            activeFolderId: active(),
+            folders: [
+              mailTestFolder("Arch01", { name: "Archive", role: "archive" }),
+              mailTestFolder("Trash1", { name: "Trash", role: "trash" }),
+              mailTestFolder("Junk01", { name: "Junk", role: "junk" }),
+            ],
+          });
+        },
+      }),
+    dom.root,
+  );
+  const more = () => [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent === "More")!;
+  const archive = () => dom.root.querySelector('a[href="/app/mail/Box001?folder=Arch01"]');
+  try {
+    expect(archive()).toBeNull();
+    more().click();
+    for (const id of ["Arch01", "Trash1", "Junk01"])
+      expect(dom.root.querySelector(`a[href="/app/mail/Box001?folder=${id}"]`)).not.toBeNull();
+    more().click();
+    expect(archive()).toBeNull();
+    setActive("Arch01");
+    expect(archive()?.getAttribute("aria-current")).toBe("page");
+    more().click();
+    expect(archive()).not.toBeNull();
+    expect(dom.root.querySelector('[data-mailbox="Box001"] a')?.hasAttribute("aria-current")).toBe(false);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("pin and hide save preferences, reorder rows and roll back a failed save", async () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
+  const m = modules!;
+  const pending: Array<{ json: unknown; resolve(response: Response): void }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      const request = new Request(input instanceof Request ? input : url, init);
+      if (request.method !== "PATCH" || !url.pathname.endsWith("/preference"))
+        throw new Error(`Unexpected request: ${request.method} ${url.pathname}`);
+      const json: unknown = await request.json();
+      return new Promise<Response>((resolve) => pending.push({ json, resolve }));
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const dispose = render(
+    () =>
+      createComponent(
+        m.default,
+        m.mailSidebarFixture({
+          open: null,
+          mailboxes: [
+            { id: "Box001", name: "Support", health: "active", healthReason: null, receivingAddress: null },
+            { id: "Box002", name: "Sales", health: "active", healthReason: null, receivingAddress: null },
+          ],
+        }),
+      ),
+    dom.root,
+  );
+  const rows = () => [...dom.root.querySelectorAll("[data-mailbox]")].map((row) => row.getAttribute("data-mailbox"));
+  const press = (name: string) => dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!.click();
+  const waitFor = async (condition: () => boolean) => {
+    const deadline = performance.now() + 2000;
+    while (!condition()) {
+      if (performance.now() > deadline) throw new Error("Preference did not settle");
+      await Bun.sleep(1);
+    }
+  };
+  try {
+    press("Pin Sales");
+    expect(rows()).toEqual(["Box002", "Box001"]);
+    await waitFor(() => pending.length === 1);
+    expect(pending[0]?.json).toEqual({ pinned: true });
+    pending[0]!.resolve(Response.json({ pinned: true, hidden: false }));
+    press("Hide Sales");
+    const hidden = () => dom.root.querySelector('[data-mailbox="Box002"][data-hidden="true"]');
+    expect(hidden()?.closest("section")?.textContent).toContain("Hidden mailboxes");
+    await waitFor(() => pending.length === 2);
+    expect(pending[1]?.json).toEqual({ hidden: true });
+    pending[1]!.resolve(Response.json({ pinned: true, hidden: true }));
+    press("Show Sales");
+    expect(rows()).toEqual(["Box002", "Box001"]);
+    await waitFor(() => pending.length === 3);
+    pending[2]!.resolve(Response.json({ message: "Preference save failed" }, { status: 500 }));
+    await waitFor(() => Boolean(hidden()));
+    expect(dom.document.body.textContent).toContain("Preference save failed");
+    press("Show Sales");
+    await waitFor(() => pending.length === 4);
+    pending[3]!.resolve(Response.json({ pinned: true, hidden: false }));
+    press("Hide Sales");
+    expect(hidden()).not.toBeNull();
+    await waitFor(() => pending.length === 5);
+    pending[4]!.resolve(Response.json({ message: "Could not hide mailbox" }, { status: 500 }));
+    await waitFor(() => !hidden());
+    expect(rows()).toEqual(["Box002", "Box001"]);
+    expect(dom.document.body.textContent).toContain("Could not hide mailbox");
+  } finally {
+    for (const request of pending) request.resolve(Response.json({ pinned: true, hidden: true }));
+    dispose();
+    globalThis.fetch = originalFetch;
+    m.ui.toast.dismissAll();
+    dom.cleanup();
+  }
+});

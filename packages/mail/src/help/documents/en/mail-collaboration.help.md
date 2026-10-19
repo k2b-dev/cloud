@@ -39,7 +39,7 @@ When live presence is available, **Active collaborators** shows the people who a
 
 ## Understand access levels {icon="shield-lock"}
 
-You give access to the mailbox in **Settings → Access**. Everyone who can view the mailbox sees who has which access in **Mailbox details**: the (i) button next to **Compose**. People with **View** access see **About this mailbox** in its place. Guest accounts see only their own access and the access of their groups there.
+You give access to the mailbox in **… → Settings → Access**. Everyone who can view the mailbox sees who has which access in **… → Mailbox details** in the head. People with **View** access see **About this mailbox** in its place. Guest accounts see only their own access and the access of their groups there.
 
 | Access | What it allows |
 | --- | --- |
@@ -53,7 +53,7 @@ You give access with the standard Cloud access editor to the supported people, g
 
 ## Give access to assigned conversations only {icon="user-check"}
 
-Choose **View assigned only** or **Edit assigned only** for a person or group in **Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
+Choose **View assigned only** or **Edit assigned only** for a person or group in **… → Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
 
 - They see no mail until someone with **Edit** or **Manage** access assigns a conversation to them. Then they see that conversation with all its messages, including replies that arrive later. They also see its attachments, comments, and activity.
 - The folder list shows only the folders that contain one of their conversations. Every count includes only their conversations. Search, **Assigned to me**, the Mail overview, Cloud search, Assistant, and `cld` work the same way.

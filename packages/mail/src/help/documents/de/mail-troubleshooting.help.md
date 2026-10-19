@@ -6,7 +6,7 @@ description: Fehlende E-Mails, pausierten Transport, Versandfehler, Entwurfskonf
 order: 80
 ---
 
-Beginne mit dem Symptom, das du siehst. Können Transport, Ordner oder Suche beteiligt sein, nutze **Postfachwerkzeuge → Postfachstatus**.
+Beginne mit dem Symptom, das du siehst. Können Transport, Ordner oder Suche beteiligt sein, nutze **… → Postfachstatus**.
 
 ## Das Postfach fehlt in der Übersicht {icon="lifebuoy"}
 
@@ -22,7 +22,7 @@ Mail prüft den Zugriff beim Laden der Seite und bei Live-Aktualisierungen. Ende
 
 :::steps
 1. Prüfe die Statuswarnung über der Unterhaltungsliste.
-2. Öffne **Postfachwerkzeuge → Postfachstatus**.
+2. Öffne **… → Postfachstatus**.
 3. Ist das Postfach pausiert, wähle **Postfach fortsetzen**.
 4. Wähle **Jetzt synchronisieren**.
 5. Fehlen Ordner oder haben sie sich geändert, wähle **Ordner neu ermitteln**.
@@ -45,16 +45,16 @@ Mail prüft jeden synchronisierten Ordner etwa einmal pro Minute. Der Posteingan
 - **Anbieter, die solche Änderungen nicht melden:** Das gilt für die neuesten paar tausend Nachrichten eines Ordners. Änderungen an älteren Nachrichten in einem größeren Ordner kommen nacheinander an und können länger dauern.
 - **Mehr als 500 Ordner:** Synchronisiert eine Installation mehr als 500 Ordner, prüft Mail weiterhin jeden Posteingang jede Minute und die anderen Ordner nacheinander. Diese können einige Minuten brauchen.
 
-Um ein Postfach sofort zu prüfen, öffne **Postfachwerkzeuge → Postfachstatus** und wähle **Jetzt synchronisieren**.
+Um ein Postfach sofort zu prüfen, öffne **… → Postfachstatus** und wähle **Jetzt synchronisieren**.
 
 ## Ein Ordner fehlt in der Seitenleiste {icon="folder"}
 
-Öffne mit Zugriff **Verwalten** **Einstellungen → Ordner** und unterscheide diese Fälle:
+Öffne mit Zugriff **Verwalten** **… → Einstellungen → Ordner** und unterscheide diese Fälle:
 
 - **Ausgeblendet:** Wähle unter **Wo E-Mails erscheinen** **Überall** oder **Nur im Ordner**, um den Ordner wieder in der Cloud-Navigation zu zeigen. Beim Anbieter ändert sich dadurch nichts.
 - **Nicht abonniert:** Abonniere den Ordner, wenn dieser Anbieter oder ein anderes E-Mail-Programm über IMAP-Abonnements entscheidet, welche Ordner es zeigt.
 - **Nicht verfügbar:** Das verbundene Konto zeigt den Ordner nicht mehr. Prüfe das Konto beim Anbieter, den Namensraum und den Zugriff beim Anbieter und führe dann **Ordner neu ermitteln** aus.
-- **Prüfung erforderlich:** Die Ermittlung hat widersprüchliche Zustände beim Anbieter gefunden. Prüfe **Ordnerermittlung** in **Postfachwerkzeuge → Postfachstatus**, bevor du E-Mails änderst.
+- **Prüfung erforderlich:** Die Ermittlung hat widersprüchliche Zustände beim Anbieter gefunden. Prüfe **Ordnerermittlung** in **… → Postfachstatus**, bevor du E-Mails änderst.
 
 Ein ausgeblendeter übergeordneter Ordner blendet auch seine Unterordner in der Seitenleiste aus, damit die Hierarchie verständlich bleibt. Ihre E-Mails und ihre eigenen Einstellungen zur Sichtbarkeit bleiben erhalten.
 
@@ -63,7 +63,7 @@ Ein ausgeblendeter übergeordneter Ordner blendet auch seine Unterordner in der 
 Jemand mit Zugriff **Verwalten** hat das Postfach pausiert oder wiederhergestellt, und ein wiederhergestelltes Postfach startet immer pausiert.
 
 :::steps
-1. Öffne **Postfachwerkzeuge → Postfachstatus**.
+1. Öffne **… → Postfachstatus**.
 2. Prüfe die Verbindung zum Anbieter und den Status.
 3. Wähle **Postfach fortsetzen**.
 :::
@@ -76,20 +76,20 @@ Prüfe diese Bedingungen:
 
 - Du hast Zugriff **Bearbeiten** oder **Verwalten**.
 - **Von** nutzt eine bestätigte Absenderidentität.
-- **Postfachwerkzeuge → Postfachstatus** zeigt eine funktionierende Verbindung.
+- **… → Postfachstatus** zeigt eine funktionierende Verbindung.
 - Der Entwurf hat Empfänger und entweder Text oder einen Anhang.
 - Jeder Upload eines Anhangs ist erfolgreich abgeschlossen, und keine Datei ist größer als 100 MiB.
 - Du hast alle Versandwarnungen für die aktuelle gespeicherte Fassung geprüft. Änderst du nach der Zustimmung Empfänger, Links, Text oder Anhänge, musst du erneut prüfen.
 - Die vollständige kodierte Nachricht passt in das aktuelle Limit für ausgehende Nachrichten, das der Anbieter veröffentlicht.
 - Die Zugangsdaten beim Anbieter sind nicht abgelaufen und wurden nicht widerrufen.
 
-Ein Anhang kann das Limit von Mail mit 100 MiB pro Datei einhalten, während die vollständige kodierte Nachricht ein kleineres Limit des Anbieters überschreitet. Entferne einen oder mehrere Anhänge, oder erstelle einen öffentlichen Download-Link und sende stattdessen diesen Link. Mit Zugriff **Verwalten** prüfst und aktualisierst du die beobachteten Werte unter **Postfachwerkzeuge → Postfachstatus → Anbieterlimits**.
+Ein Anhang kann das Limit von Mail mit 100 MiB pro Datei einhalten, während die vollständige kodierte Nachricht ein kleineres Limit des Anbieters überschreitet. Entferne einen oder mehrere Anhänge, oder erstelle einen öffentlichen Download-Link und sende stattdessen diesen Link. Mit Zugriff **Verwalten** prüfst und aktualisierst du die beobachteten Werte unter **… → Postfachstatus → Anbieterlimits**.
 
-Haben sich die Zugangsdaten beim Anbieter geändert, nutze **Einstellungen → Konten und Identitäten → Verbundenes Konto → Konto bearbeiten**. Mail kann das vorhandene Geheimnis nicht anzeigen, und du kannst es nicht teilweise bearbeiten.
+Haben sich die Zugangsdaten beim Anbieter geändert, nutze **… → Einstellungen → Konten und Identitäten → Verbundenes Konto → Konto bearbeiten**. Mail kann das vorhandene Geheimnis nicht anzeigen, und du kannst es nicht teilweise bearbeiten.
 
 ## Automatische Antworten melden, dass keine Absenderidentität verfügbar ist {icon="send"}
 
-Öffne **Einstellungen → Konten und Identitäten → Absenderidentitäten**. Prüfe, dass eine Absenderidentität beide Bedingungen erfüllt:
+Öffne **… → Einstellungen → Konten und Identitäten → Absenderidentitäten**. Prüfe, dass eine Absenderidentität beide Bedingungen erfüllt:
 
 :::steps
 1. Der Status der Absenderidentität ist **Bereit**.
@@ -140,18 +140,18 @@ Um einen Ordner im Terminal zu prüfen, akzeptiert `cld mail ls "Mailbox:Sent Ma
 5. Stehen die gesuchten Wörter in einem neu empfangenen Anhang, warte, bis die Texterkennung im Hintergrund fertig ist. Versuche es dann erneut.
 6. **Bester Treffer** ordnet die neuesten 1.000 passenden Nachrichten eines Postfachs. Ergänze bei einem sehr häufigen Wort ein genaueres Wort.
 7. Um ältere Nachrichten zu erreichen, kannst du auch **Neueste zuerst** wählen.
-8. Schlägt die allgemeine Suche im ganzen Postfach fehl, bitte jemanden mit Zugriff **Verwalten**, den Suchstatus zu prüfen. Er steht unter **Postfachwerkzeuge → Postfachstatus**.
+8. Schlägt die allgemeine Suche im ganzen Postfach fehl, bitte jemanden mit Zugriff **Verwalten**, den Suchstatus zu prüfen. Er steht unter **… → Postfachstatus**.
 :::
 
 Lokale Tags und interne Kommentare gibt es nur in Cloud. Anbieterordner und Schlüsselwörter hängen vom synchronisierten Zustand beim Anbieter ab.
 
 Die Texterkennung in Anhängen blockiert nie das Empfangen, Lesen oder Senden einer Nachricht. Mail wiederholt unterbrochene Erkennungsarbeit automatisch. Es holt auch regelmäßig Anhänge nach, die gespeichert wurden, bevor ein Worker sie verarbeiten konnte. Verschlüsselte, gescannte, nicht unterstützte, fehlerhafte oder zu große Anhänge sind endgültige Ergebnisse: Die ursprüngliche Datei bleibt verfügbar, aber ihr Inhalt ist nicht durchsuchbar.
 
-**Postfachwerkzeuge → Postfachstatus** zeigt **Abdeckung von Reparatur und Projektion**. Zeigt sie eine Lücke, kann jemand mit Zugriff **Verwalten** **Fehlende Nachrichteninhalte laden**, **Suche neu aufbauen** oder **Unterhaltungsansicht reparieren** einreihen. Warte, bis der dauerhafte Befehl fertig ist, bevor du ihn wiederholst. Reparaturen von Suche und Unterhaltungen bauen abgeleitete Daten neu auf und behalten Inhalte des Postfachs und den Zustand der Zusammenarbeit.
+**… → Postfachstatus** zeigt **Abdeckung von Reparatur und Projektion**. Zeigt sie eine Lücke, kann jemand mit Zugriff **Verwalten** **Fehlende Nachrichteninhalte laden**, **Suche neu aufbauen** oder **Unterhaltungsansicht reparieren** einreihen. Warte, bis der dauerhafte Befehl fertig ist, bevor du ihn wiederholst. Reparaturen von Suche und Unterhaltungen bauen abgeleitete Daten neu auf und behalten Inhalte des Postfachs und den Zustand der Zusammenarbeit.
 
 ## Ein Befehl braucht Aufmerksamkeit {icon="lifebuoy"}
 
-Öffne **Postfachwerkzeuge → Postfachstatus → Erweiterte Diagnose und Reparatur**. Suche den geschwärzten Befehlseintrag über seine ID und seinen Fehlercode.
+Öffne **… → Postfachstatus → Erweiterte Diagnose und Reparatur**. Suche den geschwärzten Befehlseintrag über seine ID und seinen Fehlercode.
 
 Im Terminal listet `cld mail command list --state failed` oder `--state needs_attention` die betroffenen Befehle mit ihrem Fehler auf. Ist eine Seite voll, nennt Mail den Wert für `--before` für die nächste Seite; behalte dabei denselben `--state`. Mit Zugriff **Verwalten** folgen `cld mail operator run reconcile --command <id>` und `cld mail operator run retry --command <id>` denselben Regeln wie die Schaltflächen unten. Ein fehlgeschlagenes Verschieben oder Senden lässt sich dort nicht wiederholen.
 
@@ -170,7 +170,7 @@ Meldet Mail ein unklares Ergebnis, wiederhole kein Verschieben, Löschen, Änder
 Erstellen, Umbenennen, Löschen und Abonnieren von Ordnern hängen vom aktuellen Zustand beim Anbieter ab. Das gilt auch für die Zuordnungen für Archiv, Papierkorb, Spam, Gesendet und Entwürfe. Mit Zugriff **Verwalten**:
 
 :::steps
-1. Führe **Ordner neu ermitteln** in **Postfachwerkzeuge → Postfachstatus** aus.
+1. Führe **Ordner neu ermitteln** in **… → Postfachstatus** aus.
 2. Prüfe, ob der Ordner aktiv ist und der Anbieter den nötigen Vorgang erlaubt.
 3. Aktualisiere bei Bedarf die passende Zuordnung oder das Abonnement.
 4. Versuche die Aktion noch einmal.
@@ -182,4 +182,4 @@ Geteilte Ordner und Ordner anderer Nutzer können lesbar sein, während Erstelle
 
 ## Das Postfach wurde wiederhergestellt, synchronisiert aber nicht {icon="point"}
 
-Das ist so vorgesehen. Eine Wiederherstellung lässt das Postfach bewusst pausiert. Jemand mit Zugriff **Verwalten** kann dann Zugangsdaten, Verbindungsstatus und Ordnerermittlung prüfen, bevor die Hintergrundarbeit weiterläuft. Schließe diese Prüfungen unter **Postfachwerkzeuge → Postfachstatus** ab und wähle dann **Postfach fortsetzen**.
+Das ist so vorgesehen. Eine Wiederherstellung lässt das Postfach bewusst pausiert. Jemand mit Zugriff **Verwalten** kann dann Zugangsdaten, Verbindungsstatus und Ordnerermittlung prüfen, bevor die Hintergrundarbeit weiterläuft. Schließe diese Prüfungen unter **… → Postfachstatus** ab und wähle dann **Postfach fortsetzen**.

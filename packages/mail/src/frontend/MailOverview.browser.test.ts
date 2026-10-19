@@ -114,9 +114,28 @@ const load = async (context: BrowserContextOptions, options: MailOverviewHarness
   const page = await (await browser.newContext(context)).newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    const RealDate = Date;
+    const start = performance.now();
+    const epoch = RealDate.parse("2026-08-19T10:00:00.000Z");
+    class FixedDate extends RealDate {
+      constructor(value?: string | number) {
+        super(value ?? epoch + performance.now() - start);
+      }
+      static override now() {
+        return epoch + performance.now() - start;
+      }
+    }
+    window.Date = FixedDate as DateConstructor;
+  });
   await page.goto(server.url.href);
   await page.evaluate((harnessOptions) => window.mountMailOverview(harnessOptions), options);
   await page.waitForSelector(".mail-overview-list");
+  expect(
+    await page
+      .locator(".mail-overview-list")
+      .evaluate((element) => ({ tag: element.tagName, paper: element.classList.contains("k2b-paper") })),
+  ).toEqual({ tag: "DIV", paper: false });
   await page.evaluate(() => window.watchFocus());
   await fontsLoaded(page);
   return Object.assign(page, { errors });
@@ -149,7 +168,13 @@ const idle = async (page: Page) => {
   await page.waitForFunction(() => document.querySelector(".mail-focus-main")?.getAttribute("aria-busy") === "false");
   await fontsLoaded(page);
 };
-const choose = (page: Page, label: string) => page.locator('[role="radio"]', { hasText: label }).click();
+const choose = async (page: Page, label: string) => {
+  const views = page.getByRole("navigation", { name: "Mail focus view", exact: true });
+  const link = views.getByRole("link").filter({ hasText: label });
+  if (await link.isVisible()) return link.click();
+  await views.getByRole("button", { name: "More views", exact: true }).click();
+  await page.getByRole("menuitem").filter({ hasText: label }).click();
+};
 
 describe("Mail overview views", () => {
   for (const [name, context] of viewports) {

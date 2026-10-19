@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, beforeEach as pinClockBeforeEach, afterEach as restoreClockAfterEach, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
@@ -89,7 +89,7 @@ const mountOverview = async (props: {
     dom.root,
   );
   const tab = (label: string) => {
-    const element = Array.from(dom.root.querySelectorAll<HTMLElement>('[role="radio"]')).find((item) =>
+    const element = Array.from(dom.root.querySelectorAll<HTMLElement>('nav[aria-label="Mail focus view"] a[href]')).find((item) =>
       item.textContent?.startsWith(label),
     );
     expect(element).toBeDefined();
@@ -265,7 +265,7 @@ test.skipIf(isServer)("an empty view whose count has grown since shows loading r
     held.requests[0]!.respond({ items: [], counts: { mine: 1, unassigned: 0, waiting: 0, all: 1 }, nextCursor: null });
     await settle();
     expect(overview.text()).toContain("No conversations waiting for a reply");
-    expect(overview.tab("For me").textContent).toBe("For me 1");
+    expect(overview.tab("For me").textContent).toBe("For me1");
 
     // For me still holds the server's empty page, but its count says 1.
     overview.tab("For me").click();
@@ -384,12 +384,15 @@ test.skipIf(isServer)("a response that arrives after its view was left does not 
     expect(held.requests.map((request) => request.url.searchParams.get("view"))).toEqual(["unassigned", "waiting"]);
     held.requests[0]!.respond({ items: [], counts: { mine: 1, unassigned: 9, waiting: 0, all: 10 }, nextCursor: null });
     await settle();
-    expect(overview.tab("Unassigned").textContent).toBe("Unassigned 2");
-    expect(overview.tab("All active").textContent).toBe("All active 3");
+    expect(overview.tab("Unassigned").textContent).toBe("Unassigned2");
+    expect(overview.tab("All active").textContent).toBe("All active3");
     held.requests[1]!.respond({ items: [], counts: { mine: 1, unassigned: 1, waiting: 0, all: 2 }, nextCursor: null });
     await settle();
-    expect(overview.tab("Unassigned").textContent).toBe("Unassigned 1");
+    expect(overview.tab("Unassigned").textContent).toBe("Unassigned1");
   } finally {
     overview.cleanup();
   }
 });
+
+pinClockBeforeEach(() => setSystemTime(new Date("2026-10-14T10:00:00.000Z")));
+restoreClockAfterEach(() => setSystemTime());

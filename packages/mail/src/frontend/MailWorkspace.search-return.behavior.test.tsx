@@ -291,6 +291,12 @@ describe("Mail workspace search return", () => {
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: m.readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+            mailboxCounts: [],
+          },
         }),
       dom.root,
     );
@@ -317,7 +323,9 @@ describe("Mail workspace search return", () => {
     expect(title()).toBe(expectedTitle);
   };
   const clickLink = async (query: string) => {
-    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?${query}"]`)!.click();
+    const href = `${path}?${query}`;
+    if (!dom.root.querySelector(`a[href="${href}"]`)) dom.root.querySelector<HTMLButtonElement>('button[aria-label="More views"]')!.click();
+    dom.document.querySelector<HTMLAnchorElement>(`a[href="${href}"]`)!.click();
     await settle();
   };
   const scroller = () => dom.root.querySelector<HTMLElement>('[data-scroll-preserve="mail-list-Box001"]')!;

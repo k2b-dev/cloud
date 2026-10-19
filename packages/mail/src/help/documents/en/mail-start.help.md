@@ -20,11 +20,11 @@ The email provider stays the source for portable mail state. When you move a mes
 - Open a mailbox when you need folders, a search across the mailbox, or settings.
 - Choose the flag next to a mailbox to pin it to the top of the list.
 - Choose the crossed-out eye to hide a mailbox that you rarely need, such as a no-reply address. The mailbox leaves the list, and its conversations leave Focus and the Focus counts.
-- Hidden mailboxes wait under **Hidden** below the list. Open that section to reach one, and choose the eye to show it again.
+- Hidden mailboxes wait under **Hidden mailboxes** below the list. Open that section to reach one, and choose the eye to show it again.
 - Your pinned and hidden mailboxes apply on every device where you sign in. They are yours alone. Others with access to a mailbox keep their own.
 - On a large screen, select a Focus row to see its context, summary, workflow fields, and team notes next to the queue. On a smaller screen, the row opens the conversation in its mailbox.
 - Choose **New mailbox** to connect another email account.
-- A new mailbox starts private. You have **Manage** access, and nobody else has access until you give it in **Settings → Access**.
+- A new mailbox starts private. You have **Manage** access, and nobody else has access until you give it in **… → Settings → Access**.
 
 Focus does not copy or move mail between mailboxes. Each row keeps its source mailbox. When you open a row, Mail checks your current access to the mailbox again.
 
@@ -42,11 +42,11 @@ Focus does not copy or move mail between mailboxes. Each row keeps its source ma
 
 Mail verifies IMAP and SMTP separately before it saves the credentials. Mail encrypts the credentials, and nobody can read them back after saving: no mailbox user and no administrator. Mail offers no browser authorization and no automatic token renewal. Replace manual tokens when they expire. Your provider must allow the IMAP/SMTP authentication method that you choose.
 
-After setup, Mail finds the provider's folders and starts synchronization. Older messages can appear step by step while you already use the mailbox. Open **Mailbox tools → Mailbox health** to see the connection health, folder discovery, synchronization, and search state.
+After setup, Mail finds the provider's folders and starts synchronization. Older messages can appear step by step while you already use the mailbox. Open **… → Mailbox health** to see the connection health, folder discovery, synchronization, and search state.
 
 ## Check that sending is ready {icon="send"}
 
-Open **Settings → Accounts & identities → Sending identities**. An identity groups everything that Mail uses for one sending context:
+Open **… → Settings → Accounts & identities → Sending identities**. An identity groups everything that Mail uses for one sending context:
 
 - **Identity label** is visible only in the mailbox. It helps collaborators choose the right context, such as “University” or “Private”.
 - Recipients see the **Display name** and the **From address**.
@@ -56,18 +56,22 @@ Open **Settings → Accounts & identities → Sending identities**. An identity 
 
 ## Find your way in the mailbox {icon="layout-grid"}
 
-The left navigation contains:
+The sidebar contains **Focus** and your mailboxes, with pinned mailboxes first. The open mailbox expands to its places:
 
-- **Compose** at the top, when you can send. The **Mailbox details** button (i) is next to it. If you can only view the mailbox, **About this mailbox** takes that place and opens the same details. On a phone, these are in the first row of the app menu.
-- **Follow-up** for Needs action, Waiting for reply, Later, and Done.
-- **Assignment** for Assigned to me and Unassigned.
-- **Mail** for Inbox, Drafts, Scheduled, Sent, and a **More** group that you can expand.
-- **Folders** for custom provider folders and their nested hierarchy. With **Manage** access, you can hide folders here. Hiding does not delete a folder or unsubscribe from it.
-- **Tags** to open every conversation with a mailbox-local tag. This section appears only when at least one tag exists.
-- **Saved views** that people created from reusable mailbox and collaboration filters. This section appears only when at least one view exists.
-- **More** for All mail, Recent activity, Archive, Trash, and Junk. All mail combines the mailbox except Trash and Junk. More opens automatically when one of these destinations is active.
-- **Mailbox tools** for synchronization, health, automations, mailing lists, remote images, shared links, and browser email-link handling. The tools that you see depend on your access.
-- **Settings** at the bottom, when your access allows it.
+- **Inbox**, **Drafts**, **Scheduled**, **Send problems**, and **Sent**.
+- **More** for Archive, Trash, and Junk. It stays open while one of these folders is current.
+- Custom provider folders and their nested hierarchy, with unread counts.
+- **Hidden mailboxes**, **New mailbox**, and **Recently deleted mailboxes** remain available below the mailbox list.
+
+The head contains:
+
+- View tabs: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, and **Unassigned**. **More** contains **Later**, **Done**, **Recent activity**, **Kept**, and saved views. Folders, Scheduled, and Send problems have no view tabs.
+- A **Tag** chip when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. **Search filters** in the list head opens the filter builder.
+- **Choose list view** for conversations or individual messages.
+- **…** for mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations have no mailbox menu.
+- **Compose** as the primary action when you can send.
+
+On a phone, open the mailbox title to reach Focus, other mailboxes, and the open mailbox's folders. Use the head for views, filters, Compose, and **…**.
 
 **Mailbox details** shows everyone who can view the mailbox the same overview. People with **View** access see it as **About this mailbox**. The overview shows:
 
@@ -76,7 +80,7 @@ The left navigation contains:
 - the number of folders;
 - your own access, and who has which access.
 
-Group rows list the people that the group reaches, as far as your account can see them. Guest accounts see only their own access, the access of their groups, and how many other entries exist. The dialog changes nothing. With **Manage** access, choose **Manage access** to continue in **Settings → Access**.
+Group rows list the people that the group reaches, as far as your account can see them. Guest accounts see only their own access, the access of their groups, and how many other entries exist. The dialog changes nothing. With **Manage** access, choose **Manage access** to continue in **… → Settings → Access**.
 
 The center list shows one row per conversation. The reader groups the messages of that conversation. It quietly places meaningful status, assignment, tag, summary, and workflow activity at the time it happened. Technical processing events stay out of the reading flow.
 

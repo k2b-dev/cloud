@@ -358,6 +358,12 @@ describe("Mail workspace folder switches", () => {
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: m.readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+            mailboxCounts: [],
+          },
         }),
       dom.root,
     );
@@ -369,7 +375,7 @@ describe("Mail workspace folder switches", () => {
     await settle();
     return socket;
   };
-  const link = (href: string) => dom.root.querySelector<HTMLAnchorElement>(`a[href="${href}"]`)!;
+  const link = (href: string) => dom.root.querySelector<HTMLAnchorElement>(`[aria-label="Mailboxes"] a[href="${href}"]`)!;
   const heading = () => dom.root.querySelector("[data-mail-list-heading]")?.textContent;
   const rowIds = () =>
     [...dom.root.querySelectorAll<HTMLElement>("[data-mail-conversation-list] [data-conversation-id]")].map(
@@ -378,7 +384,7 @@ describe("Mail workspace folder switches", () => {
   const location = () => `${window.location.pathname}${window.location.search}`;
   // A custom folder, because the Inbox badge keeps its first count after any refresh (#1481).
   const counts = (unread = 3, needsAction = 3) => {
-    expect(link(`${path}?view=needs_action`).textContent).toBe(`Needs action${needsAction}`);
+    expect(dom.root.querySelector(`[data-mailbox="${MAILBOX_ID}"]`)?.getAttribute("title")).toContain(`${needsAction} need action`);
     expect(link(`${path}?folder=Filed1`).textContent).toBe(`Filed${unread}, ${unread} unread`);
   };
   const expectRequests = (route: RecordedRequest["route"], href: string) => {
@@ -393,7 +399,21 @@ describe("Mail workspace folder switches", () => {
   };
   const switchTo = async (query: string) => {
     requests = [];
-    link(`${path}?${query}`).click();
+    const href = query ? `${path}?${query}` : path;
+    if (query.startsWith("savedView=") && dom.root.querySelector('nav[aria-label="Mailbox views"]')) {
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="More views"]')!.click();
+    }
+    const target = dom.document.querySelector<HTMLAnchorElement>(`a[href="${href}"]`);
+    if (
+      target &&
+      (query.startsWith("folder=") || query.startsWith("scheduled=") || target.closest('nav[aria-label="Mailbox views"], [role="menu"]'))
+    )
+      target.click();
+    else {
+      // Folders suppress view tabs. Back/Forward still loads a saved URL through the same route seam.
+      dom.window.history.pushState(null, "", href);
+      dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    }
     await settle();
   };
 
@@ -430,7 +450,9 @@ describe("Mail workspace folder switches", () => {
       assertList(`${path}?${query}`, title!);
       counts();
     }
-    expect(link(`${path}?savedView=Saved1`).getAttribute("aria-current")).toBe("page");
+    expect(dom.root.querySelector('nav[aria-label="Mailbox views"] [aria-current="page"]')?.getAttribute("href")).toBe(
+      `${path}?savedView=Saved1`,
+    );
     await switchTo("folder=Drafts1");
     expectRequests("workspace-list", `${path}?folder=Drafts1`);
     expect(dom.root.textContent).toContain("Draft offer");
@@ -441,7 +463,7 @@ describe("Mail workspace folder switches", () => {
     expectRequests("workspace-list", `${path}?scheduled=1`);
     expect(dom.root.textContent).toContain("Scheduled offer");
     expect(dom.root.querySelector("h1")?.textContent).toBe("Scheduled");
-    expect(link(`${path}?scheduled=1`).textContent).toBe("Scheduled6");
+    const scheduledLabel = link(`${path}?scheduled=1`).textContent;
     expect(location()).toBe(`${path}?scheduled=1`);
     counts();
     await switchTo("folder=Filed1");
@@ -459,6 +481,7 @@ describe("Mail workspace folder switches", () => {
     await settle();
     assertList(`${path}?folder=Filed1`, "Filed");
     counts();
+    expect(scheduledLabel).toBe("Scheduled6");
   });
 
   test("a caught-up folder switch takes mailbox and saved view names from the list and keeps counts", async () => {
@@ -474,10 +497,12 @@ describe("Mail workspace folder switches", () => {
     };
     await switchTo("folder=Filed1");
     assertList(`${path}?folder=Filed1`, "Filed");
-    const sidebar = link(`${path}?savedView=Saved1`).closest("aside")!;
-    expect(sidebar.textContent).toContain("Renamed support");
-    expect(link(`${path}?savedView=Saved1`).textContent).toBe("Renamed priority");
+    const mailboxLabel = dom.root.querySelector(`[data-mailbox="${MAILBOX_ID}"]`)?.textContent;
+    await switchTo("view=waiting");
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="More views"]')!.click();
+    expect(dom.document.querySelector(`a[href="${path}?savedView=Saved1"]`)?.textContent).toBe("Renamed priority");
     counts();
+    expect(mailboxLabel).toContain("Renamed support");
   });
 
   test("a live event after a list switch reloads the frame's folder and view counts", async () => {

@@ -2,7 +2,17 @@ import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
+
+const loadSidebar = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return { ...(await import("./mail-sidebar.fixture")), ...(await import("./MailboxMenu")), ...(await import("./MailSidebar")) };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await loadSidebar();
+
 import type { MailFolderView } from "../../service/messages";
 import type { MailboxPageData } from "../../service/workspace";
 
@@ -121,53 +131,55 @@ if (!isServer) {
       expect(folders).toHaveLength(fixture.folders.length);
       expect(folders.every((folder) => folder.parentId === null || /^[0-9A-Za-z]{6}$/.test(folder.parentId))).toBe(true);
 
-      const { default: MailSidebar } = await import("./MailSidebar");
+      const { default: MailSidebar, mailSidebarFixture, openMailboxFixture, createMailboxMenu, mailboxMenuOptions } = modules!;
       const dispose = render(
         () => (
           <MailSidebar
-            currentUserEmail={null}
-            contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-            mailboxId="Box001"
-            mailboxName="Support"
-            syncEnabled={true}
-            needsConnection={false}
-            folders={folders}
-            localTags={[]}
-            savedViews={[]}
-            scheduledMode={false}
-            scheduledCount={0}
-            activeFolderId={id("2025/archive")}
-            activeView={null}
-            activeSavedViewId={null}
-            activeTagId={null}
-            searchActive={false}
-            viewCounts={{
-              needs_action: 0,
-              mine: 0,
-              unassigned: 0,
-              waiting: 0,
-              done: 0,
-              snoozed: 0,
-              send_problems: 0,
-              recently_active: 0,
-              kept: 0,
+            {...mailSidebarFixture()}
+            open={{
+              ...openMailboxFixture(),
+              mailboxId: "Box001",
+              mailboxName: "Support",
+              canWrite: true,
+              assignedOnly: false,
+              folders: folders,
+              scheduledMode: false,
+              scheduledCount: 0,
+              activeFolderId: id("2025/archive"),
+              activeView: null,
+              viewCounts: {
+                needs_action: 0,
+                mine: 0,
+                unassigned: 0,
+                waiting: 0,
+                done: 0,
+                snoozed: 0,
+                send_problems: 0,
+                recently_active: 0,
+                kept: 0,
+              },
+              onCompose: () => {},
+              onMoveConversation: () => {},
+              onNavigate: () => {},
+              menu: createMailboxMenu(() =>
+                mailboxMenuOptions({
+                  mailboxId: "Box001",
+                  canWrite: true,
+                  canAdmin: false,
+                  assignedOnly: false,
+                  needsConnection: false,
+                  managementOpening: null,
+                  settingsOpening: false,
+                  detailsOpening: false,
+                  onOpenDetails: () => {},
+                  onOpenHealth: () => {},
+                  onOpenSharedLinks: () => {},
+                  onOpenRemoteContent: () => {},
+                  onOpenSubscriptions: () => {},
+                  onOpenSettings: () => {},
+                }),
+              ),
             }}
-            canWrite={true}
-            canAdmin={false}
-            assignedOnly={false}
-            managementOpening={null}
-            settingsOpening={false}
-            detailsOpening={false}
-            composeStarting={false}
-            onCompose={() => {}}
-            onOpenDetails={() => {}}
-            onOpenHealth={() => {}}
-            onOpenSharedLinks={() => {}}
-            onOpenRemoteContent={() => {}}
-            onOpenSubscriptions={() => {}}
-            onOpenSettings={() => {}}
-            onMoveConversation={() => {}}
-            onNavigate={() => {}}
           />
         ),
         dom.root,
