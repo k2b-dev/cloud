@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../../../ui/test/browser";
+import { appAccentStyle } from "../../../../../../cloud/src/ssr/app-appearance";
+import { appColors } from "../../../../../../cloud/src/ssr/app-color";
+import { launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { compareNoteOrder } from "../../../../lib/note-order";
 import type { NotebookContext, NoteTreeNode } from "./types";
 
@@ -338,6 +340,49 @@ describe("One notebook sidebar with quick filters", () => {
     api.requests = [];
     return { ...base, tree, favoriteNoteIds: [...api.favoriteNoteIds], tags: [...api.tags] };
   };
+  const rgb = (hex: string) => `rgb(${[1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(", ")})`;
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    test(`pressed sidebar chips use the notebook navigation fill and ink at ${viewport.width}px`, async () => {
+      const page = await open({ viewport, reducedMotion: "reduce" }, filtered());
+      try {
+        await page.clock.setFixedTime(new Date("2026-10-01T12:00:00Z"));
+        await page.evaluate((style) => {
+          const root = document.querySelector<HTMLElement>("#root")!;
+          root.classList.add("app-accent-scope");
+          root.style.cssText += `;${style}`;
+          const old = document.createElement("span");
+          old.id = "old-chip";
+          old.style.cssText = "background:color-mix(in srgb,var(--app-accent) 14%,var(--k2b-surface))";
+          root.append(old);
+        }, appAccentStyle("#eab308")!);
+        // The sidebar remains in the DOM on phones, as the source of the shared phone navigation.
+        await page
+          .locator(".notebook-sidebar-chip")
+          .filter({ hasText: "Favorites" })
+          .evaluate((button) => (button as HTMLButtonElement).click());
+        for (const theme of ["light", "dark"] as const) {
+          await page.evaluate((theme) => {
+            document.documentElement.className = theme;
+          }, theme);
+          await settled(page);
+          const colors = await page.evaluate(() => {
+            const chip = getComputedStyle(document.querySelector('.notebook-sidebar-chip[aria-pressed="true"]')!);
+            const old = getComputedStyle(document.querySelector("#old-chip")!);
+            return { fill: chip.backgroundColor, ink: chip.color, oldFill: old.backgroundColor };
+          });
+          expect(colors.fill, theme).toBe(rgb(appColors("#eab308")[theme].selectedNav));
+          expect(colors.ink, theme).toBe(rgb(appColors("#eab308")[theme].ink));
+          expect(colors.fill).not.toBe(colors.oldFill);
+        }
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+
   /** Top of the scrolling note area and the height of the chips row: neither may move when a filter changes. */
   const frame = (page: Page) =>
     page.evaluate(() => ({

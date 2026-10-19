@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { appAccentStyle } from "../../../../cloud/src/ssr/app-appearance";
+import { appColors } from "../../../../cloud/src/ssr/app-color";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { MailConversationPreview } from "../../contracts";
 import type { MailFolderView } from "../../service/messages";
 import type { MailListHarnessOptions } from "./MailConversationList.browser-harness";
@@ -1362,3 +1364,93 @@ describe("Mail conversation printing", () => {
     }
   }, 30_000);
 });
+
+const rgb = (hex: string) => `rgb(${[1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(", ")})`;
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`Mail open and checked rows use the app fill without moving at ${viewport.width}px`, async () => {
+    const page = await load({ context: { viewport, reducedMotion: "reduce" }, selectionMode: true });
+    try {
+      // Keep dates fixed while letting settled() observe real animation frames.
+      await page.clock.resume();
+      await page.clock.setFixedTime(NOW + 60_000);
+      await page.evaluate((style) => {
+        const root = document.querySelector<HTMLElement>("#root")!;
+        root.classList.add("app-accent-scope");
+        root.style.cssText += `;${style}`;
+      }, appAccentStyle("#0f766e")!);
+      for (const theme of ["light", "dark"] as const) {
+        await page.evaluate((theme) => {
+          document.documentElement.className = theme;
+          window.setMailActive(null);
+          window.setMailChecked([]);
+        }, theme);
+        await settled(page);
+        const before = [await box(page, row("Cv0000")), await box(page, row("Cv0001"))];
+        await page.evaluate(() => {
+          window.setMailActive("Cv0000");
+          window.setMailChecked(["Cv0001"]);
+          const scope = document.querySelector("#root")!;
+          for (const percent of [11, 16]) {
+            const old = document.createElement("span");
+            old.id = `old-${percent}`;
+            old.setAttribute("style", `background:color-mix(in srgb,var(--app-accent) ${percent}%,var(--ui-surface))`);
+            scope.append(old);
+          }
+        });
+        await settled(page);
+        const fills = await page.evaluate(() => ({
+          active: getComputedStyle(document.querySelector(".mail-list-entry-active")!).backgroundColor,
+          checked: getComputedStyle(document.querySelector(".mail-list-entry-selected")!).backgroundColor,
+          old: [11, 16].map((percent) => getComputedStyle(document.getElementById(`old-${percent}`)!).backgroundColor),
+        }));
+        for (const [index, fill] of [fills.active, fills.checked].entries()) {
+          expect(fill, `${theme} ${index}`).toBe(rgb(appColors("#0f766e")[theme].selected));
+          expect(fill).not.toBe(fills.old[index]);
+        }
+        await settled(page);
+        expect([await box(page, row("Cv0000")), await box(page, row("Cv0001"))]).toEqual(before);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test(`Mail quick-look summary stays flat with unchanged padding and card height at ${viewport.width}px`, async () => {
+    const page = await load({ context: { viewport, reducedMotion: "reduce" } });
+    try {
+      await page.clock.resume();
+      await page.clock.setFixedTime(NOW + 60_000);
+      await page.evaluate(
+        ({ style, item, preview }) => {
+          const root = document.querySelector<HTMLElement>("#root")!;
+          root.classList.add("app-accent-scope");
+          root.style.cssText += `;${style}`;
+          window.mountMailQuickLook(item, preview);
+        },
+        { style: appAccentStyle("#0f766e")!, item: items[0]!, preview: previews.Cv0000! },
+      );
+      for (const theme of ["light", "dark"] as const) {
+        await page.evaluate((theme) => {
+          document.documentElement.className = theme;
+        }, theme);
+        await settled(page);
+        const summary = await page.locator("#summary-card .mail-quick-look__summary").evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            background: style.backgroundColor,
+            shadow: style.boxShadow,
+            padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+          };
+        });
+        expect(summary).toEqual({ background: "rgba(0, 0, 0, 0)", shadow: "none", padding: ["7px", "10px", "7px", "10px"] });
+        await settled(page);
+        expect((await box(page, "#summary-card"))!.height).toBe(20 * 16);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
