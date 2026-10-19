@@ -1082,6 +1082,27 @@ describe("cross-site requests", () => {
   });
 });
 
+describe("requests without Fetch Metadata", () => {
+  test.each([
+    {
+      agent: "Mozilla/5.0 (iPhone; CPU iPhone OS 16_3 like Mac OS X) AppleWebKit/605.1.15 Version/16.3 Mobile/15E148 Safari/604.1",
+      encoding: null,
+    },
+    { agent: "cld/1.0", encoding: "br" },
+    { agent: "curl/8.5.0", encoding: "br" },
+  ])("User-Agent $agent chooses its encoding", async ({ agent, encoding }) => {
+    await withCompressionGateway(
+      () => new Response(mailboxHtml, { headers: { "Content-Type": "text/html" } }),
+      async (url) => {
+        const response = await fetch(url, { headers: { "Accept-Encoding": "br, gzip", "User-Agent": agent }, decompress: false });
+        expect(response.headers.get("Content-Encoding")).toBe(encoding);
+        const wire = Buffer.from(await response.arrayBuffer());
+        expect((encoding ? brotliDecompressSync(wire) : wire).toString()).toBe(mailboxHtml);
+      },
+    );
+  });
+});
+
 describe("subresource requests", () => {
   test.each([
     { dest: "document", encoding: "br" },

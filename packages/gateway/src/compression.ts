@@ -152,10 +152,12 @@ export const compressBody = (req: Request, response: Response, headers: Headers)
   if (hasNoTransform(req.headers)) return body;
   // BREACH needs credentialed requests whose input the attacker chooses. Session
   // cookies are SameSite=Lax, so such requests are cross-site navigations; they
-  // stay identity. Current browsers send Sec-Fetch-Site on HTTPS requests; a
-  // request without it comes from a non-browser client or a browser too old for it.
+  // stay identity. Current browsers send Sec-Fetch-Site on HTTPS and localhost
+  // requests. A browser that omits it (Safari before 16.4, plain-HTTP origins)
+  // cannot show where a request came from, so it stays identity too; a browser's
+  // own cache always sees the same User-Agent, so Vary does not need it.
   const site = req.headers.get("Sec-Fetch-Site");
-  if (site !== null && site !== "same-origin" && site !== "none") return body;
+  if (site === null ? req.headers.get("User-Agent")?.startsWith("Mozilla/") : site !== "same-origin" && site !== "none") return body;
   // Stored Markdown can embed same-origin images with a chosen URL, and pages echo
   // their path and query. Only documents and fetch/XHR get a compressed body;
   // HTML and JSON loaded as an image, style, script or frame gain nothing from it.

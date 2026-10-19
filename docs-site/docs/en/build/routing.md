@@ -82,8 +82,10 @@ These responses stay unchanged:
 - answers to browser subresource requests, such as images, styles, scripts
   and frames (`Sec-Fetch-Dest` other than `document` or `empty`).
 
-Browsers that send no Fetch Metadata headers, such as Safari before 16.4, get
-compressed answers like other clients without these headers.
+A request without `Sec-Fetch-Site` counts as a non-browser client and can be
+compressed, unless its `User-Agent` starts with `Mozilla/`. Browsers that send
+no Fetch Metadata headers, such as Safari before 16.4 or any browser on a
+plain-HTTP origin other than `localhost`, get uncompressed answers.
 
 An eligible response gets `Vary: Accept-Encoding, Sec-Fetch-Site,
 Sec-Fetch-Dest`, also when it stays uncompressed. A compressed response loses
