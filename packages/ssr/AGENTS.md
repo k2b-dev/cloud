@@ -32,7 +32,9 @@ bun run --cwd packages/ssr typecheck
 ```
 
 `test/unit` runs on Bun; `test/browser` runs with browser conditions and the
-Happy DOM globals from `test/browser/setup.ts`. A change in the transform,
+Happy DOM globals from `test/browser/setup.ts`; `test/engine` runs real
+browsers through `launchBrowser()` from `packages/ui/test/browser.ts`, so the
+gate also runs it in WebKit. A change in the transform,
 build, mount runtime, or adapters reaches every application: also run the
 `@k2b/ui` tests and build the production bundle of at least one application
 (`APP_ID=faq bun run packages/cloud/scripts/build.ts`).
@@ -66,8 +68,9 @@ build, mount runtime, or adapters reaches every application: also run the
   never at import time.
 - The dev overlay depends on `data-file` in dev mode and on the wrapper tags
   staying in the SSR output.
-- `@k2b/ssr/nav` stays an opt-in progressive navigation helper, not a router
-  with route matching, loaders, or server re-rendering.
+- `@k2b/ssr/nav` stays opt-in. It swaps server-rendered pages into a declared
+  content column, without route matching and without client loaders. Any
+  failure of a swap ends in one document load, never in a half-swapped page.
 
 ## Build pipeline
 
@@ -177,12 +180,52 @@ Shared helpers live in `src/adapter/utils.ts` (`normalizeBasePath`,
 
 ## Navigation
 
-When changing `src/nav.ts`, keep top-level code SSR-safe, keep `Link`
-rendering a real `<a href>`, preserve native behavior for modifier keys,
-non-left clicks, downloads, and external targets, and keep state
-reconciliation explicit through `listenPopState()`. Cover history push and
-replace, Back and Forward, hash links, async fallbacks, reactive props, and
-scroll snapshots in both test suites.
+`src/nav.ts` is the `./nav` export: `Link`, the history and scroll helpers in
+`src/nav-history.ts`, and the page swap in `src/nav-swap.ts`. Keep top-level
+code SSR-safe, keep `Link` rendering a real `<a href>`, preserve native
+behavior for modifier keys, non-left clicks, downloads, and external targets,
+and keep island state reconciliation explicit through `listenPopState()`.
+
+The page swap is opt-in. Without `installPageSwap()` nothing changes. The host
+declares the contract in server HTML, and nav knows nothing else about it:
+
+- one `data-nav-shell` element whose value is an opaque signature that nav
+  only compares;
+- `data-nav-scope` on the shell, a path prefix for links that may swap;
+- optional `data-nav-attributes` on the shell, the attributes copied from the
+  fetched shell;
+- one `data-nav-root` inside the shell, the column that is replaced;
+- `data-nav-document` on a link to keep its document navigation.
+
+A swap is one transaction, and its order is the contract:
+
+1. Abort the previous swap. Only the newest swap may commit.
+2. Fetch the target as HTML with the abort signal. Check status 200, HTML,
+   final URL in scope, shell signature and scope, the loader's
+   `data-ssr-assets` prefix, and the head stylesheet set.
+3. Preload and import the island entries of the fetched column. Nothing in
+   the old column changes before every module loaded.
+4. Commit without an `await`: dispose the old islands while they are still
+   in the document, replace the root, copy title and attributes, commit
+   history through `navigate()`, mount the new islands, focus the first
+   heading, and announce the title in the one live region.
+
+After every `await`, an aborted or replaced swap returns without a change.
+Every other failure calls `documentNavigate()` for the requested URL once;
+after a history commit it replaces the entry. The click listener sits on
+`window` in the bubble phase, so island and delegated Solid handlers can
+prevent a swap first.
+
+Back and Forward are not swapped yet. After the first swap, a `popstate` onto
+an entry of another server page loads the document; history entries carry a
+page marker for that.
+
+Cover every change in the unit, Happy DOM, and `test/engine` suites: history
+push and replace, Back and Forward, hash links, async fallbacks, reactive
+props, scroll snapshots, and for the swap each failure class, rapid clicks,
+and island disposal. A change to the swap contract updates this file,
+`README.md`, the `ssr` skill, and the Fibel page
+`frontend/url-state-and-navigation.md` in the same `feat(ssr)` pull request.
 
 ## Bun caveats
 

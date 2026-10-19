@@ -28,8 +28,8 @@ const openTab = (nav: LinkNavigateEvent) => {
 Rules:
 
 - `Link` is a real SSR-safe `<a href>` and works without JavaScript as a normal link
-- this is not a router; do not expect route matching, nested routes, loaders, or server re-rendering
-- without `onNavigate`, `Link` keeps native document navigation; `replace` and `scroll` only apply to enhanced clicks
+- nav has no route matching and no client loaders; it can swap server-rendered pages when the host opts in (below)
+- without `onNavigate`, `Link` keeps native document navigation, or a page swap when one is installed; `replace` and `scroll` only apply to enhanced clicks
 - with `onNavigate`, update island state or load data first, then call `nav.push()`, `nav.replaceWith()`, or `nav.fallback()`
 - when using `nav.push()`, subscribe with `listenPopState()` and restore island state from the URL on Back/Forward
 - rejected async `onNavigate` callbacks fall back to full document navigation
@@ -38,3 +38,31 @@ Rules:
 - replace navigation preserves existing `history.state` unless an explicit `state` option is provided
 - use `data-scroll-preserve="stable-key"` for scroll containers that should keep position
 - do not pass `onNavigate` from a server page into an island prop; define navigation callbacks inside the island/client component
+
+
+## Swap server-rendered pages
+
+A host can let same-app links replace only the content column with the next server page. Declare it in server HTML and install it once from an island outside the column:
+
+```html
+<div data-nav-shell="app:user:locale:layout:build" data-nav-scope="/demo" data-nav-attributes="data-mode">
+  <nav><a href="/demo/a">A</a></nav>
+  <main data-nav-root><h1>A</h1></main>
+</div>
+```
+
+```tsx
+import { onCleanup, onMount } from "solid-js";
+import { installPageSwap } from "@k2b/ssr/nav";
+
+onMount(() => onCleanup(installPageSwap()));
+```
+
+- `data-nav-shell` is an opaque signature; a fetched page with a different one loads as a document, so put app, user, locale, layout kind, and build into it
+- `data-nav-scope` is a path prefix (`/demo` takes `/demo/x`, not `/demobox`); `data-nav-root` is the replaced column; `data-nav-attributes` lists shell attributes the fetched page sets or removes
+- `data-nav-document` on a link keeps document navigation; prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too
+- the swap loads the new page's island modules before it disposes the old islands; then it replaces the column, sets title and attributes, pushes history, mounts, focuses the first heading, and announces the title
+- the newest click wins; any failure (status, not HTML, redirect out of scope, signature, module prefix, stylesheet set, module error) loads the requested URL as a document
+- `swapPage(href, { replace })` swaps from code
+- inline scripts in the fetched page do not run; keep page data in island props
+- Back and Forward are not swapped yet: until the first swap islands handle their entries with `listenPopState()`; after a swap, Back or Forward loads the document except onto the entry the swap created
