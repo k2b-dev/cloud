@@ -215,6 +215,7 @@ else {
         dom.root.append(element);
       }
       element.textContent = JSON.stringify(value);
+      if (id === PANEL_SHORTCUTS_ELEMENT) element.setAttribute("data-received", "");
     };
     const context = (app: string, ids: string[]) => ({ v: 1, seq: 1, pageId: "22222222-2222-4222-8222-222222222222", app, help: ids });
     script(PANEL_CONTEXT_ELEMENT, context("spaces", ["second"]));
@@ -288,8 +289,12 @@ else {
     }
   });
 
-  for (const beforeMount of [false, true])
-    test(`panel shortcuts use the host snapshot ${beforeMount ? "received before mount" : "after mount"} and restore the seed for null context`, async () => {
+  for (const { beforeMount, empty } of [
+    { beforeMount: false, empty: false },
+    { beforeMount: true, empty: false },
+    { beforeMount: true, empty: true },
+  ])
+    test(`panel shortcuts use the host snapshot ${beforeMount ? "received before mount" : "after mount"}${empty ? " (empty)" : ""} and restore the seed for null context`, async () => {
       const fixture = await setup();
       const { dom, help } = fixture;
       const script = (id: string, value: unknown) => {
@@ -301,6 +306,7 @@ else {
           dom.document.body.append(element);
         }
         element.textContent = JSON.stringify(value);
+        if (id === PANEL_SHORTCUTS_ELEMENT) element.setAttribute("data-received", "");
       };
       const context = { v: 1, seq: 1, pageId: "22222222-2222-4222-8222-222222222222", app: "spaces" };
       const snapshot = [
@@ -311,7 +317,7 @@ else {
         [...dom.root.querySelectorAll(`[data-help-shortcut-group="${scope}"] .help-shortcut-title`)].map((el) => el.textContent);
       const seed = ["Open global search", "Open shortcut help", "Open or close the panel"];
       script(PANEL_CONTEXT_ELEMENT, context);
-      script(PANEL_SHORTCUTS_ELEMENT, beforeMount ? snapshot : []);
+      if (beforeMount) script(PANEL_SHORTCUTS_ELEMENT, empty ? [] : snapshot);
       const dispose = render(
         () => <help.LayoutHelpPanel documents={documents} app={{ id: "spaces", name: "Spaces" }} platform="other" />,
         dom.root,
@@ -320,18 +326,29 @@ else {
         if (!beforeMount) {
           expect(titles("everywhere")).toEqual(seed);
           // An accepted empty snapshot can emit only the context event.
+          script(PANEL_SHORTCUTS_ELEMENT, []);
           window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
           expect(titles("everywhere")).toEqual([]);
           script(PANEL_SHORTCUTS_ELEMENT, snapshot);
           window.dispatchEvent(new Event(PANEL_SHORTCUTS_CHANGED));
         }
-        expect(titles("everywhere")).toEqual(["Open or close the panel"]);
-        expect(titles("app")).toEqual(["New Space"]);
+        expect(titles("everywhere")).toEqual(empty ? [] : ["Open or close the panel"]);
+        expect(titles("app")).toEqual(empty ? [] : ["New Space"]);
+        if (empty) expect(dom.root.querySelectorAll(".help-shortcut")).toHaveLength(0);
 
         script(PANEL_SHORTCUTS_ELEMENT, []);
         window.dispatchEvent(new Event(PANEL_SHORTCUTS_CHANGED));
         expect(titles("everywhere")).toEqual([]);
         expect(titles("app")).toEqual([]);
+
+        const input = dom.root.querySelector<HTMLInputElement>("[data-help-search]")!;
+        input.value = "Article";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        expect(dom.root.querySelector("[data-help-shortcuts]")).toBeNull();
+        input.value = "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        expect(dom.root.querySelector("[data-help-shortcuts]")).not.toBeNull();
+        expect(dom.root.querySelectorAll(".help-shortcut")).toHaveLength(0);
 
         script(PANEL_CONTEXT_ELEMENT, null);
         window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));

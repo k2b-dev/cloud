@@ -23,7 +23,7 @@ import {
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
 import { getContext, onContextChange, openPanel } from "../browser/panel";
-import { onPanelShortcutsChange, readPanelShortcuts } from "../browser/panel-shortcuts";
+import { onPanelShortcutsChange, panelShortcutsReceived, readPanelShortcuts } from "../browser/panel-shortcuts";
 import { HELP_ACCESS_LEVELS, HELP_KINDS } from "../shared/help";
 import { appAccentStyle } from "./app-appearance";
 import { helpMessages } from "./help-messages";
@@ -123,10 +123,9 @@ const StartShortcuts = (props: { appName?: string; panel?: boolean; platform?: K
   const shell = props.panel ? undefined : useShellData();
   const seed: HelpShortcutCommand[] =
     props.panel || shell ? shellShortcuts(platformMessages.resolve([locale()]).t, { panel: props.panel || !!shell?.panel }) : [];
-  let received = false;
   const read = (): HelpShortcutCommand[] => {
     // Once received, the host list is authoritative: omitted shortcuts must stay omitted.
-    if (props.panel) return received && getContext() !== null ? readPanelShortcuts() : seed;
+    if (props.panel) return panelShortcutsReceived() && getContext() !== null ? readPanelShortcuts() : seed;
     const commands = contextCommandsWithShortcuts();
     return [...seed.filter((command) => !commands.some((other) => other.id === command.id)), ...commands];
   };
@@ -134,13 +133,8 @@ const StartShortcuts = (props: { appName?: string; panel?: boolean; platform?: K
   onMount(() => {
     const update = () => setCommands(read());
     if (props.panel) {
-      received = readPanelShortcuts().length > 0;
-      const receive = () => {
-        received = true;
-        update();
-      };
-      onCleanup(onPanelShortcutsChange(receive));
-      onCleanup(onContextChange(receive));
+      onCleanup(onPanelShortcutsChange(update));
+      onCleanup(onContextChange(update));
     }
     update();
     if (!props.panel) {
