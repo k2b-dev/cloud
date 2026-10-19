@@ -25,7 +25,7 @@ packages/mail/src/frontend/_components/MailSidebar.tsx | selection | 1
 packages/mail/src/styles/app.css | accent-mix | 7
 packages/notebooks/src/styles/app.css | accent-mix | 2
 packages/oauth/src/frontend/page.tsx | selection | 1
-packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | selection | 4
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | selection | 3
 packages/tools/src/frontend/[tool]/page.tsx | accent-mix | 1
 packages/tools/src/frontend/tools/SpeedTest.island.tsx | selection | 1
 packages/tools/src/frontend/tools/WebhookTester.island.tsx | selection | 1
