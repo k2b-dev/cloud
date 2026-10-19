@@ -73,10 +73,10 @@ beforeAll(async () => {
   const css = await styles.outputs[0]!.text();
   const response = await server.request("/dialog-app-colors", { headers: { "Accept-Language": "en" } });
   expect(response.status).toBe(200);
-  // Keep the real shell and body intact. Replace its external stylesheets and remove island/module scripts.
+  // Keep the real shell and body intact and inline the stylesheet its links name. The page route aborts every other
+  // request, so the shell's island and module scripts never load.
   html = (await response.text())
     .replace(/<link\b[^>]*\brel="stylesheet"[^>]*>/g, "")
-    .replace(/<script\b[^>]*\btype="module"[^>]*>[\s\S]*?<\/script>/g, "")
     .replace("</head>", () => `<style>${css}</style></head>`);
   browser = await launchBrowser();
 }, 60_000);
