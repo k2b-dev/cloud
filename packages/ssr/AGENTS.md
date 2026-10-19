@@ -199,16 +199,22 @@ declares the contract in server HTML, and nav knows nothing else about it:
 
 A swap is one transaction, and its order is the contract:
 
-1. Abort the previous swap. Only the newest swap may commit.
+1. Abort the previous swap. Only the newest navigation may commit: a newer
+   swap, `popstate`, a native same-tab link, and the history helpers
+   (`navigate()`, `documentNavigate()`, `navigateTo()`,
+   `refreshCurrentPath()`) abort a pending swap.
 2. Fetch the target as HTML with the abort signal. Check status 200, HTML,
    final URL in scope, shell signature and scope, the loader's
    `data-ssr-assets` prefix, and the head stylesheet set.
 3. Preload and import the island entries of the fetched column. Nothing in
    the old column changes before every module loaded.
 4. Commit without an `await`: dispose the old islands while they are still
-   in the document, replace the root, copy title and attributes, commit
-   history through `navigate()`, mount the new islands, focus the first
-   heading, and announce the title in the one live region.
+   in the document, then re-check ownership, because their cleanups may
+   navigate, uninstall, or replace the column. Push history with an absolute
+   URL before inserting the root, so relative URLs in it resolve against the
+   new page. Then replace the root, copy title and attributes, mount the new
+   islands, restore keyed scroll regions, focus the first heading, and
+   announce the title in the one live region.
 
 After every `await`, an aborted or replaced swap returns without a change.
 Every other failure calls `documentNavigate()` for the requested URL once;
@@ -216,9 +222,10 @@ after a history commit it replaces the entry. The click listener sits on
 `window` in the bubble phase, so island and delegated Solid handlers can
 prevent a swap first.
 
-Back and Forward are not swapped yet. After the first swap, a `popstate` onto
-an entry of another server page loads the document; history entries carry a
-page marker for that.
+Back and Forward are not swapped yet. Swap entries carry a page marker in
+`history.state`, and a reload keeps it. A `popstate` onto an entry with the
+marker of the shown page (none on a page loaded normally) stays with the
+islands; any other entry loads the document.
 
 Cover every change in the unit, Happy DOM, and `test/engine` suites: history
 push and replace, Back and Forward, hash links, async fallbacks, reactive

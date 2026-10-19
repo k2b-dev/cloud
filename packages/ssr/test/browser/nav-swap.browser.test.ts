@@ -3,10 +3,11 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Window } from "happy-dom";
 import { toJSON } from "seroval";
+import { render } from "solid-js/web";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
 import { disposeIslands } from "../../src/mount";
-import { installPageSwap, swapPage } from "../../src/nav";
+import { documentNavigate, installPageSwap, Link, navigate, navigateTo, refreshCurrentPath, swapPage } from "../../src/nav";
 import { makeTempRoot } from "../temp-root";
 
 let root: string;
@@ -16,6 +17,8 @@ let brokenId: string;
 let slowId: string;
 /** A second slow entry: an evaluated module stays cached, so each test that waits on loading needs its own. */
 let laterId: string;
+let historyId: string;
+let scrollId: string;
 let previousLoadingSettings: { disableCSSFileLoading: boolean; handleDisabledFileLoadingAsSuccess: boolean };
 let uninstall = () => {};
 const events: string[] = [];
@@ -35,7 +38,7 @@ const response = (body = html("new"), options: ResponseInit = {}, url = "https:/
   Object.defineProperties(result, { url: { value: url }, redirected: { value: url !== "https://example.test/app/new" } });
   return result;
 };
-const deferredFetch = () => {
+const deferredFetch = (ignoreAbort = false) => {
   const requests: { signal: AbortSignal; aborted: boolean; resolve: (response: Response) => void; reject: (error: Error) => void }[] = [];
   spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
@@ -47,7 +50,7 @@ const deferredFetch = () => {
             "abort",
             () => {
               request.aborted = true;
-              reject(new DOMException("Aborted", "AbortError"));
+              if (!ignoreAbort) reject(new DOMException("Aborted", "AbortError"));
             },
             { once: true },
           );
@@ -110,6 +113,24 @@ beforeAll(async () => {
   const later = join(root, "Later.island.tsx");
   writeFileSync(later, readFileSync(slow, "utf8"));
   laterId = islandIdFromFile(later, root);
+  const history = join(root, "History.island.tsx");
+  writeFileSync(
+    history,
+    `import { onMount } from "solid-js";
+    export default function History() {
+      onMount(() => window.history.replaceState({ island: 1 }, ""));
+      return <b>island history</b>;
+    }`,
+  );
+  historyId = islandIdFromFile(history, root);
+  const scroll = join(root, "Scroll.island.tsx");
+  writeFileSync(
+    scroll,
+    `export default function Scroll(props) {
+      return <div data-scroll-preserve="list" style="height: 50px; overflow: auto"><div style="height: 500px">{props.label}</div></div>;
+    }`,
+  );
+  scrollId = islandIdFromFile(scroll, root);
   id = islandIdFromFile(file, root);
   brokenId = islandIdFromFile(broken, root);
   await buildIslands({ pattern: "**/*.island.tsx", cwd: root, outdir: prefix, dev: true, verbose: false });
@@ -566,4 +587,290 @@ test("independent module copies share one document installation", async () => {
   const copy = await import(join(import.meta.dir, "../../src/nav-swap.ts?second-copy"));
   expect(copy.installPageSwap()).toBe(uninstall);
   expect(document.querySelectorAll("[data-nav-announcer]")).toHaveLength(1);
+});
+
+test.each(["replace root", "uninstall"])("disposal can %s without committing the requested page", async (action) => {
+  install();
+  const before = window.history.length;
+  const oldUrl = window.location.href;
+  const replacement = document.createElement("main");
+  const dispose = () => {
+    if (action === "uninstall") uninstall();
+    else document.querySelector("main")!.replaceWith(replacement);
+  };
+  window.addEventListener("ssr:island-dispose", dispose, { once: true });
+  try {
+    spyOn(globalThis, "fetch").mockResolvedValue(response());
+    await swapPage("/app/requested");
+    // Application cleanup invalidates ownership before history, title or the root may commit.
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith("https://example.test/app/requested");
+    expect(replace).not.toHaveBeenCalled();
+    expect(window.history.length).toBe(before);
+    expect(window.location.href).toBe(oldUrl);
+    expect(document.title).toBe("old");
+    expect(events).toEqual(["cleanup:old"]);
+    if (action === "replace root") expect(document.querySelector("main")).toBe(replacement);
+  } finally {
+    window.removeEventListener("ssr:island-dispose", dispose);
+  }
+});
+
+test("a newer swap started during disposal owns the page", async () => {
+  install();
+  const requests = deferredFetch();
+  let b = Promise.resolve();
+  const dispose = () => {
+    b = swapPage("/app/B");
+  };
+  window.addEventListener("ssr:island-dispose", dispose, { once: true });
+  try {
+    const a = swapPage("/app/A");
+    requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
+    await a;
+    expect(requests).toHaveLength(2);
+    expect(window.location.pathname).toBe("/app/old");
+    expect(document.title).toBe("old");
+    requests[1]!.resolve(response(html("B"), {}, "https://example.test/app/B"));
+    await b;
+    expect(window.location.href).toBe("https://example.test/app/B");
+    expect(document.title).toBe("B");
+    expect(document.querySelector("main b")!.textContent).toBe("B");
+    expect(events).toEqual(["cleanup:old", "mount:B"]);
+    expect(assign).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener("ssr:island-dispose", dispose);
+  }
+});
+
+test.each(["navigate", "Link push"])("newer %s cancels a pending swap and keeps the island URL", async (kind) => {
+  install();
+  const old = document.querySelector("main");
+  const requests = deferredFetch(true);
+  const pending = swapPage("/app/A");
+  const linkRoot = document.createElement("div");
+  document.querySelector("nav")!.append(linkRoot);
+  let dispose = () => {};
+  try {
+    if (kind === "navigate") navigate("/app/island");
+    else {
+      dispose = render(() => Link({ href: "/app/island", onNavigate: ({ push }) => push(), children: "island" }), linkRoot);
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+      linkRoot.querySelector("a")!.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(requests[0]!.signal.aborted).toBe(true);
+    expect(window.location.pathname).toBe("/app/island");
+    requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
+    await pending;
+    expect(window.location.href).toBe("https://example.test/app/island");
+    expect(document.querySelector("main")).toBe(old);
+    expect(old!.querySelector("b")!.textContent).toBe("old");
+    expect(document.title).toBe("old");
+    expect(events).toEqual([]);
+    expect(assign).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  } finally {
+    dispose();
+    linkRoot.remove();
+  }
+});
+
+test.each([
+  ["documentNavigate", () => documentNavigate("/x"), "/x"],
+  ["navigateTo", () => navigateTo("/y"), "/y"],
+  ["refreshCurrentPath", () => refreshCurrentPath(), "/app/old"],
+] as const)("%s aborts a pending swap and produces only its own document load", async (_name, go, href) => {
+  install();
+  const requests = deferredFetch(true);
+  const pending = swapPage("/app/A");
+  go();
+  expect(requests[0]!.signal.aborted).toBe(true);
+  requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
+  await pending;
+  expect(assign).toHaveBeenCalledTimes(1);
+  expect(assign).toHaveBeenCalledWith(href);
+  expect(replace).not.toHaveBeenCalled();
+  expect(window.location.pathname).toBe("/app/old");
+  expect(document.title).toBe("old");
+  expect(document.querySelector("main b")!.textContent).toBe("old");
+  expect(events).toEqual([]);
+});
+
+test("a malformed hash escape commits without document navigation", async () => {
+  install();
+  spyOn(globalThis, "fetch").mockResolvedValue(response());
+  await swapPage("/app/new#%");
+  expect(window.location.href).toBe("https://example.test/app/new#%");
+  expect(document.title).toBe("new");
+  expect(document.querySelector("main b")!.textContent).toBe("new");
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test("a late commit failure replaces even when a new island overwrites the history marker", async () => {
+  install();
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", wrapper("new", historyId))));
+  const focus = spyOn(HTMLElement.prototype, "focus").mockImplementation(() => {
+    throw new Error("commit focus failed");
+  });
+  const before = window.history.length;
+  await swapPage("/app/requested");
+  // Fallback must use the local commit flag: the island has removed the page marker.
+  expect(window.history.state).toEqual({ island: 1 });
+  expect(window.history.length).toBe(before + 1);
+  expect(focus).toHaveBeenCalledTimes(1);
+  expect(console.error).toHaveBeenCalledTimes(1);
+  expect(replace).toHaveBeenCalledTimes(1);
+  expect(replace).toHaveBeenCalledWith("https://example.test/app/requested");
+  expect(assign).not.toHaveBeenCalled();
+});
+
+test("base target blank keeps an in-scope click native without fetching", () => {
+  install();
+  const base = document.createElement("base");
+  base.target = "_blank";
+  document.head.prepend(base);
+  const fetch = spyOn(globalThis, "fetch");
+  expect(click("/app/A").defaultPrevented).toBe(false);
+  expect(fetch).not.toHaveBeenCalled();
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test.each(["_top", "_parent"])("a native %s click aborts a pending swap", async (target) => {
+  install();
+  const requests = deferredFetch(true);
+  const pending = swapPage("/app/A");
+  expect(click("/app/B", `target="${target}"`).defaultPrevented).toBe(false);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.signal.aborted).toBe(true);
+  // Happy DOM applies the native target navigation itself; the late swap must leave that URL alone.
+  const nativeUrl = window.location.href;
+  requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
+  await pending;
+  expect(window.location.href).toBe(nativeUrl);
+  expect(document.title).toBe("old");
+  expect(document.querySelector("main b")!.textContent).toBe("old");
+  expect(events).toEqual([]);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test("both page bases resolve relative stylesheets while history commits an absolute same-origin URL", async () => {
+  install();
+  const base = document.createElement("base");
+  base.href = "https://other.test/";
+  document.head.prepend(base);
+  document.querySelector('link[rel="stylesheet"]')!.setAttribute("href", "base.css");
+  const next = html("new").replace("<head>", '<head><base href="https://other.test/">').replace('href="/base.css"', 'href="base.css"');
+  const push = spyOn(window.history, "pushState");
+  spyOn(globalThis, "fetch").mockResolvedValue(response(next));
+  await swapPage("https://example.test/app/new");
+  // Happy DOM resolves relative history URLs against location instead of <base>; require the browser-safe absolute input.
+  expect(push).toHaveBeenCalledWith({ "@k2b/ssr/nav": expect.any(String) }, "", "https://example.test/app/new");
+  expect(window.location.href).toBe("https://example.test/app/new");
+  expect(document.title).toBe("new");
+  expect(document.querySelector("main b")!.textContent).toBe("new");
+  expect(events).toEqual(["cleanup:old", "mount:new"]);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test("a composed click reaches an anchor inside a shell shadow root", async () => {
+  install();
+  const requests = deferredFetch();
+  const host = document.createElement("div");
+  document.querySelector("[data-nav-shell]")!.append(host);
+  const shadow = host.attachShadow({ mode: "open" });
+  const anchor = document.createElement("a");
+  anchor.href = "/app/shadow";
+  shadow.append(anchor);
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true, composed: true, button: 0 });
+  // Happy DOM keeps the inner target across shadow boundaries; model the host that a window listener sees in a browser.
+  Object.defineProperty(event, "target", { get: () => host });
+  anchor.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+  expect(requests).toHaveLength(1);
+  expect(globalThis.fetch).toHaveBeenCalledWith("https://example.test/app/shadow", {
+    credentials: "same-origin",
+    signal: requests[0]!.signal,
+    headers: { Accept: "text/html" },
+  });
+  requests[0]!.resolve(response(html("shadow"), {}, "https://example.test/app/shadow"));
+  // Join the click-started swap through its synchronous commit's last observable step.
+  await new Promise<void>((resolve) => {
+    const focus = HTMLElement.prototype.focus;
+    spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options) {
+      focus.call(this, options);
+      resolve();
+    });
+  });
+  expect(window.location.pathname).toBe("/app/shadow");
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test("a keyed region created by an island restores its scroll after the new island mounts", async () => {
+  install();
+  spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(response(html("list-old", wrapper("list-old", scrollId)), {}, "https://example.test/app/list-old"))
+    .mockResolvedValueOnce(response(html("list-new", wrapper("list-new", scrollId)), {}, "https://example.test/app/list-new"));
+  await swapPage("/app/list-old");
+  const old = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
+  old.scrollTop = 125;
+  expect(old.scrollTop).toBe(125);
+  await swapPage("/app/list-new");
+  const next = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
+  expect(next).not.toBe(old);
+  expect(old.isConnected).toBe(false);
+  expect(next.textContent).toBe("list-new");
+  // The response contains only a wrapper: this region exists only after mountIslands, so 125 proves restoration ran later.
+  expect(next.scrollTop).toBe(125);
+  expect(window.location.pathname).toBe("/app/list-new");
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test("a valid swap page served as JSON falls back solely on its content type", async () => {
+  install();
+  const before = window.history.length;
+  const old = document.querySelector("main");
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new"), { headers: { "content-type": "application/json" } }));
+  await swapPage("/app/new");
+  expect(assign).toHaveBeenCalledTimes(1);
+  expect(assign).toHaveBeenCalledWith("https://example.test/app/new");
+  expect(replace).not.toHaveBeenCalled();
+  expect(window.history.length).toBe(before);
+  expect(window.location.pathname).toBe("/app/old");
+  expect(document.title).toBe("old");
+  expect(document.querySelector("main")).toBe(old);
+  expect(events).toEqual([]);
+});
+
+test("a fetch ignoring abort cannot read or commit A after B has committed", async () => {
+  install();
+  const requests = deferredFetch(true);
+  const a = swapPage("/app/A");
+  const b = swapPage("/app/B");
+  expect(requests[0]!.signal.aborted).toBe(true);
+  requests[1]!.resolve(response(html("B"), {}, "https://example.test/app/B"));
+  await b;
+  const column = document.querySelector("main");
+  const before = window.history.length;
+  const stale = response(html("A"), {}, "https://example.test/app/A");
+  const read = spyOn(stale, "text");
+  requests[0]!.resolve(stale);
+  await a;
+  // This isolates the post-fetch guard; later stale checks could hide its removal if we checked only the final DOM.
+  expect(read).not.toHaveBeenCalled();
+  expect(window.location.href).toBe("https://example.test/app/B");
+  expect(document.title).toBe("B");
+  expect(document.querySelector("main")).toBe(column);
+  expect(column!.querySelector("b")!.textContent).toBe("B");
+  expect(window.history.length).toBe(before);
+  expect(events).toEqual(["cleanup:old", "mount:B"]);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
 });

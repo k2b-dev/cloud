@@ -165,7 +165,8 @@ replace })` starts a swap from code.
 The swap fetches the page and loads its island modules before it changes the
 old column. Then it disposes the old islands, replaces the column, sets the
 title, pushes history, mounts the new islands, focuses the first heading of the
-column, and announces the title. A newer click cancels an older swap.
+column, and announces the title. A newer navigation cancels a pending swap,
+also an island's `navigate()` call.
 
 Any failure loads the requested URL as a document, so the person sees what a
 reload shows: a status other than 200 such as an expired session's 403, a
@@ -174,9 +175,10 @@ signature, a new build with another module prefix or other stylesheets, or a
 module that fails. Inline scripts in the fetched page do not run; give page
 data to islands as props.
 
-Back and Forward are not swapped yet. Until the first swap, islands handle
-their history entries with `listenPopState()` as before. After a swap, Back or
-Forward loads the document, except onto the entry the swap created.
+Back and Forward are not swapped yet. On a page loaded normally, islands
+handle their history entries with `listenPopState()` as before. On a page
+that a swap showed, also after a reload, Back or Forward loads the document,
+except onto that page's own entry.
 
 ## Transient UI state
 

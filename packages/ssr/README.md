@@ -329,7 +329,9 @@ A swap fetches the page, then loads its island modules, and only then disposes
 the old islands and replaces the column. It sets the title and the declared
 attributes, pushes history, mounts the new islands, scrolls to the top or to
 the hash, focuses the first heading of the column, and announces the title in
-a polite live region. A newer swap aborts an older one.
+a polite live region. A newer navigation aborts a pending swap: another swap,
+Back or Forward, a native link, or a call to `navigate()` or
+`documentNavigate()`.
 
 Any failure loads the requested URL as a normal document: a status other than
 200, a response that is not HTML, a redirect out of the scope, a missing shell
@@ -338,9 +340,10 @@ and a module that fails to load or to evaluate. The old column stays until
 then. Inline scripts in the fetched page do not run, and only the title of
 its head is used.
 
-Back and Forward are not swapped yet. Until the first swap, islands handle
-their history entries with `listenPopState()` as before. After a swap, Back or
-Forward loads the document, except onto the entry the swap created.
+Back and Forward are not swapped yet. On a page loaded normally, islands
+handle their history entries with `listenPopState()` as before. On a page
+that a swap showed, also after a reload, Back or Forward loads the document,
+except onto that page's own entry.
 
 ## Error handling in islands
 

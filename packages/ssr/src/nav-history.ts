@@ -2,6 +2,15 @@ import type { EnhancedNavigateOptions, PopStateNavigationEvent, ScrollSnapshot }
 
 const SCROLL_PRESERVE_SELECTOR = "[data-scroll-preserve]";
 
+/** Where an installed page swap keeps its per-document state (see nav-swap.ts). */
+export const swapKey = Symbol.for("@k2b/ssr/nav-swap");
+
+/** Any newer navigation wins over a pending page swap. Without an installed swap this does nothing. */
+const cancelPageSwap = (): void => {
+  const shared: typeof globalThis & { [swapKey]?: { active?: AbortController } } = globalThis;
+  shared[swapKey]?.active?.abort();
+};
+
 type ViewTransitionDocument = Document & {
   startViewTransition?: (callback: () => void | Promise<void>) => unknown;
 };
@@ -18,6 +27,7 @@ export const currentPathWithQuery = (): string => {
  * Navigates to the current path + query with a full document navigation.
  */
 export const refreshCurrentPath = (): void => {
+  cancelPageSwap();
   window.location.assign(currentPathWithQuery());
 };
 
@@ -25,6 +35,7 @@ export const refreshCurrentPath = (): void => {
  * Navigates with a full document navigation.
  */
 export const navigateTo = (href: string): void => {
+  cancelPageSwap();
   window.location.assign(href);
 };
 
@@ -95,6 +106,7 @@ export const resolveNavigationUrl = (href: string): URL => new URL(href, documen
  * data, or re-render server pages.
  */
 export const navigate = (href: string, options: EnhancedNavigateOptions = {}): void => {
+  cancelPageSwap();
   const url = resolveNavigationUrl(href);
   if (url.origin !== window.location.origin) {
     documentNavigate(url.href, { replace: options.replace });
@@ -129,6 +141,7 @@ export const navigate = (href: string, options: EnhancedNavigateOptions = {}): v
 };
 
 export const documentNavigate = (href: string, options: { replace?: boolean } = {}): void => {
+  cancelPageSwap();
   if (options.replace) window.location.replace(href);
   else window.location.assign(href);
 };

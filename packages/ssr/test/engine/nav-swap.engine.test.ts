@@ -23,14 +23,16 @@ let unseenId: string;
 let brokenId: string;
 let heldA: ReturnType<typeof Promise.withResolvers<Response>> | undefined;
 let receivedA: ReturnType<typeof Promise.withResolvers<void>>;
-const scenarios = ["A", "B", "new", "non-html", "403", "redirect", "signature", "prefix", "deploy", "styles", "throw"];
+const scenarios = ["A", "B", "new", "non-html", "403", "redirect", "signature", "prefix", "deploy", "styles", "throw", "sub/nested"];
+/** Paths of frame requests, to see which URL a relative `src` in a swapped column resolved against. */
+const frames: string[] = [];
 const wrapper = (id: string, label: string) =>
   `<solid-island data-id="${id}" data-props='${JSON.stringify(toJSON({ label }))}'>server ${label}</solid-island>`;
-const html = (label: string, options: { signature?: string; prefix?: string; style?: string; entry?: string } = {}) => {
+const html = (label: string, options: { signature?: string; prefix?: string; style?: string; entry?: string; extra?: string } = {}) => {
   const prefix = options.prefix ?? `/_ssr/${version}`;
   return `<!doctype html><html><head><title>${label}</title><link rel="stylesheet" href="${options.style ?? "/base.css"}"></head><body>
     <div data-nav-shell="${options.signature ?? "sig"}" data-nav-scope="/app" data-nav-attributes="data-mode" data-mode="${label}">
-    ${wrapper(railId, "rail")}<main data-nav-root><h1>${label}</h1>${wrapper(options.entry ?? pageId, label)}</main></div>
+    ${wrapper(railId, "rail")}<main data-nav-root><h1>${label}</h1>${wrapper(options.entry ?? pageId, label)}${options.extra ?? ""}</main></div>
     <script type="module" data-ssr-assets="${prefix}">const p="${prefix}";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
     </body></html>`;
 };
@@ -48,7 +50,7 @@ beforeAll(async () => {
     import { installPageSwap } from ${JSON.stringify(resolve(import.meta.dir, "../../src/nav.ts"))};
     export default function Rail() {
       onMount(() => { onCleanup(installPageSwap()); document.documentElement.dataset.ready = "yes"; });
-      return <nav>${scenarios.map((name) => `<a id="${name}" href="/app/${name}">${name}</a>`).join("")}
+      return <nav>${scenarios.map((name) => `<a id="${name.replace("/", "-")}" href="/app/${name}">${name}</a>`).join("")}
       <a id="prevented" href="/app/prevented" onClick={e => e.preventDefault()}>prevented</a></nav>;
     }`,
   );
@@ -71,6 +73,10 @@ beforeAll(async () => {
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
+      if (url.pathname.endsWith("/frame.html")) {
+        frames.push(url.pathname);
+        return new Response("<!doctype html><title>frame</title>", { headers: { "content-type": "text/html" } });
+      }
       if (url.pathname.endsWith(".css")) return new Response("body{min-height:2000px}", { headers: { "content-type": "text/css" } });
       if (url.pathname.startsWith("/_ssr/")) {
         const file = Bun.file(join(root, "_ssr", url.pathname.split("/").at(-1)!));
@@ -98,6 +104,8 @@ beforeAll(async () => {
           return pageResponse(label, { style: "/changed.css" });
         case "throw":
           return pageResponse(label, { entry: brokenId });
+        case "nested":
+          return pageResponse(label, { extra: '<iframe title="frame" src="frame.html"></iframe>' });
         case "deploy": {
           const result = pageResponse(label, { entry: unseenId });
           version = "v2";
@@ -238,6 +246,48 @@ test(`${browserName}: success focuses and announces; Back loads the previous doc
     expect(await page.evaluate(() => history.length)).toBe(before + 1);
     expect(await page.locator("main [data-mounted]").textContent()).toBe("new");
     expect(documents).toEqual([]);
+    await page.goBack();
+    await page.waitForFunction(
+      () =>
+        location.pathname === "/app/old" &&
+        document.documentElement.dataset.ready === "yes" &&
+        document.querySelector("main [data-mounted]")?.textContent === "old",
+    );
+    expect(documents).toEqual([`${origin}/app/old`]);
+  } finally {
+    await context.close();
+  }
+});
+
+test(`${browserName}: a relative URL in the swapped column resolves against the new page`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page);
+    frames.length = 0;
+    await page.click("#sub-nested");
+    await page.waitForFunction(() => document.querySelector("main iframe") !== null);
+    expect(page.url()).toBe(`${origin}/app/sub/nested`);
+    // An iframe navigates on insertion: inserted before the history commit, it would load /app/frame.html.
+    await page.frameLocator("main iframe").locator("title").waitFor({ state: "attached" });
+    expect(frames).toEqual(["/app/sub/frame.html"]);
+  } finally {
+    await context.close();
+  }
+});
+
+test(`${browserName}: Back after reloading a swapped page loads the previous page`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page);
+    await page.click("#new");
+    await page.waitForFunction(() => document.querySelector("[data-nav-announcer]")?.textContent === "new");
+    await page.reload();
+    await page.waitForFunction(
+      () => document.documentElement.dataset.ready === "yes" && document.querySelector("main [data-mounted]")?.textContent === "new",
+    );
+    const documents = trackDocuments(page);
     await page.goBack();
     await page.waitForFunction(
       () =>
