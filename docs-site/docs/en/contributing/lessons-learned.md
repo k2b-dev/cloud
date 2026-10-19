@@ -24,7 +24,7 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | Decode work bounded only by file size | One record consumes the whole file's decode budget on every lookup, or a probe keeps many large records at once. | Tests: Cloud `geoip.test.ts` checks the 32 KiB record boundary, isolated failure and refusal of a valid record with a huge array; GeoIP `index.test.ts` checks upload refusal and that the probe keeps no record between addresses. |
-| Navigation truncation drift | Component or app CSS reintroduces an ellipsis, or a mask clips the navigation control's focus ring. | Tests: UI `truncate-fade-contract.test.ts` rejects ellipsis and line clamps across shipped navigation families; `truncate-fade.render.test.tsx` checks inner label classes; `sidebar-row-labels.browser.test.ts` checks overflow, resizing, RTL, focus, and stable heights. |
+| Navigation truncation drift | Component or app CSS reintroduces an ellipsis, lets labels in a scrolling strip shrink to fragments, or a mask clips the navigation control's focus ring. | Tests: UI `truncate-fade-contract.test.ts` rejects ellipsis and line clamps across shipped navigation families; `truncate-fade.render.test.tsx` checks inner label classes; `sidebar-row-labels.browser.test.ts` checks overflow, resizing, RTL, focus, and stable heights; `view-tabs.browser.test.ts` checks at 390 px and in a narrow head that no view tab is narrower than its content and that the current and focused tabs lie in view outside the edge fade ([#1550](https://github.com/k2b-dev/cloud/issues/1550)). |
 | Browser cookie store read races a document write | WebKit stores a `document.cookie` write asynchronously, so a test reading `context.cookies()` immediately can see the previous value ([#1496](https://github.com/k2b-dev/cloud/issues/1496)). | Check: `cookie-store` requires `storedCookie(page, name)` from `packages/ui/test/browser.ts` to wait until the store agrees with the document, or a leading `// cookie-store: <reason>` for a deliberate read such as an HttpOnly cookie. |
 | Rate-limit scope and budget mismatch | Multi-request uploads exhaust the public page budget; per-link keys let clients bypass the upload cap by spraying tokens. | Tests: Files `public-rate-limit.integration.test.ts` checks the per-client (IPv6 /64) upload budget, token spraying and page isolation; `public-inbox.behavior.test.tsx` checks automatic waits and the terminal rate-limit message ([#1168](https://github.com/k2b-dev/cloud/issues/1168)). |
 | Remote content in mail | A sent message or its preview loads an image from a remote address, so opening it tells the sender's server who read it and when. Mail images come only from stored bytes, sent as an inline `cid:` part and previewed as a `data:` URL. | Test: Mail `outbound-mime.test.ts` (the logo is a `multipart/related` inline part whose `Content-ID` matches the HTML, no `http(s)` image source) and `compose-renderer.test.ts` (Markdown images, `<img>`, and CSS `url()` or `image-set()` stay rejected). |
@@ -185,6 +185,13 @@ convention still needs a check or a test.
 - **Root cause:** An outline extended beyond an avatar placed flush with the body's scrollport.
 - **Error class:** Paint outside a scrollport.
 - **Guard:** `packages/ui/src/layout/detail-panel-sections.browser.test.ts` checks the painted ring bounds, including outside outlines and shadows, and unchanged avatar dimensions in both themes and viewport sizes. The ring and its transparent gap now fit inside the avatar's border box.
+
+### View tabs on phones shrank to fragments
+
+- **What happened:** On a phone, a Mail mailbox showed its views as "Nee 12" and "Assig 5" beside the head actions ([#1550](https://github.com/k2b-dev/cloud/issues/1550)).
+- **Root cause:** `.k2b-view-tabs__item` could shrink (`flex: 0 1 auto` with a 2.75rem floor), so the views shrank and faded their labels before the scrolling strip had anything to scroll.
+- **Error class:** Navigation truncation drift.
+- **Guard:** `packages/ui/src/actions/view-tabs.browser.test.ts` checks in Chromium and WebKit, at 390 px and in a 640 px head, that no view label is clipped and no tab is narrower than its content. It also checks that the current view lies in view in the server frame, after hydration, after an in-place change, and after a resize, and that a focused tab is never under the edge fade, also in RTL. Tabs now keep their content width at any width, and the strip scrolls.
 
 ### Large uploads timed out after all bytes arrived
 
