@@ -5,9 +5,9 @@ import { createHelpReader } from "../services/help";
 import type { HelpManifestResult } from "../services/help/types";
 import { logger } from "../services/logging";
 import type { HelpDocumentPayload } from "../shared/help";
+import { resolveCurrentApp } from "./app-appearance";
 import type { HelpArticleParts } from "./layout-help-article";
 import { helpArticlePartsServer } from "./layout-help-article.server";
-import { resolveCurrentApp } from "./app-appearance";
 import { getRuntimeContext } from "./runtime";
 
 const manifests = new WeakMap<object, HelpManifestResult | null>();

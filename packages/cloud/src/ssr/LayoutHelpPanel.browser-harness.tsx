@@ -7,9 +7,9 @@ import type { User } from "../contracts/shared";
 import type { HelpDocumentManifest, HelpDocumentPayload } from "../shared/help";
 import { appAppearanceStyle } from "./app-appearance";
 import Layout from "./Layout";
-import { LayoutHelpPage, LayoutHelpPanel, type LayoutHelpPanelProps, type LayoutHelpPageProps } from "./LayoutHelp";
-import PanelLayout from "./PanelLayout";
+import { LayoutHelpPage, type LayoutHelpPageProps, LayoutHelpPanel, type LayoutHelpPanelProps } from "./LayoutHelp";
 import { helpArticlePartsServer } from "./layout-help-article.server";
+import PanelLayout from "./PanelLayout";
 import { readPanelContext } from "./panel-context";
 
 export const documents: HelpDocumentManifest[] = [

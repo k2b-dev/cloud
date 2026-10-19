@@ -1,6 +1,6 @@
 import { Hono, type MiddlewareHandler } from "hono";
-import { buildHelpDocumentPayload } from "../server/help-payload";
 import { type AuthContext, auth, getLocale } from "../server";
+import { buildHelpDocumentPayload } from "../server/help-payload";
 import { createHelpReader, type HelpReaderFactory } from "../services/help";
 import type { HelpSearchPayload } from "../shared/help";
 import type { renderHelpMarkdown } from "../shared/markdown";
