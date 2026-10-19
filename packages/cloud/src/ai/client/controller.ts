@@ -2,7 +2,7 @@ import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
-import type { AiActionCheck } from "../action-review";
+import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
@@ -1370,12 +1370,25 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         ),
       );
     const projection = isActiveConversation(conversationId) ? state : cache.get(conversationId);
+    let effective = check;
     if (projection) {
+      const storedMessage = projection.messages.find(
+        (message) =>
+          message.loopId === requestInput.turnId &&
+          message.message.role === "assistant" &&
+          message.message.content.some((block) => block.type === "tool_call" && block.id === requestInput.callId),
+      );
+      const liveBlock =
+        projection.activeTurn?.turnId === requestInput.turnId
+          ? projection.activeTurn.blocks.find((block) => block.kind === "tool" && block.callId === requestInput.callId)
+          : undefined;
+      effective = preferredActionCheck(storedMessage?.meta?.toolChecks?.[requestInput.callId], effective);
+      effective = preferredActionCheck(liveBlock?.kind === "tool" ? liveBlock.check : undefined, effective);
       const messages = projection.messages.map((message) =>
         message.loopId === requestInput.turnId &&
         message.message.role === "assistant" &&
         message.message.content.some((block) => block.type === "tool_call" && block.id === requestInput.callId)
-          ? { ...message, meta: { ...message.meta, toolChecks: { ...message.meta?.toolChecks, [requestInput.callId]: check } } }
+          ? { ...message, meta: { ...message.meta, toolChecks: { ...message.meta?.toolChecks, [requestInput.callId]: effective } } }
           : message,
       );
       const activeTurn =
@@ -1383,7 +1396,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
           ? {
               ...projection.activeTurn,
               blocks: projection.activeTurn.blocks.map((block) =>
-                block.kind === "tool" && block.callId === requestInput.callId ? { ...block, check } : block,
+                block.kind === "tool" && block.callId === requestInput.callId ? { ...block, check: effective } : block,
               ),
             }
           : projection.activeTurn;
@@ -1391,7 +1404,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       cache.set(conversationId, next);
       if (isActiveConversation(conversationId)) setState(reconcile(next));
     }
-    return check;
+    return effective;
   };
 
   const submitFrontendToolResult = async (request: { turnId: string; callId: string }, result: unknown) => {

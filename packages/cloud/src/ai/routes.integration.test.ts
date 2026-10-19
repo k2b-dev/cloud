@@ -1071,6 +1071,105 @@ suiteFor(
       }
     },
   );
+  test.each([
+    "ACTION_OUTCOME_UNKNOWN: Recovery claim failed",
+    "IDEMPOTENCY_UNCERTAIN: Earlier outcome is unknown",
+    "IDEMPOTENCY_IN_PROGRESS: Earlier attempt is still running",
+    { code: "ACTION_OUTCOME_UNKNOWN", message: "Recovery claim failed" },
+    { code: "IDEMPOTENCY_UNCERTAIN", message: "Earlier outcome is unknown" },
+    { code: "IDEMPOTENCY_IN_PROGRESS", message: "Earlier attempt is still running" },
+  ])("starts and stores a first check after an unknown error result %j while the turn is live", async (result) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([
+      {
+        appId: "demo",
+        appName: "Demo",
+        appDescription: "Check fixture",
+        appIcon: "ti ti-box",
+        endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+        manifest: compileReviewFixture().manifest,
+      },
+    ]);
+    const dispatch = spyOn(capabilityDispatch, "dispatchCapability").mockImplementation(async (input) => {
+      expect(input).toMatchObject({
+        kind: "queries",
+        capabilityId: "check",
+        appId: "demo",
+        review: false,
+        origin: "assistant",
+        input: { id: "original" },
+      });
+      return Response.json({ data: { outcome: "done", receipt: { text: "Saved" } } });
+    });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: "test-model",
+        runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
+      });
+      const target = { conversationId: conversation.id, turnId: turn.id, callId: "send" };
+      const store = aiConversations.createSessionStore(target);
+      const callIds = ["send", "success", "definitive-error", "no-dispatch", "no-check", "success-with-code"];
+      await store.append({
+        role: "assistant",
+        content: callIds.map((id) => ({ type: "tool_call", id, name: "demo__action__send", args: {} })),
+      });
+      for (const callId of callIds) {
+        await recordAiToolReview({
+          ...target,
+          callId,
+          review: {
+            ...reviewFixture(),
+            ask: "sends",
+            ...(callId !== "no-check" ? { check: { query: "check", input: { id: "original" } } } : {}),
+          },
+        });
+        if (callId !== "no-dispatch") {
+          await aiToolAudit.noteCapabilityDispatch({
+            ...target,
+            callId,
+            toolName: "demo__action__send",
+            requestId: crypto.randomUUID(),
+          });
+        }
+        await store.append({
+          role: "tool_result",
+          callId,
+          name: "demo__action__send",
+          isError: callId !== "success" && callId !== "success-with-code",
+          result: callId === "success" ? { data: { saved: true } } : callId === "definitive-error" ? "BAD_INPUT: Refused" : result,
+        });
+      }
+      await sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`;
+      const token = await createTestSession(userId);
+      const post = (callId: string) =>
+        aiRoutes.request(`/conversations/${conversation.shortId}/turns/${turn.shortId}/calls/${callId}/check`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      const before = await aiConversations.listTurnMessages({ ...target, loopId: turn.id, includeCompacted: true });
+      expect(before.find(({ message }) => message.role === "assistant")?.meta?.toolChecks?.send).toBeUndefined();
+      for (const callId of callIds.filter((callId) => callId !== "send")) expect((await post(callId)).status).toBe(409);
+      expect(dispatch).not.toHaveBeenCalled();
+      const response = await post("send");
+      expect(response.status).toBe(200);
+      const answered = await response.json();
+      expect(answered).toMatchObject({ state: "done", receipt: { text: "Saved" } });
+      const after = await aiConversations.listTurnMessages({ ...target, loopId: turn.id, includeCompacted: true });
+      expect(after.find(({ message }) => message.role === "assistant")?.meta?.toolChecks?.send).toEqual(answered);
+      const replay = await post("send");
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toEqual(answered);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+    } finally {
+      dispatch.mockRestore();
+      registrySpy.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
   test.each(["pending", "failed"] as const)(
     "re-checks %s once per press, rejects concurrent checks, and replays a settled check",
     async (state) => {

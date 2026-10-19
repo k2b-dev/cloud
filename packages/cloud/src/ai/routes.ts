@@ -31,6 +31,7 @@ import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { readThemeFromCookieHeader } from "../shared/theme";
+import { isUnknownActionOutcome } from "./action-review";
 import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
@@ -1235,11 +1236,14 @@ export const aiRoutes = (() => {
           const previous = message.meta?.toolChecks?.[callId];
           if (!review || !("sentence" in review) || !review.check) return respond(c, fail(err.conflict("This call has no outcome check.")));
           if (!previous) {
-            // Core may stop after dispatch but before recording an unknown outcome. Only a cut-off call in a
-            // terminal turn may start its first check here; an undispatched Action must never be checked.
+            // An unknown tool result ends executor recovery for this call, even while its turn is live. Without
+            // a result, only a terminal cut-off call may be checked. Both paths require evidence of dispatch.
             const terminal = turn.status === "completed" || turn.status === "failed" || turn.status === "aborted";
-            const hasResult = messages.some(({ message }) => message.role === "tool_result" && message.callId === callId);
-            if (!terminal || hasResult || !(await aiToolAudit.hasCapabilityDispatch(target)))
+            const result = messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message;
+            const eligible = result
+              ? result.role === "tool_result" && result.isError === true && isUnknownActionOutcome(result.result)
+              : terminal;
+            if (!eligible || !(await aiToolAudit.hasCapabilityDispatch(target)))
               return respond(c, fail(err.conflict("This call has no outcome check.")));
           }
           // A settled check answers again as it was stored, so a client whose last response got lost can recover

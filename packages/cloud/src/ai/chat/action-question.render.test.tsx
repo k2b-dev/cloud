@@ -453,6 +453,13 @@ describe("card v4 outcome line", () => {
     expect(noCheck.current).toContain("Erneut ausführen geht erst, wenn klar ist, was passiert ist.");
     expect(noCheck.current).toContain("In Mail öffnen");
     expect(noCheck.all).not.toContain("Noch einmal prüfen");
+    // A review with a check whose automatic run never started, such as a failed claim, is the person's to check.
+    const unstarted = decided(de.mail!.block, { status: "failed", isError: true, result: unknown });
+    const checkable = text(
+      renderTurn(unstarted, "de", "completed", { onApproval: async () => undefined, onCheckAction: async () => ({ state: "pending" }) }),
+    );
+    expect(checkable).toContain("Noch einmal prüfen");
+    expect(checkable).toContain("Erneut ausführen geht erst, wenn klar ist, was passiert ist.");
     for (const line of [checking, found, notFound, pending, failed, noCheck])
       expect(line.all).not.toMatch(/Erneut senden|Noch einmal senden|An Lea Berg senden/);
   });

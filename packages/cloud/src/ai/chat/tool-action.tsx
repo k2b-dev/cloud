@@ -372,12 +372,13 @@ export function ToolActionView(props: {
             detail: failedDetail ?? words.checkFailed({ app }),
             actions: unknownActions(true),
           },
+          // No check ran, such as when Core could not store its claim; the review's check, if any, is the person's.
           noCheck: {
             tone: "warning",
             icon: "ti ti-help-circle",
             text: c.forms.unknown,
-            detail: words.noCheck,
-            ...(c.open ? { actions: unknownActions(false) } : {}),
+            detail: failedDetail ?? words.noCheck,
+            ...(c.open || c.hasCheck ? { actions: unknownActions(true) } : {}),
           },
           // A call the turn's end cut off has no check yet; the review's check, if any, is the person's to start.
           cutOff: {
@@ -394,7 +395,7 @@ export function ToolActionView(props: {
           checkFailed: ["pending", "checkFailed", "checkedDone", "checkedNotDone"],
           checkedDone: ["checkedDone"],
           checkedNotDone: ["checkedNotDone"],
-          noCheck: ["noCheck"],
+          noCheck: ["noCheck", "checkedDone", "checkedNotDone", "pending", "checkFailed"],
           cutOff: ["cutOff", "checkedDone", "checkedNotDone", "pending", "checkFailed"],
         };
         return Object.fromEntries(reachable[current.current].map((key) => [key, all[key]!]));
