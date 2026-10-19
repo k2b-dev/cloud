@@ -13,7 +13,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - For a date-bounded calendar use `spaces.event.agenda`. Follow every cursor, including after an empty page: pagination groups series with their overrides. Collect all pages and sort by startsAt for a chronological agenda. Use returned occurrences; do not expand recurrence rules yourself or equate a series anchor with the next occurrence.
 - Select a writable Space through `spaces.space.browse`. A known Space can be listed directly with `spaces.task.list` or `spaces.event.list`. Read `spaces.space.read` only when column/tag IDs or configuration are needed.
 - List entries show at most three assignees and tags: when `assigneeCount` is larger than the number of `assignees`, state the total (for example "3 of 11") or read the item before naming everyone. `relationsTruncated` signals that a relation preview is partial.
-- Use each entry's `overdue` to call a task overdue; a completed task is never overdue, so never infer it from `deadline` alone.
+- Use `YYYY-MM-DD` deadlines without a named time. Use each entry's `overdue` to call a task overdue; a completed task is never overdue, so never infer it from `deadline` alone.
 - Read a selected `spaces.item.read` before changing its content or deleting it. Use a task for work and an event only with explicit valid start and end. Select assignees from `spaces.space.assignee.list`, never inferred names or invented IDs. It lists people and service accounts (`kind`); an agent's claim assigns that agent.
 
 ## Make focused changes

@@ -46,7 +46,6 @@ packages/pwa/src/frontend/_components/Welcome.behavior.test.tsx | 1
 packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts | 3
 packages/spaces/src/frontend/[id]/_components/list/item-list.browser-suite.ts | 2
 packages/spaces/src/frontend/[id]/_components/sidebar/item-templates.browser-suite.ts | 2
-packages/spaces/src/pwa/page.render.test.ts | 1
 packages/spaces/test/item-form-templates.behavior.test.tsx | 7
 packages/spaces/test/live.behavior.test.tsx | 1
 packages/spaces/test/templates-settings.behavior.test.tsx | 1

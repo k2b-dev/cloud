@@ -2,6 +2,7 @@ import type { WidgetBlock, WidgetListItem, WidgetResponse, WidgetTone } from "@k
 import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor, getWidgetRequest } from "@k2b/cloud/server";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
+import { deadlineDayKey, formatDeadline } from "@/presentation/deadline";
 import { buildSpaceItemHref } from "../routes";
 import { spacesService } from "../service";
 import { type SpacesMessages, spacesMessages } from "../service/messages";
@@ -35,14 +36,10 @@ const todoIcon = (priority: Priority): { icon: string; iconTone?: WidgetTone } =
   return { icon: "ti ti-circle" };
 };
 
-const formatRelativeDeadline = (iso: string | null, t: SpacesMessages): string | undefined => {
-  if (!iso) return undefined;
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms < 0) return t.widgetOverdue;
-  const hours = ms / 3600_000;
-  if (hours < 24) return t.widgetInHours({ count: Math.round(hours) });
-  const days = Math.round(hours / 24);
-  return t.widgetInDays({ count: days });
+const formatRelativeDeadline = (deadline: string | null, t: SpacesMessages, dateConfig?: DateContext): string | undefined => {
+  if (!deadline) return undefined;
+  if (deadlineDayKey(deadline, dateConfig) < dates.formatDateKey(dates.today(dateConfig), dateConfig)) return t.widgetOverdue;
+  return formatDeadline(deadline, dateConfig);
 };
 
 const formatTimeRange = (startsAt: string | null, endsAt: string | null, t: SpacesMessages, dateConfig?: DateContext): string => {
@@ -130,7 +127,7 @@ export const spacesTodayWidgetHandler = async (c: Context<AuthContext>) => {
         iconTone: ic.iconTone,
         label: todo.title,
         sub: todo.spaceName,
-        meta: formatRelativeDeadline(todo.deadline, t),
+        meta: formatRelativeDeadline(todo.deadline, t, dateConfig),
         href: buildSpaceItemHref(todo.spaceId, todo.id),
       };
     }),

@@ -128,6 +128,14 @@ panel.
 | 768–1023 px | Non-modal right drawer | Overlays the app without changing its width |
 | Below 768 px | Bottom sheet | Overlays the app; the grabber toggles full height |
 
+With the panel column open, the app area beside it is the app's
+`k2b-app-area` host from the server frame. Application chrome tied to the
+workspace sidebar or levels follows that host width, as the workspace does:
+the app behaves like the same app in a window as wide as its host. Shell focus
+hides the workspace navigation only when the host is at least 64 rem; below
+that, **Show navigation** still opens its overlay. See
+[AppWorkspace: Host width](/en/ui/layout/workspace#host-width).
+
 The column defaults to 26 rem, or 21.5 rem below a 1280 px viewport. Its
 separator resizes between 20 and 36 rem. Arrow keys change width by 1 rem,
 Shift+Arrow by 4 rem; Home and End select the bounds. Dragging below a raw

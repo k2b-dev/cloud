@@ -40,6 +40,7 @@ import {
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, getLocale, getTimeZone, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
+import { noTransform } from "../server/middleware/no-transform";
 import {
   accountLifecycle,
   accountsAppService as accountsService,
@@ -195,6 +196,7 @@ const NotificationHistoryQuerySchema = z.object({
 });
 const mandateRoutes = createMeMandateRoutes();
 const app = new Hono<AuthContext>()
+  .use("/notifications/history/*", noTransform())
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   .use(auth.requireUser())

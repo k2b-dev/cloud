@@ -950,6 +950,66 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("one click picks a complete one-day range, and a second day extends it", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { DateRangePicker } = await import("../src/inputs/DatePicker");
+    const commits: Array<{ start: string | null; end: string | null }> = [];
+    const dispose = render(
+      () =>
+        createComponent(DateRangePicker, {
+          label: "Window",
+          value: { start: "2026-10-05", end: "2026-10-06" },
+          dateConfig: { locale: "en", timeZone: "UTC" },
+          onValueCommit: (value) => commits.push(value),
+        }),
+      dom.root,
+    );
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")!;
+    const day = (key: string) => dom.root.querySelector<HTMLButtonElement>(`[data-date-day="${key}"]`)!;
+    const apply = () => dom.root.querySelector<HTMLButtonElement>(".k2b-date-apply")!;
+    const selected = () =>
+      Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[data-date-day][aria-selected="true"]')).map((cell) => cell.dataset.dateDay);
+    const pick = async (...keys: string[]) => {
+      trigger.click();
+      await Bun.sleep(0);
+      for (const key of keys) {
+        day(key).click();
+        await Bun.sleep(0);
+      }
+    };
+
+    // The first click is a whole one-day range: Apply is ready and the footer counts one day.
+    await pick("2026-10-22");
+    expect(selected()).toEqual(["2026-10-22"]);
+    expect(apply().disabled).toBe(false);
+    expect(dom.root.querySelector(".k2b-date-duration")?.textContent).toContain("1 day");
+    // A click on the same day keeps that one-day range.
+    day("2026-10-22").click();
+    await Bun.sleep(0);
+    expect(apply().disabled).toBe(false);
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-22", end: "2026-10-22" });
+
+    // A second day extends the range; an earlier day becomes the start, as before.
+    await pick("2026-10-22", "2026-10-25");
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-22", end: "2026-10-25" });
+    await pick("2026-10-25", "2026-10-22");
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-22", end: "2026-10-25" });
+
+    // After a range of several days, the next click starts a new one-day range.
+    await pick("2026-10-12", "2026-10-14", "2026-10-20");
+    expect(selected()).toEqual(["2026-10-20"]);
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-20", end: "2026-10-20" });
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
   test("normalizes NumberInput once and keeps steppers inside bounds", async () => {
     const dom = createDomTestHarness();
     const { NumberInput } = await import("../src/inputs/NumberInput");

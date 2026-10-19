@@ -192,7 +192,7 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
         onKeyDown={(event) => moveTabFocus(event, tab.props.id)}
       >
         <Show when={tab.props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-        <span>{tab.props.title}</span>
+        <span class="k2b-truncate-fade">{tab.props.title}</span>
       </button>
     );
   };
@@ -217,7 +217,7 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
             {(entry) =>
               isGroupDefinition(entry) ? (
                 <div class="k2b-settings__tab-group" role="presentation">
-                  <span class="k2b-settings__tab-group-label" aria-hidden="true">
+                  <span class="k2b-settings__tab-group-label k2b-truncate-fade" aria-hidden="true">
                     {entry.props.title}
                   </span>
                   <For each={collectTabs(entry.props.children)}>{(tab) => TabButton(tab)}</For>

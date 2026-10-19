@@ -159,6 +159,8 @@ const harness = async (dom: DomTestHarness) => {
     } = {},
   ) => {
     dom.window.happyDOM.setViewport({ width: options.width ?? 1440, height: 900 });
+    // The detail follows the app host; without a nearer host that is the root, which happy-dom does not lay out.
+    document.documentElement.style.width = `${options.width ?? 1440}px`;
     const shared = `${options.initialShiftId ? `&shift=${options.initialShiftId}` : ""}${options.focusDay ? "&focus=day" : ""}`;
     dom.window.history.replaceState(null, "", `/app/venue/Cafe01/shifts?cv=${options.calendarView ?? "week"}&cd=${shiftDay}${shared}`);
     return render(
@@ -338,7 +340,7 @@ describe("Venue shift detail", () => {
     }
   });
 
-  test("below 1024 px one tap opens the same detail in a bottom sheet with touch-sized actions", async () => {
+  test("below a 64 rem app host one tap opens the same detail in a bottom sheet with touch-sized actions", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     try {

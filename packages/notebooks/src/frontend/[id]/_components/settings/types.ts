@@ -8,6 +8,8 @@ export type NotebookSettingsProps = {
   isAdmin: boolean;
   canWrite: boolean;
   dateConfig: DateContext;
+  /** Returns an element inside the app; settings that depend on the app's width follow its `k2b-app-area` host. */
+  host: () => Element;
 };
 
 export type NoteSelectOption = {

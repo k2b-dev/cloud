@@ -1,6 +1,7 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Select, SettingsField, SettingsGroup, Switch, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup } from "solid-js";
+import { Select, SettingsField, SettingsGroup, Switch, useLocale, watchAppHostWidth } from "@k2b/ui";
+import { createSignal, onCleanup, Show } from "solid-js";
+import { isServer } from "solid-js/web";
 import { apiClient } from "@/api/client";
 import { isPresentationMode, type PresentationMode } from "@/lib/presentation-mode";
 import { TAB_KEY_PREFERENCE_EVENT } from "../detail/events";
@@ -11,11 +12,18 @@ import { readFullWidth, readTabMovesFocus, setTabMovesFocus } from "./NotebookSe
 import { SaveStatus } from "./shared";
 import { readErrorMessage } from "./utils";
 
-/** Personal preferences stored in this browser; an open note applies them without a reload. */
-function PersonalViewSection() {
+/**
+ * Personal preferences stored in this browser; an open note applies them without a reload. `host` returns an element
+ * inside the app: the dialog mounts outside the app's host, so CSS here cannot query it. Below a 64 rem host "Full width"
+ * changes nothing (app.css), so the switch stays away, as the View menu choice and the command do.
+ */
+function PersonalViewSection(props: { host: () => Element }) {
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
   const fullWidth = createFullWidth(readFullWidth());
+  const [wide, setWide] = createSignal(false);
+  // Measures before the first render, so the dialog opens in its final layout.
+  if (!isServer) onCleanup(watchAppHostWidth(props.host(), 64, setWide));
   const [tabMovesFocus, setTabMovesFocusValue] = createSignal(readTabMovesFocus());
 
   const change = (next: boolean) => {
@@ -26,13 +34,15 @@ function PersonalViewSection() {
 
   return (
     <SettingsGroup title={t().onlyForYou} description={t().yourViewDescription}>
-      <Switch
-        class="notebooks-full-width-option"
-        label={t().fullWidth}
-        description={t().fullWidthDescription}
-        value={fullWidth}
-        onValueChange={changeFullWidth}
-      />
+      <Show when={wide()}>
+        <Switch
+          class="notebooks-full-width-option"
+          label={t().fullWidth}
+          description={t().fullWidthDescription}
+          value={fullWidth}
+          onValueChange={changeFullWidth}
+        />
+      </Show>
       <Switch label={t().tabMovesFocus} description={t().tabMovesFocusDescription} value={tabMovesFocus} onValueChange={change} />
       <SaveStatus loading={false} saved error={null} label={t().savedBrowser} />
     </SettingsGroup>
@@ -85,11 +95,16 @@ export function DefaultPresentationSection(props: {
   );
 }
 
-export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; onNotebookChange: (notebook: Notebook) => void }) {
+export function FeaturesSection(props: {
+  notebook: Notebook;
+  isAdmin: boolean;
+  onNotebookChange: (notebook: Notebook) => void;
+  host: () => Element;
+}) {
   return (
     <>
       <DefaultPresentationSection notebook={props.notebook} isAdmin={props.isAdmin} onNotebookChange={props.onNotebookChange} />
-      <PersonalViewSection />
+      <PersonalViewSection host={props.host} />
     </>
   );
 }

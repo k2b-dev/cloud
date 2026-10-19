@@ -68,8 +68,7 @@
   color: var(--k2b-text-muted);
 }
 
-.cloud-panel__title > span,
-.cloud-panel__tab-label {
+.cloud-panel__title > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

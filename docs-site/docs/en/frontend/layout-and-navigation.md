@@ -19,6 +19,14 @@ pages, breadcrumbs and a footer.
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
 
+Application authors put objects in the sidebar and views of the open object
+in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
+quiet secondary actions share that row while the workspace width permits;
+filters wrap and the quiet filtered result count disappears first. Put the
+one filled primary action in `Head.primary`; on phones the shell leaves its
+place beside the bottom bar. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
+for the complete rule and API.
+
 ## Know the shell at each width
 
 The shell has three forms. They are CSS on the same server-rendered markup, so

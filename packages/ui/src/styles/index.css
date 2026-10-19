@@ -52,8 +52,11 @@
   --k2b-surface-muted: var(--k2b-neutral-100);
   --k2b-surface-elevated: #ffffff;
   --k2b-text: var(--k2b-neutral-950);
-  --k2b-text-secondary: var(--k2b-neutral-700);
-  --k2b-text-muted: var(--k2b-neutral-600);
+  /* Ink hierarchy: text for content and titles, secondary for labels and
+     supporting lines, muted for metadata and quiet hints. Secondary keeps
+     at least 10:1 and muted 7:1 on the surface and the muted surface. */
+  --k2b-text-secondary: var(--k2b-neutral-800);
+  --k2b-text-muted: #45454e;
   --k2b-placeholder-color: var(--k2b-neutral-500);
   --k2b-border: var(--k2b-neutral-200);
   --k2b-border-strong: var(--k2b-neutral-300);
@@ -221,8 +224,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-surface-muted: #20242a;
   --k2b-surface-elevated: #181d24;
   --k2b-text: var(--k2b-neutral-50);
-  --k2b-text-secondary: var(--k2b-neutral-200);
-  --k2b-text-muted: var(--k2b-neutral-400);
+  --k2b-text-secondary: #f1f1f3;
+  --k2b-text-muted: #bdbdc6;
   --k2b-placeholder-color: color-mix(in srgb, var(--k2b-neutral-400) 70%, var(--k2b-neutral-500));
   --k2b-border: #29313a;
   --k2b-border-strong: #3a4552;
@@ -405,6 +408,144 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: -1px;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+}
+
+/* Navigation labels that do not fit fade out at their end; they never end in
+   an ellipsis. `k2b-truncate-fade` keeps one line and fades its last 1.5rem.
+   `k2b-truncate-fade-lines` wraps up to `--k2b-truncate-fade-lines` lines
+   (2 by default) and fades the last of several lines over half its width:
+   that line ends at a word, short of the edge, so a 1.5rem fade would miss
+   its last word.
+   The fade is a mask, not an overlay, so it works on any fill: selected,
+   hovered, or dark. A scroll timeline on the label is active only while its
+   text overflows, so a label that fits is never dimmed. The text, its box,
+   and its accessible name stay as they are. One line overflows only sideways,
+   so `k2b-truncate-fade` follows the inline axis alone: a tight line height
+   lets glyphs reach past the line box, which would read as block overflow.
+   `k2b-truncate-fade-lines` also follows the block axis and needs a line
+   height of at least 1.3. An engine without scroll timelines cannot tell a
+   label that fits from one that overflows, so it keeps an ellipsis or line
+   clamp instead of dimming every label.
+   `--k2b-truncate-fade-inset` (inherited) is the length of the end that a
+   control overlays, such as a row's hover actions, including a 0.75rem fade
+   before it: text under that control fades out whether it overflows or not. */
+@property --k2b-truncate-fade-on {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@keyframes k2b-truncate-fade {
+  from,
+  to {
+    --k2b-truncate-fade-on: 1;
+    /* Balanced lines would end the last visible line even shorter. */
+    text-wrap-style: auto;
+  }
+}
+
+.k2b-ui :is(.k2b-truncate-fade, .k2b-truncate-fade-lines) {
+  --k2b-truncate-fade-on: 0;
+  --k2b-truncate-fade-length: 1.5rem;
+  --k2b-truncate-fade-start: calc(var(--k2b-truncate-fade-inset, 0px) - min(var(--k2b-truncate-fade-inset, 0px), 0.75rem));
+  --k2b-truncate-fade-end: linear-gradient(
+    to left,
+    transparent var(--k2b-truncate-fade-start),
+    #000 max(var(--k2b-truncate-fade-inset, 0px), calc(var(--k2b-truncate-fade-on) * var(--k2b-truncate-fade-length)))
+  );
+  min-width: 0;
+  overflow: hidden;
+  mask-image: var(--k2b-truncate-fade-end);
+}
+
+.k2b-ui .k2b-truncate-fade {
+  white-space: nowrap;
+}
+
+/* Lines above the last fade only under an overlaid control. */
+.k2b-ui .k2b-truncate-fade-lines {
+  /* One line runs to its edge, so it keeps the 1.5rem fade. */
+  --k2b-truncate-fade-length: max(1.5rem, calc(min(var(--k2b-truncate-fade-lines, 2) - 1, 1) * 50%));
+  --k2b-truncate-fade-above: linear-gradient(
+    to left,
+    transparent var(--k2b-truncate-fade-start),
+    #000 var(--k2b-truncate-fade-inset, 0px)
+  );
+  display: block;
+  max-height: calc(var(--k2b-truncate-fade-lines, 2) * 1lh);
+  overflow-wrap: anywhere;
+  mask-image: var(--k2b-truncate-fade-above), var(--k2b-truncate-fade-end);
+  mask-position:
+    top,
+    bottom;
+  mask-repeat: no-repeat;
+  mask-size:
+    100% calc(100% - 1lh),
+    100% 1lh;
+}
+
+/* Right-to-left text ends on the left. The attribute selectors cover the
+   build, which lowers `:dir()` to a list of right-to-left languages; a
+   left-to-right island inside right-to-left text keeps the left-to-right fade. */
+.k2b-ui :is(.k2b-truncate-fade, .k2b-truncate-fade-lines):is(:dir(rtl), [dir="rtl"], [dir="rtl"] *):not([dir="ltr"], [dir="rtl"] [dir="ltr"] *) {
+  --k2b-truncate-fade-end: linear-gradient(
+    to right,
+    transparent var(--k2b-truncate-fade-start),
+    #000 max(var(--k2b-truncate-fade-inset, 0px), calc(var(--k2b-truncate-fade-on) * var(--k2b-truncate-fade-length)))
+  );
+  --k2b-truncate-fade-above: linear-gradient(
+    to right,
+    transparent var(--k2b-truncate-fade-start),
+    #000 var(--k2b-truncate-fade-inset, 0px)
+  );
+}
+
+/* A label inside another fading label, inside row metadata, or in a card's
+   context header does not end where the overlaid control starts: the outer
+   element fades under it, and a context header keeps its width. */
+.k2b-ui
+  :is(
+    .k2b-truncate-fade,
+    .k2b-truncate-fade-lines,
+    .k2b-app-workspace__sidebar-item-meta,
+    .k2b-app-workspace__sidebar-item-context
+  )
+  :is(.k2b-truncate-fade, .k2b-truncate-fade-lines) {
+  --k2b-truncate-fade-inset: 0px;
+}
+
+@supports (animation-timeline: scroll()) {
+  .k2b-ui .k2b-truncate-fade {
+    animation: k2b-truncate-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+
+  .k2b-ui .k2b-truncate-fade-lines {
+    animation:
+      k2b-truncate-fade linear both,
+      k2b-truncate-fade linear both;
+    animation-timeline:
+      scroll(self inline),
+      scroll(self block);
+  }
+}
+
+/* Without scroll timelines, labels keep the ellipsis they had before. A line
+   clamp ends only wrapping text with one, so a one-line `-lines` label wraps
+   into its single clamped line here instead of staying unwrapped. */
+@supports not (animation-timeline: scroll()) {
+  .k2b-ui .k2b-truncate-fade {
+    text-overflow: ellipsis;
+  }
+
+  .k2b-ui .k2b-truncate-fade-lines {
+    white-space: normal !important;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--k2b-truncate-fade-lines, 2);
+    line-clamp: var(--k2b-truncate-fade-lines, 2);
+    text-overflow: ellipsis;
+  }
 }
 
 .k2b-ui .k2b-panes {
@@ -1006,9 +1147,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-app-workspace__sidebar-section-header > h2 {
   min-width: 0;
   margin: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 500;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
   line-height: 1rem;
   letter-spacing: normal;
   text-transform: none;
@@ -1028,9 +1169,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-inline-start: calc(0.5625rem + var(--k2b-sidebar-item-depth, 0) * 0.75rem);
   border: 0;
   border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text-secondary);
+  color: var(--k2b-text);
   background: transparent;
-  font-size: 0.75rem;
+  /* The line height holds the 2rem row and two-line labels at their height. */
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
   text-decoration: none;
   cursor: pointer;
 }
@@ -1139,11 +1282,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-align: center;
 }
 
-/* A row's label takes up to two balanced lines and ends with an ellipsis after
-   them, so names that share a beginning stay apart without hover or motion. A
-   hidden copy of a plain-text label at the weight of the current row sizes it,
-   so selecting a row never wraps it onto another line. `data-lines="1"` keeps
-   one line with an ellipsis instead. */
+/* A row's label takes up to two balanced lines and fades out at the end of
+   the second (`k2b-truncate-fade-lines`), so names that share a beginning stay
+   apart without hover or motion. A hidden copy of a plain-text label at the
+   weight of the current row sizes it, so selecting a row never wraps it onto
+   another line. `data-lines="1"` keeps one line that fades out instead. */
 .k2b-ui .k2b-app-workspace__sidebar-item-label {
   @apply min-w-0 flex-1;
   display: grid;
@@ -1152,19 +1295,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-app-workspace__sidebar-item-label-text,
 .k2b-ui .k2b-app-workspace__sidebar-item-label[data-label]::after {
-  display: -webkit-box;
   grid-area: 1 / 1;
   align-self: center;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow-wrap: anywhere;
   text-wrap: balance;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item-label[data-label]::after {
   content: attr(data-label) / "";
+  display: block;
+  max-height: 2lh;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   font-weight: 600;
   visibility: hidden;
 }
@@ -1178,23 +1319,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     [data-lines="1"],
     :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
     .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
-  ) {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.k2b-ui
-  .k2b-app-workspace__sidebar-item-label:is(
-    [data-lines="1"],
-    :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
-    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
   )::after {
   display: none;
 }
 
-/* `text-wrap: balance` above would turn wrapping back on. */
 .k2b-ui
   .k2b-app-workspace__sidebar-item-label:is(
     [data-lines="1"],
@@ -1202,7 +1330,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
   )
   > .k2b-app-workspace__sidebar-item-label-text {
-  display: inline;
+  --k2b-truncate-fade-lines: 1;
   white-space: nowrap;
 }
 
@@ -1266,7 +1394,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text);
   background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   line-height: 1rem;
@@ -1604,8 +1732,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: #ffffff;
   background: var(--k2b-action-solid);
-  font-size: 0.75rem;
-  font-weight: 500;
+  /* Each size sets its line height, so the larger type keeps the button's
+     height whatever line height the host page inherits. */
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.125rem;
   text-decoration: none;
   cursor: pointer;
   user-select: none;
@@ -1620,20 +1751,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-button[data-size="sm"] {
   min-height: 1.75rem;
   padding: 0.25rem 0.625rem;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .k2b-ui .k2b-button[data-size="xs"] {
   min-height: 1.5rem;
   padding: 0.125rem 0.375rem;
   gap: 0.25rem;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .k2b-ui .k2b-button[data-size="lg"] {
   min-height: 2.5rem;
   padding: 0.5rem 1rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 .k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):hover {
@@ -1961,31 +2095,33 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   animation: k2b-spin 900ms linear infinite;
 }
 
+/* Soft segments: no tray, no separators, no ring. The selected option is a
+   fill in the app's selection tint with its ink. Padding, option spacing,
+   and type keep the control's former box, so toolbars that fit before still
+   fit. */
 .k2b-ui .k2b-segmented-control {
   @apply inline-flex w-full items-stretch;
-  padding: 0.125rem;
-  border: 1px solid transparent;
+  padding: calc(0.125rem + 1px);
+  border: 0;
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-field-surface, var(--k2b-surface-muted));
+  background: transparent;
 }
 
 .k2b-ui .k2b-segmented-control__option {
   @apply relative inline-flex min-w-0 flex-1 items-center justify-center;
-  z-index: 0;
   min-height: 2rem;
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
   border: 0;
   border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
   background: transparent;
   font-size: 0.75rem;
   line-height: 1rem;
   cursor: pointer;
   transition:
     background-color 150ms ease-out,
-    color 150ms ease-out,
-    box-shadow 150ms ease-out;
+    color 150ms ease-out;
 }
 
 .k2b-ui .k2b-segmented-control[data-size="sm"] .k2b-segmented-control__option {
@@ -1994,29 +2130,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.6875rem;
 }
 
-.k2b-ui .k2b-segmented-control__option:not(:disabled):hover {
+.k2b-ui .k2b-segmented-control__option:not(:disabled, [aria-checked="true"]):hover {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-segmented-control__option[data-selected="true"],
 .k2b-ui .k2b-segmented-control__option[aria-checked="true"] {
-  z-index: 10;
-  color: var(--k2b-text);
-  background: var(--k2b-surface);
-  box-shadow: 0 0 0 1px var(--k2b-border);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
 }
 
-/* Cloud draws the segment divider as an inset pseudo element so the button box
-   itself keeps its geometry; a real border would shift every segment by 1px. */
-.k2b-ui .k2b-segmented-control__option[data-divider="true"]::after {
-  content: "";
-  position: absolute;
-  top: 0.25rem;
-  right: 0;
-  bottom: 0.25rem;
-  width: 1px;
-  background: var(--k2b-border);
+@media (forced-colors: active) {
+  .k2b-ui .k2b-segmented-control__option[aria-checked="true"] {
+    text-decoration: underline 2px;
+    text-underline-offset: 0.3em;
+  }
 }
 
 .k2b-ui .k2b-segmented-control__option:focus-visible {
@@ -2115,8 +2244,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-check__label,
 .k2b-ui .k2b-switch__label {
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
+  line-height: 1.125rem;
 }
 
 .k2b-ui .k2b-field__required {
@@ -2127,9 +2257,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-field__description,
 .k2b-ui .k2b-field__error {
   margin: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
-  line-height: 1.4;
+  color: var(--k2b-text-secondary);
+  /* The line box of the former 11px text, so help lines keep their height. */
+  font-size: 0.75rem;
+  line-height: 0.9625rem;
 }
 
 .k2b-ui .k2b-field__error {
@@ -2503,6 +2634,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-header__title.is-medium {
   font-size: 1rem;
   line-height: 1.5;
+  letter-spacing: -0.018em;
 }
 
 /* The subtitle is size-dependent in Cloud too — `text-[10px]` with no top
@@ -2526,7 +2658,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-header__title.is-large {
   font-size: 1.375rem;
   line-height: 1.2;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-panel-header[data-size="lg"] .k2b-panel-header__subtitle {
@@ -2824,6 +2956,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.875rem;
   font-weight: 650;
   line-height: 1.25rem;
+  letter-spacing: -0.018em;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -3890,7 +4023,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.3;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.018em;
   overflow-wrap: anywhere;
 }
 
@@ -4226,20 +4359,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 1.875rem;
   padding: 0.375rem 0.625rem;
   border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text-secondary);
-  background: transparent;
   font-size: 0.75rem;
 }
 
-.k2b-ui .k2b-panel-dialog__tabs .k2b-tabs__list button:hover {
-  background: var(--k2b-hover);
-}
-
-.k2b-ui .k2b-panel-dialog__tabs .k2b-tabs__list button[aria-selected="true"] {
-  color: var(--k2b-action);
-  background: var(--k2b-selected);
-  font-weight: 600;
-}
+/* Colour, selection, and hover come from the shared soft tab; the weight never
+   changes. */
 
 /* Tooltip and toast chrome (`.k2b-tooltip*`, `.k2b-toast*`) live in
  * styles/feedback-parity.css. The toast rail itself is positioned by inline
@@ -4933,7 +5057,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 2.5rem;
+    --k2b-truncate-fade-inset: 2.5rem;
   }
 
   .k2b-ui
@@ -4946,7 +5070,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2)
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 4.25rem;
+    --k2b-truncate-fade-inset: 4.25rem;
   }
 
   /* Hover actions and the row chevron overlay the row's trailing edge:
@@ -4989,7 +5113,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 2.5rem;
+    --k2b-truncate-fade-inset: 2.5rem;
   }
 
   .k2b-ui
@@ -5000,7 +5124,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 4.25rem;
+    --k2b-truncate-fade-inset: 4.25rem;
   }
 
   /* Without a touch screen, an action preview opens on hover, so its button
@@ -5030,28 +5154,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-ui
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
       > .k2b-app-workspace__sidebar-item-main {
-      --k2b-sidebar-item-fade-inset: 2.5rem;
+      --k2b-truncate-fade-inset: 2.5rem;
     }
   }
 
-  /* The fade inset spans the covered end and a 0.75rem gradient before it. */
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item-main
-    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-meta) {
+  /* Labels and descriptions fade under the covered end through their
+     `k2b-truncate-fade` mask; counts take the same fade here. The inset spans
+     the covered end and a 0.75rem gradient before it. */
+  .k2b-ui .k2b-app-workspace__sidebar-item-main .k2b-app-workspace__sidebar-item-meta {
     mask-image: linear-gradient(
       to left,
-      transparent calc(var(--k2b-sidebar-item-fade-inset) - 0.75rem),
-      #000 var(--k2b-sidebar-item-fade-inset)
+      transparent calc(var(--k2b-truncate-fade-inset) - 0.75rem),
+      #000 var(--k2b-truncate-fade-inset)
     );
   }
 
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item-main
-    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-meta):dir(rtl) {
+  .k2b-ui .k2b-app-workspace__sidebar-item-main .k2b-app-workspace__sidebar-item-meta:is(:dir(rtl), [dir="rtl"], [dir="rtl"] *):not([dir="ltr"], [dir="rtl"] [dir="ltr"] *) {
     mask-image: linear-gradient(
       to right,
-      transparent calc(var(--k2b-sidebar-item-fade-inset) - 0.75rem),
-      #000 var(--k2b-sidebar-item-fade-inset)
+      transparent calc(var(--k2b-truncate-fade-inset) - 0.75rem),
+      #000 var(--k2b-truncate-fade-inset)
     );
   }
 
@@ -5575,44 +5697,83 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Filter triggers are field controls: they use the same height, radius, and
-   surface as the input they sit beside rather than a smaller button size. */
+   surface as the input they sit beside rather than a smaller button size. A
+   chip is a soft surface without a border; the padding keeps its former box.
+   An active chip is a fill in the app's selection tint with its ink and names
+   its value. */
 .k2b-ui .k2b-filter-chip {
   display: inline-flex;
+  min-width: 0;
   min-height: 2.25rem;
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  border: 1px solid transparent;
+  padding: calc(0.375rem + 1px) calc(0.75rem + 1px);
+  border: 0;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-field-surface, var(--k2b-surface-muted));
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.25rem;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
   transition:
     background-color 150ms ease-out,
-    border-color 150ms ease-out,
     color 150ms ease-out;
 }
 
 .k2b-ui .k2b-filter-chip:hover {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: color-mix(in srgb, var(--k2b-text) 6%, var(--k2b-field-surface, var(--k2b-surface-muted)));
 }
 
 .k2b-ui .k2b-filter-chip[data-active="true"] {
-  color: var(--k2b-action);
-  border-color: transparent;
-  background: var(--k2b-selected);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
+}
+
+.k2b-ui .k2b-filter-chip[data-active="true"]:hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) 8%, var(--k2b-app-workspace-selected));
+}
+
+.k2b-ui .k2b-filter-chip[data-active="true"] .k2b-filter-chip__chevron {
+  color: inherit;
+}
+
+.k2b-ui .k2b-filter-chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-filter-chip__value {
+  white-space: nowrap;
+}
+
+/* A tag's colour sits beside its name, never alone. */
+.k2b-ui .k2b-filter-chip__dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-inline: 0.125rem 0.25rem;
+  border-radius: 999px;
+  background: var(--k2b-filter-color);
+  vertical-align: 0.0625rem;
 }
 
 .k2b-ui .k2b-filter-chip[data-icon-only="true"] {
   width: 2.25rem;
   justify-content: center;
   padding: 0;
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-filter-chip {
+    border: 1px solid ButtonText;
+    padding: 0.375rem 0.75rem;
+  }
 }
 
 .k2b-ui .k2b-filter-chip__chevron {
@@ -6800,6 +6961,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-date-calendar {
+  --k2b-date-weekend: var(--k2b-surface-muted);
   min-width: 0;
   flex: 1;
   padding: 0.625rem;
@@ -6867,7 +7029,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: contents;
 }
 
-.k2b-ui .k2b-date-weekdays span {
+/* The weekend band: one soft column per run of weekend days, behind the
+   weekday letter and every week. Each grid draws its part, so the weekday row
+   rounds the top and the days round the bottom; the two rows touch, so the
+   parts read as one column. It is positioned, so it takes no grid cell and
+   never moves a day, and it sits below the days inside each grid's own
+   stacking context. */
+.k2b-ui .k2b-date-weekdays,
+.k2b-ui .k2b-date-grid {
+  position: relative;
+  isolation: isolate;
+}
+
+.k2b-ui .k2b-date-weekend {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: var(--k2b-radius-control) var(--k2b-radius-control) 0 0;
+  background: var(--k2b-date-weekend);
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-date-grid > .k2b-date-weekend {
+  border-radius: 0 0 var(--k2b-radius-control) var(--k2b-radius-control);
+}
+
+.k2b-ui .k2b-date-weekdays > span:not(.k2b-date-weekend) {
   padding-block: 0.25rem;
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
@@ -6896,6 +7083,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-date-months button:hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
+}
+
+/* The hover fill would nearly vanish on the weekend band, so a weekend day
+   mixes the hover tint into the band instead. */
+.k2b-ui .k2b-date-grid button[data-weekend="true"]:hover:not([aria-selected="true"], [data-in-range="true"]) {
+  background: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-date-weekend));
 }
 
 .k2b-ui .k2b-date-grid button[data-outside="true"] {
@@ -7043,6 +7236,56 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-date-durations button {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+/* The optional time of a DateTimePicker: one slot of the time field's height holds either "Add time" or the field
+   with its remove button, so adding or removing the time never moves the panel. */
+.k2b-ui .k2b-date-optional-time {
+  display: flex;
+  min-width: 0;
+  min-height: 2rem;
+  flex: 1;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-date-optional-time__add,
+.k2b-ui .k2b-date-optional-time__remove {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-date-optional-time__add {
+  margin-left: -0.5rem;
+}
+
+.k2b-ui .k2b-date-optional-time__remove {
+  width: 2rem;
+  padding: 0;
+}
+
+.k2b-ui .k2b-date-optional-time__add:hover,
+.k2b-ui .k2b-date-optional-time__remove:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-date-optional-time__add:focus-visible,
+.k2b-ui .k2b-date-optional-time__remove:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
 .k2b-ui .k2b-date-durations button[aria-pressed="true"] {
@@ -11921,10 +12164,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-spotlight-button[data-variant="sidebar"] .k2b-spotlight-button__label {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .k2b-ui .k2b-spotlight-button[data-variant="sidebar-mobile"] {
@@ -11989,39 +12229,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: flex-start;
 }
 
-/* The list scrolls sideways only. Its baseline is drawn inside the padding box,
-   where the selected tab's underline can cover it without leaving the scrollport. */
+/* Soft tabs: no tray, no baseline, no separators, no ring. The list scrolls
+   sideways only; a selected tab is a fill in the app's selection tint with
+   its ink. Every tab keeps its weight and box in every state, so selecting or
+   hovering one never moves a neighbour. The focus ring sits inside the tab,
+   where the scrolling list cannot clip it. */
 .k2b-ui .k2b-tabs__list {
   display: flex;
   min-width: 0;
   flex: 1;
-  gap: 0.25rem;
-  padding-bottom: 1px;
+  gap: 0.125rem;
   overflow: auto hidden;
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
   scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__list {
   flex: 0 0 auto;
   flex-direction: column;
-  padding-bottom: 0;
   overflow: visible;
-  border-right: 1px solid var(--k2b-border);
-  box-shadow: none;
-}
-
-/* Forced colours drop box-shadow. The horizontal list opts out to keep its
-   baseline in CanvasText; its tabs stay in forced colours. */
-@media (forced-colors: active) {
-  .k2b-ui .k2b-tabs[data-orientation="horizontal"] .k2b-tabs__list {
-    --k2b-border: CanvasText;
-    forced-color-adjust: none;
-  }
-
-  .k2b-ui .k2b-tabs__list > * {
-    forced-color-adjust: auto;
-  }
 }
 
 .k2b-ui .k2b-tabs__list button {
@@ -12030,32 +12255,33 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   align-items: center;
   gap: 0.375rem;
-  margin-bottom: -1px;
+  margin: 0;
   padding: 0.375rem 0.625rem;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: transparent;
   font: inherit;
   font-size: 0.75rem;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
 }
 
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__list button {
   width: 100%;
-  margin: 0 -1px 0 0;
-  border-right: 2px solid transparent;
-  border-bottom: 0;
 }
 
 .k2b-ui .k2b-tabs__list button[aria-selected="true"] {
-  border-color: var(--k2b-action);
-  color: var(--k2b-action);
-  font-weight: 600;
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
 }
 
-.k2b-ui .k2b-tabs__list button:hover:not(:disabled) {
+.k2b-ui .k2b-tabs__list button:hover:not(:disabled, [aria-selected="true"]) {
   color: var(--k2b-text);
+  background: var(--k2b-app-workspace-hover);
 }
 .k2b-ui .k2b-tabs__list button:disabled {
   opacity: 0.45;
@@ -12065,6 +12291,134 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
+
+/* Forced colours drop the fill; an underline marks the selected tab
+   without changing its box. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-tabs__list button[aria-selected="true"] {
+    text-decoration: underline 2px;
+    text-underline-offset: 0.3em;
+  }
+}
+/* View tabs: links to the views of one object, in the same soft look as the
+   tabs. The open view is a fill in the app's selection tint with its ink;
+   weight and box never change, so nothing beside a tab moves. "More +n" ends
+   the strip with the views that do not get a place. Narrow, the strip
+   scrolls sideways, and the ring sits inside each tab so it is never cut. */
+.k2b-ui .k2b-view-tabs {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.k2b-ui .k2b-view-tabs__list {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto hidden;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.k2b-ui .k2b-view-tabs__list::-webkit-scrollbar {
+  display: none;
+}
+
+/* Views shrink before the strip scrolls: a long label ends in an ellipsis, so
+   the current view, which always has a place, stays on screen. "More" keeps
+   its size. */
+.k2b-ui .k2b-view-tabs__item {
+  display: flex;
+  min-width: 2.75rem;
+  flex: 0 1 auto;
+}
+
+.k2b-ui .k2b-view-tabs__more {
+  display: flex;
+  flex: none;
+}
+
+.k2b-ui .k2b-view-tabs__tab {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0.375rem 0.625rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--k2b-motion-fast) var(--k2b-ease-out),
+    color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+/* A long view name fades out at its end (`k2b-truncate-fade`). */
+.k2b-ui .k2b-view-tabs__label {
+  min-width: 0;
+}
+
+.k2b-ui .k2b-view-tabs__tab > i {
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+}
+
+.k2b-ui :is(.k2b-view-tabs__count, .k2b-view-tabs__more-count) {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-view-tabs__tab:hover:not([aria-current="page"]) {
+  color: var(--k2b-text);
+  background: var(--k2b-app-workspace-hover);
+}
+
+.k2b-ui .k2b-view-tabs__tab[aria-current="page"] {
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
+}
+
+.k2b-ui .k2b-view-tabs__tab[aria-current="page"] :is(i, .k2b-view-tabs__count) {
+  color: inherit;
+}
+
+.k2b-ui .k2b-view-tabs__tab:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+.k2b-ui .k2b-view-tabs__more-trigger > i {
+  font-size: 0.75rem;
+}
+
+/* The wide strip shows "More" only when views wait behind it; the compact
+   strip shows its own count (see the head row). */
+.k2b-ui .k2b-view-tabs__more:not([data-wide]),
+.k2b-ui .k2b-view-tabs__more-count[data-level="compact"] {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-view-tabs__tab[aria-current="page"] {
+    text-decoration: underline 2px;
+    text-underline-offset: 0.3em;
+  }
+}
+
 .k2b-ui .k2b-tabs__panel {
   min-width: 0;
 }
@@ -12579,13 +12933,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-tabs__item:is(:hover, :focus-within, :has(> [aria-selected="true"])) .k2b-tabs__close {
   opacity:1;
 }
-.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list { padding-bottom:0; border:0; box-shadow:none; }
-.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:var(--k2b-surface-canvas); }
-.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:hover,
-.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) { background:var(--k2b-surface-muted); }
-.k2b-ui .k2b-tabs[data-variant="pill"] [role="tab"][aria-selected="true"] { color:var(--k2b-text); font-weight:500; }
-.k2b-ui .k2b-tabs[data-variant="pill"] [role="tab"] { border:0; margin:0; border-radius:.75rem; max-width:16rem; }
-.k2b-ui .k2b-tabs[data-variant="pill"] [role="tab"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Pill tabs carry a close button: the item is the soft tab, so the selection
+   fill and the hover fill cover the label and its close button together. */
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:transparent; transition:background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:hover { background:var(--k2b-app-workspace-hover); }
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) { background:var(--k2b-app-workspace-selected); }
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list button[role="tab"] { border:0; margin:0; border-radius:.75rem; max-width:16rem; background:transparent; }
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) .k2b-tabs__close { color:var(--k2b-app-workspace-active); }
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__bar { flex-direction:column; }
 
 /* Optional chart exploration surface; the viewport never changes size on load. */
@@ -12727,16 +13081,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   gap: 0.2rem;
 }
+/* One line that fades out at its end (`k2b-truncate-fade`). */
 .k2b-ui .k2b-app-workspace__sidebar-item-description {
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
   line-height: 1.125rem;
   font-weight: 400;
 }
@@ -12753,9 +13104,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border: 0;
   padding: 0.25rem 0;
   text-align: start;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
   font: inherit;
   font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
   cursor: pointer;
 }
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle > i { margin-inline-start: auto; }
@@ -12788,7 +13141,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 2.5rem;
+    --k2b-truncate-fade-inset: 2.5rem;
   }
   .k2b-ui
     .k2b-app-workspace__sidebar-item:not(
@@ -12798,7 +13151,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 4.25rem;
+    --k2b-truncate-fade-inset: 4.25rem;
   }
 }
 
@@ -12943,10 +13296,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-app-workspace__sidebar-item-context-label {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item-context-meta {
   flex-shrink: 0;

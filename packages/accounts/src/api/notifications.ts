@@ -1,5 +1,5 @@
 import { MailStatusSchema } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, expectUserBackedActor, jsonResponse, middleware, requiresAdmin, respond, v } from "@k2b/cloud/server";
 import { notificationBatches } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -139,6 +139,7 @@ const RecipientsQuerySchema = z.object({
 });
 
 const app = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(auth.requireRole("admin"))
   .get(
     "/batches",

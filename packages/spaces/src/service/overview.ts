@@ -8,7 +8,7 @@ import { dashboardSnapshot, listMyTasks } from "./items";
 export async function loadOverviewWork(params: { userId: string; view: OverviewView; dateConfig: DateContext }): Promise<OverviewWork> {
   const [dashboard, mine] = await Promise.all([
     dashboardSnapshot({ ...params, view: params.view === "mine" ? "counts" : params.view, todoLimit: 30 }),
-    params.view === "mine" ? listMyTasks({ userId: params.userId, limit: 100 }) : Promise.resolve([]),
+    params.view === "mine" ? listMyTasks({ userId: params.userId, limit: 100, dateConfig: params.dateConfig }) : Promise.resolve([]),
   ]);
   const items = params.view === "mine" ? mine : params.view === "today" ? dashboard.events : dashboard.todos;
   return {
@@ -24,6 +24,7 @@ export async function loadOverviewWork(params: { userId: string; view: OverviewV
       startsAt: "startsAt" in item ? item.startsAt : null,
       endsAt: "endsAt" in item ? item.endsAt : null,
       deadline: item.deadline,
+      deadlineAllDay: item.deadlineAllDay,
     })),
   };
 }

@@ -54,8 +54,6 @@ export function SegmentedControl<T extends string = string>(props: SegmentedCont
     if (currentValue() === value) return 0;
     return !selectedEnabled() && enabled()[0]?.index === index ? 0 : -1;
   };
-  const divider = (index: number, value: T) =>
-    index < props.options.length - 1 && currentValue() !== value && currentValue() !== props.options[index + 1]?.value;
 
   return (
     <div
@@ -77,7 +75,6 @@ export function SegmentedControl<T extends string = string>(props: SegmentedCont
             class="k2b-segmented-control__option"
             aria-checked={currentValue() === option.value}
             data-selected={currentValue() === option.value ? "true" : undefined}
-            data-divider={divider(index(), option.value) ? "true" : undefined}
             disabled={props.disabled || option.disabled}
             tabIndex={tabIndex(index(), option.value)}
             onClick={() => emit(option.value)}

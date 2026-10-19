@@ -57,7 +57,7 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
                   tabindex={item.id === provider.id ? 0 : -1}
                 >
                   <i class={item.icon} aria-hidden="true" />
-                  <span class="cloud-panel__tab-label">{item.label}</span>
+                  <span class="cloud-panel__tab-label k2b-truncate-fade">{item.label}</span>
                 </button>
               ))}
             </div>

@@ -12,6 +12,7 @@ import {
   UniversalSearchDataSchema,
 } from "../contracts";
 import { type AuthContext, auth, expectUserBackedActor, jsonResponse, preferredLocale, requiresAuth, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { logger } from "../services";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
@@ -103,7 +104,8 @@ type AppOutcome = { appId: string; status: SearchProviderStatus; items: SearchIt
 export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) => {
   const registry = dependencies.listCapabilities ?? listCapabilities;
   const fetchProvider = dependencies.fetch ?? globalThis.fetch;
-  return new Hono<AuthContext>().use(dependencies.authenticate ?? auth.requireRole("authenticated")).get(
+  const router = new Hono<AuthContext>().use("/search/*", noTransform());
+  return router.use(dependencies.authenticate ?? auth.requireRole("authenticated")).get(
     "/search",
     describeRoute({
       tags: ["Search"],

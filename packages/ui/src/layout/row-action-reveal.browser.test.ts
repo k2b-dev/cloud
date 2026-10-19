@@ -247,7 +247,7 @@ describe("@k2b/ui row action reveal", () => {
               fades: [...document.querySelectorAll(".k2b-app-workspace__sidebar-item:not(.is-active):not(:has(> [aria-current]))")]
                 .map((row) => row.querySelector(":scope > .k2b-app-workspace__sidebar-item-main"))
                 .filter((main) => main !== null)
-                .map((main) => getComputedStyle(main).getPropertyValue("--k2b-sidebar-item-fade-inset").trim()),
+                .map((main) => getComputedStyle(main).getPropertyValue("--k2b-truncate-fade-inset").trim()),
             }));
             expect(paint.count, `${mode} count`).toBe("1");
             expect(paint.fades.length).toBeGreaterThan(0);

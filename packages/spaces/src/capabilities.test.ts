@@ -180,6 +180,7 @@ const task: SpaceItem = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: "high",
@@ -1294,6 +1295,17 @@ describe("spaces capabilities", () => {
       },
     });
 
+    const allDay = await spacesCapabilities.actions["task.update"].review!({ itemId, deadline: "2026-10-24" }, userContext);
+    expect(allDay).toMatchObject({
+      ok: true,
+      data: {
+        details: [
+          { label: "Task", value: task.title },
+          { label: "Deadline", value: "2026-10-24", format: "date" },
+        ],
+      },
+    });
+
     const german = await spacesCapabilities.actions["task.update"].review!(
       {
         itemId,
@@ -1711,7 +1723,7 @@ describe("spaces capabilities", () => {
     if (!result.ok) return;
     expect(capabilityResultSchema(TemplateListDataSchema).safeParse(result.data).success).toBeTrue();
     const [summary] = result.data.data;
-    expect(summary).toMatchObject({ id: templateId, name: "Weekly report", rule: "Mi oder Do · 17:00", timeZone: "Europe/Berlin" });
+    expect(summary).toMatchObject({ id: templateId, name: "Weekly report", rule: "Mi oder Do · ganztägig", timeZone: "Europe/Berlin" });
     expect(summary?.proposals).toHaveLength(3);
     for (const date of summary?.proposals ?? []) expect([3, 4]).toContain(new Date(`${date}T12:00:00Z`).getUTCDay());
     expect(
@@ -2150,6 +2162,7 @@ describe("spaces capabilities", () => {
       descriptionPreview: "d".repeat(1000),
       descriptionTruncated: true,
       deadline: null,
+      deadlineAllDay: false,
       overdue: false,
       estimatedDurationMinutes: null,
       activeBlockerCount: 0,
@@ -2181,6 +2194,7 @@ describe("spaces capabilities", () => {
       ({
         kind: _kind,
         deadline: _deadline,
+        deadlineAllDay: _deadlineAllDay,
         overdue: _overdue,
         estimatedDurationMinutes: _estimatedDurationMinutes,
         activeBlockerCount: _activeBlockerCount,

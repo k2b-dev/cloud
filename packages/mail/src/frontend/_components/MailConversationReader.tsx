@@ -1109,7 +1109,7 @@ export default function MailConversationReader(props: {
           <div class="flex min-w-0 items-start gap-2">
             <IconButtonLink
               href={closeHref()}
-              class="lg:hidden"
+              class="@min-[64rem]/k2b-app-area:hidden"
               label={t().backToList}
               navigation="enhanced"
               onNavigate={props.onClose}
@@ -1119,7 +1119,12 @@ export default function MailConversationReader(props: {
             </IconButtonLink>
             <Show when={props.listCollapsed}>
               <Tooltip.Anchor content={t().showList}>
-                <IconButton type="button" class="hidden lg:inline-flex" label={t().showList} onClick={props.onRestoreList}>
+                <IconButton
+                  type="button"
+                  class="hidden @min-[64rem]/k2b-app-area:inline-flex"
+                  label={t().showList}
+                  onClick={props.onRestoreList}
+                >
                   <i class="ti ti-layout-sidebar-left-expand" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>

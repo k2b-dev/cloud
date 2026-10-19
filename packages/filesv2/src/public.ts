@@ -2,6 +2,7 @@ import {
   type AuthContext,
   auth,
   getLocale,
+  middleware,
   REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
   REQUEST_IDLE_TIMEOUT_SECONDS,
   rateLimit,
@@ -22,6 +23,8 @@ import { setShareAccessCookie, shareAccessCookie } from "./share-access-cookie";
 
 /** Public routes re-resolve the share and enforce its optional password on every call. */
 export const publicApi = new Hono<AuthContext>()
+  // A share's public note sits next to file names that writers of the shared folder choose without holding the link.
+  .use("*", middleware.noTransform())
   .use(
     "*",
     rateLimit({

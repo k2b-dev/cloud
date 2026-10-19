@@ -14,6 +14,7 @@ import {
   MailStatusSchema,
 } from "../contracts/outgoing-mail";
 import { type AuthContext, auth, jsonResponse, requiresAdmin } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { audit } from "../services/audit";
 import { outgoingMailLog } from "../services/outgoing-mail/admin";
 import { MAIL_RETENTION_KEYS, readMailRetention } from "../services/outgoing-mail/retention";
@@ -96,6 +97,7 @@ const contentResponse = z.union([
 ]);
 export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin")) =>
   new Hono<AuthContext>()
+    .use("*", noTransform())
     .use("*", authenticate)
     .use("*", async (c, next) => {
       c.header("Cache-Control", "no-store");

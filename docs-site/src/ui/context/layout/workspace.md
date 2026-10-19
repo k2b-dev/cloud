@@ -13,7 +13,9 @@ drawer uses the subtle surface.
 Keep region wrappers transparent. A view that fills `Main`—a canvas, graph,
 editor, or empty state—is `Main`'s surface and draws no radius or border of its
 own. Cards and table frames inset with `Main`'s padding stay allowed where the
-content needs another visual level.
+content needs another visual level. An object, such as a Kanban card that you
+drag and open, may be a rounded surface; a group of objects uses space and a
+heading instead.
 
 ## Use AppWorkspace
 
@@ -30,6 +32,108 @@ import {
   type AppWorkspaceLayoutState,
 } from "@k2b/ui";
 ```
+
+## Objects on the left, views in the head
+
+Where things go is one rule for every application: objects in the sidebar,
+views and filters in the head, the detail beside the content.
+
+| Rule | What it says |
+| --- | --- |
+| R1 Objects, not views | The sidebar shows objects: things you open and go to, such as Spaces, tables, books, and mailboxes. Actions on an object (settings, iCal, share) sit in its head or under "…". An app with only one object has no sidebar. |
+| R2 Views as tabs | Views are tabs in the head, right beside the title. From about five views, "More +n" appears and the selected view stays visible. On the phone they are tabs at the top of the card. The selected view stays in the URL (`?view=`). |
+| R3 Filters as chips | Filters are chips in the same row as the tabs when there is room; otherwise they wrap to a second row. The workspace's width decides, not the window's. An active filter is tinted and names its value ("Tags: Customer"; set `showValue`, which toolbars outside the head row do not use yet); while filters are active, "Reset" appears. The count on a tab is enough; a quiet result count appears only while a filter is active and is the first thing to go when space is short. |
+| R4 One surface | Head, filters, and content lie on the same white surface: no gray column trays, no `Paper` box, no line under the head. Space and a clear group heading (dot, name, count) separate groups. |
+| R5 Color from content | Status dots, tag colors, places, and stock carry color. The app color carries only the selection and the one filled primary action. Color is never the only signal; the name always shows. A selection is tinted on white and white on color. |
+| R6 Space, not lines | Rows and tables have no dividers and no grid; rows are 40–44 px high with a hover fill. |
+
+Three exceptions:
+
+1. An object may be a rounded surface in the main card, such as a Kanban
+   card that you drag and open; a group may not.
+2. The sidebar is white: it lies on the content's surface, separated by space.
+3. Wide editing tables (more than about eight columns) may draw a hairline
+   between rows.
+
+The head follows these rules as well:
+
+- It shows no title while the visible sidebar marks the object (from
+  64 rem). The title follows the page trail: a page with a page above it
+  shows its title and back link with the sidebar collapsed or hidden, on
+  focus pages that the sidebar does not mark (such as Compose or Preview),
+  and on tablet and phone. An app's root page shows its title only beside
+  the overlay sidebar's button. A page without its own `h1` keeps a visually
+  hidden one.
+- The back link goes with the title. Beside a visible sidebar it remains
+  only for pages deeper than the sidebar lists: the sidebar marks their
+  container with `active="ancestor"`, not the page itself.
+- Tabs, chips, and actions share one row while they fit.
+- Exactly one action is filled. On the phone it becomes a round button; a
+  host with a bottom bar, such as Cloud, places it beside the bar.
+- Files keeps its path in the head (exception D1 to "no title").
+
+The sidebar stays resizable; its handle shows on hover and focus. The minimal
+Grids table is the reference for tables.
+
+### Compose the head row
+
+Place `AppWorkspace.Head` as a **direct child** of `AppWorkspace`, in any
+position. It is a slot: the workspace renders its parts in the existing head,
+leaving the other children in order. Individual parts may be islands. Give
+the chips `showValue`, keep secondary actions quiet, and put the one filled
+action in `primary`.
+
+```tsx
+import { AppWorkspace, ViewTabs } from "@k2b/ui";
+
+<AppWorkspace>
+  <AppWorkspace.Head
+    views={<ViewTabs label="Views" current="list" items={[
+      { id: "list", label: "List", href: "?view=list", count: 12 },
+      { id: "board", label: "Board", href: "?view=board" },
+    ]} />}
+    filters={filterChips}
+    filtered={filtered}
+    resetHref="?view=list"
+    count="12 results"
+    actions={searchAction}
+    primary={{ label: "New task", icon: "ti ti-plus", href: "?new=task" }}
+  />
+  <AppWorkspace.Content>
+    <AppWorkspace.Main>{tasks}</AppWorkspace.Main>
+  </AppWorkspace.Content>
+</AppWorkspace>;
+```
+
+The server reads `current` from `?view=`. No client measurement changes the
+strip or head layout after mounting. `resetHref` works before JavaScript;
+`onReset` handles an interactive reset. With both, the callback handles a
+plain click while the URL remains available to the browser. The result count
+and Reset appear only while `filtered` is true.
+
+```ts
+type AppWorkspaceHeadProps = {
+  views?: JSX.Element;
+  filters?: JSX.Element;
+  filtered?: boolean;
+  resetHref?: string;
+  onReset?: () => void;
+  count?: JSX.Element;
+  actions?: JSX.Element;
+  primary?: {
+    label: string;
+    icon: string;
+    href?: string;
+    onClick?: (event: MouseEvent) => void;
+  };
+};
+```
+
+The host supplies the page trail. A visible sidebar item marked `active`
+names the object on desktop; the head keeps its views while hiding the repeated
+title. A hidden `h1` supplies the page heading only when Main has no `h1`.
+The primary label stays in the DOM when CSS turns the phone action into an
+icon button, preserving its accessible name.
 
 ## Compose the regions
 
@@ -99,6 +203,20 @@ therefore follows the same rule without a host marker
 ([#1381](https://github.com/k2b-dev/cloud/issues/1381)). The 48 rem phone split
 and phone sheet still follow the viewport. CSS decides the first frame;
 no browser measurement chooses the initial layout.
+
+App stylesheets query `k2b-app-area` for workspace chrome tied to the sidebar
+or levels. Use `@container k2b-app-area (min-width: 64rem)` in CSS,
+`@min-[64rem]/k2b-app-area:` in Tailwind classes, and
+`watchAppHostWidth(element, 64, update)` from `@k2b/ui` in script; call its
+returned stop function on cleanup. Levels use the 80 rem threshold.
+In app stylesheets, avoid `max-width` and `@max-` container variants:
+fractional widths can fall between ranges. Hide below a threshold with base
+`hidden` plus a minimum display class, or use
+`@container k2b-app-area not (min-width: 64rem)` to preserve a component's own
+display. Dialogs, floating windows, and toasts mount outside the app's host,
+so their CSS follows the window; decide such chrome in script with
+`watchAppHostWidth` on an element inside the app. Keep viewport rules for the
+48 rem phone split and for pointer capabilities.
 
 Because the document root is a container, an unnamed `@container` query in
 application CSS without a nearer container now follows the window. Name the
@@ -380,8 +498,10 @@ its own overlay.
 
 ### Head
 
-The head is one 46 px row above the work area, beside the sidebar column. It
-draws no line; only its place separates it from the content. It shows:
+Without a Head slot, the head is one 46 px row above the work area, beside the
+sidebar column. A Head slot makes it a 56 px row that is always there and lets
+its filters wrap.
+It draws no line; only its place separates it from the content. The default head shows:
 
 - from a 48 rem viewport whenever the sidebar is an overlay, with its navigation
   button and page title;
@@ -390,7 +510,7 @@ draws no line; only its place separates it from the content. It shows:
   It then holds a [PageTitle](/en/ui/layout/page-title) with the way up: from
   48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
   of it. The title is the page's `h1`. From a 64 rem host, a visible, non-collapsed
-  column sidebar with `[aria-current="page"]` hides the title row and its back link;
+  column sidebar with `[aria-current="page"]` hides the repeated title and its back link;
   the `h1` remains visually hidden for assistive technology. Mark the exact
   current page with `SidebarItem active`; on a page deeper than the sidebar
   lists, mark the containing item with `active="ancestor"` so it stays
@@ -400,10 +520,10 @@ draws no line; only its place separates it from the content. It shows:
 The title comes from the host's page trail: a host renders
 `PageTrailProvider` around the page during server rendering and calls
 `setPageTrail()` after an in-page navigation (see
-[PageTitle](/en/ui/layout/page-title)). Without a trail, the head holds only the
-button. When the page renders its own `PageTitle`, for example in an
-application header, the head's title steps back and the head stays only for
-the button. A nested workspace's head never shows the title. CSS decides all
+[PageTitle](/en/ui/layout/page-title)). Without a trail, the default head holds only the button; a Head slot adds its
+views, filters, and actions. When the page renders its own `PageTitle`, for
+example in an application header, the head's title steps back while its other
+controls stay available. A nested workspace's head never shows the title. CSS decides all
 of this on the server-rendered markup, so the head arrives in its final place
 and nothing moves when a controller attaches. A server-rendered head follows a
 new trail once the host runs `followPageTrail()`; Cloud's `Layout` does.
@@ -598,7 +718,7 @@ The head always reserves two name lines and centres its text in them, so a
 short and a long name give it the same height from the server's first paint
 on. Switching containers, hover, opening, loading, and arriving options keep the
 trigger and the rows below it in place. The name takes up to two balanced lines
-and ends with an ellipsis when it overflows; beside the optional fact it takes
+and fades out when it overflows; beside the optional fact it takes
 one line, and the fact takes the second. The check on the current container
 uses the app's workspace accent, like the sidebar's active row. Hover and open
 use a neutral fill, and sidebar rows use the same neutral fill on hover.
@@ -936,7 +1056,7 @@ type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element 
 
 type AppWorkspaceSidebarItemLabelProps = {
   children: JSX.Element;
-  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  /** False keeps one line that fades out; rows wrap long labels onto a second line by default. */
   marquee?: boolean;
 };
 
@@ -1032,6 +1152,7 @@ declare function parseAppWorkspaceLayoutState(value: string | null | undefined):
 declare function serializeAppWorkspaceLayoutState(state: AppWorkspaceLayoutState): string;
 declare function appWorkspaceLayoutStyle(state: AppWorkspaceLayoutState | null | undefined): string | undefined;
 declare function installAppWorkspaceController(options?: AppWorkspaceControllerOptions): () => void;
+declare function watchAppHostWidth(element: Element, minRem: number, update: (matches: boolean) => void): () => void;
 declare function safeAppWorkspacePanelId(panelId: string): string;
 declare function appWorkspacePanelVariable(kind: "pane" | "detail" | "drawer", panelId: string): string;
 declare function appWorkspaceResizeLimits(options: { kind: "sidebar" | "pane" | "detail" | "drawer"; workspaceSize: number; reservedSize: number; min?: number; max?: number; sidebarCollapsible?: boolean }): { min: number; max: number };
@@ -1151,13 +1272,13 @@ The package exports parse, normalize, serialize, and style helpers for layout st
   <AppWorkspace.Sidebar collapsible>
     <AppWorkspace.SidebarDesktop>
       <AppWorkspace.SidebarBody scrollPreserveKey="inventory-sidebar">
-        <AppWorkspace.SidebarSection title="Views">
+        <AppWorkspace.SidebarSection title="Tables">
           <AppWorkspace.SidebarItem
             href="/app/inventory"
             icon="ti ti-list"
             active
           >
-            All items
+            Inventory
           </AppWorkspace.SidebarItem>
         </AppWorkspace.SidebarSection>
       </AppWorkspace.SidebarBody>
@@ -1309,15 +1430,16 @@ needed to tell items apart. A plain row with a section heading is calmer and
 usually enough; Assistant lists its chats as rows under day headings with one
 status icon in `meta`. `context` holds a project or category; `contextMeta` holds a short time
 or secondary value. Both accept reactive JSX. Keep commands in actions or the
-preview. Rows wrap a long label onto up to two balanced lines ending in an
-ellipsis. A selected row keeps its line count when its label is plain text; a
+preview. Rows wrap a long label onto up to two balanced lines that fade out at
+the end, with the shared
+[fade utilities](/en/ui/layout/navigation#label-overflow). A selected row keeps its line count when its label is plain text; a
 label built from elements, such as `<strong>`, gets no such reservation.
 A row whose metadata holds a `SidebarItemStatus` keeps one line from its first
 paint, also while the status shows nothing, so a new count never re-wraps the
 label and moves the rows below. Any other metadata must keep its width while
 the row is shown: put unread counts in `SidebarItemStatus` and render it at
 zero too, and keep rows with other changing metadata on one line.
-`SidebarItemLabel marquee={false}` keeps one line with an ellipsis, as cards
+`SidebarItemLabel marquee={false}` keeps one line that fades out, as cards
 and object rows do by default.
 Completed work can retain `variant="row"` without context or description.
 
@@ -1341,7 +1463,7 @@ its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
 one. A plain object-row icon sits in a soft chip of the app color; custom
 icon content, such as an avatar, keeps its own treatment in the same 2rem box.
-Object rows keep their title on one line with an ellipsis.
+Object rows keep their title on one line that fades out.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">
@@ -1363,7 +1485,7 @@ sideways with fades at cut edges and keeps the current chip in view when the
 page loads. From 64 rem, it is the regular sidebar column. The sidebar is a
 `nav` landmark at every width; give it a `label` that names the objects.
 
-A chip shows the icon, a label on one line with an ellipsis, and metadata
+A chip shows the icon, a label on one line that fades out, and metadata
 such as a count or dot. Selection changes only its fill and color; its box
 and font weight stay the same. Section titles, descriptions, row actions,
 collapsible sections, the footer, and other content stay out of the row.
@@ -1410,8 +1532,8 @@ Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
 `--k2b-surface-muted`), and `--k2b-app-workspace-selected` for selected fill
 (default `--k2b-selected`). Cloud maps selected fill to `--ui-app-selected-nav`.
 
-Leave the default `mobile="hidden"` for workspaces whose sidebar is view
-navigation inside one resource.
+Leave the default `mobile="hidden"` when the host's phone navigation already
+provides the object list. Views of an object belong in the head.
 
 ### Cloud phone title menu
 

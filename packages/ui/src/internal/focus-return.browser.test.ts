@@ -138,7 +138,12 @@ const load = async (options: (typeof viewports)[keyof typeof viewports]) => {
 
 /** Every box in the page once transitions, such as a trigger that hides again, have finished. */
 const boxes = async (page: Page) => {
-  await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .filter((animation) => animation.timeline === document.timeline)
+      .every((animation) => animation.playState !== "running"),
+  );
   return page.evaluate(() =>
     Array.from(document.querySelectorAll("#app *"), (element) => {
       const box = element.getBoundingClientRect();
