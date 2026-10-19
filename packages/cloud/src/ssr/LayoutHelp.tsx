@@ -20,12 +20,13 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
 import { getContext, onContextChange, openPanel } from "../browser/panel";
 import { onPanelShortcutsChange, panelShortcutsReceived, readPanelShortcuts } from "../browser/panel-shortcuts";
 import { HELP_ACCESS_LEVELS, HELP_KINDS } from "../shared/help";
 import { appAccentStyle } from "./app-appearance";
+import type { LayoutHelpArticle } from "./help";
 import { helpMessages } from "./help-messages";
 import { helpArticleParts } from "./layout-help-article";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
@@ -47,6 +48,8 @@ import { shellShortcuts } from "./shell-shortcuts";
 export type LayoutHelpPageProps = {
   documents: readonly HelpDocumentManifest[];
   initialTopic?: string;
+  /** Authorized article and server-parsed parts for an identical first frame. */
+  initialArticle?: LayoutHelpArticle;
   includeShortcuts?: boolean;
   accent?: string;
   /** Render inside an app-owned pane instead of occupying a full page. */
@@ -64,6 +67,8 @@ export type LayoutHelpPanelProps = {
   /** Server-filtered For this view ids. */
   view?: readonly string[];
   initialTopic?: string;
+  /** Authorized article and server-parsed parts for an identical first frame. */
+  initialArticle?: LayoutHelpArticle;
   pageBase?: string;
   platform: KeyboardPlatform;
   state?: "failed" | "unavailable";
@@ -183,6 +188,7 @@ const StartShortcuts = (props: { appName?: string; panel?: boolean; platform?: K
 
 const HelpShell = (props: {
   session: HelpSession;
+  initialArticle?: LayoutHelpArticle;
   close: () => void;
   pageBase?: string;
   documents?: readonly HelpDocumentManifest[];
@@ -208,8 +214,12 @@ const HelpShell = (props: {
   const [view, setView] = createSignal<HelpView>(props.session.view);
   const [query, setQuery] = createSignal(props.session.query);
   const [activeId, setActiveId] = createSignal<string | null>(props.session.activeId);
-  const [payload, setPayload] = createSignal<HelpDocumentPayload | null>(null);
-  const [loading, setLoading] = createSignal(props.session.view === "article");
+  const initialTopic = props.documents?.find((topic) => topic.id === props.session.activeId);
+  const initialArticle = initialTopic && props.initialArticle?.payload.id === initialTopic.id ? props.initialArticle : undefined;
+  if (initialArticle && initialTopic)
+    props.session.articleCache.set(`${initialTopic.locale ?? "en"}:${initialTopic.url}`, initialArticle.payload);
+  const [payload, setPayload] = createSignal<HelpDocumentPayload | null>(initialArticle?.payload ?? null);
+  const [loading, setLoading] = createSignal(props.session.view === "article" && !initialArticle);
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [loadAttempt, setLoadAttempt] = createSignal(0);
   const [remoteIds, setRemoteIds] = createSignal<readonly string[] | null>(null);
@@ -305,10 +315,11 @@ const HelpShell = (props: {
     helpStart(topics(), props.surface === "panel" ? viewIds() : props.surface === "modal" ? shell?.help : undefined),
   );
   const activeTopic = createMemo(() => topics().find((topic) => topic.id === activeId()) ?? null);
-  // Article bodies load in the browser only; the server renders the head and the loading state.
+  // Reuse the serialized parts for the initial object on both sides of the island boundary.
   const articleParts = createMemo(() => {
-    const html = payload()?.html;
-    return html ? helpArticleParts(html) : null;
+    const article = payload();
+    if (initialArticle && article === initialArticle.payload) return initialArticle.parts;
+    return article?.html ? helpArticleParts(article.html) : null;
   });
   const articleSections = (): HelpSection[] => (view() === "article" ? articleParts()?.sections : undefined) ?? [];
   const normalizedQuery = createMemo(() => query().trim().toLocaleLowerCase());
@@ -513,16 +524,19 @@ const HelpShell = (props: {
     loadAttempt();
     const topic = activeTopic();
     const version = ++requestVersion;
-    setPayload(null);
+    const cached = topic && view() === "article" ? props.session.articleCache.get(`${topic.locale ?? "en"}:${topic.url}`) : undefined;
     setLoadError(null);
     setLoading(false);
-    if (!topic || view() !== "article") return;
-    const cached = props.session.articleCache.get(`${topic.locale ?? "en"}:${topic.url}`);
+    // Keep a seeded payload in place on mount: no empty frame or duplicate scroll restoration.
     if (cached) {
-      setPayload(cached);
-      restoreArticleScroll();
+      if (untrack(payload) !== cached) {
+        setPayload(cached);
+        restoreArticleScroll();
+      }
       return;
     }
+    setPayload(null);
+    if (!topic || view() !== "article") return;
 
     const controller = new AbortController();
     setLoading(true);
@@ -1167,14 +1181,15 @@ const createSession = (initialTopic?: string): HelpSession => {
 
 /**
  * Render the shared Help experience as a full page. Apps pass the same
- * manifest used by `Layout.HelpDocuments`; article bodies still load lazily
- * from the central Help API.
+ * manifest used by `Layout.HelpDocuments`; initialArticle supplies the first
+ * article, while other articles load from the central Help API.
  */
 export function LayoutHelpPage(props: LayoutHelpPageProps) {
   const session = createSession(props.initialTopic);
   return (
     <HelpShell
       session={session}
+      initialArticle={props.initialTopic ? props.initialArticle : undefined}
       close={() => {}}
       documents={props.documents}
       includeShortcuts={props.includeShortcuts}
@@ -1190,7 +1205,15 @@ export function LayoutHelpPage(props: LayoutHelpPageProps) {
 export function LayoutHelpPanel(props: LayoutHelpPanelProps) {
   const session = createSession(props.initialTopic);
   return (
-    <HelpShell session={session} close={() => {}} documents={props.documents} pageBase={props.pageBase} surface="panel" panel={props} />
+    <HelpShell
+      session={session}
+      initialArticle={props.initialTopic ? props.initialArticle : undefined}
+      close={() => {}}
+      documents={props.documents}
+      pageBase={props.pageBase}
+      surface="panel"
+      panel={props}
+    />
   );
 }
 

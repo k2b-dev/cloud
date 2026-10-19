@@ -72,6 +72,7 @@ const panelUrl = (app: string, help = ["spaces-share", "unknown-id"]) =>
 
 // One reader stub preserves preloadLayoutHelp's actual failure tracking and request-local cache.
 test("Help panel SSR authorizes selectors and renders the first view without shell chrome", async () => {
+  const articleReads: string[] = [];
   const spies = [
     spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
@@ -104,7 +105,23 @@ test("Help panel SSR authorizes selectors and renders the first view without she
     },
     list: async () => [],
     search: async () => [],
-    read: async () => null,
+    read: async ({ appId, documentId }) => {
+      articleReads.push(`${appId}/${documentId}`);
+      return {
+        appId,
+        documentId,
+        appName: appId,
+        title: `${appId} fixture article`,
+        locale,
+        manifestHash: appId,
+        order: 1,
+        kind: "task",
+        needs: "edit",
+        related: [],
+        links: {},
+        markdown: 'Server fixture lead.\n\n## Open sharing {icon="share"}\n\n:::steps\n1. Server fixture body.\n2. Confirm sharing.\n:::',
+      };
+    },
   }));
   try {
     const response = await server.request(panelUrl("spaces"));
@@ -117,10 +134,11 @@ test("Help panel SSR authorizes selectors and renders the first view without she
     expect(html).toContain('data-panel-provider="core"');
     for (const absent of ["rail-item", "cloud-app-canvas", 'id="cloud-panel"', "Help for spaces"]) expect(html).not.toContain(absent);
     for (const id of ["restricted", "admin-only", "nope"]) {
-      const unavailable = await (await server.request(panelUrl(id))).text();
+      const unavailable = await (await server.request(`${panelUrl(id)}&topic=${id}-share`)).text();
       expect(unavailable).toContain("This Help is not available");
       expect(unavailable).toContain("You may not have access to it, or it no longer exists.");
       expect(unavailable).not.toContain("fixture article");
+      expect(unavailable).not.toContain("Server fixture lead.");
       expect(unavailable).not.toContain("fixture app");
       expect(unavailable).not.toContain("data-help-shortcuts");
       expect(unavailable).not.toContain("--app-accent:");
@@ -143,7 +161,15 @@ test("Help panel SSR authorizes selectors and renders the first view without she
     for (const topic of ["spaces-share", "unknown-id", "UpperCase", "x".repeat(181)]) {
       const article = await (await server.request(`${panelUrl("spaces")}&topic=${topic}`)).text();
       expect(article.includes("data-help-article-head")).toBe(topic === "spaces-share");
+      if (topic === "spaces-share") {
+        expect(article).toContain('class="help-article-facts"');
+        expect(article).toContain("Server fixture lead.");
+        expect(article).toContain("Server fixture body.");
+        expect(article).toContain("2 steps");
+        expect(article).not.toContain('data-state="loading"');
+      } else expect(article).not.toContain("Server fixture lead.");
     }
+    expect(articleReads).toEqual(["spaces/spaces-share"]);
     const german = await (
       await server.request(panelUrl("spaces"), {
         headers: { "Accept-Language": "de", "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },

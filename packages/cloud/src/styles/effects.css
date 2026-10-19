@@ -1648,6 +1648,11 @@
     margin-top: 0.75rem;
   }
 
+  /* The panel article has no path row (the panel head names the app), so the tile and the title open the head. */
+  .help-article[data-surface="panel"] :is(.help-article-icon, .help-article-title) {
+    grid-row: 1;
+  }
+
   /* Two columns leave a phone about 140 px per alternative. */
   .help-document .help-compare > ul {
     grid-template-columns: minmax(0, 1fr);

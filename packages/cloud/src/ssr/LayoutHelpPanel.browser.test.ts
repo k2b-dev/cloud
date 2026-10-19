@@ -14,7 +14,7 @@ const root = mkdtempSync(resolve(tmpdir(), "cloud-help-panel-browser-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
-const { documents, helpManifest, server, helpPanelGeometry } = await import("./LayoutHelpPanel.browser-harness");
+const { documents, helpManifest, server, helpPanelGeometry, fixtureDocument } = await import("./LayoutHelpPanel.browser-harness");
 const rail = await import("../services/rail-snapshot");
 const settings = await import("../server/middleware/settings");
 const help = await import("./help");
@@ -55,7 +55,7 @@ const provider = !!document.querySelector("[data-cloud-panel-page]");
 const helpRoot = document.getElementById("help-fixture-root");
 const documents = ${JSON.stringify(documents)};
 if (helpRoot) {
-  const props = provider ? JSON.parse(document.getElementById("help-fixture-props").textContent) : { documents, initialTopic: "spaces-share", pageBase: "/help/apps/spaces" };
+  const props = JSON.parse(document.getElementById("help-fixture-props").textContent);
   helpRoot.innerHTML = "";
   render(() => createComponent(LocaleProvider, { locale: "en", get children() { return createComponent(provider ? LayoutHelpPanel : LayoutHelpPage, props); } }), helpRoot);
 }
@@ -101,16 +101,7 @@ document.documentElement.dataset.helpMounted = "true";
       const url = new URL(request.url);
       if (url.pathname === "/help-fixture.js") return new Response(client, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/api/help/search") return Response.json({ ids: [] });
-      if (url.pathname.startsWith("/api/help/"))
-        return Response.json({
-          id: url.pathname.split("/").at(-1),
-          title: "Share a Space",
-          locale: "en",
-          markdown: "Share",
-          kind: "task",
-          related: [],
-          html: '<h2 id="share">Share</h2><p>Open Space settings.</p>',
-        });
+      if (url.pathname.startsWith("/api/help/")) return Response.json({ ...fixtureDocument, id: url.pathname.split("/").at(-1) });
       const response = await server.fetch(request);
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
       const html = (await response.text())
@@ -247,6 +238,41 @@ for (const width of [1440, 390])
       await context.close();
     }
   });
+test("an article opened from the panel start grows its head only downwards once the article arrives", async () => {
+  const { context, page } = await fixture(1440, 900);
+  try {
+    let release = () => {};
+    const arrived = new Promise<void>((done) => {
+      release = done;
+    });
+    await page.route("**/api/help/spaces-share", async (route) => {
+      await arrived;
+      await route.continue();
+    });
+    await ready(page);
+    const provider = frame(page);
+    if (!provider) throw new Error("Missing Help frame");
+    await provider.waitForFunction(() => document.documentElement.dataset.helpMounted === "true");
+    await provider.locator('[data-help-view] [data-help-topic="spaces-share"]').click();
+    await provider.locator('.help-article [data-state="loading"]').waitFor();
+    const box = () =>
+      provider.evaluate(() =>
+        [".help-article-head", ".help-article-title", ".help-article-icon"].map((selector) => {
+          const rect = document.querySelector(selector)?.getBoundingClientRect();
+          return rect && { x: rect.x, y: rect.y, width: rect.width };
+        }),
+      );
+    const loading = await box();
+    release();
+    await provider.locator(".help-document h2").waitFor();
+    await settled(page);
+    // A person opened the article on purpose: the head may grow, but its place, title, and icon tile stay.
+    expect(await box()).toEqual(loading);
+    expect(await provider.locator(".help-article-lead").textContent()).toContain("Share a Space so other people");
+  } finally {
+    await context.close();
+  }
+});
 test("an article fits a 20rem panel column and leaves the panel URL unchanged", async () => {
   const { context, page } = await fixture(1440, 900, true, 20);
   try {

@@ -4,7 +4,7 @@ import { canReadAppHelp } from "@k2b/cloud/services/help";
 import { HELP_VIEW_LIMIT } from "@k2b/cloud/shared";
 import { getLocalizedRuntimeContext, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
-import { layoutHelpFailed, preloadLayoutHelp } from "@k2b/cloud/ssr/help";
+import { layoutHelpFailed, preloadLayoutHelp, preloadLayoutHelpArticle } from "@k2b/cloud/ssr/help";
 import { keyboardPlatform } from "@k2b/ui";
 import { ssr } from "../../config";
 import CoreLayoutHelpPanel from "../CoreLayoutHelpPanel.island";
@@ -30,6 +30,7 @@ export default ssr<AuthContext>(async (c) => {
     requested && requested.length <= PANEL_HELP_ID_MAX_LENGTH && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(requested) && ids.has(requested)
       ? requested
       : undefined;
+  const initialArticle = initialTopic && app ? await preloadLayoutHelpArticle(c, app.id, initialTopic) : null;
   const state = !app ? "unavailable" : !help && layoutHelpFailed(c) ? "failed" : undefined;
   const platform = keyboardPlatform(c.req.header("User-Agent") ?? "");
   return () => (
@@ -40,6 +41,7 @@ export default ssr<AuthContext>(async (c) => {
         appearance={app ? appAppearanceStyle(app.appearance) : undefined}
         view={view}
         initialTopic={initialTopic}
+        initialArticle={initialArticle ?? undefined}
         pageBase={help?.pageBase}
         platform={platform}
         state={state}

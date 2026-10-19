@@ -1,10 +1,9 @@
-import { keyboardPlatform } from "@k2b/ui";
 import { Hono, type MiddlewareHandler } from "hono";
-import { helpAgentMarkdown } from "../_internal/help-catalog";
+import { buildHelpDocumentPayload } from "../server/help-payload";
 import { type AuthContext, auth, getLocale } from "../server";
 import { createHelpReader, type HelpReaderFactory } from "../services/help";
-import { type HelpDocumentPayload, type HelpSearchPayload, parseHelpReference } from "../shared/help";
-import { renderHelpMarkdown } from "../shared/markdown";
+import type { HelpSearchPayload } from "../shared/help";
+import type { renderHelpMarkdown } from "../shared/markdown";
 import { helpApiMessages } from "./help-messages";
 
 export type HelpRouteDependencies = {
@@ -36,30 +35,7 @@ export const createHelpRoutes = (dependencies: HelpRouteDependencies = {}) => {
       const { t } = helpApiMessages.resolve([locale]);
       const document = await reader(locale, c.get("actor")).read({ appId: c.req.param("appId"), documentId: c.req.param("documentId") });
       if (!document) return c.json({ code: "HELP_NOT_FOUND", message: t.notFound }, 404);
-      const links = (reference: { appId?: string; documentId: string }) =>
-        document.links[`${reference.appId ?? document.appId}/${reference.documentId}`];
-      const resolve = (reference: string) => {
-        const ref = parseHelpReference(reference);
-        return ref ? links(ref) : undefined;
-      };
-      const payload: HelpDocumentPayload = {
-        locale: document.locale,
-        id: document.documentId,
-        title: document.title,
-        markdown: helpAgentMarkdown(document),
-        kind: document.kind,
-        needs: document.needs,
-        next: document.next ? resolve(document.next) : undefined,
-        related: document.related.flatMap((reference) => {
-          const target = resolve(reference);
-          return target ? [target] : [];
-        }),
-        html: (dependencies.renderMarkdown ?? renderHelpMarkdown)(document.markdown, {
-          locale: document.locale,
-          platform: keyboardPlatform(c.req.header("User-Agent") ?? ""),
-          links,
-        }),
-      };
+      const payload = buildHelpDocumentPayload(document, c.req.header("User-Agent") ?? "", dependencies.renderMarkdown);
       return c.json(payload);
     });
 };

@@ -477,9 +477,11 @@ related articles in their app colour. Authors choose `next`; article order
 sorts the task tiles, remaining tasks, and kind groups on the Help start.
 
 SSR loads the current application's localized article metadata from Postgres.
-The browser receives this manifest and loads article bodies on demand. An
-agent uses bounded search and read operations; Cloud does not create one
-permanently loaded tool for every article.
+The browser receives this manifest. When the address names an article, on a
+full page or through the panel's `?topic=`, the server renders that article in
+the first frame; other articles load on demand. An agent uses bounded search
+and read operations; Cloud does not create one permanently loaded tool for
+every article.
 
 Every automatic surface uses the same request locale. Article responses and
 AI/MCP matches report each article's actual content locale. Browser article
@@ -619,6 +621,11 @@ It receives the authorized documents, app identity and appearance, filtered
 view IDs, keyboard platform, and optional topic from the server. It reads no
 host shell data and follows context and shortcuts through the panel API.
 Application authors normally use the automatic registration above.
+
+Pass the result of `preloadLayoutHelpArticle(c, appId, documentId)` from
+`@k2b/cloud/ssr/help` as `initialArticle` alongside a manifest-validated
+`initialTopic` to `Layout.HelpPage` or `Layout.HelpPanel` to render the article
+in the first frame; if the helper returns `null`, omit the prop to load on demand.
 
 `Layout.HelpPage` with `embedded` renders no Help head: the host's own window
 names the reader and chooses its article. Its start keeps only the search.
