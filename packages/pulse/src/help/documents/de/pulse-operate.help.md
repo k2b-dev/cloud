@@ -56,17 +56,19 @@ die Pulse-Verwaltung verfügbar.
 
 Eine neue Base richtet ihre eigene Datenbank ein und nimmt erst im Zustand
 „Aktiv“ Änderungen an. Leeren behält Quellen, Tokens, Dashboards und Abfragen.
-Löschen widerruft zuerst Tokens, öffentliche Links und den Lese-Zugang. Nach
+Löschen widerruft zuerst Tokens, öffentliche Links und den Lese-Zugang. Eine
+Base, die gelöscht wird, bleibt auf deiner Pulse-Übersicht, bis sie weg ist. Nach
 einem Fehler setzt **Erneut versuchen** den Vorgang fort. Cloud-Admins sehen
 Zustand, Profil, Grenzen und gemessenen Speicher unter Verwaltung → Pulse →
 Bases, ohne Messdaten-Inhalte.
 
 Kürzere Aufbewahrung braucht eine Bestätigung mit Stichtag, Zeilen und geschätzten
-Bytes. Rohdaten erlauben standardmäßig 1–730 Tage (per Richtlinie bis 3.650),
+Bytes. Bei sensiblen Feldern zählt Pulse die Felder, die geleert werden; die
+Zeilen bleiben. Rohdaten erlauben standardmäßig 1–730 Tage (per Richtlinie bis 3.650),
 Stundenwerte 1–3.650 Tage und sensible Felder 1–8.760 Stunden. Sensible Felder
 verfallen per Spalten-TTL bei ClickHouse-Merges; aktuelle Zustände verfallen nicht.
 
 Fehlende Datenbanken oder abweichende Prüfpunkte sperren Messdaten-Schreibzugriffe.
-Nach passenden Sicherungen wählt ein Cloud-Admin **Erneut prüfen**. **Leer neu
+Solange die Sperre gilt, kannst du die Base nicht leeren. Nach passenden Sicherungen wählt ein Cloud-Admin **Erneut prüfen**. **Leer neu
 anlegen** verwirft Messdaten. Ohne Verbindung bleibt die Pulse-Verwaltung
 verfügbar; andere Cloud-Apps arbeiten weiter.

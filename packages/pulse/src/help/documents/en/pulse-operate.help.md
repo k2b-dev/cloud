@@ -53,16 +53,18 @@ passwords only with `--password-file` or `--password-stdin`. Without this connec
 
 A new base provisions its own database and becomes active before accepting
 changes. Clearing keeps sources, tokens, dashboards and queries. Deletion
-revokes tokens and public links first and closes the database to queries. If an operation fails,
+revokes tokens and public links first and closes the database to queries. A
+base in deletion stays on your Pulse overview until it is gone. If an operation fails,
 choose **Retry**. A Cloud administrator can also retry it under Administration → Pulse
 → Bases, where profiles, limits and measured storage appear without contents.
 
 Shorter retention needs confirmation of the cutoff, affected rows and estimated
-bytes. Raw data allows 1–730 days by default (up to 3,650 by policy), rollups
+bytes. For sensitive fields, it counts the fields that are cleared; the rows stay. Raw data allows 1–730 days by default (up to 3,650 by policy), rollups
 1–3,650 days, and sensitive fields 1–8,760 hours. Sensitive fields expire by
 column TTL during ClickHouse merges; current states do not expire.
 
-A checkpoint mismatch or missing database blocks measurement writes. After
+A checkpoint mismatch or missing database blocks measurement writes. While
+the block is active, you cannot clear the base. After
 restoring matching backups, a Cloud administrator chooses **Recheck**. **Recreate**
 discards measurements and starts empty. Other Cloud apps keep working
 when Pulse is not configured.

@@ -21,13 +21,16 @@ file into agent context. Ask the operator to run the generated SQL as the
 ClickHouse admin; the service account cannot create its own settings profiles.
 
 Base admins manage their bases; Cloud admins set policy, limits and internal
-targets. By default, people and standalone agents with write scope create bases
-and become their admins. Resource-bound credentials cannot create bases.
+targets. By default, people and agents with write scope create bases and become
+their admins; a delegated agent's base goes to its person. A "people only"
+policy refuses every service account. Resource-bound credentials cannot create
+bases.
 
 Use `cld pulse admin policy get|set`, `bases list|limits|retry|recheck|recreate`,
 `orphans list|delete`, and `targets list|add|remove`. Read the admin reference for
 flags.
 Internal targets are per-base host, host:port or CIDR entries; /0 is refused.
 A failed lifecycle operation needs Retry. A write block after restore needs a
-Cloud admin to recheck matching backups or explicitly recreate an empty store.
+Cloud admin to recheck matching backups or explicitly recreate an empty store;
+until then a base admin cannot clear the base.
 Shorter retention requires confirming its cutoff and affected-data preview.

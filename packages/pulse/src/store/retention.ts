@@ -52,6 +52,16 @@ export const retentionPreview = async (
     let rows = 0,
       bytes = 0;
     for (const table of change.tables) {
+      if (change.kind === "sensitive") {
+        // Sensitive erasure clears the field and keeps the row: count the non-empty fields and their own size.
+        const [fields] = await store.query(
+          `SELECT count() AS rows, sum(length(sensitive)) AS bytes FROM ${database}.${table.table} WHERE ${table.time} < parseDateTime64BestEffort({cutoff:String}) AND sensitive != ''`,
+          { cutoff },
+        );
+        rows += Number(fields?.rows ?? 0);
+        bytes += Number(fields?.bytes ?? 0);
+        continue;
+      }
       const [count] = await store.query(
         `SELECT count() AS rows FROM ${database}.${table.table} WHERE ${table.time} < parseDateTime64BestEffort({cutoff:String})`,
         { cutoff },

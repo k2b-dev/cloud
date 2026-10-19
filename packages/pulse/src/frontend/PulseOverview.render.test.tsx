@@ -49,12 +49,12 @@ const base = (id: string, name: string, description: string | null): PulseBase =
   },
 });
 
-const render = (bases: PulseBase[], capabilities: PulseCapabilitySnapshot | null = null) =>
+const render = (bases: PulseBase[], capabilities: PulseCapabilitySnapshot | null = null, deletingBases: PulseBase[] = []) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "en",
       get children() {
-        return createComponent(PulseOverview, { bases, capabilities, initialQuery: "" });
+        return createComponent(PulseOverview, { bases, deletingBases, capabilities, initialQuery: "" });
       },
     }),
   );
@@ -79,4 +79,26 @@ test("keeps the empty state and the TimescaleDB notice on the page", () => {
   expect(html).toContain("New base");
   expect(html).toContain("k2b-notice");
   expect(html).not.toContain("k2b-app-overview__cards");
+});
+
+test("keeps a base in deletion on the overview, with Retry enabled only after a failure", () => {
+  const deleting = (id: string, name: string, state: "deleting" | "failed"): PulseBase => {
+    const value = base(id, name, null);
+    return {
+      ...value,
+      deletionStartedAt: "2026-01-02T00:00:00.000Z",
+      store: { ...value.store, state, operation: "delete", errorCode: state === "failed" ? "STORE_UNREACHABLE" : null },
+    };
+  };
+  const html = render([], null, [deleting("Old001", "Old metrics", "deleting"), deleting("Gone01", "Legacy", "failed")]);
+
+  expect(html).toContain("No Pulse bases yet");
+  expect(html).toContain("Old metrics");
+  expect(html).toContain("Being deleted");
+  expect(html).toContain("Legacy");
+  expect(html).toContain("Deleting the base failed");
+  expect(html).not.toContain('href="/app/pulse/Old001"');
+  const buttons = [...html.matchAll(/<button[^>]*>(?:(?!<\/button>).)*Retry/g)].map((match) => match[0]);
+  expect(buttons).toHaveLength(2);
+  expect(buttons.filter((button) => / disabled/.test(button))).toHaveLength(1);
 });

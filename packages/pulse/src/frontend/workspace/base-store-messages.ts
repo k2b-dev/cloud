@@ -17,9 +17,12 @@ export const baseStoreMessages = i18n.define({
       failedProvision: "Setting up the database failed. Pulse continues where it stopped when you retry.",
       failedClear: "Clearing the data failed. Pulse continues where it stopped when you retry.",
       failedDelete: "Deleting the base failed. Pulse continues where it stopped when you retry.",
+      deletingText: "Pulse is deleting this base in the background. It leaves this list when it is done.",
       busyText: "Pulse is working on this base. Writing waits until it is active again.",
       blockedText:
         "Pulse found a different checkpoint in the data store, for example after a restore. It keeps the data and accepts no new values until a Cloud admin decides.",
+      clearBlockedText:
+        "Writes to this base are blocked after a checkpoint mismatch. A Cloud admin decides first, then you can clear it again.",
       retry: "Retry",
       retryStarted: "Pulse continues where it stopped.",
       retryFailed: "Retry did not start. Nothing changed. Try again.",
@@ -39,7 +42,7 @@ export const baseStoreMessages = i18n.define({
       confirmRollup: (p: { rows: string; bytes: string; date: string }) =>
         `Hourly values before ${p.date}: ${p.rows} rows, about ${p.bytes}`,
       confirmSensitive: (p: { rows: string; bytes: string; date: string }) =>
-        `Sensitive fields before ${p.date}: ${p.rows} rows, about ${p.bytes}`,
+        `Sensitive fields before ${p.date}: ${p.rows} fields are cleared, about ${p.bytes}. The rows stay.`,
       confirmShorter: "Delete and save",
     },
     de: {
@@ -56,9 +59,12 @@ export const baseStoreMessages = i18n.define({
         "Die Datenbank konnte nicht eingerichtet werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
       failedClear: "Die Daten konnten nicht geleert werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
       failedDelete: "Die Base konnte nicht gelöscht werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
+      deletingText: "Pulse löscht diese Base im Hintergrund. Sie verschwindet aus dieser Liste, wenn das Löschen fertig ist.",
       busyText: "Pulse arbeitet an dieser Base. Schreiben wartet, bis sie wieder aktiv ist.",
       blockedText:
         "Pulse hat im Datenspeicher einen anderen Prüfpunkt gefunden, zum Beispiel nach einer Wiederherstellung. Die Daten bleiben, neue Werte nimmt Pulse erst an, wenn ein Cloud-Admin entschieden hat.",
+      clearBlockedText:
+        "Schreiben ist nach einem abweichenden Prüfpunkt gesperrt. Zuerst entscheidet ein Cloud-Admin, danach kannst du die Base wieder leeren.",
       retry: "Erneut versuchen",
       retryStarted: "Pulse macht dort weiter, wo es aufgehört hat.",
       retryFailed: "Der erneute Versuch ist nicht gestartet. Es wurde nichts geändert. Versuche es erneut.",
@@ -78,7 +84,7 @@ export const baseStoreMessages = i18n.define({
       confirmRollup: (p: { rows: string; bytes: string; date: string }) =>
         `Stundenwerte vor dem ${p.date}: ${p.rows} Zeilen, etwa ${p.bytes}`,
       confirmSensitive: (p: { rows: string; bytes: string; date: string }) =>
-        `Sensible Felder vor dem ${p.date}: ${p.rows} Zeilen, etwa ${p.bytes}`,
+        `Sensible Felder vor dem ${p.date}: ${p.rows} Felder werden geleert, etwa ${p.bytes}. Die Zeilen bleiben.`,
       confirmShorter: "Löschen und speichern",
     },
   },

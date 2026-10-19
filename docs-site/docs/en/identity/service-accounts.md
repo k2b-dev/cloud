@@ -141,8 +141,11 @@ work all use the lower of its grant and its token's scopes, so a `write` grant
 with a `read`-only token only reads. In Pulse it lists and queries its bases
 and changes them with a `write` grant. By default, standalone and agent accounts
 with write or admin credential scope can also create a Pulse base and receive
-its admin grant. Cloud admins can restrict creation under Administration → Pulse
-→ Bases. Resource-bound accounts cannot create bases. In Venue it lists its venues and reads
+its admin grant. A delegated account can create a base for its person, who
+receives the admin grant. Cloud admins can restrict creation under
+Administration → Pulse → Bases; under "people only", every service account
+counts as an agent, delegated ones included. Resource-bound accounts cannot
+create bases. In Venue it lists its venues and reads
 their dashboards.
 In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
 person stay user-only: creating a Space, Notebook, contact book, or venue, creating and revoking API keys, managing Pulse source tokens, personal

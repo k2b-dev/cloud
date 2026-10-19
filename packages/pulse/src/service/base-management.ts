@@ -148,19 +148,33 @@ export const listBases = async (
   return ok(await Promise.all(rows.map(mapBase)));
 };
 
+/** Bases the scope administers whose deletion still runs or failed; the overview keeps them until the deletion finishes. */
+export const listDeletingBases = async (user: AccessScope): Promise<Result<PulseBase[]>> => {
+  const baseIds = await listBaseIdsVisibleTo(user, { deleting: true, limit: 100 });
+  if (baseIds.length === 0) return ok([]);
+  const rows = await sql<BaseRow[]>`
+    SELECT b.*
+    FROM pulse.bases b
+    WHERE b.deletion_started_at IS NOT NULL
+      AND b.id = ANY(${toPgUuidArray(baseIds)}::uuid[])
+    ORDER BY b.updated_at DESC, b.name ASC, b.id ASC
+  `;
+  return ok(await Promise.all(rows.map(mapBase)));
+};
+
 export const createBase = async (params: {
   name: string;
   description?: string | null;
   user: AccessScope;
   isCloudAdmin?: boolean;
+  agent: boolean;
 }): Promise<Result<PulseBase>> => {
   const policy = await readBasePolicy();
-  const agent = "subject" in params.user;
   if (
     ("subject" in params.user &&
       (params.user.serviceAccount.kind === "resource_bound" || !params.user.scopes.some((s) => s === "write" || s === "admin"))) ||
-    (policy.baseCreation === "people" && agent) ||
-    (policy.baseCreation === "admins" && (agent || !params.isCloudAdmin))
+    (policy.baseCreation === "people" && params.agent) ||
+    (policy.baseCreation === "admins" && (params.agent || !params.isCloudAdmin))
   )
     return fail({
       code: "PULSE_BASE_CREATION_NOT_ALLOWED",
@@ -400,7 +414,24 @@ export const updateBase = async (params: {
   clock?: () => Date;
   store?: typeof baseStore;
 }): Promise<Result<PulseBase>> => {
+  const access = await requireBaseAccess(params.baseId, params.user, "write");
+  if (!access.ok) return access;
+  const active = await requireBaseActive(params.baseId);
+  if (!active.ok) return active;
+  const [before] = await sql<BaseRow[]>`SELECT * FROM pulse.bases WHERE id=${params.baseId}::uuid`;
+  if (!before) return fail(err.notFound("Pulse base"));
+  const proposed = normalizeBaseUpdateValues(params, before);
+  if (!proposed.ok) return proposed;
   const policy = await readBasePolicy();
+  if (params.rawRetentionDays !== undefined && proposed.data.rawRetentionDays > policy.maxRawRetentionDays)
+    return fail(err.badInput(`Raw retention must be between 1 and ${policy.maxRawRetentionDays} days`));
+  // ClickHouse scans must not hold the row lock that ingest and scrapes share.
+  // A confirmed save needs no preview, and so no data store.
+  const preview = params.confirmShorterRetention
+    ? []
+    : await retentionPreview(params.baseId, before, proposed.data, params.clock, params.store).catch(() => {
+        throw new RetentionStoreUnavailable();
+      });
   const result = await sql.begin(async (tx): Promise<Result<BaseRow>> => {
     await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
     const access = await requireBaseAccess(params.baseId, params.user, "write", tx);
@@ -409,24 +440,26 @@ export const updateBase = async (params: {
     if (!active.ok) return active;
     const [existing] = await tx<BaseRow[]>`SELECT * FROM pulse.bases WHERE id=${params.baseId}::uuid`;
     if (!existing) return fail(err.notFound("Pulse base"));
+    if (
+      existing.retention_days !== before.retention_days ||
+      existing.rollup_retention_days !== before.rollup_retention_days ||
+      existing.sensitive_retention_hours !== before.sensitive_retention_hours
+    )
+      return fail({
+        code: "PULSE_BASE_CHANGED",
+        status: 409,
+        message: "The base changed while the preview was computed. Review the preview again.",
+      });
+    if (preview.length && !params.confirmShorterRetention)
+      return fail({
+        code: "PULSE_RETENTION_CONFIRMATION_REQUIRED",
+        status: 409,
+        message: "Shorter retention removes older data. Confirm the preview to continue.",
+        preview,
+      });
+    // Preserve unrelated concurrent name/description changes when those fields were omitted.
     const values = normalizeBaseUpdateValues(params, existing);
     if (!values.ok) return values;
-    if (params.rawRetentionDays !== undefined && values.data.rawRetentionDays > policy.maxRawRetentionDays)
-      return fail(err.badInput(`Raw retention must be between 1 and ${policy.maxRawRetentionDays} days`));
-    if (!params.confirmShorterRetention) {
-      try {
-        const preview = await retentionPreview(params.baseId, existing, values.data, params.clock, params.store);
-        if (preview.length)
-          return fail({
-            code: "PULSE_RETENTION_CONFIRMATION_REQUIRED",
-            status: 409,
-            message: "Shorter retention removes older data. Confirm the preview to continue.",
-            preview,
-          });
-      } catch {
-        throw new RetentionStoreUnavailable();
-      }
-    }
     const row = await persistBaseUpdate(params.baseId, values.data, tx);
     if (row.ok) await tx`UPDATE pulse.base_stores SET reconcile_needed=true,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     return row;
@@ -485,6 +518,14 @@ export const clearBaseData = async (params: { baseId: string; user: AccessScope 
     if (!active.ok) return active;
     const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!authorized.ok) return authorized;
+    const [store] = await tx`SELECT write_block_reason FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
+    if (store?.write_block_reason != null)
+      return fail({
+        code: "PULSE_BASE_WRITE_BLOCKED",
+        status: 409,
+        message:
+          "Writes to this base are blocked after a checkpoint mismatch. A Cloud admin decides under Administration -> Pulse -> Bases.",
+      });
     // A clear gets a fresh checkpoint identity; retries of this clear keep the one its first run prepared.
     await tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`

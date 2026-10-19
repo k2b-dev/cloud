@@ -129,8 +129,12 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
   prompts.dialog<void>(
     (close) => {
       const t = usePulseMessages();
+      const locale = useLocale();
+      const storeT = createMemo(() => baseStoreMessages.resolve([locale()]).t);
       let disposed = false;
       const [store, setStore] = createSignal(options.base.store);
+      // A Cloud admin decides about a checkpoint mismatch first; clearing would take away the restore option.
+      const clearBlocked = () => Boolean(store().writeBlockReason);
       const [retrying, setRetrying] = createSignal(false);
       const retry = async () => {
         if (retrying()) return;
@@ -419,13 +423,16 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                 tone="danger"
                 description={t().destructiveBaseActions}
               >
-                <SettingsGroup title={t().clearTelemetry} description={t().clearTelemetryDescription}>
+                <SettingsGroup
+                  title={t().clearTelemetry}
+                  description={clearBlocked() ? storeT().clearBlockedText : t().clearTelemetryDescription}
+                >
                   <SettingsGroup.Action>
                     <Button
                       type="button"
                       variant="danger"
                       size="sm"
-                      disabled={options.loading() || options.writeBlocked()}
+                      disabled={options.loading() || options.writeBlocked() || clearBlocked()}
                       onClick={() => void options.clearBaseData()}
                     >
                       <i class="ti ti-eraser text-sm" />

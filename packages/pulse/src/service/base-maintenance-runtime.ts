@@ -1,10 +1,13 @@
 import { lazySync } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
-import { BaseOperationSuperseded } from "../store/base-store";
+import { BaseOperationSuperseded, baseStore, storeErrorCode } from "../store/base-store";
 import { measureBaseUsage, measureInstanceDisk, verifyBaseCheckpoint, writeBaseCheckpoint } from "../store/maintenance";
 import { pulseStoreConfigured } from "../store/service";
 import { resumePulseBaseJobs } from "./base-lifecycle";
+
+const log = logger("pulse:base-maintenance");
 
 type ScanInput = { slot: number; after: string | null; checkpointId: string | null; verifyOnly: boolean };
 const usageJob = lazySync((sync) =>
@@ -15,38 +18,65 @@ const checkpointJob = lazySync((sync) =>
 );
 const scheduler = lazySync((sync) => sync.scheduler({ id: "pulse:stores", delivery: { maxAttempts: 3, backoffMs: [10_000, 30_000] } }));
 let workers: Worker[] = [];
+const nextUsageBase = async (input: ScanInput) => {
+  const [base] = await sql<
+    { base_id: string }[]
+  >`SELECT base_id FROM pulse.base_stores WHERE state='active' AND (usage_measured_at IS NULL OR usage_measured_at<${new Date(input.slot)}) AND (${input.after}::uuid IS NULL OR base_id>${input.after}::uuid) ORDER BY base_id LIMIT 1`;
+  return base;
+};
+const nextCheckpointBase = async (input: ScanInput) => {
+  const [base] = await sql<
+    { base_id: string }[]
+  >`SELECT base_id FROM pulse.base_stores WHERE state='active' AND (${input.after}::uuid IS NULL OR base_id>${input.after}::uuid) ORDER BY base_id LIMIT 1`;
+  return base;
+};
+/** One base per run; the cursor advances even when its store is unavailable. */
+export const runUsageScan = async (
+  input: ScanInput,
+  store = baseStore,
+  { nextBase = nextUsageBase, warn = log.warn } = {},
+): Promise<ScanInput | null> => {
+  const base = await nextBase(input);
+  if (!base) return null;
+  try {
+    await measureBaseUsage(base.base_id, store);
+  } catch (error) {
+    if (!(error instanceof BaseOperationSuperseded))
+      warn("Pulse base usage failed", { baseId: base.base_id, errorCode: storeErrorCode(error) });
+  }
+  return { ...input, after: base.base_id };
+};
+
+export const runCheckpointScan = async (
+  input: ScanInput,
+  store = baseStore,
+  { nextBase = nextCheckpointBase, warn = log.warn } = {},
+): Promise<ScanInput | null> => {
+  const base = await nextBase(input);
+  if (!base) return null;
+  try {
+    if (input.verifyOnly) await verifyBaseCheckpoint(base.base_id, store, true);
+    else if (input.checkpointId) await writeBaseCheckpoint(base.base_id, input.checkpointId, store);
+  } catch (error) {
+    if (!(error instanceof BaseOperationSuperseded))
+      warn("Pulse base checkpoint failed", { baseId: base.base_id, errorCode: storeErrorCode(error) });
+  }
+  return { ...input, after: base.base_id };
+};
+
 export const startBaseMaintenance = async () => {
   workers.push(
     await usageJob().process({}, async (context) => {
       if (!(await pulseStoreConfigured())) return;
-      const { slot } = context.input;
-      const [base] = await sql<
-        { base_id: string }[]
-      >`SELECT base_id FROM pulse.base_stores WHERE state='active' AND (usage_measured_at IS NULL OR usage_measured_at<${new Date(slot)}) ORDER BY usage_measured_at ASC NULLS FIRST,base_id LIMIT 1`;
-      if (!base) return;
-      try {
-        await measureBaseUsage(base.base_id);
-      } catch (error) {
-        if (!(error instanceof BaseOperationSuperseded)) throw error;
-      }
-      context.resubmit();
+      const input = await runUsageScan(context.input);
+      if (input) context.resubmit({ input });
     }),
   );
   workers.push(
     await checkpointJob().process({}, async (context) => {
       if (!(await pulseStoreConfigured())) return;
-      const input = context.input;
-      const [base] = await sql<
-        { base_id: string }[]
-      >`SELECT base_id FROM pulse.base_stores WHERE state='active' AND (${input.after}::uuid IS NULL OR base_id>${input.after}::uuid) ORDER BY base_id LIMIT 1`;
-      if (!base) return;
-      try {
-        if (input.verifyOnly) await verifyBaseCheckpoint(base.base_id);
-        else if (input.checkpointId) await writeBaseCheckpoint(base.base_id, input.checkpointId);
-      } catch (error) {
-        if (!(error instanceof BaseOperationSuperseded)) throw error;
-      }
-      context.resubmit({ input: { ...input, after: base.base_id } });
+      const input = await runCheckpointScan(context.input);
+      if (input) context.resubmit({ input });
     }),
   );
   await scheduler().create({

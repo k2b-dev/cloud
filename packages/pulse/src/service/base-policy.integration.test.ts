@@ -4,7 +4,7 @@ import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts
 import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { settingsFixture } from "../store/settings.test-fixture";
-import type { ResourceScope } from "./access-control";
+import { accessScopeFor, type ResourceScope } from "./access-control";
 import { updateBaseLimits } from "./base-admin";
 import { createBase } from "./base-management";
 import { setPolicy } from "./base-policy";
@@ -35,7 +35,7 @@ dbTest(
     bindProcessSync(sync);
     try {
       for (const scope of [{ id: user!.id }, agent]) {
-        const result = await createBase({ name: "Created by policy", user: scope });
+        const result = await createBase({ name: "Created by policy", user: scope, agent: "subject" in scope });
         expect(result.ok).toBe(true);
         if (!result.ok) throw new Error("CREATE_FAILED");
         ids.push(result.data.id);
@@ -47,14 +47,49 @@ dbTest(
         expect(grant?.service_account_id).toBe("subject" in scope ? account!.id : null);
       }
       await setPolicy(identity, { baseCreation: "people" });
-      expect(await createBase({ name: "Denied agent", user: agent })).toMatchObject({
+      expect(await createBase({ name: "Denied agent", user: agent, agent: true })).toMatchObject({
         ok: false,
         error: { status: 403, code: "PULSE_BASE_CREATION_NOT_ALLOWED" },
       });
+      // Delegation changes the grant owner, not the request actor used by creation policy.
+      if (identity.actor.kind !== "user") throw new Error("USER_FIXTURE_REQUIRED");
+      const delegated = accessScopeFor(
+        {
+          kind: "service_account",
+          serviceAccount: {
+            id: account!.id,
+            name: "Delegated fixture",
+            kind: "user_delegated",
+            status: "active",
+            delegatedUserId: user!.id,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: user!.id,
+            createdAt: "2026-10-17T12:00:00.000Z",
+          },
+          scopes: ["write"],
+          delegatedUser: identity.actor.user,
+        },
+        { type: "user", userId: user!.id },
+      );
+      expect(delegated.ok).toBe(true);
+      if (!delegated.ok) throw new Error("DELEGATED_SCOPE_FAILED");
+      expect(await createBase({ name: "Denied delegated agent", user: delegated.data, agent: true, isCloudAdmin: true })).toMatchObject({
+        ok: false,
+        error: { status: 403, code: "PULSE_BASE_CREATION_NOT_ALLOWED" },
+      });
+      const person = await createBase({ name: "Allowed person", user: { id: user!.id }, agent: false });
+      expect(person.ok).toBe(true);
+      if (!person.ok) throw new Error("PERSON_CREATE_FAILED");
+      ids.push(person.data.id);
       await setPolicy(identity, { baseCreation: "admins" });
-      expect(await createBase({ name: "Denied person", user: { id: user!.id } })).toMatchObject({ ok: false, error: { status: 403 } });
+      expect(await createBase({ name: "Denied person", user: { id: user!.id }, agent: false })).toMatchObject({
+        ok: false,
+        error: { status: 403 },
+      });
       await setPolicy(identity, { baseCreation: "everyone", maxBases: 1 });
-      const limited = await createBase({ name: "Over maximum", user: { id: user!.id } });
+      const limited = await createBase({ name: "Over maximum", user: { id: user!.id }, agent: false });
       expect(limited).toMatchObject({ ok: false, error: { code: "PULSE_BASE_LIMIT_REACHED", status: 409 } });
       if (!limited.ok)
         expect(limited.error.message).toContain("A Cloud admin can raise the maximum under Administration -> Pulse -> Bases");

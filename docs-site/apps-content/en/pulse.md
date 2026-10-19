@@ -41,13 +41,17 @@ other bases. Base admins manage members, sources, tokens, queries, dashboards
 and retention; they do not need the Cloud admin role. By default, people and
 agents with write credentials can create a base and become its admin. A Cloud
 admin can restrict creation to people or Cloud admins and set the maximum
-(default 200) under **Administration → Pulse → Bases**.
+(default 200) under **Administration → Pulse → Bases**. The policy judges who
+sends the request: a service account counts as an agent, also when it acts for
+a person, and the admin grant then goes to that person.
 
 New bases are `provisioning`, then `active`. Only active bases accept changes.
 Clearing (`clearing`) keeps sources, tokens, dashboards and queries. Deleting
 (`deleting`) revokes source tokens, public links and read access before removing
-the store. After five failed runs, the operation is `failed`; a base admin can
-choose **Retry**, and a Cloud admin can retry from the Bases page.
+the store. A base in deletion stays on its admins' Pulse overview until the
+deletion finishes. After five failed runs, the operation is `failed`; a base
+admin can choose **Retry** in the base settings or on the overview, and a Cloud
+admin can retry from the Bases page.
 
 Cloud admins see state, amounts and limits, without measurement contents. They
 choose a read profile (small: 1 GB/10 s; normal: 2 GB/10 s; large: 4 GB/30 s),
@@ -58,14 +62,17 @@ shows it, with the free space of the store, to base admins and Cloud admins.
 
 Raw retention is 1–730 days by default (Cloud admins can raise the maximum to
 3,650); rollups allow 1–3,650 days and sensitive fields 1–8,760 hours. Shortening
-any period returns a cutoff and affected-row preview with estimated bytes.
-Confirm it to apply the change. Sensitive fields use column TTL; physical
+any period returns a cutoff and affected-row preview with estimated bytes; for
+sensitive fields it counts the non-empty fields that are cleared, while their
+rows stay. Confirm it to apply the change. Sensitive fields use column TTL; physical
 removal follows ClickHouse merges. Current states have no TTL.
 
 Hourly checkpoints compare Postgres and ClickHouse. A missing database or a
-mismatch blocks measurement writes. After restoring matching backups, a Cloud
-admin chooses **Recheck** to verify and recreate read access, or **Recreate**
-to discard measurements and start empty. Databases without a base appear as
+mismatch blocks measurement writes, and a base admin cannot clear the base
+while it is blocked. After restoring matching backups, a Cloud admin chooses
+**Recheck** to verify and recreate read access, or **Recreate** to discard
+measurements and start empty. When Pulse starts, it re-creates missing read
+users of bases whose checkpoints match. Databases without a base appear as
 orphans and can be deleted separately.
 
 ## Use Pulse

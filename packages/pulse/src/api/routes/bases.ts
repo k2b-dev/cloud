@@ -56,8 +56,14 @@ const routes = new Hono<AuthContext>()
       const isCloudAdmin = actor.kind === "user" && hasRole(actor.user, "admin");
       return respond(
         c,
-        projectResult(pulseService.base.create({ ...c.req.valid("json"), user: requestAccessScope(c), isCloudAdmin }), (item) =>
-          projectBases([item]).then(([value]) => value!),
+        projectResult(
+          pulseService.base.create({
+            ...c.req.valid("json"),
+            user: requestAccessScope(c),
+            isCloudAdmin,
+            agent: actor.kind === "service_account",
+          }),
+          (item) => projectBases([item]).then(([value]) => value!),
         ),
         201,
       );

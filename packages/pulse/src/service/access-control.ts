@@ -106,7 +106,8 @@ export const requireBaseAccess = async (
 
 export const listBaseIdsVisibleTo = async (
   scope: AccessScope,
-  params: { query?: string | null; limit?: number; offset?: number } = {},
+  /** `deleting` lists only bases in deletion that the scope administers, so their admin can follow or resume it. */
+  params: { query?: string | null; limit?: number; offset?: number; deleting?: boolean } = {},
 ): Promise<string[]> => {
   const visibility = readableScopeFilter(scope);
   if (!visibility) return [];
@@ -134,7 +135,7 @@ export const listBaseIdsVisibleTo = async (
       WHERE ${principalMatch}
         AND a.permission <> 'none'
         AND (${visibility.boundBaseShortId}::text IS NULL OR b.short_id = ${visibility.boundBaseShortId})
-        AND b.deletion_started_at IS NULL
+        AND ${params.deleting ? sql`b.deletion_started_at IS NOT NULL AND a.permission = 'admin'` : sql`b.deletion_started_at IS NULL`}
         AND (${pattern}::text IS NULL OR b.name ILIKE ${pattern} ESCAPE '\\' OR b.description ILIKE ${pattern} ESCAPE '\\')
     ) visible
     ORDER BY visible.updated_at DESC, visible.name ASC, visible.id ASC
