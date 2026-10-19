@@ -771,10 +771,13 @@ export default function AssistantWorkspace(props: Props) {
   /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
   const jumpToQuestion = async (question: AiOpenQuestion) => {
     const jump = ++questionJump;
-    const current = () => jump === questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
     revealRequest++;
-    if (waitingConversationId() === question.conversationId) {
+    const here = waitingConversationId() === question.conversationId;
+    // A newer jump, any navigation and leaving the workspace end this one, also while it waits for the card.
+    const navigation = here ? navigationRequest : ++navigationRequest;
+    const current = () => jump === questionJump && navigation === navigationRequest && waitingConversationId() === question.conversationId;
+    if (here) {
       if (assistantMessageSeqFromHref(window.location.href) !== null) {
         const url = new URL(window.location.href);
         url.searchParams.delete("message");
@@ -783,11 +786,10 @@ export default function AssistantWorkspace(props: Props) {
       return waitingFocus.focus(question.anchor, current);
     }
     const href = assistantConversationHref(window.location.href, question.conversationId);
-    const requestId = ++navigationRequest;
     setProjectView(null);
     setApprovalsOpen(false);
     const result = await chat.openConversation(question.conversationId);
-    if (requestId !== navigationRequest || !current() || result === "stale") return;
+    if (navigation !== navigationRequest || jump !== questionJump || result === "stale") return;
     // The page load shows the chat, or why it cannot.
     if (result === "failed") return navigateTo(href);
     navigate(href, { scroll: "manual", viewTransition: false });

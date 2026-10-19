@@ -11,7 +11,7 @@ import { logger } from "../services/logging";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
 import { aiToolIcon } from "./chat/message-utils";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
-import type { AiTurnBlock } from "./protocol";
+import { type AiTurnBlock, toolBlockId } from "./protocol";
 
 export type AiOpenQuestion = {
   /** The approval request id (approvals.requests.id). */
@@ -20,7 +20,7 @@ export type AiOpenQuestion = {
   conversationId: string;
   /** The chat's current title, at most 200 code points; chat content, never Cloud's words. */
   conversationTitle: string | null;
-  /** The question's data-chat-anchor: its tool block id. */
+  /** The question's data-chat-anchor: the id of the tool block the chat renders it in. */
   anchor: string;
   /** The question's short form, plain text, at most 160 code points. */
   short: string;
@@ -117,7 +117,9 @@ export const openQuestionFromRow = (row: QuestionRow, input: { locale: string; t
     id: row.id,
     conversationId: row.conversationId,
     conversationTitle: row.conversationTitle === null ? null : boundedText(row.conversationTitle, 200),
-    anchor: typeof block?.id === "string" && block.id ? block.id : `tool-${row.displayCallId}`,
+    // The id the chat renders the card under: a custom approval's card carries its parent call, also when a stored
+    // block still has the approval's own id (see normalizeCustomApprovalBlocks in client/projection.ts).
+    anchor: toolBlockId(row.displayCallId),
     short: boundedText(row.sentence.split(/\r?\n/, 1)[0] ?? "", 160),
     app: {
       name: typeof presentation?.appName === "string" ? presentation.appName : block ? "Cloud" : row.appId,

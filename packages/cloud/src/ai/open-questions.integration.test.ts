@@ -145,13 +145,12 @@ databaseSuite()("open questions", () => {
     expect((await f.read()).items.map((item) => item.id)).toEqual([...ids].sort().reverse().slice(0, APPROVALS_PAGE_SIZE));
   });
 
-  test("uses the exact tool block for standard and custom approvals, the card's words and app, and the current chat title", async () => {
+  test("uses the chat's tool block and card anchor for standard and custom approvals, the card's words and app, and the current chat title", async () => {
     const f = await fixture();
     const review = reviewFixture();
     const short = await f.ask({
       callId: "short",
       block: tool("short", {
-        id: "exact-short-anchor",
         review: { ...review, sentence: { ...review.sentence, short: "Send Meeting.pdf" } },
       }),
     });
@@ -160,6 +159,12 @@ databaseSuite()("open questions", () => {
       callId: "parent-approval-1",
       kind: "custom_approval",
       block: tool("parent-approval-1", { id: "tool-parent", review }),
+    });
+    // A stored block may still carry the approval's own id; the chat renders the card under the parent call.
+    const stored = await f.ask({
+      callId: "stored-approval-0",
+      kind: "custom_approval",
+      block: tool("stored-approval-0", { id: "tool-stored-approval-0", review }),
     });
     const legacy = await f.ask({
       callId: "legacy",
@@ -174,12 +179,13 @@ databaseSuite()("open questions", () => {
     const missing = await f.ask({ callId: "missing-approval-1", kind: "custom_approval", block: tool("missing", { review }) });
     const items = (await f.read()).items;
     expect(items.find((item) => item.id === short.id)).toMatchObject({
-      anchor: "exact-short-anchor",
+      anchor: "tool-short",
       short: "Send Meeting.pdf",
       app: { name: "Mail", icon: "ti ti-mail", accent: "blue" },
     });
     expect(items.find((item) => item.id === action.id)?.short).toBe("Send Meeting.pdf to Lea");
     expect(items.find((item) => item.id === custom.id)).toMatchObject({ anchor: "tool-parent", short: "Send Meeting.pdf to Lea" });
+    expect(items.find((item) => item.id === stored.id)).toMatchObject({ anchor: "tool-stored", short: "Send Meeting.pdf to Lea" });
     expect(items.find((item) => item.id === legacy.id)?.short).toBe("Send the letter exactly as written?");
     expect(items.find((item) => item.id === approvalReview.id)?.short).toBe("Send from the saved approval?");
     expect(items.find((item) => item.id === withoutReview.id)?.short).toBe("Send draft?");
