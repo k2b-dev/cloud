@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Concurrency bounded by count, not by memory | Background worker counts allow several large items to hold more memory together than the process can afford. | Tests: Mail `processing-memory-budget.test.ts` checks weighted FIFO admission, oversized work, cancellation and release; `processing-memory.integration.test.ts` checks peak RSS and correctness under the guard workload ([#1549](https://github.com/k2b-dev/cloud/issues/1549)). |
 | Decode work bounded only by file size | One record consumes the whole file's decode budget on every lookup, or a probe keeps many large records at once. | Tests: Cloud `geoip.test.ts` checks the 32 KiB record boundary, isolated failure and refusal of a valid record with a huge array; GeoIP `index.test.ts` checks upload refusal and that the probe keeps no record between addresses. |
 | Navigation truncation drift | Component or app CSS reintroduces an ellipsis, or a mask clips the navigation control's focus ring. | Tests: UI `truncate-fade-contract.test.ts` rejects ellipsis and line clamps across shipped navigation families; `truncate-fade.render.test.tsx` checks inner label classes; `sidebar-row-labels.browser.test.ts` checks overflow, resizing, RTL, focus, and stable heights. |
 | Browser cookie store read races a document write | WebKit stores a `document.cookie` write asynchronously, so a test reading `context.cookies()` immediately can see the previous value ([#1496](https://github.com/k2b-dev/cloud/issues/1496)). | Check: `cookie-store` requires `storedCookie(page, name)` from `packages/ui/test/browser.ts` to wait until the store agrees with the document, or a leading `// cookie-store: <reason>` for a deliberate read such as an HttpOnly cookie. |
@@ -108,6 +109,13 @@ convention still needs a check or a test.
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 
 ## Lessons
+
+### Large Mail messages exhausted container memory (#1549)
+
+- **What happened:** Mail 0.43.0 was OOMKilled at a 1 GiB container limit while hydrating messages up to about 34 MiB and extracting attachments ([#1549](https://github.com/k2b-dev/cloud/issues/1549)). The measured guard workload added about 650 MiB above baseline.
+- **Root cause:** Four hydration workers could parse large messages together. HTML sanitizing added 30–38 times the HTML size, and CSV extraction built all Markdown before truncating it. Blob chunk copies and read-ahead added allocation churn.
+- **Error class:** Concurrency bounded by count, not by memory.
+- **Guard:** `processing-memory-budget.test.ts` checks one shared weighted FIFO budget, oversized work running alone, cancellation and release after failure. `processing-memory.integration.test.ts` runs the memory guard workload and checks peak RSS, the budget high-water and complete messages and attachments. Blob streaming keeps one pending chunk and bounds read-ahead.
 
 ### Changing chats kept the destination composer read-only
 

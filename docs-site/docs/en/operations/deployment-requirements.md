@@ -27,6 +27,17 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Size Mail for large messages
+
+Mail processes large messages and attachment text within a fixed per-process
+working-set budget of **256 MiB**. Large items wait their turn and run one at a
+time when they exceed that budget; no message is skipped. This budget covers
+estimated processing memory beside the process baseline and API traffic.
+
+Use a container memory limit of **1.5 GiB** for Mail. Where availability matters,
+run at least **two Mail replicas**: while a single replica restarts, Mail pages
+and API requests return **Bad Gateway** until it is ready.
+
 ## Prepare for browser confirmation of new access
 
 Deploy updated Core and OAuth together: start Core first, then OAuth, as in

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sanitizeIncomingMailHtml, sanitizeIncomingMailHtmlWithRemoteImages } from "./message-hydration";
+import { hydrationHtmlBytes, sanitizeIncomingMailHtml, sanitizeIncomingMailHtmlWithRemoteImages } from "./message-hydration";
 
 describe("incoming mail HTML", () => {
   test("keeps common template layout styles and drops positioning and hiding styles", () => {
@@ -164,5 +164,41 @@ describe("incoming mail HTML", () => {
     expect(result.remoteImages).toHaveLength(64);
     expect(result.html.match(/data-mail-remote-image=/gu)).toHaveLength(64);
     expect(result.html).not.toContain("https://images.example");
+  });
+});
+
+describe("hydration HTML working-set estimate", () => {
+  test("sums encoded inline HTML sizes and excludes attachment subtrees", () => {
+    const structure = {
+      type: "multipart/mixed",
+      childNodes: [
+        { type: "text/html", disposition: "inline", size: 200 },
+        { type: "text/html", size: 300 },
+        { type: "text/plain", size: 500 },
+        { type: "text/html", disposition: "ATTACHMENT", size: 900 },
+        { type: "multipart/alternative", disposition: "attachment", childNodes: [{ type: "text/html", size: 1000 }] },
+      ],
+    };
+    expect(hydrationHtmlBytes(structure, 3000)).toBe(500);
+    expect(hydrationHtmlBytes(JSON.stringify(structure), 3000)).toBe(500);
+  });
+
+  test("falls back to source size for absent or unusable HTML metadata", () => {
+    for (const structure of [
+      null,
+      {},
+      { type: "text/plain", size: 10 },
+      { type: "text/html" },
+      { type: "text/html", size: -1 },
+      { type: "text/html", size: NaN },
+      {
+        childNodes: [
+          { type: "text/html", size: 10 },
+          { type: "text/html", size: null },
+        ],
+      },
+    ])
+      expect(hydrationHtmlBytes(structure, 100)).toBe(100);
+    expect(hydrationHtmlBytes({ type: "text/html", size: 0 }, 100)).toBe(0);
   });
 });

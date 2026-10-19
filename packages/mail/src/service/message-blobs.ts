@@ -49,7 +49,7 @@ export const createBlobReadable = (blobId: string): Readable =>
           WHERE blob_id = ${blobId}::uuid AND position = ${position}
         `;
         if (!chunk) throw Object.assign(new Error("Stored mail blob is incomplete"), { code: "MAIL_BLOB_INCOMPLETE" });
-        const bytes = Buffer.from(chunk.bytes);
+        const bytes = Buffer.from(chunk.bytes.buffer, chunk.bytes.byteOffset, chunk.bytes.byteLength);
         byteLength += bytes.length;
         yield bytes;
       }
@@ -57,6 +57,8 @@ export const createBlobReadable = (blobId: string): Readable =>
         throw Object.assign(new Error("Stored mail blob length does not match its metadata"), { code: "MAIL_BLOB_INCOMPLETE" });
       }
     })(),
+    // Read ahead at most one 1 MiB chunk (Readable.from defaults to 16 objects).
+    { highWaterMark: 1 },
   );
 
 export const readStoredBlobPrefix = async (
@@ -111,35 +113,34 @@ export const storeReadableBlob = async (stream: Readable, expectedSize?: number 
   if (!created) throw new Error("Blob allocation failed");
 
   const hasher = new Bun.CryptoHasher("sha256");
-  let pending: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  let pending = Buffer.allocUnsafe(DEFAULT_CHUNK_SIZE);
+  let filled = 0;
   let byteLength = 0;
   let chunkCount = 0;
   try {
     for await (const value of stream) {
-      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array);
+      if (typeof value !== "string" && !(value instanceof Uint8Array)) {
+        throw new TypeError("Mail blob stream chunks must be strings or bytes");
+      }
+      const chunk = typeof value === "string" ? Buffer.from(value) : Buffer.from(value.buffer, value.byteOffset, value.byteLength);
       hasher.update(chunk);
       byteLength += chunk.length;
       let offset = 0;
-      if (pending.length > 0) {
-        const required = DEFAULT_CHUNK_SIZE - pending.length;
-        if (chunk.length < required) {
-          pending = Buffer.concat([pending, chunk]);
-          continue;
+      while (offset < chunk.length) {
+        const copied = chunk.copy(pending, filled, offset, Math.min(chunk.length, offset + DEFAULT_CHUNK_SIZE - filled));
+        filled += copied;
+        offset += copied;
+        if (filled === DEFAULT_CHUNK_SIZE) {
+          await insertChunk(created.id, chunkCount, pending);
+          chunkCount += 1;
+          // A fresh buffer per stored chunk: nothing has to know when the driver let go of the last one.
+          pending = Buffer.allocUnsafe(DEFAULT_CHUNK_SIZE);
+          filled = 0;
         }
-        await insertChunk(created.id, chunkCount, Buffer.concat([pending, chunk.subarray(0, required)]));
-        chunkCount += 1;
-        pending = Buffer.alloc(0);
-        offset = required;
       }
-      while (chunk.length - offset >= DEFAULT_CHUNK_SIZE) {
-        await insertChunk(created.id, chunkCount, chunk.subarray(offset, offset + DEFAULT_CHUNK_SIZE));
-        chunkCount += 1;
-        offset += DEFAULT_CHUNK_SIZE;
-      }
-      if (offset < chunk.length) pending = Buffer.from(chunk.subarray(offset));
     }
-    if (pending.length > 0) {
-      await insertChunk(created.id, chunkCount, pending);
+    if (filled > 0) {
+      await insertChunk(created.id, chunkCount, pending.subarray(0, filled));
       chunkCount += 1;
     }
     if (expectedSize != null && expectedSize >= 0 && byteLength !== expectedSize) {
@@ -188,7 +189,7 @@ export const storeReadableBlob = async (stream: Readable, expectedSize?: number 
       });
       return finalized;
     } catch (error) {
-      if ((error as { code?: string } | null)?.code !== "23505") throw error;
+      if (!error || typeof error !== "object" || !("code" in error) || error.code !== "23505") throw error;
       const [existing] = await sql<{ id: string; byte_length: string | number; chunk_size: number; chunk_count: number }[]>`
         SELECT id, byte_length, chunk_size, chunk_count
         FROM mail.message_part_blobs

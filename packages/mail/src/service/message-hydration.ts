@@ -19,6 +19,7 @@ import { createBlobReadable, type StoredBlob, storeReadableBlob } from "./messag
 import { extractMessageProtocolFacts, parseMessageProtocolFacts, readMessageRootHeaders } from "./message-protocol";
 import { parseMessageReceiptSource, recordMessageReceipt } from "./message-receipts";
 import { assessMessageSourceSize } from "./message-source-size";
+import { estimateHydrationWorkingSet, withProcessingMemory } from "./processing-memory-budget";
 import { splitSearchText } from "./search-chunks";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
 
@@ -760,12 +761,42 @@ export const releaseExpiredHydrationClaims = async (): Promise<{ id: string; mai
   return released.map((message) => ({ id: message.id, mailbox_id: message.mailbox_id }));
 };
 
+const isMimeNode = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const parseMimeStructure = (value: unknown): Record<string, unknown> => {
+  const parsed: unknown = typeof value === "string" ? JSON.parse(value) : value;
+  return isMimeNode(parsed) ? parsed : {};
+};
+
+// IMAP BODYSTRUCTURE sizes describe encoded bytes, an upper bound for base64/QP HTML.
+export const hydrationHtmlBytes = (structure: unknown, sourceBytes: number): number => {
+  let total = 0;
+  let usable = false;
+  let missing = false;
+  const visit = (value: unknown, attachment = false): void => {
+    if (!isMimeNode(value)) return;
+    const node = value;
+    const isAttachment = attachment || String(node.disposition).toLowerCase() === "attachment";
+    if (!isAttachment && String(node.type).toLowerCase() === "text/html") {
+      if (typeof node.size === "number" && Number.isFinite(node.size) && node.size >= 0) {
+        total += node.size;
+        usable = true;
+      } else missing = true;
+    }
+    if (Array.isArray(node.childNodes)) for (const child of node.childNodes) visit(child, isAttachment);
+  };
+  visit(parseMimeStructure(structure));
+  return usable && !missing ? total : sourceBytes;
+};
+
 export const hydrateMessageFromSource = async (params: {
   messageId: string;
   source: Readable;
   expectedSize?: number | null;
   claimId?: string;
   transportFence?: MailboxTransportFence;
+  signal?: AbortSignal;
 }): Promise<{ status: "hydrated" | "already_complete" | "deduplicated"; sourceHash?: string; canonicalMessageId?: string }> => {
   const claimId = params.claimId ?? randomUUID();
   const claimed = await claimMessage(params.messageId, claimId);
@@ -804,29 +835,37 @@ export const hydrateMessageFromSource = async (params: {
     throw Object.assign(new Error("Message source is too large to hydrate"), { code: "MESSAGE_TOO_LARGE" });
   }
 
-  const mimeStructure =
-    typeof claimed.mime_structure === "string" ? (JSON.parse(claimed.mime_structure) as Record<string, unknown>) : claimed.mime_structure;
-  const parser = new MailParser({
-    skipHtmlToText: false,
-    skipTextToHtml: true,
-    skipImageLinks: true,
-    keepCidLinks: true,
-    maxHtmlLengthToParse: 10 * 1024 * 1024,
-    checksumAlgo: "sha256",
-  });
-  const parts: HydratedPart[] = [];
-  let plainText = "";
-  let originalHtml: string | null = null;
-  let attachmentIndex = 0;
-  let sourceBlob: StoredBlob | null = null;
-  let parseSource: Readable | null = null;
-  let parsePipeline: Promise<void> | null = null;
+  const processing: { sourceBlob?: StoredBlob } = {};
 
   try {
-    const storedSource = await storeMessageSource(params.messageId, params.source, params.expectedSize);
-    sourceBlob = storedSource;
-    await sql.begin(async (tx) => {
-      const [current] = await tx<{ id: string }[]>`
+    const sourceBytes = Math.max(Number(claimed.size_bytes), params.expectedSize ?? 0);
+    return await withProcessingMemory(
+      {
+        weightBytes: estimateHydrationWorkingSet({ sourceBytes, htmlBytes: hydrationHtmlBytes(claimed.mime_structure, sourceBytes) }) || 1,
+        label: "hydration",
+        signal: params.signal,
+      },
+      async () => {
+        const mimeStructure = parseMimeStructure(claimed.mime_structure);
+        const parser = new MailParser({
+          skipHtmlToText: false,
+          skipTextToHtml: true,
+          skipImageLinks: true,
+          keepCidLinks: true,
+          maxHtmlLengthToParse: 10 * 1024 * 1024,
+          checksumAlgo: "sha256",
+        });
+        const parts: HydratedPart[] = [];
+        let plainText = "";
+        let originalHtml: string | null = null;
+        let attachmentIndex = 0;
+        let parseSource: Readable | null = null;
+        let parsePipeline: Promise<void> | null = null;
+        try {
+          const storedSource = await storeMessageSource(params.messageId, params.source, params.expectedSize);
+          processing.sourceBlob = storedSource;
+          await sql.begin(async (tx) => {
+            const [current] = await tx<{ id: string }[]>`
         SELECT id
         FROM mail.message_contents
         WHERE id = ${params.messageId}::uuid
@@ -834,88 +873,90 @@ export const hydrateMessageFromSource = async (params: {
           AND hydration_claim_id = ${claimId}::uuid
         FOR UPDATE
       `;
-      if (!current) throw Object.assign(new Error("Message hydration claim was lost"), { code: "HYDRATION_CLAIM_LOST" });
-      if (params.transportFence) await assertMailboxTransportFence(params.transportFence, tx);
-      await tx`
+            if (!current) throw Object.assign(new Error("Message hydration claim was lost"), { code: "HYDRATION_CLAIM_LOST" });
+            if (params.transportFence) await assertMailboxTransportFence(params.transportFence, tx);
+            await tx`
         UPDATE mail.message_contents
         SET source_blob_id = ${storedSource.id}::uuid, source_hash = ${storedSource.contentHash}
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
-    });
-
-    const headers = await readMessageRootHeaders(createBlobReadable(storedSource.id));
-    parseSource = createBlobReadable(storedSource.id);
-    parsePipeline = pipeline(parseSource, parser);
-    for await (const value of parser as AsyncIterable<AttachmentStream | MessageText>) {
-      if (value.type === "attachment") {
-        const attachment = value as AttachmentStream & { partId?: string };
-        attachmentIndex += 1;
-        try {
-          const blob = await storeReadableBlob(attachment.content as Readable, attachment.size || null);
-          parts.push({
-            partPath: attachment.partId || `attachment-${attachmentIndex}`,
-            contentType: attachment.contentType || "application/octet-stream",
-            charset: null,
-            transferEncoding: null,
-            disposition: attachment.contentDisposition || "attachment",
-            contentId: attachment.contentId ?? null,
-            filename: attachment.filename ?? null,
-            blob,
-            attachment: true,
           });
-        } finally {
-          attachment.release();
-        }
-      } else {
-        plainText = value.text ?? "";
-        originalHtml = typeof value.html === "string" ? value.html : null;
-      }
-    }
-    await parsePipeline;
 
-    if (plainText) {
-      const blob = await storeReadableBlob(readableFromText(plainText), Buffer.byteLength(plainText));
-      parts.push({
-        partPath: findPartPath(mimeStructure, "text/plain") ?? "normalized-plain",
-        contentType: "text/plain",
-        charset: "utf-8",
-        transferEncoding: null,
-        disposition: "inline",
-        contentId: null,
-        filename: null,
-        blob,
-        attachment: false,
-      });
-    }
-    if (originalHtml) {
-      const blob = await storeReadableBlob(readableFromText(originalHtml), Buffer.byteLength(originalHtml));
-      parts.push({
-        partPath: findPartPath(mimeStructure, "text/html") ?? "original-html",
-        contentType: "text/html",
-        charset: "utf-8",
-        transferEncoding: null,
-        disposition: "inline",
-        contentId: null,
-        filename: null,
-        blob,
-        attachment: false,
-      });
-    }
+          const headers = await readMessageRootHeaders(createBlobReadable(storedSource.id));
+          parseSource = createBlobReadable(storedSource.id);
+          parsePipeline = pipeline(parseSource, parser);
+          for await (const value of parser as AsyncIterable<AttachmentStream | MessageText>) {
+            if (value.type === "attachment") {
+              const attachment = value as AttachmentStream & { partId?: string };
+              attachmentIndex += 1;
+              try {
+                const blob = await storeReadableBlob(attachment.content as Readable, attachment.size || null);
+                parts.push({
+                  partPath: attachment.partId || `attachment-${attachmentIndex}`,
+                  contentType: attachment.contentType || "application/octet-stream",
+                  charset: null,
+                  transferEncoding: null,
+                  disposition: attachment.contentDisposition || "attachment",
+                  contentId: attachment.contentId ?? null,
+                  filename: attachment.filename ?? null,
+                  blob,
+                  attachment: true,
+                });
+              } finally {
+                attachment.release();
+              }
+            } else {
+              plainText = value.text ?? "";
+              originalHtml = typeof value.html === "string" ? value.html : null;
+            }
+          }
+          await parsePipeline;
 
-    const sourceHash = storedSource.contentHash;
-    const protocolFacts = extractMessageProtocolFacts((name) => headers.getFirst(name));
-    const receiptSource =
-      protocolFacts.deliveryStatus || /(?:^|;)\s*report-type\s*=\s*["']?disposition-notification\b/iu.test(protocolFacts.contentType ?? "")
-        ? await readReceiptSource(storedSource)
-        : null;
-    const receipt = receiptSource ? parseMessageReceiptSource(receiptSource) : null;
-    const sanitized = originalHtml ? sanitizeIncomingMailHtmlWithRemoteImages(originalHtml) : null;
-    const sanitizedHtml = sanitized?.html ?? null;
-    let canonicalMessageId: string | null = null;
-    let collaborationEvent: MailActivityChange | null = null;
-    let receiptEvent: MailActivityChange | null = null;
-    await sql.begin(async (tx) => {
-      const [current] = await tx<{ id: string }[]>`
+          if (plainText) {
+            const blob = await storeReadableBlob(readableFromText(plainText), Buffer.byteLength(plainText));
+            parts.push({
+              partPath: findPartPath(mimeStructure, "text/plain") ?? "normalized-plain",
+              contentType: "text/plain",
+              charset: "utf-8",
+              transferEncoding: null,
+              disposition: "inline",
+              contentId: null,
+              filename: null,
+              blob,
+              attachment: false,
+            });
+          }
+          if (originalHtml) {
+            const blob = await storeReadableBlob(readableFromText(originalHtml), Buffer.byteLength(originalHtml));
+            parts.push({
+              partPath: findPartPath(mimeStructure, "text/html") ?? "original-html",
+              contentType: "text/html",
+              charset: "utf-8",
+              transferEncoding: null,
+              disposition: "inline",
+              contentId: null,
+              filename: null,
+              blob,
+              attachment: false,
+            });
+          }
+
+          const sourceHash = storedSource.contentHash;
+          const protocolFacts = extractMessageProtocolFacts((name) => headers.getFirst(name));
+          const receiptSource =
+            protocolFacts.deliveryStatus ||
+            /(?:^|;)\s*report-type\s*=\s*["']?disposition-notification\b/iu.test(protocolFacts.contentType ?? "")
+              ? await readReceiptSource(storedSource)
+              : null;
+          const receipt = receiptSource ? parseMessageReceiptSource(receiptSource) : null;
+          const sanitized = originalHtml ? sanitizeIncomingMailHtmlWithRemoteImages(originalHtml) : null;
+          originalHtml = null;
+          const sanitizedHtml = sanitized?.html ?? null;
+          let canonicalMessageId: string | null = null;
+          let collaborationEvent: MailActivityChange | null = null;
+          let receiptEvent: MailActivityChange | null = null;
+          await sql.begin(async (tx) => {
+            const [current] = await tx<{ id: string }[]>`
         SELECT id
         FROM mail.message_contents
         WHERE id = ${params.messageId}::uuid
@@ -923,20 +964,20 @@ export const hydrateMessageFromSource = async (params: {
           AND hydration_claim_id = ${claimId}::uuid
         FOR UPDATE
       `;
-      if (!current) throw Object.assign(new Error("Message hydration claim was lost"), { code: "HYDRATION_CLAIM_LOST" });
-      if (params.transportFence) await assertMailboxTransportFence(params.transportFence, tx);
-      const duplicate = await mergeVerifiedDuplicate({ db: tx, messageId: params.messageId, sourceHash });
-      canonicalMessageId = duplicate.canonicalMessageId;
-      if (canonicalMessageId) return;
-      await tx`DELETE FROM mail.message_parts WHERE message_id = ${params.messageId}::uuid`;
-      await tx`
+            if (!current) throw Object.assign(new Error("Message hydration claim was lost"), { code: "HYDRATION_CLAIM_LOST" });
+            if (params.transportFence) await assertMailboxTransportFence(params.transportFence, tx);
+            const duplicate = await mergeVerifiedDuplicate({ db: tx, messageId: params.messageId, sourceHash });
+            canonicalMessageId = duplicate.canonicalMessageId;
+            if (canonicalMessageId) return;
+            await tx`DELETE FROM mail.message_parts WHERE message_id = ${params.messageId}::uuid`;
+            await tx`
         DELETE FROM mail.message_search_chunks
         WHERE message_id = ${params.messageId}::uuid
           AND source_kind = 'body'
       `;
-      await tx`DELETE FROM mail.message_remote_images WHERE message_id = ${params.messageId}::uuid`;
-      for (const part of parts) {
-        const [partRow] = await tx<{ id: string }[]>`
+            await tx`DELETE FROM mail.message_remote_images WHERE message_id = ${params.messageId}::uuid`;
+            for (const part of parts) {
+              const [partRow] = await tx<{ id: string }[]>`
           INSERT INTO mail.message_parts (
             message_id,
             part_path,
@@ -965,12 +1006,12 @@ export const hydrateMessageFromSource = async (params: {
           )
           RETURNING id
         `;
-        if (!partRow) throw new Error("Message part insert returned no row");
-        if (part.attachment) {
-          await withShortIdDb(
-            tx,
-            "attachment",
-            (db, shortId) => db`
+              if (!partRow) throw new Error("Message part insert returned no row");
+              if (part.attachment) {
+                await withShortIdDb(
+                  tx,
+                  "attachment",
+                  (db, shortId) => db`
             INSERT INTO mail.attachments (
               short_id,
               message_id,
@@ -996,12 +1037,12 @@ export const hydrateMessageFromSource = async (params: {
               ${part.blob.id}::uuid
             )
           `,
-          );
-        }
-      }
-      const searchChunks = splitSearchText(plainText);
-      for (let position = 0; position < searchChunks.length; position += 1) {
-        await tx`
+                );
+              }
+            }
+            const searchChunks = splitSearchText(plainText);
+            for (let position = 0; position < searchChunks.length; position += 1) {
+              await tx`
           INSERT INTO mail.message_search_chunks (message_id, mailbox_id, position, search_document)
           VALUES (
             ${params.messageId}::uuid,
@@ -1010,9 +1051,9 @@ export const hydrateMessageFromSource = async (params: {
             to_tsvector('simple'::regconfig, ${searchChunks[position]!})
           )
         `;
-      }
-      for (const remoteImage of sanitized?.remoteImages ?? []) {
-        await tx`
+            }
+            for (const remoteImage of sanitized?.remoteImages ?? []) {
+              await tx`
           INSERT INTO mail.message_remote_images (
             id,
             message_id,
@@ -1028,8 +1069,8 @@ export const hydrateMessageFromSource = async (params: {
             ${remoteImage.sourceHost}
           )
         `;
-      }
-      await tx`
+            }
+            await tx`
         UPDATE mail.message_contents
         SET
           plain_text = ${plainText || null},
@@ -1044,43 +1085,49 @@ export const hydrateMessageFromSource = async (params: {
           hydrated_at = now()
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
-      if (!duplicate.duplicateFound) {
-        collaborationEvent = await applyVerifiedConversationTransition({ db: tx, messageId: params.messageId });
-        if (receipt) {
-          receiptEvent = await recordMessageReceipt({
-            db: tx,
-            mailboxId: claimed.mailbox_id,
-            reportMessageId: params.messageId,
-            receipt,
+            if (!duplicate.duplicateFound) {
+              collaborationEvent = await applyVerifiedConversationTransition({ db: tx, messageId: params.messageId });
+              if (receipt) {
+                receiptEvent = await recordMessageReceipt({
+                  db: tx,
+                  mailboxId: claimed.mailbox_id,
+                  reportMessageId: params.messageId,
+                  receipt,
+                });
+              }
+            }
           });
+          if (collaborationEvent || receiptEvent) mailLive.wake();
+          await publishMailWorkflowDependency({
+            mailboxId: claimed.mailbox_id,
+            dependency: { kind: "mail.hydration", key: params.messageId },
+          });
+          if (canonicalMessageId) return { status: "deduplicated", sourceHash, canonicalMessageId };
+          await enqueueAttachmentExtractionsForMessage(params.messageId).catch((error) => {
+            logAttachmentExtractionEnqueueFailure(params.messageId, error);
+          });
+          return { status: "hydrated", sourceHash };
+        } finally {
+          // Keep the reservation until a failed parser has stopped consuming its source.
+          parser.destroy();
+          parseSource?.destroy();
+          await parsePipeline?.catch(() => undefined);
         }
-      }
-    });
-    if (collaborationEvent || receiptEvent) mailLive.wake();
-    await publishMailWorkflowDependency({
-      mailboxId: claimed.mailbox_id,
-      dependency: { kind: "mail.hydration", key: params.messageId },
-    });
-    if (canonicalMessageId) return { status: "deduplicated", sourceHash, canonicalMessageId };
-    await enqueueAttachmentExtractionsForMessage(params.messageId).catch((error) => {
-      logAttachmentExtractionEnqueueFailure(params.messageId, error);
-    });
-    return { status: "hydrated", sourceHash };
+      },
+    );
   } catch (error) {
     params.source.destroy();
-    parseSource?.destroy();
-    await parsePipeline?.catch(() => undefined);
     const transportChanged = normalizeErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED";
     if (transportChanged) {
       await sql`
         UPDATE mail.message_contents
         SET
           source_blob_id = CASE
-            WHEN source_blob_id = ${sourceBlob?.id ?? null}::uuid THEN NULL
+            WHEN source_blob_id = ${processing.sourceBlob?.id ?? null}::uuid THEN NULL
             ELSE source_blob_id
           END,
           source_hash = CASE
-            WHEN source_blob_id = ${sourceBlob?.id ?? null}::uuid THEN NULL
+            WHEN source_blob_id = ${processing.sourceBlob?.id ?? null}::uuid THEN NULL
             ELSE source_hash
           END,
           hydration_status = ${claimed.resume_hydration_status},
