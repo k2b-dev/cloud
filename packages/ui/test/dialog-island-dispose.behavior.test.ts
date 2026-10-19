@@ -231,6 +231,31 @@ for (const navigationApi of [true, false]) {
       await lower;
     });
 
+    test("closing dialogs never goes Back across a forgotten entry", async () => {
+      const core = createDialogCore();
+      const a = trigger("a");
+      const b = trigger("b");
+      b.button.focus();
+      const lower = core.open(view("Live history"), { history: true });
+      a.button.focus();
+      const upper = core.open(view("Disposed history"), { history: true });
+      const forgottenEntry = history.state;
+      dispose(a.parent);
+      expect(await upper).toBeUndefined();
+      // The router may replace the forgotten entry with another page; a synthetic Back must never cross it.
+      history.replaceState(forgottenEntry, "", "/elsewhere");
+      b.button.focus();
+      const next = core.open(view("Next"), { history: true });
+      const go = spyOn(history, "go");
+      core.close();
+      expect(await next).toBeUndefined();
+      expect(await lower).toBeUndefined();
+      await settle();
+      expect(go.mock.calls).toEqual([[-1]]);
+      expect(location.pathname).toBe("/elsewhere");
+      expect(history.state).toEqual(forgottenEntry);
+    });
+
     test("a dialog opened after an await belongs to the island of the latest press", async () => {
       const core = createDialogCore();
       const { parent, button } = trigger("a");

@@ -22,7 +22,7 @@ export type OpenDialogOptions = {
    * With the Navigation API, same-URL traversals between this core's entries and the page do not reach application popstate listeners.
    * Without it, only the synthetic Back on close is suppressed.
    * Island disposal closes its dialogs immediately and forgets their markers without traversing history.
-   * The same-URL entry remains for the router to replace; later traversals are ordinary application popstate events.
+   * The same-URL entry remains for the router to replace and counts as a page entry above the dialogs opened before it.
    */
   history?: boolean;
 };
@@ -146,7 +146,10 @@ export const createDialogCore = () => {
   /** Markers of this core's entries in the browser history, oldest first. */
   let historyIds: number[] = [];
   const issued = new Set<number>();
-  /** Markers forgotten during island disposal. Their entries count as page entries above the dialogs opened before them. */
+  /**
+   * Markers forgotten during island disposal. Their entries stay in `historyIds` as barriers: a synthetic Back never
+   * crosses one, because the router may have replaced that entry with another page.
+   */
   const forgotten = new Set<number>();
   const deadMarker = (marker: unknown): marker is number => typeof marker === "number" && forgotten.has(marker);
   /** The target of the latest pointer or key press, for dialogs that open after an await. */
@@ -174,7 +177,7 @@ export const createDialogCore = () => {
     const openIds = new Set([...state.stack, ...historyHolders].map((entry) => entry.historyId));
     const current = historyIds.at(-1);
     let steps = 0;
-    while (historyIds.length > 0 && !openIds.has(historyIds.at(-1))) {
+    while (historyIds.length > 0 && !openIds.has(historyIds.at(-1)) && !deadMarker(historyIds.at(-1))) {
       historyIds.pop();
       steps++;
     }
@@ -193,10 +196,9 @@ export const createDialogCore = () => {
 
   const releaseHistory = (entry: HistoryEntry) => {
     if (entry.historyId === undefined) return;
-    // During a content swap the router owns history. Forget the dead marker, leaving its entry for the router
-    // to replace. Later Back/Forward involving that entry must reach application listeners normally.
+    // During a content swap the router owns history. Forget the marker without moving history; its entry stays a
+    // barrier for later synthetic Backs and is left for the router to replace.
     if (disposingIslands) {
-      historyIds = historyIds.filter((id) => id !== entry.historyId);
       issued.delete(entry.historyId);
       forgotten.add(entry.historyId);
       entry.historyId = undefined;
@@ -221,12 +223,8 @@ export const createDialogCore = () => {
         event.stopImmediatePropagation();
       }
       // Own entries are ordered by id. A retired entry reached by Forward stays tracked, so closing the dialogs
-      // beneath it also removes it. A forgotten entry keeps the dialogs opened before it, like the page keeps none.
-      historyIds = ownMarker(marker)
-        ? [...historyIds.filter((id) => id < marker), marker]
-        : deadMarker(marker)
-          ? historyIds.filter((id) => id < marker)
-          : [];
+      // beneath it also removes it. A forgotten entry keeps the dialogs opened before it and stays a barrier.
+      historyIds = ownMarker(marker) || deadMarker(marker) ? [...historyIds.filter((id) => id < marker), marker] : [];
       const gone = (entry: DialogStackEntry) => entry.historyId !== undefined && !historyIds.includes(entry.historyId);
       while (state.stack.some(gone)) popTop(undefined);
       for (const holder of [...historyHolders].reverse()) {

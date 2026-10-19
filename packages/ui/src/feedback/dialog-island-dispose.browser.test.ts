@@ -33,10 +33,16 @@ afterAll(async () => {
 test(`a dialog opened by a click in an island closes when the island is disposed (${browserName})`, async () => {
   const page = await browser.newPage();
   try {
-    await page.setContent(
-      `<!doctype html><html><body class="k2b-ui"><input id="elsewhere" aria-label="Elsewhere">` +
-        `<solid-island data-id="a"><button id="open" type="button">Open</button></solid-island></body></html>`,
+    // A real http document: WebKit keeps no same-URL history entries for about:blank.
+    await page.route("http://island.test/", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body:
+          `<!doctype html><html><body class="k2b-ui"><input id="elsewhere" aria-label="Elsewhere">` +
+          `<solid-island data-id="a"><button id="open" type="button">Open</button></solid-island></body></html>`,
+      }),
     );
+    await page.goto("http://island.test/");
     await page.addScriptTag({ content: script });
     // Focus sits outside the island, as WebKit leaves it after a click on a button.
     await page.focus("#elsewhere");

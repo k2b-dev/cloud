@@ -413,11 +413,12 @@ the application pushed or replaced an address while a dialog was open; closing
 such a dialog then leaves that history alone.
 
 A dialog closes when the island that opened it is disposed, together with the
-dialogs stacked above it. The opening island is the one around the clicked
-element, or around the focused element when no event is being handled; a
-dialog opened from a timer or outside any island stays open. Its history entry
-stays in the browser and is left to the router; later traversals of that entry
-reach application listeners normally.
+dialogs stacked above it. The opening island is the one around the element
+whose event opened the dialog, else around the latest click or key press, else
+around focus. A dialog opened before any press, or outside every island, stays
+open. Its history entry stays in the browser and is left to the router; the
+dialog core then treats it like a page entry, so a later Back onto it closes
+only dialogs opened after it.
 
 Use the option for dialogs a person opens on purpose. Leave it off for
 confirmations inside another dialog, which Back closes together with their
