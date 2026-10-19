@@ -348,3 +348,20 @@ async function sample() {
 `),
   ).toEqual([6]);
 });
+
+test("a settle counts only when the flow waits for it", () => {
+  expect(
+    check(`async () => {
+  await page.click("button");
+  settled(page);
+  void expect.poll(() => ready);
+  await page.locator("p").boundingBox();
+}`),
+  ).toEqual([5]);
+  expect(
+    check(`const open = async () => { await page.goto(url); return settled(page); };
+const ready = () => settled(page);
+async function sample() { await open(); await page.click("p"); await ready(); await page.locator("p").boundingBox(); }`),
+  ).toEqual([]);
+  expect(check(`async () => { await page.click("p"); await Promise.all([settled(page)]); ${read} }`)).toEqual([]);
+});

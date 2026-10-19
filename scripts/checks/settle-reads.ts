@@ -73,6 +73,15 @@ const mentions = (node: ts.Node, names: ReadonlySet<string>): boolean =>
  */
 const readsInBrowser = (callback: BodyFunction | undefined): boolean => Boolean(callback?.body && mentions(callback.body, readApis));
 
+/** A settle counts only when the flow waits for it: awaited, or returned to a caller that does. */
+const joined = (call: ts.CallExpression): boolean => {
+  for (let node: ts.Node = call; ; node = node.parent) {
+    if (ts.isAwaitExpression(node) || ts.isReturnStatement(node)) return true;
+    if (isBodyFunction(node.parent) && node.parent.body === node) return true;
+    if (ts.isStatement(node) || isBodyFunction(node) || ts.isSourceFile(node)) return false;
+  }
+};
+
 const deviceCall = (expression: ts.Expression): boolean => {
   if (ts.isIdentifier(expression)) return devices.has(expression.text);
   if (ts.isPropertyAccessExpression(expression)) return devices.has(expression.name.text) || deviceCall(expression.expression);
@@ -141,10 +150,10 @@ export const checkSettleReadsSource = (file: string, source: string): Finding[] 
         (name && settles.has(name) && (propertyCall || name !== "waitFor")) ||
         (propertyCall && name === "poll" && ts.isIdentifier(callee.expression) && callee.expression.text === "expect")
       ) {
-        events.push({ kind: "settle", call });
+        if (joined(call)) events.push({ kind: "settle", call });
       } else if ((propertyCall && name && actions.has(name)) || deviceCall(callee)) {
         events.push({ kind: "action", call });
-      } else if (summary && summary.end !== "none") {
+      } else if (summary?.end === "action" || (summary?.end === "settle" && joined(call))) {
         events.push({ kind: summary.end, call });
       }
     }
