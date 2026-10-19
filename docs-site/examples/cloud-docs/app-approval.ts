@@ -1,5 +1,5 @@
 import { type AppApprovalDevice, appApproval } from "@k2b/cloud/browser/app-approval";
-import type { AppActionView } from "@k2b/cloud/contracts";
+import type { AppActionView, AppDeviceChange } from "@k2b/cloud/contracts";
 
 /** Call only after showing the parsed issuer and obtaining consent. */
 export const connectTrustedPairing = async (link: string, authenticatorOrigin: string, signal?: AbortSignal) => {
@@ -38,13 +38,13 @@ export const createProtectedPairing = async (link: string, pin: string) => {
   }
 };
 
-/** Opt in only when the app shows the terminal client, all scopes and lifetime before consent.
- * Discovery gates the additive commands; older Clouds keep serving pending sign-ins. */
+/** Opt in only to what the app shows: the terminal client, all scopes and lifetime before consent, and
+ * device-change requests. Discovery gates the additive commands; older Clouds keep serving pending sign-ins. */
 export const readDeviceInbox = (
   client: Awaited<ReturnType<typeof appApproval.connect>>,
   device: AppApprovalDevice,
   signal?: AbortSignal,
-) => (client.actions ? client.inbox(device, signal, { accept: ["terminal-logins"] }) : client.pending(device, signal));
+) => (client.actions ? client.inbox(device, signal, { accept: ["terminal-logins", "device-changes"] }) : client.pending(device, signal));
 
 /** Load before presenting the choice: action() refuses a view whose digest does not match. */
 export const readAction = (
@@ -62,3 +62,12 @@ export const decideAction = (
   decision: "approve" | "deny",
   signal?: AbortSignal,
 ) => client.act(device, view, decision, signal);
+
+/** Call after the person reviews this pairing or removal request and chooses. */
+export const decideDeviceChange = (
+  client: Awaited<ReturnType<typeof appApproval.connect>>,
+  device: AppApprovalDevice,
+  change: AppDeviceChange,
+  decision: "approve" | "deny",
+  signal?: AbortSignal,
+) => client.decideChange(device, change, decision, signal);
