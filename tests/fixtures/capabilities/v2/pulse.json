@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "pulse",
-  "manifestHash": "28214bb802bea080abeddc1cac86a94cb7010e50e5d812bf236415efbad97dfa",
+  "manifestHash": "1ffd4fc9735959ffceb975f31f08650f935e490f5f4b40f2bd36273d6f2bd6eb",
   "types": [
     {
       "localId": "base",
@@ -9,20 +9,6 @@
       "description": "A permission-scoped Pulse telemetry workspace.",
       "icon": "ti ti-activity-heartbeat",
       "reader": "base.read"
-    },
-    {
-      "localId": "resource",
-      "title": "Pulse Resource",
-      "description": "An observed resource with metrics, events, or states.",
-      "icon": "ti ti-box",
-      "reader": "resource.read"
-    },
-    {
-      "localId": "saved_query",
-      "title": "Pulse Saved Query",
-      "description": "A named, validated Pulse query stored in a Base.",
-      "icon": "ti ti-code",
-      "reader": "saved_query.read"
     },
     {
       "localId": "source",
@@ -36,7 +22,7 @@
     {
       "localId": "base.list",
       "title": "List Pulse Bases",
-      "description": "Normal entry for Base-scoped telemetry work. List accessible Pulse Bases and use returned pulse.base refs or IDs with readers, source and signal discovery, or query calls.",
+      "description": "Normal entry for Base-scoped telemetry work. List accessible Pulse Bases and use returned pulse.base refs or IDs with base.read and source.list.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -69,6 +55,109 @@
         "items": {
           "type": "object",
           "properties": {
+            "store": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": ["provisioning", "active", "clearing", "deleting", "failed"]
+                },
+                "operation": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": ["provision", "clear", "delete"]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "errorCode": {
+                  "type": ["string", "null"]
+                },
+                "errorAt": {
+                  "type": ["string", "null"]
+                },
+                "writeBlockReason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": ["checkpoint_mismatch", "database_missing"]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "profile": {
+                  "type": "string",
+                  "enum": ["small", "normal", "large"]
+                },
+                "limits": {
+                  "type": "object",
+                  "properties": {
+                    "valuesPerMinute": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "bytesPerMinute": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "storageBytes": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "maxSeries": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "maxEventKinds": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "maxStateKeys": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["valuesPerMinute", "bytesPerMinute", "storageBytes", "maxSeries", "maxEventKinds", "maxStateKeys"],
+                  "additionalProperties": false
+                },
+                "usage": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "bytes": {
+                          "type": "number"
+                        },
+                        "rows": {
+                          "type": "number"
+                        },
+                        "measuredAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["bytes", "rows", "measuredAt"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["state", "operation", "errorCode", "errorAt", "writeBlockReason", "profile", "limits", "usage"],
+              "additionalProperties": false
+            },
             "id": {
               "type": "string",
               "pattern": "^[0-9A-Za-z]{6}$"
@@ -145,11 +234,11 @@
               "additionalProperties": false
             }
           },
-          "required": ["id", "name", "description", "createdAt", "updatedAt", "ref"],
+          "required": ["store", "id", "name", "description", "createdAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
-      "schemaHash": "9ae533860506275a63ed385b12acd865fb17e352621d341d53fcd05ecae2422c",
+      "schemaHash": "c7b720d1c500d3f91f43d0c4d1127767cb5bc38306ef914003d577309e0290c5",
       "openWorld": false
     },
     {
@@ -173,6 +262,109 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "store": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["provisioning", "active", "clearing", "deleting", "failed"]
+              },
+              "operation": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["provision", "clear", "delete"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "errorCode": {
+                "type": ["string", "null"]
+              },
+              "errorAt": {
+                "type": ["string", "null"]
+              },
+              "writeBlockReason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["checkpoint_mismatch", "database_missing"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "profile": {
+                "type": "string",
+                "enum": ["small", "normal", "large"]
+              },
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "valuesPerMinute": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "bytesPerMinute": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "storageBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "maxSeries": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "maxEventKinds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "maxStateKeys": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": ["valuesPerMinute", "bytesPerMinute", "storageBytes", "maxSeries", "maxEventKinds", "maxStateKeys"],
+                "additionalProperties": false
+              },
+              "usage": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "bytes": {
+                        "type": "number"
+                      },
+                      "rows": {
+                        "type": "number"
+                      },
+                      "measuredAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["bytes", "rows", "measuredAt"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["state", "operation", "errorCode", "errorAt", "writeBlockReason", "profile", "limits", "usage"],
+            "additionalProperties": false
+          },
           "id": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$"
@@ -234,16 +426,16 @@
             }
           }
         },
-        "required": ["id", "name", "description", "createdAt", "updatedAt"],
+        "required": ["store", "id", "name", "description", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
-      "schemaHash": "cc265ffedfe2b78f58f78aae6eba2700756401dd2613b843fed1ad36e2af204a",
+      "schemaHash": "67a7ccbdba76d7c04b89419aa72be3f2d80a8682cd94eaa51e4826757c4b1e63",
       "openWorld": false
     },
     {
       "localId": "base.search",
       "title": "Search Pulse Bases",
-      "description": "Find an accessible Pulse Base by name or description when its ID is unknown. Use returned pulse.base refs with base.read or their IDs with source.list, metric.search, field.search, and query tools.",
+      "description": "Find an accessible Pulse Base by name or description when its ID is unknown. Use returned pulse.base refs with base.read or their IDs with source.list.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -416,1262 +608,6 @@
       }
     },
     {
-      "localId": "field.search",
-      "title": "Search Pulse Fields",
-      "description": "Discover dimension or attribute keys for metrics, events, and states in one known Base without exposing values. Use metric.search for metric names, then query.compile before query.execute.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
-          },
-          "query": {
-            "description": "Optional text search.",
-            "type": "string",
-            "maxLength": 500
-          },
-          "scope": {
-            "description": "Optional signal kind filter.",
-            "type": "string",
-            "enum": ["metric", "event", "state"]
-          },
-          "role": {
-            "default": "dimension",
-            "description": "Field role to discover; sensitive fields are excluded.",
-            "type": "string",
-            "enum": ["dimension", "attribute"]
-          },
-          "cursor": {
-            "description": "Opaque cursor returned by the previous page.",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          },
-          "limit": {
-            "default": 25,
-            "description": "Maximum number of results to return.",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": ["baseId"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "maxItems": 100,
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "sourceId": {
-              "type": "string",
-              "pattern": "^[0-9A-Za-z]{6}$"
-            },
-            "scope": {
-              "type": "string",
-              "enum": ["metric", "event", "state"]
-            },
-            "signalName": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 240
-            },
-            "role": {
-              "type": "string",
-              "enum": ["dimension", "attribute"]
-            },
-            "key": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 80
-            },
-            "valueType": {
-              "type": "string",
-              "enum": ["null", "string", "number", "boolean", "object", "array", "mixed"]
-            },
-            "observedCount": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "firstSeenAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            },
-            "lastSeenAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            },
-            "links": {
-              "minItems": 1,
-              "maxItems": 10,
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "rel": {
-                    "type": "string",
-                    "enum": ["open", "edit", "status", "preview", "download"],
-                    "description": "Semantic relationship; clients decide how to present it."
-                  },
-                  "href": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2048,
-                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
-                    "description": "Root-relative Cloud URL."
-                  },
-                  "title": {
-                    "description": "Optional human-readable link label.",
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  }
-                },
-                "required": ["rel", "href"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": ["sourceId", "scope", "signalName", "role", "key", "valueType", "observedCount", "firstSeenAt", "lastSeenAt"],
-          "additionalProperties": false
-        }
-      },
-      "schemaHash": "51d318afcd35229225c9eca84daa2ef2ba537543feef7e98da71265cd2807819",
-      "openWorld": false
-    },
-    {
-      "localId": "metric.search",
-      "title": "Search Pulse Metrics",
-      "description": "Discover metric names and types before authoring a query in one known Base. Get baseId from base.list or base.search; validate the resulting DSL with query.compile before query.execute.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
-          },
-          "query": {
-            "description": "Optional text search.",
-            "type": "string",
-            "maxLength": 500
-          },
-          "type": {
-            "description": "Optional metric type filter.",
-            "type": "string",
-            "enum": ["gauge", "counter"]
-          },
-          "cursor": {
-            "description": "Opaque cursor returned by the previous page.",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          },
-          "limit": {
-            "default": 25,
-            "description": "Maximum number of results to return.",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": ["baseId"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "maxItems": 100,
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 240
-            },
-            "unit": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 120
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "type": {
-              "type": "string",
-              "enum": ["gauge", "counter"]
-            },
-            "seriesCount": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "lastSeenAt": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "links": {
-              "minItems": 1,
-              "maxItems": 10,
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "rel": {
-                    "type": "string",
-                    "enum": ["open", "edit", "status", "preview", "download"],
-                    "description": "Semantic relationship; clients decide how to present it."
-                  },
-                  "href": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2048,
-                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
-                    "description": "Root-relative Cloud URL."
-                  },
-                  "title": {
-                    "description": "Optional human-readable link label.",
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  }
-                },
-                "required": ["rel", "href"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": ["name", "unit", "type", "seriesCount", "lastSeenAt"],
-          "additionalProperties": false
-        }
-      },
-      "schemaHash": "8ce76a408067b31ead37c4f93b301a99860beb49956092b7b9e8dba7ea0538d7",
-      "openWorld": false
-    },
-    {
-      "localId": "query.compile",
-      "title": "Compile Pulse Query",
-      "description": "Validate Pulse query DSL for a baseId from base.list or base.search without reading telemetry rows. Use metric.search and field.search to discover valid names; execute valid DSL with query.execute.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
-          },
-          "query": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2000,
-            "description": "Pulse query DSL text."
-          }
-        },
-        "required": ["baseId", "query"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "valid": {
-            "type": "boolean"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": ["metric", "events", "states"]
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "diagnostics": {
-            "maxItems": 20,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "severity": {
-                  "type": "string",
-                  "enum": ["error", "info"]
-                },
-                "message": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1000
-                }
-              },
-              "required": ["severity", "message"],
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": ["valid", "kind", "diagnostics"],
-        "additionalProperties": false
-      },
-      "schemaHash": "d01d2fcea4ae27bda242a091bc6bc7c4ea8833f7592fb580bfdd530472c680cb",
-      "openWorld": false
-    },
-    {
-      "localId": "query.execute",
-      "title": "Execute telemetry query",
-      "description": "Execute Pulse query DSL for a baseId from base.list or base.search, normally after query.compile. Returns at most 500 points or 100 compact rows; raw event payloads are omitted and truncated reports omitted results.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
-          },
-          "query": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2000,
-            "description": "Pulse query DSL text."
-          }
-        },
-        "required": ["baseId", "query"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": ["metric", "events", "states"]
-          },
-          "query": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2000
-          },
-          "points": {
-            "maxItems": 500,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "bucket": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                },
-                "value": {
-                  "type": ["number", "null"]
-                },
-                "group": {
-                  "type": "object",
-                  "propertyNames": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 500
-                  }
-                }
-              },
-              "required": ["bucket", "value"],
-              "additionalProperties": false
-            }
-          },
-          "events": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                },
-                "kind": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 240
-                },
-                "ts": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                },
-                "value": {
-                  "type": ["number", "null"]
-                },
-                "sourceId": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^[0-9A-Za-z]{6}$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resourceKey": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 505
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resourceType": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 120
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "dimensions": {
-                  "type": "object",
-                  "propertyNames": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 500
-                  }
-                }
-              },
-              "required": ["id", "kind", "ts", "value", "sourceId", "resourceKey", "resourceType", "dimensions"],
-              "additionalProperties": false
-            }
-          },
-          "states": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "key": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 240
-                },
-                "value": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 1000
-                    },
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "sourceId": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^[0-9A-Za-z]{6}$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resourceKey": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 505
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resourceType": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 120
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "dimensions": {
-                  "type": "object",
-                  "propertyNames": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 500
-                  }
-                },
-                "updatedAt": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                }
-              },
-              "required": ["key", "value", "sourceId", "resourceKey", "resourceType", "dimensions", "updatedAt"],
-              "additionalProperties": false
-            }
-          },
-          "limitApplied": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 500
-          },
-          "truncated": {
-            "type": "boolean"
-          }
-        },
-        "required": ["kind", "query", "points", "events", "states", "limitApplied", "truncated"],
-        "additionalProperties": false
-      },
-      "schemaHash": "0efa619163147cb6fe288745c63eba4ec054308c97793653e67091c5e9f91ff4",
-      "openWorld": false
-    },
-    {
-      "localId": "resource.read",
-      "title": "Read Pulse Resource",
-      "description": "Read one observed Pulse Resource by passing the composite ID from a resource.search pulse.resource ref unchanged.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 512,
-            "pattern": "^[0-9A-Za-z]{6}\\/[\\s\\S]+$",
-            "description": "Composite Base-ID/resource-key value returned by Search Pulse Resources in a pulse.resource ref; pass the ref id unchanged."
-          }
-        },
-        "required": ["id"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 512,
-            "pattern": "^[0-9A-Za-z]{6}\\/[\\s\\S]+$"
-          },
-          "baseId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$"
-          },
-          "baseName": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "key": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 505
-          },
-          "resourceId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500
-          },
-          "type": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "lastSeenAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "links": {
-            "minItems": 1,
-            "maxItems": 10,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "rel": {
-                  "type": "string",
-                  "enum": ["open", "edit", "status", "preview", "download"],
-                  "description": "Semantic relationship; clients decide how to present it."
-                },
-                "href": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 2048,
-                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
-                  "description": "Root-relative Cloud URL."
-                },
-                "title": {
-                  "description": "Optional human-readable link label.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120
-                }
-              },
-              "required": ["rel", "href"],
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": ["id", "baseId", "baseName", "key", "resourceId", "label", "type", "lastSeenAt"],
-        "additionalProperties": false
-      },
-      "schemaHash": "00b0dc53ce132f717fa1f685382f42cd35c550b672097fec0f9f3c359ed05730",
-      "openWorld": false
-    },
-    {
-      "localId": "resource.search",
-      "title": "Search Pulse Resources",
-      "description": "Direct cross-Base entry for finding observed resources. Use the returned composite pulse.resource ref unchanged with resource.read; use metric.search or field.search when authoring a query in one known Base.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "maxLength": 500,
-            "description": "User-entered search text. Empty text is allowed when a facet narrows the query."
-          },
-          "tags": {
-            "maxItems": 20,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            },
-            "description": "Canonical search facets supported by this query."
-          },
-          "scope": {
-            "description": "Optional resource containing the search results; must be an explicitly supported scope type.",
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "minLength": 3,
-                "maxLength": 180,
-                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-                "description": "Namespaced resource type declared by the owning app."
-              },
-              "id": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 512,
-                "description": "Stable app-owned resource identifier."
-              }
-            },
-            "required": ["type", "id"],
-            "additionalProperties": false
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100,
-            "description": "Maximum number of results to return."
-          }
-        },
-        "required": ["query", "tags", "limit"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "maxItems": 100,
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "ref": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "minLength": 3,
-                  "maxLength": 180,
-                  "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-                  "description": "Namespaced resource type declared by the owning app."
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 512,
-                  "description": "Stable app-owned resource identifier."
-                }
-              },
-              "required": ["type", "id"],
-              "additionalProperties": false,
-              "description": "Stable identity of the result."
-            },
-            "title": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 500,
-              "description": "Primary result label."
-            },
-            "preview": {
-              "description": "Short plain-text result preview.",
-              "type": "string",
-              "maxLength": 2000
-            },
-            "icon": {
-              "description": "Optional presentation icon.",
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 120
-            },
-            "priority": {
-              "description": "App-local relevance hint from zero to nine.",
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9
-            },
-            "metadata": {
-              "description": "Small structured metadata shown with the result.",
-              "maxItems": 20,
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  },
-                  "value": {
-                    "type": "string",
-                    "maxLength": 1000
-                  }
-                },
-                "required": ["label", "value"],
-                "additionalProperties": false
-              }
-            },
-            "links": {
-              "minItems": 1,
-              "maxItems": 10,
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "rel": {
-                    "type": "string",
-                    "enum": ["open", "edit", "status", "preview", "download"],
-                    "description": "Semantic relationship; clients decide how to present it."
-                  },
-                  "href": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2048,
-                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
-                    "description": "Root-relative Cloud URL."
-                  },
-                  "title": {
-                    "description": "Optional human-readable link label.",
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  }
-                },
-                "required": ["rel", "href"],
-                "additionalProperties": false
-              },
-              "description": "Semantic links for the resource."
-            }
-          },
-          "required": ["ref", "title", "links"],
-          "additionalProperties": false
-        }
-      },
-      "schemaHash": "5b78e710d3729f50c18b549cedce82e88fbd22757c37d87a0e245682c8d1608e",
-      "openWorld": false,
-      "universalSearch": {
-        "tags": [
-          {
-            "tag": "pulse-resource",
-            "title": "Pulse resources",
-            "description": "Show observed Pulse resources only.",
-            "aliases": ["resource"]
-          }
-        ]
-      }
-    },
-    {
-      "localId": "saved_query.execute",
-      "title": "Execute saved telemetry query",
-      "description": "Execute one stored query using baseId and queryId from saved_query.list. This skips query.compile because the stored DSL is already validated and returns the same bounded result as query.execute.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
-          },
-          "queryId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Saved-query ID returned by List saved Pulse Queries or a pulse.saved_query ref."
-          }
-        },
-        "required": ["baseId", "queryId"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": ["metric", "events", "states"]
-          },
-          "query": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2000
-          },
-          "points": {
-            "maxItems": 500,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "bucket": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                },
-                "value": {
-                  "type": ["number", "null"]
-                },
-                "group": {
-                  "type": "object",
-                  "propertyNames": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 500
-                  }
-                }
-              },
-              "required": ["bucket", "value"],
-              "additionalProperties": false
-            }
-          },
-          "events": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                },
-                "kind": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 240
-                },
-                "ts": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                },
-                "value": {
-                  "type": ["number", "null"]
-                },
-                "sourceId": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^[0-9A-Za-z]{6}$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resourceKey": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 505
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resourceType": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 120
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "dimensions": {
-                  "type": "object",
-                  "propertyNames": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 500
-                  }
-                }
-              },
-              "required": ["id", "kind", "ts", "value", "sourceId", "resourceKey", "resourceType", "dimensions"],
-              "additionalProperties": false
-            }
-          },
-          "states": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "key": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 240
-                },
-                "value": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 1000
-                    },
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "sourceId": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^[0-9A-Za-z]{6}$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resourceKey": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 505
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "resourceType": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 120
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "dimensions": {
-                  "type": "object",
-                  "propertyNames": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "additionalProperties": {
-                    "type": "string",
-                    "maxLength": 500
-                  }
-                },
-                "updatedAt": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                }
-              },
-              "required": ["key", "value", "sourceId", "resourceKey", "resourceType", "dimensions", "updatedAt"],
-              "additionalProperties": false
-            }
-          },
-          "limitApplied": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 500
-          },
-          "truncated": {
-            "type": "boolean"
-          }
-        },
-        "required": ["kind", "query", "points", "events", "states", "limitApplied", "truncated"],
-        "additionalProperties": false
-      },
-      "schemaHash": "6fa27774caad77c668ea0b8d0b1424f35d384e68b4742c1d4658156d178a7ca8",
-      "openWorld": false
-    },
-    {
-      "localId": "saved_query.list",
-      "title": "List saved Pulse Queries",
-      "description": "List named queries in one known Base. Get baseId from base.list or base.search; use returned pulse.saved_query refs with saved_query.read or their IDs with saved_query.execute.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "baseId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
-          },
-          "query": {
-            "description": "Optional text search.",
-            "type": "string",
-            "maxLength": 500
-          },
-          "cursor": {
-            "description": "Opaque cursor returned by the previous page.",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          },
-          "limit": {
-            "default": 25,
-            "description": "Maximum number of results to return.",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": ["baseId"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "maxItems": 100,
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "pattern": "^[0-9A-Za-z]{6}$"
-            },
-            "baseId": {
-              "type": "string",
-              "pattern": "^[0-9A-Za-z]{6}$"
-            },
-            "name": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 120
-            },
-            "description": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 1000
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "query": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 2000
-            },
-            "createdAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            },
-            "ref": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "const": "pulse.saved_query"
-                },
-                "id": {
-                  "type": "string",
-                  "pattern": "^[0-9A-Za-z]{6}$"
-                }
-              },
-              "required": ["type", "id"],
-              "additionalProperties": false
-            }
-          },
-          "required": ["id", "baseId", "name", "description", "query", "createdAt", "updatedAt", "ref"],
-          "additionalProperties": false
-        }
-      },
-      "schemaHash": "3eabda3f42d289978b5c43b76bd7c044b209ac4078621e0050bf6b6517488717",
-      "openWorld": false
-    },
-    {
-      "localId": "saved_query.read",
-      "title": "Read saved Pulse Query",
-      "description": "Read one pulse.saved_query ref returned by saved_query.list, including its stored DSL and Base ID.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Saved-query ID returned by List saved Pulse Queries or a pulse.saved_query ref."
-          }
-        },
-        "required": ["id"],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$"
-          },
-          "baseId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$"
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "query": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2000
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          }
-        },
-        "required": ["id", "baseId", "name", "description", "query", "createdAt", "updatedAt"],
-        "additionalProperties": false
-      },
-      "schemaHash": "1a7fbe93ae01ae68b8ca5c745402cc6e07e4144e6f7751741732a41b62a6e136",
-      "openWorld": false
-    },
-    {
       "localId": "source.list",
       "title": "List Pulse Sources",
       "description": "List source health in one known Base without exposing credentials. Get baseId from base.list or base.search; use returned pulse.source refs with source.read.",
@@ -1732,6 +668,60 @@
             },
             "enabled": {
               "type": "boolean"
+            },
+            "metricFilters": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*\\*?$"
+              }
+            },
+            "status": {
+              "type": "object",
+              "properties": {
+                "newestDataAt": {
+                  "type": ["string", "null"]
+                },
+                "throttled": {
+                  "type": "boolean"
+                },
+                "throttledAt": {
+                  "type": ["string", "null"]
+                },
+                "refusedHistograms": {
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "family": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["family", "reason"],
+                    "additionalProperties": false
+                  }
+                },
+                "skippedSummaries": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lastError": {
+                  "type": ["string", "null"]
+                },
+                "lastErrorAt": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["newestDataAt", "throttled", "throttledAt", "refusedHistograms", "skippedSummaries", "lastError", "lastErrorAt"],
+              "additionalProperties": false
             },
             "lastSeenAt": {
               "anyOf": [
@@ -1819,11 +809,24 @@
               "additionalProperties": false
             }
           },
-          "required": ["id", "baseId", "kind", "name", "enabled", "lastSeenAt", "lastError", "lastErrorAt", "updatedAt", "ref"],
+          "required": [
+            "id",
+            "baseId",
+            "kind",
+            "name",
+            "enabled",
+            "metricFilters",
+            "status",
+            "lastSeenAt",
+            "lastError",
+            "lastErrorAt",
+            "updatedAt",
+            "ref"
+          ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "c5a1e8b73aa7b08065749b9960e37a7327c0d8cab199bc359a7c2334f946464a",
+      "schemaHash": "3f00f2afaa56d0a1eee3df636343bdd8f826bd405ad60c60fea95aa9cadd8303",
       "openWorld": false
     },
     {
@@ -1866,6 +869,60 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "metricFilters": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*\\*?$"
+            }
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "newestDataAt": {
+                "type": ["string", "null"]
+              },
+              "throttled": {
+                "type": "boolean"
+              },
+              "throttledAt": {
+                "type": ["string", "null"]
+              },
+              "refusedHistograms": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "family": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["family", "reason"],
+                  "additionalProperties": false
+                }
+              },
+              "skippedSummaries": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lastError": {
+                "type": ["string", "null"]
+              },
+              "lastErrorAt": {
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["newestDataAt", "throttled", "throttledAt", "refusedHistograms", "skippedSummaries", "lastError", "lastErrorAt"],
+            "additionalProperties": false
           },
           "lastSeenAt": {
             "anyOf": [
@@ -1938,10 +995,22 @@
             }
           }
         },
-        "required": ["id", "baseId", "kind", "name", "enabled", "lastSeenAt", "lastError", "lastErrorAt", "updatedAt"],
+        "required": [
+          "id",
+          "baseId",
+          "kind",
+          "name",
+          "enabled",
+          "metricFilters",
+          "status",
+          "lastSeenAt",
+          "lastError",
+          "lastErrorAt",
+          "updatedAt"
+        ],
         "additionalProperties": false
       },
-      "schemaHash": "3f75716d5d829dc6dd14413e11e5da9f0ca31ac1efc235bbb2a664888ce6aa7e",
+      "schemaHash": "46392146f9355e395113f7db9532a3a9989c62aba85ecbf1cdca431dcaf0b77e",
       "openWorld": false
     }
   ],
