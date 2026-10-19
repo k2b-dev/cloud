@@ -46,7 +46,6 @@
 .spaces-overview-activity-row { position: relative; display: flex; min-width: 0; flex-direction: column; gap: .1875rem; margin: -.375rem -.5rem; padding: .375rem 2rem .375rem .5rem; color: inherit; text-decoration: none; border-radius: var(--k2b-radius-control); transition: background-color 120ms ease-out; }
 .spaces-overview-activity-row:hover { background: var(--k2b-hover); }
 .spaces-overview-activity-row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 0; }
-@media (prefers-reduced-motion: reduce) { .spaces-overview-activity-row { transition: none; } }
 .spaces-overview-activity-icon { position: absolute; top: .5rem; right: .5rem; font-size: .875rem; }
 .spaces-overview-activity-meta { display: flex; min-width: 0; align-items: baseline; gap: .375rem; color: var(--color-zinc-500); font-size: .6875rem; line-height: 1rem; }
 .spaces-overview-activity-meta strong { min-width: 0; overflow: hidden; color: var(--color-zinc-900); font-size: .75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
@@ -131,6 +130,50 @@
 /* A Kanban card's footer lets the pointer through to the card link; only the reaction chips and "Add reaction" catch it.
    "+n" stays text the pointer passes, so a click on it opens the item like the rest of the card. */
 .k2b-ui .spaces-card-reactions :is(.k2b-reaction-bar__chip, .k2b-reaction-bar__add) { pointer-events: auto; }
+
+/* Kanban on the workspace's surface: no column trays, groups apart by space and a clear head (dot, name, count).
+   A card is an object you drag and open, so it may be a rounded surface (exception 1 of the white surface): calm
+   neutral, or tinted 6 % (10 % dark) by its first tag, whose name it always shows. State changes only paint. */
+.spaces-kanban-columns { --spaces-kanban-gap: 1rem; gap: var(--spaces-kanban-gap); }
+.spaces-kanban-column { width: 17.5rem; }
+.k2b-ui .spaces-kanban-card {
+  --spaces-card-fill: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 7%, var(--k2b-surface));
+  --spaces-card-edge: transparent;
+  background: var(--spaces-card-fill);
+  box-shadow: inset 0 0 0 1px var(--spaces-card-edge);
+  transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint] {
+  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 6%, var(--k2b-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-surface));
+  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 12%, transparent);
+}
+.dark .k2b-ui .spaces-kanban-card,
+.k2b-ui.dark .spaces-kanban-card {
+  --spaces-card-fill: color-mix(in srgb, var(--k2b-text) 5%, var(--k2b-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 8%, var(--k2b-surface));
+}
+.dark .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint],
+.k2b-ui.dark .spaces-kanban-card[data-spaces-kanban-card-tint] {
+  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 14%, var(--k2b-surface));
+  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 16%, transparent);
+}
+.k2b-ui .spaces-kanban-card:hover { background: var(--spaces-card-fill-hover); }
+.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="selected"] {
+  background: var(--spaces-card-fill-hover);
+  box-shadow: inset 0 0 0 1.5px var(--ui-app-accent-border);
+}
+.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="held"] { box-shadow: inset 0 0 0 1.5px var(--ui-app-accent-border); }
+.k2b-ui .spaces-kanban-card-title { color: var(--k2b-text); }
+.k2b-ui .spaces-kanban-card-status { background: color-mix(in srgb, var(--k2b-text) 6%, transparent); }
+@media (prefers-reduced-motion: reduce) { .k2b-ui :is(.spaces-kanban-card, .spaces-overview-activity-row) { transition: none; } }
+/* Phone: one column at a time with a look at the next, so it is clear the board goes on. */
+@media not all and (min-width: 48rem) {
+  .spaces-kanban-columns { --spaces-kanban-gap: 0.75rem; }
+  .spaces-kanban-column { width: calc(100vw - 4.5rem); max-width: 20rem; }
+}
 
 /* The head row of a Space. The people row needs the wide head; below an 80 rem workspace it moves under "…"
    (the menu lists the people then). Decided by the workspace's width from the first frame. */
