@@ -23,6 +23,8 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A predecessor lookup ignores retention boundaries | A lagging hour selects its own rollup, or shorter rollup retention hides a predecessor whose raw samples remain. | Tests: Pulse `service/metric-rollups.integration.test.ts` checks a late correction before the raw cutoff and a sparse counter after its old rollup is removed. |
+| Nested reservations starve the SQL pool | A transaction waits for a service or settings lookup that needs another pooled connection. | Tests: Pulse's two-connection scrape and source-key regressions, one-connection notification regression, and orphan-deletion settings boundary unit test. |
 | A clear keeps the measured usage | Clearing a base empties its data but keeps the usage that the storage threshold reads, so ingest refuses the empty base until the next usage scan. | Test: Pulse `service/base-lifecycle.integration.test.ts` clears a base over its threshold and checks that usage and the threshold crossing are reset. |
 | A late domain refusal becomes an infrastructure failure | An ingest reservation commits, then T2 returns a service conflict that a catch-all replaces with 503. | Test: Pulse `service/ingest-controls.integration.test.ts` raises a T2 service refusal after a keyed T1 and expects its own 409. |
 | A merge changes the winning observation | A deduplicated view orders by observation time, but physical replacement orders only by acceptance; later merges silently discard the correct state. | Test: Pulse `service/state-transitions.integration.test.ts` checks state timestamp priority before and after a forced merge and schema replay. |
@@ -648,6 +650,13 @@ convention still needs a check or a test.
 - **Root cause:** A scrape retained a transaction while ingest reserved another connection, store settings and notification lookups could do the same, seals lived only in pruned rows, retry guidance assumed a key could apply retroactively, and fixtures shared instance health.
 - **Error class:** Pool starvation; lost durable invariants; misleading retry recovery; environment-dependent test contamination.
 - **Guard:** Pulse's two-connection scrape regression, pruned-seal/clear regression, exact partial-write error assertion, injected disk-query fixture guard, and poisoned-health fixture reset regression.
+
+## Pulse predecessor retention and source keys
+
+- **What happened:** Lagging counter corrections selected their own old hourly value; sparse counters lost predecessors when hourly values expired before raw samples; concurrent source-key operations could exhaust the SQL pool.
+- **Root cause:** The raw lookup floor exceeded the target hour, historical lookup assumed rollups outlived raw samples, and credential services or orphan-store settings reserved another connection inside a transaction.
+- **Error class:** A predecessor lookup ignores retention boundaries; nested reservations starve the SQL pool.
+- **Guard:** Pulse's lagging-hour and shorter-rollup-retention integration tests, two-connection source-key regression, lifecycle-change revocation tests, and orphan-deletion settings boundary unit test.
 
 ## Pulse pending retries, cleared usage and open settings
 

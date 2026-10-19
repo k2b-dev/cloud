@@ -1,5 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { clickhouseAdminQuery } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { installFixtureStore } from "../store/base-store.test-fixture";
@@ -15,6 +16,66 @@ suiteFor(
   "clickhouse",
 )("Pulse ClickHouse hourly values", () => {
   beforeAll(installFixtureStore, 30000);
+  test("a lagging dirty hour before the raw cutoff never uses its own old rollup as predecessor", async () => {
+    const f = await writeFixture("rollup-lagging-cutoff"),
+      run = createHourlyRollup({ store: f.store });
+    const expire = () => sql`UPDATE pulse.metric_hours SET lease_until=${f.clock()} WHERE base_id=${f.base.id}::uuid`;
+    try {
+      await f.stopMerges();
+      assertWrite(
+        await f.write({
+          metrics: [
+            { name: "requests", type: "counter", value: 5, ts: "2026-10-15T09:05:00Z" },
+            { name: "requests", type: "counter", value: 10, ts: "2026-10-15T10:05:00Z" },
+          ],
+        }),
+      );
+      await expire();
+      expect(await run(f.base.id)).toEqual({ buckets: 1, done: false });
+      expect(await run(f.base.id)).toEqual({ buckets: 1, done: false });
+      expect(await f.read("rollups", "increase", "ORDER BY bucket DESC LIMIT 1")).toEqual([{ increase: 5 }]);
+      f.setTime("2026-10-17T12:00:00.001Z");
+      assertWrite(await f.writeB({ metrics: [{ name: "requests", type: "counter", value: 20, ts: "2026-10-15T10:15:00Z" }] }));
+      await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${f.base.id}::uuid`;
+      await expire();
+      // Retention must keep this raw partition until its lagging dirty hour is repaired.
+      expect((await createRetention({ store: f.store })(f.base.id)).rawPartitions).toBe(0);
+      expect(await run(f.base.id)).toEqual({ buckets: 1, done: false });
+      expect(await f.read("rollups", "increase", "ORDER BY bucket DESC LIMIT 1")).toEqual([{ increase: 15 }]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
+  test("a sparse counter uses retained raw history after its shorter-lived rollup expires", async () => {
+    const f = await writeFixture("rollup-shorter-ttl"),
+      run = createHourlyRollup({ store: f.store });
+    const expire = () => sql`UPDATE pulse.metric_hours SET lease_until=${f.clock()} WHERE base_id=${f.base.id}::uuid`;
+    try {
+      await f.stopMerges();
+      await sql`UPDATE pulse.bases SET retention_days=30,rollup_retention_days=1 WHERE id=${f.base.id}::uuid`;
+      f.setTime("2026-10-15T12:00:00Z");
+      assertWrite(await f.write({ metrics: [{ name: "requests", type: "counter", value: 100, ts: "2026-10-15T10:05:00Z" }] }));
+      await expire();
+      expect(await run(f.base.id)).toEqual({ buckets: 1, done: false });
+      expect(await f.read("rollups", "last_value")).toEqual([{ last_value: 100 }]);
+      f.setTime("2026-10-17T12:00:00Z");
+      // Simulate TTL synchronously; mutations need merges enabled for this table.
+      await clickhouseAdminQuery(`SYSTEM START MERGES ${q(f.base.database)}._rollups`);
+      await f.store.query(
+        `ALTER TABLE ${q(f.base.database)}._rollups DELETE WHERE bucket=toDateTime('2026-10-15 10:00:00','UTC') SETTINGS mutations_sync=2`,
+      );
+      await clickhouseAdminQuery(`SYSTEM STOP MERGES ${q(f.base.database)}._rollups`);
+      expect(await f.read("rollups")).toHaveLength(0);
+      expect((await createRetention({ store: f.store })(f.base.id)).rawPartitions).toBe(0);
+      expect(await f.read("samples", "value")).toEqual([{ value: 100 }]);
+      assertWrite(await f.write({ metrics: [{ name: "requests", type: "counter", value: 150, ts: "2026-10-17T10:05:00Z" }] }));
+      await expire();
+      expect(await run(f.base.id)).toEqual({ buckets: 1, done: false });
+      expect(await f.read("rollups", "increase,increase_seconds")).toEqual([{ increase: 50, increase_seconds: 172800 }]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("clean history uses its rollup predecessor without scanning old raw samples", async () => {
     const f = await writeFixture("rollup-bounded-history"),
       run = createHourlyRollup({ store: f.store });

@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import { sql } from "bun";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { baseStore } from "../store/base-store";
 import {
@@ -72,6 +73,27 @@ test("internal target normalization preserves scope and refuses broad or malform
 });
 
 const databaseName = (n: number) => `pulse_${n.toString(16).padStart(32, "0")}`;
+test("orphan deletion resolves store settings before reserving its transaction", async () => {
+  const steps: string[] = [];
+  const store = {
+    ...baseStore,
+    prepare: async () => {
+      steps.push("prepare");
+      return async () => [];
+    },
+  };
+  const boundary = spyOn(sql, "begin").mockImplementation(async () => {
+    steps.push("begin");
+    throw new Error("Fixture transaction boundary");
+  });
+  try {
+    await expect(deleteOrphan(adminFixtureIdentity(), databaseName(1), store)).rejects.toThrow("Fixture transaction boundary");
+    expect(steps).toEqual(["prepare", "begin"]);
+  } finally {
+    boundary.mockRestore();
+  }
+});
+
 const orphanFixture = (total: number, reserved: (name: string) => boolean) => {
   const names = Array.from({ length: total }, (_, index) => databaseName(index + 1));
   const cursors: string[] = [];

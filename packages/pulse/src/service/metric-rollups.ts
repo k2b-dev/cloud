@@ -31,11 +31,16 @@ export const hourlyRollupSql = (database: string, prefix: string) => {
     WITH
     in_hour AS (SELECT series_id,ts,value FROM ${db}.samples WHERE ts>=fromUnixTimestamp64Milli({start:Int64}) AND ts<fromUnixTimestamp64Milli({end:Int64})),
     ids AS (SELECT DISTINCT series_id FROM in_hour),
-    raw_base AS (SELECT src.series_id,argMax(src.value,(src.ts,src.version)) AS value,max(src.ts) AS ts FROM ${db}._samples src
+    raw_recent AS (SELECT src.series_id,argMax(src.value,(src.ts,src.version)) AS value,max(src.ts) AS ts FROM ${db}._samples src
       WHERE src.series_id IN ids AND src.ts<fromUnixTimestamp64Milli({start:Int64}) AND src.ts>=fromUnixTimestamp64Milli({rawFrom:Int64}) GROUP BY src.series_id),
-    historical_base AS (SELECT series_id,argMax(last_value,(bucket,version)) AS value,argMax(last_ts,(bucket,version)) AS ts FROM ${db}._rollups
-      WHERE series_id IN ids AND series_id NOT IN (SELECT series_id FROM raw_base) AND bucket<toStartOfHour(fromUnixTimestamp64Milli({rawFrom:Int64})) GROUP BY series_id),
-    points AS (SELECT series_id,ts,value,1 AS inside FROM in_hour UNION ALL SELECT series_id,ts,value,0 AS inside FROM raw_base UNION ALL SELECT series_id,ts,value,0 AS inside FROM historical_base),
+    rollup_base AS (SELECT series_id,argMax(last_value,(bucket,version)) AS value,argMax(last_ts,(bucket,version)) AS ts FROM ${db}._rollups
+      WHERE series_id IN ids AND series_id NOT IN (SELECT series_id FROM raw_recent)
+        AND bucket>=fromUnixTimestamp64Milli({rollupFloor:Int64}) AND bucket<toStartOfHour(fromUnixTimestamp64Milli({rawFrom:Int64})) GROUP BY series_id),
+    raw_old AS (SELECT src.series_id,argMax(src.value,(src.ts,src.version)) AS value,max(src.ts) AS ts FROM ${db}._samples src
+      WHERE src.series_id IN ids AND src.series_id NOT IN (SELECT series_id FROM raw_recent) AND src.series_id NOT IN (SELECT series_id FROM rollup_base)
+        AND src.ts>=fromUnixTimestamp64Milli({cutoff:Int64}) AND src.ts<fromUnixTimestamp64Milli(least({rollupFloor:Int64},{rawFrom:Int64})) GROUP BY src.series_id),
+    points AS (SELECT series_id,ts,value,1 AS inside FROM in_hour UNION ALL SELECT series_id,ts,value,0 AS inside FROM raw_recent
+      UNION ALL SELECT series_id,ts,value,0 AS inside FROM rollup_base UNION ALL SELECT series_id,ts,value,0 AS inside FROM raw_old),
     pairs AS (SELECT *,lagInFrame(toNullable(value),1,NULL) OVER w AS previous_value,lagInFrame(toNullable(ts),1,NULL) OVER w AS previous_ts
       FROM points WINDOW w AS (PARTITION BY series_id ORDER BY ts ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW))
     SELECT p.series_id,toDateTime(fromUnixTimestamp64Milli({start:Int64})),countIf(inside=1),sumIf(value,inside=1),minIf(value,inside=1),maxIf(value,inside=1),
@@ -71,20 +76,25 @@ export const createHourlyRollup =
       AND state='dirty' AND (lease_until IS NULL OR lease_until<=${now}::timestamptz)`;
         if (!hour) return { buckets: 0, done: false };
         const [base] = await tx<
-          { database_name: string; retention_days: number }[]
-        >`SELECT s.database_name,b.retention_days FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.id=${candidate.base_id}::uuid`;
+          { database_name: string; retention_days: number; rollup_retention_days: number }[]
+        >`SELECT s.database_name,b.retention_days,b.rollup_retention_days FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.id=${candidate.base_id}::uuid`;
         if (!base) return { buckets: 0, done: false };
         const [dirty] = await tx<{ hour: Date | null }[]>`SELECT min(hour) AS hour FROM pulse.metric_hours
         WHERE base_id=${candidate.base_id}::uuid AND state='dirty' AND hour<${candidate.hour}`;
         const cutoff = now.getTime() - base.retention_days * 86_400_000;
-        // Writes dirty their hour and corrections the successor's before inserting; clean/sealed hours before rawFrom
-        // reflect all raw samples, so the newest rollup's last_value/last_ts is the predecessor.
-        const rawFrom = Math.max(dirty?.hour?.getTime() ?? candidate.hour.getTime(), cutoff);
+        // Dirty raw history wins, then clean rollups strictly before start; scan older retained raw only below the rollup TTL floor.
+        const rawFrom = Math.min(candidate.hour.getTime(), Math.max(dirty?.hour?.getTime() ?? candidate.hour.getTime(), cutoff));
+        const rollupFloor =
+          base.rollup_retention_days >= base.retention_days
+            ? 0
+            : Math.ceil((now.getTime() - base.rollup_retention_days * 86_400_000) / HOUR_MS) * HOUR_MS;
         try {
           await connectedStore.query(hourlyRollupSql(base.database_name, store.prefix), {
             start: candidate.hour.getTime(),
             end: candidate.hour.getTime() + HOUR_MS,
             rawFrom,
+            rollupFloor,
+            cutoff,
             revision: hour.revision,
           });
         } catch (error) {

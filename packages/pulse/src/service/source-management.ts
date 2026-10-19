@@ -136,13 +136,17 @@ const sourceApiKeyPermission = (scopes: string[]): PermissionLevel => {
 
 type HttpIngestSource = { source: PulseSource; shortId: string };
 
-const ensureHttpIngestSource = async (params: { baseId: string; sourceId: string }): Promise<Result<HttpIngestSource>> => {
-  const [source] = await sql<SourceRow[]>`
+const ensureHttpIngestSource = async (
+  params: { baseId: string; sourceId: string },
+  db: typeof sql = sql,
+): Promise<Result<HttpIngestSource>> => {
+  const [source] = await db<SourceRow[]>`
     SELECT *
     FROM pulse.sources
     WHERE NOT deleted AND id = ${params.sourceId}::uuid
       AND base_id = ${params.baseId}::uuid
       AND kind = 'http_ingest'::pulse.source_kind
+    FOR SHARE
   `;
   return source ? ok({ source: mapSource(source), shortId: source.short_id }) : fail(err.notFound("Ingest source"));
 };
@@ -431,40 +435,47 @@ export const createSourceApiKey = async (params: {
 }): Promise<Result<{ credential: PulseSourceApiKey; token: string }>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
-  return sql.begin(async (db) => {
+  const active = await requireBaseActive(params.baseId);
+  if (!active.ok) return fail(active.error);
+  const source = await ensureHttpIngestSource({ baseId: params.baseId, sourceId: params.sourceId });
+  if (!source.ok) return fail(source.error);
+  const name = params.name.trim();
+  if (!name) return fail(err.badInput("API key name is required"));
+  if (params.permission !== "write") return fail(err.badInput("Source API keys can only use ingest permission"));
+
+  const serviceAccount = await serviceAccounts.getOrCreateResourceBound({
+    name: `${source.data.source.name} ingest API keys`,
+    appId: PULSE_APP_ID,
+    resourceType: PULSE_SOURCE_RESOURCE_TYPE,
+    resourceId: source.data.shortId,
+    createdBy: params.user.id,
+  });
+  if (!serviceAccount.ok) return fail(serviceAccount.error);
+
+  const created = await serviceAccountCredentials.createResourceApiToken({
+    serviceAccountId: serviceAccount.data.id,
+    actor: params.user,
+    name,
+    expiresAt: params.expiresAt ?? null,
+    scopes: [PULSE_INGEST_SCOPE, "write"],
+  });
+  if (!created.ok) return fail(created.error);
+
+  // Deletion changes the base state before removing source accounts: this check sees it, or deletion removes the token later.
+  const checked = await sql.begin(async (db) => {
     const active = await requireBaseActive(params.baseId, db);
-    if (!active.ok) return fail(active.error);
-    const source = await ensureHttpIngestSource({ baseId: params.baseId, sourceId: params.sourceId });
-    if (!source.ok) return fail(source.error);
-    const name = params.name.trim();
-    if (!name) return fail(err.badInput("API key name is required"));
-    if (params.permission !== "write") return fail(err.badInput("Source API keys can only use ingest permission"));
+    const source = active.ok ? await ensureHttpIngestSource({ baseId: params.baseId, sourceId: params.sourceId }, db) : active;
+    if (!source.ok) await serviceAccountCredentials.revoke({ credentialId: created.data.credential.id, actor: params.user }, { db });
+    return source;
+  });
+  if (!checked.ok) return fail(checked.error);
 
-    const serviceAccount = await serviceAccounts.getOrCreateResourceBound({
-      name: `${source.data.source.name} ingest API keys`,
-      appId: PULSE_APP_ID,
-      resourceType: PULSE_SOURCE_RESOURCE_TYPE,
-      resourceId: source.data.shortId,
-      createdBy: params.user.id,
-    });
-    if (!serviceAccount.ok) return fail(serviceAccount.error);
-
-    const created = await serviceAccountCredentials.createResourceApiToken({
-      serviceAccountId: serviceAccount.data.id,
-      actor: params.user,
-      name,
-      expiresAt: params.expiresAt ?? null,
-      scopes: [PULSE_INGEST_SCOPE, "write"],
-    });
-    if (!created.ok) return fail(created.error);
-
-    return ok({
-      credential: {
-        ...created.data.credential,
-        permission: sourceApiKeyPermission(created.data.credential.scopes),
-      },
-      token: created.data.token,
-    });
+  return ok({
+    credential: {
+      ...created.data.credential,
+      permission: sourceApiKeyPermission(created.data.credential.scopes),
+    },
+    token: created.data.token,
   });
 };
 
@@ -476,14 +487,12 @@ export const removeSourceApiKey = async (params: {
 }): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
-  return sql.begin(async (db) => {
-    const active = await requireBaseActive(params.baseId, db);
-    if (!active.ok) return fail(active.error);
-    const keys = await listSourceApiKeys(params);
-    if (!keys.ok) return fail(keys.error);
-    if (!keys.data.some((key) => key.id === params.credentialId)) return fail(err.notFound("API key"));
-    return serviceAccountCredentials.revoke({ credentialId: params.credentialId, actor: params.user });
-  });
+  const active = await requireBaseActive(params.baseId);
+  if (!active.ok) return fail(active.error);
+  const keys = await listSourceApiKeys(params);
+  if (!keys.ok) return fail(keys.error);
+  if (!keys.data.some((key) => key.id === params.credentialId)) return fail(err.notFound("API key"));
+  return serviceAccountCredentials.revoke({ credentialId: params.credentialId, actor: params.user });
 };
 
 export const resolveIngestSourceForServiceAccount = async (

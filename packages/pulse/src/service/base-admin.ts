@@ -282,6 +282,7 @@ export const deleteOrphan = async (identity: StoreIdentity, database: string, st
   }
   const hex = database.slice(store.prefix.length),
     baseId = databaseBaseId(database, store.prefix);
+  store = { ...store, query: await store.prepare() };
   return sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('pulse.base.creation',0))`;
     const [used] =

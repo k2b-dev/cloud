@@ -1,8 +1,10 @@
-import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { beforeAll, expect, spyOn, test } from "bun:test";
+import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import { SQL, sql } from "bun";
 import { clickhouseAdminQuery as admin, clickhouseTestPrefix as prefix } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { READ_VIEWS } from "../store/base-schema";
 import { createBaseStore, loadStoreRow } from "../store/base-store";
 import {
@@ -18,15 +20,117 @@ import { quoteIdentifier as q } from "../store/validation";
 import { requireBaseActive, requireBaseWritable } from "./access-control";
 import { createBaseLifecycle } from "./base-lifecycle";
 import { ingestBatch } from "./ingest-writer";
-import { createSource } from "./source-management";
+import { createSource, createSourceApiKey, removeSourceApiKey } from "./source-management";
 
 const suite = suiteFor("database", "clickhouse");
 const runUntilDone = async (run: () => Promise<{ done: boolean }>) => {
   for (let n = 0; n < 100; n++) if ((await run()).done) return;
   throw new Error("LIFECYCLE_DID_NOT_FINISH");
 };
+const sourceKeyFixture = async () => {
+  const base = await fixtureBase();
+  await createBaseLifecycle(fixtureStore())(base.id);
+  const identity = adminFixtureIdentity(crypto.randomUUID());
+  if (identity.actor.kind !== "user") throw new Error("Expected user fixture");
+  const user = identity.actor.user;
+  const sourceId = crypto.randomUUID(),
+    shortId = newShortId();
+  await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${user.id}::uuid,${user.id},'local','user')`;
+  const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${user.id}::uuid,'admin') RETURNING id`;
+  await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${base.id}::uuid,${access!.id}::uuid)`;
+  await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${shortId},${base.id}::uuid,'http_ingest','Key fixture')`;
+  return {
+    baseId: base.id,
+    sourceId,
+    user,
+    cleanup: async () => {
+      await sql`DELETE FROM auth.service_accounts WHERE app_id='pulse' AND resource_type='pulse_source' AND resource_id=${shortId}`;
+      await cleanupFixtureBase(base);
+      await sql`DELETE FROM auth.users WHERE id=${user.id}::uuid`;
+    },
+  };
+};
 suite("Pulse per-base store lifecycle", () => {
   beforeAll(installFixtureStore, 30_000);
+  test("source key creation and removal exceed a two-connection pool without nested reservations", async () => {
+    const f = await sourceKeyFixture();
+    const database = new SQL({ max: 2 });
+    const begin = database.begin.bind(database);
+    const boundary = spyOn(sql, "begin").mockImplementation((run) => {
+      if (typeof run === "string") throw new Error("Unexpected transaction options in source key fixture");
+      return begin(run);
+    });
+    // Make pool-backed service calls contend for the same bounded pool as Pulse transactions.
+    const getOrCreate = serviceAccounts.getOrCreateResourceBound;
+    const accountLookup = spyOn(serviceAccounts, "getOrCreateResourceBound").mockImplementation(async (params) => {
+      await database`SELECT 1`;
+      return getOrCreate(params);
+    });
+    const list = serviceAccountCredentials.listOverview;
+    const credentialLookup = spyOn(serviceAccountCredentials, "listOverview").mockImplementation(async (params) => {
+      await database`SELECT 1`;
+      return list(params);
+    });
+    const pending: Promise<unknown>[] = [];
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("Source keys starved the SQL pool")), 10000);
+    });
+    try {
+      const creates = Array.from({ length: 6 }, (_, i) =>
+        createSourceApiKey({ baseId: f.baseId, sourceId: f.sourceId, user: f.user, name: `Key ${i}`, permission: "write" }),
+      );
+      pending.push(...creates);
+      const created = await Promise.race([Promise.all(creates), deadline]);
+      const removes = created.map((result) => {
+        if (!result.ok) throw new Error(result.error.message);
+        return removeSourceApiKey({ baseId: f.baseId, sourceId: f.sourceId, user: f.user, credentialId: result.data.credential.id });
+      });
+      pending.push(...removes);
+      expect((await Promise.race([Promise.all(removes), deadline])).every((result) => result.ok)).toBe(true);
+    } finally {
+      clearTimeout(timeout);
+      await database.close({ timeout: 1 });
+      await Promise.allSettled(pending);
+      boundary.mockRestore();
+      accountLookup.mockRestore();
+      credentialLookup.mockRestore();
+      await f.cleanup();
+    }
+  }, 30000);
+  test.each(["clearing", "deleting", "source removed"])(
+    "a key created during %s is revoked by the locked post-check",
+    async (state) => {
+      const f = await sourceKeyFixture();
+      const create = serviceAccountCredentials.createResourceApiToken;
+      let credentialId: string | undefined;
+      const boundary = spyOn(serviceAccountCredentials, "createResourceApiToken").mockImplementation(async (params) => {
+        const result = await create(params);
+        if (result.ok) {
+          credentialId = result.data.credential.id;
+          if (state === "source removed") await sql`UPDATE pulse.sources SET deleted=true WHERE id=${f.sourceId}::uuid`;
+          else await sql`UPDATE pulse.base_stores SET state=${state} WHERE base_id=${f.baseId}::uuid`;
+        }
+        return result;
+      });
+      try {
+        expect(
+          await createSourceApiKey({ baseId: f.baseId, sourceId: f.sourceId, user: f.user, name: "Racing key", permission: "write" }),
+        ).toMatchObject({
+          ok: false,
+          error: { status: state === "source removed" ? 404 : 409 },
+        });
+        expect(credentialId).toBeDefined();
+        expect(await sql<{ status: string }[]>`SELECT status FROM auth.service_account_credentials WHERE id=${credentialId}::uuid`).toEqual(
+          [{ status: "revoked" }],
+        );
+      } finally {
+        boundary.mockRestore();
+        await f.cleanup();
+      }
+    },
+    30000,
+  );
   test("provisions tables, six SELECT grants and the selected read profile", async () => {
     const base = await fixtureBase(),
       store = fixtureStore();
