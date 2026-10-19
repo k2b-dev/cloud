@@ -823,7 +823,8 @@ const HelpShell = (props: {
     >
       {/* One head in every view: the search never moves between the start, an article, and results. An app's embedded
           reader sits in the app's own chrome, which names it and picks its article, so it keeps only the search of its start. */}
-      <Show when={props.surface !== "embedded" || view() === "hub"}>
+      {/* Help the reader may not see gets no head either: the slot already names the panel, and there is nothing to search. */}
+      <Show when={(props.surface !== "embedded" || view() === "hub") && props.panel?.state !== "unavailable"}>
         <header class="help-head" data-help-head="">
           <div class="help-head-inner help-measure">
             <Show when={props.surface !== "embedded"}>
@@ -865,7 +866,6 @@ const HelpShell = (props: {
               icon="ti ti-search"
               aria-label={t().searchHelp}
               data-help-search=""
-              disabled={props.panel?.state === "unavailable"}
               value={query()}
               placeholder={t().searchPlaceholder}
               onValueChange={changeQuery}

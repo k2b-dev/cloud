@@ -124,7 +124,8 @@ test("Help panel SSR authorizes selectors and renders the first view without she
       expect(unavailable).not.toContain("fixture app");
       expect(unavailable).not.toContain("data-help-shortcuts");
       expect(unavailable).not.toContain("--app-accent:");
-      expect(unavailable).toContain("disabled");
+      expect(unavailable).not.toContain("data-help-search");
+      expect(unavailable).not.toContain("data-help-menu");
     }
     expect(requestedApps).not.toContain("restricted");
     expect(requestedApps).not.toContain("nope");
