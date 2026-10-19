@@ -161,6 +161,8 @@ const mount = async (
     recentFail?: () => boolean;
     /** The recent references answer only once this settles. */
     recentGate?: () => Promise<void>;
+    /** More parts that arrive without a new search, such as an upload finishing. */
+    extraParts?: () => number;
   } = {},
 ) => {
   const dom = options.host ? { ...options.host, root: options.host.document.createElement("div") } : createDomTestHarness();
@@ -264,7 +266,7 @@ const mount = async (
   const recent = createAssistantRecentResources();
   recent.ensure(locale);
   const draftRefs = () => assistantDraftRefs(options.attachments ?? [], mentions());
-  const partCount = () => (options.attachments ?? []).length + mentions().length;
+  const partCount = () => (options.attachments ?? []).length + mentions().length + (options.extraParts?.() ?? 0);
   const modelChanges: string[] = [];
   const chooseModel = (id: string) => {
     modelChanges.push(id);
@@ -291,7 +293,7 @@ const mount = async (
         attachments={aiChatAttachments(options.attachments ?? [])}
         fileSelection={{ choose: options.choose ?? (async () => []), onSelect() {} }}
         commands={[
-          ...assistantRecentCommands({ items: recent.items(), excludeRefs: draftRefs(), partCount: partCount(), locale }),
+          ...assistantRecentCommands({ items: recent.items(), excludeRefs: draftRefs(), partCount, locale }),
           ...insert().commands,
           ...assistantBuiltInCommands({
             copy,
@@ -317,7 +319,7 @@ const mount = async (
             assistantComposerCommands({
               recent: recent.items(),
               excludeRefs: draftRefs(),
-              partCount: partCount(),
+              partCount,
               query,
               signal,
               session: search.opening,
@@ -1165,4 +1167,20 @@ test("an answer between opening and the first search keeps a recent Skill under 
   await settled();
   expect(h.headings()[0]).toBe("Zuletzt");
   expect(h.labels().filter((label) => label === "Skill 1")).toHaveLength(1);
+});
+
+test("a recent search row checks the live part count when chosen, so a full message gets no reference", async () => {
+  const [extra, setExtra] = createSignal(0);
+  const h = await mountWithRecent({ extraParts: extra });
+  h.type("/q3");
+  await settled();
+  expect(h.row("Q3-Planung").getAttribute("aria-disabled")).not.toBe("true");
+  // Uploads finish while the list stays open; no search runs again.
+  setExtra(16);
+  h.mark("Q3-Planung");
+  h.key("Enter");
+  await flush();
+  expect(h.mentions()).toEqual([]);
+  expect(h.value()).toBe("/q3");
+  expect(h.status()).toContain("Eine Nachricht kann höchstens 16 Elemente enthalten.");
 });

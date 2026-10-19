@@ -4,7 +4,13 @@ import { aiResourceMarker } from "./resource-markers";
 
 const marker = (id: string) =>
   aiResourceMarker({ ref: { type: "demo.item", id }, title: "Stored secret", icon: "ti ti-secret", href: "/secret" });
-const row = (markers: string[], conversationId = "latest") => ({ markers, conversationId, lastSentAt: "2026-10-01T00:00:00.000Z" });
+let messages = 0;
+const row = (markers: string[], conversationId = "latest", messageId = `message-${++messages}`) => ({
+  markers,
+  conversationId,
+  messageId,
+  lastSentAt: "2026-10-01T00:00:00.000Z",
+});
 
 test("parses only schema-valid markers and emits identity without stored metadata", () => {
   const invalid = marker("bad").replace('"title":"Stored secret"', '"title":42');
@@ -22,4 +28,15 @@ test("deduplicates per message, counts all scanned messages, preserves latest co
   expect(result).toHaveLength(8);
   expect(result[0]).toMatchObject({ ref: { id: "one" }, count: 3, conversationId: "latest" });
   expect(result.map((item) => item.ref.id)).toEqual(["one", "item-0", "item-1", "item-2", "item-3", "item-4", "item-5", "item-6"]);
+});
+
+test("a message copied into a fork counts once, at its newest copy", () => {
+  const result = collectRecentSentResourceRefs([
+    row([marker("one")], "fork", "Sent1"),
+    row([marker("one")], "source", "Sent1"),
+    row([marker("one")], "source", "Sent2"),
+  ]);
+  expect(result).toEqual([
+    { ref: { type: "demo.item", id: "one" }, count: 2, conversationId: "fork", lastSentAt: "2026-10-01T00:00:00.000Z" },
+  ]);
 });

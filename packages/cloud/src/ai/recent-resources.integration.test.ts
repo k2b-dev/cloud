@@ -106,6 +106,20 @@ suite("recent sent resources: real store and current reader authorization", () =
     }
   });
 
+  test("a forked chat's copied messages count once", async () => {
+    const f = await fixture();
+    try {
+      await f.append([marker("forked")]);
+      await f.append([marker("forked")]);
+      await aiConversations.forkConversation({ sourceConversationId: f.chat.id, ownerUserId: f.userId, throughSeq: 2 });
+      expect(await aiConversations.listRecentSentResourceRefs({ ownerUserId: f.userId })).toEqual([
+        expect.objectContaining({ ref: { type: "demo.item", id: "forked" }, count: 2 }),
+      ]);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
   test("returns exactly the latest eight distinct refs with counts across messages", async () => {
     const f = await fixture();
     try {

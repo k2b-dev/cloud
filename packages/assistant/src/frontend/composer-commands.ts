@@ -350,7 +350,16 @@ export function createAssistantRecentResources(
 /** Only for tests: forget the page's loads. */
 export const resetAssistantRecentResources = () => recentLoads.clear();
 
-const recentRow = (item: AiRecentResource, section: string, extra: { reason?: string; recent?: boolean } = {}): ChatCommand => {
+/**
+ * One recent reference as a row. Choosing it checks the live part count, as the picker rows do: attachments can arrive
+ * while the list is open, and the server rejects a message with more parts.
+ */
+const recentRow = (
+  item: AiRecentResource,
+  section: string,
+  limit: { partCount: () => number; locale: string },
+  recent = false,
+): ChatCommand => {
   const attachment = aiChatAttachments([
     {
       kind: "resource",
@@ -361,6 +370,7 @@ const recentRow = (item: AiRecentResource, section: string, extra: { reason?: st
       ...(item.href ? { href: item.href } : {}),
     },
   ])[0]!;
+  const reason = recentLimitReason(limit.partCount(), limit.locale);
   return {
     id: attachment.id,
     section,
@@ -371,9 +381,13 @@ const recentRow = (item: AiRecentResource, section: string, extra: { reason?: st
     icon: item.icon ?? "ti ti-cloud",
     keywords: [item.kind, item.appName],
     app: item.appName,
-    mention: attachment,
-    ...(extra.reason ? { reason: extra.reason } : {}),
-    ...(extra.recent ? { recent: true } : {}),
+    action: () => {
+      const full = recentLimitReason(limit.partCount(), limit.locale);
+      if (full) throw new Error(full);
+      return { mention: attachment };
+    },
+    ...(reason ? { reason } : {}),
+    ...(recent ? { recent: true } : {}),
   };
 };
 
@@ -395,13 +409,12 @@ export function assistantRecentCommands(input: {
   items: readonly AiRecentResource[] | undefined;
   excludeRefs: readonly CloudResourceRef[];
   /** Attachments plus references in the text: the server counts both. */
-  partCount: number;
+  partCount: () => number;
   locale: string;
 }): ChatCommand[] {
   const excluded = new Set(input.excludeRefs.map(recentKey));
-  const reason = recentLimitReason(input.partCount, input.locale);
   return assistantRecentOverview((input.items ?? []).filter((item) => !excluded.has(recentKey(item.ref)))).map((item) =>
-    recentRow(item, "recent", { reason }),
+    recentRow(item, "recent", input),
   );
 }
 
@@ -585,8 +598,8 @@ export async function assistantComposerCommands(input: {
   recent?: readonly AiRecentResource[];
   /** References the draft already holds; recent rows leave them out. */
   excludeRefs?: readonly CloudResourceRef[];
-  /** Attachments plus references in the text, for the insert limit. */
-  partCount?: number;
+  /** Attachments plus references in the text, for the insert limit; read again when a recent row is chosen. */
+  partCount?: () => number;
 }): Promise<ChatCommand[]> {
   const copy = assistantCopyFor(input.locale);
   const legacyScope = !input.scope
@@ -631,7 +644,7 @@ export async function assistantComposerCommands(input: {
   const excluded = new Set((input.excludeRefs ?? []).map(recentKey));
   const recent = (input.recent ?? []).filter((item) => !excluded.has(recentKey(item.ref)));
   const recentSkills = new Set(recent.filter((item) => item.ref.type === SKILL_TYPE).map((item) => item.ref.id));
-  const recentReason = recentLimitReason(input.partCount ?? 0, input.locale);
+  const recentLimit = { partCount: input.partCount ?? (() => 0), locale: input.locale };
   const [sessionData, searchedSkills, chatFiles, project] = await Promise.all([
     wants("task") ? input.sessionLoader.load(input.session) : null,
     wants("skill") && !overview && !fullSkillScope ? assistantApi.listSkills(input.signal, query.slice(0, 200)) : [],
@@ -648,13 +661,13 @@ export async function assistantComposerCommands(input: {
   if (!category && query)
     for (const item of recent)
       if (item.ref.type !== SKILL_TYPE) {
-        const row = recentRow(item, "insert", { reason: recentReason, recent: true });
+        const row = recentRow(item, "insert", recentLimit, true);
         if (matchesChatCommand(row, query)) results.push(row);
       }
   if (category?.startsWith("cloud-tag:"))
     for (const item of recent)
       if (recentInTagScope(category, item.ref)) {
-        const row = recentRow(item, "insert", { reason: recentReason, recent: true });
+        const row = recentRow(item, "insert", recentLimit, true);
         if (matchesChatCommand(row, query)) results.push(row);
       }
   const shownRecentSkills = overview

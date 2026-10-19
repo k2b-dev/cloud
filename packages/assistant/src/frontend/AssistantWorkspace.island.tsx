@@ -1637,7 +1637,7 @@ export default function AssistantWorkspace(props: Props) {
             ...assistantRecentCommands({
               items: recentResources.items(),
               excludeRefs: draftRefs(),
-              partCount: attachmentCount() + mentionCount(),
+              partCount: () => attachmentCount() + mentionCount(),
               locale: locale(),
             }),
             ...insert().commands,
@@ -1702,7 +1702,7 @@ export default function AssistantWorkspace(props: Props) {
               assistantComposerCommands({
                 recent: recentResources.items(),
                 excludeRefs: draftRefs(),
-                partCount: attachmentCount() + mentionCount(),
+                partCount: () => attachmentCount() + mentionCount(),
                 query,
                 scope: search.scope,
                 session: search.opening,

@@ -8,12 +8,18 @@ export const RECENT_SENT_REF_LIMIT = 8;
 export const RECENT_SENT_MESSAGE_SCAN_LIMIT = RECENT_SENT_REF_LIMIT * 25;
 export const RECENT_SENT_CONVERSATION_SCAN_LIMIT = RECENT_SENT_MESSAGE_SCAN_LIMIT;
 
-/** Rows arrive newest first and contain only marker text, never whole message bodies. */
+/**
+ * Rows arrive newest first and contain only marker text, never whole message bodies. Forking or copying a chat copies
+ * its messages with their short IDs, so a message ID counts once, however many chats hold a copy of it.
+ */
 export const collectRecentSentResourceRefs = (
-  messages: readonly { conversationId: string; lastSentAt: string; markers: readonly string[] }[],
+  messages: readonly { conversationId: string; messageId: string; lastSentAt: string; markers: readonly string[] }[],
 ): AiRecentSentResourceRef[] => {
   const refs = new Map<string, AiRecentSentResourceRef>();
+  const counted = new Set<string>();
   for (const message of messages) {
+    if (counted.has(message.messageId)) continue;
+    counted.add(message.messageId);
     const seen = new Set<string>();
     for (const text of message.markers) {
       const marker = parseAiResourceMarker(text);

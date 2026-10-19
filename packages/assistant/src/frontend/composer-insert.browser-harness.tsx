@@ -120,7 +120,7 @@ render(
           commandScopes={[...assistantCommandScopes(copy, locale), ...insert().scopes]}
           commandFallback={insert().fallback}
           commands={[
-            ...assistantRecentCommands({ items: recent.items(), excludeRefs: draftRefs(), partCount: partCount(), locale }),
+            ...assistantRecentCommands({ items: recent.items(), excludeRefs: draftRefs(), partCount, locale }),
             ...insert().commands,
             ...(params.has("commands") ? appCommands().commands : []),
             ...assistantBuiltInCommands({
@@ -159,7 +159,7 @@ render(
               running,
               recent: recent.items(),
               excludeRefs: draftRefs(),
-              partCount: partCount(),
+              partCount,
             });
           }}
           fileSelection={{ onSelect: () => {}, choose: async () => [], disabled: running }}

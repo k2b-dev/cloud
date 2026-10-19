@@ -71,7 +71,7 @@ export const resolveAiTurnShortIds = async (input: {
  * newest few are read for their resource markers.
  */
 export const recentSentResourceMarkersQuery = (ownerUserId: string) => sql<
-  { conversation_id: string; created_at: Date | string; markers: string[] }[]
+  { conversation_id: string; short_id: string; created_at: Date | string; markers: string[] }[]
 >`
       WITH conversations AS MATERIALIZED (
         SELECT id FROM ai.conversations
@@ -93,7 +93,7 @@ export const recentSentResourceMarkersQuery = (ownerUserId: string) => sql<
         ORDER BY candidate.created_at DESC, candidate.id DESC
         LIMIT ${RECENT_SENT_MESSAGE_SCAN_LIMIT}
       )
-      SELECT recent_messages.conversation_id, recent_messages.created_at,
+      SELECT recent_messages.conversation_id, sent.short_id, recent_messages.created_at,
              array_agg(part->>'text' ORDER BY ordinal) AS markers
       FROM recent_messages
       JOIN ai.messages sent ON sent.id = recent_messages.id
@@ -101,7 +101,7 @@ export const recentSentResourceMarkersQuery = (ownerUserId: string) => sql<
         CASE WHEN jsonb_typeof(sent.message->'content') = 'array' THEN sent.message->'content' ELSE '[]'::jsonb END
       ) WITH ORDINALITY AS content(part, ordinal)
       WHERE part->>'type' = 'text' AND ltrim(part->>'text') LIKE '[Attached Cloud resource %'
-      GROUP BY recent_messages.id, recent_messages.conversation_id, recent_messages.created_at
+      GROUP BY recent_messages.id, recent_messages.conversation_id, sent.short_id, recent_messages.created_at
       ORDER BY recent_messages.created_at DESC, recent_messages.id DESC
     `;
 
@@ -1608,6 +1608,7 @@ export const aiConversations: AiConversationService = {
     return collectRecentSentResourceRefs(
       rows.map((row) => ({
         conversationId: row.conversation_id,
+        messageId: row.short_id,
         lastSentAt: iso(row.created_at),
         markers: row.markers,
       })),
