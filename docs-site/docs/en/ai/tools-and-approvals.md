@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-12
+updated: 2026-10-19
 ---
 
 # Tools and approvals
@@ -24,6 +24,11 @@ Applications can also restrict launched conversations through
 [`allowedTools`](/en/docs/ai/chat-runtime-and-streaming). The stored ceiling applies
 to later turns and forks as well as initial discovery. Action approval and domain
 permissions still apply to every permitted operation.
+
+Applications can declare [Action policies, per-call reviews, and receipts](/en/docs/platform/capabilities#describe-each-call-with-policy-and-typed-slots).
+In this release, silent policies keep the rememberable-approval behavior;
+asking policies ask every time. Upgrade Core, Assistant, and Capabilities
+before apps return the new shapes.
 
 ## Define a server tool
 

@@ -36,6 +36,7 @@ import {
   guessAiMediaType,
   isAiImageMediaType,
 } from "@k2b/cloud/ai/browser";
+import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { type CloudCliContext, command } from "@k2b/cloud/cli";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contracts/approvals";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
@@ -533,7 +534,13 @@ export const createAcpAgent = (host: CloudCliContext) => {
             s,
             {
               toolCallId: rows.get(action.callId) ?? action.callId,
-              title: terminalSafeText(action.review?.message ?? action.message ?? action.name),
+              title: terminalSafeText(
+                (action.review
+                  ? capabilityReviewView(action.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).message
+                  : undefined) ??
+                  action.message ??
+                  action.name,
+              ),
               kind: action.website ? "fetch" : "other",
               status: "pending",
               content: toolContent(approvalReviewText(action, chatLink(s))),

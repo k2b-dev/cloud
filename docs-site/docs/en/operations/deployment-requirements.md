@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Deployment requirements
@@ -26,6 +26,15 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Upgrade Core and Action callers before applications use typed Action reviews
+
+Applications built with this release may declare Action policies and return
+per-call reviews or receipts. Upgrade Core and every application that calls
+Actions, at least Assistant and Capabilities, to this release or newer first.
+Older versions still discover the Actions through derived approval metadata,
+but reject the new response shapes. Existing apps need no migration in this
+release. See [Action contract migration](/en/docs/platform/capabilities#migrate-an-application).
 
 ## Prepare the common infrastructure
 

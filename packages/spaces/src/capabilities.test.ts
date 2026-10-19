@@ -1542,7 +1542,7 @@ describe("spaces capabilities", () => {
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (result.ok) {
-        expect(typeof result.data.approvalScope).toBe("string");
+        expect(typeof CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe("string");
         const parsed = CapabilityActionReviewSchema.safeParse(result.data);
         if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
       }

@@ -99,6 +99,7 @@ const review = (localId: string, input: unknown, context: CapabilityExecutionCon
       if (operation.approval !== "rememberable") expect(validated.data.approvalScope).toBeUndefined();
       else if (localId !== "view.create" || !(parsed.data as { shared?: boolean }).shared)
         expect(validated.data.approvalScope).toBeString();
+      return { ...result, data: validated.data };
     }
     return result;
   });

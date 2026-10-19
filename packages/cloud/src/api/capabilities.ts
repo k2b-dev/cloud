@@ -3,6 +3,11 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import {
+  capabilityActionReceiptIssues,
+  capabilityActionReviewIssues,
+  capabilityQueryChecksActionOutcome,
+} from "../_internal/capability-reviews";
 import { getCapability, listApps } from "../_internal/registry";
 import { resolveCommandLink } from "../capabilities/command-link";
 import {
@@ -25,12 +30,13 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_ORIGIN_HEADER,
   CAPABILITY_PROTOCOL_VERSION,
-  CapabilityActionReviewSchema,
+  CapabilityActionReviewDataSchema,
   type CapabilityCatalog,
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
   CapabilityIdempotencyKeySchema,
   type CapabilityOrigin,
+  capabilityActionPolicy,
   capabilityResultJsonSchema,
 } from "../contracts/capabilities";
 import { CapabilityStreamSchema } from "../contracts/capability-streams";
@@ -382,6 +388,7 @@ const runCapabilityDispatch = async (
                     actionApproval: mandate.actionApproval ?? "none",
                     input: params.input,
                     capabilityApproval: "approval" in operation ? (operation.approval ?? "always") : "always",
+                    capabilityPolicy: capabilityActionPolicy(entry.manifest, params.capabilityId),
                     requestId,
                   },
                   async (mandateAuthority) => {
@@ -609,18 +616,39 @@ const runCapabilityDispatch = async (
     return settle(invalid, "uncertain");
   }
 
+  const reviewContext = {
+    policy: capabilityActionPolicy(entry.manifest, params.capabilityId),
+    approval: "approval" in operation ? operation.approval : undefined,
+    queries: entry.manifest.queries,
+    validateQueryInput: (query: (typeof entry.manifest.queries)[number], input: Record<string, unknown>) =>
+      schemaValidator(`${query.schemaHash}:input`, query.inputSchema)?.safeParse(input).success === true,
+    ...(entry.presentation ? { locales: [entry.presentation.baseLocale, ...Object.keys(entry.presentation.translations)] } : {}),
+  };
   const resultValidator = params.review
-    ? CapabilityActionReviewSchema
+    ? CapabilityActionReviewDataSchema
     : schemaValidator(`${operation.schemaHash}:result`, capabilityResultJsonSchema(operation.dataSchema));
   const parsedResult = resultValidator?.safeParse(upstreamBody.data);
-  const parsedReview = params.review ? CapabilityActionReviewSchema.safeParse(upstreamBody.data) : null;
-  // A rememberable Action may leave out its scope for arguments that should ask every time; any other Action has none.
-  const reviewApprovalScopeIsValid =
-    !params.review ||
-    !parsedReview?.success ||
-    ("approval" in operation && operation.approval === "rememberable") ||
-    parsedReview.data.approvalScope === undefined;
-  if (!resultValidator || !parsedResult?.success || !reviewApprovalScopeIsValid) {
+  const field = (value: unknown, key: string): unknown =>
+    value !== null && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  const receipt = field(upstreamBody.data, "receipt");
+  const links = field(upstreamBody.data, "links");
+  const reviewIssues = params.review
+    ? capabilityActionReviewIssues(upstreamBody.data, reviewContext)
+    : receipt === undefined
+      ? []
+      : params.kind === "queries"
+        ? ["Queries cannot return a receipt"]
+        : capabilityActionReceiptIssues(receipt, links);
+  const nestedReceipt = field(field(upstreamBody.data, "data"), "receipt");
+  if (
+    !params.review &&
+    params.kind === "queries" &&
+    nestedReceipt !== undefined &&
+    !("idempotency" in operation) &&
+    capabilityQueryChecksActionOutcome(operation)
+  )
+    reviewIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
+  if (!resultValidator || !parsedResult?.success || reviewIssues.length > 0) {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.outsideResultSchema({ appId: params.appId }), 502);
     return settle(invalid, "uncertain");
