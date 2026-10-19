@@ -572,7 +572,7 @@ for (const [width, height] of [
     try {
       await page.waitForFunction(() => document.documentElement.dataset.consentFirstFrame !== undefined);
       await settle(page);
-      await expect(page.locator("[data-cloud-panel-consent]").isVisible()).resolves.toBe(true);
+      expect(await page.locator("[data-cloud-panel-consent]").isVisible()).toBe(true);
       const serverFrame = await page.evaluate(() => document.documentElement.dataset.consentServerFrame ?? "");
       expect(await page.evaluate(() => document.documentElement.dataset.consentFirstFrame)).toBe(serverFrame);
       expect(JSON.stringify(await page.evaluate(consentGeometry))).toBe(serverFrame);
