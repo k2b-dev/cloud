@@ -481,13 +481,14 @@ these results include neither browser cost nor HTTP socket or provider latency.
 300-second test timeout. It requires database, NATS and Valkey test targets
 and uses its own disposable database. It checks that every generated message
 completes and no attachment is missing, and that peak RSS above baseline stays
-within `GUARD_PEAK_ABOVE_BASELINE_MIB` (560 MiB). On Linux x64 with glibc,
-that run peaked at 482–633 MiB in four runs before the processing memory
-budget and at 391–491 MiB in six runs with it, so the limit fails most runs
-without the budget. Hydration must reserve through the budget, and the
-estimated processing high-water must stay within 256 MiB, except for an item
-above the budget that runs alone. Attachment
-extraction stays out of this run: its memory is native and glibc keeps those
+within `GUARD_PEAK_ABOVE_BASELINE_MIB` (600 MiB). On Linux x64 with glibc
+and four CPUs, as on the CI runner, that run peaked at 650–669 MiB in three
+runs before the processing memory budget and at 345–510 MiB in six runs with
+it, so the limit fails every such run without the budget. On the full host,
+it peaked at 482–633 MiB before and 391–491 MiB with it. Hydration must
+reserve through the budget, and the estimated processing high-water must stay
+within 256 MiB, except for an item above the budget that runs alone.
+Attachment extraction stays out of this run: its memory is native and glibc keeps those
 pages, so its peak varies more than the budget changes it. The `incident`
 profile measures it. Failures report the summary path and key numbers. The
 unit tests in `processing-memory-budget.test.ts` check FIFO admission, byte

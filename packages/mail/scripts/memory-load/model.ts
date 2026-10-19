@@ -2,11 +2,13 @@ import { Readable } from "node:stream";
 
 /**
  * Peak RSS above baseline that the guard run (`--profile guard`, loads in GUARD_LOADS) may reach.
- * Measured on Linux x64 with glibc (#1549), four runs before the processing memory budget:
- * 482-633 MiB; six runs with it: 391-491 MiB. GC timing moves single runs by about 100 MiB, so
- * the limit keeps about 70 MiB above the highest run with the budget and fails most runs without.
+ * Measured on Linux x64 with glibc (#1549). On four CPUs, like the CI runner: 650-669 MiB in three
+ * runs before the processing memory budget, 345-510 MiB in six runs with it. On the full host:
+ * 482-633 MiB before, 391-491 MiB with it. GC timing moves single runs by about 100 MiB, so the
+ * limit keeps about 90 MiB above the highest run with the budget and fails every four-CPU run
+ * without it.
  */
-export const GUARD_PEAK_ABOVE_BASELINE_MIB = 560;
+export const GUARD_PEAK_ABOVE_BASELINE_MIB = 600;
 /**
  * The guard measures hydration beside live API reads. Attachment extraction is left out: its
  * memory is native (anydoc) and glibc keeps those pages, so its peak varies more than the budget
