@@ -1,5 +1,4 @@
-import { fail, ok, type Result } from "@k2b/cloud/server";
-import type { PulseCapabilitySnapshot } from "../contracts";
+import { fail, type Result } from "@k2b/cloud/server";
 import { type AccessScope, requireBaseAccess } from "./access-control";
 import {
   clearBaseData,
@@ -79,5 +78,4 @@ export const pulseService = {
     batch: ingestBatch,
     byApiKey: ingestByApiKey,
   },
-  capabilities: async (): Promise<Result<PulseCapabilitySnapshot>> => ok({}),
 };

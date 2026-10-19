@@ -84,7 +84,7 @@ suite("Pulse REST access for standalone agents", () => {
       expect(bases.status).toBe(200);
       expect(await listedIds(bases)).toEqual([granted.shortId]);
       expect((await call(`/bases/${granted.shortId}`)).status).toBe(200);
-      expect((await call(`/bases/${granted.shortId}/saved-queries`)).status).toBe(200);
+      expect((await call(`/bases/${granted.shortId}/sources`)).status).toBe(200);
       expect((await call(`/bases/${other.shortId}`)).status).toBe(403);
       const renamed = await call(`/bases/${granted.shortId}`, { method: "PATCH", body: { name: `Renamed ${suffix}` } });
       expect(renamed.status).toBe(200);

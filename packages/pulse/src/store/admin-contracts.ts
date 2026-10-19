@@ -60,6 +60,7 @@ export type PulsePolicy = {
 export type PulsePolicyUpdate = Partial<Omit<PulsePolicy, "defaultLimits">> & { defaultLimits?: Partial<BaseLimits> };
 
 export type AdminBaseRow = {
+  rollupLag: boolean;
   /** Public short ID. */
   id: string;
   name: string;

@@ -11,7 +11,7 @@ Pulse accepts metrics, events, and current states in one JSON batch. Signed-in a
 - [Classify event data](#classify-event-data)
 - [Model resources and variants](#model-resources-and-variants)
 - [Retry safely](#retry-safely)
-- [Limits and transaction behavior](#limits-and-transaction-behavior)
+- [Limits and write failures](#limits-and-write-failures)
 - [Inspect the result](#inspect-the-result)
 - [Operational rules](#operational-rules)
 
@@ -230,7 +230,7 @@ Field limits are part of the public ingest contract:
 | `resource` | No | Explicit `{type, id, label?}` whose state is being set. |
 | `dimensions` | No | Labels distinguishing independently current state variants. |
 
-States represent current truth. Sending the same source, key, resource identity, and dimensions replaces the current value. Pulse records state history only for the initial value and real value changes; repeated equal snapshots update the current row without adding another transition. Source is part of current-state identity: different sources never overwrite each other. Late snapshots do not rewind the current value. Batch transitions are processed in timestamp order, with input order breaking ties; stored history preserves that order.
+States represent current truth. Sending the same source, key, resource identity, and dimensions replaces the current value. Pulse records state history only for the initial value and real value changes; repeated equal snapshots update the current row without adding another transition. Source is part of current-state identity: different sources never overwrite each other. Late snapshots do not rewind the current value. Batch states are processed in input order. Older timestamps change nothing; equal timestamps use later acceptance, with input order breaking ties inside a batch.
 
 ### Dimension values
 
@@ -294,7 +294,8 @@ Rules:
 - A key is scoped to one source.
 - The key may contain at most 200 characters.
 - Pulse remembers the key for at least 24 hours.
-- Repeating the same key with the same batch returns the original counts without writing again.
+- A completed key returns the original counts without writing again.
+- A pending key reruns the write with its original acceptance time and row identities.
 - Reusing the key with different content returns HTTP `409 Conflict`.
 - Do not deliberately reuse old keys.
 
@@ -302,20 +303,30 @@ Generate one deterministic key per logical batch and keep it unchanged across re
 
 `cld pulse ingest` does not currently expose an idempotency-key flag. Use it only when the caller can tolerate a deliberate retry strategy or when the batch's own metric timestamps make repeated metric samples harmless; repeated events are separate rows.
 
-## Limits and all-or-nothing behavior
+## Limits and write failures
 
 - At most 500 metrics, 500 events, and 500 states per request.
 - At most 1,500 total items per request.
 - The batch must not be empty.
 - Metric values and event numeric values must be finite.
-- Timestamps must parse as datetimes.
+- Timestamps must parse as datetimes and may be at most five minutes in the future. Metric timestamps must also be within raw retention.
 - Idempotency keys may not exceed 200 characters.
 - One metric may have at most 10,000 variants per base.
 - Event field objects must satisfy the key, byte, and nesting limits in [Classify event data](#classify-event-data).
 
 These limits apply to both source-token requests and `cld pulse ingest`.
 
-A batch either succeeds completely or writes nothing. Pulse does not report partial success.
+Validation and cap violations return 400 before measurement inserts. Base limits
+also cap total series, event kinds and state keys. An unavailable store returns
+503 and `Retry-After: 30`; retry an identical keyed batch after that delay. Its key
+stays pending until all writes finish. A failed unkeyed batch may already be partly
+stored; repeated events can duplicate. Use a key from the first attempt when a
+collector needs safe retries.
+
+The source-token route returns 200 for success, 403 without ingest permission,
+404 for an unknown source, 409 for key conflicts or an unwritable base, and 429
+for rate limiting. A future timestamp error names its collection, index and
+metric name, event kind or state key.
 
 Split larger collector output into bounded batches. Give each batch its own idempotency key.
 

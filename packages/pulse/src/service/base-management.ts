@@ -482,7 +482,6 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
     if (!authorized.ok) return authorized;
     await insertBaseStore(params.baseId, await readBasePolicy(), tx);
     await tx`UPDATE pulse.base_stores SET state='deleting',operation='delete',attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
-    await tx`UPDATE pulse.dashboards SET public_enabled=false,public_token_hash=NULL,public_token_encrypted=NULL WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases
       SET deletion_started_at = now(),

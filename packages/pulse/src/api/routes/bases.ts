@@ -17,17 +17,6 @@ const routes = new Hono<AuthContext>()
     throw error;
   })
   .get(
-    "/capabilities",
-    describeRoute({
-      tags: ["Pulse"],
-      summary: "Get Pulse deployment capabilities",
-      responses: {
-        200: jsonResponse(z.object({}), "Capabilities"),
-      },
-    }),
-    async (c) => respond(c, pulseService.capabilities()),
-  )
-  .get(
     "/bases",
     describeRoute({
       tags: ["Pulse"],

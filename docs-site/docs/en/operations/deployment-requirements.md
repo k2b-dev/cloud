@@ -564,12 +564,17 @@ compatibility; replacing an image does not restore migrated data.
 
 ### Prepare Pulse's new data store
 
-Pulse uses a configured ClickHouse connection and versioned Pulse
-Postgres migrations. A complete existing Pulse installation is adopted without
-replaying its baseline; older images must not start against ledger versions
-they do not recognize. An incomplete Alpha schema still requires an explicit
-reset and is never upgraded automatically.
+Starting this release **automatically deletes all old Pulse data** when its
+Postgres ledger contains version 1 or 2, or the pre-ledger installation marker
+exists. The reset removes bases, sources, source tokens and base grants, then
+installs control-data baseline 3. There is no confirmation, copy or compatibility
+path. Stop old Pulse replicas before starting the new image. Other applications'
+data stays. Back up first if old Pulse data must remain recoverable.
 
+A fresh or reset installation creates no Postgres extension. Measurements live
+in each new base's ClickHouse database; Postgres holds control data and write
+reservations. Subsequent starts preserve baseline 3. Older images refuse a newer
+ledger instead of rolling it back.
 Provision and [connect ClickHouse](#provide-clickhouse-for-pulse) before using
 Pulse. The rebuild is a hard cut: earlier dashboards, saved queries, data
 browsing, public dashboards, and the query and dashboard DSLs are removed.

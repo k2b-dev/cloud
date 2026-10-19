@@ -1,66 +1,62 @@
-import { expect } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
-import { testFor } from "../../../../scripts/fixtures/test-infra";
-import { newShortId } from "../lib/short-id";
-import { seedActiveBaseStore } from "./base-store.test-fixture";
-import { runRetentionBatch } from "./runtime";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
+import { installFixtureStore } from "../store/base-store.test-fixture";
+import { listAdminBases } from "./base-admin";
+import { createRetention } from "./retention";
+import { assertWrite, writeFixture } from "./write.test-fixture";
 
-const dbTest = testFor("database");
-
-dbTest(
-  "retention respects each base policy, lifecycle, sealed hours and sensitive fields",
-  async () => {
-    const bases = Array.from({ length: 4 }, () => crypto.randomUUID());
-    // The retained hour sits one hour past the one-day cutoff hour, so the test still holds when the wall clock
-    // crosses a full hour between setup and the second retention pass (the cutoff hour then moves up by one).
-    // The hour directly at the cutoff is inherently racy against the clock and is not asserted here.
-    const [times] = await sql`SELECT date_bin('1 hour',now()-interval '3 days','1970-01-01'::timestamptz) AS old,
-    date_bin('1 hour',now()-interval '1 day','1970-01-01'::timestamptz)+interval '1 hour' AS boundary,
-    now()-interval '2 hours' AS recent`;
+suiteFor("database", "clickhouse")("Pulse sealed raw partition retention", () => {
+  beforeAll(installFixtureStore, 30000);
+  test("#7 sealed hours reject writes, whole days require sealing, and lag reaches the admin contract", async () => {
+    const f = await writeFixture("retention"),
+      run = createRetention({ store: f.store });
+    const ts = "2026-10-14T10:05:00Z";
     try {
-      for (const [index, base] of bases.entries()) {
-        await sql`INSERT INTO pulse.bases(id,short_id,name,retention_days,rollup_retention_days,sensitive_retention_hours,
-        deletion_started_at,data_clear_started_at) VALUES(${base}::uuid,${newShortId()},'Retention proof',${index === 1 ? 30 : 1},
-        ${index === 1 ? 30 : 2},${index === 1 ? 48 : 1},${index === 2 ? new Date() : null},${index === 3 ? new Date() : null})`;
-        await seedActiveBaseStore(base);
-        const [metric] = await sql`INSERT INTO pulse.metric_defs(base_id,name) VALUES(${base}::uuid,'retention') RETURNING id`;
-        const [series] = await sql`INSERT INTO pulse.metric_series(base_id,metric_id,series_key,dimensions_hash)
-        VALUES(${base}::uuid,${metric.id}::uuid,'retention','retention') RETURNING id`;
-        await sql`INSERT INTO pulse.metric_hours(base_id,hour,state) VALUES(${base}::uuid,${times.old},'sealed'),
-        (${base}::uuid,${times.old}::timestamptz+interval '1 hour','dirty'),(${base}::uuid,${times.boundary},'sealed')`;
-        await sql`INSERT INTO pulse.metric_samples(base_id,series_id,ts,value) VALUES
-        (${base}::uuid,${series.id}::uuid,${times.old},1),
-        (${base}::uuid,${series.id}::uuid,${times.old}::timestamptz+interval '1 hour',2),
-        (${base}::uuid,${series.id}::uuid,${times.boundary},3)`;
-        await sql`INSERT INTO pulse.metric_rollups_hourly(base_id,series_id,bucket,sample_count,value_sum,value_min,value_max,last_value,last_ts)
-        VALUES(${base}::uuid,${series.id}::uuid,${times.old},1,1,1,1,1,${times.old})`;
-        await sql`INSERT INTO pulse.events(base_id,source_identity,dimensions_hash,kind,ts,sensitive) VALUES
-        (${base}::uuid,${base}::uuid,'test','retention.old',${times.old},'{"secret":true}'::jsonb),
-        (${base}::uuid,${base}::uuid,'test','retention.recent',${times.recent},'{"secret":true}'::jsonb),
-        (${base}::uuid,${base}::uuid,'test','retention.empty',${times.recent},'{}'::jsonb)`;
-      }
-      const result = await runRetentionBatch(bases[0]);
-      expect(result.metricSamples).toBe(1);
-      expect(result.metricRollups).toBe(1);
-      expect(result.events).toBe(1);
-      expect(result.sensitiveEvents).toBe(2);
-      // The global pass must retain the longer-lived base and skip both lifecycle states.
-      await runRetentionBatch();
-      for (const [index, base] of bases.entries()) {
-        const samples = await sql<{ value: number }[]>`SELECT value FROM pulse.metric_samples WHERE base_id=${base}::uuid ORDER BY ts`;
-        expect(samples.map((row) => Number(row.value))).toEqual(index === 0 ? [2, 3] : [1, 2, 3]);
-        const [rollups] = await sql`SELECT count(*)::int AS count FROM pulse.metric_rollups_hourly WHERE base_id=${base}::uuid`;
-        expect(rollups.count).toBe(index === 0 ? 0 : 1);
-        const events = await sql<
-          { kind: string; sensitive: Record<string, boolean> }[]
-        >`SELECT kind,sensitive FROM pulse.events WHERE base_id=${base}::uuid ORDER BY kind`;
-        expect(events.length).toBe(index === 0 ? 2 : 3);
-        expect(events.find((row) => row.kind === "retention.recent")?.sensitive).toEqual(index === 0 ? {} : { secret: true });
-        expect(events.find((row) => row.kind === "retention.empty")?.sensitive).toEqual({});
-      }
+      await f.stopMerges();
+      assertWrite(await f.write({ metrics: [{ name: "load", value: 1, ts }] }));
+      await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${f.base.id}::uuid`;
+      await sql`UPDATE pulse.metric_hours SET lease_until=${new Date("2026-10-14T12:00:00Z")},updated_at=${new Date("2026-10-14T10:00:00Z")} WHERE base_id=${f.base.id}::uuid`;
+      const blocked = await run(f.base.id);
+      expect(blocked.rawPartitions).toBe(0);
+      expect(Number((await f.read("samples", "count() AS n"))[0]?.n)).toBe(1);
+      const admin = await listAdminBases(adminFixtureIdentity(), { q: f.base.shortId }, f.clock);
+      expect(admin.items[0]?.rollupLag).toBe(true);
+      // Rollup completion alone is insufficient until the writer lease has expired.
+      await sql`UPDATE pulse.metric_hours SET state='clean',lease_until=${new Date(f.clock().getTime() + 60000)} WHERE base_id=${f.base.id}::uuid`;
+      expect((await run(f.base.id)).rawPartitions).toBe(0);
+      await sql`UPDATE pulse.metric_hours SET lease_until=${new Date(f.clock().getTime() - 1)} WHERE base_id=${f.base.id}::uuid`;
+      const dropped = await run(f.base.id);
+      expect(dropped.sealedHours).toBe(1);
+      expect(dropped.rawPartitions).toBe(1);
+      expect(Number((await f.read("samples", "count() AS n"))[0]?.n)).toBe(0);
+      // Widen retention again: the persisted seal still refuses a write even though the timestamp is now in range.
+      await sql`UPDATE pulse.bases SET retention_days=30 WHERE id=${f.base.id}::uuid`;
+      expect(await f.write({ metrics: [{ name: "load", value: 2, ts }] })).toMatchObject({
+        ok: false,
+        error: { status: 400, message: expect.stringContaining("sealed") },
+      });
+      expect((await listAdminBases(adminFixtureIdentity(), { q: f.base.shortId }, f.clock)).items[0]?.rollupLag).toBe(false);
     } finally {
-      for (const base of bases) await sql`DELETE FROM pulse.bases WHERE id=${base}::uuid`;
+      await f.cleanup();
     }
-  },
-  30_000,
-);
+  }, 60000);
+  test("registries and scrape history expire but current state keys remain", async () => {
+    const f = await writeFixture("registry-retention");
+    try {
+      assertWrite(
+        await f.write({ metrics: [{ name: "load", value: 1 }], events: [{ kind: "opened" }], states: [{ key: "door", value: true }] }),
+      );
+      await sql`UPDATE pulse.metric_series SET last_seen_at=${new Date("2025-01-01T00:00:00Z")},last_sample_at=${new Date("2025-01-01T00:00:00Z")} WHERE base_id=${f.base.id}::uuid`;
+      await sql`UPDATE pulse.event_kinds SET last_seen_at=${new Date("2025-01-01T00:00:00Z")} WHERE base_id=${f.base.id}::uuid`;
+      await sql`UPDATE pulse.state_keys SET first_seen_at=${new Date("2025-01-01T00:00:00Z")} WHERE base_id=${f.base.id}::uuid`;
+      const result = await createRetention({ store: f.store })(f.base.id);
+      expect(result.registryRecords).toBe(3); // series, definition, event kind
+      const [key] = await sql`SELECT state_key FROM pulse.state_keys WHERE base_id=${f.base.id}::uuid`;
+      expect(key?.state_key).toBe("door");
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
+});

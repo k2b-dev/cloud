@@ -28,6 +28,7 @@ const policy: PulsePolicy = {
   defaultLimits: limits,
 };
 const row = (id: string, name: string, store: Partial<AdminBaseRow["store"]> = {}): AdminBaseRow => ({
+  rollupLag: false,
   id,
   name,
   admins: ["Jana Berger"],

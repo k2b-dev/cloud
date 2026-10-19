@@ -2,6 +2,7 @@ import { expect, mock, spyOn, test } from "bun:test";
 import { BaseOperationSuperseded, baseStore } from "../store/base-store";
 import * as maintenance from "../store/maintenance";
 import { runCheckpointScan, runUsageScan } from "./base-maintenance-runtime";
+import * as sourceMirror from "./source-mirror";
 
 const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"] as const;
 const input = {
@@ -18,6 +19,7 @@ const nextBase = async ({ after }: Parameters<typeof runUsageScan>[0]) => {
 for (const kind of ["usage", "checkpoint"] as const)
   for (const superseded of [false, true])
     test(`${kind} advances one base per run after ${superseded ? "supersession" : "a store failure"}`, async () => {
+      const mirror = spyOn(sourceMirror, "mirrorPendingSources").mockResolvedValue(undefined);
       const visited: string[] = [];
       const warn = mock(() => {});
       const operation = spyOn(maintenance, kind === "usage" ? "measureBaseUsage" : "writeBaseCheckpoint").mockImplementation(
@@ -42,6 +44,7 @@ for (const kind of ["usage", "checkpoint"] as const)
         else expect(warn).toHaveBeenCalledWith(`Pulse base ${kind} failed`, { baseId: ids[0], errorCode: "STORE_UNREACHABLE" });
       } finally {
         operation.mockRestore();
+        mirror.mockRestore();
       }
     });
 

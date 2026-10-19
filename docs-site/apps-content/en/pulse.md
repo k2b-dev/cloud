@@ -108,11 +108,10 @@ contracts.
 
 ## Inspect Pulse from the terminal
 
-The native module can inspect a deployment before a script chooses a base:
+List accessible bases before choosing one:
 
 ```bash
 cld pulse list --json
-cld pulse capabilities --json
 ```
 
 Run `cld pulse help` for bases, sources, ingest, and access. Run `cld pulse <command> --help` before ingesting data or changing a
@@ -124,11 +123,10 @@ See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
 
-Pulse initializes its tables atomically in a fresh `pulse` schema. Later starts
-reuse that installation without changing its data. Existing Alpha schemas are
-rejected: there is no automatic upgrade or data repair. Before replacing a
-disposable Alpha installation, explicitly remove only its Pulse schema; the
-application never deletes it on startup.
+The ClickHouse rebuild automatically resets earlier Pulse installations: bases,
+sources, source tokens and base grants are deleted without confirmation. There
+is no data migration. See [Prepare Pulse's new data store](/en/docs/operations/deployment-requirements#prepare-pulses-new-data-store)
+before upgrading. Later starts preserve the new baseline.
 
 ## Server collection before deployment
 
@@ -152,21 +150,40 @@ Pulse records whether each metric hour is dirty, complete or sealed. The hourly
 worker resumes unfinished hours after downtime without a fixed lookback limit.
 Late samples and corrections inside raw retention mark the hour dirty again.
 
-Raw metric retention preserves the entire boundary hour. Older raw hours are
-removed only after successful rollup and sealing. Sealed hours reject later
-writes, including after an operator extends retention: deleted samples cannot be
-reconstructed. Metric ingestion rejects timestamps older than raw retention.
-Rollup retention also applies to full hours.
+Raw metric retention removes a whole daily partition only after every recorded
+hour of that day is sealed and the whole day is past retention. Sealed hours
+refuse later writes, including after retention is extended. Metric timestamps
+must be within raw retention; all telemetry refuses timestamps more than five
+minutes in the future.
 
-Hourly rollups retain sample count, sum, minimum, maximum and the last value with
-its actual timestamp.
+Hourly values retain sample count, sum, minimum, maximum and last value with its
+timestamp. Counter increases span gaps and resets; after raw data expires, the
+previous hourly value supplies the starting value. A correction also invalidates
+the hour containing the next sample, even across empty hours. Pending writes hold
+a ten-minute lease; the worker recomputes one expired dirty hour per run.
 
-Retention also removes expired scrape history and unreferenced metric series,
-definitions, resources and field metadata. Current state persists until replaced
-or explicitly cleared, independently of history retention. A resource or field
-still needed by current state or retained observations remains in its catalog.
-Continuously creating new state identities therefore requires an explicit
-operator lifecycle; raw retention does not bound that inventory.
+Administration → Pulse → Bases shows **Hourly values are lagging** when expired
+dirty hours are over three hours old or sealing delays raw partition removal
+by more than a day. Check the rollup and retention jobs before discarding data.
+
+Retention removes expired scrape history, request keys and unused series,
+metric definitions, event kinds and state keys. Keys with a current state remain;
+current states do not expire.
+
+## Retry an ingest request
+
+Give each source-token batch an `Idempotency-Key` from its first attempt. A
+successful retry returns the stored `{ metrics, events, states }` counts for 24
+hours. An interrupted request remains pending; retry its identical JSON body
+with the same key. Pulse retains its original acceptance time and row identities.
+A key reused with different content returns 409.
+
+Invalid input, future timestamps, sealed hours and registry caps return 400;
+missing ingest permission returns 403; an unknown source returns 404; a disabled
+source, busy/write-blocked base or key conflict returns 409; rate limiting returns
+429. An unavailable store returns 503 with `Retry-After: 30`. Wait and retry the
+same keyed batch. A failed request without a key may already be partly stored;
+repeated events can duplicate. Validation failures write no measurements.
 
 ## Website analytics from your backend
 

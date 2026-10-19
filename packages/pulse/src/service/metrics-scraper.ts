@@ -3,6 +3,7 @@ import { decryptSecret, logger } from "@k2b/cloud/services";
 import { sql, type TransactionSQL } from "bun";
 import type { MetricType, PulseIngestBatch, PulseMetric } from "../contracts";
 import { requireBaseWritable } from "./access-control";
+import type { IngestResult } from "./ingest-writer";
 import { type MetricsHttpDeps, requestMetrics } from "./metrics-http";
 import { baseScrapeAllowlist } from "./scrape-target";
 
@@ -18,23 +19,24 @@ const log = logger("pulse:metrics-scraper");
 type IngestCounts = { metrics: number; events: number; states: number };
 type MetricsScraperDeps = {
   database?: typeof sql;
+  clock?: () => Date;
   http?: MetricsHttpDeps;
-  ingestBatch: (params: {
-    baseId: string;
-    sourceId: string;
-    batch: PulseIngestBatch;
-    transaction: TransactionSQL;
-  }) => Promise<Result<IngestCounts>>;
+  ingestBatch: (params: { baseId: string; sourceId: string; batch: PulseIngestBatch }) => Promise<IngestResult>;
 };
 type MetricsSourceConfig = {
   endpointUrl: string;
   bearerTokenEncrypted: string | null;
 };
 
-const markSourceError = async (params: { sourceId: string; message: string | null }, db: TransactionSQL): Promise<void> => {
+const markSourceError = async (
+  params: { sourceId: string; message: string | null },
+  db: TransactionSQL,
+  clock: () => Date = () => new Date(),
+): Promise<void> => {
+  const now = clock();
   await db`
     UPDATE pulse.sources
-    SET last_error = ${params.message}, last_error_at = CASE WHEN ${params.message}::text IS NULL THEN NULL ELSE now() END, updated_at = now()
+    SET last_error = ${params.message}, last_error_at = CASE WHEN ${params.message}::text IS NULL THEN NULL ELSE ${now}::timestamptz END, updated_at = ${now}
     WHERE id = ${params.sourceId}::uuid
   `;
 };
@@ -56,6 +58,7 @@ const logSourceScrapeRecordFailure = (params: { baseId: string; sourceId: string
 const recordFailedSourceScrape = async (
   params: { baseId: string; sourceId: string; startedAt: Date; message: string },
   db: TransactionSQL,
+  clock: () => Date = () => new Date(),
 ): Promise<void> => {
   await recordSourceScrape(
     {
@@ -66,8 +69,9 @@ const recordFailedSourceScrape = async (
       errorMessage: params.message,
     },
     db,
+    clock,
   );
-  await markSourceError({ sourceId: params.sourceId, message: params.message }, db);
+  await markSourceError({ sourceId: params.sourceId, message: params.message }, db, clock);
 };
 
 const recordIngestResult = async (
@@ -75,10 +79,11 @@ const recordIngestResult = async (
     baseId: string;
     sourceId: string;
     startedAt: Date;
-    result: Result<IngestCounts>;
+    result: IngestResult;
     warning?: string | null;
   },
   db: TransactionSQL,
+  clock: () => Date = () => new Date(),
 ): Promise<void> => {
   if (params.result.ok) {
     await recordSourceScrape(
@@ -91,8 +96,9 @@ const recordIngestResult = async (
         errorMessage: params.warning,
       },
       db,
+      clock,
     );
-    await markSourceError({ sourceId: params.sourceId, message: params.warning ?? null }, db);
+    await markSourceError({ sourceId: params.sourceId, message: params.warning ?? null }, db, clock);
     return;
   }
   await recordFailedSourceScrape(
@@ -103,6 +109,7 @@ const recordIngestResult = async (
       message: params.result.error.message,
     },
     db,
+    clock,
   );
 };
 
@@ -116,8 +123,9 @@ const recordSourceScrape = async (
     errorMessage?: string | null;
   },
   db: TransactionSQL,
+  clock: () => Date = () => new Date(),
 ): Promise<void> => {
-  const finishedAt = new Date();
+  const finishedAt = clock();
   const durationMs = Math.max(0, finishedAt.getTime() - params.startedAt.getTime());
   const counts = scrapeCounts(params.counts);
   try {
@@ -328,16 +336,17 @@ const scrapeSource = async (
   deps: MetricsScraperDeps,
   db: TransactionSQL,
 ): Promise<Result<IngestCounts>> => {
-  const startedAt = new Date();
+  const clock = deps.clock ?? (() => new Date());
+  const startedAt = clock();
   const source = await loadMetricsSourceConfig(params, db);
   if (!source) {
     const message = "Metrics source is missing or disabled";
-    await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message }, db);
+    await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message }, db, clock);
     return fail(err.notFound("Metrics source"));
   }
 
   const slot = new Date(params.slotTs ?? Math.floor(startedAt.getTime() / 60_000) * 60_000);
-  await db`UPDATE pulse.sources SET last_scrape_slot_at = GREATEST(last_scrape_slot_at, ${slot}) WHERE id = ${params.sourceId}::uuid`;
+
   // Endpoint-side failures (unreachable, timeout, HTTP status, unparseable
   // body) are scrape outcomes: recorded on the source and returned as `fail`.
   let metricsResult: Result<ParsedMetrics>;
@@ -350,18 +359,21 @@ const scrapeSource = async (
     metricsResult = fail(err.internal(metricsScrapeErrorMessage(scrapeError)));
   }
   if (!metricsResult.ok) {
+    await db`UPDATE pulse.sources SET last_scrape_slot_at = GREATEST(last_scrape_slot_at, ${slot}) WHERE id = ${params.sourceId}::uuid`;
     await recordFailedSourceScrape(
       { baseId: params.baseId, sourceId: params.sourceId, startedAt, message: metricsResult.error.message },
       db,
+      clock,
     );
     return fail(metricsResult.error);
   }
   const metrics = metricsResult.data.metrics.map((metric) => ({ ...metric, ts: startedAt.toISOString() }));
-  const result = await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics }, transaction: db });
+  const result = await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics } });
   // The ingest writer turns database failures into internal errors. Those are
   // infrastructure, not a property of the endpoint: throw so the job retries
   // instead of recording them as a scrape outcome.
   if (!result.ok && result.error.status >= 500) throw new Error(`Metrics ingest failed: ${result.error.message}`);
+  await db`UPDATE pulse.sources SET last_scrape_slot_at = GREATEST(last_scrape_slot_at, ${slot}) WHERE id = ${params.sourceId}::uuid`;
   await recordIngestResult(
     {
       baseId: params.baseId,
@@ -373,8 +385,11 @@ const scrapeSource = async (
         : null,
     },
     db,
+    clock,
   );
-  return result;
+  return result.ok
+    ? ok(result.data)
+    : fail({ code: result.error.code, message: result.error.message, status: result.error.status === 503 ? 500 : result.error.status });
 };
 
 export const runMetricsSourceScrape = async (

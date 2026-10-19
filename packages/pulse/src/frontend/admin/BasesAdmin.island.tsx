@@ -670,12 +670,15 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
               const badge = () => storeBadge(t(), row.store);
               if (col.id === "base")
                 return (
-                  <span class="flex min-w-0 items-center gap-2">
+                  <span class="flex min-w-0 flex-wrap items-center gap-2">
                     <span class="truncate font-medium text-primary">{row.name}</span>
                     <Show when={badge()}>
                       {(value) => (
                         <StatusBadge tone={value().tone} variant="text" label={value().label} title={row.store.errorCode ?? undefined} />
                       )}
+                    </Show>
+                    <Show when={row.rollupLag}>
+                      <StatusBadge tone="warning" variant="text" label={t().rollupLag} />
                     </Show>
                   </span>
                 );

@@ -1,212 +1,188 @@
-import { beforeAll, describe, expect, test } from "bun:test";
-import type { ServiceAccount } from "@k2b/cloud/contracts";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
-import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import type { PulseResourceRef } from "../contracts";
-import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
-import { seedActiveBaseStore } from "./base-store.test-fixture";
-import { ingestBatch, ingestByApiKey } from "./ingest-writer";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { installFixtureStore } from "../store/base-store.test-fixture";
+import { deterministicRowId } from "./ingest-bulk";
+import { createIngestWriter } from "./ingest-writer";
+import { assertWrite, writeFixture } from "./write.test-fixture";
 
-const enabled = testInfra.database !== undefined;
-const databaseTest = enabled ? test : test.skip;
-beforeAll(async () => {
-  if (enabled) await migrate();
-}, 30_000);
-
-const fixture = async () => {
-  const baseId = crypto.randomUUID();
-  const sources: [string, string] = [crypto.randomUUID(), crypto.randomUUID()];
-  await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Identity test')`;
-  await seedActiveBaseStore(baseId);
-  for (const sourceId of sources) {
-    await sql`INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
-      VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'http_ingest', 'Test source')`;
-  }
-  return { baseId, sources };
-};
-
-describe("Pulse canonical ingest", () => {
-  databaseTest(
-    "isolates resources and sources, and keeps identity through labels and source deletion",
-    async () => {
-      const { baseId, sources } = await fixture();
-      const resources: (PulseResourceRef | null)[] = [
-        { type: "host", id: "same" },
-        { type: "service", id: "same" },
-        { type: "host", id: "other" },
-        null,
-      ];
+suiteFor("database", "clickhouse")("Pulse ClickHouse write identity", () => {
+  beforeAll(installFixtureStore, 30000);
+  test("#1 abort between inserts leaves pending; retry is one clean run, conflicting body is 409", async () => {
+    const f = await writeFixture("retry"),
+      clean = await writeFixture("retry-clean");
+    try {
+      await f.stopMerges();
       const batch = {
-        metrics: resources.map((resource) => ({ name: "load", value: 1, resource, dimensions: { region: "eu" } })),
-        states: resources.map((resource) => ({ key: "online", value: true, resource, dimensions: { region: "eu" } })),
-      };
-      try {
-        for (const sourceId of sources) expect((await ingestBatch({ baseId, sourceId, batch })).ok).toBe(true);
-        const [counts] = await sql`SELECT
-        (SELECT count(*)::int FROM pulse.metric_series WHERE base_id=${baseId}::uuid) AS metrics,
-        (SELECT count(*)::int FROM pulse.states_current WHERE base_id=${baseId}::uuid) AS states`;
-        expect(counts).toMatchObject({ metrics: 8, states: 8 });
-        expect(
-          (
-            await ingestBatch({
-              baseId,
-              sourceId: sources[0],
-              batch: {
-                metrics: [
-                  { name: "load", value: 2, resource: { type: "host", id: "same", label: "Renamed" }, dimensions: { region: "eu" } },
-                ],
-              },
-            })
-          ).ok,
-        ).toBe(true);
-        await sql`DELETE FROM pulse.sources WHERE base_id=${baseId}::uuid`;
-        const rows = await sql<{ variant_key: string }[]>`SELECT variant_key FROM pulse.states_current WHERE base_id=${baseId}::uuid`;
-        expect(new Set(rows.map((row) => row.variant_key)).size).toBe(8);
-        const [series] = await sql`SELECT count(*)::int AS count FROM pulse.metric_series WHERE base_id=${baseId}::uuid`;
-        expect(series?.count).toBe(8);
-      } finally {
-        await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
-      }
-    },
-    30_000,
-  );
-
-  databaseTest(
-    "round-trips JSON primitives and records every ordered batch transition",
-    async () => {
-      const { baseId, sources } = await fixture();
-      const values = ["123", "true", "null", "plain", 123, true, null];
-      try {
-        const result = await ingestBatch({
-          baseId,
-          sourceId: sources[0],
-          batch: {
-            states: values.map((value, index) => ({ key: "status", value, ts: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString() })),
-            events: [{ kind: "page.viewed", attributes: { numeric: "123", boolean: "true", null: "null" }, payload: { count: 123 } }],
+        metrics: [{ name: "load", value: 2 }],
+        events: [
+          {
+            kind: "opened",
+            dimensions: { zone: "eu" },
+            attributes: { detail: "ok" },
+            sensitive: { secret: "hidden" },
+            payload: { raw: 1 },
           },
-        });
-        expect(result.ok).toBe(true);
-        const changes = await sql<
-          { value: unknown }[]
-        >`SELECT value FROM pulse.state_changes WHERE base_id=${baseId}::uuid ORDER BY changed_at`;
-        expect(changes.map((row) => row.value)).toEqual(values);
-        const [event] = await sql`SELECT attributes,payload FROM pulse.events WHERE base_id=${baseId}::uuid`;
-        expect(event?.attributes).toEqual({ numeric: "123", boolean: "true", null: "null" });
-        expect(event?.payload).toEqual({ count: 123 });
-        for (const value of values) {
-          expect((await ingestBatch({ baseId, sourceId: sources[0], batch: { states: [{ key: "current", value }] } })).ok).toBe(true);
-          const [row] = await sql<
-            { value: unknown }[]
-          >`SELECT value FROM pulse.states_current WHERE base_id=${baseId}::uuid AND state_key='current'`;
-          if (!row) throw Error("missing state");
-          expect(row.value).toEqual(value);
+        ],
+        states: [{ key: "door", value: true }],
+      };
+      assertWrite(await clean.write(batch, "clean"));
+      f.failInsert(3); // _series and _samples succeeded; _events fails.
+      expect(await f.write(batch, "fixed")).toMatchObject({ ok: false, error: { status: 503, retryAfter: 30 } });
+      const [key] =
+        await sql`SELECT state,accepted_at FROM pulse.ingest_idempotency WHERE source_id=${f.sourceId}::uuid AND idempotency_key='fixed'`;
+      expect(key?.state).toBe("pending");
+      expect(key?.accepted_at.toISOString()).toBe(f.clock().toISOString());
+      f.recover();
+      f.setTime("2026-10-17T12:01:00Z");
+      assertWrite(await f.write(batch, "fixed"));
+      expect(
+        await f
+          .read("samples", "value,toUnixTimestamp64Milli(ts) AS ts")
+          .then((rows) => rows.map((r) => ({ value: r.value, ts: Number(r.ts) }))),
+      ).toEqual([{ value: 2, ts: Date.parse("2026-10-17T12:00:00Z") }]);
+      expect(await f.read("events", "kind,dimensions,attributes")).toEqual([
+        { kind: "opened", dimensions: '{"zone":"eu"}', attributes: '{"detail":"ok"}' },
+      ]);
+      expect(await f.read("states", "value")).toEqual([{ value: "true" }]);
+      for (const [view, columns] of [
+        ["samples", "ts,value"],
+        ["events", "ts,kind,dimensions,attributes"],
+        ["states", "state_key,value,dimensions,updated_at"],
+        ["_state_changes", "state_key,value,dimensions,changed_at"],
+      ] as const)
+        expect(await f.read(view, columns)).toEqual(await clean.read(view, columns));
+      const [hidden] = await f.read("_events", "sensitive,payload");
+      expect(hidden).toEqual({ sensitive: '{"secret":"hidden"}', payload: '{"raw":1}' });
+      f.failInsert(1); // done response cannot attempt another insert.
+      expect(await f.write(batch, "fixed")).toEqual({ ok: true, data: { metrics: 1, events: 1, states: 1 } });
+      expect(await f.write({ ...batch, events: [{ kind: "other" }] }, "fixed")).toMatchObject({ ok: false, error: { status: 409 } });
+      f.failInsert(2);
+      expect(await f.write({ metrics: [{ name: "new", value: 3 }], events: [{ kind: "new" }] })).toMatchObject({
+        ok: false,
+        error: { status: 503, message: expect.stringContaining("batch may be partly stored") },
+      });
+    } finally {
+      await f.cleanup();
+      await clean.cleanup();
+    }
+  }, 60000);
+  test("#2 another instance's correction is immediately visible with merges stopped", async () => {
+    const f = await writeFixture("correction");
+    try {
+      await f.stopMerges();
+      const ts = "2026-10-17T10:05:00Z";
+      assertWrite(await f.write({ metrics: [{ name: "load", value: 1, ts }] }, "first"));
+      f.setTime("2026-10-17T12:00:00.001Z");
+      assertWrite(await f.writeB({ metrics: [{ name: "load", value: 9, ts }] }, "corrected"));
+      expect(await f.read("samples", "value")).toEqual([{ value: 9 }]);
+      expect(Number((await f.read("_samples", "count() AS n"))[0]?.n)).toBe(2);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
+  test("another source can finish writing while a ClickHouse insert is in flight", async () => {
+    const f = await writeFixture("parallel-sources");
+    const sourceB = deterministicRowId(f.sourceId, "parallel", "source", 1);
+    let resume: (() => void) | undefined, entered: (() => void) | undefined;
+    const paused = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const query = f.store.query;
+    let write: ReturnType<typeof f.write> | undefined;
+    let other: ReturnType<typeof f.write> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name)
+        VALUES(${sourceB}::uuid,${sourceB.replaceAll("-", "").slice(0, 6)},${f.base.id}::uuid,'http_ingest','Parallel source')`;
+      f.store.query = async (statement, params) => {
+        if (statement.startsWith("INSERT INTO") && statement.includes("._samples")) {
+          entered?.();
+          await released;
         }
-        const [before] = await sql`SELECT count(*)::int AS count FROM pulse.state_changes WHERE base_id=${baseId}::uuid`;
-        expect(
-          (
-            await ingestBatch({
-              baseId,
-              sourceId: sources[0],
-              batch: { states: [{ key: "status", value: "stale", ts: "2025-01-01T00:00:00Z" }] },
-            })
-          ).ok,
-        ).toBe(true);
-        const [after] = await sql`SELECT count(*)::int AS count FROM pulse.state_changes WHERE base_id=${baseId}::uuid`;
-        expect(after?.count).toBe(before?.count);
-      } finally {
-        await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
-      }
-    },
-    30_000,
-  );
-
-  databaseTest(
-    "rejects a disabled, foreign, missing, or clearing source scope without partial writes",
-    async () => {
-      const first = await fixture();
-      const second = await fixture();
-      try {
-        await sql`UPDATE pulse.sources SET enabled=false WHERE id=${first.sources[0]}::uuid`;
-        const batch = { metrics: [{ name: "load", value: 1 }], events: [{ kind: "view" }], states: [{ key: "online", value: true }] };
-        for (const sourceId of [first.sources[0], second.sources[0], ""]) {
-          expect((await ingestBatch({ baseId: first.baseId, sourceId, batch })).ok).toBe(false);
+        return query(statement, params);
+      };
+      write = f.write({ metrics: [{ name: "load", value: 1 }] });
+      await Promise.race([
+        paused,
+        write.then(() => {
+          throw new Error("Write finished before sample insert");
+        }),
+      ]);
+      other = createIngestWriter({ store: f.other, clock: f.clock })({
+        baseId: f.base.id,
+        sourceId: sourceB,
+        batch: { metrics: [{ name: "load", value: 2 }] },
+      });
+      assertWrite(
+        await Promise.race([
+          other,
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error("Independent source was blocked")), 5000);
+          }),
+        ]),
+      );
+      resume?.();
+      assertWrite(await write);
+      expect(await f.read("samples", "value", "ORDER BY value")).toEqual([{ value: 1 }, { value: 2 }]);
+    } finally {
+      clearTimeout(timeout);
+      resume?.();
+      await Promise.allSettled([write, other]);
+      await f.cleanup();
+    }
+  }, 60000);
+  test("T2 holds lifecycle locks across inserts; later writes see clear/delete state", async () => {
+    const f = await writeFixture("write-lifecycle");
+    let resume: (() => void) | undefined, entered: (() => void) | undefined;
+    const paused = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const query = f.store.query;
+    let write: ReturnType<typeof f.write> | undefined;
+    try {
+      f.store.query = async (statement, params) => {
+        if (statement.startsWith("INSERT INTO") && statement.includes("._samples")) {
+          entered?.();
+          await released;
         }
-        await sql`UPDATE pulse.base_stores SET state='clearing',operation='clear' WHERE base_id=${first.baseId}::uuid`;
-        expect((await ingestBatch({ baseId: first.baseId, sourceId: first.sources[1], batch })).ok).toBe(false);
-        const [row] = await sql`SELECT count(*)::int AS count FROM pulse.metric_defs WHERE base_id=${first.baseId}::uuid`;
-        expect(row?.count).toBe(0);
-      } finally {
-        await sql`DELETE FROM pulse.bases WHERE id=${first.baseId}::uuid OR id=${second.baseId}::uuid`;
+        return query(statement, params);
+      };
+      write = f.write({ metrics: [{ name: "load", value: 1 }] }, "in-flight");
+      // A failed write must also unblock this rendezvous so the test fails visibly.
+      await Promise.race([
+        paused,
+        write.then(() => {
+          throw new Error("Write finished before sample insert");
+        }),
+      ]);
+      for (const table of ["bases", "base_stores"] as const) {
+        await expect(
+          sql.begin(async (tx) => {
+            if (table === "bases") await tx`SELECT id FROM pulse.bases WHERE id=${f.base.id}::uuid FOR UPDATE NOWAIT`;
+            else await tx`SELECT base_id FROM pulse.base_stores WHERE base_id=${f.base.id}::uuid FOR UPDATE NOWAIT`;
+          }),
+        ).rejects.toThrow("could not obtain lock");
       }
-    },
-    30_000,
-  );
-  databaseTest(
-    "serializes concurrent idempotent requests and replays without extra writes",
-    async () => {
-      const { baseId, sources } = await fixture();
-      try {
-        const [source] = await sql`SELECT short_id FROM pulse.sources WHERE id=${sources[0]}::uuid`;
-        const serviceAccount: ServiceAccount = {
-          id: crypto.randomUUID(),
-          name: "Test source",
-          kind: "resource_bound",
-          status: "active",
-          delegatedUserId: null,
-          appId: "pulse",
-          resourceType: "pulse_source",
-          resourceId: source!.short_id,
-          createdBy: null,
-          createdAt: new Date().toISOString(),
-        };
-        const batch = { events: [{ kind: "page.viewed" }] };
-        const send = (key: string) => ingestByApiKey({ serviceAccount, scopes: ["pulse:ingest"], batch, idempotencyKey: key });
-        const keys = Array.from({ length: 8 }, (_, i) => `request-${i}`);
-        const first = await Promise.all(keys.map(send));
-        expect(first.every((result) => result.ok)).toBe(true);
-        const replay = await Promise.all([...keys, ...keys].map(send));
-        expect(replay.every((result) => result.ok)).toBe(true);
-        const [count] = await sql`SELECT count(*)::int AS count FROM pulse.events WHERE base_id=${baseId}::uuid`;
-        expect(count?.count).toBe(8);
-        const conflict = await ingestByApiKey({
-          serviceAccount,
-          scopes: ["pulse:ingest"],
-          batch: { events: [{ kind: "different" }] },
-          idempotencyKey: keys[0],
+      resume?.();
+      assertWrite(await write);
+      for (const state of ["clearing", "deleting"] as const) {
+        await sql.begin(async (tx) => {
+          await tx`SELECT id FROM pulse.bases WHERE id=${f.base.id}::uuid FOR UPDATE`;
+          await tx`UPDATE pulse.base_stores SET state=${state},operation=${state === "clearing" ? "clear" : "delete"} WHERE base_id=${f.base.id}::uuid`;
         });
-        expect(conflict).toMatchObject({ ok: false, error: { status: 409 } });
-        await sql`UPDATE pulse.base_stores SET state='failed',operation='clear' WHERE base_id=${baseId}::uuid`;
-        expect((await send(keys[0]!)).ok).toBe(false);
-      } finally {
-        await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
+        expect(await f.write({ events: [{ kind: "refused" }] })).toMatchObject({ ok: false, error: { status: 409 } });
       }
-    },
-    30_000,
-  );
-
-  databaseTest(
-    "preserves the order of equal-timestamp state transitions",
-    async () => {
-      const { baseId, sources } = await fixture();
-      try {
-        expect(
-          (
-            await ingestBatch({
-              baseId,
-              sourceId: sources[0],
-              batch: { states: [false, true, false].map((value) => ({ key: "online", value, ts: "2026-01-01T00:00:00Z" })) },
-            })
-          ).ok,
-        ).toBe(true);
-        const rows = await sql<
-          { value: boolean }[]
-        >`SELECT value FROM pulse.state_changes WHERE base_id=${baseId}::uuid ORDER BY changed_at, sequence`;
-        expect(rows.map((row) => row.value)).toEqual([false, true, false]);
-      } finally {
-        await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
-      }
-    },
-    30_000,
-  );
+    } finally {
+      resume?.();
+      await write;
+      await f.cleanup();
+    }
+  }, 60000);
 });

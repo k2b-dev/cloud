@@ -525,3 +525,9 @@ describe("Pulse base administration CLI", () => {
     await expect(pulseCli.run(ctx)).rejects.toThrow("ACCESS_DENIED: A Cloud admin");
   });
 });
+
+test("the removed deployment snapshot command makes no API call", async () => {
+  const { ctx, calls } = createContext(["capabilities"]);
+  await expect(pulseCli.run(ctx)).rejects.toThrow("Unknown pulse command");
+  expect(calls).toHaveLength(0);
+});

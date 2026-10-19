@@ -77,3 +77,35 @@ export const measureBaseUsage = async (baseId: string, store = baseStore) => {
     await db`UPDATE pulse.base_stores SET usage_bytes=${Number(size?.bytes ?? 0)},usage_rows=${Number(size?.rows ?? 0)},usage_measured_at=${store.clock()} WHERE base_id=${baseId}::uuid`;
   });
 };
+
+/** Caller holds the exclusive base row lock, excluding ingest and rollups during the drop. */
+export const dropExpiredRawPartition = async ({
+  baseId,
+  databaseName,
+  cutoff,
+  store,
+  db,
+}: {
+  baseId: string;
+  databaseName: string;
+  cutoff: Date;
+  store: Pick<typeof baseStore, "prefix" | "query">;
+  db: typeof sql;
+}): Promise<boolean> => {
+  const partitions = await store.query(
+    `SELECT partition_id FROM system.parts WHERE active AND database={database:String} AND table='_samples'
+    AND partition_id<formatDateTime(fromUnixTimestamp64Milli({cutoff:Int64}),'%Y%m%d','UTC') GROUP BY partition_id ORDER BY partition_id LIMIT 1`,
+    { database: databaseName, cutoff: cutoff.getTime() },
+  );
+  const part = partitions[0]?.partition_id;
+  if (typeof part !== "string") return false;
+  if (!/^\d{8}$/.test(part)) throw new Error("Unexpected raw partition identity");
+  const day = new Date(`${part.slice(0, 4)}-${part.slice(4, 6)}-${part.slice(6, 8)}T00:00:00Z`);
+  const end = new Date(day.getTime() + 86_400_000);
+  if (end > cutoff) return false;
+  const [unsealed] =
+    await db`SELECT 1 FROM pulse.metric_hours WHERE base_id=${baseId}::uuid AND hour>=${day} AND hour<${end} AND state<>'sealed' LIMIT 1`;
+  if (unsealed) return false;
+  await store.query(`ALTER TABLE ${assertStoreName(databaseName, store.prefix)}._samples DROP PARTITION ID '${part}'`);
+  return true;
+};

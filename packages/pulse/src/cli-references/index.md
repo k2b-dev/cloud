@@ -71,11 +71,7 @@ Use a separate base when access, retention, ownership, or reporting context shou
 
 Raw retention controls how long detailed metrics, events, and state changes remain available. Rollup retention controls how long long-range metric summaries remain available. Sensitive retention clears only the `sensitive` object from older events; the non-sensitive event remains until raw retention expires.
 
-`capabilities` returns the deployment capability snapshot, currently an empty object:
 
-```bash
-cld pulse capabilities --json
-```
 
 Capability output is informational and does not change the selected base or Cloud instance.
 
@@ -228,7 +224,6 @@ Run `cld pulse <command> --help` before using unfamiliar flags or positional arg
 
 | Area | Commands |
 | --- | --- |
-| Deployment | `capabilities` |
 | Bases | `list`, `use`, `current`, `get`, `create`, `update`, `delete`, `clear-data` |
 | Sources | `sources list`, `sources create`, `sources update`, `sources delete`, `sources scrape`, `sources scrapes` |
 | Ingest credentials | `source-tokens list`, `source-tokens create`, `source-tokens revoke` |
@@ -242,7 +237,6 @@ Run `cld pulse <command> --help` before using unfamiliar flags or positional arg
 Bases:
 
 ```text
-cld pulse capabilities
 cld pulse list
 cld pulse use <base>
 cld pulse current

@@ -1,5 +1,14 @@
-import { type AuthContext, auth, getLocale, jsonResponse, respond, v } from "@k2b/cloud/server";
-import { Hono } from "hono";
+import {
+  type AuthContext,
+  auth,
+  getLocale,
+  jsonResponse,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  respond,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
+import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { pulseService } from "../../service";
@@ -27,6 +36,16 @@ const sourceInputErrorResponse = jsonResponse(
   "Invalid input, including PULSE_SCRAPE_TARGET_BLOCKED for a disallowed internal target",
 );
 
+// Source mutations attempt one synchronous mirror insert after the control transaction commits.
+const mirrorTimeout: MiddlewareHandler<AuthContext> = async (c, next) => {
+  setRequestTimeout(c, 60);
+  try {
+    await next();
+  } finally {
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+  }
+};
+
 const routes = new Hono<AuthContext>()
   .get(
     "/bases/:baseId/sources",
@@ -46,6 +65,7 @@ const routes = new Hono<AuthContext>()
   )
   .post(
     "/bases/:baseId/sources",
+    mirrorTimeout,
     describeRoute({
       tags: ["Pulse"],
       summary: "Create a Pulse source",
@@ -179,6 +199,7 @@ const routes = new Hono<AuthContext>()
   })
   .patch(
     "/bases/:baseId/sources/:sourceId",
+    mirrorTimeout,
     describeRoute({
       tags: ["Pulse"],
       summary: "Update a Pulse source",
@@ -207,7 +228,7 @@ const routes = new Hono<AuthContext>()
       );
     },
   )
-  .delete("/bases/:baseId/sources/:sourceId", async (c) => {
+  .delete("/bases/:baseId/sources/:sourceId", mirrorTimeout, async (c) => {
     const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
     if (!baseId.ok) return respond(c, baseId.result);
     const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);

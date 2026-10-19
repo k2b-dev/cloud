@@ -97,5 +97,3 @@ export type PulseIngestBatch = {
   events?: PulseEvent[];
   states?: PulseState[];
 };
-
-export type PulseCapabilitySnapshot = Record<string, never>;

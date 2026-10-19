@@ -14,7 +14,7 @@ export const resolvePublicId = async (table: PulsePublicResourceTable, shortId: 
       rows = await sql`SELECT id FROM pulse.bases WHERE short_id = ${shortId}`;
       break;
     case "sources":
-      rows = await sql`SELECT id FROM pulse.sources WHERE short_id = ${shortId}`;
+      rows = await sql`SELECT id FROM pulse.sources WHERE NOT deleted AND short_id = ${shortId}`;
       break;
   }
   return rows[0]?.id ?? null;
@@ -25,7 +25,7 @@ export const resolveBasePublicId = async (table: PulseBaseResourceTable, baseId:
   let rows: { id: string }[];
   switch (table) {
     case "sources":
-      rows = await sql`SELECT id FROM pulse.sources WHERE base_id = ${baseId}::uuid AND short_id = ${shortId}`;
+      rows = await sql`SELECT id FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid AND short_id = ${shortId}`;
       break;
   }
   return rows[0]?.id ?? null;
@@ -44,7 +44,7 @@ export const shortIds = async (
       rows = await sql`SELECT id, short_id FROM pulse.bases WHERE id = ANY(${array}::uuid[])`;
       break;
     case "sources":
-      rows = await sql`SELECT id, short_id FROM pulse.sources WHERE id = ANY(${array}::uuid[])`;
+      rows = await sql`SELECT id, short_id FROM pulse.sources WHERE NOT deleted AND id = ANY(${array}::uuid[])`;
       break;
   }
   return new Map(rows.map((row) => [row.id, row.short_id]));

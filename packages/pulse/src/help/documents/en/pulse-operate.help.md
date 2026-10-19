@@ -31,9 +31,10 @@ passwords only with `--password-file` or `--password-stdin`. Without this connec
 ## Send data with HTTP ingest {icon="point"}
 
 :::reference
-- **Requests are all or nothing:** Pulse rejects a request that it cannot accept completely, instead of keeping only part of its data. Split a rejected large request and retry each part separately.
+- **Write failures:** Invalid requests write no measurements. A store outage returns 503 with a retry delay; a request without a key may already be partly stored. Use an `Idempotency-Key` from the first attempt and retry the identical batch with that key.
 - **API keys belong to one source:** Pulse assigns received signals to the source that owns the API key. A source value sent with the data does not change that assignment.
 - **Retry-safe requests:** Send the same `Idempotency-Key` when you retry one batch. Pulse returns the original result for at least 24 hours and rejects reuse with different content.
+- **Timestamps:** Metrics, events and states may be at most five minutes in the future. Metric timestamps must also be within the base's raw retention.
 - **Keep metric variants manageable:** A metric can have up to 10,000 variants in a base. Move request IDs, sessions, full URLs, IPs, and other unique values to events instead of metric dimensions.
 :::
 
@@ -64,3 +65,7 @@ the block is active, you cannot clear the base. After
 restoring matching backups, a Cloud administrator chooses **Recheck**. **Recreate**
 discards measurements and starts empty. Other Cloud apps keep working
 when Pulse is not configured.
+
+**Hourly values are lagging** in Administration → Pulse → Bases means rollups or
+sealing are delayed. Raw daily partitions stay until their hours are sealed;
+check the rollup and retention jobs before clearing data.

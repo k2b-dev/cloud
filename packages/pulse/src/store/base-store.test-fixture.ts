@@ -43,7 +43,7 @@ export const installFixtureStore = async () => {
     .filter(Boolean))
     await clickhouseAdminQuery(statement);
 };
-export const fixtureBase = async (id = crypto.randomUUID()) => {
+export const fixtureBase = async (id: string = crypto.randomUUID()) => {
   const shortId = newShortId();
   await sql`INSERT INTO pulse.bases(id,short_id,name,retention_days,rollup_retention_days,sensitive_retention_hours) VALUES(${id}::uuid,${shortId},'Store fixture',30,365,24)`;
   await insertBaseStore(id, fixturePolicy, sql, clickhouseTestPrefix);

@@ -6,6 +6,7 @@ import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
 import { checkScrapeTarget } from "./scrape-target";
+import { tryMirrorSource } from "./source-mirror";
 import { iso, isoNullable } from "./telemetry-values";
 
 export const PULSE_APP_ID = "pulse";
@@ -118,7 +119,7 @@ const ensureHttpIngestSource = async (params: { baseId: string; sourceId: string
   const [source] = await sql<SourceRow[]>`
     SELECT *
     FROM pulse.sources
-    WHERE id = ${params.sourceId}::uuid
+    WHERE NOT deleted AND id = ${params.sourceId}::uuid
       AND base_id = ${params.baseId}::uuid
       AND kind = 'http_ingest'::pulse.source_kind
   `;
@@ -139,7 +140,7 @@ export const listSources = async (
   const rows = await sql<SourceRow[]>`
     SELECT *
     FROM pulse.sources
-    WHERE base_id = ${baseId}::uuid
+    WHERE NOT deleted AND base_id = ${baseId}::uuid
       AND (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\')
     ORDER BY created_at DESC, id ASC
     LIMIT ${limit}
@@ -149,7 +150,7 @@ export const listSources = async (
 };
 
 export const getSource = async (sourceId: string, user: AccessScope): Promise<Result<PulseSource>> => {
-  const [row] = await sql<SourceRow[]>`SELECT * FROM pulse.sources WHERE id = ${sourceId}::uuid`;
+  const [row] = await sql<SourceRow[]>`SELECT * FROM pulse.sources WHERE NOT deleted AND id = ${sourceId}::uuid`;
   if (!row) return fail(err.notFound("Source"));
   const access = await requireBaseAccess(row.base_id, user, "read");
   return access.ok ? ok(mapSource(row)) : fail(access.error);
@@ -193,7 +194,7 @@ export const createSource = async (params: {
   }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  return sql.begin(async (db) => {
+  const result = await sql.begin(async (db) => {
     const active = await requireBaseActive(params.baseId, db);
     if (!active.ok) return fail(active.error);
 
@@ -235,6 +236,8 @@ export const createSource = async (params: {
     if (!row) return fail(err.internal("Failed to create Pulse source"));
     return ok(mapSource(row));
   });
+  if (result.ok) await tryMirrorSource(params.baseId, result.data.id);
+  return result;
 };
 
 export const removeSource = async (params: { baseId: string; sourceId: string; user: AccessScope }): Promise<Result<void>> => {
@@ -254,14 +257,15 @@ export const removeSource = async (params: { baseId: string; sourceId: string; u
         AND account.resource_id = source.short_id
     `;
     const deleted = await tx`
-      DELETE FROM pulse.sources
-      WHERE id = ${params.sourceId}::uuid
+      UPDATE pulse.sources SET deleted=true,enabled=false,mirror_pending=true,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond')
+      WHERE NOT deleted AND id = ${params.sourceId}::uuid
         AND base_id = ${params.baseId}::uuid
     `;
     return ok(deleted.count ?? 0);
   });
   if (!result.ok) return result;
   if (result.data === 0) return fail(err.notFound("Pulse source"));
+  await tryMirrorSource(params.baseId, params.sourceId);
   return ok();
 };
 
@@ -317,13 +321,13 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
   }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  return sql.begin(async (db) => {
+  const result = await sql.begin(async (db) => {
     const active = await requireBaseActive(params.baseId, db);
     if (!active.ok) return fail(active.error);
     const [existing] = await db<SourceRow[]>`
     SELECT *
     FROM pulse.sources
-    WHERE id = ${params.sourceId}::uuid
+    WHERE NOT deleted AND id = ${params.sourceId}::uuid
       AND base_id = ${params.baseId}::uuid
   `;
     if (!existing) return fail(err.notFound("Pulse source"));
@@ -339,14 +343,17 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
       endpoint_url = ${values.data.endpointUrl},
       bearer_token_encrypted = ${values.data.bearerTokenEncrypted},
       scrape_interval_seconds = ${values.data.scrapeIntervalSeconds},
-      updated_at = now()
-    WHERE id = ${params.sourceId}::uuid
+      mirror_pending = true,
+      updated_at = greatest(clock_timestamp(),updated_at+interval '1 microsecond')
+    WHERE NOT deleted AND id = ${params.sourceId}::uuid
       AND base_id = ${params.baseId}::uuid
     RETURNING *
   `;
     if (!row) return fail(err.internal("Failed to update Pulse source"));
     return ok(mapSource(row));
   });
+  if (result.ok) await tryMirrorSource(params.baseId, result.data.id);
+  return result;
 };
 
 export const listSourceApiKeys = async (params: {
@@ -460,7 +467,7 @@ export const resolveIngestSourceForServiceAccount = async (
     JOIN pulse.bases b ON b.id = s.base_id
     WHERE s.short_id = ${serviceAccount.resourceId}
       AND s.kind = 'http_ingest'::pulse.source_kind
-      AND s.enabled = TRUE
+      AND s.enabled = TRUE AND NOT s.deleted
       AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL) AND b.deletion_started_at IS NULL
       AND (
         b.data_clear_started_at IS NULL

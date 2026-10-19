@@ -29,3 +29,13 @@ test("DDL names are derived from UUIDs, validated again and every view has a def
     for (const invalid of [0, 1.2, NaN, Infinity, key === "sensitiveRetentionHours" ? 8761 : 3651])
       expect(() => baseTtlStatements({ ...ctx, [key]: invalid })).toThrow();
 });
+
+test("v2 orders states by observation then acceptance and hides source tombstones", () => {
+  expect(BASE_SCHEMA_VERSIONS.map((v) => v.version)).toEqual([1, 2]);
+  const statements = BASE_SCHEMA_VERSIONS[1]!.statements(ctx);
+  expect(statements[0]).toContain("ADD COLUMN IF NOT EXISTS deleted UInt8 DEFAULT 0");
+  expect(statements[1]).toContain("ReplacingMergeTree(merge_version)");
+  expect(statements[1]).toContain("bitShiftLeft");
+  expect(statements.find((s) => s.includes(".states "))).toContain("tuple(src.updated_at, src.version)");
+  expect(statements.find((s) => s.includes(".sources "))).toContain("WHERE deleted=0");
+});

@@ -7,7 +7,7 @@ import { baseFlag, JSON_INPUT } from "./cli/flags";
 import { jsonRequest, printJsonOrTable, readApi, readJsonInput } from "./cli/shared";
 import { sourceTokenCommands } from "./cli/source-tokens";
 import { sourceCommands } from "./cli/sources";
-import type { PulseCapabilitySnapshot, PulseIngestBatch } from "./contracts";
+import type { PulseIngestBatch } from "./contracts";
 
 type IngestResult = { metrics: number; events: number; states: number };
 
@@ -27,13 +27,6 @@ const module = defineCliCommands({
   },
   commands: [
     ...adminCommands,
-    command("capabilities", {
-      summary: "Show Pulse deployment capabilities",
-      async run({ ctx }) {
-        const capabilities = await readApi<PulseCapabilitySnapshot>(ctx, "/capabilities");
-        printJsonOrTable(ctx, capabilities, [], []);
-      },
-    }),
     ...baseCommands,
     ...pulseAccessCommands,
     ...sourceCommands,

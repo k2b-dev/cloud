@@ -45,6 +45,7 @@ export const LimitsUpdateSchema = z
   .object({ profile: z.enum(READ_PROFILE_NAMES).optional(), limits: BaseLimitsSchema.partial().optional() })
   .strict();
 export const AdminBaseRowSchema = z.object({
+  rollupLag: z.boolean(),
   id: z.string(),
   name: z.string(),
   admins: z.array(z.string()),

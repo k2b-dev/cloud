@@ -34,7 +34,8 @@ die Pulse-Verwaltung verfügbar.
 ## Daten per HTTP-Datenaufnahme senden {icon="point"}
 
 :::reference
-- **Anfragen werden vollständig oder gar nicht angenommen:** Pulse lehnt eine Anfrage ab, die es nicht vollständig annehmen kann, statt nur einen Teil ihrer Daten zu speichern. Teile eine abgelehnte große Anfrage auf und wiederhole jeden Teil einzeln.
+- **Schreibfehler:** Ungültige Anfragen speichern keine Messwerte. Bei einem Speicherausfall antwortet Pulse mit 503 und einer Wartezeit. Ohne Schlüssel kann der Batch bereits teilweise gespeichert sein. Sende einen `Idempotency-Key` ab dem ersten Versuch und wiederhole denselben Batch mit diesem Schlüssel.
+- **Zeitstempel:** Metriken, Ereignisse und Zustände dürfen höchstens fünf Minuten in der Zukunft liegen. Metrikwerte müssen außerdem innerhalb der Rohdatenaufbewahrung liegen.
 - **API-Schlüssel gehören zu einer Quelle:** Pulse ordnet empfangene Signale der Quelle zu, der der API-Schlüssel gehört. Ein mit den Daten gesendeter Quellenwert ändert diese Zuordnung nicht.
 - **Sicher wiederholbare Anfragen:** Sende denselben `Idempotency-Key`, wenn du einen Batch erneut sendest. Pulse gibt mindestens 24 Stunden lang das ursprüngliche Ergebnis zurück und lehnt die Wiederverwendung mit anderem Inhalt ab.
 - **Metrikvarianten überschaubar halten:** Eine Metrik kann in einer Basis bis zu 10.000 Varianten haben. Lege Anfrage-IDs, Sitzungen, vollständige URLs, IP-Adressen und andere eindeutige Werte in Ereignissen ab, nicht in Metrikdimensionen.
@@ -67,3 +68,8 @@ Fehlende Datenbanken oder abweichende Prüfpunkte sperren Messdaten-Schreibzugri
 Solange die Sperre gilt, kannst du die Base nicht leeren. Nach passenden Sicherungen wählt ein Cloud-Admin **Erneut prüfen**. **Leer neu
 anlegen** verwirft Messdaten. Ohne Verbindung bleibt die Pulse-Verwaltung
 verfügbar; andere Cloud-Apps arbeiten weiter.
+
+**Stundenwerte hängen hinterher** unter Administration → Pulse → Bases bedeutet,
+dass Stundenberechnung oder Versiegelung verzögert sind. Rohdatenpartitionen
+bleiben bis zur Versiegelung ihrer Stunden erhalten. Prüfe die Jobs für
+Stundenwerte und Aufbewahrung, bevor du Daten leerst.

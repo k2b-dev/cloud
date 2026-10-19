@@ -1,9 +1,10 @@
 import { decryptSecret, encryptSecret } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
+import { PULSE_INTERNAL_INGEST_BATCH_LIMIT } from "../ingest-limits";
 import { BASE_STORE_OPERATIONS, BASE_STORE_STATES, READ_PROFILE_NAMES } from "./admin-contracts";
 import { assertStoreName, BASE_SCHEMA_VERSIONS, baseStoreNames, baseTtlStatements, DATA_TABLES, READ_VIEWS } from "./base-schema";
-import { clickhouseQuery, StoreQueryError } from "./client";
+import { clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
 import { storeConnection } from "./service";
 import { hashServicePassword, randomHex } from "./setup-sql";
 import { quoteIdentifier as q, StorePrefix } from "./validation";
@@ -50,9 +51,11 @@ export const createBaseStore = ({
   prefix = "pulse_",
   clock = () => new Date(),
   beforeStep,
+  transport,
 }: {
   connection?: () => Promise<{ url: string; user: string; password: string } | null>;
   prefix?: string;
+  transport?: QueryOptions["transport"];
   clock?: () => Date;
   beforeStep?: (operation: StoreOperation, step: string) => void | Promise<void>;
 } = {}) => {
@@ -60,7 +63,15 @@ export const createBaseStore = ({
   const query = async (query: string, params?: Record<string, string | number>) => {
     const value = await connection();
     if (!value) throw new BaseStoreError("STORE_NOT_CONFIGURED");
-    return clickhouseQuery({ ...value, query, params, timeoutMs: 30_000 });
+    return clickhouseQuery({
+      ...value,
+      query,
+      params,
+      transport,
+      settings: { insert_deduplicate: 0, async_insert: 0 },
+      timeoutMs: 30_000,
+      maxResponseBytes: PULSE_INTERNAL_INGEST_BATCH_LIMIT * 128,
+    });
   };
   const ctx = (row: StoreRow) => ({
     database: row.database_name,
