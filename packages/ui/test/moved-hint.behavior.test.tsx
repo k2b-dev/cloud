@@ -57,6 +57,62 @@ else {
     }
   });
 
+  test("Escape consumed by the target leaves the hint open without dismissing", async () => {
+    const dom = createDomTestHarness();
+    const { MovedHint } = await import("../src/feedback/MovedHint");
+    const target = document.createElement("button");
+    dom.root.append(target);
+    Object.defineProperty(target, "getClientRects", { value: () => [target.getBoundingClientRect()] });
+    Object.defineProperties(dom.window.HTMLElement.prototype, {
+      showPopover: {
+        configurable: true,
+        value(this: HTMLElement) {
+          this.dataset.shown = "true";
+        },
+      },
+      hidePopover: {
+        configurable: true,
+        value(this: HTMLElement) {
+          delete this.dataset.shown;
+        },
+      },
+    });
+    const consumeEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") event.preventDefault();
+    };
+    target.addEventListener("keydown", consumeEscape);
+    let dismissals = 0;
+    const dispose = render(
+      () =>
+        createComponent(MovedHint, {
+          open: true,
+          target: () => target,
+          onDismiss: () => {
+            dismissals++;
+          },
+          action: { label: "Show filters", href: "#filters" },
+          children: "Tags moved.",
+        }),
+      dom.root,
+    );
+    try {
+      await Promise.resolve();
+      const surface = dom.root.querySelector<HTMLElement>(".k2b-moved-hint")!;
+      expect(surface.dataset.shown).toBe("true");
+      target.focus();
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      expect(surface.dataset.shown).toBe("true");
+      expect(dismissals).toBe(0);
+      target.removeEventListener("keydown", consumeEscape);
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      expect(surface.dataset.shown).toBeUndefined();
+      expect(dismissals).toBe(1);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("an action dismisses before running and cannot run twice", async () => {
     const dom = createDomTestHarness();
     const { MovedHint } = await import("../src/feedback/MovedHint");

@@ -80,11 +80,12 @@ type ExplorerSummary = Extract<CloudAiViewSummary, { view: "explorer" }>;
 
 /**
  * The header row, the rows up to the viewport's, and the totals row when there is one, inside the paper's 1px frame.
- * A wide table's hairlines add up to a pixel per row.
+ * Wide tables add a 1px hairline after each visible body row with a following body row; the footer adds none.
  */
 const tableHeight = (summary: TableSummary) => {
-  const rows = Math.max(1, Math.min(summary.rows, VIEWPORT_ROWS)) + Number(summary.footer);
-  const lines = summary.columns > HAIRLINE_ABOVE_COLUMNS ? rows : 0;
+  const bodyRows = Math.max(1, Math.min(summary.rows, VIEWPORT_ROWS));
+  const rows = bodyRows + Number(summary.footer);
+  const lines = summary.columns > HAIRLINE_ABOVE_COLUMNS ? bodyRows - 1 + Number(summary.rows > VIEWPORT_ROWS) : 0;
   return `calc(${HEADER_REM + rows * ROW_REM}rem + ${2 + lines}px)`;
 };
 

@@ -103,6 +103,7 @@ export function MovedHint(props: MovedHintProps): JSX.Element {
       }
     };
     const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
       if (event.key !== "Escape" || !(event.target instanceof Node)) return;
       if (!surface?.contains(event.target) && !anchor.contains(event.target)) return;
       event.preventDefault();

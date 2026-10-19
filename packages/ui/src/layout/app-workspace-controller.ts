@@ -1103,7 +1103,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (!target || target.closest(KEY_OWNER_SELECTOR)) return;
     if (ownerDocument.querySelector("dialog[open], [aria-modal='true']")) return;
     try {
-      if (ownerDocument.querySelector(":popover-open")) return;
+      // A passive hint does not own the keyboard.
+      if (ownerDocument.querySelector(":popover-open:not(.k2b-moved-hint)")) return;
     } catch {
       // Older engines have no popover selector; the other popup guards still apply.
     }
