@@ -73,12 +73,17 @@ const pageHtml = (url: URL) => {
   return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0"><main style="container-type:inline-size;container-name:k2b-app-area;display:flex;flex-direction:column;height:100dvh">${html}</main><script>${controller}</script><script type="module">
     const geometry=${geometrySource};
     const strip=${stripSource};
+    const step=(name)=>{document.documentElement.dataset.mailShellStep=name};
+    step('fonts');
     await document.fonts.ready;
+    step('first frame');
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     document.documentElement.dataset.serverGeometry=JSON.stringify(geometry());
     document.documentElement.dataset.serverStrip=JSON.stringify(strip());
     document.documentElement.dataset.serverCurrent=document.querySelector('${tabsSelector} [aria-current="page"]')?.getAttribute('href')??'';
+    step('islands');
     await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));
+    step('hydrated frame');
     // The first frame the browser paints after hydration, as a person sees it.
     await new Promise(resolve=>requestAnimationFrame(resolve));
     document.documentElement.dataset.hydratedGeometry=JSON.stringify(geometry());
@@ -160,7 +165,16 @@ const pinPageClock = (at: number) => {
   globalThis.Date = PinnedDate as DateConstructor;
 };
 const ready = async (page: Page) => {
-  await page.waitForFunction(() => document.documentElement.dataset.mailShellReady === "true");
+  try {
+    await page.waitForFunction(() => document.documentElement.dataset.mailShellReady === "true");
+  } catch (error) {
+    // Name the page script's step that never finished, so a stall points at fonts, the first frame or the islands.
+    const step = await page
+      .locator("html")
+      .getAttribute("data-mail-shell-step", { timeout: 1000 })
+      .catch(() => "unreadable");
+    throw new Error(`Mail shell page never got ready (stopped at: ${step ?? "page script not started"})`, { cause: error });
+  }
   await page.waitForFunction(
     () => !Array.from(document.querySelectorAll(".k2b-app-workspace__main")).some((main) => main.getAttribute("aria-busy") === "true"),
   );
@@ -669,18 +683,14 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       }
     });
 
-    // One browser, one context per viewport/theme; Focus and mailbox share that context.
+    // Each URL opens in its own page (testing.md: an in-place goto can stall in WebKit, #1367); reload is the subject.
     for (const theme of ["light", "dark"] as const)
       for (const [width, height] of sizes)
         test(`${theme} ${width}x${height}: server = hydrated = settled = reload within 0.5px`, async () => {
-          const page = await open(`/app/mail?theme=${theme}`, width, height);
           const differences: string[] = [];
-          try {
-            for (const path of ["/app/mail", boxPath]) {
-              if (path === boxPath) {
-                await page.goto(new URL(`${path}?theme=${theme}`, server.url).href);
-                await ready(page);
-              }
+          for (const path of ["/app/mail", boxPath]) {
+            const page = await open(`${path}?theme=${theme}`, width, height);
+            try {
               const serverFrame = await recordedFrame(page, "server");
               expect(serverFrame.some((part) => part.part.includes("head"))).toBe(true);
               expect(
@@ -702,11 +712,11 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
               await compare("reload SSR", serverFrame, await recordedFrame(page, "server"));
               await compare("reload hydrated", shell(serverFrame), shell(await recordedFrame(page, "hydrated")));
               await compare("reload settled", serverFrame, await geometry(page));
+            } finally {
+              await close(page);
             }
-            expect(differences).toEqual([]);
-          } finally {
-            await close(page);
           }
+          expect(differences).toEqual([]);
         }, 30_000);
 
     test("German locale uses the same hydrated sidebar and head", async () => {
