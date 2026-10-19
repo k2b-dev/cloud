@@ -30,7 +30,7 @@ import {
   createYjsTopic,
   isSharedCursor,
   legacyYjsTopicInfo,
-  MalformedSyncEventError,
+  type MalformedSyncEventError,
   notebooksTextLog,
   parseStreamCursor,
   toBase64,
@@ -1588,31 +1588,13 @@ export const adoptSnapshotAtHead = async (params: {
   let malformedUpdates = 0;
   let historyGaps = 0;
   try {
-    let after = stored.streamCursor ?? topic.cursorAt(0);
-    while (compareStreamCursor(after, head) < 0) {
-      params.signal?.throwIfAborted();
-      try {
-        for await (const event of topic.replay({ tenantId: noteId, after, until: head, signal: params.signal })) {
-          try {
-            applyYjsTopicEvent(doc, event, noteId);
-            recoveredUpdates++;
-          } catch (error) {
-            if (!(error instanceof MalformedSyncEventError)) throw error;
-            malformedUpdates++;
-          }
-          after = event.cursor;
-        }
-        // The replay covered every note event up to the captured head.
-        after = head;
-      } catch (error) {
-        if (!(error instanceof RetentionGapError) || !error.resumeAfter || compareStreamCursor(error.resumeAfter, after) <= 0) throw error;
-        historyGaps++;
-        // Skip only unavailable sequences; include the first retained event.
-        // Strict forward progress and a fixed head bound this loop even if
-        // retention advances concurrently. Never advance past the captured head.
-        after = compareStreamCursor(error.resumeAfter, head) > 0 ? head : error.resumeAfter;
-      }
-    }
+    ({ recoveredUpdates, malformedUpdates, historyGaps } = await notebooksTextLog.recover({
+      docId: noteId,
+      after: stored.streamCursor,
+      until: head,
+      doc,
+      signal: params.signal,
+    }));
     params.signal?.throwIfAborted();
     // Keep the exact pre-recovery binary accessible in version history, even
     // when ordinary versions are later compacted. Reuse an unchanged original.

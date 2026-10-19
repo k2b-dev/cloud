@@ -36,8 +36,8 @@ with the installed declaration raises `ResourceDriftError`.
 
 Size retention for updates waiting for a covering snapshot. Once a snapshot
 covers them, updates are no longer needed; retention eventually removes them.
-The application owns snapshot scheduling and keeping idle document cursors
-inside the log's retained window. See [Topics and live events](/en/docs/automation/topics-and-live-events).
+The platform snapshot pipeline saves documents and keeps idle cursors inside
+the retained window. The application queues work and schedules reconciliation. See [Topics and live events](/en/docs/automation/topics-and-live-events).
 
 `log.id` identifies the resource. `log.topicConfig` exposes the exact readonly
 Sync declaration, passed through unchanged. `log.topic()` returns a fresh
@@ -134,6 +134,139 @@ if (result.status === "edited" && result.saved.status === "saved") {
 Errors from `load`, the initial latest-cursor lookup, or publication propagate.
 A `persistFailed` result means the update is already in the log: recover by
 replaying and saving, rather than blindly publishing the edit again.
+
+## Snapshots
+
+Use `sharedText.snapshots({ log, job, store, input?, logger? })` to persist
+accepted updates without rebuilding a snapshot worker for each application.
+It uses the same Yjs reconstruction as `read` and `edit`, including fallback
+text for documents without a binary snapshot.
+
+Declare one job per definition with `sharedTextSnapshotJobConfig`:
+
+```ts
+import { lazySync } from "@k2b/cloud";
+import {
+  type SharedTextSnapshotStore,
+  sharedText,
+  sharedTextSnapshotJobConfig,
+} from "@k2b/cloud/shared-text";
+
+const snapshotConfig = sharedTextSnapshotJobConfig({
+  id: "drafts.text.snapshots",
+  // Jobs carry a document ID and a cursor; a small budget is enough.
+  retention: { maxAgeMs: 7 * 24 * 60 * 60 * 1000, maxBytes: 64 * 1024 * 1024 },
+});
+
+const draftSnapshots = (store: SharedTextSnapshotStore) => sharedText.snapshots({
+  log,
+  job: lazySync((sync) => sync.job(snapshotConfig)),
+  store,
+});
+```
+
+Pass the application's snapshot store to `draftSnapshots` once. Start the
+returned pipeline in the application's lifecycle and await `stop()` on
+shutdown. Stop drains active work for up to 120 seconds.
+
+The job contract is fixed:
+
+| Setting | Contract |
+| --- | --- |
+| Ordering | 8 partitions, keyed by document ID; one writer per document across replicas. |
+| Process concurrency | One document at a time per process. |
+| Acknowledgment wait | 120 seconds, with a heartbeat every 15 seconds during reconstruction. |
+| Delivery | 20 attempts, with 5 seconds between attempts. |
+| Terminal retention | 30 days by default; override with `terminalRetentionMs`. |
+| Dead-letter bytes | 34,603,008 by default: 256 entries at the 128 KiB payload limit plus 4 KiB headroom. Override with `deadLetterRetention`. |
+| Dedupe window | `dedupeWindowMs` is included only when supplied. Coalesced submits do not use it. |
+
+Changing the partition count or other provisioned job values later is a
+resource change. A mismatch raises `ResourceDriftError`; use a deliberate
+resource migration. Keep an installed dedupe window even for coalesced jobs.
+
+### Implement the snapshot store
+
+The application owns durable rows and all derived projections. Implement
+`SharedTextSnapshotStore` with these guarantees:
+
+| Method | Required behavior |
+| --- | --- |
+| `list({ limit, after?, signal? })` | Return `{ docId, cursor }` in stable keyset order by `docId`. Include only documents that take snapshots. `cursor` may be null. |
+| `load(docId, { signal })` | Return `{ state, text, cursor, restoreRevision }` or null, with the same contract as `withStore.load`. Anchor legacy cursors to this log before returning. |
+| `save(docId, input)` | Atomically require an unchanged `restoreRevision` and a cursor newer than the stored cursor. Apply projections such as text, search, indexes, versions and events **only when the write was accepted, never when overtaken**. |
+| `recover(docId, cause, { signal })` | Keep every valid retained update, including pending structs and deletes. Save at a captured head and mark history incomplete. Never claim lost bytes were restored. |
+| `advance(docId, { from, to, latest })` | Move an idle cursor to `to` only while `from` is still stored and no newer event exists. Return whether it moved. |
+
+`save` receives `SharedTextSaveInput`, including binary state, text, cursor,
+restore revision, request time, `actor: null`, and contributors. It returns
+normally when saved, when the current snapshot already covers the cursor,
+or when the document is gone or locked. If a restore changed the base and
+the current snapshot does not cover the cursor, it must throw. The job then
+retries from the current state instead of dropping an accepted update.
+
+For recovery, `log.recover({ docId, after, until, doc, signal? })` merges valid
+updates into the supplied Y.Doc and returns
+`{ recoveredUpdates, malformedUpdates, historyGaps }`. It skips malformed
+events and missing ranges with strict forward progress, never beyond the
+fixed `until` cursor. Encoding that document preserves unresolved Yjs structs
+and deletes. The application still saves the result, marks history incomplete,
+and preserves any protected original required by its domain.
+
+### Queue and reconcile work
+
+Call `queue({ docId, targetCursor, reason })`, for example while an editor has
+unsaved changes and when it closes. `reason` is a string. Jobs coalesce by
+`docId:sequence`; a final unload at a newer cursor does not coalesce with a
+snapshot that is already settling. The default job payload is the queue
+request. An optional `input: { encode, decode }` maps it to an application's
+existing payload, allowing rolling deployments to share the same job.
+
+Each job loads the snapshot, reads the shared head **before** the document's
+latest event, then replays to that event. It saves at the greater of that head
+and event cursor. A later job skips state already covered by the snapshot.
+Transient failures retry. A retention gap or malformed event calls `recover`,
+then dead-letters the job once after successful recovery. Missing bytes stay
+missing; recovery preserves the valid retained updates and pending dependencies.
+
+The application schedules `reconcile({ signal?, heartbeat? })`, for example
+hourly, and forwards the scheduler's cancellation signal and heartbeat.
+Reconcile scans pages of 5,000 documents and heartbeats before each group of
+200, starting with the first document. It queues snapshots whose latest event
+is newer, and moves idle cursors in the older half of the retained window to
+the captured head. It returns exactly `{ checked, queued, advanced }`.
+`log.firstSequence()` reads the first retained sequence for this exact log,
+or returns zero when the log is absent.
+
+### Observe snapshot backlog
+
+Each completed reconcile logs `Shared text snapshot backlog` at info level.
+`backlog()` returns that process's last report, or null before its first
+completed reconcile. Cancellation leaves the previous report intact.
+Pass `logger` to use an application log source; the default source is
+`shared-text-snapshots`.
+
+| Field | Meaning |
+| --- | --- |
+| `log` | Definition ID. |
+| `measuredAt` | Measurement time as a Date. |
+| `documents` | Number of scanned documents whose latest event is newer than their snapshot. |
+| `oldest` | Null with no backlog; otherwise the document with the lowest stored sequence. |
+| `oldest.docId` | That document's ID. |
+| `oldest.sequence` | Its first unsnapshotted event's sequence. |
+| `oldest.ageMs` | Time since that event's publication. |
+| `oldest.sequenceDistance` | Last scanned shared head sequence minus the event sequence. |
+
+The scan reuses its existing broker lookups. After scanning, it makes one
+bounded tenant replay for the document with the lowest stored sequence and
+stops after the first event. This measures the oldest update after the
+furthest-behind snapshot; it does not compare every document's update age.
+
+If this lookup fails, reconciliation still succeeds and warns. The report
+uses `storedSequence + 1` as `sequence`, null for `ageMs`, and
+`lastHeadSequence - storedSequence` as `sequenceDistance`. It also includes
+`historyGap`, true only for a `RetentionGapError`. An unknown age signals an
+unreadable history, not an empty backlog.
 
 ## Attribute people and agents
 

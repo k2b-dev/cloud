@@ -17,6 +17,8 @@ document state. The log only needs to hold updates until a snapshot covers
 them.
 The platform now provides the log through `@k2b/cloud/shared-text`; the topic
 names and limits are unchanged.
+The snapshot pipeline also comes from the platform, with the same job ID,
+partitions, retries and reconcile schedule.
 
 Releases up to 0.10 created one log per note. JetStream reserves every
 stream's configured byte limit against the account, whether or not data is
