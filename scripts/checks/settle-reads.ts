@@ -73,16 +73,6 @@ const mentions = (node: ts.Node, names: ReadonlySet<string>): boolean =>
  */
 const readsInBrowser = (callback: BodyFunction | undefined): boolean => Boolean(callback?.body && mentions(callback.body, readApis));
 
-const promiseCombinator = (expression: ts.Expression): boolean =>
-  ts.isPropertyAccessExpression(expression) &&
-  ts.isIdentifier(expression.expression) &&
-  expression.expression.text === "Promise" &&
-  ["all", "allSettled", "race", "any"].includes(expression.name.text);
-
-/**
- * A settle counts only when the flow waits for it: awaited, or returned to a caller that does. The promise
- * passes through parentheses, type assertions, a method chain on it, and Promise.all and its siblings.
- */
 const joined = (call: ts.CallExpression): boolean => {
   for (let node: ts.Node = call; ; ) {
     const parent = node.parent;
@@ -102,9 +92,6 @@ const joined = (call: ts.CallExpression): boolean => {
       parent.parent.expression === parent
     )
       node = parent.parent;
-    else if (ts.isArrayLiteralExpression(parent) && ts.isCallExpression(parent.parent) && promiseCombinator(parent.parent.expression))
-      node = parent.parent;
-    else if (ts.isCallExpression(parent) && parent.expression !== node && promiseCombinator(parent.expression)) node = parent;
     else return false;
   }
 };
@@ -116,7 +103,13 @@ const deviceCall = (expression: ts.Expression): boolean => {
 };
 
 export const checkSettleReadsSource = (file: string, source: string): Finding[] => {
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const sourceFile = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
   const functions: BodyFunction[] = [];
   // A name belongs to the block, function, or file that declares it and resolves to the nearest declaration.
   // Parameters and other variables shadow a helper of the same name (null).

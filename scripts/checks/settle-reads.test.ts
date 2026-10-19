@@ -363,7 +363,9 @@ test("a settle counts only when the flow waits for it", () => {
 const ready = () => settled(page);
 async function sample() { await open(); await page.click("p"); await ready(); await page.locator("p").boundingBox(); }`),
   ).toEqual([]);
-  expect(check(`async () => { await page.click("p"); await Promise.all([settled(page)]); ${read} }`)).toEqual([]);
+  // Beside other work in Promise.all or race, a settle does not finish before that work reads.
+  expect(check(`async () => { await page.click("p"); await Promise.all([settled(page), page.locator("p").boundingBox()]); }`)).toEqual([1]);
+  expect(check(`async () => { await page.click("p"); await Promise.race([settled(page), Promise.resolve()]); ${read} }`)).toEqual([1]);
 });
 
 test("a parameter or variable shadows a helper of the same name", () => {
@@ -382,4 +384,9 @@ const pending = () => { return { pending: settled(page) }; };
 async function sample() { await page.click("p"); await ready(); await pending(); await page.locator("p").boundingBox(); }`),
   ).toEqual([3]);
   expect(check(`async () => { await page.click("p"); await expect.poll(() => ready).toBe(true); ${read} }`)).toEqual([]);
+});
+
+test("parses .ts files as TypeScript, so a generic arrow does not hide later reads", () => {
+  const source = `const fixture = <T>(value: T) => value;\nasync () => { await page.click("p"); await page.locator("p").boundingBox(); };`;
+  expect(check(source)).toEqual([2]);
 });
