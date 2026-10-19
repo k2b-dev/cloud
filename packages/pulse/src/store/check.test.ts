@@ -185,3 +185,24 @@ test("a ClickHouse failure that is not a permission is reported by its code, not
     steps: { rights: "failed" },
   });
 });
+
+test("a maintenance limit that can be raised counts as missing", async () => {
+  stub();
+  const implementation = transport.getMockImplementation()!;
+  transport.mockImplementation(async (input, init) =>
+    String(init.body) === "SELECT 1 SETTINGS max_memory_usage = 2000000000" ? reply([{ one: 1 }]) : implementation(input, init),
+  );
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({
+    ok: false,
+    code: "PROFILE_MISSING:fixture_maintenance",
+    steps: { profiles: "failed" },
+  });
+});
+
+test.each(["all", "`all`"])("a service user named %s is not read as the ALL privilege", async (grantee) => {
+  stub(
+    "26.9.19.9",
+    normalGrants.map((grant) => grant.replace("TO fixture_service", `TO ${grantee}`)),
+  );
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({ ok: true });
+});

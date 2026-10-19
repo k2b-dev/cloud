@@ -10,9 +10,17 @@ const ACCESS_DENIED = 497;
 const AUTHENTICATION_FAILED = 516;
 const NO_PROFILE = 180;
 const UNKNOWN_TABLE = 60;
-const ADMIN_GRANT =
-  /^GRANT\b.*\b(?:ALL(?: PRIVILEGES)?|ACCESS MANAGEMENT|ROLE ADMIN|(?:CREATE|ALTER|DROP) (?:SETTINGS )?PROFILE|(?:CREATE|ALTER|DROP) (?:ROLE|QUOTA|ROW POLICY|POLICY))\b/i;
-const BROAD_SELECT_GRANT = /^GRANT\b.*\bSELECT\b.*\bON\s+(?:\*(?:\.\*)?|`?system`?\.\*)\s+TO\b/i;
+const ADMIN_PRIVILEGE =
+  /\b(?:ALL(?: PRIVILEGES)?|ACCESS MANAGEMENT|ROLE ADMIN|(?:CREATE|ALTER|DROP) (?:SETTINGS )?PROFILE|(?:CREATE|ALTER|DROP) (?:ROLE|QUOTA|ROW POLICY|POLICY))\b/i;
+const BROAD_TARGET = /^(?:\*(?:\.\*)?|`?system`?\.\*)$/i;
+/** Rights that would let the service user lift the limits, act as an admin, or read every log. Only the
+ * privilege list and target count: a grantee such as `all` must not read as the ALL privilege. */
+const tooBroad = (grant: string): boolean => {
+  const match = /^GRANT\s+(.+?)\s+ON\s+(\S+)\s+TO\b/i.exec(grant);
+  if (!match) return false;
+  const [, privileges = "", target = ""] = match;
+  return ADMIN_PRIVILEGE.test(privileges) || (/\bSELECT\b/i.test(privileges) && BROAD_TARGET.test(target));
+};
 
 export const supportedVersion = (version: string): boolean => {
   const match = /^(\d+)\.(\d+)(?:\.\d+)*$/.exec(version);
@@ -109,8 +117,7 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
       if (!(error instanceof StoreQueryError && error.code === UNKNOWN_TABLE)) throw error;
     });
     const grants = (await run("SHOW GRANTS FINAL")).flatMap((row) => Object.values(row)).filter((v): v is string => typeof v === "string");
-    // Rights that would let the service user lift the limits or act as an admin, on any target.
-    if (grants.some((grant) => ADMIN_GRANT.test(grant) || BROAD_SELECT_GRANT.test(grant))) fail("TOO_MANY_RIGHTS");
+    if (grants.some(tooBroad)) fail("TOO_MANY_RIGHTS");
     await right("CREATE DATABASE", `CREATE DATABASE ${q(database)}`);
     await right("CREATE TABLE", `CREATE TABLE ${table} (value UInt8) ENGINE = MergeTree ORDER BY tuple()`);
     await right("ALTER TABLE", `ALTER TABLE ${table} ADD COLUMN extra UInt8 DEFAULT 0`);
@@ -177,7 +184,8 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
     }
     const [maintenance] = await run("SELECT getSetting('max_memory_usage') AS memory");
     if (Number(maintenance?.memory) !== 1_000_000_000) fail(`PROFILE_MISSING:${prefix}maintenance`);
-    await readonly(`${prefix}maintenance`, "SELECT 1 SETTINGS max_memory_usage = 1", {});
+    // Raising the limit is what must fail; a MIN-only constraint would refuse only a lower value.
+    await readonly(`${prefix}maintenance`, "SELECT 1 SETTINGS max_memory_usage = 2000000000", {});
     await right("TRUNCATE", `TRUNCATE TABLE ${table}`);
     await right("DROP USER", `DROP USER ${q(reader)}`);
     await right("DROP TABLE", `DROP TABLE ${table}`);
