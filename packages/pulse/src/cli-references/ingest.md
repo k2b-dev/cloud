@@ -1,394 +1,218 @@
 # Pulse ingest
 
-Pulse accepts metrics, events, and current states in one JSON batch. Signed-in agents can ingest through `cld pulse ingest`; long-running collectors should use a labeled token bound to an `http_ingest` source.
+Use one HTTP ingest source per collector boundary. External collectors send to
+`POST /api/pulse/ingest` with `Authorization: Bearer <source-token>` and
+`Content-Type: application/json`. The token selects the source. Never send it
+from browser JavaScript or put it in chat, logs, or shell arguments.
 
-## Contents
+## Create a source and credential
 
-- [Choose the ingest path](#choose-the-ingest-path)
-- [Create an HTTP ingest source](#create-an-http-ingest-source)
-- [Send a collector request](#send-a-collector-request)
-- [Batch schema](#batch-schema)
-- [Classify event data](#classify-event-data)
-- [Model resources and variants](#model-resources-and-variants)
-- [Retry safely](#retry-safely)
-- [Limits and write failures](#limits-and-write-failures)
-- [Inspect the result](#inspect-the-result)
-- [Operational rules](#operational-rules)
-
-## Choose the ingest path
-
-| Path | Use it for | Source association | Retry idempotency |
-| --- | --- | --- | --- |
-| `cld pulse ingest` | A signed-in agent importing or testing a batch | Required `--source` | No idempotency-key option |
-| `POST /api/pulse/ingest` | Servers, jobs, importers, and collectors | Source bound to the token | Optional `Idempotency-Key` header |
-| `metrics` source | Pulling a Prometheus-compatible `/metrics` endpoint | Configured metrics source | Scrape lifecycle handles collection |
-
-Do not use a personal Cloud session in a long-running collector. Create an `http_ingest` source and one labeled token per deployment, server, importer, or job.
-
-## Create an HTTP ingest source
-
-```bash
-cld pulse sources create --name "Warehouse importer" --kind http_ingest --json
-cld pulse source-tokens create "Warehouse importer" \
-  --name production-job \
-  --output-file ./pulse.token \
-  --expires-at 2027-01-01T00:00:00Z \
-  --json
+```sh
+cld pulse use Operations
+cld pulse sources create --name importer --kind http_ingest
+cld pulse source-tokens create importer --name production --output-file ./pulse.token
+cld pulse source-tokens list importer --json
 ```
 
-Token creation writes the raw token to a new file with mode 0600; an existing file is refused. All output modes print only its ID, name and path. Move the private file into the collector’s secret store.
+`--output-file` is required and must name a new file. The CLI writes the token
+with mode `0600`. Text, JSON, and JSONL output contain only its ID, name, and
+path. Transfer the file to the collector's secret store without printing it.
+`--expires-at` optionally sets an ISO expiry time. Revoke a credential with
+`cld pulse source-tokens revoke importer production --yes`.
 
-Listing, creating, and revoking source tokens requires `admin` permission on the base. Creating or editing the source itself requires `write` permission.
+For a signed-in person or agent with write access, the CLI can send a batch:
 
-Use separate tokens when credentials need separate expiration, usage visibility, or revocation. Tokens from one source all publish under that source.
-
-```bash
-cld pulse source-tokens list "Warehouse importer" --json
-cld pulse source-tokens revoke "Warehouse importer" production-job --yes
+```sh
+cld pulse ingest --source importer --file batch.json
+# Alternatively, use --stdin or --batch <json>.
 ```
 
-## Send a collector request
+This uses the authenticated base/source API. It has no idempotency-key flag.
+For deliveries that need safe retries, use the source-token HTTP route with an
+`Idempotency-Key` from the first attempt.
 
-```bash
-curl -fsS -X POST "$CLOUD_URL/api/pulse/ingest" \
-  -H "Authorization: Bearer $PULSE_TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $BATCH_ID" \
-  --data-binary @batch.json
-```
+## Build a batch
 
-Successful response:
+The JSON object accepts `metrics`, `events`, and `states` arrays. Omit arrays
+that you do not need. A batch must contain at least one item.
 
 ```json
 {
-  "metrics": 2,
-  "events": 1,
-  "states": 1
+  "metrics": [{ "name": "orders.total", "value": 142, "type": "counter", "unit": "count", "dimensions": { "channel": "web" } }],
+  "events": [{ "kind": "order.completed", "value": 149.9, "dimensions": { "channel": "web" }, "attributes": { "orderId": "order-123" } }],
+  "states": [{ "key": "shop.online", "value": true }]
 }
 ```
 
-The token determines the base and source. Omit `sourceId` from every signal; Pulse rejects payload-level source attribution.
+| Item | Fields |
+| --- | --- |
+| Metric | Required nonempty `name` and finite numeric `value`; optional `type` (`gauge`, the default, or `counter`) and nonempty `unit` or null. Counters must be nonnegative. |
+| Event | Required nonempty `kind`; optional finite numeric `value` or null, `actorId`, `sessionId`, `correlationId`, `attributes`, `sensitive`, and `payload`. |
+| State | Required nonempty `key` and `value` (string, finite number, boolean, or null). |
+| All items | Optional ISO datetime `ts`, `dimensions`, and explicit `resource: {type, id, label?}` or null. `sourceId` is refused; the credential or authenticated route selects the source. |
 
-For a one-off signed-in import:
+The optional object identity stays part of metric and state identity. Its type
+is a lowercase slug matching `[a-z][a-z0-9._-]*`; its full `type:id` key has at
+most 505 characters. The type allows 80 characters, ID 500, and label 240;
+the combined-key limit also applies. Omit it when no stable observed object is needed.
+Pulse does not infer this identity from generic ingest dimensions.
 
-```bash
-cld pulse ingest --source "Warehouse importer" --file batch.json --json
-cat batch.json | cld pulse ingest --source "Warehouse importer" --stdin --json
+Dimensions distinguish variants by source and object identity. Pulse trims
+keys, drops null values, converts other values to strings, and sorts keys.
+Keep reusable labels such as route templates, region, or channel here. Put
+request IDs, full URLs, and other unique details in event `attributes` or
+identity fields; protected data belongs in `sensitive`, and nested details in
+`payload`. Pulse does not derive visitor identities or sessions.
+
+| Per-call limit | Maximum |
+| --- | --- |
+| Each collection | 500 metrics, 500 events, 500 states |
+| Combined items | 1,500 |
+| Validated batch encoded as JSON | 5 MiB |
+| Dimension keys / key length / stringified value length | 32 / 80 characters / 500 characters |
+| Attributes | 64 top-level keys, 32 KiB JSON, 4 nested levels |
+| Sensitive fields | 32 top-level keys, 32 KiB JSON, 4 nested levels |
+| Attribute and sensitive key length | 80 characters; nonempty |
+| Payload | 64 KiB JSON, 8 nested levels |
+| Idempotency key | 200 characters |
+| Variants for one metric in a base | 10,000 |
+
+The external batch limits also apply to `cld pulse ingest`. Per-base series,
+event-kind, and state-key limits can refuse otherwise valid input.
+
+## Keep timestamps and corrections consistent
+
+Omitting `ts` uses the batch's acceptance time. All supplied timestamps can be
+at most five minutes in the future. The error names the collection, item
+index, metric name, event kind or state key, and offending timestamp. Metric
+timestamps must also be within raw retention. Sealed metric hours reject
+writes even after retention is extended.
+
+A metric series is identified by metric name, source, object identity, and
+normalized dimensions. For the same series and timestamp, the newest accepted
+value wins and the read view shows it immediately. The first accepted sample
+fixes type and unit per metric name within a base; later input must match both,
+including an omitted unit. Conflicts reject the batch before measurement writes.
+
+For states, the newer timestamp wins. At equal timestamps, later acceptance
+wins; input order breaks ties within a batch. Older snapshots change nothing.
+History records the initial value and real value changes only. Repeated equal
+values update the current snapshot without another history row. Different
+sources never overwrite each other's states.
+
+Hourly values retain count, sum, minimum, maximum, last value and timestamp,
+and counter increase. Resets contribute the new counter value; otherwise the
+increase is the difference from the predecessor, even across gaps. Corrections
+recompute the affected hour and the hour of the next observation. A preceding
+hourly value supplies the starting value after raw data expires.
+
+## Retry one delivery safely
+
+Generate a key per logical batch and send it as the `Idempotency-Key` HTTP
+header from the first attempt. Persist the unchanged body and key until delivery
+finishes. A key belongs to one source and lives for 24 hours from reservation.
+
+Pulse commits the reservation before measurement writes. The same key and
+identical batch return the same successful `{ metrics, events, states }`
+counts. Different content returns `409`. A failed write keeps the key pending;
+retrying it uses the same acceptance time and row identities, so it writes the
+same rows. Completed retries do not consume quota again.
+
+Without a key, a failed batch can already be partly stored. Its error includes
+**The batch may be partly stored**. Repeated events can duplicate; adding a key
+after the first failure cannot deduplicate that earlier attempt. Do not claim
+that an unkeyed retry is safe.
+
+| Outcome | HTTP response |
+| --- | --- |
+| Accepted | `200`, counts for metrics, events, and states |
+| Invalid batch, timestamps, sealed hours, or registry caps | `400`; no measurements written |
+| No ingest access | `403` |
+| Unknown source | `404` |
+| Key conflict, disabled source, busy or blocked base | `409` |
+| Base storage threshold reached | `409 PULSE_BASE_STORAGE_FULL`; reads continue |
+| Value or byte quota exhausted | `429 PULSE_BASE_THROTTLED`, whole-second `Retry-After` |
+| Quota service unavailable | `503 PULSE_QUOTA_UNAVAILABLE`, `Retry-After: 30` |
+| Store unavailable | `503 PULSE_STORE_UNAVAILABLE`, `Retry-After: 30` |
+| Instance disk below 10% free | `503 PULSE_STORE_DISK_LOW`, `Retry-After: 300`; reads continue |
+
+Wait for `Retry-After` before retrying an unchanged keyed batch. Fix other
+client errors first. Split batches that exceed the base's allowance; a bucket
+cannot accumulate more than one minute's quota.
+
+Values and bytes use continuously refilled token buckets per base, shared
+across replicas and HTTP, CLI, and scrape paths. HTTP counts original request
+bytes; other paths count serialized batch bytes. Quota refusals mark the source
+as throttled for five minutes. A base administrator can shorten retention when
+storage is full; a Cloud administrator can raise its threshold.
+
+Direct user base administrators receive one storage notification per crossing;
+group access is not expanded. Cloud administrators receive one disk notification
+per crossing and one notification per store outage, subject to preferences.
+A successful disk measurement ends the outage.
+
+## Set up Prometheus collection
+
+```sh
+cld pulse sources create --name node --kind metrics \
+  --endpoint-url https://metrics.example.com/metrics \
+  --scrape-interval-seconds 60 \
+  --metric-filter 'node_*' --metric-filter up
+cld pulse sources update node --metric-filter 'node_cpu*'
+cld pulse sources update node --clear-metric-filters
+cld pulse sources scrape node --json
+cld pulse sources scrapes node --json
 ```
 
-`cld pulse ingest` requires write access to the selected base. Pass `--source` to select an enabled source in that base. The endpoint is `/api/pulse/bases/:baseId/sources/:sourceId/ingest`. Long-running collectors use a source token.
-
-## Batch schema
-
-All three collections are optional, but the batch must contain at least one item.
-
-```json
-{
-  "metrics": [],
-  "events": [],
-  "states": []
-}
-```
-
-### Metrics
-
-```json
-{
-  "name": "sales.orders.total",
-  "value": 142,
-  "ts": "2026-07-12T12:00:00.000Z",
-  "type": "counter",
-  "unit": "count",
-  "resource": { "type": "store", "id": "berlin" },
-  "dimensions": {
-    "channel": "web"
-  }
-}
-```
-
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `name` | Yes | Non-empty metric name. |
-| `value` | Yes | Finite number. `NaN` and infinities are rejected. |
-| `ts` | No | ISO datetime. Server time is used when omitted. |
-| `type` | No | `gauge` or `counter`; defaults to `gauge`. |
-| `unit` | No | Non-empty unit string or null. |
-| `resource` | No | Explicit `{type, id, label?}` for the observed object; omit or use null for no resource. |
-| `dimensions` | No | Exact-match labels distinguishing variants. |
-
-A metric variant is identified by metric name, authenticated source, resource identity, and normalized dimensions. Sending the same variant and timestamp again updates that sample rather than creating a second sample. The first accepted sample fixes the type and unit for that metric name within its base. Later samples must match both, including a null or omitted unit; a conflict rejects the entire batch.
-
-One metric may have at most 10,000 variants in one base. Values such as visitor IDs, request IDs, session IDs, full URLs, timestamps, or IP addresses create too many variants and belong in events instead. Pulse rejects a batch that would exceed the metric's variant limit.
-
-### Events
-
-```json
-{
-  "kind": "order.created",
-  "ts": "2026-07-12T12:00:00.000Z",
-  "value": 149.9,
-  "actorId": "customer:42",
-  "sessionId": "checkout-session-8",
-  "correlationId": "checkout-1234",
-  "resource": {
-    "type": "store",
-    "id": "berlin",
-    "label": "Berlin store"
-  },
-  "dimensions": {
-    "channel": "web",
-    "currency": "EUR"
-  },
-  "attributes": {
-    "orderId": "order:1234",
-    "targetUrl": "https://shop.example/orders/1234"
-  },
-  "sensitive": {
-    "ipHash": "sha256:7d8f...",
-    "geo": { "country": "DE", "city": "Berlin" }
-  },
-  "payload": {
-    "lineItems": [{ "sku": "sku-42", "quantity": 3 }]
-  }
-}
-```
-
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `kind` | Yes | Non-empty event kind. |
-| `ts` | No | Event ISO datetime; server time is used when omitted. |
-| `value` | No | Optional finite numeric value or null. |
-| `actorId` | No | Actor responsible for the event. |
-| `sessionId` | No | Session grouping related events. |
-| `correlationId` | No | Identifier joining one process across events. |
-| `resource` | No | Explicit stable resource `{ type, id, label? }` for the observed object. |
-| `dimensions` | No | Bounded exact-match labels. |
-| `attributes` | No | JSON for irregular or unique event fields. |
-| `sensitive` | No | Classified JSON with independent short retention. |
-| `payload` | No | Nested event-specific JSON. |
-
-## Classify event data
-
-Classify fields by how Pulse must use and retain them. Do not duplicate one value across roles unless two distinct user questions require it.
-
-| Role | Put here | Do not put here |
-| --- | --- | --- |
-| `dimensions` | Stable fields users repeatedly filter or group by: campaign, channel, country, outcome | Request IDs, visitor IDs, full URLs, timestamps, raw IPs |
-| `attributes` | Unique or irregular fields that should remain visible on individual events: full URL, referrer, user agent, order ID | Secrets or fields requiring shorter retention |
-| `sensitive` | Raw IP, precise geolocation, or other classified event data | Data required after sensitive retention expires |
-| `payload` | Nested domain details that should be returned as one object | Stable grouping labels |
-
-Example for a QR redirect:
-
-```json
-{
-  "kind": "qr.opened",
-  "actorId": "visitor:hashed-123",
-  "sessionId": "session:456",
-  "correlationId": "request:789",
-  "resource": { "type": "qr_code", "id": "summer-poster-a", "label": "Summer poster A" },
-  "dimensions": { "campaign": "summer", "channel": "poster", "country": "DE" },
-  "attributes": {
-    "targetUrl": "https://example.com/products/123?utm_source=poster",
-    "referrer": "https://example.org/"
-  },
-  "sensitive": {
-    "ipHash": "sha256:7d8f...",
-    "geo": { "city": "Berlin", "latitude": 52.52, "longitude": 13.4 }
-  },
-  "payload": { "redirectStatus": 302 }
-}
-```
-
-This shape keeps campaign reporting useful while retaining individual URLs and classified location data without creating a metric variant or resource per visit.
-
-Field limits are part of the public ingest contract:
-
-- `dimensions`: at most 32 keys; keys at most 80 characters; stringified values at most 500 characters.
-- `attributes`: at most 64 top-level keys, 32 KiB encoded JSON, and 4 nested levels.
-- `sensitive`: at most 32 top-level keys, 32 KiB encoded JSON, and 4 nested levels.
-- `payload`: at most 64 KiB encoded JSON and 8 nested levels.
-
-### States
-
-```json
-{
-  "key": "store.online",
-  "value": true,
-  "ts": "2026-07-12T12:00:00.000Z",
-  "resource": { "type": "store", "id": "berlin" },
-  "dimensions": {
-    "region": "eu-central"
-  }
-}
-```
-
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `key` | Yes | Non-empty state key. |
-| `value` | Yes | String, number, boolean, or null. |
-| `ts` | No | State-change ISO datetime; server time is used when omitted. |
-| `resource` | No | Explicit `{type, id, label?}` whose state is being set. |
-| `dimensions` | No | Labels distinguishing independently current state variants. |
-
-States represent current truth. Sending the same source, key, resource identity, and dimensions replaces the current value. Pulse records state history only for the initial value and real value changes; repeated equal snapshots update the current row without adding another transition. Source is part of current-state identity: different sources never overwrite each other. Late snapshots do not rewind the current value. Batch states are processed in input order. Older timestamps change nothing; equal timestamps use later acceptance, with input order breaking ties inside a batch.
-
-### Dimension values
-
-Input dimension values may be strings, numbers, booleans, or null. Pulse trims keys, drops null and undefined values, converts remaining values to strings, and sorts keys before storing them.
-
-Prefer stable dimensions that answer real filtering or grouping questions. Event dimensions may have more distinct values than metric dimensions, but arbitrary unique detail still belongs in event attributes. Never encode timestamps, request IDs, sessions, full URLs, or IP addresses as metric dimensions.
-
-## Model resources and variants
-
-Use stable resource identities across batches.
-
-Use this split:
-
-- `resource.id`: stable identity of the observed object.
-- `resource.type`: a lowercase slug such as `host`, `container`, or `service`.
-- `resource.label`: optional presentation; changing it does not create a variant.
-- `dimensions`: labels that distinguish or filter variants without replacing identity.
-- metric/event/state name: the fact being observed, not the object name.
-
-Good container example:
-
-```json
-{
-  "name": "docker.container.cpu.usage",
-  "value": 12.4,
-  "unit": "percent",
-  "type": "gauge",
-  "resource": { "type": "container", "id": "host-01/f06a6893f7bd" },
-  "dimensions": {
-    "host": "host-01",
-    "container": "app-core",
-    "container_id": "f06a6893f7bd",
-    "compose_project": "cloud",
-    "compose_service": "app-core"
-  }
-}
-```
-
-Do not put the container name into the metric name. Use one stable metric name with one resource per container.
-
-Pulse uses only explicit resources. It does not infer Docker, host, or service
-objects from generic ingest dimensions. The Prometheus adapter can identify a
-`target` resource from its `instance`, `host`, or `node` label. Resource types
-must match `[a-z][a-z0-9._-]*`; their full `type:id` key has at most 505
-characters. The type distinguishes equal IDs belonging to different classes.
-
-Keep identity consistent across metrics, events, and states so Pulse groups all signals under the same resource.
-
-Only stable observed objects should become resources. A website, campaign, QR code, host, container, service, customer, or order can be a resource when it represents a stable object. Do not create resources for individual page views, visits, sessions, requests, IP addresses, or timestamps.
-
-## Retry safely
-
-External source-token ingest supports `Idempotency-Key`:
-
-```bash
--H "Idempotency-Key: collector-01-2026-07-12T12:00:00Z"
-```
-
-Rules:
-
-- A key is scoped to one source.
-- The key may contain at most 200 characters.
-- Pulse remembers the key for at least 24 hours.
-- A completed key returns the original counts without writing again.
-- A pending key reruns the write with its original acceptance time and row identities.
-- Reusing the key with different content returns HTTP `409 Conflict`.
-- Do not deliberately reuse old keys.
-
-Generate one deterministic key per logical batch and keep it unchanged across retries. Do not generate a new key for each retry attempt.
-
-`cld pulse ingest` does not currently expose an idempotency-key flag. Use it only when the caller can tolerate a deliberate retry strategy or when the batch's own metric timestamps make repeated metric samples harmless; repeated events are separate rows.
-
-## Limits and write failures
-
-- At most 500 metrics, 500 events, and 500 states per request.
-- At most 1,500 total items per request.
-- The batch must not be empty.
-- Metric values and event numeric values must be finite.
-- Timestamps must parse as datetimes and may be at most five minutes in the future. Metric timestamps must also be within raw retention.
-- Idempotency keys may not exceed 200 characters.
-- One metric may have at most 10,000 variants per base.
-- Event field objects must satisfy the key, byte, and nesting limits in [Classify event data](#classify-event-data).
-
-These limits apply to both source-token requests and `cld pulse ingest`.
-
-Validation and cap violations return 400 before measurement inserts. Base limits
-also cap total series, event kinds and state keys. An unavailable store returns
-503 and `Retry-After: 30`; retry an identical keyed batch after that delay. Its key
-stays pending until all writes finish. A failed unkeyed batch may already be partly
-stored; repeated events can duplicate. Use a key from the first attempt when a
-collector needs safe retries.
-
-All write paths share continuously refilled per-base value and byte quotas.
-The HTTP API counts original request-body bytes; scrapes count their serialized
-batch. `429 PULSE_BASE_THROTTLED` includes a whole-second `Retry-After` and
-marks the source as throttled for five minutes. Completed idempotency keys
-return their stored counts without consuming quota. A Valkey failure returns
-`503 PULSE_QUOTA_UNAVAILABLE` with `Retry-After: 30`.
-
-A measured storage threshold refuses new values with
-`409 PULSE_BASE_STORAGE_FULL`. A base admin can shorten retention or a Cloud
-admin can raise the threshold. Instance disk space below 10% free refuses all
-bases with `503 PULSE_STORE_DISK_LOW` and `Retry-After: 300`. Existing data
-remains readable. Failed or throttled scrapes record their error and wait for
-the next scheduled tick.
-
-The source-token route returns 200 for success, 403 without ingest permission,
-404 for an unknown source, 409 for key conflicts or an unwritable base, and 429
-for rate limiting. A future timestamp error names its collection, index and
-metric name, event kind or state key.
-
-Split larger collector output into bounded batches. Give each batch its own idempotency key.
-
-## Inspect the result
-
-Check source health:
-
-```bash
-cld pulse sources list --json
-cld pulse source-tokens list "Warehouse importer" --json
-```
-
-HTTP ingest updates the source's `lastSeenAt` and the credential's `lastUsedAt`. Prometheus scrape attempts additionally appear in `sources scrapes`; push-ingest requests do not create scrape-attempt rows.
-
-## Operational rules
-
-- Use one source for one logical integration boundary; use multiple labeled tokens for independently revocable deployments of that integration.
-- Use separate sources when ownership, health, provenance, or access to credentials must be distinguishable.
-- Keep source tokens out of logs, shell history, or documentation.
-- Revoke a token before deleting a collector deployment.
-- Check `lastSeenAt` and token `lastUsedAt` when data stops arriving.
-- Use `clear-data` to remove telemetry while preserving sources, credentials, settings, and access.
-- Configure detailed telemetry, long-range metric summaries, and sensitive event fields independently. When sensitive retention expires, Pulse clears only the event's `sensitive` object; the remaining event follows raw retention.
-- Deleting a source makes its source-bound credentials unusable and removes source metadata, but retained historical telemetry loses its source association rather than being deleted.
-
-Return to the [Pulse CLI reference](index.md) for bases, sources, access, and lifecycle operations.
-
-### Metric definitions and scrapes
-
-The first accepted sample fixes the metric type and unit within its base. Later samples must use the same type and unit, including an omitted unit. Conflicting batches are rejected atomically. Counters must be nonnegative.
-
-Scheduled metrics sources use whole-minute intervals from 60 through 86400 seconds. Scheduling is based on the scheduled slot, so completion time does not postpone the next minute. Only one scrape per source runs at a time. Fetching headers and the complete body share a 15-second timeout; the response limit is 10 MiB and the sample limit is 50000. All accepted samples in an attempt use the same collection time.
-
-The Prometheus adapter accepts declared gauge, counter and histogram families.
-Histograms store `_bucket` with canonical `le` dimensions, `_sum` and `_count`
-as counters. Every label group needs a `+Inf` bucket, cumulative buckets,
-matching count (when present), and a nonnegative sum. One invalid group refuses
-the whole family. `status.refusedHistograms` records up to 20 family/reason
-pairs; `status.skippedSummaries` counts skipped summary samples. Both describe
-the latest scrape. Untyped, malformed and nonfinite samples remain skipped.
-
-For metrics sources, repeat `--metric-filter node_* --metric-filter up` to
-include family prefixes or exact names. Filters apply before the 50,000-sample
-and series caps. Empty filters include all families; use
-`--clear-metric-filters` when updating. At most 100 entries, each up to 128
-characters, are accepted. Only a trailing `*` is allowed; the rest follows
-Prometheus metric-name syntax. Changing the endpoint origin clears its bearer
-token unless you supply a replacement.
-
- The adapter uses `instance`, `host`, or `node` as target identity, falling back to the endpoint host and port. This inference belongs to the adapter. HTTP ingest creates a resource association only when you supply `resource`; omitting it or sending null records the signal without a resource.
+Filters match exact family names or `prefix*`. Only a trailing wildcard is
+allowed; other characters follow Prometheus metric-name syntax. An empty list
+includes all families. `--clear-metric-filters` is update-only and cannot be
+combined with `--metric-filter`. Histogram filters use the parent family name.
+
+At most 100 filters of 128 characters fit the source configuration's 16 KiB
+budget: 100 × (128 + 3 JSON bytes) = 13,100 bytes, leaving room for other fields.
+Filtered-out families consume neither the sample cap nor series budgets.
+
+Intervals are multiples of 60 seconds from 60 through 86,400. Fetching lookup,
+connection, headers, and body has one 15-second deadline. The response limit is
+10 MiB, with identity encoding only, and at most 50,000 selected sample lines.
+Only one scrape per source runs at a time. Accepted samples share a collection
+time; timestamps in the exposition do not override it.
+
+The adapter accepts declared gauges, counters, and histograms. Histograms store
+`_bucket` with normalized `le` dimensions, `_sum`, and `_count` as counters.
+Every label group needs `+Inf` and nonnegative cumulative buckets; a supplied
+count must match `+Inf`, and the sum cannot be negative. One invalid group
+refuses its whole family. Source status lists up to 20 family/reason pairs:
+`missing_inf`, `not_cumulative`, `count_mismatch`, or `negative_sum`.
+Summaries are skipped and counted as samples in `skippedSummaries`; untyped,
+malformed, and nonfinite samples are skipped too. Included but skipped lines
+still count toward the sample limit.
+
+The adapter uses `instance`, `host`, or `node` for target identity, falling back
+to the endpoint host and port. Internal endpoints require a Cloud administrator
+to allow the target for this base under **Administration → Pulse → Internal
+targets**. Read [Administration](admin.md) for target entries.
+
+Pass endpoint credentials only with `--bearer-token-file` or
+`--bearer-token-stdin`. A scheme, host, or port change deletes the stored bearer
+token unless a replacement is supplied. Changing only the path keeps it.
+
+## Inspect collection and retention
+
+`sources list --json` exposes `status.newestDataAt`, `throttled`, `throttledAt`,
+`refusedHistograms`, `skippedSummaries`, `lastError`, and `lastErrorAt`.
+Histogram and summary diagnostics describe the latest scrape. Scrape history
+records attempts, counts, duration, and failures, including store and quota
+refusals; such failures wait for the next scheduled attempt. HTTP ingest updates
+source health and token usage without creating scrape-attempt rows.
+
+Events and state history expire by raw TTL, hourly values by rollup TTL, and
+sensitive event fields by a separate column TTL. Current states do not expire.
+Raw metric partitions are dropped by nightly retention at 03:17 UTC only when
+the whole day is expired and every recorded hour is sealed. Late samples and
+corrections mark hours dirty for recomputation. **Hourly values are lagging**
+in **Administration → Pulse → Bases** warns about delayed hourly calculation
+or sealing. See the [Pulse guide](/en/apps/pulse#retention-and-complete-metric-hours).
+
+Return to [Pulse CLI](index.md) for base, access, and lifecycle commands.

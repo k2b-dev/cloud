@@ -10,6 +10,68 @@ updated: 2026-10-19
 
 # Deprecations and migrations
 
+## Pulse requires ClickHouse and starts empty
+
+Pulse now needs an operator-provided ClickHouse data store. Measurements go to
+one database per base; Postgres keeps control data. This update **deletes all
+existing Pulse data without confirmation**: bases, members and access entries,
+sources, source tokens, measurements, dashboards, and saved queries. There is
+no migration of that data. Other Cloud apps keep their data.
+
+The query DSL, dashboard DSL, explorer, signal catalog, resource browsing, and
+public dashboards are removed. SQL questions and new dashboards follow in the
+next releases. In a base, a notice replaces the removed views: **Dashboards and
+questions are coming back**, with **Go to sources**. Sources, ingest, and
+scrapes are available now.
+
+Before updating:
+
+1. Export or copy any configuration, dashboard definitions, or saved queries
+   you want to keep while the old version still runs. **There is no export
+   path for old measurements.** Back up the old Postgres database and keys if
+   you need to recover the old installation; that backup is not an import into
+   the new Pulse.
+2. Provide a dedicated, single-node ClickHouse 26.9 or newer instance with its
+   own volume. Prepare the setup script and service credentials as described
+   in [Provide ClickHouse for Pulse](/en/docs/operations/deployment-requirements#provide-clickhouse-for-pulse).
+   Connect it under **Administration → Pulse → Data store** on the updated
+   Pulse before resuming collection. An older Pulse without this setup page
+   cannot save the new connection in advance.
+3. Stop all old Pulse replicas before starting the new version. The startup
+   reset is automatic; replacing the image with an older one does not restore
+   deleted data. Recreate bases, members, sources, and tokens after setup, and
+   update each producer with its new credential.
+
+`PULSE_SCRAPE_ALLOWED_TARGETS` is removed. Cloud administrators allow internal
+scrape targets **per base** under **Administration → Pulse → Internal targets**
+(**Verwaltung → Pulse → Interne Ziele** in German), or with
+`cld pulse admin targets`. Transfer the intended exceptions to each recreated
+base; the old environment variable has no effect.
+
+The following CLI groups and commands are removed, without a current query replacement:
+
+- `cld pulse query` (including saved-query operations) and `cld pulse dashboards`
+  (including publishing and public links).
+- `cld pulse resources`, `cld pulse inventory`, `cld pulse fields`, and
+  `cld pulse capabilities`.
+- The top-level data commands `cld pulse overview`, `cld pulse metrics`,
+  `cld pulse states`, `cld pulse events`, and `cld pulse series`. There is no
+  `cld pulse signals` command to replace them.
+
+The removed capability IDs are `pulse.resource.search`, `pulse.resource.read`,
+`pulse.metric.search`, `pulse.field.search`, `pulse.query.compile`,
+`pulse.query.execute`, `pulse.saved_query.list`, `pulse.saved_query.read`, and
+`pulse.saved_query.execute`. Pulse's remaining capabilities find/read bases and
+sources; agents have no measurement-query capability until SQL arrives.
+Update scripts, scheduled tasks, and agents that call the removed operations.
+
+Refresh the Pulse CLI plugin for each profile with `cld plugins update pulse`.
+Token creation now requires `cld pulse source-tokens create --output-file <path>`:
+it creates a new file with mode `0600` and prints no token in any output mode.
+Moving a metrics endpoint to another origin removes its bearer token unless a
+replacement is supplied. Collectors can use an `Idempotency-Key` from the first
+attempt for safe batch retries; see [Pulse](/en/apps/pulse#send-a-batch-with-http-ingest).
+
 ## Action policies and per-call reviews replace approval and catalog sentences
 
 Action `approval`, `CapabilityActionReview`, and `presentation.sentences`

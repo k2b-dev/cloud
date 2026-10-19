@@ -5,8 +5,9 @@ store administration. Without a saved ClickHouse connection, Pulse data APIs ret
 `PULSE_STORE_NOT_CONFIGURED`. Pulse administration and other Cloud apps remain available.
 
 1. Ask the operator for a dedicated ClickHouse 26.9 or newer instance reachable
-   from Pulse over HTTP or HTTPS. Its admin can read all Pulse data. The Pulse
-   service user manages users instance-wide and could alter even admins, so do
+   from Pulse over HTTP or HTTPS, as one node with its own persistent volume.
+   Its admin can read all Pulse data. The Pulse service user manages users
+   instance-wide and could alter even admins, so do
    not share the instance with other applications.
 2. Have the operator place the chosen service password in a private file or
    provide it on stdin. Never read the file into agent context, pass the value
@@ -90,11 +91,12 @@ cld pulse admin targets remove <targetId>
 Policy defaults use `--default-values-per-minute`, `--default-bytes-per-minute`,
 `--default-storage-bytes`, `--default-max-series`, `--default-max-event-kinds`,
 and `--default-max-state-keys`. Creation allows `everyone` (people and agents),
-`people`, or `admins`. Resource-bound credentials never create bases.
+`people`, or `admins`. Source-bound credentials never create bases.
 
 **Recreate discards measurements** and, like orphan deletion, needs `--yes`. It keeps sources and tokens. Retry resumes a failed operation. Recheck verifies matching backups
 and recreates read access after restore. Orphan deletion rechecks that no base
 references the database. Administration shows amounts and state, never contents.
+Use **Administration → Pulse → Internal targets** for the same target policy.
 Host and CIDR target entries cover every port; host:port covers one. `/0` is
 refused. Revocation blocks the next scrape, including redirect targets.
 

@@ -1,71 +1,62 @@
 ---
 id: pulse-operate
-title: Operate a base
+title: Check collection and recover a base
 icon: ti ti-lifebuoy
-description: Check source health, retention, access, send data with HTTP ingest, and fix common problems.
+kind: reference
+description: Check source status, retry ingest safely, and recover failed or blocked bases.
 order: 140
 ---
-Use this page to check source health, manage access, and send data.
+Open **Sources** when expected data is missing. Check the source before changing or clearing the base.
 
-## Connect the data store (Cloud administrators) {icon="database"}
-
-Open **Administration → Pulse → Data store**. An operator provides a dedicated
-ClickHouse instance, version 26.9 or newer. Choose the service password, get the
-setup script and have the ClickHouse administrator run it. Then enter the address and
-service credentials and choose **Check and connect**. Failed checks explain
-what to fix and leave the saved connection unchanged.
-
-The same workflow is available through `cld pulse admin store`. Provide
-passwords only with `--password-file` or `--password-stdin`. Without this connection, only Pulse administration stays available.
-
-## Check a base routinely {icon="route"}
+## Read source status
 
 :::reference
-- **Source health:** **Sources** show recent updates, duration, errors, received data, and the use of API keys where relevant.
-- **Access:** Access to a base controls who can view, edit, or manage it.
-- **Retention:** Pulse can keep detailed data, long-term summaries, and protected event fields for different periods. Protected fields can expire before the rest of an event.
-- **Clear data:** **Clear telemetry** discards the collected data. It keeps the base, sources, API keys, access, and settings.
-- **Long destructive operations:** Clearing or deleting a large base can take time after you confirm it. An accepted request means that the work started, not that all data disappeared immediately.
+- **Newest data:** The latest timestamp received from the source. Compare it with the time you expect.
+- **Throttling:** Recent value or byte limits stopped collection. Reduce the batch or wait for the retry delay.
+- **Refused histograms:** A family failed validation. Check its buckets, count, and sum at the endpoint.
+- **Skipped summaries:** Prometheus summary samples are not stored. Select supported metric families instead.
+- **Errors:** Check the last error and its time. Scrape history adds success, received counts, duration, and finish time.
 :::
 
-## Send data with HTTP ingest {icon="point"}
+For an internal endpoint, ask the Cloud administrator to allow its host, host:port, or CIDR under **Administration → Pulse → Internal targets**.
+Changing the endpoint's scheme, host, or port deletes its stored bearer token unless you supply a replacement.
+
+## Retry HTTP ingest safely
+
+Send batches to `POST /api/pulse/ingest` with the source token as a Bearer credential.
+Send an `Idempotency-Key` from the first attempt. Keep the body and key unchanged for retries.
 
 :::reference
-- **Write failures:** Invalid requests write no measurements. A store outage returns 503 with a retry delay; a request without a key may already be partly stored. Use an `Idempotency-Key` from the first attempt and retry the identical batch with that key.
-- **API keys belong to one source:** Pulse assigns received signals to the source that owns the API key. A source value sent with the data does not change that assignment.
-- **Retry-safe requests:** Send the same `Idempotency-Key` when you retry one batch. Pulse returns the original result for at least 24 hours and rejects reuse with different content.
-- **Timestamps:** Metrics, events and states may be at most five minutes in the future. Metric timestamps must also be within the base's raw retention.
-- **Keep metric variants manageable:** A metric can have up to 10,000 variants in a base. Move request IDs, sessions, full URLs, IPs, and other unique values to events instead of metric dimensions.
+- **Batch size:** At most 500 metrics, 500 events, and 500 states; 1,500 items total and 5 MiB of encoded batch JSON.
+- **Request key:** Pulse reserves it before writing. The same key and batch return the same successful result for 24 hours.
+- **Pending batch:** Retry with the same key to write the same rows. Different content with that key returns 409.
+- **No key:** A failed batch can already be partly stored; the error says so. Retried events can duplicate.
+- **Quota:** Values and bytes share a per-base allowance across sources and replicas. A 429 response includes `Retry-After`.
+- **Store outage:** A 503 response includes `Retry-After`. Scrapes record the failure; Cloud administrators receive one notification per outage.
 :::
 
-## Fix common problems {icon="lifebuoy"}
+Wait for the stated delay before repeating a keyed batch. A future-time error names the item to correct.
+The CLI ingest command has no key flag. Use the source-token HTTP route when delivery needs safe retries.
+`cld pulse source-tokens create --output-file <path>` saves a token in a new private file and never prints it.
+
+## Recover capacity or a base
+
+A base administrator changes sources, access, and retention. Cloud administrators connect the store and set base policy, limits, and internal targets.
+The operator supplies a dedicated ClickHouse instance. Without it, **Pulse is not set up yet** appears; other Cloud apps remain available.
 
 :::reference
-- **A metrics source is refused:** Pulse scrapes only public endpoints by default. Ask a Cloud administrator to release the host, host:port or CIDR for this base under Administration → Pulse → Internal targets. Then retry the source.
-- **No data appears:** Check the source first. Check its last update and error message.
-- **A metric has too many variants:** Inspect its dimensions. Keep stable grouping labels. Move unique identities or event details into the identity fields, attributes, sensitive fields, or payload of an event.
+- **Base storage full:** New values return 409; reads continue. Shorten retention or ask a Cloud administrator to raise the threshold.
+- **Instance disk below 10% free:** New values return 503 with a retry delay. Reads continue; Cloud administrators receive a notification.
+- **Shorter retention:** Review the cutoff, affected rows, and estimated bytes before confirming. Sensitive fields are cleared while their event rows remain.
+- **Hourly values are lagging:** This notice under **Administration → Pulse → Bases** means calculation or sealing is delayed. Check those jobs before clearing data.
+- **Failed operation:** A new base must become active first. Choose **Retry** after provisioning, clearing, or deletion fails.
+- **Blocked writes:** A missing database or checkpoint mismatch needs a matching restore and a Cloud administrator's **Check again**. Clearing stays blocked meanwhile.
 :::
 
-## Recover a base {icon="database"}
+:::warning Clearing and recreating discard measurements
+Clearing keeps sources, tokens, settings, and access. A Cloud administrator's **Start empty** also starts with empty measurements.
+Deleting revokes tokens, prevents database reads, and then removes the base. These operations cannot be undone in Pulse.
+:::
 
-A new base provisions its own database and becomes active before accepting
-changes. Clearing keeps sources and tokens. Deletion
-revokes tokens first and closes database read access. A
-base in deletion stays on your Pulse overview until it is gone. If an operation fails,
-choose **Retry**. A Cloud administrator can also retry it under Administration → Pulse
-→ Bases, where profiles, limits and measured storage appear without contents.
-
-Shorter retention needs confirmation of the cutoff, affected rows and estimated
-bytes. For sensitive fields, it counts the fields that are cleared; the rows stay. Raw data allows 1–730 days by default (up to 3,650 by policy), rollups
-1–3,650 days, and sensitive fields 1–8,760 hours. Sensitive fields expire by
-column TTL during ClickHouse merges; current states do not expire.
-
-A checkpoint mismatch or missing database blocks measurement writes. While
-the block is active, you cannot clear the base. After
-restoring matching backups, a Cloud administrator chooses **Recheck**. **Recreate**
-discards measurements and starts empty. Other Cloud apps keep working
-when Pulse is not configured.
-
-**Hourly values are lagging** in Administration → Pulse → Bases means rollups or
-sealing are delayed. Raw daily partitions stay until their hours are sealed;
-check the rollup and retention jobs before clearing data.
+A deleting base remains on its administrators' overview until deletion finishes.
+Check the operation's state before treating an accepted request as completed work.

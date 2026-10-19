@@ -1,42 +1,44 @@
 ---
 id: pulse-data-model
-title: Understand the data model
+title: Understand collected data
 icon: ti ti-stack-2
-description: See how bases, sources, resources, signals, variants, and dimensions fit together.
+kind: reference
+description: Choose metrics, events, and states and understand timestamps, corrections, and retention.
 order: 105
 ---
-Pulse groups incoming measurements by base and source.
+Choose the data type that matches what your source reports. Each base keeps its own sources, access, and retention.
 
-## Follow the path from source to measurement {icon="layout-dashboard"}
-
-:::reference
-- **Base:** A workspace with its own access, retention, and sources.
-- **Source:** One connection that sends data to Pulse, such as a metrics endpoint, an HTTP ingest source, or another app.
-- **Resource:** The observed object: a host, container, device, customer, order, store, service, battery, or any domain object.
-- **Signal:** A named metric, event, or state. The name says what happened or what was measured.
-- **Variant:** One concrete signal shape for one combination of source, resource, and dimensions. Variants explain why one signal can have many rows or lines.
-- **Dimension:** A label that distinguishes one variant from another, such as region, route, device, `compose_service`, channel, or `customer_tier`. Use reusable categories here, not unique request or user values.
-:::
-
-## Choose the right signal type {icon="route"}
+## Choose a data type
 
 :::reference
-- **Metric: a number over time:** Use metrics for repeated measurements such as CPU usage, power, latency, or revenue. Keep dimensions stable, so the list of variants stays useful.
-- **Event: something happened:** Use events for visits, QR opens, orders, requests, deployments, and other facts at one point in time. Events can carry details with many possible values without a metric variant for each value.
-- **State: what is true now:** Use states for online status, current version, operating mode, or another latest value. Pulse adds history only when the value actually changes.
+- **Metric:** A number over time, such as memory usage or a counter of completed orders. Counters cannot be negative.
+- **Event:** Something happened at a particular time, such as a visit or completed order.
+- **State:** The current value of a fact, such as online status or a version. Pulse records history only for initial values and value changes.
+- **Dimension:** A reusable label, such as region, route template, or channel. Keep request IDs and full URLs out of metric dimensions.
 :::
 
-## Classify event fields {icon="table"}
+Use event `attributes` for unique details, `sensitive` for protected fields with shorter retention, and `payload` for nested details.
+Use `actorId`, `sessionId`, and `correlationId` to connect related events.
+
+## Understand accepted values
 
 :::reference
-- **Dimensions filter and group:** Use dimensions for labels with a stable set of values, such as campaign, channel, country, outcome, or environment.
-- **Attributes keep detailed context:** Use attributes for full URLs, request IDs, referrers, user agents, and irregular event details that you want to keep visible on single events.
-- **Sensitive fields expire on their own:** Use sensitive fields for IP addresses, precise geodata, and other protected event data. Pulse can remove them sooner than the rest of the event.
-- **Payload keeps supporting data together:** Use the payload for nested domain data that you want to inspect as one object but do not need to filter or group.
-- **Identities connect activity:** Use `actorId`, `sessionId`, and `correlationId` for people, sessions, and related activity. Keep these identities out of dimensions.
-- **Resources stay stable:** Create resources for stable objects such as a campaign, QR code, host, or service. A visit, session, request, timestamp, or IP address is not a resource.
+- **Time:** Without a timestamp, Pulse uses acceptance time. Supplied timestamps can be at most five minutes in the future.
+- **Metric age:** Metric timestamps must be within raw retention. Sealed hours refuse further writes, even after retention is extended.
+- **Corrections:** For one metric series and timestamp, the newest accepted value wins. The correction is visible immediately.
+- **Current states:** A newer timestamp wins. At equal timestamps, later acceptance wins; input order breaks ties within a batch.
+- **Older states:** Older snapshots change nothing. Equal values update the current snapshot without adding history.
+- **Source separation:** Metrics and states from different sources stay separate.
 :::
 
-:::note Explicit resources
-Send `resource: {type, id, label?}` to associate a signal with an object. Omit it for a signal without a resource. Pulse does not infer objects from generic ingest dimensions. Resource types are lowercase slugs. Metrics and states from different sources stay separate variants.
-:::
+Hourly values keep count, sum, minimum, maximum, last value and timestamp, and counter increase.
+A counter reset contributes its new value. Corrections trigger recomputation of affected hours.
+
+## Understand retention
+
+Raw retention covers detailed measurements, events, and state history.
+Hourly values and sensitive event fields have separate periods. Current states do not expire.
+
+Expired events, history, hourly values, and sensitive fields are removed during storage cleanup.
+Raw metric partitions are removed nightly only after their whole day has expired and its recorded hours are sealed.
+The base settings preview affected data before you confirm a shorter period.
