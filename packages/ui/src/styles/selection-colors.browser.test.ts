@@ -77,12 +77,12 @@ const script = await build.outputs[0]!.text();
 
 const apps = {
   Notebooks: {
-    light: { ink: "#836404", row: "#fefaee", nav: "#f3eedd" },
-    dark: { ink: "#eab308", row: "#2f2b18", nav: "#423c24" },
+    light: { ink: "#886805", row: "#fefaee", nav: "#fdf7e6" },
+    dark: { ink: "#eab308", row: "#2f2b18", nav: "#363018" },
   },
   Mail: {
-    light: { ink: "#0f726b", row: "#eef5f5", nav: "#dde7e8" },
-    dark: { ink: "#5ca29c", row: "#112327", nav: "#1d3236" },
+    light: { ink: "#0f766e", row: "#eef5f5", nav: "#e7f1f1" },
+    dark: { ink: "#5ca29c", row: "#112327", nav: "#112529" },
   },
 };
 
