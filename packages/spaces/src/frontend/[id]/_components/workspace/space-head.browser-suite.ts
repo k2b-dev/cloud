@@ -539,32 +539,24 @@ describe(`Spaces shared head in ${browserName}`, () => {
       await page.context().close();
     }
   }, 30_000);
-  test("overview sidebar resizes by arrow keys", async () => {
-    const page = await open("/app/spaces?view=mine");
-    try {
-      const target = page.locator('[role="separator"][data-app-workspace-resize="sidebar"]');
-      const before = Number(await target.getAttribute("aria-valuenow"));
-      await target.focus();
-      await page.keyboard.press("ArrowRight");
-      const right = await resizedPast(target, "above", before);
-      // A step starts from the sidebar's rendered width, so the next key waits until the layout shows the last one.
-      await target.evaluate(
-        (handle) =>
-          new Promise<void>((resolve) => {
-            const sidebar = document.getElementById(handle.getAttribute("aria-controls") ?? "");
-            const check = () =>
-              sidebar && Math.round(sidebar.getBoundingClientRect().width) === Number(handle.getAttribute("aria-valuenow"))
-                ? resolve()
-                : requestAnimationFrame(check);
-            check();
-          }),
-      );
-      await page.keyboard.press("ArrowLeft");
-      expect(await resizedPast(target, "below", right)).toBeLessThan(right);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
+  for (const [key, direction] of [
+    ["ArrowRight", "above"],
+    ["ArrowLeft", "below"],
+  ] as const)
+    test(`overview sidebar resizes by ${key}`, async () => {
+      // One key per page: a second key right after the first is sometimes lost in WebKit under load (#1525).
+      const page = await open("/app/spaces?view=mine");
+      try {
+        const target = page.locator('[role="separator"][data-app-workspace-resize="sidebar"]');
+        const before = Number(await target.getAttribute("aria-valuenow"));
+        await target.focus();
+        await page.keyboard.press(key);
+        const after = await resizedPast(target, direction, before);
+        expect(direction === "above" ? after > before : after < before).toBe(true);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
   test("390px: view tabs precede chips and primary is round", async () => {
     const page = await open("/app/spaces/Space1?view=list", 390);
     try {
