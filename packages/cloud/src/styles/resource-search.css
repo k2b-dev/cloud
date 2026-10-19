@@ -184,9 +184,13 @@
 .cloud-resource-search__result:hover {
   background: var(--k2b-hover);
 }
-.cloud-resource-search__result.is-active,
-.cloud-resource-search__result.is-selected {
+/* The keyboard-active option is a state of the listbox and keeps the platform
+   selection; a picked resource is an object row and carries the app fill. */
+.cloud-resource-search__result.is-active {
   background: var(--k2b-selected);
+}
+.cloud-resource-search__result.is-selected {
+  background: var(--ui-app-selected);
 }
 .cloud-resource-search__result-copy {
   display: flex;

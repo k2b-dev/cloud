@@ -1,0 +1,34 @@
+# Known selection-tokens findings: <file> | <selection|accent-mix> | <count>.
+# Migrations lower counts and remove entries; the rule never raises counts or adds lines.
+# `bun scripts/check.ts selection-tokens --fix` lowers counts whose findings are gone.
+# packages/filesv2 and packages/grids selection entries are tracked in #1430.
+packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | selection | 1
+packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | selection | 1
+packages/contacts/src/styles/app.css | accent-mix | 3
+packages/filesv2/src/styles/app.css | selection | 1
+packages/gateway-ops/src/observability/metrics/_components/MetricsCatalogue.island.tsx | selection | 1
+packages/gateway-ops/src/observability/metrics/_components/MetricsTokens.island.tsx | selection | 1
+packages/gateway-ops/src/observability/notifications/page.tsx | selection | 1
+packages/grids/src/frontend/_components/documents/DocumentLinkDialog.tsx | selection | 1
+packages/grids/src/frontend/_components/fields/FormulaReferenceWindow.island.tsx | selection | 1
+packages/grids/src/frontend/_components/forms/FormFieldsEditor.tsx | selection | 1
+packages/grids/src/frontend/_components/records-view/RecordCardsView.tsx | selection | 1
+packages/grids/src/frontend/_components/table/DatabaseTable.tsx | selection | 1
+packages/grids/src/frontend/admin.tsx | selection | 1
+packages/grids/src/frontend/public/documents/[token]/page.tsx | selection | 1
+packages/grids/src/styles/app.css | accent-mix | 1
+packages/grids/src/styles/app.css | selection | 1
+packages/ipa-hosts/src/frontend/HostgroupCard.tsx | selection | 1
+packages/mail/src/frontend/_components/MailComposeIntentPage.island.tsx | selection | 1
+packages/mail/src/frontend/_components/MailConversationReader.tsx | selection | 1
+packages/mail/src/frontend/_components/MailSidebar.tsx | selection | 1
+packages/mail/src/styles/app.css | accent-mix | 7
+packages/notebooks/src/styles/app.css | accent-mix | 2
+packages/oauth/src/frontend/page.tsx | selection | 1
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | selection | 4
+packages/tools/src/frontend/[tool]/page.tsx | accent-mix | 1
+packages/tools/src/frontend/tools/SpeedTest.island.tsx | selection | 1
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | selection | 1
+packages/tools/src/styles/app.css | accent-mix | 2
+packages/venue/src/frontend/_components/venue-workspace/signup.tsx | selection | 1
+packages/weather/src/frontend/[id]/page.tsx | selection | 1

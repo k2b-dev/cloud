@@ -645,6 +645,10 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
 
 export type MailboxListView = Pick<
   MailboxPageData,
+  | "mailbox"
+  | "permission"
+  | "access"
+  | "savedViews"
   | "scheduledMode"
   | "scheduledPage"
   | "scheduledError"
@@ -678,7 +682,7 @@ const buildMailboxListView = async (
   params: MailboxListParams,
   folderResult: Awaited<ReturnType<typeof messages.listFolders>>,
   savedViewResult: Awaited<ReturnType<typeof savedViews.listSavedConversationViews>>,
-): Promise<MailboxListView> => {
+): Promise<Omit<MailboxListView, "mailbox" | "permission" | "access" | "savedViews">> => {
   const t = workspaceMessages.resolve([params.locale ?? "en"]).t;
   const scheduledMode = params.requestUrl.searchParams.get("scheduled") === "1";
   const parsedView = conversationViewSchema.safeParse(params.requestUrl.searchParams.get("view") ?? undefined);
@@ -776,11 +780,19 @@ const buildMailboxListView = async (
 export const loadMailboxListView = async (params: MailboxListParams): Promise<Result<MailboxListView>> => {
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
-  const [folderResult, savedViewResult] = await Promise.all([
+  const [mailboxResult, folderResult, savedViewResult] = await Promise.all([
+    mailboxes.getMailbox(params.context, params.mailboxId),
     messages.listFolders(params.context, params.mailboxId),
     savedViews.listSavedConversationViews({ context: params.context, mailboxId: params.mailboxId }),
   ]);
-  return ok(await buildMailboxListView(params, folderResult, savedViewResult));
+  if (!mailboxResult.ok) return fail(mailboxResult.error);
+  return ok({
+    ...(await buildMailboxListView(params, folderResult, savedViewResult)),
+    mailbox: mailboxResult.data,
+    permission: permission.data.permission,
+    access: { scope: permission.data.scope, permission: permission.data.permission },
+    savedViews: savedViewResult.ok ? savedViewResult.data : [],
+  });
 };
 
 export const loadMailboxPageData = async (params: {

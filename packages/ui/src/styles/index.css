@@ -8318,10 +8318,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-direction: column;
 }
 
+/* The chat surface. Activities and questions measure its width, not the window's, so a chat in a narrow panel
+   beside an app takes the same rules as a chat on a phone. */
 .k2b-ui .k2b-chat-timeline {
   position: relative;
   min-height: 0;
   flex: 1;
+  container: k2b-chat / inline-size;
 }
 
 .k2b-ui .k2b-chat-timeline__viewport {
@@ -9908,6 +9911,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-chat-activity-busy-color: var(--k2b-text-secondary);
 }
 
+/* A running step turns its icon to the AI accent, also with reduced motion. A host accent keeps its colour. */
+.k2b-ui
+  .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]):not([data-accent="true"])
+  .k2b-chat-activity__leading {
+  --k2b-chat-activity-busy-color: var(--k2b-ai-accent);
+  color: var(--k2b-ai-accent);
+}
+
+/* A spinning icon cannot be painted through the text shimmer, so it turns solid on its own. */
+.k2b-ui
+  .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
+  .k2b-chat-activity__leading:has(.k2b-spin) {
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+}
+
 @keyframes k2b-chat-activity-shimmer {
   from {
     background-position: 120% 0;
@@ -9948,6 +9968,49 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: normal;
 }
 
+/* On a narrow chat surface a step's label wraps, so it shows its whole sentence instead of an ellipsis. A row with a
+   description keeps its one line, where the description is cut first. The chat surface is the container; the viewport
+   rule covers activities outside a chat timeline. A single line keeps its 1.75rem row. */
+@container k2b-chat (max-width: 47.999rem) {
+  .k2b-ui .k2b-chat-activity__row:not(:has(> .k2b-chat-activity__copy > small)) {
+    align-items: flex-start;
+  }
+
+  .k2b-ui .k2b-chat-activity__row:not(:has(> .k2b-chat-activity__copy > small)) > .k2b-chat-activity__leading {
+    min-height: 1.25rem;
+  }
+
+  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) {
+    line-height: 1.25rem;
+  }
+
+  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) > strong {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-chat-activity__row:not(:has(> .k2b-chat-activity__copy > small)) {
+    align-items: flex-start;
+  }
+
+  .k2b-ui .k2b-chat-activity__row:not(:has(> .k2b-chat-activity__copy > small)) > .k2b-chat-activity__leading {
+    min-height: 1.25rem;
+  }
+
+  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) {
+    line-height: 1.25rem;
+  }
+
+  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) > strong {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
 .k2b-ui .k2b-chat-activity__trailing {
   display: inline-flex;
   align-items: center;
@@ -9972,6 +10035,59 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-activity[data-body-inset="false"] > .k2b-chat-activity__body {
   margin-left: 0;
+}
+
+/* A `Chat.Activity.Toggle`: only its words open the body, with the chevron right after them. It stays part of the
+   sentence, so chips beside it keep their links. */
+.k2b-ui .k2b-chat-activity .k2b-chat-activity__toggle {
+  position: relative;
+  display: inline;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-chat-activity .k2b-chat-activity__toggle:hover {
+  color: inherit;
+  background: none;
+}
+
+.k2b-ui .k2b-chat-activity__toggle:hover > .k2b-chat-activity__toggle-label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.k2b-ui .k2b-chat-activity__toggle > .k2b-chat-activity__chevron {
+  display: inline-block;
+  margin-inline-start: 0.125rem;
+  vertical-align: -0.125em;
+}
+
+.k2b-ui .k2b-chat-activity__toggle[aria-expanded="true"] > .k2b-chat-activity__chevron {
+  transform: rotate(90deg);
+}
+
+/* Touch: the toggle's hit area fills its row's height and stays inside the row, so it takes no taps from the rows
+   or chips around it. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-activity__toggle::after {
+    position: absolute;
+    inset: -0.25rem -0.25rem;
+    content: "";
+  }
+}
+
+/* A preview in an activity body, such as a task list, keeps the step's small scale instead of the question's 14.5px. */
+.k2b-ui .k2b-chat-activity__body .k2b-chat-preview,
+.k2b-ui .k2b-chat-activity__body .k2b-chat-preview :is(.k2b-chat-preview__meta, .k2b-chat-preview__line[data-tone="warning"]) {
+  font-size: 0.8125rem;
 }
 
 /* Chat questions (`Chat.Decision`), their outcome line (`Chat.Outcome`), and
@@ -10120,6 +10236,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 @media (max-width: 47.999rem) {
   .k2b-ui {
+    --k2b-chat-decision-size: 1.0625rem;
+  }
+
+  .k2b-ui .k2b-button.k2b-chat-decision__answer {
+    flex: 1 1 9.5rem;
+  }
+}
+
+/* The same rules on a narrow chat surface, such as the panel beside an app on a wide window. */
+@container k2b-chat (max-width: 47.999rem) {
+  .k2b-ui .k2b-chat-decision {
     --k2b-chat-decision-size: 1.0625rem;
   }
 

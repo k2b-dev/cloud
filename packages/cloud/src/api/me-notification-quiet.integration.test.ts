@@ -38,7 +38,7 @@ suite("/api/me/notifications/quiet (isolated Postgres and Valkey)", () => {
   beforeAll(async () => {
     await settings.set("security.rate_limit_per_second", 1000);
     router = new Hono<AuthContext>()
-      .post("/issue", async (c) => c.json({ token: await session.create(c, issueFor) }))
+      .post("/issue", async (c) => c.json({ token: await session.create(c, issueFor, { method: "password", notify: async () => {} }) }))
       .route("/api/me", meRoutes);
   });
 

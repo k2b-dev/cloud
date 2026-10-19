@@ -7,8 +7,8 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
       commands: { "note.compose": { title: "Neue Notiz", description: "Notizbuch auswählen und eine Notiz schreiben." } },
       types: {
         note: {
-          title: "Hinweis",
-          description: "Eine Markdown-Notiz in einem barrierefreien Notizbuch.",
+          title: "Notiz",
+          description: "Eine Markdown-Notiz in einem Notizbuch, auf das du Zugriff hast.",
         },
         notebook: {
           title: "Notizbuch",

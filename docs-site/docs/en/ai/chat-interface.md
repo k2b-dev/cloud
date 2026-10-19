@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-12
+updated: 2026-10-19
 ---
 
 # Chat interface
@@ -1153,8 +1153,9 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 ## Select commands and inline context
 
 Assistant recognizes `/` at a word boundary anywhere in the composer. Its
-sections stay in this order: **Insert**, **Skills**, **Files in this chat**,
-**This chat**, **Routines**, **Open in apps** (German: **In Apps öffnen**).
+sections stay in this order: **Recent**, **Insert**, **Skills**, **Files in this
+chat**, **This chat**, **Routines**, **Open in apps** (German: **Zuletzt** and
+**In Apps öffnen**).
 Files appear when searching or narrowing to files. Type a name, or narrow by
 typing one of these words followed by a space:
 
@@ -1213,6 +1214,27 @@ the response to finish. Cloud insert rows explain when the message has reached i
 16-item limit, counting attachments and inline references together. If the
 message fills up while the picker is open, the choice is not inserted, `/…`
 stays, and the composer shows the limit.
+
+**Recent** (**Zuletzt**) leads the list before you type. It shows up to four
+references you sent in your own Assistant messages, the ones you sent most
+often first, then the most recent. Each row names the item and one line with its
+kind and place, such as **Note · Sales**. Choosing one inserts the reference
+like any insert row. While you type, **Recent** is gone: matching recent
+references come first in **Insert**, recent Skills first in **Skills**, and
+`/notiz q3` lists matching recent notes above the row that searches Notes. Each
+entry appears once, so a Skill under **Recent** is not repeated under
+**Skills**. Without history, the list starts with **Insert**.
+
+The server checks each reference before it names it: up to eight of your
+latest different references are read again by their app as you, and anything
+you can no longer read, or whose app does not answer in time, is left out.
+Routine runs and messages from other chats do not count. Recent loads once
+when the composer appears. If you type `/` before it arrives, or the load
+fails, that list opens without **Recent** and nothing is added while it is
+open; the next `/` shows it, or asks again after a failure. A failed load shows
+no error, because nothing in the list depends on it. Actions are never sorted
+by your use. See
+[AI resources and access](/en/docs/ai/resources-and-access#recently-sent-references).
 
 The Skills overview shows the first four enabled Skills. If there are more,
 **All N Skills** narrows to the full Skill list with Enter or Tab. If the Skill

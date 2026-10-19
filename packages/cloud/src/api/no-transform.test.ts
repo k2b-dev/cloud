@@ -75,7 +75,7 @@ describe("platform compression boundaries", () => {
 test("authenticator device commands opt out even when protocol access fails", async () => {
   const config = spyOn(appApproval, "config").mockRejectedValue(new AppApprovalError("FORBIDDEN", 403));
   try {
-    const router = createAppApprovalRoutes();
+    const router = createAppApprovalRoutes({ notify: async () => {} });
     for (const path of ["/device", "/device/__new_route__", "/info"]) {
       const response = await router.request(path, { method: path === "/info" ? "GET" : "POST" });
       expect(response.status).toBe(403);

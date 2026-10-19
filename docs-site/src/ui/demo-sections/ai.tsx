@@ -401,6 +401,73 @@ const ContextUsageDemo = () => (
   </DemoCard>
 );
 
+const StepRowsDemo = () => (
+  <DemoCard
+    id="chat-step-rows"
+    chip={{ kind: "component", name: "Chat.Activity.Toggle", from: "@k2b/ui" }}
+    description="Open the task count to review a partial result. The place chip keeps its link, and the running icon stays solid."
+    code={`<div class="flex flex-col gap-1">
+  <Chat.Activity icon="ti ti-book" label={<>Read <ReferenceChip kind="object" title="Week 42" href="#chat-step-rows" /></>} />
+  <Chat.Activity
+    icon="ti ti-alert-triangle"
+    tone="warning"
+    defaultOpen
+    label={<><Chat.Activity.Toggle>3 of 4 tasks</Chat.Activity.Toggle> created in <ReferenceChip kind="place" title="Team Ops" href="#chat-step-rows" /></>}
+  >
+    <Chat.Preview>
+      <Chat.Preview.Lines label="Tasks">
+        <Chat.Preview.Line icon="ti ti-check" meta="Created">Check inventory</Chat.Preview.Line>
+        <Chat.Preview.Line icon="ti ti-check" meta="Created">Plan deliveries</Chat.Preview.Line>
+        <Chat.Preview.Line icon="ti ti-check" meta="Created">Prepare the workshop</Chat.Preview.Line>
+        <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">Schedule pickup could not be created. Try again.</Chat.Preview.Line>
+      </Chat.Preview.Lines>
+    </Chat.Preview>
+  </Chat.Activity>
+  <Chat.Activity busy icon="ti ti-loader-2 k2b-spin" label="Creating 4 tasks in Team Ops …" />
+</div>`}
+  >
+    <div class="flex flex-col gap-1">
+      <Chat.Activity
+        icon="ti ti-book"
+        label={
+          <>
+            Read <ReferenceChip kind="object" title="Week 42" href="#chat-step-rows" />
+          </>
+        }
+      />
+      <Chat.Activity
+        icon="ti ti-alert-triangle"
+        tone="warning"
+        defaultOpen
+        label={
+          <>
+            <Chat.Activity.Toggle>3 of 4 tasks</Chat.Activity.Toggle> created in{" "}
+            <ReferenceChip kind="place" title="Team Ops" href="#chat-step-rows" />
+          </>
+        }
+      >
+        <Chat.Preview>
+          <Chat.Preview.Lines label="Tasks">
+            <Chat.Preview.Line icon="ti ti-check" meta="Created">
+              Check inventory
+            </Chat.Preview.Line>
+            <Chat.Preview.Line icon="ti ti-check" meta="Created">
+              Plan deliveries
+            </Chat.Preview.Line>
+            <Chat.Preview.Line icon="ti ti-check" meta="Created">
+              Prepare the workshop
+            </Chat.Preview.Line>
+            <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
+              Schedule pickup could not be created. Try again.
+            </Chat.Preview.Line>
+          </Chat.Preview.Lines>
+        </Chat.Preview>
+      </Chat.Activity>
+      <Chat.Activity busy icon="ti ti-loader-2 k2b-spin" label="Creating 4 tasks in Team Ops …" />
+    </div>
+  </DemoCard>
+);
+
 const MailDecisionDemo = () => {
   const [state, setState] = createSignal<ChatDecisionState>("open");
   const [current, setCurrent] = createSignal("running");
@@ -807,6 +874,7 @@ const ReferenceChipsDemo = () => (
 const demos: DemoSection = {
   chat: () => (
     <DemoGrid columns="one">
+      <StepRowsDemo />
       <MailDecisionDemo />
       <DecisionPoliciesDemo />
       <OutcomeStatesDemo />

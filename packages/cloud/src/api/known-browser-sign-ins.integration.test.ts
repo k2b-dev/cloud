@@ -7,7 +7,13 @@ import { env } from "../config/env";
 import * as requestContext from "../server/request-context";
 import { AppApprovalError, appApproval } from "../services/app-approval";
 import { authFlows } from "../services/auth-flows";
-import { browserHash, newBrowserCookie } from "../services/known-browsers";
+import {
+  browserHash,
+  type NewBrowserSignInNotice,
+  type NewBrowserSignInNotifier,
+  newBrowserCookie,
+  type SignInMethod,
+} from "../services/known-browsers";
 import { session } from "../services/session";
 import { loadCurrentUser } from "../services/session/user";
 import * as settings from "../services/settings";
@@ -23,9 +29,14 @@ const NOW = new Date("2026-10-18T12:00:00Z");
 const unused = async (): Promise<never> => {
   throw new Error("No messages in this fixture");
 };
+let notify: NewBrowserSignInNotifier = async () => {};
+const handoff: NewBrowserSignInNotifier = (notice) => notify(notice);
 const router = new Hono()
-  .route("/api/auth", createAuthRoutes({ sendMagicLink: unused, sendIpaLoginHint: unused, sendPasswordReset: unused }))
-  .route("/api/auth/app-approval/v1", createAppApprovalRoutes());
+  .route(
+    "/api/auth",
+    createAuthRoutes({ sendMagicLink: unused, sendIpaLoginHint: unused, sendPasswordReset: unused, sendNewBrowserSignIn: handoff }),
+  )
+  .route("/api/auth/app-approval/v1", createAppApprovalRoutes({ notify: handoff }));
 const cookieHeader = (cookie: string) => `${env.IS_DEVELOPMENT ? "cloud_browser" : "__Host-cloud_browser"}=${cookie}`;
 const post = (path: string, body: unknown, cookie: string) =>
   router.request(`/api/auth/${path}`, {
@@ -34,6 +45,7 @@ const post = (path: string, body: unknown, cookie: string) =>
       Origin: issuer,
       "Content-Type": "application/json",
       cookie: cookieHeader(cookie),
+      "x-cloud-locale": "de-AT",
       "x-request-id": "known-browser-route-fixture",
     },
     body: JSON.stringify(body),
@@ -41,6 +53,49 @@ const post = (path: string, body: unknown, cookie: string) =>
 const browserRows = (userId: string, cookie: string) => sql`
   SELECT * FROM auth.known_browsers WHERE user_id = ${userId}::uuid AND browser_hash = ${browserHash(userId, cookie)}
 `;
+
+const waitsForHandoff = async (start: () => Response | Promise<Response>, method: SignInMethod, device: string | null = null) => {
+  const called = Promise.withResolvers<NewBrowserSignInNotice>();
+  const release = Promise.withResolvers<void>();
+  const received: NewBrowserSignInNotice[] = [];
+  notify = async (notice) => {
+    received.push(notice);
+    called.resolve(notice);
+    await release.promise;
+  };
+  let settled = false;
+  const pending = Promise.resolve(start());
+  void pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const notice = await Promise.race([
+      called.promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("No new-browser handoff")), 3000);
+      }),
+    ]);
+    expect(notice).toMatchObject({ method, device, locale: "de-AT", country: "AT", city: "Wien", signedInAt: NOW.toISOString() });
+    // The session is committed and visible on another connection, but the response still waits.
+    expect(await sql`SELECT sid FROM auth.session_families WHERE user_id = ${notice.userId}::uuid AND revoked_at IS NULL`).not.toHaveLength(
+      0,
+    );
+    await Bun.sleep(20);
+    expect(settled).toBe(false);
+    expect(received).toHaveLength(1);
+  } finally {
+    clearTimeout(timer);
+    release.resolve();
+    await pending;
+  }
+  return pending;
+};
 
 suite("every successful web sign-in route remembers its browser", () => {
   const keys = [
@@ -53,6 +108,7 @@ suite("every successful web sign-in route remembers its browser", () => {
   ];
   const previous = new Map<string, unknown>();
   let userId: string;
+  let previousStart: Date;
   let restoreContext: () => void;
   beforeAll(async () => {
     for (const key of keys) previous.set(key, await settings.get(key));
@@ -65,6 +121,10 @@ suite("every successful web sign-in route remembers its browser", () => {
   });
   beforeEach(async () => {
     setSystemTime(NOW);
+    notify = async () => {};
+    const [state] = await sql<{ started_at: Date }[]>`SELECT started_at FROM auth.device_trust_state`;
+    previousStart = state!.started_at;
+    await sql`UPDATE auth.device_trust_state SET started_at = ${new Date(NOW.getTime() - 15 * 86_400_000)}`;
     userId = crypto.randomUUID();
     await sql`INSERT INTO auth.users (id, uid, provider, profile) VALUES (${userId}::uuid, ${`browser-route-${userId}`}, 'ipa', 'user')`;
     const describe = requestContext.describeRequest;
@@ -80,6 +140,7 @@ suite("every successful web sign-in route remembers its browser", () => {
   });
   afterEach(async () => {
     restoreContext();
+    await sql`UPDATE auth.device_trust_state SET started_at = ${previousStart}`;
     setSystemTime();
     await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
@@ -120,7 +181,7 @@ suite("every successful web sign-in route remembers its browser", () => {
           },
         },
       });
-      const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue(userId);
+      const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue({ userId, deviceName: "Jana’s phone" });
       const create = spyOn(session, "create");
       const cookie = newBrowserCookie();
       const body = {
@@ -137,7 +198,19 @@ suite("every successful web sign-in route remembers its browser", () => {
         "app-approval/v1/login/complete": { requestId: crypto.randomUUID(), browserSecret: "a".repeat(42) + "A" },
       }[path];
       try {
-        const response = await post(path, body, cookie);
+        const methods = {
+          login: "password",
+          "passkeys/authentication/verify": "passkey",
+          "verify-token": "email_code",
+          "password-reset/complete": "password_reset",
+          "change-expired-password": "expired_password",
+          "app-approval/v1/login/complete": "cloud_login",
+        } as const;
+        const response = await waitsForHandoff(
+          () => post(path, body, cookie),
+          methods[path],
+          path === "app-approval/v1/login/complete" ? "Jana’s phone" : null,
+        );
         if (!response.ok) throw new Error(`${path}: ${response.status} ${await response.text()}`);
         expect(create).toHaveBeenCalledTimes(1);
         expect(await browserRows(userId, cookie)).toHaveLength(1);
@@ -165,6 +238,28 @@ suite("every successful web sign-in route remembers its browser", () => {
     });
   }
 
+  test("verify-token: a newly created guest remembers the browser without a sign-in notice", async () => {
+    const user = await loadCurrentUser({ userId, groupsAdmin: [] });
+    if (!user) throw new Error("Missing route fixture user");
+    const email = spyOn(authFlows.magicLink, "verify").mockResolvedValue({ ok: true, userId, user, email: null, createdGuest: true });
+    const sender = { notify: async () => {} };
+    const notification = spyOn(sender, "notify");
+    notify = sender.notify;
+    const cookie = newBrowserCookie();
+    try {
+      const response = await post("verify-token", { token: crypto.randomUUID() }, cookie);
+      expect(response.ok).toBe(true);
+      expect(notification).not.toHaveBeenCalled();
+      const rows = await browserRows(userId, cookie);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].notified_at).not.toBeNull();
+      expect(rows[0].notice).toBeNull();
+    } finally {
+      email.mockRestore();
+      notification.mockRestore();
+    }
+  });
+
   test("admin-login: real emergency login remembers the browser only with the right token", async () => {
     const originalToken = process.env.ADMIN_LOGIN_TOKEN;
     const [before] = await sql<{ id: string; provider: string; profile: string; admin: boolean }[]>`
@@ -188,7 +283,7 @@ suite("every successful web sign-in route remembers its browser", () => {
       expect(await sql`SELECT id FROM auth.known_browsers WHERE browser_hash = ${browserHash(before?.id ?? userId, cookie)}`).toHaveLength(
         0,
       );
-      const response = await post("admin-login", { token }, cookie);
+      const response = await waitsForHandoff(() => post("admin-login", { token }, cookie), "admin_token");
       if (!response.ok) throw new Error(`admin-login: ${response.status} ${await response.text()}`);
       const [admin] = await sql<{ id: string }[]>`SELECT id FROM auth.users WHERE uid = 'admin'`;
       adminId = admin!.id;

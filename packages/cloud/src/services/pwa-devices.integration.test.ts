@@ -73,7 +73,7 @@ const routes = new Hono<AuthContext>()
     }),
   )
   .route("/api/me", meRoutes)
-  .route(APP_APPROVAL_PATH, createAppApprovalRoutes())
+  .route(APP_APPROVAL_PATH, createAppApprovalRoutes({ notify: async () => {} }))
   // Another application's validator: the ordinary auth middleware of any app.
   .get("/pwa/probe", auth.requireRole("authenticated"), (c) =>
     c.json({ userId: c.get("user").id, kind: c.get("sessionKind"), roles: c.get("user").roles }),

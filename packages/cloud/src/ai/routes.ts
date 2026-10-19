@@ -1,7 +1,10 @@
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { listCapabilities } from "../_internal/registry";
+import { QUERY_TIMEOUT_MS } from "../api/capabilities";
+import { ErrorResponseSchema } from "../contracts";
 import { APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
 import {
   type AccessSubject,
@@ -11,15 +14,18 @@ import {
   fail,
   getLocale,
   getTimeZone,
+  jsonResponse,
   ok,
   type RequestActor,
   rateLimit,
+  requiresAuth,
   respond,
   v,
 } from "../server";
 import { isAppSessionActor } from "../server/actor";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
+import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { approvalDecisionChannel } from "../services/approvals";
 import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
@@ -68,6 +74,8 @@ import {
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
+import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
 import { type AiChatRequestContext, resolveAiChatRequestContext as resolveContext } from "./request-context";
 import { aiResourceMarker } from "./resource-markers";
 import { isConversationResourceCursor } from "./resource-refs";
@@ -461,6 +469,42 @@ export const aiRoutes = (() => {
         });
         return respond(c, ok({ prompt, renderedAt: new Date().toISOString() }));
       })
+      .get(
+        "/resources/recent",
+        describeRoute({
+          tags: ["AI"],
+          summary: "List recently sent resources",
+          description: "Up to eight recently sent refs, with current reader-authorized metadata. Unreadable resources are omitted.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(
+              z.object({ resources: z.array(AiRecentResourceSchema).max(RECENT_SENT_REF_LIMIT) }),
+              "Current recent resources",
+            ),
+            401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+            403: jsonResponse(ErrorResponseSchema, "AI context unavailable"),
+          },
+        }),
+        // Titles come from app readers, so a scoped token needs the read scope the capability routes ask for.
+        auth.requireOAuthScope("read", "admin"),
+        async (c) => {
+          c.header("Cache-Control", "no-store");
+          const ctx = await resolveContext(c);
+          if (ctx instanceof Response) return ctx;
+          setRequestTimeout(c, Math.ceil(QUERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
+          try {
+            const resources = await listAiRecentResources({
+              ownerUserId: ctx.ownerUserId,
+              authority: auth.getAuthority(c),
+              locale: getLocale(c),
+              signal: c.req.raw.signal,
+            });
+            return respond(c, ok({ resources }));
+          } finally {
+            setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+          }
+        },
+      )
       .get("/resources", v("query", UserResourcesQuerySchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;

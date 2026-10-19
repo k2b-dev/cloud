@@ -71,6 +71,16 @@ After sign-in, Cloud asks you to accept its terms and acknowledge the privacy po
 
 If the result of a sign-in is unclear, reload the page to check your session, or start a new request.
 
+## New sign-in notice {icon="bell"}
+
+After a successful sign-in, Cloud sends **New sign-in from a new browser** once for each new browser. This starts 14 days after the upgrade. It does not apply to the mobile app.
+
+The notice shows the browser and time. The email also shows the sign-in method and the approximate place, when available.
+
+If this was not you, check your paired devices under **Profile settings → Sign-in**. Then contact your administrator.
+
+By default, Cloud sends the notice by email. Without an email address, it sends a browser notification. To turn it off, open **Profile settings → Notifications** and clear every channel under **New sign-in from a new browser**.
+
 ## Check and revoke paired devices {icon="device-mobile"}
 
 **Paired devices** shows the name of each device, when it was paired and last used, and whether an administrator helped with the pairing. Rename a device, or revoke a device that you no longer control. A revoked device cannot approve new sign-ins, but existing sessions stay signed in. These controls stay available when app sign-in is disabled.

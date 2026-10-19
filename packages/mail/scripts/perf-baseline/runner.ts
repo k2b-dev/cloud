@@ -371,6 +371,10 @@ export async function run(options: Options) {
       add(id!, "Folders and counts", async (s) => {
         await request(api, s, route(`?folder=${folder}`));
       });
+    add("folder-medium-list", "Folders and counts", async (s) => {
+      const href = `${page}?folder=${plan.shape.mediumFolderId}`;
+      await request(api, s, `${base}/workspace-list?href=${encodeURIComponent(href)}`);
+    });
     add("counts", "Folders and counts", async (s) => {
       await request(api, s, `${base}/conversation-view-counts`);
       const data = workspaceSchema.parse(await request(api, s, route()));
