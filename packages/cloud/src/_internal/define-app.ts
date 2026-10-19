@@ -80,7 +80,7 @@ import { appAccentStyle } from "../ssr/app-appearance";
 import { appFaviconHref } from "./app-favicon";
 import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
-import { appRuntimeMetadata } from "./build-metadata";
+import { appRuntimeMetadata, buildMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
 import { cliPluginRoutePrefixes, createCliPluginRoutes, validateAppCliModules } from "./cli-plugins";
 import { FONT_PRELOAD_LINKS } from "./font-preloads";
@@ -92,14 +92,14 @@ import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
 import { canonicalRoute, isOwnAppPath } from "./registry-validation";
-import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
-import { servePublicAsset } from "./static-assets";
+import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
+import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versionedPublicHref } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
 import { WEB_VITALS_ASSET_HREF } from "./web-vitals-asset";
 import { compileWidgetDeclarations } from "./widget-declarations";
 
-/** Cache-busting version stamp — changes on every server start / rebuild. */
-const v = Date.now();
+/** Only development links use this start stamp to pick up rebuilds. */
+const developmentStamp = Date.now();
 
 export type PageOptions = {
   title?: string;
@@ -437,6 +437,16 @@ export const defineApp = <
     // only gives the fallback Cloud's look and the reader's language.
     errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
     template: ({ body, scripts, title, description, theme, themePreference, lang, performanceRoute, pwa, appAccent }) => {
+      // A URL changes only when what it names changes: the app's own files by their content, Core's shared sheets by
+      // the release of the Core build in the registry, so every app links them under one URL per Core build.
+      const sharedVersion = isDevelopment ? String(developmentStamp) : sharedStylesheetVersion(registeredCoreRelease());
+      const appStylesheet = `/public/${opts.id}/app.css`;
+      const appVersion = isDevelopment ? String(developmentStamp) : publicFileVersion(appStylesheet);
+      const faviconVersion = isDevelopment
+        ? developmentStamp
+        : opts.id === "core"
+          ? undefined
+          : publicFileVersion(`/public/${opts.id}/favicon.svg`);
       const accentStyle = appAccentStyle(appAccent);
       const fixed = theme !== undefined;
       const resolved = theme ?? (themePreference === "light" || themePreference === "dark" ? themePreference : undefined);
@@ -481,14 +491,14 @@ export const defineApp = <
     <title>${escapeHtml(title ?? "Cloud")}</title>
     <meta name="description" content="${escapeHtml(description ?? "Cloud workspace")}">
     ${head.app}
-    <link rel="icon" href="${appFaviconHref(opts.id, v)}">
+    <link rel="icon" href="${appFaviconHref(opts.id, faviconVersion)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
     <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     ${FONT_PRELOAD_LINKS}
-    <link rel="stylesheet" href="/public/fonts.css?v=${v}">
-    <link rel="stylesheet" href="/public/tabler-icons.css?v=${v}">
-    <link rel="stylesheet" href="/public/${opts.id}/app.css?v=${v}">
-    <link rel="stylesheet" href="/public/global.css?v=${v}">${head.styles}
+    <link rel="stylesheet" href="${versionedPublicHref("/public/fonts.css", sharedVersion)}">
+    <link rel="stylesheet" href="${versionedPublicHref("/public/tabler-icons.css", sharedVersion)}">
+    <link rel="stylesheet" href="${versionedPublicHref(appStylesheet, appVersion)}">
+    <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">${head.styles}
     <script>${themeBootstrapScript}</script>
   </head>
   <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""} data-k2b-app-workspace-controller="global">
@@ -745,7 +755,7 @@ export const defineApp = <
         .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
         .route(ssrMountPath, routes(config))
         .all(`${ssrMountPath}/*`, (c) => c.notFound())
-        .all("/public/*", servePublicAsset(isDevelopment))
+        .all("/public/*", servePublicAsset(isDevelopment, sharedStylesheetVersion(buildMetadata.release)))
         .use(
           "/_internal/sync/*",
           requireInvocation((c) => ({

@@ -19,6 +19,7 @@ import { buildRuntimeFromRegistry } from "./runtime-context";
 const log = logger("runtime-watcher");
 
 let current: CloudRuntime | undefined;
+let coreRelease: string | undefined;
 let initPromise: Promise<void> | undefined;
 let watcherTask: Promise<void> | undefined;
 let abort: AbortController | undefined;
@@ -27,7 +28,11 @@ const refresh = async () => {
   const apps = await listApps();
   const capabilities = await listCapabilities(apps);
   current = buildRuntimeFromRegistry(apps, capabilities);
+  coreRelease = apps.find((app) => app.id === "core")?.runtime?.release;
 };
+
+/** Core's release from the live registry, absent before initialization and after shutdown. */
+export const registeredCoreRelease = (): string | undefined => coreRelease;
 
 export const ensureRuntimeWatcher = (): Promise<void> => {
   // Concurrent callers (start() + first request) wait on the same init —
@@ -68,6 +73,7 @@ export const stopRuntimeWatcher = async (): Promise<void> => {
   watcherTask = undefined;
   initPromise = undefined;
   current = undefined;
+  coreRelease = undefined;
 };
 
 export const getCurrentRuntime = (): CloudRuntime => {

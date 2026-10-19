@@ -1,7 +1,41 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import type { Context } from "hono";
 
 const publicRoot = resolve(process.cwd(), "public");
+const versions = new Map<string, string>();
+
+/**
+ * Version of Core's shared stylesheets: the release, which names one build. `local` and `development` are the
+ * defaults of unnamed builds and name many, so those sheets get no version and are revalidated instead.
+ */
+export function sharedStylesheetVersion(release: string | undefined): string | undefined {
+  return !release || release === "local" || release === "development" ? undefined : release;
+}
+
+/**
+ * Content version of a file below `public/`: hashed on first use and kept for the process, since production files
+ * never change under a running process. An unreadable file has no version and is tried again on the next call.
+ */
+export function publicFileVersion(pathname: string): string | undefined {
+  const path = resolvePublicAsset(pathname);
+  if (!path) return undefined;
+  const cached = versions.get(path);
+  if (cached) return cached;
+  try {
+    const version = createHash("sha256").update(readFileSync(path)).digest("hex").slice(0, 16);
+    versions.set(path, version);
+    return version;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Append a URL-encoded version only when the asset has one. */
+export function versionedPublicHref(pathname: string, version: string | undefined): string {
+  return version === undefined ? pathname : `${pathname}?v=${encodeURIComponent(version)}`;
+}
 
 function decodePathname(pathname: string): string | null {
   try {
@@ -48,14 +82,15 @@ async function encodedFile(path: string, encoding: "br" | "gzip"): Promise<Bun.B
   return (await file.exists()) ? file : null;
 }
 
-export function servePublicAsset(isDevelopment: boolean) {
+export function servePublicAsset(isDevelopment: boolean, sharedVersion?: string) {
   return async (c: Context) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
       c.header("Allow", "GET, HEAD");
       return c.text("Method Not Allowed", 405);
     }
 
-    const path = resolvePublicAsset(new URL(c.req.url).pathname);
+    const url = new URL(c.req.url);
+    const path = resolvePublicAsset(url.pathname);
     if (!path) return c.notFound();
 
     const sourceFile = Bun.file(path);
@@ -84,8 +119,20 @@ export function servePublicAsset(isDevelopment: boolean) {
     // Development rebuilds files in place under the same address, so the browser asks again on every use; an
     // unchanged file then costs one round trip instead of its whole size on every page.
     const etag = `"${selectedEncoding ?? "identity"}-${selected.size.toString(36)}-${selected.lastModified.toString(36)}"`;
+    // The page head links these files with the version this process names for them. Any other version may name
+    // other content (a rolling deploy, an app started before a Core redeploy), so it is revalidated, never kept.
+    let cacheControl = isDevelopment ? "no-cache" : "public, max-age=31536000, immutable";
+    if (!isDevelopment) {
+      const pathname = decodePathname(url.pathname)!;
+      const shared = /^\/public\/(fonts|tabler-icons|global)\.css$/.test(pathname);
+      const own = /^\/public\/[^/]+\/(app\.css|favicon\.svg)$/.test(pathname);
+      if (shared || own) {
+        const expected = shared ? sharedVersion : publicFileVersion(url.pathname);
+        if (expected === undefined || url.searchParams.get("v") !== expected) cacheControl = "no-cache";
+      }
+    }
     const headers = new Headers({
-      "Cache-Control": isDevelopment ? "no-cache" : "public, max-age=31536000, immutable",
+      "Cache-Control": cacheControl,
       ETag: etag,
       Vary: "Accept-Encoding",
     });
