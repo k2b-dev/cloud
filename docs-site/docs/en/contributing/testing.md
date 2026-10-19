@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Testing
@@ -303,7 +303,14 @@ Use `mostAtOnce(page, selector, change)` from `packages/ui/test/browser.ts` to
 check that Undo or a refresh never shows an entity twice and ends with exactly
 one. Scope a locator that reads the entity to its row, not to the page. Await
 Playwright calls and read their values: `expect(await box.isChecked())`.
-Never use `expect(promise).resolves`, which hides the reason for a rejection.
+In Playwright tests, never use `expect(promise).resolves` or `.rejects`.
+Besides hiding the reason for a rejection, Bun's matcher waits in a nested
+event loop that runs Playwright's channel messages out of order and can close
+the browser connection. This shows as `Cannot find object to "message": jsonPipe@…`
+and a next test that fails within milliseconds
+([#1502](https://github.com/k2b-dev/cloud/issues/1502)). The `browser-test-promises`
+check enforces this rule. Await promises directly and assert on their values;
+for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 

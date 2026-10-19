@@ -665,7 +665,7 @@ describe(`Spaces task tray in ${browserName}`, () => {
   test("offers no tray checkbox to a reader who may not change tasks", async () => {
     const page = await open(desktop, { canWrite: false });
     await page.getByText("Vertrag Stadtwerke gegenzeichnen").waitFor();
-    await expect(page.locator(`${TRAY} input[type=checkbox]`).count()).resolves.toBe(0);
+    expect(await page.locator(`${TRAY} input[type=checkbox]`).count()).toBe(0);
     await page.context().close();
   }, 60_000);
 
