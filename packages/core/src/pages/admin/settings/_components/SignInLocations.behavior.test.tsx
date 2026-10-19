@@ -6,6 +6,14 @@ import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import { bundledStatus, uploadedStatus } from "./sign-in-locations-fixture";
 
 const uploader = uploadedStatus.databases[0].upload!.uploadedBy!.id;
+/** The status after the default three-byte test file landed as the City upload. */
+const landed = (changes: Partial<NonNullable<GeoIpAdminStatus["databases"][0]["upload"]>> = {}): GeoIpAdminStatus => ({
+  ...uploadedStatus,
+  databases: [
+    { ...uploadedStatus.databases[0], upload: { ...uploadedStatus.databases[0].upload!, size: 3, ...changes } },
+    uploadedStatus.databases[1],
+  ],
+});
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** A scripted XMLHttpRequest: the test decides when progress, the end of the upload and the answer arrive. */
@@ -103,9 +111,9 @@ const mount = async (options: { initial?: GeoIpAdminStatus | null; locale?: stri
   const button = (label: string) => [...root.querySelectorAll("button")].find((node) => node.textContent?.trim().endsWith(label));
   const uploadButton = () => root.querySelector<HTMLButtonElement>("[data-geoip-upload]")!;
   const resetButton = (kind: "city" | "asn") => root.querySelector<HTMLButtonElement>(`[data-geoip-kind="${kind}"] button`)!;
-  const choose = async (name = "dbip-city-lite-2026-11.mmdb.gz") => {
+  const choose = async (name = "dbip-city-lite-2026-11.mmdb.gz", bytes = new Uint8Array([1, 2, 3])) => {
     const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
-    const file = new dom.window.File([new Uint8Array([1, 2, 3])], name);
+    const file = new dom.window.File([bytes], name);
     Object.defineProperty(input, "files", { configurable: true, value: [file] });
     input.dispatchEvent(new Event("change", { bubbles: true }));
     await flush();
@@ -229,7 +237,7 @@ describe("sign-in locations block", () => {
 
   test("a lost answer after a committed upload reports the upload, not a failure", async () => {
     const view = await mount();
-    view.respondWith(() => Response.json(uploadedStatus));
+    view.respondWith(() => Response.json(landed()));
     await view.choose();
     FakeXhr.last!.respond(502, "Bad Gateway");
     await flush();
@@ -239,14 +247,8 @@ describe("sign-in locations block", () => {
   });
 
   test("a lost answer after re-uploading the same file reports the upload by its new upload time", async () => {
-    const view = await mount({ initial: uploadedStatus });
-    const city = uploadedStatus.databases[0];
-    view.respondWith(() =>
-      Response.json({
-        ...uploadedStatus,
-        databases: [{ ...city, upload: { ...city.upload!, uploadedAt: "2026-10-17T08:00:00.000Z" } }, uploadedStatus.databases[1]],
-      }),
-    );
+    const view = await mount({ initial: landed() });
+    view.respondWith(() => Response.json(landed({ uploadedAt: "2026-10-17T08:00:00.000Z" })));
     await view.choose();
     FakeXhr.last!.respond(502, "Bad Gateway");
     await flush();
@@ -262,6 +264,34 @@ describe("sign-in locations block", () => {
     await flush();
     await flush();
     expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+  });
+
+  test("this administrator's upload of another file elsewhere during a lost answer does not count as this upload", async () => {
+    const view = await mount();
+    // The status lists a new City upload by the same administrator, but of a file with another unpacked size.
+    view.respondWith(() => Response.json(uploadedStatus));
+    await view.choose("dbip-asn-lite-2026-11.mmdb");
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.source("city")).toBe("Uploaded file");
+  });
+
+  test("a gzip file is recognised after a lost answer by the unpacked size in its trailer", async () => {
+    const view = await mount();
+    const gzip = new Uint8Array([0x1f, 0x8b, ...Array(12).fill(0), 0x40, 0x42, 0x0f, 0x00]);
+    for (const [size, line] of [
+      [1_000_000, "Uploaded. Sign-in requests now use this file for places."],
+      [1_000_001, "Unclear whether the change was saved. Load status"],
+    ] as const) {
+      view.respondWith(() => Response.json(landed({ size, sha256: String(size).padStart(64, "0") })));
+      await view.choose("dbip-city-lite-2026-11.mmdb.gz", gzip);
+      FakeXhr.last!.respond(502, "Bad Gateway");
+      await flush();
+      await flush();
+      expect(view.statusLine()).toBe(line);
+    }
   });
 
   test("another administrator's upload during a lost answer does not count as this upload", async () => {
@@ -325,13 +355,7 @@ describe("sign-in locations block", () => {
 
   test("cancel reports and announces a new uploaded checksum already saved", async () => {
     const view = await mount({ initial: uploadedStatus });
-    const after: GeoIpAdminStatus = {
-      ...uploadedStatus,
-      databases: [
-        { ...uploadedStatus.databases[0], upload: { ...uploadedStatus.databases[0].upload!, sha256: "cd".repeat(32) } },
-        uploadedStatus.databases[1],
-      ],
-    };
+    const after = landed({ sha256: "cd".repeat(32) });
     view.respondWith(() => Response.json(after));
     await view.choose();
     const xhr = FakeXhr.last!;

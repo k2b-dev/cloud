@@ -69,6 +69,21 @@ const parseJson = (text: string): unknown => {
   }
 };
 
+/**
+ * The unpacked size Cloud stores for this file: its own size, or the size trailer of a gzip file (exact below 4 GiB
+ * for one gzip member). Null when the browser cannot read the file.
+ */
+const unpackedSize = async (file: File): Promise<number | null> => {
+  try {
+    const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+    if (head[0] !== 0x1f || head[1] !== 0x8b) return file.size;
+    if (file.size < 18) return null;
+    return new DataView(await file.slice(file.size - 4).arrayBuffer()).getUint32(0, true);
+  } catch {
+    return null;
+  }
+};
+
 const formatBytes = (bytes: number, locale: string) =>
   `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(bytes / 1024 / 1024)} MiB`;
 
@@ -89,6 +104,8 @@ export default function SignInLocations(props: {
   const [online, setOnline] = createSignal(true);
   let input: HTMLInputElement | undefined;
   let request: XMLHttpRequest | undefined;
+  /** The unpacked size of the file in flight, to recognise this upload after a lost answer. */
+  let requestSize: Promise<number | null> = Promise.resolve(null);
 
   onMount(() => {
     const sync = () => setOnline(navigator.onLine);
@@ -146,19 +163,21 @@ export default function SignInLocations(props: {
   };
 
   /**
-   * A lost answer or a server error leaves the upload's outcome open. A new upload by this administrator proves
-   * it landed: every saved upload gets a new upload time, so a file with the same checksum counts too. Anything
-   * else leaves the outcome unclear unless the request was cancelled.
+   * A lost answer or a server error leaves the upload's outcome open. A new upload by this administrator with this
+   * file's unpacked size proves it landed: every saved upload gets a new upload time, so a file with the same
+   * checksum counts too, and the size tells it apart from this administrator's upload of another file elsewhere.
+   * Anything else leaves the outcome unclear unless the request was cancelled.
    */
-  const settleUpload = async (before: GeoIpAdminStatus | null, cancelled = false) => {
-    const after = await reconcile();
+  const settleUpload = async (before: GeoIpAdminStatus | null, size: Promise<number | null>, cancelled = false) => {
+    const [after, expected] = await Promise.all([reconcile(), size]);
     if (!after) return unknownOutcome();
     const changed = after.databases.find((database, index) => {
       const previous = before?.databases[index]?.upload;
       return (
         database.source === "uploaded" &&
         (database.upload?.sha256 !== previous?.sha256 || database.upload?.uploadedAt !== previous?.uploadedAt) &&
-        database.upload?.uploadedBy?.id === props.actorId
+        database.upload?.uploadedBy?.id === props.actorId &&
+        database.upload?.size === expected
       );
     });
     if (changed) {
@@ -176,6 +195,8 @@ export default function SignInLocations(props: {
     setPhase({ kind: "uploading", percent: 0 });
     const xhr = new XMLHttpRequest();
     request = xhr;
+    const size = unpackedSize(file);
+    requestSize = size;
     xhr.open("PUT", API);
     xhr.setRequestHeader("content-type", "application/octet-stream");
     xhr.setRequestHeader("accept", "application/json");
@@ -198,14 +219,14 @@ export default function SignInLocations(props: {
         return;
       }
       const code = errorCode(xhr.status, body);
-      if (code === "ambiguous") return void settleUpload(before);
+      if (code === "ambiguous") return void settleUpload(before, size);
       setPhase({ kind: "upload-error", code, file });
       announce(errorText(code), { politeness: "assertive" });
     };
     xhr.onerror = () => {
       if (request !== xhr) return;
       request = undefined;
-      void settleUpload(before);
+      void settleUpload(before, size);
     };
     xhr.send(file);
   };
@@ -215,7 +236,7 @@ export default function SignInLocations(props: {
     const current = request;
     request = undefined;
     current?.abort();
-    void settleUpload(before, true);
+    void settleUpload(before, requestSize, true);
   };
 
   const choose = () => {
