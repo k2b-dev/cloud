@@ -17,6 +17,7 @@ import { sql } from "bun";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import { sha256Text } from "./canonical";
 import { createBlobReadable, getStoredBlob } from "./message-blobs";
+import { estimateExtractionWorkingSet, withProcessingMemory } from "./processing-memory-budget";
 import { splitSearchText } from "./search-chunks";
 
 export { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
@@ -205,21 +206,18 @@ export const attachmentExtractionStatusForError = (
   return null;
 };
 
-const readBlobBytes = async (blobId: string, signal: AbortSignal): Promise<{ bytes: Uint8Array; inputBytes: number }> => {
-  const blob = await getStoredBlob(blobId);
-  if (blob.byteLength > DOCUMENT_EXTRACTION_MAX_INPUT_BYTES) {
-    throw new DocumentExtractionError("input_too_large", "The attachment exceeds the document extraction limit.");
-  }
+const readBlobBytes = async (blob: Awaited<ReturnType<typeof getStoredBlob>>, signal: AbortSignal): Promise<Uint8Array> => {
   const bytes = new Uint8Array(blob.byteLength);
   let offset = 0;
-  for await (const value of createBlobReadable(blobId)) {
+  for await (const value of createBlobReadable(blob.id)) {
     if (signal.aborted) throw new DocumentExtractionError("cancelled", "Document extraction was cancelled.");
-    const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array);
+    if (!(value instanceof Uint8Array)) throw new TypeError("Stored mail blob chunk must contain bytes");
+    const chunk = value;
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
   if (offset !== blob.byteLength) throw Object.assign(new Error("Stored mail blob is incomplete"), { code: "MAIL_BLOB_INCOMPLETE" });
-  return { bytes, inputBytes: blob.byteLength };
+  return bytes;
 };
 
 const filenameForBlob = async (blobId: string): Promise<string | null> => {
@@ -415,8 +413,22 @@ export const extractMailAttachmentBlob = async (blobId: string, signal: AbortSig
 
   await markAttempt(blobId);
   try {
-    const { bytes } = await readBlobBytes(blobId, signal);
-    const extracted = await extractDocumentMarkdown({ bytes, filename, signal });
+    const blob = await getStoredBlob(blobId);
+    if (blob.byteLength > DOCUMENT_EXTRACTION_MAX_INPUT_BYTES) {
+      throw new DocumentExtractionError("input_too_large", "The attachment exceeds the document extraction limit.");
+    }
+    const extracted = await withProcessingMemory(
+      {
+        weightBytes: estimateExtractionWorkingSet(blob.byteLength) || 1,
+        label: "attachment extraction",
+        signal,
+      },
+      async () => {
+        // Keep input bytes scoped to extraction; projection only retains the bounded Markdown.
+        const bytes = await readBlobBytes(blob, signal);
+        return extractDocumentMarkdown({ bytes, filename, signal });
+      },
+    );
     const chunks = await projectCompleteExtraction({
       blobId,
       markdown: extracted.markdown,

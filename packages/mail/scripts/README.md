@@ -24,3 +24,15 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
 ```
 
 It needs Docker, takes the machine-wide heavy lock, never uses port 3000 or the development database, and writes `.local/mail-perf/<UTC timestamp>/result.json` and `summary.md`. `--browser chromium,webkit` adds page loads and seven interactions in the run-owned Playwright container; `--rank <result.json> --bottlenecks <candidates.json>` prints the top 5 bottlenecks backed by that result. `--compare <earlier result.json>` adds median deltas. The fixture lives in `packages/mail/test/fixtures/large-mailbox.ts`; an integration test keeps it in step with real ingest. Flags, scenarios, fixture shape and limitations: `--help` and [Measure production page performance](../../../docs-site/docs/en/contributing/performance-baseline.md#measure-mail-at-mailbox-scale).
+
+## Measure Mail memory under hydration load
+
+With `CLOUD_TEST_DATABASE_URL`, `CLOUD_TEST_NATS_SERVERS`, and `CLOUD_TEST_VALKEY_URL` exported (plus `CLOUD_TEST_NATS_CREDS_FILE` when needed), run:
+
+```sh
+bun --no-env-file packages/mail/scripts/memory-load.ts --profile guard --json
+```
+
+The script takes the heavy lock, creates a disposable `mail_*_test` database and private Sync namespace, and runs real hydration, extraction, API reads and folder sync against simulated IMAP. `incident` (default) uses four mailboxes, each with 40 small folders and an INBOX with three 10–40 MiB messages and 20 small messages. `guard` keeps four mailboxes with fewer messages and targets a run under 90 seconds; host load can extend it. `--only`, `--html-mib` and `--csv-mib` isolate load paths; `--help` lists all overrides without connecting.
+
+Results go to `.local/mail-memory/<UTC timestamp>/`: `samples.ndjson`, `summary.json` and `summary.md`. RSS is sampled by a worker every 20 ms; heap and database state samples pause during main-thread stalls. API traffic stays in process; there is no browser or real IMAP/network latency. See [measurement details and limits](../../../docs-site/docs/en/contributing/performance-baseline.md#measure-mail-memory-under-hydration-load).

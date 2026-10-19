@@ -1,5 +1,5 @@
 import { appApproval } from "@k2b/cloud/browser/app-approval";
-import { AppPairingInspectionSchema, AppPairingPayloadSchema } from "@k2b/cloud/contracts";
+import { AppPairingConfirmResultSchema, AppPairingInspectionSchema, AppPairingPayloadSchema } from "@k2b/cloud/contracts";
 import { qr } from "@k2b/stdlib/qr";
 import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogOptions, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -28,7 +28,7 @@ export default function Pairing(props: {
   const [reference, setReference] = createSignal<z.infer<typeof ResumeSchema>>();
   const [link, setLink] = createSignal("");
   const [inspection, setInspection] = createSignal<z.infer<typeof AppPairingInspectionSchema>>();
-  const [state, setState] = createSignal<"idle" | "waiting" | "done" | "expired" | "cancelled">("idle");
+  const [state, setState] = createSignal<"idle" | "waiting" | "done" | "denied" | "expired" | "cancelled">("idle");
   const [busy, setBusy] = createSignal(false);
   const [checkingIdentity, setCheckingIdentity] = createSignal(true);
   // Unset when the dialog has no install step. A new pairing starts only after it,
@@ -40,19 +40,31 @@ export default function Pairing(props: {
     return cause instanceof ApprovalError && (cause.code === "REAUTHENTICATE" || cause.status === 401);
   };
   const [retrying, setRetrying] = createSignal(false);
-  const canCancelResume = () => state() === "waiting" && !needsAuthentication() && !link() && !inspection()?.comparison;
+  // The code was confirmed while the account already had a paired device: one of them approves the pairing.
+  const awaitingApproval = () => state() === "waiting" && !needsAuthentication() && inspection()?.approval?.state === "pending";
+  const canCancelResume = () =>
+    state() === "waiting" && !needsAuthentication() && ((!link() && !inspection()?.comparison) || awaitingApproval());
   const canConfirm = () =>
-    state() === "waiting" && !needsAuthentication() && inspection()?.state === "claimed" && !!inspection()?.comparison;
+    state() === "waiting" &&
+    !needsAuthentication() &&
+    inspection()?.state === "claimed" &&
+    !!inspection()?.comparison &&
+    !inspection()?.approval;
   const storageKey = `cloud.app-pairing:${props.actorId}:${props.userId}`;
   const returnTo = props.returnTo;
   let stop = () => {};
   let disposed = false;
-  const forget = () => {
+  /** With a pairing ID, only that pairing's saved reference goes; a newer one stays for a reload. */
+  const forget = (pairingId?: string) => {
     try {
+      if (pairingId !== undefined) {
+        const saved = ResumeSchema.safeParse(JSON.parse(window.sessionStorage.getItem(storageKey) || "null"));
+        if (!saved.success || saved.data.pairingId !== pairingId) return;
+      }
       window.sessionStorage.removeItem(storageKey);
     } catch {}
   };
-  const finish = (next: "done" | "expired" | "cancelled") => {
+  const finish = (next: "done" | "denied" | "expired" | "cancelled") => {
     stop();
     forget();
     setLink("");
@@ -63,16 +75,16 @@ export default function Pairing(props: {
     setState(next);
     if (next === "cancelled") closeDialog?.();
   };
-  const wait = (ref: z.infer<typeof ResumeSchema>) => {
+  /** `stale`: the saved reference is past its deadline, which Cloud may have extended; ask at once, else start over. */
+  const wait = (started: z.infer<typeof ResumeSchema>, stale = false) => {
+    let ref = started;
     stop();
     setReference(ref);
     setState("waiting");
     stop = pollApproval(
       async (signal) => {
-        if (Date.parse(ref.expiresAt) <= Date.now()) {
-          finish("expired");
-          return false;
-        }
+        // Cloud says when a pairing ended: a lost confirmation answer may have extended it for a paired device, and a
+        // decided request still answers approved or denied for a minute. A gone pairing answers 404, read as expired.
         const data = await parsed(
           await approvalApi.manage.pairings.status.$post({ json: { pairingId: ref.pairingId } }, approvalRequestOptions(signal)),
           AppPairingInspectionSchema,
@@ -85,8 +97,22 @@ export default function Pairing(props: {
           return false;
         }
         if (data.state === "cancelled") {
-          finish("cancelled");
+          finish(data.approval?.state === "denied" ? "denied" : "cancelled");
           return false;
+        }
+        if (data.approval?.state === "expired") {
+          finish("expired");
+          return false;
+        }
+        // Also a status read can be the first to learn of the approval request, after a lost confirmation answer:
+        // the saved reference follows its deadline, so a reload resumes the pairing.
+        const approvalUntil = data.approval?.state === "pending" ? Date.parse(data.approval.expiresAt) : 0;
+        if (approvalUntil > Date.parse(ref.expiresAt)) {
+          ref = { ...ref, expiresAt: new Date(approvalUntil).toISOString() };
+          setReference(ref);
+          try {
+            window.sessionStorage.setItem(storageKey, JSON.stringify(ref));
+          } catch {}
         }
         setInspection(data);
         if (data.state === "claimed") setLink("");
@@ -94,7 +120,13 @@ export default function Pairing(props: {
       },
       (cause) => {
         if (cause instanceof ApprovalError && cause.status < 500 && cause.status !== 429) {
-          if (cause.status === 404) finish("expired");
+          if (cause.status === 404 && stale && !inspection()) {
+            stop();
+            forget();
+            setReference(undefined);
+            setState("idle");
+            begin();
+          } else if (cause.status === 404) finish("expired");
           else {
             setInspection(undefined);
             setLink("");
@@ -105,6 +137,8 @@ export default function Pairing(props: {
         setRetrying(true);
         return true;
       },
+      5,
+      { immediate: stale },
     );
   };
   onMount(() => {
@@ -120,16 +154,17 @@ export default function Pairing(props: {
         if (!disposed) {
           stop();
           const pending = reference();
-          forget();
-          if (pending) void cancelPending(pending.pairingId);
+          // The saved reference stays until Cloud confirms the cancellation, so reopening the dialog can retry it.
+          if (pending) void cancelPending(pending.pairingId, true);
+          else forget();
           props.onClose();
         }
       });
     try {
       const saved = ResumeSchema.safeParse(JSON.parse(window.sessionStorage.getItem(storageKey) || "null"));
-      if (saved.success && Date.parse(saved.data.expiresAt) > Date.now()) {
+      if (saved.success) {
         setCheckingIdentity(false);
-        wait(saved.data);
+        wait(saved.data, Date.parse(saved.data.expiresAt) <= Date.now());
       } else {
         forget();
         begin();
@@ -200,18 +235,32 @@ export default function Pairing(props: {
     setError(undefined);
     stop();
     try {
-      await checked(
-        confirm && code
-          ? await approvalApi.manage.pairings.confirm.$post(
-              { json: { pairingId: ref.pairingId, comparison: code } },
-              approvalRequestOptions(),
-            )
-          : await approvalApi.manage.pairings.cancel.$post({ json: { pairingId: ref.pairingId } }, approvalRequestOptions()),
-      );
-      if (!disposed) {
-        finish(confirm ? "done" : "cancelled");
-        if (confirm) toast.success(t().paired);
+      if (confirm && code) {
+        const result = await parsed(
+          await approvalApi.manage.pairings.confirm.$post(
+            { json: { pairingId: ref.pairingId, comparison: code } },
+            approvalRequestOptions(),
+          ),
+          AppPairingConfirmResultSchema,
+        );
+        if (disposed) return;
+        const approval = result.approval;
+        if (approval) {
+          // Nothing is paired yet: follow the request until a paired device decides it, also after a reload.
+          const next = { ...ref, expiresAt: new Date(Math.max(Date.parse(ref.expiresAt), Date.parse(approval.expiresAt))).toISOString() };
+          try {
+            window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+          } catch {}
+          setInspection((previous) => (previous ? { ...previous, approval } : previous));
+          wait(next);
+          return;
+        }
+        finish("done");
+        toast.success(t().paired);
+        return;
       }
+      await checked(await approvalApi.manage.pairings.cancel.$post({ json: { pairingId: ref.pairingId } }, approvalRequestOptions()));
+      if (!disposed) finish("cancelled");
     } catch (cause) {
       if (!disposed) {
         setError(cause);
@@ -231,11 +280,15 @@ export default function Pairing(props: {
       setError(new Error());
     }
   };
-  const cancelPending = async (pairingId: string) => {
+  const cancelPending = async (pairingId: string, saved = false) => {
     try {
       await checked(await approvalApi.manage.pairings.cancel.$post({ json: { pairingId } }, approvalRequestOptions()));
-    } catch {
-      toast.error(t().failure);
+      if (saved) forget(pairingId);
+    } catch (cause) {
+      // A pairing that Cloud already finished or no longer knows has nothing left to cancel.
+      const settled = cause instanceof ApprovalError && cause.status < 500 && cause.status !== 429;
+      if (saved && settled) forget(pairingId);
+      toast.error(saved && !settled ? t().pairCancelFailed : t().failure);
     }
   };
   let closeDialog: (() => void) | undefined;
@@ -309,6 +362,11 @@ export default function Pairing(props: {
                 <p role="status">{t().done}</p>
               </NoticeCard>
             </Show>
+            <Show when={state() === "denied"}>
+              <NoticeCard tone="warning">
+                <p role="status">{t().pairDenied}</p>
+              </NoticeCard>
+            </Show>
             <Show when={state() === "waiting" && !needsAuthentication()}>
               <Show
                 when={link()}
@@ -326,11 +384,31 @@ export default function Pairing(props: {
                   </Button>
                 </div>
               </Show>
-              <Show when={canConfirm()}>
-                <p class="text-sm">{t().confirmHint({ name: inspection()?.name ?? "" })}</p>
-                <div class="py-4 text-center" role="status">
-                  <p class="text-sm">{t().comparison}</p>
-                  <p class="mt-2 text-3xl sm:text-5xl font-mono tabular-nums tracking-widest">{inspection()?.comparison}</p>
+              {/* The code and the wait for a paired device share one place, so confirming moves nothing. */}
+              <Show when={canConfirm() || awaitingApproval()}>
+                <div class="grid">
+                  <div
+                    class="flex flex-col [grid-area:1/1]"
+                    classList={{ invisible: !canConfirm() }}
+                    aria-hidden={canConfirm() ? undefined : true}
+                    inert={canConfirm() ? undefined : true}
+                  >
+                    <p class="text-sm">{t().confirmHint({ name: inspection()?.name ?? "" })}</p>
+                    <div class="py-4 text-center" role="status">
+                      <p class="text-sm">{t().comparison}</p>
+                      <p class="mt-2 text-3xl sm:text-5xl font-mono tabular-nums tracking-widest">{inspection()?.comparison}</p>
+                    </div>
+                  </div>
+                  <div
+                    class="flex flex-col gap-2 [grid-area:1/1]"
+                    classList={{ invisible: !awaitingApproval() }}
+                    aria-hidden={awaitingApproval() ? undefined : true}
+                    role="status"
+                  >
+                    <h3 class="text-sm font-semibold">{t().approvalTitle}</h3>
+                    <p class="text-sm">{t().pairApprovalHint({ name: inspection()?.name ?? "" })}</p>
+                    <p class="text-sm text-dimmed">{t().pairApprovalHelp}</p>
+                  </div>
                 </div>
               </Show>
             </Show>

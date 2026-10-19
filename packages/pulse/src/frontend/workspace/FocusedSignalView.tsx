@@ -68,7 +68,7 @@ const FocusedSignalHeader = (props: FocusedSignalViewProps & { kind: Accessor<Fo
   const title = () => (props.kind() === "metric" ? t().metric : props.kind() === "state" ? t().state : t().event);
   return (
     <header class="flex shrink-0 flex-wrap items-center gap-3">
-      <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 app-accent-text dark:bg-zinc-900">
+      <span class="k2b-icon-tile h-9 w-9 app-accent-text" aria-hidden="true">
         <i class={`ti ${focusedSignalIcon(props.kind())} text-base`} />
       </span>
       <div class="min-w-0 flex-1">

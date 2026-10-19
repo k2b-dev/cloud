@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import type { Socket } from "bun";
 import { type FetchMessageObject, ImapFlow, type ListResponse } from "imapflow";
 import nodemailer from "nodemailer";
@@ -780,6 +780,128 @@ describe("IMAP reads under throttling", () => {
   );
 });
 
+describe("IMAP source download interruption", () => {
+  // Serves one 1 MiB source in the partial windows ImapFlow requests, like a real server.
+  const source = Buffer.alloc(1024 * 1024, "x");
+  const serve = () => {
+    const sockets: Socket<{ buffer: string }>[] = [];
+    let fetches = 0;
+    const server = Bun.listen<{ buffer: string }>({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open(socket) {
+          socket.data = { buffer: "" };
+          sockets.push(socket);
+          socket.write("* OK [CAPABILITY IMAP4rev1] fixture ready\r\n");
+        },
+        data(socket, data) {
+          socket.data.buffer += data.toString();
+          while (true) {
+            const end = socket.data.buffer.indexOf("\r\n");
+            if (end === -1) break;
+            const line = socket.data.buffer.slice(0, end);
+            socket.data.buffer = socket.data.buffer.slice(end + 2);
+            const [tag, ...words] = line.split(" ");
+            const command = (words[0] === "UID" ? `UID ${words[1]}` : words[0]) ?? "";
+            if (command === "LOGIN") {
+              socket.write(`${tag} OK [CAPABILITY IMAP4rev1] logged in\r\n`);
+            } else if (command === "SELECT" || command === "EXAMINE") {
+              socket.write(
+                `* FLAGS (\\Seen)\r\n* 1 EXISTS\r\n* OK [UIDVALIDITY 10] ok\r\n* OK [UIDNEXT 10] ok\r\n${tag} OK [READ-ONLY] done\r\n`,
+              );
+            } else if (command === "UID FETCH") {
+              fetches += 1;
+              const window = /BODY\.PEEK\[\]<(\d+)\.(\d+)>/.exec(line);
+              const start = Number(window?.[1] ?? 0);
+              const chunk = source.subarray(start, start + Number(window?.[2] ?? source.length));
+              const size = line.includes("RFC822.SIZE") ? ` RFC822.SIZE ${source.length}` : "";
+              socket.write(`* 1 FETCH (UID 7${size} BODY[]<${start}> {${chunk.length}}\r\n`);
+              socket.write(chunk);
+              socket.write(`)\r\n${tag} OK done\r\n`);
+            } else if (command === "LOGOUT") {
+              socket.write(`* BYE\r\n${tag} OK done\r\n`);
+              socket.end();
+            } else {
+              socket.write(`${tag} OK done\r\n`);
+            }
+          }
+        },
+      },
+    });
+    return { server, sockets, fetches: () => fetches };
+  };
+  const connect = async (port: number) => {
+    const client = new ImapFlow({
+      host: "127.0.0.1",
+      port,
+      secure: false,
+      doSTARTTLS: false,
+      auth: { user: "fixture", pass: "fixture" },
+      logger: false,
+      disableAutoIdle: true,
+      socketTimeout: 2_000,
+    });
+    client.on("error", () => undefined);
+    await client.connect();
+    const lock = await client.getMailboxLock("INBOX", { readOnly: true });
+    return { client, lock };
+  };
+  const drain = async (stream: Readable): Promise<{ bytes: number; error: unknown }> => {
+    let bytes = 0;
+    try {
+      for await (const chunk of stream) bytes += (chunk as Buffer).length;
+      return { bytes, error: null };
+    } catch (error) {
+      return { bytes, error };
+    }
+  };
+
+  test("fails a real download that the connection loss cut short while the consumer waited", async () => {
+    const fixture = serve();
+    const { client, lock } = await connect(fixture.server.port);
+    try {
+      const results: Array<{ bytes: number; error: unknown }> = [];
+      await downloadSelectedSources(client, [{ key: "message-7", uidValidity: "10", uid: 7 }], async (download) => {
+        // The consumer waits (as hydration waits for memory) until ImapFlow pauses on backpressure.
+        let seen = -1;
+        while (seen !== fixture.fetches()) {
+          seen = fixture.fetches();
+          await Bun.sleep(50);
+        }
+        const closed = new Promise((resolve) => client.once("close", resolve));
+        for (const socket of fixture.sockets) socket.end();
+        await closed;
+        results.push(await drain(download.stream));
+      });
+      // ImapFlow 2.0.7 ends the content stream without an error here; the source is incomplete.
+      expect(results).toMatchObject([{ error: { code: "IMAP_CONNECTION_LOST" } }]);
+      expect(results[0]!.bytes).toBeLessThan(source.length);
+    } finally {
+      lock.release();
+      await client.logout().catch(() => undefined);
+      fixture.server.stop(true);
+    }
+  });
+
+  test("delivers the whole real download on a connection that stays usable", async () => {
+    const fixture = serve();
+    const { client, lock } = await connect(fixture.server.port);
+    try {
+      const results: Array<{ bytes: number; error: unknown }> = [];
+      await downloadSelectedSources(client, [{ key: "message-7", uidValidity: "10", uid: 7 }], async (download) => {
+        await Bun.sleep(100);
+        results.push(await drain(download.stream));
+      });
+      expect(results).toEqual([{ bytes: source.length, error: null }]);
+    } finally {
+      lock.release();
+      await client.logout().catch(() => undefined);
+      fixture.server.stop(true);
+    }
+  });
+});
+
 describe("IMAP set moves", () => {
   type Folder = "INBOX" | "Archive";
   type Stored = { uid: number; deleted: boolean };
@@ -1203,6 +1325,54 @@ describe("IMAP envelope UID batching", () => {
 describe("IMAP source downloads", () => {
   const requests = [1, 2, 3].map((uid) => ({ key: `message-${uid}`, uidValidity: "10", uid }));
   const source = (uid: number) => ({ meta: { expectedSize: 1, contentType: "message/rfc822" }, content: Readable.from([String(uid)]) });
+
+  test("rejects a source that ends after the selected connection becomes unusable", async () => {
+    const content = new PassThrough();
+    const client = {
+      usable: true,
+      mailbox: { path: "INBOX", delimiter: "/", flags: new Set<string>(), uidValidity: 10n, uidNext: 4, exists: 3 },
+      search: async () => [],
+      fetchOne: async (): Promise<false> => false,
+      download: async () => ({ meta: { expectedSize: 128 * 1024, contentType: "message/rfc822" }, content }),
+    };
+    let receivedBytes = 0;
+    const batch = downloadSelectedSources(client, requests.slice(0, 1), async (download) => {
+      content.write(Buffer.alloc(64 * 1024, "a"));
+      for await (const chunk of download.stream) {
+        receivedBytes += chunk.length;
+        // The connection can close while hydration waits for its memory reservation.
+        Object.assign(client, { usable: false, mailbox: false });
+        content.end();
+      }
+    });
+    await expect(batch).rejects.toMatchObject({ code: "IMAP_CONNECTION_LOST" });
+    expect(receivedBytes).toBe(64 * 1024);
+    expect(content.destroyed).toBe(true);
+  });
+
+  test("delivers the exact source bytes and expected size on a usable connection", async () => {
+    const chunks = [Buffer.from("Subject: Test\r\n\r\n"), Buffer.from([0, 128, 255]), Buffer.from("\r\nbody")];
+    const expected = Buffer.concat(chunks);
+    const received: Buffer[] = [];
+    await downloadSelectedSources(
+      {
+        usable: true,
+        mailbox: { path: "INBOX", delimiter: "/", flags: new Set<string>(), uidValidity: 10n, uidNext: 4, exists: 3 },
+        search: async () => [],
+        fetchOne: async (): Promise<false> => false,
+        download: async () => ({
+          meta: { expectedSize: expected.length, contentType: "message/rfc822" },
+          content: Readable.from(chunks),
+        }),
+      },
+      requests.slice(0, 1),
+      async (download) => {
+        expect(download.expectedSize).toBe(expected.length);
+        for await (const chunk of download.stream) received.push(chunk);
+      },
+    );
+    expect(Buffer.concat(received)).toEqual(expected);
+  });
 
   const probeSources: Array<[string, Buffer]> = [
     ["nonempty", Buffer.from("M")],

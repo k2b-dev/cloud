@@ -6,6 +6,7 @@ import {
   AppActionViewSchema,
   AppDeviceCommandSchema,
   AppDeviceInboxSchema,
+  AppDeviceInboxWithChangesSchema,
   type AppDeviceProof,
   AppDevicePublicKeySchema,
   AppDeviceRequestSchema,
@@ -230,6 +231,54 @@ test("terminal consent is strict, plain and bounded within a five-login inbox", 
   ])
     expect(AppPendingLoginSchema.safeParse({ ...login, terminal: change }).success).toBe(false);
   const inbox = AppDeviceInboxSchema.parse({ logins: Array(5).fill(login), actions: [], moreActions: 0, pollAfterSeconds: 5 });
+  expect(new TextEncoder().encode(JSON.stringify(inbox)).length).toBeLessThanOrEqual(APP_APPROVAL_LIMITS.bodyBytes);
+});
+
+test("inbox opt-in preserves the original literal signing message and binds accepted parts", () => {
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox" } })).toBe(
+    `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"inbox"]`,
+  );
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox", accept: ["device-changes"] } })).toBe(
+    `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"inbox",["device-changes"]]`,
+  );
+  expect(
+    appDeviceProofMessage({
+      ...proof,
+      command: { operation: "change", changeId: id, kind: "revoke", targetId: id, endSessions: true, decision: "approve" },
+    }),
+  ).toBe(
+    `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"change","${id}","revoke","${id}",true,"approve"]`,
+  );
+});
+
+test("five logins and five device changes with 80 four-byte code points fit the inbox budget without actions", () => {
+  const inbox = AppDeviceInboxWithChangesSchema.parse({
+    logins: Array.from({ length: APP_APPROVAL_LIMITS.pendingPerAccount }, () => ({
+      requestId: id,
+      challenge: coordinate,
+      comparison: "000123",
+      createdAt: "2026-10-11T10:00:00.000Z",
+      expiresAt: "2026-10-11T10:05:00.000Z",
+    })),
+    moreChanges: 0,
+    changes: Array.from({ length: APP_APPROVAL_LIMITS.pendingPerAccount }, () => ({
+      changeId: id,
+      kind: "revoke",
+      device: { id, name: "🦊".repeat(80) },
+      endSessions: true,
+      createdAt: "2026-10-11T10:00:00.000Z",
+      expiresAt: "2026-10-11T10:05:00.000Z",
+    })),
+    actions: [],
+    moreActions: 0,
+    pollAfterSeconds: APP_APPROVAL_LIMITS.pollSeconds,
+  });
+  expect(inbox.logins).toHaveLength(5);
+  expect(inbox.changes).toHaveLength(5);
+  expect(inbox.moreChanges).toBe(0);
+  for (const moreChanges of [undefined, -1, 0.5, APP_APPROVAL_LIMITS.pendingPerAccount + 1])
+    expect(AppDeviceInboxWithChangesSchema.safeParse({ ...inbox, moreChanges }).success).toBe(false);
+  expect(AppDeviceInboxWithChangesSchema.safeParse({ ...inbox, moreChanges: APP_APPROVAL_LIMITS.pendingPerAccount }).success).toBe(true);
   expect(new TextEncoder().encode(JSON.stringify(inbox)).length).toBeLessThanOrEqual(APP_APPROVAL_LIMITS.bodyBytes);
 });
 

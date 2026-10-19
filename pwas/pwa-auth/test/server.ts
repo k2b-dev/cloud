@@ -32,6 +32,7 @@ for (const port of [43220, 43221]) {
   app.post("/fixture/pair", async (c) => {
     // Simulate a fresh interactive fixture session for each new test flow.
     await sql`UPDATE auth.session_families SET issued_at=now() WHERE sid=${sid}::uuid`;
+    await sql`UPDATE auth.app_devices SET revoked_at=COALESCE(revoked_at,now()) WHERE user_id=${actor.userId}::uuid`;
     const pairing = await service.startPairing(actor);
     return c.json({ pairingId: pairing.pairingId, link: appApproval.createPairingLink(pwa, pairing) });
   });

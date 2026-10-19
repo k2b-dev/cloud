@@ -30,9 +30,7 @@ const HostgroupCard = (props: Props) => {
         {hostgroup.hostgroups.length > 0 && (
           <div class="hidden sm:flex items-center gap-1 flex-wrap shrink-0">
             {hostgroup.hostgroups.map((nestedCn) => (
-              <span class="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                {nestedCn}
-              </span>
+              <span class="rounded bg-[var(--ui-surface-muted)] text-secondary px-1.5 py-0.5 text-[10px] font-medium">{nestedCn}</span>
             ))}
           </div>
         )}
