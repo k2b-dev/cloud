@@ -168,7 +168,7 @@ describe("incoming mail HTML", () => {
 });
 
 describe("hydration HTML working-set estimate", () => {
-  test("sums encoded inline HTML sizes and excludes attachment subtrees", () => {
+  test("sums the encoded size of every HTML node, attachment subtrees included", () => {
     const structure = {
       type: "multipart/mixed",
       childNodes: [
@@ -179,8 +179,9 @@ describe("hydration HTML working-set estimate", () => {
         { type: "multipart/alternative", disposition: "attachment", childNodes: [{ type: "text/html", size: 1000 }] },
       ],
     };
-    expect(hydrationHtmlBytes(structure, 3000)).toBe(500);
-    expect(hydrationHtmlBytes(JSON.stringify(structure), 3000)).toBe(500);
+    // MailParser can take HTML from a multipart subtree marked as an attachment into the body.
+    expect(hydrationHtmlBytes(structure, 3000)).toBe(2400);
+    expect(hydrationHtmlBytes(JSON.stringify(structure), 3000)).toBe(2400);
   });
 
   test("falls back to source size for absent or unusable HTML metadata", () => {

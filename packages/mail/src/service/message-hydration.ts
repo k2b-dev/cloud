@@ -769,22 +769,22 @@ const parseMimeStructure = (value: unknown): Record<string, unknown> => {
   return isMimeNode(parsed) ? parsed : {};
 };
 
-// IMAP BODYSTRUCTURE sizes describe encoded bytes, an upper bound for base64/QP HTML.
+// IMAP BODYSTRUCTURE sizes describe encoded bytes, an upper bound for base64/QP HTML. Every HTML
+// node counts, attachments included: MailParser can take HTML from a multipart subtree marked as
+// an attachment into the body, and counting one HTML attachment too many only reserves more.
 export const hydrationHtmlBytes = (structure: unknown, sourceBytes: number): number => {
   let total = 0;
   let usable = false;
   let missing = false;
-  const visit = (value: unknown, attachment = false): void => {
+  const visit = (value: unknown): void => {
     if (!isMimeNode(value)) return;
-    const node = value;
-    const isAttachment = attachment || String(node.disposition).toLowerCase() === "attachment";
-    if (!isAttachment && String(node.type).toLowerCase() === "text/html") {
-      if (typeof node.size === "number" && Number.isFinite(node.size) && node.size >= 0) {
-        total += node.size;
+    if (String(value.type).toLowerCase() === "text/html") {
+      if (typeof value.size === "number" && Number.isFinite(value.size) && value.size >= 0) {
+        total += value.size;
         usable = true;
       } else missing = true;
     }
-    if (Array.isArray(node.childNodes)) for (const child of node.childNodes) visit(child, isAttachment);
+    if (Array.isArray(value.childNodes)) for (const child of value.childNodes) visit(child);
   };
   visit(parseMimeStructure(structure));
   return usable && !missing ? total : sourceBytes;
