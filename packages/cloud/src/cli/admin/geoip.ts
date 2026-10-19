@@ -71,8 +71,11 @@ export const geoipCommands = [
     async run({ ctx, args }) {
       const file = Bun.file(args.file);
       if (!(await file.exists())) throw new Error(cliText(ctx, { en: "File not found.", de: "Datei nicht gefunden." }));
-      // Refresh credentials on a replayable request before sending a one-shot stream.
-      await readStatus(ctx, await ctx.fetch(path));
+      // Refresh credentials on a replayable request before sending a one-shot stream. A token with only the write
+      // scope may not read the status; the upload's own answer reports whether it is allowed.
+      const preflight = await ctx.fetch(path);
+      if (preflight.status === 403) await preflight.body?.cancel();
+      else await readStatus(ctx, preflight);
       const magic = new Uint8Array(await file.slice(0, 2).arrayBuffer());
       const gzip = magic[0] === 0x1f && magic[1] === 0x8b;
       const body = gzip ? file.stream() : file.stream().pipeThrough(new CompressionStream("gzip"));

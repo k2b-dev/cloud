@@ -126,6 +126,25 @@ test("upload uses a streaming gzip body and duplex half for raw and already comp
   }
 });
 
+test("upload works with a write-only token whose status read is refused", async () => {
+  const test = fixture(["geoip", "upload", await file(mmdbFixture("city"))], {}, "json");
+  test.receive(async (init) => {
+    if (!init) return Response.json({ error: "insufficient_scope" }, { status: 403 });
+    await new Response(init.body).arrayBuffer();
+    return Response.json({ ...status, kind: "city" });
+  });
+  await admin.run(test.ctx);
+  expect(test.calls.map((call) => call.init?.method ?? "GET")).toEqual(["GET", "PUT"]);
+  expect(JSON.parse(test.lines[0]!).kind).toBe("city");
+});
+
+test("upload stops before sending the file when the status read fails otherwise", async () => {
+  const test = fixture(["geoip", "upload", await file(mmdbFixture("city"))]);
+  test.receive(async () => new Response("unavailable", { status: 503, statusText: "Service Unavailable" }));
+  await expect(admin.run(test.ctx)).rejects.toThrow("Service Unavailable");
+  expect(test.calls).toHaveLength(1);
+});
+
 test("reset requires yes, accepts a single type, defaults to both, and rejects unknown types", async () => {
   const refused = fixture(["geoip", "reset"]);
   await expect(admin.run(refused.ctx)).rejects.toThrow("--yes");
