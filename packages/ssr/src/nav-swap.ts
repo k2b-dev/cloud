@@ -6,13 +6,13 @@ type SwapState = {
   uninstall: () => void;
   announcer: HTMLElement;
   active?: AbortController;
-  click?: { event: MouseEvent; controller: AbortController };
+  native?: { event: Event; controller: AbortController };
   token: string;
   counter: number;
   /** The page marker of the shown server page; island-owned state may leave it undefined. */
   currentPage: unknown;
   trusted: boolean;
-  fragment?: string;
+  fragment?: { event: MouseEvent; href: string };
 };
 const swappedKey = Symbol.for("@k2b/ssr/nav-swap/swapped");
 const shared: typeof globalThis & { [swapKey]?: SwapState; [swappedKey]?: Document } = globalThis;
@@ -68,6 +68,20 @@ const hashJump = (url: URL): boolean =>
   url.search === window.location.search &&
   // `href="#"` has an empty hash but still jumps natively.
   (url.hash !== "" || url.href.endsWith("#"));
+const sameTabAnchor = (event: MouseEvent) => {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  // The composed path reaches an anchor inside a shadow root, where event.target is the host.
+  const anchor = event.composedPath().find((node) => node instanceof HTMLAnchorElement && node.hasAttribute("href"));
+  if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download")) return;
+  // An explicit target="" means this tab even under <base target>; reserved names are case-insensitive.
+  const target = (
+    anchor.hasAttribute("target") ? anchor.getAttribute("target") : document.querySelector("base[target]")?.getAttribute("target")
+  )
+    ?.trim()
+    .toLowerCase();
+  if (target && !["_self", "_top", "_parent"].includes(target)) return;
+  return { anchor, target };
+};
 /** The base URL of a parsed page: its own <base href>, resolved against the response URL, as the browser would. */
 const baseOf = (doc: Document, url: URL): string => new URL(doc.querySelector("base[href]")?.getAttribute("href") ?? url.href, url).href;
 /** A fetched page keeps the current head, so its <base> must already match, also where it resolves to. */
@@ -116,7 +130,7 @@ export function installPageSwap(): () => void {
     uninstall: () => {
       window.removeEventListener("click", captureClick, true);
       window.removeEventListener("click", click);
-      window.removeEventListener("submit", submit);
+      window.removeEventListener("submit", submit, true);
       window.removeEventListener("popstate", popstate);
       announcer.remove();
       abort(state);
@@ -128,30 +142,29 @@ export function installPageSwap(): () => void {
     window.history.replaceState({ [markerKey]: state.currentPage }, "");
   }
   const captureClick = (event: MouseEvent): void => {
-    if (!state.active || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const anchor = event.composedPath().find((node) => node instanceof HTMLAnchorElement && node.hasAttribute("href"));
-    if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download")) return;
-    const target = (
-      anchor.hasAttribute("target") ? anchor.getAttribute("target") : document.querySelector("base[target]")?.getAttribute("target")
-    )
-      ?.trim()
-      .toLowerCase();
-    if (target && !["_self", "_top", "_parent"].includes(target)) return;
+    const link = sameTabAnchor(event);
+    if (!link) return;
     // stopPropagation can hide a native click from the bubble listener; wait until handlers can prevent it.
-    state.click = { event, controller: state.active };
+    if (state.active) state.native = { event, controller: state.active };
+    let url: URL;
+    try {
+      url = new URL(link.anchor.href);
+    } catch {
+      return;
+    }
+    if (!hashJump(url)) return;
+    const fragment = { event, href: url.href };
+    state.fragment = fragment;
+    // Native fragment activation finishes before the next task.
+    setTimeout(() => {
+      if (state.fragment === fragment) state.fragment = undefined;
+    }, 0);
   };
   const click = (event: MouseEvent): void => {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    // The composed path reaches an anchor inside a shadow root, where event.target is the host.
-    const anchor = event.composedPath().find((node) => node instanceof HTMLAnchorElement && node.hasAttribute("href"));
-    if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download")) return;
-    // An explicit target="" means this tab even under <base target>; reserved names are case-insensitive.
-    const target = (
-      anchor.hasAttribute("target") ? anchor.getAttribute("target") : document.querySelector("base[target]")?.getAttribute("target")
-    )
-      ?.trim()
-      .toLowerCase();
-    if (target && !["_self", "_top", "_parent"].includes(target)) return;
+    if (event.defaultPrevented) return;
+    const link = sameTabAnchor(event);
+    if (!link) return;
+    const { anchor, target } = link;
     let url: URL;
     try {
       url = new URL(anchor.href);
@@ -161,12 +174,6 @@ export function installPageSwap(): () => void {
     if (hashJump(url)) {
       // A native jump on this page is still a newer navigation than a pending swap.
       abort(state);
-      const href = url.href;
-      state.fragment = href;
-      // Native fragment popstate runs after the click's microtask checkpoint, before the next task.
-      setTimeout(() => {
-        if (state.fragment === href) state.fragment = undefined;
-      }, 0);
       return;
     }
     const context = shellContext(document);
@@ -181,9 +188,11 @@ export function installPageSwap(): () => void {
     }
   };
   const submit = (event: SubmitEvent): void => {
-    if (event.defaultPrevented) return;
+    if (!state.active) return;
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
+    const method = event.submitter?.hasAttribute("formmethod") ? event.submitter.getAttribute("formmethod") : form.getAttribute("method");
+    if (method?.trim().toLowerCase() === "dialog") return;
     const target = (
       event.submitter?.hasAttribute("formtarget")
         ? event.submitter.getAttribute("formtarget")
@@ -194,8 +203,8 @@ export function installPageSwap(): () => void {
       ?.trim()
       .toLowerCase();
     if (target && !["_self", "_top", "_parent"].includes(target)) return;
-    // A late swap must not replace the page or cancel a pending native form navigation.
-    abort(state);
+    // Capture survives stopPropagation; defer cancellation until later handlers can prevent the submission.
+    state.native = { event, controller: state.active };
   };
   const popstate = (event: PopStateEvent): void => {
     abort(state);
@@ -205,7 +214,13 @@ export function installPageSwap(): () => void {
       if (page === state.currentPage) return;
     } else {
       // The link's own fresh fragment entry belongs to the shown page, even after a swap.
-      if (event.state === null && state.fragment !== undefined && state.fragment === window.location.href) {
+      if (
+        event.state === null &&
+        state.fragment &&
+        state.fragment.href === window.location.href &&
+        state.fragment.event.eventPhase === Event.NONE &&
+        !state.fragment.event.defaultPrevented
+      ) {
         state.fragment = undefined;
         if (state.currentPage !== undefined) window.history.replaceState({ [markerKey]: state.currentPage }, "");
         return;
@@ -219,7 +234,7 @@ export function installPageSwap(): () => void {
   shared[swapKey] = state;
   window.addEventListener("click", captureClick, true);
   window.addEventListener("click", click);
-  window.addEventListener("submit", submit);
+  window.addEventListener("submit", submit, true);
   window.addEventListener("popstate", popstate);
   document.body.append(announcer);
   return state.uninstall;
@@ -245,7 +260,7 @@ export async function swapPage(href: string, options: { replace?: boolean } = {}
   const controller = new AbortController();
   state.active = controller;
   const active = () => {
-    if (state.click?.controller === controller && state.click.event.eventPhase === Event.NONE && !state.click.event.defaultPrevented) {
+    if (state.native?.controller === controller && state.native.event.eventPhase === Event.NONE && !state.native.event.defaultPrevented) {
       // Dispatch finished without prevention, so the browser's native default action ran and wins.
       if (state.active === controller) state.active = undefined;
       controller.abort();

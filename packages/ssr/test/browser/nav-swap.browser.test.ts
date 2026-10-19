@@ -437,6 +437,7 @@ test("install is idempotent; uninstall removes listeners, live region and pendin
   expect(installPageSwap()).toBe(uninstall);
   expect(add.mock.calls.filter(([type]) => type === "click" || type === "submit" || type === "popstate")).toHaveLength(4);
   expect(add).toHaveBeenCalledWith("click", expect.any(Function), true);
+  expect(add).toHaveBeenCalledWith("submit", expect.any(Function), true);
   expect(document.querySelectorAll("[data-nav-announcer]")).toHaveLength(1);
   const requests = deferredFetch();
   const pending = swapPage("/app/A");
@@ -446,6 +447,8 @@ test("install is idempotent; uninstall removes listeners, live region and pendin
   expect(remove.mock.calls.filter(([type]) => type === "click" || type === "submit" || type === "popstate")).toHaveLength(4);
   const capture = add.mock.calls.find(([type, , options]) => type === "click" && options === true)![1];
   expect(remove).toHaveBeenCalledWith("click", capture, true);
+  const submit = add.mock.calls.find(([type]) => type === "submit")![1];
+  expect(remove).toHaveBeenCalledWith("submit", submit, true);
   expect(document.querySelector("[data-nav-announcer]")).toBeNull();
   expect(assign).not.toHaveBeenCalled();
 });
@@ -509,18 +512,19 @@ test("a prevented link that stops propagation lets a pending swap commit", async
   expect(replace).not.toHaveBeenCalled();
 });
 
-test("a native same-tab form submission aborts a pending swap without committing or loading a document", async () => {
+test.each([false, true])("a native same-tab form submission with stopPropagation=%s stops a pending swap", async (stop) => {
   install();
   const requests = deferredFetch(true);
   const before = window.history.length;
   const state = window.history.state;
   const pending = swapPage("/app/A");
   const form = document.createElement("form");
+  if (stop) form.addEventListener("submit", (event) => event.stopPropagation());
   document.body.append(form);
   form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-  expect(requests[0]!.signal.aborted).toBe(true);
   requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
   await pending;
+  expect(requests[0]!.signal.aborted).toBe(true);
   expect(document.title).toBe("old");
   expect(document.querySelector("main b")!.textContent).toBe("old");
   expect(window.location.href).toBe("https://example.test/app/old");
@@ -531,12 +535,13 @@ test("a native same-tab form submission aborts a pending swap without committing
   expect(replace).not.toHaveBeenCalled();
 });
 
-test.each(["prevented", "_blank"])("a %s form submission lets a pending swap commit", async (kind) => {
+test.each(["prevented", "_blank", "dialog"])("a %s form submission lets a pending swap commit", async (kind) => {
   install();
   const requests = deferredFetch(true);
   const pending = swapPage("/app/A");
   const form = document.createElement("form");
   if (kind === "_blank") form.target = "_blank";
+  else if (kind === "dialog") form.method = "dialog";
   else form.addEventListener("submit", (event) => event.preventDefault());
   document.body.append(form);
   form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -1190,17 +1195,26 @@ test("a same-page hash link stays native and aborts a pending swap", async () =>
   expect(assign).not.toHaveBeenCalled();
 });
 
-test("a fresh hash-link popstate after a swap stays native and gets the shown page marker", async () => {
+test.each(["native", "stopped", "prevented"])("a %s hash-link popstate after a swap checks the click before stamping", async (kind) => {
   install();
   spyOn(globalThis, "fetch").mockResolvedValue(response());
   await swapPage("/app/new");
   const current = window.history.state;
   const reload = spyOn(window.location, "reload").mockImplementation(() => {});
-  expect(click("#later").defaultPrevented).toBe(false);
-  // Native fragment activation follows the click's microtask checkpoint; Happy DOM needs its popstate emulated.
-  await Promise.resolve();
+  const anchor = document.createElement("a");
+  anchor.href = "#later";
+  anchor.addEventListener("click", (event) => {
+    if (kind === "stopped") event.stopPropagation();
+    if (kind === "prevented") event.preventDefault();
+  });
+  document.body.append(anchor);
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+  anchor.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(kind === "prevented");
+  // Activation runs with eventPhase NONE; Happy DOM needs its null-state popstate emulated.
+  expect(event.eventPhase).toBe(Event.NONE);
   window.history.replaceState(null, "", "/app/new#later");
   window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
-  expect(reload).not.toHaveBeenCalled();
-  expect(window.history.state).toEqual(current);
+  expect(reload).toHaveBeenCalledTimes(kind === "prevented" ? 1 : 0);
+  expect(window.history.state).toEqual(kind === "prevented" ? null : current);
 });
