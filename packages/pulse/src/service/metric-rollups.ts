@@ -82,17 +82,3 @@ export const createHourlyRollup =
     });
   };
 export const runHourlyRollup = createHourlyRollup();
-
-export const sealExpiredMetricHour = async (baseId?: string, now = new Date()): Promise<number> =>
-  sql.begin(async (tx) => {
-    const [candidate] = await tx<{ base_id: string; hour: Date }[]>`SELECT h.base_id,h.hour FROM pulse.metric_hours h
-    JOIN pulse.bases b ON b.id=h.base_id JOIN pulse.base_stores s ON s.base_id=b.id
-    WHERE h.state='clean' AND h.hour+interval '1 hour'<=${now}::timestamptz-b.retention_days*interval '1 day' AND (h.lease_until IS NULL OR h.lease_until<=${now}::timestamptz)
-      AND (${baseId ?? null}::uuid IS NULL OR h.base_id=${baseId ?? null}::uuid) AND s.state='active' AND s.write_block_reason IS NULL ORDER BY h.hour,h.base_id LIMIT 1`;
-    if (!candidate) return 0;
-    const active = await requireBaseWritable(candidate.base_id, tx);
-    if (!active.ok) return 0;
-    const rows = await tx`UPDATE pulse.metric_hours SET state='sealed',updated_at=${now}::timestamptz
-    WHERE base_id=${candidate.base_id}::uuid AND hour=${candidate.hour} AND state='clean' AND (lease_until IS NULL OR lease_until<=${now}::timestamptz)`;
-    return rows.count;
-  });

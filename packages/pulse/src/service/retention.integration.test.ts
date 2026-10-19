@@ -223,6 +223,37 @@ suiteFor(
       await f.cleanup();
     }
   }, 60000);
+  test("a pending keyed batch keeps the hours it may replay unsealed until its key is done", async () => {
+    const f = await writeFixture("pending-seal-horizon");
+    try {
+      const [base] = await sql<{ retention_days: number }[]>`SELECT retention_days FROM pulse.bases WHERE id=${f.base.id}::uuid`;
+      const retention = Number(base?.retention_days) * 86_400_000;
+      // Half an hour inside raw retention at acceptance; two hours later its hour is past the raw cutoff.
+      const ts = new Date(f.clock().getTime() - retention + 1_800_000);
+      const hour = new Date(Math.floor(ts.getTime() / 3_600_000) * 3_600_000);
+      const batch = { metrics: [{ name: "load", value: 1, ts: ts.toISOString() }], events: [{ kind: "deploy" }] };
+      f.failInsert(1);
+      expect(await f.write(batch, "pending-batch")).toMatchObject({ ok: false, error: { status: 503 } });
+      f.recover();
+      f.setTime(new Date(f.clock().getTime() + 2 * 3_600_000).toISOString());
+      // The recompute ran and the lease expired: only the pending key still protects the hour.
+      await sql`UPDATE pulse.metric_hours SET state='clean',lease_until=NULL WHERE base_id=${f.base.id}::uuid AND hour=${hour}`;
+      const run = createRetention({ store: f.store, clock: f.clock });
+      await run(f.base.id);
+      expect(
+        await sql<{ state: string }[]>`SELECT state FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid AND hour=${hour}`,
+      ).toEqual([{ state: "clean" }]);
+      assertWrite(await f.write(batch, "pending-batch"));
+      expect(await f.read("samples", "value")).toEqual([{ value: 1 }]);
+      await sql`UPDATE pulse.metric_hours SET state='clean',lease_until=NULL WHERE base_id=${f.base.id}::uuid AND hour=${hour}`;
+      await run(f.base.id);
+      expect(
+        await sql<{ state: string }[]>`SELECT state FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid AND hour=${hour}`,
+      ).toEqual([{ state: "sealed" }]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("registries and scrape history expire but current state keys remain", async () => {
     const f = await writeFixture("registry-retention");
     try {

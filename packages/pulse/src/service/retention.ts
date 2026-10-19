@@ -61,15 +61,22 @@ export const createRetention =
         if (!b) return [];
         const rawCutoff = new Date(now.getTime() - b.retention_days * DAY_MS),
           registryCutoff = new Date(now.getTime() - Math.max(b.retention_days, b.rollup_retention_days) * DAY_MS);
+        // A pending keyed batch may still replay metrics back to its own acceptance time minus raw retention, and
+        // keeps that promise for the key's lifetime: hold the seal horizon there until the key is done or expired.
+        const [pending] = await tx<{ oldest: Date | null }[]>`SELECT min(i.accepted_at) AS oldest FROM pulse.ingest_idempotency i
+          JOIN pulse.sources src ON src.id=i.source_id WHERE src.base_id=${base.id}::uuid AND i.state='pending' AND i.expires_at>${now}`;
+        const sealCutoff = new Date(
+          Math.min(rawCutoff.getTime(), pending?.oldest ? pending.oldest.getTime() - b.retention_days * DAY_MS : Number.POSITIVE_INFINITY),
+        );
         const sealed = await tx`WITH victims AS(SELECT hour FROM pulse.metric_hours WHERE base_id=${base.id}::uuid AND state='clean'
-          AND hour+interval '1 hour'<=${rawCutoff} AND (lease_until IS NULL OR lease_until<=${now}) ORDER BY hour LIMIT ${BATCH} FOR UPDATE)
+          AND hour+interval '1 hour'<=${sealCutoff} AND (lease_until IS NULL OR lease_until<=${now}) ORDER BY hour LIMIT ${BATCH} FOR UPDATE)
           UPDATE pulse.metric_hours h SET state='sealed',updated_at=${now} FROM victims v WHERE h.base_id=${base.id}::uuid AND h.hour=v.hour AND h.state='clean'`;
         result.sealedHours += sealed.count;
-        // Preserve the seal before discarding its individual rows. Do not advance
-        // past an outstanding dirty/clean hour, even when it predates a sealed one.
+        // Preserve the seal before discarding its individual rows. Do not advance past an outstanding
+        // dirty/clean hour, even when it predates a sealed one, nor past the pending replay horizon.
         await tx`UPDATE pulse.base_stores SET sealed_before=greatest(sealed_before,
           (SELECT max(hour)+interval '1 hour' FROM pulse.metric_hours h WHERE h.base_id=${base.id}::uuid
-            AND state='sealed' AND hour+interval '1 hour'<=${registryCutoff}
+            AND state='sealed' AND hour+interval '1 hour'<=least(${registryCutoff}::timestamptz,${sealCutoff}::timestamptz)
             AND hour<coalesce((SELECT min(hour) FROM pulse.metric_hours WHERE base_id=${base.id}::uuid AND state<>'sealed'),'infinity'::timestamptz)))
           WHERE base_id=${base.id}::uuid`;
         if (sealed.count >= BATCH) result.done = false;
