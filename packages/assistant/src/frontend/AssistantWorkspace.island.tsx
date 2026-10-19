@@ -1765,7 +1765,7 @@ export default function AssistantWorkspace(props: Props) {
           disabled={!canUseComposer() || (newConversation.loading() && !commandCreating()) || chat.loadingConversation()}
           state={
             projectComposer()
-              ? newConversation.loading()
+              ? newConversation.loading() && !commandCreating()
                 ? "submitting"
                 : "idle"
               : chat.runStatus() === "stopping"

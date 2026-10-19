@@ -387,6 +387,24 @@ test("cancelling an app Command while a plain chat is being created preserves la
   expect(openCommand).not.toHaveBeenCalled();
 });
 
+test("cancelling an app Command while a project chat is being created gives editing back at once", async () => {
+  let release!: () => void;
+  const createGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const h = await mount({ project: true, createGate });
+  h.choose();
+  await waitFor(() => h.creates.length === 1);
+  expect(h.input.readOnly).toBe(true);
+  h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  // Editing returns before the chat exists, not when its creation ends.
+  await waitFor(() => !h.input.readOnly);
+  expect(h.input.disabled).toBe(false);
+  release();
+  await waitFor(() => h.saves.length === 1);
+  expect(openCommand).not.toHaveBeenCalled();
+});
+
 test("an unreachable app from a plain new chat names the failure in the status line of the chat it created", async () => {
   openCommand.mockRejectedValueOnce(new Error("Offline"));
   const h = await mount({ newChat: true });
