@@ -415,8 +415,10 @@ such a dialog then leaves that history alone.
 A dialog closes when the island that opened it is disposed, together with the
 dialogs stacked above it. The opening island is the one around the element
 whose event opened the dialog, else around the latest click or key press, else
-around focus. A dialog opened before any press, or outside every island, stays
-open. Its history entry stays in the browser and is left to the router; the
+around focus. An element outside every island, such as an item of a context
+menu, counts for the island of the latest press inside one. A dialog opened
+before any press inside an island stays open. A history dialog that waits for
+an earlier Back never opens when its island is disposed in the meantime. Its history entry stays in the browser and is left to the router; the
 dialog core then treats it like a page entry, so a later Back onto it closes
 only dialogs opened after it.
 

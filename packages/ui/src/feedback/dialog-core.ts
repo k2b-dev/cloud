@@ -140,6 +140,9 @@ const focusUnclaimed = (dialog: HTMLDialogElement): boolean => {
 
 type HistoryEntry = { historyId?: number };
 type HistoryHolder = HistoryEntry & { onBack: () => void };
+/** The island that opened a dialog, and how often it had been disposed by then. */
+type DialogOwner = { island?: Element; disposals?: number };
+const ISLANDS = "solid-island,solid-client";
 
 export const createDialogCore = () => {
   const state: DialogState = { stack: [] };
@@ -154,6 +157,10 @@ export const createDialogCore = () => {
   const deadMarker = (marker: unknown): marker is number => typeof marker === "number" && forgotten.has(marker);
   /** The target of the latest pointer or key press, for dialogs that open after an await. */
   let lastInteraction: Element | undefined;
+  /** The island of the latest press inside one; a press in a portal such as a context menu leaves it. */
+  let lastIsland: Element | undefined;
+  /** How often each wrapper was disposed, so a dialog that waits to open notices that its island went away. */
+  const disposals = new WeakMap<Element, number>();
   const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
   let seen: ReturnType<typeof historySnapshot> | undefined;
   let traversalFrom: { href: string; marker: unknown } | undefined;
@@ -248,14 +255,31 @@ export const createDialogCore = () => {
     }
     const target = event.target;
     if (!(target instanceof Element)) return;
+    disposals.set(target, (disposals.get(target) ?? 0) + 1);
     if (lastInteraction && target.contains(lastInteraction)) lastInteraction = undefined;
+    if (lastIsland && target.contains(lastIsland)) lastIsland = undefined;
     const lowest = state.stack.findIndex((entry) => entry.island && target.contains(entry.island));
     if (lowest < 0) return;
     while (state.stack.length > lowest) popTop(undefined);
   };
 
   const onInteraction = (event: Event) => {
-    if (event.target instanceof Element) lastInteraction = event.target;
+    if (!(event.target instanceof Element)) return;
+    lastInteraction = event.target;
+    lastIsland = event.target.closest(ISLANDS) ?? lastIsland;
+  };
+
+  /**
+   * The island that opens a dialog now: the one around the target of the event being dispatched, else of the latest
+   * pointer or key press (WebKit does not focus a clicked button, and a dialog may open after an await), else of focus.
+   * A trigger outside every island, such as an item of a portalled menu, falls back to the island of the latest press
+   * inside one. A level opened from inside a dialog has no island and closes with the level below it.
+   */
+  const openingIsland = (): DialogOwner => {
+    const trigger = window.event?.target instanceof Element ? window.event.target : (lastInteraction ?? document.activeElement);
+    if (!(trigger instanceof Element) || state.element?.contains(trigger)) return {};
+    const island = trigger.closest(ISLANDS) ?? lastIsland;
+    return island ? { island, disposals: disposals.get(island) ?? 0 } : {};
   };
 
   const onNavigate = (event: NavigateEvent) => {
@@ -267,6 +291,7 @@ export const createDialogCore = () => {
     if (listening?.window === window) return;
     // A press in another window never names the island that opens a dialog here.
     lastInteraction = undefined;
+    lastIsland = undefined;
     listening?.window.removeEventListener("popstate", onPopState, { capture: true });
     listening?.window.removeEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
     listening?.window.removeEventListener("pointerdown", onInteraction, { capture: true });
@@ -516,23 +541,25 @@ export const createDialogCore = () => {
   };
 
   const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
+    listen();
+    return openOwned(view, options, openingIsland());
+  };
+
+  const openOwned = <T>(view: DialogRender<T>, options: OpenDialogOptions, owner: DialogOwner): Promise<T | undefined> => {
     if (options.signal?.aborted) return Promise.resolve(undefined);
     if (options.history) {
       // Dialogs closed just now leave the history first, or this dialog's entry would be the one removed.
       if (historySyncScheduled) syncHistory();
-      if (returning) return returning.then(() => open(view, options));
+      if (returning) return returning.then(() => openOwned(view, options, owner));
     }
+    // An island disposed while its dialog waited for history never gets that dialog.
+    if (owner.island && (disposals.get(owner.island) ?? 0) !== owner.disposals) return Promise.resolve(undefined);
     const dialog = ensureDialogElement();
     listen();
     const previousTop = state.stack[state.stack.length - 1];
     if (previousTop) previousTop.container.style.display = "none";
     const activeElement = document.activeElement;
-    // The island around the element that opened this dialog: the target of the event being dispatched, else of the
-    // latest pointer or key press (WebKit does not focus a clicked button, and a dialog may open after an await),
-    // else focus. A level opened from inside a dialog closes with the level below it.
-    const trigger = window.event?.target instanceof Element ? window.event.target : (lastInteraction ?? activeElement);
-    const island =
-      trigger instanceof Element && !dialog.contains(trigger) ? (trigger.closest("solid-island,solid-client") ?? undefined) : undefined;
+    const island = owner.island;
 
     const panelClassName = options.panelClassName ?? DEFAULT_PANEL_CLASS;
     const cancelBehavior = options.cancelBehavior ?? "resolve-undefined";

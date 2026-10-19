@@ -66,6 +66,16 @@ for (const navigationApi of [true, false]) {
       };
     });
     afterEach(() => restoreNavigation());
+    /** A real browser traverses after the current task; Happy DOM would traverse inside go(). */
+    const deferTraversals = () => {
+      const go = Object.getPrototypeOf(history).go.bind(history);
+      return spyOn(history, "go").mockImplementation((delta) => {
+        setTimeout(() => {
+          if (navigationApi) navigation.dispatchEvent(Object.assign(new Event("navigate"), { navigationType: "traverse" }));
+          go(delta);
+        }, 10);
+      });
+    };
 
     test("disposal closes the focused island's dialog, portal, focus trap and scroll lock", async () => {
       const core = createDialogCore();
@@ -316,14 +326,7 @@ for (const navigationApi of [true, false]) {
         },
         { history: true },
       );
-      // A real browser traverses after the current task; Happy DOM would traverse inside go().
-      const go = Object.getPrototypeOf(history).go.bind(history);
-      const deferred = spyOn(history, "go").mockImplementation((delta) => {
-        setTimeout(() => {
-          if (navigationApi) navigation.dispatchEvent(Object.assign(new Event("navigate"), { navigationType: "traverse" }));
-          go(delta);
-        }, 10);
-      });
+      const deferred = deferTraversals();
       closeSecond();
       expect(core.isOpen()).toBe(true);
       // The synthetic Back that removes the second entry starts at the next microtask.
@@ -340,6 +343,57 @@ for (const navigationApi of [true, false]) {
       expect(await first).toBeUndefined();
       expect(landedAtSettle).toBe(true);
       window.removeEventListener("popstate", onLanded, { capture: true });
+    });
+
+    test("a history dialog waiting for an earlier Back never opens once its island is disposed", async () => {
+      const core = createDialogCore();
+      const outside = trigger();
+      const b = trigger("b");
+      document.body.style.overflow = "auto";
+      outside.button.focus();
+      let closeFirst = () => {};
+      const first = core.open(
+        (close) => {
+          closeFirst = close;
+          return view("First")();
+        },
+        { history: true },
+      );
+      const deferred = deferTraversals();
+      closeFirst();
+      await Promise.resolve();
+      expect(deferred).toHaveBeenCalledWith(-1);
+      b.button.focus();
+      const waiting = core.open(view("Waiting"), { history: true });
+      dispose(b.parent);
+      expect(await first).toBeUndefined();
+      expect(await waiting).toBeUndefined();
+      expect(core.isOpen()).toBe(false);
+      expect(document.querySelector("dialog")).toBeNull();
+      expect(document.body.textContent).not.toContain("Waiting");
+      expect(document.body.style.overflow).toBe("auto");
+    });
+
+    test("a dialog opened from a portalled menu item belongs to the island of the press that opened the menu", async () => {
+      const core = createDialogCore();
+      const { parent, button } = trigger("a");
+      button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      // The context menu renders in a portal outside the island and closes before it runs the chosen action.
+      const menu = trigger();
+      menu.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      menu.parent.remove();
+      const descriptor = Object.getOwnPropertyDescriptor(window, "event");
+      Object.defineProperty(window, "event", { configurable: true, value: { target: menu.button } });
+      let result: Promise<unknown>;
+      try {
+        result = core.open(view("From menu"));
+      } finally {
+        if (descriptor) Object.defineProperty(window, "event", descriptor);
+        else Reflect.deleteProperty(window, "event");
+      }
+      dispose(parent);
+      expect(core.isOpen()).toBe(false);
+      expect(await result).toBeUndefined();
     });
 
     test("the disposal window resets at the next microtask and normal close still goes Back", async () => {
