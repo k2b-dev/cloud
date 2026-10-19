@@ -99,14 +99,12 @@ const boxes = (page: Page) =>
 describe("DateTimePicker with an optional time", () => {
   test("shows a date key on its own day and commits a chosen day at once", async () => {
     const page = await load(viewports.desktop);
-    await expect(page.locator("#" + (await trigger(page, "Due").getAttribute("id")) + "-value").textContent()).resolves.toBe(
-      "Oct 23, 2026",
-    );
+    expect(await page.locator("#" + (await trigger(page, "Due").getAttribute("id")) + "-value").textContent()).toBe("Oct 23, 2026");
     const panel = await open(page, "Due");
-    await expect(panel.getByRole("button", { name: "Add time" }).isVisible()).resolves.toBe(true);
-    await expect(panel.locator("input").count()).resolves.toBe(0);
+    expect(await panel.getByRole("button", { name: "Add time" }).isVisible()).toBe(true);
+    expect(await panel.locator("input").count()).toBe(0);
     await panel.locator('[data-date-day="2026-10-24"]').click();
-    await expect(page.locator(".k2b-date-popover:popover-open").count()).resolves.toBe(0);
+    expect(await page.locator(".k2b-date-popover:popover-open").count()).toBe(0);
     expect(await committed(page)).toEqual([["Due", "2026-10-24"]]);
     await page.close();
   }, 30_000);
@@ -128,14 +126,12 @@ describe("DateTimePicker with an optional time", () => {
 
         await page.getByRole("button", { name: "Add time" }).click();
         const time = page.getByRole("textbox", { name: "Time" });
-        await expect(time.evaluate((input) => input === document.activeElement)).resolves.toBe(true);
-        await expect(time.inputValue()).resolves.toBe("17:00");
+        expect(await time.evaluate((input) => input === document.activeElement)).toBe(true);
+        expect(await time.inputValue()).toBe("17:00");
         expect(await boxes(page)).toEqual(before);
 
         await page.getByRole("button", { name: "Remove time" }).click();
-        await expect(page.getByRole("button", { name: "Add time" }).evaluate((button) => button === document.activeElement)).resolves.toBe(
-          true,
-        );
+        expect(await page.getByRole("button", { name: "Add time" }).evaluate((button) => button === document.activeElement)).toBe(true);
         expect(await boxes(page)).toEqual(before);
         await page.close();
       }, 30_000);
@@ -154,16 +150,14 @@ describe("DateTimePicker with an optional time", () => {
     expect(await committed(page)).toEqual([]);
     await panel.getByRole("button", { name: "Apply" }).click();
     expect(await committed(page)).toEqual([["Due", "2026-10-24T07:30:00.000Z"]]);
-    await expect(page.locator("#" + (await trigger(page, "Due").getAttribute("id")) + "-value").textContent()).resolves.toBe(
-      "Oct 24, 2026, 09:30",
-    );
+    expect(await page.locator("#" + (await trigger(page, "Due").getAttribute("id")) + "-value").textContent()).toBe("Oct 24, 2026, 09:30");
     await page.close();
   }, 30_000);
 
   test("opens a timed value with its time and saves the date alone after Remove time", async () => {
     const page = await load(viewports.desktop);
     const panel = await open(page, "Timed");
-    await expect(panel.getByRole("textbox", { name: "Time" }).inputValue()).resolves.toBe("17:30");
+    expect(await panel.getByRole("textbox", { name: "Time" }).inputValue()).toBe("17:30");
     await panel.getByRole("button", { name: "Remove time" }).click();
     await panel.getByRole("button", { name: "Apply" }).click();
     expect(await committed(page)).toEqual([["Timed", "2026-10-23"]]);

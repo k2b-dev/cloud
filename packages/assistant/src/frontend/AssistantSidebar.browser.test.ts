@@ -315,7 +315,7 @@ describe(`Assistant chat list in ${browserName}`, () => {
       await target.hover();
       await frames(page);
       const done = target.getByRole("button", { name: "Chat als fertig markieren" });
-      await expect(done.isVisible()).resolves.toBe(true);
+      expect(await done.isVisible()).toBe(true);
       const after = await rows(page);
       expect(after.rows.map((row) => ({ x: row.x, y: row.y, height: row.height, labelX: row.label.x, labelY: row.label.y }))).toEqual(
         before.rows.map((row) => ({ x: row.x, y: row.y, height: row.height, labelX: row.label.x, labelY: row.label.y })),
