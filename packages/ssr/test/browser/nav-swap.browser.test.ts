@@ -959,3 +959,33 @@ test.each([
   expect(assign).toHaveBeenCalledWith("https://example.test/app/new");
   expect(document.title).toBe("old");
 });
+
+test("a commit failure on a URL with a hash reloads it, since replacing it would only scroll", async () => {
+  install();
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new"), {}, "https://example.test/app/requested"));
+  spyOn(window, "scrollTo").mockImplementation(() => {
+    throw new Error("commit scroll failed");
+  });
+  const before = window.history.length;
+  await swapPage("/app/requested#section");
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(window.location.href).toBe("https://example.test/app/requested#section");
+  expect(window.history.length).toBe(before + 1);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test("a relative <base> that resolves elsewhere on the fetched page loads the document", async () => {
+  install();
+  const base = document.createElement("base");
+  base.setAttribute("href", "assets/");
+  document.head.prepend(base);
+  // Same attribute on both pages, but the fetched page sits in another directory.
+  const next = html("new").replace("<head>", '<head><base href="assets/">');
+  spyOn(globalThis, "fetch").mockResolvedValue(response(next, {}, "https://example.test/app/sub/new"));
+  await swapPage("/app/sub/new");
+  expect(assign).toHaveBeenCalledTimes(1);
+  expect(assign).toHaveBeenCalledWith("https://example.test/app/sub/new");
+  expect(document.title).toBe("old");
+});
