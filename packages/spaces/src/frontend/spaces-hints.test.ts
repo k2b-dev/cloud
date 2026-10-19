@@ -11,7 +11,7 @@ const root = mkdtempSync(join(tmpdir(), "spaces-hints-test-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { firstOpenSpacesHint } = await import("./spaces-hints");
+const { firstOpenSpacesHint, spaceHintCandidates } = await import("./spaces-hints");
 
 const app = new Hono<AuthContext>()
   .use("*", async (c, next) => {
@@ -20,18 +20,17 @@ const app = new Hono<AuthContext>()
   })
   .get("/", (c) =>
     c.json({
-      open: firstOpenSpacesHint(c, [
-        { id: "spaces.sidebar-switch", allowed: c.req.query("single") !== "true" },
-        { id: "spaces.view-tabs", allowed: true },
-        { id: "spaces.space-menu", allowed: true },
-      ]),
+      open: firstOpenSpacesHint(c, spaceHintCandidates(c.req.query("single") === "true" ? 1 : 2)),
     }),
   );
 
 test("server chooses only the first allowed unseen hint, preserving the ordered remainder for later views", async () => {
-  expect(await (await app.request("/")).json()).toEqual({ open: "spaces.sidebar-switch" });
+  expect(await (await app.request("/")).json()).toEqual({ open: "spaces.view-tabs" });
   expect(await (await app.request("/?single=true")).json()).toEqual({ open: "spaces.view-tabs" });
-  const cookie = "cloud_seen_hints=spaces.sidebar-switch~spaces.view-tabs";
+  const cookie = "cloud_seen_hints=spaces.view-tabs";
   expect(await (await app.request("/", { headers: { Cookie: cookie } })).json()).toEqual({ open: "spaces.space-menu" });
-  expect(await (await app.request("/", { headers: { Cookie: `${cookie}~spaces.space-menu` } })).json()).toEqual({});
+  const seenMobileHints = `${cookie}~spaces.space-menu`;
+  expect(await (await app.request("/", { headers: { Cookie: seenMobileHints } })).json()).toEqual({ open: "spaces.sidebar-switch" });
+  expect(await (await app.request("/?single=true", { headers: { Cookie: seenMobileHints } })).json()).toEqual({});
+  expect(await (await app.request("/", { headers: { Cookie: `${seenMobileHints}~spaces.sidebar-switch` } })).json()).toEqual({});
 });

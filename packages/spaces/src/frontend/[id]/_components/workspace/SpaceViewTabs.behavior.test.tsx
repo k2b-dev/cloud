@@ -26,7 +26,7 @@ else {
         dom.root,
       );
       try {
-        expect(dom.root.textContent).toContain("List, Table, Kanban, and Calendar are now tabs in the head.");
+        expect(dom.root.textContent).toContain("List, Table, Kanban, and Calendar are now tabs at the top of the page.");
         expect(dom.root.querySelector('[aria-current="page"]')?.textContent).toContain("Table");
         if (usePath) {
           const event = new MouseEvent("click", { bubbles: true, cancelable: true });
@@ -37,7 +37,7 @@ else {
             .click();
         }
         expect(decodeURIComponent(dom.document.cookie)).toContain("spaces.view-tabs");
-        expect(dom.root.textContent).not.toContain("List, Table, Kanban, and Calendar are now tabs in the head.");
+        expect(dom.root.textContent).not.toContain("List, Table, Kanban, and Calendar are now tabs at the top of the page.");
       } finally {
         dispose();
       }

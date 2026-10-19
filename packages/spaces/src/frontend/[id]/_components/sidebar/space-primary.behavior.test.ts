@@ -2,6 +2,15 @@ import { expect, mock, test } from "bun:test";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import { interceptSpacePrimaryClick, spacePrimaryHref } from "./space-primary";
 
+test("primary command links fall back to the current view when the query is too long", () => {
+  const href = spacePrimaryHref({ space: { id: "Space01" }, query: `view=kanban&q=${"x".repeat(1990)}`, currentView: "kanban" });
+  const url = new URL(href, "https://cloud.invalid");
+  expect(url.searchParams.get("command")).toBe("spaces.task.compose");
+  expect(JSON.parse(url.searchParams.get("commandInput")!)).toEqual({ spaceId: "Space01" });
+  expect(url.searchParams.get("view")).toBe("kanban");
+  expect(url.searchParams.has("q")).toBe(false);
+});
+
 test("head primary is a command link and plain clicks run the controller; modified clicks keep the link", () => {
   const dom = createDomTestHarness();
   const create = mock(() => {});

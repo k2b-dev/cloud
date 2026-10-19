@@ -97,7 +97,7 @@ export default function SpaceHeadActions(props: Props) {
         onDismiss={dismissHint}
         action={{ label: t.headOpenMenu, onClick: () => openMenu(true) }}
       >
-        {t.headMenuHint}
+        {t.headMenuHint({ ical: Boolean(props.icalToken), shortcuts: props.currentView === "kanban" })}
       </MovedHint>
       <span class="sr-only" role="status">
         {calendar.copied() ? t.copiedIcalUrl : ""}

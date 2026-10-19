@@ -10,7 +10,7 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 
 ## Ansicht wählen {icon="layout-list"}
 
-Wähle **Liste**, **Tabelle**, **Kanban** oder **Kalender** in den Tabs im Kopfbereich. Die Tabs bleiben auch auf dem Handy dort.
+Wähle **Liste**, **Tabelle**, **Kanban** oder **Kalender** in den Tabs im Kopfbereich. Auf dem Handy stehen die Tabs oben im Inhalt, über den Filtern.
 
 :::reference
 - **Liste:** Eignet sich für eine schnelle Einordnung, persönliche Arbeitsvorräte und kurze operative Listen.

@@ -120,6 +120,16 @@ if (isServer) {
       expect(dom.document.cookie).toContain("spaces.space-menu");
     });
 
+    test.each([
+      { view: "kanban" as const, token: "calendar-token", text: "Space settings, the iCal URL, and keyboard shortcuts are now under “…”." },
+      { view: "list" as const, token: "calendar-token", text: "Space settings and the iCal URL are now under “…”." },
+      { view: "kanban" as const, token: null, text: "Space settings and keyboard shortcuts are now under “…”." },
+      { view: "list" as const, token: null, text: "Space settings are now under “…”." },
+    ])("the menu hint names only the items the menu has ($view, iCal $token)", ({ view, token, text }) => {
+      mount({ hintOpen: true, view, token });
+      expect(dom.root.querySelector(".k2b-moved-hint")?.textContent).toContain(text);
+    });
+
     test("using the menu dismisses and persists its hint", () => {
       mount({ hintOpen: true });
       openMenu();

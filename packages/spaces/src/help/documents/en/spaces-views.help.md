@@ -11,7 +11,7 @@ Views show the same items in the shape that fits the current job. A good view re
 
 ## Choose a view {icon="layout-list"}
 
-Choose **List**, **Table**, **Kanban**, or **Calendar** in the tabs in the page header. The tabs stay there on phones too.
+Choose **List**, **Table**, **Kanban**, or **Calendar** in the tabs in the page header. On a phone, the tabs sit at the top of the content, above the filters.
 
 :::reference
 - **List:** Best for quick triage, personal work queues, and short operational lists.
