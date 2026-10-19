@@ -311,7 +311,8 @@ const inbox = await client.inbox(device, signal, {
 
 Both commands sign `accept`. The SDK filters the list against `/info.features`
 and omits the key when nothing matches. `APP_APPROVAL_PENDING_ACCEPT` contains
-only `login-context`; `terminal-logins` is inbox-only. `APP_APPROVAL_ACCEPT`
+only `login-context`; `terminal-logins` is inbox-only, so `pending` drops it
+from the list instead of failing. `APP_APPROVAL_ACCEPT`
 contains both. Without `login-context`, neither response includes a `context`
 key. Updating the SDK alone does not opt in.
 
@@ -357,7 +358,9 @@ An opted-in browser request can lack context if it started before the upgrade
 or the response budget forced it out. Cloud first drops Actions from the end
 of the inbox and adds them to `moreActions`. If needed, it then drops context
 from the last login backwards. It never drops a login. `pending` uses the same
-context trim order. Both responses stay within 8 KiB.
+context trim order. Both responses stay within 8 KiB. Keep `context` optional
+when you parse a response, and treat a missing context as no claim about the
+browser.
 
 | App and Cloud combination | Browser context behavior |
 | --- | --- |

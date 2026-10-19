@@ -21,8 +21,8 @@ import {
   type AppDeviceRequest,
   AppDeviceResponseSchema,
   AppDevicesPageSchema,
-  AppLoginStartResultSchema,
   AppLoginContextSchema,
+  AppLoginStartResultSchema,
   AppLoginStatusSchema,
   AppPairingClaimResultSchema,
   AppPairingPayloadSchema,
@@ -41,12 +41,12 @@ import {
   readAppApprovalConfig,
 } from "./app-approval";
 import { approvals } from "./approvals";
+import { createIdentityPublicRoutes } from "./identity";
+import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { browserHash, countryHistory } from "./known-browsers";
 import { type AppLoginAddressStore, appLoginAddressKey, valkeyAppLoginAddressStore } from "./login-address-store";
 import type { AppLoginRequestContext } from "./login-context";
 import { requestCacheRedis } from "./request-cache-redis";
-import { createIdentityPublicRoutes } from "./identity";
-import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { session } from "./session";
 import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";

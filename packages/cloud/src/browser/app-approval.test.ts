@@ -299,6 +299,9 @@ test("context opt-in is signed only when advertised, for pending and inbox", asy
       expect(client.loginContext).toBe(features?.includes("login-context") === true);
       await client.pending(device, undefined, asks ? { accept: ["login-context"] } : undefined);
       await client.inbox(device, undefined, asks ? { accept: ["login-context"] } : undefined);
+      // An untyped caller reusing its inbox list on pending loses only the value pending does not serve.
+      // @ts-expect-error terminal-logins is inbox-only
+      if (asks) await client.pending(device, undefined, { accept: ["terminal-logins", "login-context"] });
     }
   }
 });

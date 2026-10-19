@@ -7,6 +7,7 @@ import {
   APP_ACTION_LIMITS,
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
+  APP_APPROVAL_PENDING_ACCEPT,
   APP_APPROVAL_PROTOCOL,
   type AppActionView,
   AppActionViewSchema,
@@ -207,7 +208,8 @@ const connect = async (options: {
       );
     },
     pending: async (device: AppApprovalDevice, signal?: AbortSignal, options?: { accept?: AppApprovalPendingAccept[] }) => {
-      const accept = options?.accept?.filter((entry) => info.features?.includes(entry));
+      // Untyped callers may reuse their inbox list; drop what pending does not serve instead of failing every poll.
+      const accept = options?.accept?.filter((entry) => APP_APPROVAL_PENDING_ACCEPT.includes(entry) && info.features?.includes(entry));
       const result = await command(device, { operation: "pending", ...(accept?.length ? { accept } : {}) }, signal);
       if (!("requests" in result)) throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
