@@ -12,7 +12,7 @@ import {
 import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess, updateMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
-import { attachProviderBinding } from "./bindings";
+import { attachProviderBinding, rediscoverProviderBinding } from "./bindings";
 import { imapSmtpConnector } from "./connectors";
 import { mailboxLiveKeys } from "./live-channels";
 import { createMailbox, updateMailbox } from "./mailboxes";
@@ -75,6 +75,7 @@ suite("Mail frame writers invalidate open mailboxes", () => {
   let sentinelId = "";
   const mailboxIds: string[] = [];
   const accessIds: string[] = [];
+  let discover: ReturnType<typeof spyOn<typeof imapSmtpConnector, "discoverFolders">>;
   let restore = () => {};
 
   beforeAll(async () => {
@@ -114,7 +115,7 @@ suite("Mail frame writers invalidate open mailboxes", () => {
 
   beforeEach(() => {
     const verify = spyOn(imapSmtpConnector, "verify").mockImplementation(async (input) => verification(input.email));
-    const discover = spyOn(imapSmtpConnector, "discoverFolders").mockImplementation(async () => folders());
+    discover = spyOn(imapSmtpConnector, "discoverFolders").mockImplementation(async () => folders());
     const send = spyOn(imapSmtpConnector, "send").mockImplementation(async (_runtime, request) => ({
       response: "250 accepted",
       messageId: request.messageId,
@@ -201,6 +202,47 @@ suite("Mail frame writers invalidate open mailboxes", () => {
     assertPair(mailboxId, await pending(mailboxId));
     expect(await pending(sentinelId)).toEqual([]);
   };
+
+  test("provider folder rediscovery invalidates a rename in both scopes, then stays quiet", async () => {
+    setSystemTime(new Date("2026-10-01T12:00:00.000Z"));
+    try {
+      const f = await connected();
+      const [before] = await sql<{ id: string }[]>`
+        SELECT folder.id FROM mail.folders folder
+        JOIN mail.provider_bindings binding ON binding.remote_resource_id = folder.remote_resource_id
+        WHERE binding.id = ${f.bindingId}::uuid AND folder.role = 'sent'
+      `;
+      expect(before).toBeDefined();
+      discover.mockResolvedValue(
+        folders().map((folder) => (folder.path === "Sent" ? { ...folder, path: "Sent renamed", name: "Sent renamed" } : folder)),
+      );
+      await change(f.mailboxId, async () => {
+        const result = await rediscoverProviderBinding({ bindingId: f.bindingId });
+        expect(result).toMatchObject({ changed: true, renamed: 1 });
+      });
+      const [after] = await sql<{ id: string; name: string }[]>`
+        SELECT id, name FROM mail.folders WHERE id = ${before!.id}::uuid
+      `;
+      expect(after).toEqual({ id: before!.id, name: "Sent renamed" });
+      await clear(f.mailboxId);
+      expect(await rediscoverProviderBinding({ bindingId: f.bindingId })).toMatchObject({ changed: false, renamed: 0 });
+      expect(await pending(f.mailboxId)).toEqual([]);
+      expect(await pending(sentinelId)).toEqual([]);
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test("attaching a provider binding invalidates both scopes with one pair", async () => {
+    setSystemTime(new Date("2026-10-01T12:00:00.000Z"));
+    try {
+      const mailboxId = await mailbox();
+      const connection = unwrap(await createProviderConnection({ context, mailboxId, input: input(mailboxId) })).connection;
+      await change(mailboxId, async () => unwrap(await attachProviderBinding({ context, mailboxId, connectionId: connection.id })));
+    } finally {
+      setSystemTime();
+    }
+  });
 
   test("an empty sync batch invalidates changed health in both scopes, then stays quiet", async () => {
     setSystemTime(new Date("2026-10-01T12:00:00.000Z"));
