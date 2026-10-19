@@ -407,6 +407,33 @@ for (const dir of ["ltr", "rtl"]) {
   });
 }
 
+test("clicking a partially visible phone tab navigates without moving it under the pointer", async () => {
+  const page = await browser!.newPage(phone);
+  try {
+    await load(page);
+    await settled(page);
+    const { href, x, y } = await page.locator(listSelector).evaluate((list) => {
+      const bounds = list.getBoundingClientRect();
+      for (const tab of list.querySelectorAll(".k2b-view-tabs__tab")) {
+        if (tab.getClientRects().length === 0) continue;
+        const rect = tab.getBoundingClientRect();
+        if (rect.left >= bounds.left && rect.left < bounds.right && rect.right > bounds.right) {
+          const href = tab.getAttribute("href");
+          if (!href) throw new Error("Partially visible tab has no navigation href");
+          // Press near the strip edge: a reveal on pointer focus would move the tab out from under this point.
+          const x = bounds.right - 4;
+          if (x <= rect.left) throw new Error("Partially visible tab has no room to click");
+          return { href, x, y: rect.top + rect.height / 2 };
+        }
+      }
+      throw new Error("No visible tab extends beyond the list's right edge with its left edge inside");
+    });
+    await Promise.all([page.waitForURL((url) => url.search === href, { timeout: 5_000 }), page.mouse.click(x, y)]);
+  } finally {
+    await page.close();
+  }
+});
+
 test("forced colors drop the edge fade", async () => {
   const page = await browser!.newPage({ ...phone, forcedColors: "active" });
   try {

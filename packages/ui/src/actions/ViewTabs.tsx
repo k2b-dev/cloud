@@ -70,7 +70,8 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
   let watch = list.__k2bViewTabsWatch;
   if (!watch) {
     const focus = (event: FocusEvent) => {
-      if (watch && event.target instanceof HTMLElement && event.target.matches(".k2b-view-tabs__tab")) {
+      // Pointer focus must not move the target under the pointer.
+      if (watch && event.target instanceof HTMLElement && event.target.matches(".k2b-view-tabs__tab:focus-visible")) {
         watch.preferCurrent = false;
         settle(list, edges, event.target);
       }
@@ -82,7 +83,7 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
           watch?.preferCurrent === false &&
           focused instanceof HTMLElement &&
           list.contains(focused) &&
-          focused.matches(".k2b-view-tabs__tab")
+          focused.matches(".k2b-view-tabs__tab:focus-visible")
         )
           settle(list, edges, focused);
         else settle(list, edges);
