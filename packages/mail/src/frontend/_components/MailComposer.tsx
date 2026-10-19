@@ -232,6 +232,7 @@ export default function MailComposer(props: {
     draft,
     setDraft,
     lease,
+    materializedLeasePending,
     leaseConflict,
     lifecycleTransition,
     status,
@@ -336,7 +337,11 @@ export default function MailComposer(props: {
   });
   createEffect(on(previewQuery.data, () => setPreviewError(undefined), { defer: true }));
   const canEditDraft = createMemo(
-    () => verifiedIdentities().length > 0 && status() !== "preparing" && status() !== "readonly" && (Boolean(lease()) || !draft()),
+    () =>
+      verifiedIdentities().length > 0 &&
+      status() !== "preparing" &&
+      status() !== "readonly" &&
+      (Boolean(lease()) || !draft() || materializedLeasePending()),
   );
   const editable = createMemo(() => canEditDraft() && composerTransition.active() === null);
   const focusFreshEditorAtStart = (element: HTMLTextAreaElement) => {

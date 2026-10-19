@@ -381,6 +381,11 @@ describe("MailComposer signature choice", () => {
       expect(grant).toBeDefined();
       expect(editor.disabled).toBe(false);
       expect(dom.document.activeElement).toBe(editor);
+      // Text typed while the lease is pending survives a reload: the materialized draft keeps its journal.
+      editor.value = "First lines and more";
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      expect(JSON.parse(localStorage.getItem("cloud:mail:draft:Box001:Draft1") ?? "null")?.content?.body).toBe("First lines and more");
       grant?.(
         Response.json({
           token: "seed-token",
@@ -392,12 +397,12 @@ describe("MailComposer signature choice", () => {
       await flush();
       expect(editor.disabled).toBe(false);
       expect(dom.document.activeElement).toBe(editor);
-      expect(editor.value).toBe("First lines");
-      expect(saves[0]?.body).toBe("First lines");
+      expect(editor.value).toBe("First lines and more");
+      expect(saves.map((save) => save.body)).toEqual(["First lines", "First lines and more"]);
       jest.advanceTimersByTime(10_000);
       await flush();
       expect(heartbeats).toBe(1);
-      expect(saves).toHaveLength(1);
+      expect(saves).toHaveLength(2);
     } finally {
       jest.useRealTimers();
     }

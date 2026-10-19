@@ -107,6 +107,7 @@ export const createMailDraftSession = (options: {
   const [statusMessage, setStatusMessage] = createSignal(options.initialSeed ? "" : t().preparingDraft);
   const [lifecycleTransition, setLifecycleTransition] = createSignal<MailDraftLifecycleTransition | null>(null);
   const [initialized, setInitialized] = createSignal(false);
+  const [materializedLeasePending, setMaterializedLeasePending] = createSignal(false);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatController: AbortController | null = null;
@@ -487,14 +488,16 @@ export const createMailDraftSession = (options: {
         }
         currentDraft = await response.json();
         lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
+        setDraft(currentDraft);
         try {
           options.onMaterialized(currentDraft);
         } catch {
           // URL and local-seed cleanup are best-effort; the durable draft remains authoritative.
         }
         if (options.isDisposed()) return currentDraft;
-        const acquired = await acquireLease(currentDraft, false, LEASE_HEARTBEAT_MS);
-        setDraft(currentDraft);
+        // The person keeps typing while the first lease arrives; the journal and the save below keep that text.
+        setMaterializedLeasePending(true);
+        const acquired = await acquireLease(currentDraft, false, LEASE_HEARTBEAT_MS).finally(() => setMaterializedLeasePending(false));
         // A retried materialization returns the draft its first request stored, which can predate the
         // editor's current content; the save below brings the draft up to date before anyone uses it.
         if (!acquired) return serializedContent() === lastSavedContent ? currentDraft : null;
@@ -705,6 +708,7 @@ export const createMailDraftSession = (options: {
     setDraft,
     lease,
     setLease,
+    materializedLeasePending,
     leaseConflict,
     lifecycleTransition,
     status,
