@@ -136,9 +136,9 @@ afterAll(async () => {
     }
   }
 });
-const open = async (page: Page) => {
+const open = async (page: Page, path = "/app/old") => {
   page.setDefaultTimeout(10_000);
-  await page.goto(`${origin}/app/old`);
+  await page.goto(`${origin}${path}`);
   await page.waitForFunction(
     () => document.documentElement.dataset.ready === "yes" && document.querySelector("main [data-mounted]")?.textContent === "old",
   );
@@ -295,6 +295,29 @@ test(`${browserName}: Back after reloading a swapped page loads the previous pag
         document.documentElement.dataset.ready === "yes" &&
         document.querySelector("main [data-mounted]")?.textContent === "old",
     );
+    expect(documents).toEqual([`${origin}/app/old`]);
+  } finally {
+    await context.close();
+  }
+});
+
+test(`${browserName}: Back onto a URL with a hash after a swap loads that page`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page, "/app/old#section");
+    await page.click("#new");
+    await page.waitForFunction(() => document.querySelector("[data-nav-announcer]")?.textContent === "new");
+    const documents = trackDocuments(page);
+    await page.goBack();
+    // Replacing the same URL with a hash would only scroll and keep the swapped column.
+    await page.waitForFunction(
+      () =>
+        location.hash === "#section" &&
+        document.documentElement.dataset.ready === "yes" &&
+        document.querySelector("main [data-mounted]")?.textContent === "old",
+    );
+    // The request carries no fragment; location.hash above shows the URL kept it.
     expect(documents).toEqual([`${origin}/app/old`]);
   } finally {
     await context.close();

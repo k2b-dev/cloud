@@ -206,8 +206,8 @@ A swap is one transaction, and its order is the contract:
    takes an enhanced click.
 2. Fetch the target as HTML with the abort signal. Check status 200, HTML,
    final URL in scope, shell signature and scope, the loader's
-   `data-ssr-assets` prefix, the `<base>` element, and the head stylesheet
-   set.
+   `data-ssr-assets` prefix, the `<base>` element, and the head stylesheets
+   in order with their `media`, because the current head stays.
 3. Preload and import the island entries of the fetched column. The old
    column stays as it is until every module loaded. Evaluation cannot be
    cancelled: an entry also mounts wrappers already waiting for it in the
@@ -230,7 +230,8 @@ prevent a swap first.
 Back and Forward are not swapped yet. Swap entries carry a page marker in
 `history.state`, and a reload keeps it. A `popstate` onto an entry with the
 marker of the shown page (none on a page loaded normally) stays with the
-islands; any other entry loads the document. An island that replaces the
+islands; any other entry reloads the document (`location.reload()`, since
+replacing a URL with a hash would only scroll). An island that replaces the
 swap entry's state with its own drops the marker; after a reload of that
 entry, Back can then keep the wrong column. The history slice gives every
 entry its page ID and closes this.

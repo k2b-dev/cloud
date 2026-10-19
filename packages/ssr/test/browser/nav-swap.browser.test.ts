@@ -348,19 +348,22 @@ test("50 sequential swaps keep listener counts flat and dispose every previous i
 
 test("popstate preserves island history until a swap, then reloads other pages and aborts pending swaps", async () => {
   install();
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
   window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
-  expect(replace).not.toHaveBeenCalled();
+  expect(reload).not.toHaveBeenCalled();
   spyOn(globalThis, "fetch").mockResolvedValue(response());
   await swapPage("/app/new");
   window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
-  expect(replace).not.toHaveBeenCalled();
+  expect(reload).not.toHaveBeenCalled();
   const requests = deferredFetch();
   const pending = swapPage("/app/A");
+  // Back onto a URL with a hash: replacing that same URL would only scroll, so recovery must reload.
+  window.history.replaceState(null, "", "/app/A#section");
   window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
   await pending;
   expect(requests[0]!.aborted).toBe(true);
-  expect(replace).toHaveBeenCalledTimes(1);
-  expect(replace).toHaveBeenCalledWith(window.location.href);
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(replace).not.toHaveBeenCalled();
   expect(assign).not.toHaveBeenCalled();
 });
 
@@ -543,17 +546,14 @@ test.each(["/app", "/app/", "/app/x", "/app?x"])("scope accepts %s at a path bou
   expect(assign).not.toHaveBeenCalled();
 });
 
-test("root scope, absent prefixes without wrappers, and equivalent stylesheet sets are compatible", async () => {
+test("root scope, absent prefixes without wrappers, and the same stylesheet spelled absolute are compatible", async () => {
   install();
   document.querySelector("[data-nav-shell]")!.setAttribute("data-nav-scope", "/");
   document.querySelector("script[data-ssr-assets]")!.remove();
   const next = html("new", "")
     .replace('data-nav-scope="/app"', 'data-nav-scope="/"')
     .replace(/<script.*?<\/script>/, "")
-    .replace(
-      '<link rel="stylesheet" href="/base.css">',
-      '<link rel="stylesheet" href="https://example.test/base.css"><link rel="stylesheet" href="/base.css">',
-    );
+    .replace('<link rel="stylesheet" href="/base.css">', '<link rel="stylesheet" href="https://example.test/base.css">');
   spyOn(globalThis, "fetch").mockResolvedValue(response(next, {}, "https://example.test/elsewhere"));
   await swapPage("/elsewhere");
   expect(window.location.pathname).toBe("/elsewhere");
@@ -941,4 +941,21 @@ test("an enhanced Link cancels a pending swap when it takes the click, before it
   } finally {
     dispose();
   }
+});
+
+test.each([
+  [
+    "order",
+    '<link rel="stylesheet" href="/second.css"><link rel="stylesheet" href="/base.css">',
+    '<link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/second.css">',
+  ],
+  ["media", '<link rel="stylesheet" href="/base.css">', '<link rel="stylesheet" href="/base.css" media="print">'],
+] as const)("a stylesheet %s change loads the document", async (_name, current, fetched) => {
+  install();
+  document.head.querySelector('link[rel="stylesheet"]')!.outerHTML = current;
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new").replace('<link rel="stylesheet" href="/base.css">', fetched)));
+  await swapPage("/app/new");
+  expect(assign).toHaveBeenCalledTimes(1);
+  expect(assign).toHaveBeenCalledWith("https://example.test/app/new");
+  expect(document.title).toBe("old");
 });

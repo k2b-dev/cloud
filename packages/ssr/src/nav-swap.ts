@@ -50,13 +50,13 @@ const baseOf = (doc: Document, url: URL): string => new URL(doc.querySelector("b
 /** A fetched page keeps the current head, so its <base> must already match. */
 const baseElement = (doc: Document): string =>
   JSON.stringify([doc.querySelector("base[href]")?.getAttribute("href"), doc.querySelector("base[target]")?.getAttribute("target")]);
+/** The kept head's cascade: stylesheet URLs in order, with their media. */
 const stylesheets = (doc: Document, base: string): string =>
   JSON.stringify(
-    [
-      ...new Set(
-        [...doc.querySelectorAll('head link[rel~="stylesheet"]')].map((link) => new URL(link.getAttribute("href") ?? "", base).href),
-      ),
-    ].sort(),
+    [...doc.querySelectorAll('head link[rel~="stylesheet"]')].map((link) => [
+      new URL(link.getAttribute("href") ?? "", base).href,
+      link.getAttribute("media"),
+    ]),
   );
 const wrappers = (root: HTMLElement): HTMLElement[] => [
   ...(root.matches("solid-island,solid-client") ? [root] : []),
@@ -129,7 +129,8 @@ export function installPageSwap(): () => void {
     // Entries of the shown page keep its marker (or none on a page loaded normally); islands handle those.
     if (page === state.currentPage) return;
     // The next slice gives every history entry its page ID, including island-owned entries.
-    documentNavigate(window.location.href, { replace: true });
+    // reload(), not replace(location.href): for a URL with a hash that would only be a fragment navigation.
+    window.location.reload();
   };
   shared[swapKey] = state;
   window.addEventListener("click", click);
