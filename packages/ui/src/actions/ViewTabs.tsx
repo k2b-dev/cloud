@@ -60,7 +60,7 @@ function settleViewTabs(list: Element | null, edges: (element: HTMLElement) => s
 }
 
 type WatchedViewTabs = HTMLElement & {
-  __k2bViewTabsWatch?: { resize: ResizeObserver; focus: (event: FocusEvent) => void };
+  __k2bViewTabsWatch?: { resize: ResizeObserver; focus: (event: FocusEvent) => void; preferCurrent: boolean };
 };
 
 /** Also embedded, so it must not close over module state. */
@@ -70,20 +70,30 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
   let watch = list.__k2bViewTabsWatch;
   if (!watch) {
     const focus = (event: FocusEvent) => {
-      if (event.target instanceof HTMLElement && event.target.matches(".k2b-view-tabs__tab")) settle(list, edges, event.target);
+      if (watch && event.target instanceof HTMLElement && event.target.matches(".k2b-view-tabs__tab")) {
+        watch.preferCurrent = false;
+        settle(list, edges, event.target);
+      }
     };
     watch = {
       resize: new ResizeObserver(() => {
         const focused = document.activeElement;
-        if (focused instanceof HTMLElement && list.contains(focused) && focused.matches(".k2b-view-tabs__tab"))
+        if (
+          watch?.preferCurrent === false &&
+          focused instanceof HTMLElement &&
+          list.contains(focused) &&
+          focused.matches(".k2b-view-tabs__tab")
+        )
           settle(list, edges, focused);
         else settle(list, edges);
       }),
       focus,
+      preferCurrent: true,
     };
     Object.defineProperty(list, "__k2bViewTabsWatch", { value: watch, configurable: true });
     list.addEventListener("focusin", focus);
   }
+  watch.preferCurrent = true;
   const { resize } = watch;
   resize.disconnect();
   // Head actions parse after the views; settle again after their layout, before paint, and on later resizes.

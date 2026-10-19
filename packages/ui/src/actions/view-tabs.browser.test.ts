@@ -323,6 +323,23 @@ for (const reducedMotion of ["reduce", "no-preference"] as const) {
   });
 }
 
+test("in-place current changes stay visible while another view keeps focus", async () => {
+  const page = await browser!.newPage(phone);
+  try {
+    await load(page);
+    await page.keyboard.press("Tab");
+    await settled(page);
+    await page.evaluate(() => window.setView("5"));
+    await settled(page);
+    const current = await snapshot(page);
+    expect(current.id).toBe("?view=5");
+    expectVisible(current);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("href"))).toBe("?view=1");
+  } finally {
+    await page.close();
+  }
+});
+
 for (const dir of ["ltr", "rtl"]) {
   test(`${dir} fades name physical edges at the start, middle, end, and disappear when the strip fits`, async () => {
     const page = await browser!.newPage(phone);
