@@ -171,6 +171,9 @@ block instead of that pull request's own commit message:
 - Change a file in every component the advisory commit changed, for example
   under `packages/cloud/` when it changed `@k2b/cloud`. release-please gives
   the override only to the components of the pull request's own files.
+- Write the marker only once, where the block starts: release-please takes
+  the text after the first `BEGIN_COMMIT_OVERRIDE` in the body, also when that
+  first one stands in a sentence.
 - Keep the block and the rest of the text free of HTML-like markup, and name
   the behavior, not the vulnerability, until the advisory is published.
 
