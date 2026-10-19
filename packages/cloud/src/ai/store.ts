@@ -575,6 +575,13 @@ const conversationRunStatus = (status: AiTurnStatus | null | undefined, browserP
 const todoMessageJson = () => sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (message #>> '{}')::jsonb ELSE message END)`;
 const todoMetaJson = () => sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
 
+/** What a copied message keeps of its meta: its todo plan, and its calls' reviews and checks, so a fork reads the same. */
+const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_object(
+  'todoPlan', ${todoMetaJson()}->'todoPlan',
+  'toolReviews', ${todoMetaJson()}->'toolReviews',
+  'toolChecks', ${todoMetaJson()}->'toolChecks'
+)), '{}'::jsonb)`;
+
 // A scheduled result arriving during an interactive turn becomes context on the next turn.
 const visibleToTurn = (turnId?: string) => sql`(
   ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ? 'scheduledTask', false) OR seq < ALL (
@@ -1381,7 +1388,7 @@ export const aiConversations: AiConversationService = {
         SELECT
           short_id, ${target.id}::uuid, seq, kind, role, message, search_text, loop_id,
           model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason,
-          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END,
+          ${copiedMessageMetaJson()},
           created_at
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}::uuid
@@ -2709,7 +2716,7 @@ export const aiConversations: AiConversationService = {
           stop_reason,
           loop_aggregate,
           loop_done_reason,
-          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END,
+          ${copiedMessageMetaJson()},
           created_at
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}

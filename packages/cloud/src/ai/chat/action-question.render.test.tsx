@@ -464,6 +464,19 @@ describe("card v4 outcome line", () => {
       expect(line.all).not.toMatch(/Erneut senden|Noch einmal senden|An Lea Berg senden/);
   });
 
+  test("a long time chip keeps its whole label as its name, however the chip cuts it for the eye", () => {
+    const review = de.del!.block.review!;
+    if (!("sentence" in review)) throw new Error("Expected a new review");
+    const slots = {
+      ...review.slots,
+      day: { kind: "time" as const, start: "2026-10-21T08:45:00.000Z", end: "2026-10-22T18:15:00.000Z", format: "date-time" as const },
+    };
+    const html = renderTurn({ ...de.del!.block, review: { ...review, slots } }, "de");
+    const sentence = html.slice(html.indexOf("k2b-chat-decision__sentence"), html.indexOf("k2b-chat-decision__reason"));
+    expect(sentence).toContain("21. Okt. 2026, 10:45");
+    expect(sentence).toContain("22. Okt. 2026, 20:15");
+  });
+
   test("a Markdown excerpt drops marks but keeps every literal character and link target", () => {
     const review = de.mail!.block.review!;
     if (!("sentence" in review) || review.preview?.kind !== "message") throw new Error("Expected a message review");

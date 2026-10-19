@@ -156,7 +156,8 @@ const partsText = (parts: CapabilitySentencePart[], locale: string, app: ActionC
   merge(
     parts.map((part) => {
       if (part.kind === "text") return textPart(part.text);
-      const chip = chipOf(part.slot, part.label, locale, app);
+      // The full label: the chip cuts it for the eye and keeps it whole as its name and tooltip.
+      const chip = chipOf(part.slot, part.full, locale, app);
       return chip ? { kind: "chip" as const, chip } : textPart(part.label);
     }),
   );
