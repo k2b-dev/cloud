@@ -271,23 +271,6 @@ if (testInfra.nats) {
   }
 }
 
-/** Set by `test-clickhouse.ts` when a test process loads it. */
-export const clickhouseFixtureLoaded = Symbol.for("cloud.test.clickhouse.loaded");
-
-if (testInfra.clickhouse) {
-  try {
-    // Only processes that loaded the ClickHouse fixture own objects under its prefix; every other
-    // integration process skips the round trips.
-    afterAll(async () => {
-      if (!(globalThis as { [clickhouseFixtureLoaded]?: boolean })[clickhouseFixtureLoaded]) return;
-      const { cleanupClickhouseTestObjects } = await import("./test-clickhouse");
-      await cleanupClickhouseTestObjects();
-    });
-  } catch {
-    // Scripts importing the gate do not register test hooks.
-  }
-}
-
 /** The configured target for one infrastructure kind; throws when it is not set. */
 export const requireInfraUrl = (kind: InfraKind): string => {
   const url = testInfra[kind];

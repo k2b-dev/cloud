@@ -483,9 +483,10 @@ suites; a configured but unusable target fails loudly. Diagnostics redact URL
 passwords for every infrastructure kind.
 
 ClickHouse tests use one `pulsetest_<8 hex>_` prefix per process. Generated
-setup SQL grants the service user only that database wildcard, and the fixture
-removes exactly that prefix's databases, users, settings profiles, roles,
-quotas and row policies after the process's tests. Cleanup validates the prefix
+setup SQL grants the service user only that database wildcard. When loaded with
+a configured target, `scripts/fixtures/test-clickhouse.ts` registers its own
+`afterAll` hook to remove exactly that prefix's databases, users, settings
+profiles, roles, quotas and row policies. Cleanup validates the prefix
 before dropping anything and leaves objects outside it alone. Use a dedicated
 test instance: checks deliberately probe instance-wide admin privileges and
 create temporary users. CI and nightly provide ClickHouse 26.9.19.9 for these

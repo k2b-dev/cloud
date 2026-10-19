@@ -1,9 +1,8 @@
+import { afterAll } from "bun:test";
 import { clickhouseQuery, type QueryOptions } from "../../packages/pulse/src/store/client";
 import { quoteIdentifier as q } from "../../packages/pulse/src/store/validation";
 import { assertClickhouseTestPrefix, selectClickhouseTestNames } from "./test-clickhouse-selection";
-import { clickhouseFixtureLoaded, requireInfraUrl } from "./test-infra";
-
-(globalThis as { [clickhouseFixtureLoaded]?: boolean })[clickhouseFixtureLoaded] = true;
+import { requireInfraUrl, testInfra } from "./test-infra";
 
 export const clickhouseTestPrefix = `pulsetest_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}_`;
 export const clickhouseTestAdmin = () => {
@@ -49,3 +48,11 @@ export const cleanupClickhouseTestObjects = async (): Promise<void> => {
     for (const name of selectClickhouseTestNames(prefix, names)) await clickhouseAdminQuery(`DROP ${kind} IF EXISTS ${q(name)}`);
   }
 };
+
+if (testInfra.clickhouse) {
+  try {
+    afterAll(cleanupClickhouseTestObjects);
+  } catch {
+    // Scripts importing the fixture do not register test hooks.
+  }
+}
