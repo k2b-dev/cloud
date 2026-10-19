@@ -353,5 +353,5 @@ export const writePreparedIngestBatchInTransaction = async (params: {
     FROM (SELECT DISTINCT name,"seriesKey" FROM jsonb_to_recordset((${JSON.stringify(batch.metrics)}::jsonb #>> '{}')::jsonb) AS i(name text,"seriesKey" text)) i,pulse.metric_defs d
     WHERE d.base_id=${baseId}::uuid AND d.name=i.name AND s.metric_id=d.id AND s.series_key=i."seriesKey"`;
   const maxTs = [...batch.metrics, ...batch.events, ...batch.states].reduce((max, s) => (s.ts > max ? s.ts : max), "");
-  await db`UPDATE pulse.sources SET last_seen_at=${now}::timestamptz,last_data_at=greatest(last_data_at,${maxTs}::timestamptz),updated_at=${now}::timestamptz WHERE id=${sourceId}::uuid`;
+  await db`UPDATE pulse.sources SET last_seen_at=${now}::timestamptz,last_data_at=greatest(last_data_at,${maxTs}::timestamptz),updated_at=greatest(updated_at,${now}::timestamptz) WHERE id=${sourceId}::uuid`;
 };

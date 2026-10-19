@@ -111,3 +111,24 @@ test("source ingest parses public IDs and refuses a source outside the base", as
     ingest.mockRestore();
   }
 });
+
+test("a manual scrape raises the idle timeout for its synchronous ClickHouse write and restores it", async () => {
+  const base = spyOn(resources, "resolvePublicId").mockResolvedValue(baseId);
+  const source = spyOn(resources, "resolveBasePublicId").mockResolvedValue(sourceId);
+  const scrape = spyOn(pulseService.source, "scrape").mockResolvedValue(ok({ metrics: 1, events: 0, states: 0 }));
+  const timeouts: number[] = [];
+  try {
+    const response = await app.request(
+      "/api/pulse/bases/Base01/sources/Src001/scrape",
+      { method: "POST" },
+      { timeout: (_request: Request, seconds: number) => timeouts.push(seconds) },
+    );
+    expect(response.status).toBe(200);
+    expect(timeouts[0]).toBe(240);
+    expect(timeouts.at(-1)).not.toBe(240);
+  } finally {
+    base.mockRestore();
+    source.mockRestore();
+    scrape.mockRestore();
+  }
+});

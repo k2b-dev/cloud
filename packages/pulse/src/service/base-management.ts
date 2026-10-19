@@ -492,7 +492,7 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
     `;
     await tx`
       UPDATE pulse.sources
-      SET enabled = FALSE, updated_at = now()
+      SET enabled = FALSE, updated_at = greatest(now(), updated_at)
       WHERE base_id = ${params.baseId}::uuid
     `;
     await deleteBoundServiceAccounts(params.baseId, tx);

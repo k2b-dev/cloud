@@ -120,6 +120,8 @@ const routes = new Hono<AuthContext>()
   )
   .post(
     "/bases/:baseId/sources/:sourceId/scrape",
+    // A manual scrape fetches the endpoint and then writes synchronously to ClickHouse like an ingest call.
+    ingestTimeout,
     describeRoute({
       tags: ["Pulse"],
       summary: "Scrape a Pulse metrics source",

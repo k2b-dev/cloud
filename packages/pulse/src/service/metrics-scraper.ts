@@ -45,7 +45,7 @@ const markSourceError = async (
   const now = clock();
   await db`
     UPDATE pulse.sources
-    SET last_error = ${params.message}, last_error_at = CASE WHEN ${params.message}::text IS NULL THEN NULL ELSE ${now}::timestamptz END, updated_at = ${now}
+    SET last_error = ${params.message}, last_error_at = CASE WHEN ${params.message}::text IS NULL THEN NULL ELSE ${now}::timestamptz END, updated_at = greatest(updated_at, ${now}::timestamptz)
     WHERE id = ${params.sourceId}::uuid
   `;
 };
