@@ -105,6 +105,89 @@ function check(value: unknown, message: string): asserts value {
 const phase = (name: string, evidence: Record<string, unknown> = {}) => console.log(JSON.stringify({ phase: name, ...evidence }));
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+/** Cloud respond() flattens service errors; also accept an explicit error envelope. */
+export const mailErrorCode = (body: unknown): string | undefined => {
+  if (!record(body)) return undefined;
+  if (typeof body.code === "string") return body.code;
+  return record(body.error) && typeof body.error.code === "string" ? body.error.code : undefined;
+};
+type MailAnswer = { status: number; body: unknown };
+const succeeded = ({ status }: { status: number }) => status >= 200 && status < 300;
+export const mailLeaseBusy = (answer: MailAnswer) => answer.status === 409 && mailErrorCode(answer.body) === "DRAFT_LEASE_BUSY";
+/**
+ * #1561: Mail is unrouted. The gateway then answers its unmatched-route 502, or Core's catch-all answers
+ * exactly what Core answers for the same path directly. A Mail 404, 409, or 5xx never matches.
+ */
+export const knownMailGatewayGap = (answer: MailAnswer, coreFallthrough: MailAnswer) =>
+  (answer.status === 404 && coreFallthrough.status === 404 && JSON.stringify(answer.body) === JSON.stringify(coreFallthrough.body)) ||
+  (answer.status === 502 && answer.body === "Bad Gateway — no app registered for this path");
+
+export const mailAttachmentBytes = (length: number, seed: number): Uint8Array => {
+  const bytes = new Uint8Array(length);
+  let state = seed;
+  for (let index = 0; index < length; index++) {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    bytes[index] = state & 255;
+  }
+  return bytes;
+};
+
+type MailDraftSnapshot = {
+  id: string;
+  conversationId: string | null;
+  revision: number;
+  body: string;
+  state: string;
+  recoveryCopyCount: number;
+  attachments: { id: string; filename: string; byteLength: number }[];
+};
+const mailDraft = (body: unknown): MailDraftSnapshot => {
+  check(
+    record(body) &&
+      typeof body.id === "string" &&
+      (body.conversationId === null || typeof body.conversationId === "string") &&
+      Number.isInteger(body.revision) &&
+      typeof body.revision === "number" &&
+      body.revision > 0 &&
+      typeof body.body === "string" &&
+      typeof body.state === "string" &&
+      typeof body.recoveryCopyCount === "number" &&
+      Array.isArray(body.attachments),
+    `Invalid Mail draft: ${JSON.stringify(body)}`,
+  );
+  const attachments = body.attachments.map((item: unknown) => {
+    check(
+      record(item) && typeof item.id === "string" && typeof item.filename === "string" && typeof item.byteLength === "number",
+      "Invalid draft attachment",
+    );
+    return { id: item.id, filename: item.filename, byteLength: item.byteLength };
+  });
+  return {
+    id: body.id,
+    conversationId: body.conversationId,
+    revision: body.revision,
+    body: body.body,
+    state: body.state,
+    recoveryCopyCount: body.recoveryCopyCount,
+    attachments,
+  };
+};
+const mailLease = (body: unknown) => {
+  check(
+    record(body) &&
+      typeof body.token === "string" &&
+      typeof body.acquiredAt === "string" &&
+      typeof body.expiresAt === "string" &&
+      record(body.holder) &&
+      typeof body.holder.id === "string",
+    `Invalid acquired Mail lease: ${JSON.stringify(body)}`,
+  );
+  return { token: body.token, acquiredAt: body.acquiredAt, expiresAt: body.expiresAt, holder: { id: body.holder.id } };
+};
+
 /** Failed probes are retried only inside this bounded loop; assertions stay outside it. */
 const poll = async <T>(label: string, probe: () => Promise<T | undefined | false>, timeoutMs = 60_000): Promise<T> => {
   const deadline = Date.now() + timeoutMs;
@@ -272,7 +355,14 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     return value;
   };
   const served = (app: App, target: Replica) => pair(app).served.add(target.id);
-  const http = async (base: string, path: string, method = "GET", body?: unknown, token?: string, expected?: number): Promise<Response> => {
+  const http = async (
+    base: string,
+    path: string,
+    method = "GET",
+    body?: unknown,
+    token?: string,
+    expected?: number | null,
+  ): Promise<Response> => {
     const response = await fetch(`${base}${path}`, {
       method,
       headers: {
@@ -284,11 +374,32 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       signal: AbortSignal.timeout(10_000),
       redirect: "manual",
     });
-    check(
-      expected === undefined ? response.ok : response.status === expected,
-      `${method} ${path}: expected ${expected ?? "2xx"}, got ${response.status}: ${response.ok ? "" : (await response.text()).slice(0, 1500)}`,
-    );
+    if (expected !== null && !(expected === undefined ? response.ok : response.status === expected)) {
+      throw new Error(
+        `${method} ${path}: expected ${expected ?? "2xx"}, got ${response.status}: ${(await response.text()).slice(0, 1500)}`,
+      );
+    }
     return response;
+  };
+  // HTTP errors are data here. Network failures still fail the scenario, with the request's ten-second deadline.
+  const mailCall = async (target: Replica | string, path: string, token: string, method = "GET", body?: unknown): Promise<MailAnswer> => {
+    const response = await http(typeof target === "string" ? target : target.url, path, method, body, token, null);
+    const raw = await response.text();
+    let value: unknown = raw;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      /* Core/gateway fallthroughs and empty release answers are not JSON. */
+    }
+    if (typeof target !== "string") served("mail", target);
+    phase("mail-call", {
+      target: typeof target === "string" ? "gateway" : target.id,
+      path,
+      method,
+      status: response.status,
+      code: mailErrorCode(value),
+    });
+    return { status: response.status, body: value };
   };
   const request = async <T>(app: App, target: Replica, path: string, token: string, method = "GET", body?: unknown): Promise<T> => {
     const response = await http(target.url, path, method, body, token);
@@ -316,11 +427,16 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     socket.onerror = () => {
       failure = `${app} websocket failed`;
     };
-    await poll(`${app} websocket open`, async () => {
-      check(!failure, failure ?? "Socket failed");
-      check(socket.readyState !== WebSocket.CLOSED, `${app} websocket closed`);
-      return socket.readyState === WebSocket.OPEN;
-    });
+    try {
+      await poll(`${app} websocket open`, async () => {
+        check(!failure, failure ?? "Socket failed");
+        check(socket.readyState !== WebSocket.CLOSED, `${app} websocket closed`);
+        return socket.readyState === WebSocket.OPEN;
+      });
+    } catch (error) {
+      socket.close();
+      throw error;
+    }
     return {
       socket,
       healthy: () => {
@@ -637,78 +753,708 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       const result = await sentOnce(recipient, 1, 90_000);
       phase("durable-mail-once", { status: "passed", trigger: "POST /api/auth/email-login", recipient, ...result });
     });
-    let draftPath = "",
-      leaseToken = "",
-      holderId = "";
-    await scenario("mail-draft-lease", async () => {
+    let mailboxPath = "",
+      identityId = "",
+      draftPath = "";
+    let draft: MailDraftSnapshot | undefined;
+    let lease: ReturnType<typeof mailLease> | undefined;
+    let composeFailure: string | undefined;
+    let busyRetries = 0;
+    const expectSuccess = (answer: MailAnswer, label: string) => {
+      check(succeeded(answer), `${label}: ${JSON.stringify(answer)}`);
+      return answer.body;
+    };
+    const expectFailure = (answer: MailAnswer, status: number, code: string, label: string) =>
+      check(
+        answer.status === status && mailErrorCode(answer.body) === code,
+        `${label}: expected ${status} ${code}, got ${JSON.stringify(answer)}`,
+      );
+    // Like the composer, only a transient lease BUSY retries saves/heartbeats: three attempts total.
+    const mailBusyCall = async (
+      target: Replica | string,
+      path: string,
+      session: string,
+      body: unknown,
+      observe?: (answer: MailAnswer, attempt: number) => void,
+    ): Promise<MailAnswer> => {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        let answer: MailAnswer;
+        try {
+          answer = await mailCall(target, path, session, "PUT", body);
+        } catch (error) {
+          observe?.({ status: 0, body: { code: "NETWORK_ERROR", message: message(error) } }, attempt);
+          throw error;
+        }
+        observe?.(answer, attempt);
+        if (!mailLeaseBusy(answer) || attempt === 3) return answer;
+        busyRetries++;
+        await Bun.sleep(100);
+      }
+      throw new Error("Unreachable Mail retry exhaustion");
+    };
+    const composeScenario = async (name: string, action: () => Promise<Record<string, unknown>>) => {
+      await scenario(name, async () => {
+        check(!composeFailure, `Mail compose prerequisite failed: ${composeFailure}`);
+        const before = busyRetries;
+        try {
+          const result = await action();
+          const { a, b } = pair("mail");
+          await stillRunning([a, b]);
+          phase(name, { status: "passed", ...result, busyRetries: busyRetries - before });
+        } catch (error) {
+          composeFailure = `${name}: ${message(error)}`;
+          throw error;
+        }
+      });
+    };
+    const editing = () => {
+      check(draft && lease && draftPath, "Mail compose setup did not create a draft and held lease");
+      return { draft, lease };
+    };
+    const content = (body: string) => ({
+      senderIdentityId: identityId,
+      to: [{ address: "recipient@example.test" }],
+      subject: `Scale ${runId}`,
+      body,
+      format: "plain",
+    });
+    const save = async (target: Replica, body: string) => {
+      const current = editing().draft;
+      const saved = mailDraft(
+        expectSuccess(
+          await mailBusyCall(target, draftPath, token, {
+            expectedRevision: current.revision,
+            draft: content(body),
+          }),
+          "Autosave",
+        ),
+      );
+      check(
+        saved.id === current.id && saved.revision === current.revision + 1 && saved.body === body,
+        "Autosave lost content or skipped a revision",
+      );
+      draft = saved;
+      return saved;
+    };
+    const heartbeat = async (target: Replica, session = token, held = editing().lease) => {
+      const renewed = mailLease(
+        expectSuccess(await mailBusyCall(target, `${draftPath}/lease`, session, { token: held.token }), "Heartbeat"),
+      );
+      check(
+        renewed.token === held.token && renewed.holder.id === held.holder.id && renewed.acquiredAt === held.acquiredAt,
+        "Heartbeat changed the lease",
+      );
+      return renewed;
+    };
+    await composeScenario("mail-compose-open", async () => {
       const { a, b } = pair("mail");
       const mailbox = await request<{ id: string }>("mail", a, "/api/mail/mailboxes", token, "POST", {
         name: `Scale ${runId}`,
-        description: "Disposable lease acceptance",
+        description: "Disposable compose acceptance",
       });
-      const identityId = randomBytes(3).toString("hex");
-      // A draft only needs a verified identity, not an IMAP server or provider binding.
-      await db`INSERT INTO mail.sender_identities (short_id, mailbox_id, label, display_name, from_address, automation_policy, is_default, status)
-        SELECT ${identityId}, id, 'Scale', 'Scale', 'sender@example.test', 'disabled', true, 'verified' FROM mail.mailboxes WHERE short_id = ${mailbox.id}`;
-      const draft = await request<{ id: string; revision: number }>("mail", a, `/api/mail/mailboxes/${mailbox.id}/drafts`, token, "POST", {
-        senderIdentityId: identityId,
-        subject: `Scale ${runId}`,
-        body: "before",
+      mailboxPath = `/api/mail/mailboxes/${mailbox.id}`;
+      identityId = randomBytes(3).toString("hex");
+      // Only provider verification lacks an inert public API. Seed it atomically, before any draft exists.
+      // resolveMailExecution allows actorSend with active health even when sync_enabled is false.
+      // Sync/IMAP/command workers fence on sync_enabled. No Drafts folder is seeded: projection jobs
+      // stop at resolveRoleFolder, before loadProviderConnectionRuntimeSnapshot could decrypt this sentinel.
+      await db.begin(async (tx) => {
+        const [mailboxRow] = await tx<{ id: string }[]>`
+          UPDATE mail.mailboxes SET sync_enabled = false, health = 'active', health_reason = NULL
+          WHERE short_id = ${mailbox.id} RETURNING id
+        `;
+        check(mailboxRow, "Mailbox setup could not resolve internal ID");
+        const [connection] = await tx<{ id: string; secret_revision: number }[]>`
+          INSERT INTO mail.provider_connections (
+            owner_mailbox_id, name, email, username, imap_host, imap_port, imap_tls_mode,
+            smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret, authenticated_principal, last_verified_at
+          ) VALUES (
+            ${mailboxRow.id}::uuid, 'Scale inert provider', 'sender@example.test', 'sender@example.test',
+            'imap.scale.invalid', 993, 'implicit', 'smtp.scale.invalid', 587, 'starttls',
+            'password', 'scale-inert-never-decrypt', 'sender@example.test', now()
+          ) RETURNING id, secret_revision
+        `;
+        check(connection, "Provider connection setup returned no row");
+        const scope = "c".repeat(64);
+        const [resource] = await tx<{ id: string }[]>`
+          INSERT INTO mail.remote_resources (mailbox_id, remote_locator, server_identity, scope_fingerprint, status)
+          VALUES (${mailboxRow.id}::uuid, '{}'::jsonb, '{}'::jsonb, ${scope}, 'active') RETURNING id
+        `;
+        check(resource, "Remote resource setup returned no row");
+        const [binding] = await tx<{ id: string }[]>`
+          INSERT INTO mail.provider_bindings (
+            remote_resource_id, connection_id, state, remote_locator, verified_scope_fingerprint, verified_secret_revision, last_verified_at
+          ) VALUES (${resource.id}::uuid, ${connection.id}::uuid, 'active', '{}'::jsonb, ${scope}, ${connection.secret_revision}, now())
+          RETURNING id
+        `;
+        check(binding, "Binding setup returned no row");
+        const [folder] = await tx<{ id: string }[]>`
+          INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+          VALUES (${randomBytes(3).toString("hex")}, ${resource.id}::uuid, 'scale-sent', 'Sent', 'sent', 'current') RETURNING id
+        `;
+        check(folder, "Sent folder setup returned no row");
+        await tx`
+          INSERT INTO mail.binding_folder_refs (binding_id, folder_id, remote_path, uid_validity, uid_next, effective_rights, last_verified_at)
+          VALUES (${binding.id}::uuid, ${folder.id}::uuid, 'Sent', 1, 1, ARRAY['read', 'insert']::text[], now())
+        `;
+        const [identity] = await tx<{ id: string }[]>`
+          INSERT INTO mail.sender_identities (
+            short_id, mailbox_id, label, display_name, from_address, automation_policy, is_default, status, sent_folder_id
+          ) VALUES (${identityId}, ${mailboxRow.id}::uuid, 'Scale', 'Scale', 'sender@example.test', 'disabled', true, 'verified', ${folder.id}::uuid)
+          RETURNING id
+        `;
+        check(identity, "Sender identity setup returned no row");
+        await tx`
+          INSERT INTO mail.sender_identity_bindings (
+            sender_identity_id, binding_id, provider_principal, verified_at, verified_secret_revision, saves_sent_automatically
+          ) VALUES (${identity.id}::uuid, ${binding.id}::uuid, 'sender@example.test', now(), ${connection.secret_revision}, false)
+        `;
       });
-      draftPath = `/api/mail/mailboxes/${mailbox.id}/drafts/${draft.id}`;
-      const lease = await request<{ token: string; holder: { id: string } }>("mail", a, `${draftPath}/lease`, token, "POST", {});
-      leaseToken = lease.token;
-      holderId = lease.holder.id;
-      const body = `saved-on-B-${runId}`;
-      const saved = await request<{ revision: number }>("mail", b, draftPath, token, "PUT", {
-        expectedRevision: draft.revision,
-        draft: { senderIdentityId: identityId, subject: `Scale ${runId}`, body },
+      phase("mail-compose-setup", { mailbox: mailbox.id, create: a.id, syncEnabled: false, provider: "inert .invalid; Sent folder only" });
+      draft = mailDraft(
+        expectSuccess(await mailCall(gateway, `${mailboxPath}/drafts`, token, "POST", content("Compose opened")), "Gateway draft creation"),
+      );
+      draftPath = `${mailboxPath}/drafts/${draft.id}`;
+      const composerPath = `/app/mail/${mailbox.id}/compose/${draft.id}`;
+      const page = await fetch(`${gateway}${composerPath}`, {
+        headers: { cookie: `session_token=${token}` },
+        redirect: "manual",
+        signal: AbortSignal.timeout(10_000),
       });
-      const heartbeat = await request<{ token: string; holder: { id: string } }>("mail", b, `${draftPath}/lease`, token, "PUT", {
-        token: leaseToken,
-      });
-      const read = await request<{ body: string; revision: number }>("mail", a, draftPath, token);
-      const currentLease = await request<{ holder: { id: string }; acquiredAt: string }>("mail", a, `${draftPath}/lease`, token);
-      await stillRunning([a, b]);
-      check(read.body === body && read.revision === saved.revision, "A did not read B's saved draft revision");
-      check(heartbeat.token === leaseToken && currentLease.holder.id === holderId, "Draft lease changed across replicas");
-      phase("mail-draft-lease", {
-        status: "passed",
+      // Consume the body too, so rendering errors and open response streams cannot be hidden by headers.
+      const html = await page.text();
+      check(page.status === 200 && html.includes(draft.id), `SSR composer ${composerPath}: ${page.status}`);
+      phase("mail-compose-ssr", { via: "gateway", path: composerPath, status: page.status });
+      const editorId = crypto.randomUUID();
+      lease = mailLease(expectSuccess(await mailCall(a, `${draftPath}/lease`, token, "POST", { editorId }), "Acquire E1 on A"));
+      const repeated = mailLease(expectSuccess(await mailCall(b, `${draftPath}/lease`, token, "POST", { editorId }), "Repeat E1 on B"));
+      check(
+        repeated.token === lease.token && repeated.acquiredAt === lease.acquiredAt && lease.holder.id === admin.user.id,
+        "Retried acquire did not return E1's own lease",
+      );
+      return {
         draft: draft.id,
-        revision: read.revision,
-        holder: holderId,
+        revision: draft.revision,
+        holder: lease.holder.id,
         acquire: a.id,
-        saveAndHeartbeat: b.id,
-        saveContract: "expectedRevision; lease ownership is by user",
-      });
+        repeatedAcquire: b.id,
+        create: "gateway",
+      };
     });
-    await scenario("mail-lease-conflict", async () => {
-      check(draftPath && leaseToken, "Draft lease scenario did not create a held lease");
+    await composeScenario("mail-compose-autosave", async () => {
       const { a, b } = pair("mail");
-      try {
-        const second = await login();
-        check(second.session_token !== token, "Second admin sign-in reused the first session");
-        await http(b.url, `${draftPath}/lease`, "POST", {}, second.session_token, 409);
-        served("mail", b);
-        const holder = await request<{ holder: { id: string; displayName: string } }>(
-          "mail",
-          b,
-          `${draftPath}/lease`,
-          second.session_token,
+      for (let index = 0; index < 6; index++) await save(index % 2 === 0 ? a : b, `Autosave ${index + 1} ${runId}`);
+      const expected = editing().draft;
+      for (const target of [a, b]) {
+        const read = mailDraft(expectSuccess(await mailCall(target, draftPath, token), "Read autosaved draft"));
+        check(
+          read.body === expected.body && read.revision === expected.revision && read.recoveryCopyCount === 0,
+          "Replica lost autosave or created a recovery copy",
         );
-        await stillRunning([a, b]);
-        check(holder.holder.id === holderId && holderId === admin.user.id, "Conflict did not retain the holder acquired on A");
-        phase("mail-lease-conflict", {
-          status: "passed",
-          statusCode: 409,
-          holder: holder.holder,
-          acquire: a.id,
-          conflict: b.id,
-          contender: "same user, second session",
-        });
-      } finally {
-        await http(a.url, `${draftPath}/lease`, "DELETE", { token: leaseToken }, token);
+        const copies = expectSuccess(await mailCall(target, `${draftPath}/recovery-copies`, token), "Recovery copies");
+        check(Array.isArray(copies) && copies.length === 0, "Autosaves created a conflict/recovery copy");
       }
+      return { saves: 6, alternating: [a.id, b.id], readers: [a.id, b.id], revision: expected.revision, recoveryCopies: 0 };
+    });
+    await composeScenario("mail-compose-heartbeat", async () => {
+      const { a, b } = pair("mail");
+      const previous = editing();
+      // Ensure a distinct millisecond without depending on scheduler/clock granularity.
+      await Bun.sleep(10);
+      lease = await heartbeat(b);
+      check(Date.parse(lease.expiresAt) > Date.parse(previous.lease.expiresAt), "Heartbeat did not extend expiry");
+      const visible = expectSuccess(await mailCall(a, `${draftPath}/lease`, token), "Read lease on A");
+      check(
+        record(visible) &&
+          record(visible.holder) &&
+          visible.holder.id === previous.lease.holder.id &&
+          visible.acquiredAt === previous.lease.acquiredAt &&
+          visible.expiresAt === lease.expiresAt,
+        "A did not read B's renewed lease",
+      );
+      const startRevision = previous.draft.revision;
+      for (let round = 0; round < 8; round++) {
+        // Settle both requests before ending the scenario even when one assertion fails.
+        const results = await Promise.allSettled([save(a, `Concurrent save ${round + 1} ${runId}`), heartbeat(b)]);
+        for (const result of results) {
+          if (result.status === "rejected") throw result.reason;
+        }
+      }
+      check(
+        editing().draft.revision === startRevision + 8 && editing().lease.token === previous.lease.token,
+        "Concurrent save/heartbeat lost revision or lease",
+      );
+      return { concurrentRounds: 8, save: a.id, heartbeat: b.id, readLease: a.id, revision: editing().draft.revision };
+    });
+    await composeScenario("mail-compose-reload", async () => {
+      const { a, b } = pair("mail");
+      const editorId = crypto.randomUUID();
+      const startedAt = Date.now();
+      expectFailure(await mailCall(b, `${draftPath}/lease`, token, "POST", { editorId }), 409, "DRAFT_LEASE_HELD", "E2 before old release");
+      const t1 = editing().lease.token;
+      expectSuccess(await mailCall(a, `${draftPath}/lease`, token, "DELETE", { token: t1 }), "Old page release on A");
+      // One attempt, deliberately outside poll: a committed release must be visible immediately.
+      const t2 = mailLease(expectSuccess(await mailCall(b, `${draftPath}/lease`, token, "POST", { editorId }), "E2 after release"));
+      check(Date.now() - startedAt < 10_000 && t2.token !== t1, "Reload exceeded the client's grace or reused T1");
+      expectSuccess(await mailCall(b, `${draftPath}/lease`, token, "DELETE", { token: t2.token }), "E2 release on B");
+      const t3 = mailLease(
+        expectSuccess(await mailCall(a, `${draftPath}/lease`, token, "POST", { editorId: crypto.randomUUID() }), "E3 after release"),
+      );
+      check(t3.token !== t2.token, "Second reload reused T2");
+      lease = t3;
+      return {
+        acquireBeforeRelease: b.id,
+        releaseFirst: a.id,
+        acquireAfterRelease: b.id,
+        reverseRelease: b.id,
+        reverseAcquire: a.id,
+        attemptsAfterRelease: [1, 1],
+        graceMs: Date.now() - startedAt,
+      };
+    });
+    await composeScenario("mail-compose-takeover", async () => {
+      const { a, b } = pair("mail");
+      const current = editing();
+      const second = await login();
+      check(second.session_token !== token && second.user.id === admin.user.id, "Expected a second session of the same admin");
+      const pendingLiveRows = async () => {
+        const [row] = await db<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM events.outbox WHERE kind = 'live' AND app_id = 'mail'
+        `;
+        check(row, "Missing Mail live outbox count");
+        return row.count;
+      };
+      // Published rows are deleted: drain setup invalidations onto the topic before subscribing.
+      await poll("Mail live outbox drained before subscription", async () => (await pendingLiveRows()) === 0, 15_000);
+      const frames: unknown[] = [];
+      let ready = false;
+      const subscription = "scale-mail-compose";
+      const reader = await openSocket("mail", a, "/api/mail/live", token, (frame) => {
+        check(record(frame), "Invalid Mail live frame");
+        if (frame.id !== subscription) return;
+        if (frame.t === "ready") ready = true;
+        else if (ready && frame.t === "event") frames.push(frame);
+      });
+      try {
+        const mailboxId = mailboxPath.split("/").at(-1);
+        check(mailboxId, "Mailbox scope missing");
+        reader.socket.send(JSON.stringify({ t: "sub", id: subscription, channel: "mailbox", scope: { mailbox: mailboxId } }));
+        await poll(
+          "Mail subscription ready on A",
+          async () => {
+            reader.healthy();
+            return ready;
+          },
+          10_000,
+        );
+        reader.markServed();
+        expectFailure(
+          await mailCall(b, `${draftPath}/lease`, second.session_token, "POST", {}),
+          409,
+          "DRAFT_LEASE_HELD",
+          "Second session plain acquire",
+        );
+        const held = expectSuccess(await mailCall(b, `${draftPath}/lease`, second.session_token), "Conflict holder on B");
+        check(
+          record(held) && record(held.holder) && held.holder.id === current.lease.holder.id && held.acquiredAt === current.lease.acquiredAt,
+          "B did not name the original holder",
+        );
+        check((await pendingLiveRows()) === 0, "Mail live outbox gained pending rows before takeover");
+        // Discard any frames from setup: only a post-ready, post-acquire event can prove takeover fanout.
+        frames.length = 0;
+        const taken = mailLease(
+          expectSuccess(
+            await mailCall(b, `${draftPath}/lease`, second.session_token, "POST", { takeover: true, editorId: crypto.randomUUID() }),
+            "Takeover on B",
+          ),
+        );
+        check(taken.token !== current.lease.token, "Takeover reused T3");
+        const relevantEvent = () =>
+          frames.find(
+            (frame) =>
+              record(frame) &&
+              record(frame.data) &&
+              (frame.data.conversationId === null || frame.data.conversationId === current.draft.conversationId),
+          );
+        await poll(
+          "Mail takeover live event on A",
+          async () => {
+            reader.healthy();
+            return relevantEvent();
+          },
+          10_000,
+        );
+        expectFailure(
+          await mailBusyCall(a, `${draftPath}/lease`, token, { token: current.lease.token }),
+          409,
+          "DRAFT_LEASE_NOT_OWNED",
+          "Old T3 heartbeat",
+        );
+        await heartbeat(a, second.session_token, taken);
+        expectSuccess(await mailCall(a, `${draftPath}/lease`, second.session_token, "DELETE", { token: taken.token }), "Release T4");
+        lease = mailLease(
+          expectSuccess(await mailCall(b, `${draftPath}/lease`, token, "POST", { editorId: crypto.randomUUID() }), "Reacquire E5"),
+        );
+        check(lease.token !== taken.token && lease.token !== current.lease.token, "Reacquire reused an old token");
+        return {
+          holder: held.holder,
+          conflictAndTakeover: b.id,
+          liveReader: a.id,
+          oldAndNewHeartbeat: a.id,
+          reacquire: b.id,
+          event: relevantEvent(),
+        };
+      } finally {
+        reader.socket.close();
+      }
+    });
+    await composeScenario("mail-compose-attachment", async () => {
+      const { a, b } = pair("mail");
+      const held = editing().lease;
+      const chunkBytes = 1024 * 1024;
+      const bytes = mailAttachmentBytes(chunkBytes + 300 * 1024, 0x5ca1e);
+      const hash = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+      const filename = `scale-${runId}.bin`;
+      const upload = expectSuccess(
+        await mailCall(a, `${draftPath}/attachment-uploads`, token, "POST", {
+          filename,
+          contentType: "application/octet-stream",
+          byteLength: bytes.byteLength,
+        }),
+        "Create upload on A",
+      );
+      check(record(upload) && typeof upload.id === "string" && upload.chunkSize === chunkBytes, "Invalid upload allocation");
+      const uploadPath = `${draftPath}/attachment-uploads/${upload.id}`;
+      const chunk = async (target: Replica, offset: number, end: number) => {
+        const response = await fetch(`${target.url}${uploadPath}?offset=${offset}`, {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${token}`, origin: ORIGIN, "content-type": "application/octet-stream" },
+          body: bytes.slice(offset, end),
+          signal: AbortSignal.timeout(10_000),
+          redirect: "manual",
+        });
+        const body: unknown = await response.json();
+        served("mail", target);
+        phase("mail-upload-chunk", { target: target.id, offset, status: response.status });
+        expectSuccess({ status: response.status, body }, "Upload chunk");
+        check(record(body) && body.receivedBytes === end, "Upload chunk did not advance by its exact byte length");
+      };
+      await chunk(a, 0, chunkBytes);
+      const resumed = expectSuccess(await mailCall(b, uploadPath, token), "Resume upload on B");
+      check(record(resumed) && resumed.receivedBytes === chunkBytes && resumed.state === "uploading", "B lost the first upload chunk");
+      const listed = expectSuccess(await mailCall(b, `${draftPath}/attachment-uploads`, token), "List resumable upload on B");
+      check(
+        Array.isArray(listed) && listed.some((item: unknown) => record(item) && item.id === upload.id && item.receivedBytes === chunkBytes),
+        "B did not list the resumable upload",
+      );
+      await chunk(b, chunkBytes, bytes.byteLength);
+      const previousRevision = editing().draft.revision;
+      draft = mailDraft(
+        expectSuccess(await mailCall(b, `${uploadPath}/finalize`, token, "POST", { expectedRevision: previousRevision }), "Finalize on B"),
+      );
+      check(draft.revision === previousRevision + 1, "Finalizing attachment did not increment revision once");
+      const read = mailDraft(expectSuccess(await mailCall(a, draftPath, token), "Read attached draft on A"));
+      const attachment = read.attachments.find((item) => item.filename === filename);
+      check(
+        read.revision === draft.revision && attachment?.byteLength === bytes.byteLength && read.attachments.length === 1,
+        "A lost the finalized attachment",
+      );
+      const download = await http(a.url, `${draftPath}/attachments/${attachment.id}`, "GET", undefined, token);
+      const downloaded = new Uint8Array(await download.arrayBuffer());
+      served("mail", a);
+      check(
+        downloaded.byteLength === bytes.byteLength && new Bun.CryptoHasher("sha256").update(downloaded).digest("hex") === hash,
+        "Downloaded attachment SHA-256 differs",
+      );
+      await heartbeat(a, token, held);
+      return {
+        createAndFirstChunk: a.id,
+        resumeAndLastChunkAndFinalize: b.id,
+        readAndDownload: a.id,
+        filename,
+        byteLength: bytes.byteLength,
+        sha256: hash,
+        revision: draft.revision,
+      };
+    });
+    await composeScenario("mail-compose-send", async () => {
+      const { a, b } = pair("mail");
+      const held = editing().lease;
+      const saved = await save(a, `Ready to send ${runId}`);
+      const mailbox = expectSuccess(await mailCall(b, mailboxPath, token), "Read inert mailbox health");
+      check(
+        record(mailbox) && mailbox.health === "active" && mailbox.syncEnabled === false,
+        "Inert fixture lost usable mailbox health or enabled sync",
+      );
+      const review = expectSuccess(
+        await mailCall(b, `${draftPath}/safety-review`, token, "POST", { expectedRevision: saved.revision }),
+        "Compose safety review",
+      );
+      check(
+        record(review) && Array.isArray(review.warnings) && review.warnings.length === 0 && review.revision === saved.revision,
+        "Inert compose fixture unexpectedly needs safety approval",
+      );
+      // commands.ts commits state='scheduled', then invalidates the lease before answering. Creation
+      // only reads credential metadata; the outbox worker waits until scheduledAt before provider work.
+      const scheduledAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      // Measure from the request start so the age bound includes heartbeat response latency.
+      const lastHeartbeatAt = Date.now();
+      await heartbeat(a, token, held);
+      const command = expectSuccess(
+        await mailCall(b, `${mailboxPath}/commands`, token, "POST", {
+          kind: "send",
+          draftId: saved.id,
+          expectedDraftRevision: saved.revision,
+          senderIdentityId: identityId,
+          idempotencyKey: crypto.randomUUID(),
+          scheduledAt,
+          undoSeconds: 0,
+        }),
+        "Schedule send through B",
+      );
+      check(record(command) && typeof command.id === "string" && command.kind === "send", "Missing send command");
+      for (const target of [a, b]) {
+        expectFailure(
+          await mailBusyCall(target, `${draftPath}/lease`, token, { token: held.token }),
+          404,
+          "NOT_FOUND",
+          "Consumed draft heartbeat",
+        );
+        expectFailure(await mailCall(target, `${draftPath}/lease`, token), 404, "NOT_FOUND", "Consumed draft lease read");
+        const read = mailDraft(expectSuccess(await mailCall(target, draftPath, token), "Read scheduled draft"));
+        check(read.state === "scheduled", `Consumed draft remained editable: ${read.state}`);
+        draft = read;
+      }
+      expectFailure(
+        await mailCall(a, `${draftPath}/lease`, token, "POST", { editorId: crypto.randomUUID() }),
+        404,
+        "NOT_FOUND",
+        "Acquire consumed draft",
+      );
+      expectSuccess(await mailCall(a, `${mailboxPath}/commands/${command.id}/cancel`, token, "POST"), "Cancel send on A");
+      draft = mailDraft(expectSuccess(await mailCall(b, draftPath, token), "Read restored draft on B"));
+      check(
+        draft.id === saved.id && draft.state === "draft" && draft.revision === saved.revision + 1,
+        "Cancel did not restore the editable draft with one new revision",
+      );
+      // One attempt, without takeover: an unremoved lease would still answer DRAFT_LEASE_HELD.
+      const acquired = await mailCall(a, `${draftPath}/lease`, token, "POST", { editorId: crypto.randomUUID() });
+      const msSinceLastHeartbeat = Date.now() - lastHeartbeatAt;
+      check(msSinceLastHeartbeat < 20_000, `Reacquire took ${msSinceLastHeartbeat} ms since heartbeat; old lease could have expired`);
+      check(acquired.status === 200, `Reacquire after cancel: expected 200, got ${JSON.stringify(acquired)}`);
+      const reacquired = mailLease(expectSuccess(acquired, "Reacquire after cancel on A"));
+      check(reacquired.token !== held.token, "Reacquire after cancel reused the old token");
+      expectFailure(
+        await mailBusyCall(b, `${draftPath}/lease`, token, { token: held.token }),
+        409,
+        "DRAFT_LEASE_NOT_OWNED",
+        "Old lease heartbeat after cancel on B",
+      );
+      expectSuccess(
+        await mailCall(b, `${draftPath}/lease`, token, "DELETE", { token: reacquired.token }),
+        "Release restored draft lease on B",
+      );
+      lease = undefined;
+      return {
+        edit: a.id,
+        send: b.id,
+        command: command.id,
+        scheduledAt,
+        cancel: a.id,
+        restoredRead: b.id,
+        reacquire: a.id,
+        msSinceLastHeartbeat,
+        release: b.id,
+        state: draft?.state,
+        revision: draft.revision,
+        invalidatedOn: [a.id, b.id],
+        leaseResponse: "404 NOT_FOUND",
+      };
+    });
+    await composeScenario("mail-compose-restart", async () => {
+      const { a, b } = pair("mail");
+      if (options.replicas === 1)
+        return { status: "skipped", reason: "Negative control has no surviving Mail replica; final vacuity guard will fail" };
+      draft = mailDraft(
+        expectSuccess(
+          await mailCall(b, `${mailboxPath}/drafts`, token, "POST", content("Before graceful restart")),
+          "Create restart draft on B",
+        ),
+      );
+      draftPath = `${mailboxPath}/drafts/${draft.id}`;
+      lease = mailLease(
+        expectSuccess(await mailCall(b, `${draftPath}/lease`, token, "POST", { editorId: crypto.randomUUID() }), "Acquire E6 on B"),
+      );
+      const held = lease,
+        startRevision = draft.revision;
+      // Core owns '/', so with Mail unrouted (#1561) a Mail path falls through to Core. Record Core's own
+      // answer for each PUT path; only that exact answer counts as the routing gap, never a Mail error.
+      const coreFallthrough = new Map<string, MailAnswer>();
+      for (const path of [draftPath, `${draftPath}/lease`]) {
+        const response = await http(coreB.url, path, "PUT", {}, token, 404);
+        const raw = await response.text();
+        let body: unknown = raw;
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          /* Plain-text fallthroughs stay text. */
+        }
+        served("core", coreB);
+        coreFallthrough.set(path, { status: response.status, body });
+      }
+      type Sample = {
+        via: string;
+        method: string;
+        status: number;
+        code?: string;
+        body?: string;
+        at: string;
+        afterReady: boolean;
+        attempt: number;
+        knownGap?: "#1561";
+      };
+      const samples: Sample[] = [];
+      const deadline = Date.now() + 90_000;
+      let stop = false,
+        restarting = false,
+        readyAt: number | undefined,
+        loopError: unknown;
+      let saves = 0,
+        saveCalls = 0,
+        heartbeatCalls = 0,
+        nextHeartbeat = Date.now();
+      const call = async (target: Replica | string, path: string, body: unknown) => {
+        const answer = await mailBusyCall(target, path, token, body, (answer, attempt) => {
+          const signature = coreFallthrough.get(path);
+          const knownGap = typeof target === "string" && restarting && signature !== undefined && knownMailGatewayGap(answer, signature);
+          samples.push({
+            via: typeof target === "string" ? "gateway" : target.id,
+            method: path.endsWith("/lease") ? "heartbeat" : "autosave",
+            status: answer.status,
+            code: mailErrorCode(answer.body),
+            ...(succeeded(answer) ? {} : { body: JSON.stringify(answer.body).slice(0, 200) }),
+            at: new Date().toISOString(),
+            afterReady: readyAt !== undefined,
+            attempt,
+            ...(knownGap ? { knownGap: "#1561" } : {}),
+          });
+        });
+        const signature = coreFallthrough.get(path);
+        if (typeof target === "string" && restarting && signature !== undefined && knownMailGatewayGap(answer, signature)) return undefined;
+        expectSuccess(
+          answer,
+          `Editing during restart via ${typeof target === "string" ? "gateway" : target.id}; samples=${JSON.stringify(samples)}`,
+        );
+        return answer;
+      };
+      const editLoop = (async () => {
+        try {
+          while (!stop && Date.now() < deadline) {
+            const tick = Date.now();
+            const target = saveCalls++ % 2 === 0 ? gateway : b;
+            const body = `Restart autosave ${saveCalls} ${runId}`;
+            const expected = editing().draft;
+            const pending = [
+              call(target, draftPath, { expectedRevision: expected.revision, draft: content(body) }).then((answer) => {
+                if (!answer) return;
+                const saved = mailDraft(answer.body);
+                check(
+                  saved.id === expected.id && saved.revision === expected.revision + 1 && saved.body === body,
+                  "Restart autosave lost a revision or content",
+                );
+                draft = saved;
+                saves++;
+              }),
+            ];
+            if (tick >= nextHeartbeat) {
+              nextHeartbeat = tick + 3_000;
+              const target = heartbeatCalls++ % 2 === 0 ? gateway : b;
+              pending.push(
+                call(target, `${draftPath}/lease`, { token: held.token }).then((answer) => {
+                  if (!answer) return;
+                  const renewed = mailLease(answer.body);
+                  check(renewed.token === held.token && renewed.acquiredAt === held.acquiredAt, "Restart changed T6");
+                }),
+              );
+            }
+            const results = await Promise.allSettled(pending);
+            for (const result of results) {
+              if (result.status === "rejected") throw result.reason;
+            }
+            await Bun.sleep(Math.min(Math.max(0, 700 - (Date.now() - tick)), Math.max(0, deadline - Date.now())));
+          }
+          check(stop, "Restart edit loop exceeded its 90-second deadline");
+        } catch (error) {
+          loopError = error;
+        }
+      })();
+      try {
+        await Bun.sleep(3_200);
+        check(!loopError, message(loopError));
+        restarting = true;
+        phase("mail-compose-restarting", { victim: a.id, survivor: b.id, deadlineMs: 90_000 });
+        await docker(["restart", "--time", "30", a.id], 45_000);
+        const [restarted] = await inspect([a.id]);
+        check(restarted?.Id === a.id && restarted.State.Running, "Graceful restart replaced or stopped A");
+        // Docker may reallocate published ports. Mutate the evidence object before probing A again.
+        a.url = port(restarted, 3000);
+        const ip = restarted.NetworkSettings.Networks[`${project}_cloud-internal`]?.IPAddress;
+        check(ip, "Restarted Mail A has no internal IP");
+        a.ip = ip;
+        phase("mail-compose-restarted-port", { target: a.id, url: a.url });
+        await poll(
+          "Mail A ready after graceful restart",
+          async () => {
+            await http(a.url, "/_cloud/ready");
+            return true;
+          },
+          Math.max(1, Math.min(30_000, deadline - Date.now() - 5_000)),
+        );
+        readyAt = Date.now();
+        await Bun.sleep(5_000);
+      } finally {
+        stop = true;
+        await editLoop;
+        phase("mail-compose-restart-requests", {
+          victim: a.id,
+          survivor: b.id,
+          samples,
+          knownGap: "#1561",
+          gatewayGapCount: samples.filter((sample) => sample.knownGap).length,
+          gatewayFailuresAfterReady: samples.filter((sample) => sample.via === "gateway" && sample.afterReady && !succeeded(sample)).length,
+        });
+      }
+      check(!loopError, `Restart editing failed: ${message(loopError)}; samples=${JSON.stringify(samples)}`);
+      const final = editing().draft;
+      check(final.revision === startRevision + saves && saves > 0, "Restart lost a successful save");
+      for (const method of ["autosave", "heartbeat"]) {
+        check(
+          samples.some((sample) => sample.via === b.id && sample.method === method && sample.status >= 200 && sample.status < 300),
+          `No pinned-B ${method} succeeded`,
+        );
+        check(
+          samples.some((sample) => sample.via === "gateway" && sample.method === method),
+          `No gateway ${method} attempted`,
+        );
+      }
+      check(
+        samples.some((sample) => sample.via === "gateway" && sample.afterReady),
+        "No gateway request attempted after A was ready",
+      );
+      await heartbeat(a, token, held);
+      const read = mailDraft(expectSuccess(await mailCall(a, draftPath, token), "Restarted A reads final save"));
+      check(read.body === final.body && read.revision === final.revision, "Restarted A lost B/gateway's final body or revision");
+      expectSuccess(await mailCall(b, `${draftPath}/lease`, token, "DELETE", { token: held.token }), "Release restart draft");
+      return {
+        victim: a.id,
+        survivor: b.id,
+        saves,
+        revision: final.revision,
+        readyAt: new Date(readyAt ?? 0).toISOString(),
+        knownGap: "#1561",
+        gatewayGapCount: samples.filter((sample) => sample.knownGap).length,
+        gatewayFailuresAfterReady: samples.filter((sample) => sample.via === "gateway" && sample.afterReady && !succeeded(sample)).length,
+      };
     });
     // Run last: the intentionally killed replica must not invalidate earlier scenario checks.
     await scenario("sigkill-mail-recovery", async () => {
