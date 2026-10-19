@@ -1,9 +1,10 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterEach, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import * as settings from "@k2b/cloud/services/settings";
 import { sql } from "bun";
-import { databaseSuite } from "../../../scripts/fixtures/test-infra";
+import { databaseSuite, testFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
+import { userNotifications } from "@k2b/cloud/services/notifications/user";
 import { app } from "./config";
 import { createCoreNotificationSender } from "./notifications";
 
@@ -120,6 +121,102 @@ suite("Core notice for a newly paired phone", () => {
         { channel: "email", status: "failed", error_code: "preparation_failed" },
         { channel: "browser", status: "suppressed", error_code: "no_endpoint" },
       ]);
+    } finally {
+      await sql`DELETE FROM notifications.events WHERE recipient_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+});
+
+suite("Core new-browser sign-in notification handoff", () => {
+  const now = new Date("2026-10-16T07:14:00.000Z");
+  beforeAll(async () => {
+    await registerNotificationDefinitions(app.meta.id, app.notifications);
+  });
+  afterEach(() => setSystemTime());
+
+  testFor("database", "nats")("default delivery, idempotency per first-seen period, and an explicitly disabled preference", async () => {
+    setSystemTime(now);
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, mail)
+      VALUES (${`browser-notice-${suffix}`}, 'local', 'user', ${`browser-notice-${suffix}@example.test`}) RETURNING id`;
+    const userId = user!.id;
+    const browserId = crypto.randomUUID();
+    const notice = {
+      browserId,
+      userId,
+      firstName: "Jana",
+      browser: "chrome" as const,
+      os: "macos" as const,
+      country: "AT",
+      city: "Wien",
+      signedInAt: now.toISOString(),
+      method: "password" as const,
+      device: null,
+      locale: "de",
+    };
+    const sender = createCoreNotificationSender(app.notifications);
+    try {
+      const first = await sender.sendNewBrowserSignIn(notice);
+      expect(first).toMatchObject({ status: "queued" });
+      await sender.sendNewBrowserSignIn(notice);
+      const events =
+        await sql`SELECT title, target_href, idempotency_key FROM notifications.events WHERE definition_id = 'core.newBrowserSignIn' AND recipient_user_id = ${userId}::uuid`;
+      expect(events).toEqual([
+        {
+          title: "Neue Anmeldung aus einem neuen Browser",
+          target_href: "/me/security",
+          idempotency_key: `new-browser-sign-in:${browserId}:${now.toISOString()}`,
+        },
+      ]);
+      expect(JSON.stringify(events)).not.toMatch(/Wien|Österreich/);
+      expect(
+        await sql`SELECT d.id FROM notifications.deliveries d JOIN notifications.events e ON e.id = d.event_id WHERE e.recipient_user_id = ${userId}::uuid AND d.channel = 'email' AND d.status = 'pending'`,
+      ).toHaveLength(1);
+      expect((await userNotifications.preferences.set({ userId, definitionId: "core.newBrowserSignIn", channels: [] })).ok).toBe(true);
+      // A later first-seen period has a new key even though it reuses the browser row id.
+      const disabled = await sender.sendNewBrowserSignIn({ ...notice, signedInAt: "2027-01-17T07:14:00.000Z" });
+      expect(disabled).toMatchObject({ status: "suppressed", deliveries: [{ errorCode: "disabled_by_user" }] });
+      expect(
+        await sql`SELECT id FROM notifications.events WHERE definition_id = 'core.newBrowserSignIn' AND recipient_user_id = ${userId}::uuid`,
+      ).toHaveLength(2);
+    } finally {
+      await sql`DELETE FROM notifications.events WHERE recipient_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a preparation failure throws so maintenance can retry the same event", async () => {
+    setSystemTime(now);
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, mail)
+      VALUES (${`browser-failure-${suffix}`}, 'local', 'user', ${`browser-failure-${suffix}@example.test`}) RETURNING id`;
+    const userId = user!.id;
+    const sender = createCoreNotificationSender({
+      ...app.notifications,
+      newBrowserSignIn: {
+        ...app.notifications.newBrowserSignIn,
+        email: async () => {
+          throw new Error("Settings unavailable");
+        },
+      },
+    });
+    try {
+      await expect(
+        sender.sendNewBrowserSignIn({
+          browserId: crypto.randomUUID(),
+          userId,
+          firstName: null,
+          browser: "other",
+          os: "other",
+          country: null,
+          city: null,
+          signedInAt: now.toISOString(),
+          method: "password",
+          device: null,
+          locale: "en",
+        }),
+      ).rejects.toThrow("could not be prepared");
     } finally {
       await sql`DELETE FROM notifications.events WHERE recipient_user_id = ${userId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;

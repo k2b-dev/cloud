@@ -247,4 +247,11 @@ export {
 } from "./network-security";
 export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
 
-export { knownBrowsers } from "./known-browsers";
+export {
+  knownBrowsers,
+  KNOWN_BROWSER_LIMITS,
+  SIGN_IN_METHODS,
+  type SignInMethod,
+  type NewBrowserSignInNotice,
+  type NewBrowserSignInNotifier,
+} from "./known-browsers";

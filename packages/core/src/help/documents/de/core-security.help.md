@@ -71,6 +71,16 @@ Nach der Anmeldung bittet dich Cloud einmalig, die Nutzungsbedingungen anzunehme
 
 Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung zu prüfen, oder starte eine neue Anfrage.
 
+## Benachrichtigung zu neuen Anmeldungen {icon="bell"}
+
+Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue Anmeldung aus einem neuen Browser**. Das beginnt 14 Tage nach dem Upgrade. Die Benachrichtigung gilt nicht für die Mobile App.
+
+Sie zeigt Browser und Zeit. Die E-Mail zeigt zusätzlich den Anmeldeweg und den ungefähren Ort, wenn er bekannt ist.
+
+Warst du das nicht, prüfe deine gekoppelten Geräte unter **Profileinstellungen → Anmeldung**. Wende dich dann an die Administration.
+
+Cloud sendet die Benachrichtigung standardmäßig per E-Mail. Ohne E-Mail-Adresse sendet Cloud eine Browser-Benachrichtigung. Zum Abschalten öffne **Profileinstellungen → Benachrichtigungen** und entferne bei **Neue Anmeldung aus einem neuen Browser** alle Haken.
+
 ## Gekoppelte Geräte prüfen und widerrufen {icon="device-mobile"}
 
 **Gekoppelte Geräte** zeigt für jedes Gerät den Namen, das Kopplungsdatum, die letzte Nutzung und ob die Administration bei der Kopplung geholfen hat. Benenne ein Gerät um oder widerrufe ein Gerät, das du nicht mehr kontrollierst. Ein widerrufenes Gerät kann keine neuen Anmeldungen bestätigen, bestehende Sitzungen bleiben aber angemeldet. Diese Funktionen bleiben auch bei ausgeschalteter App-Anmeldung verfügbar.

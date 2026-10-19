@@ -16,12 +16,17 @@ export const appApprovalRuntime = {
       cron: "* * * * *",
       timezone: "UTC",
       misfire: "latest",
-      meta: { appId: "core", family: "app-approval", label: "App device enrollment notices, expiry and known-browser cleanup" },
+      meta: {
+        appId: "core",
+        family: "app-approval",
+        label: "App device enrollment notices, expiry, new-browser notices and known-browser cleanup",
+      },
       process: async ({ signal }) => {
         // The steps are independent: a failing step never skips the later ones, and the run still fails.
         const errors: unknown[] = [];
         for (const step of [
           () => knownBrowsers.cleanup(sql, { signal }),
+          () => knownBrowsers.maintainNotices(sql, sender.sendNewBrowserSignIn, { signal }),
           () => appApproval.maintain(sender.sendDeviceEnrollment, signal),
           () => cleanupTerminalLogins(),
         ]) {

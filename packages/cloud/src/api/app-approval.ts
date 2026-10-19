@@ -24,7 +24,7 @@ import {
   appApproval,
   type createAppApprovalService,
 } from "../services/app-approval";
-import { readBrowserCookie } from "../services/known-browsers";
+import { type NewBrowserSignInNotifier, readBrowserCookie } from "../services/known-browsers";
 import { appNameIn } from "../ssr/runtime";
 import { createDeviceActions } from "./app-approval-actions";
 
@@ -33,7 +33,12 @@ const DevicePageSchema = z.object({ after: z.string().uuid().optional() }).stric
 type Service = ReturnType<typeof createAppApprovalService>;
 
 /** This is a separate credential surface, never a user API-key or OAuth scope. */
-export const createAppApprovalRoutes = (service: Service = appApproval, actions = createDeviceActions, terminal?: AppTerminalLogins) => {
+export const createAppApprovalRoutes = (
+  options: { notify: NewBrowserSignInNotifier },
+  service: Service = appApproval,
+  actions = createDeviceActions,
+  terminal?: AppTerminalLogins,
+) => {
   const actor = async (c: Parameters<typeof auth.session.getToken>[0]): Promise<AppApprovalActor> => {
     // The web session (or an explicit bearer session), never the mobile app's session: a phone
     // that pairs sign-in devices would hand out authority that outlives its removal.
@@ -152,8 +157,8 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
       v("json", AppLoginReferenceSchema),
       async (c) => {
         const input = c.req.valid("json");
-        const userId = await service.consumeLogin(input.requestId, input.browserSecret);
-        await auth.session.create(c, userId);
+        const { userId, deviceName } = await service.consumeLogin(input.requestId, input.browserSecret);
+        await auth.session.create(c, userId, { method: "cloud_login", device: deviceName, notify: options.notify });
         return c.body(null, 204);
       },
     );
