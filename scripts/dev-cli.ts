@@ -31,6 +31,7 @@
  *    captured by an agent), no ANSI escapes leak into the output.
  */
 import { $ } from "bun";
+import { prepareDevClickhouse } from "./dev-clickhouse";
 import { prepareDevFilegate } from "./dev-filegate";
 import { prepareDevRsql } from "./dev-rsql";
 
@@ -39,6 +40,7 @@ export const INFRA_COMPOSE_FILE = "compose.yml";
 
 /** Prepare local credentials and start every infrastructure service in compose.yml. */
 export const ensureInfra = async (): Promise<void> => {
+  await prepareDevClickhouse();
   await prepareDevRsql();
   await prepareDevFilegate();
   await $`bun packages/gateway-ops/scripts/dev-nats.ts`;

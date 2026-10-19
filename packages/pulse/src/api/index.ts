@@ -1,5 +1,6 @@
 import { type AuthContext, auth, middleware, rateLimit } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import adminRoutes from "./routes/admin";
 import basesRoutes from "./routes/bases";
 import dashboardsRoutes from "./routes/dashboards";
 import publicRoutes from "./routes/public";
@@ -14,6 +15,7 @@ const app = new Hono<AuthContext>()
   .use(rateLimit())
   .route("/", publicRoutes)
   .use(auth.requireRole("authenticated"))
+  .route("/admin/store", adminRoutes)
   .route("/", basesRoutes)
   .route("/", sourcesRoutes)
   .route("/", signalsRoutes)

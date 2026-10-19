@@ -20,6 +20,7 @@ const runAllMigrations = async (): Promise<void> => {
     "notebooks",
     "oauth",
     "proxy-auth",
+    "pulse",
     "spaces",
     "tools",
     "venue",
@@ -28,8 +29,6 @@ const runAllMigrations = async (): Promise<void> => {
     const { migrate } = (await import(`../../${application}/src/migrate`)) as { migrate: () => Promise<void> };
     await migrate();
   }
-  const { initializeSchema } = await import("../../pulse/src/schema");
-  await initializeSchema();
 };
 
 /** Catalog snapshot of every non-system schema: tables, columns, constraints and indexes. */

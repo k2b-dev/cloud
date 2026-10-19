@@ -10,8 +10,8 @@ const postgresTest = runDbSmoke ? test : test.skip;
 
 beforeAll(async () => {
   if (!runDbSmoke) return;
-  const { initializeSchema } = await import("../schema");
-  await initializeSchema();
+  const { migrate } = await import("../migrate");
+  await migrate();
 }, 30_000);
 
 describe("Pulse event aggregation Postgres smoke", () => {

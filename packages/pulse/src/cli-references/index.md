@@ -8,6 +8,8 @@ Use `cld pulse` to discover what a Pulse base contains, narrow data to a source 
 
 ## Contents
 
+- [Connect the data store (Cloud admins)](admin.md)
+
 - [How Pulse organizes data](#how-pulse-organizes-data)
 - [Agent workflow](#agent-workflow)
 - [Select and inspect a base](#select-and-inspect-a-base)
