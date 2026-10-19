@@ -8,6 +8,7 @@ import {
   CapabilityActionManifestSchema,
   type CapabilityActionPolicy,
   CapabilityActionReviewDataSchema,
+  CapabilityActionReviewSchema,
   CapabilityManifestSchema,
   type CapabilitySlot,
   capabilityActionPolicy,
@@ -234,6 +235,15 @@ describe("policy declarations and mixed manifests", () => {
       CapabilityManifestSchema.parse({ ...source, actions: source.actions.map((a) => ({ ...a, review: undefined })) }).actions,
     ).toEqual([]);
   });
+  test("readers reject unreadable policy containers", () => {
+    const source = compile({ ...definition(), policy: { silent: "you", routines: false } }).manifest;
+    for (const policies of [null, [], "unreadable", 42]) {
+      const { manifestHash: _, ...base } = { ...source, policies };
+      const raw = { ...base, manifestHash: capabilityHash(base) };
+      expect(CapabilityManifestSchema.safeParse(raw).success).toBe(false);
+      expect(() => parseCapabilityManifest(raw, "demo")).toThrow();
+    }
+  });
   test("one-time approval to policy evolution", () => {
     for (const approval of ["rememberable", undefined] as const)
       for (const policy of [{ silent: "you" }, { ask: "involves_people" }] satisfies CapabilityActionPolicy[]) {
@@ -247,6 +257,14 @@ describe("policy declarations and mixed manifests", () => {
 });
 
 describe("review helpers", () => {
+  test("schema and builder accept explicitly undefined optional forms", () => {
+    for (const form of ["rejected", "notRun", "short"]) {
+      const review = reviewFixture();
+      const forms = { locale: review.locale, sentence: { ...review.sentence, [form]: undefined } };
+      expect(CapabilityActionReviewSchema.safeParse({ ...review, ...forms }).success).toBe(true);
+      expect(actionReview(forms, review.slots).sentence).toEqual(forms.sentence);
+    }
+  });
   test("dispatch preserves branch errors and approval API output remains projectable", () => {
     for (const review of [{ sentence: {} }, { message: 42 }]) {
       const parsed = CapabilityActionReviewDataSchema.safeParse(review);
@@ -308,6 +326,31 @@ describe("review helpers", () => {
     };
     expect(checkActionReviewMessages({ locales: ["en", "de"], forms, slots: review.slots }).join()).toContain("de sentence.done");
   });
+  for (const locale of ["en", "de"])
+    for (const kind of ["message", "page"] as const)
+      test(`truncated ${kind} view ${locale}`, () => {
+        const review = reviewFixture();
+        review.locale = locale;
+        review.preview =
+          kind === "message"
+            ? { kind, to: [{ name: "Lea" }], subject: "Meeting", body: "Excerpt", format: "plain", truncated: true }
+            : { kind, title: "Page", body: "Excerpt", format: "plain", truncated: true };
+        review.links = [{ rel: "open", href: "/app/demo/full" }];
+        const view = capabilityReviewView(review, { timeZone: "UTC" });
+        const bodyIndex = view.details!.findIndex((detail) => detail.value === "Excerpt");
+        expect(bodyIndex).toBeGreaterThanOrEqual(0);
+        expect(view.details![bodyIndex + 1]).toEqual({
+          label: locale === "de" ? "Gekürzt" : "Shortened",
+          value: locale === "de" ? "Den ganzen Text öffnest du über den Link unten." : "Open the full text through the link below.",
+        });
+        expect(view.links).toEqual(review.links);
+        review.preview.truncated = false;
+        expect(
+          capabilityReviewView(review, { timeZone: "UTC" }).details?.some(
+            (detail) => detail.label === "Shortened" || detail.label === "Gekürzt",
+          ),
+        ).toBe(false);
+      });
   for (const locale of ["en", "de"])
     test(`full legacy view ${locale}`, () => {
       const review = reviewFixture();

@@ -79,7 +79,7 @@ const linkLabel = (link: CapabilitySemanticLink, locale: string): string => {
 
 export function ActionReviewContent(props: { review: CapabilityActionReviewData }): JSX.Element {
   const locale = useLocale();
-  const review = () => capabilityReviewView(props.review, { timeZone: "UTC" });
+  const review = () => capabilityReviewView(props.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
   return (
     <div class="flex flex-col gap-4">
       <p class="m-0 whitespace-pre-wrap">{review().message}</p>

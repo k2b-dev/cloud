@@ -74,6 +74,9 @@ export const reviewCases = (): Array<{ name: string; review: object; valid: bool
   const form = (name: string, text: string) => change(name, { sentence: { ...base.sentence, [name.split(" ")[0]!]: text } });
   return [
     change("valid", {}, true),
+    ...["rejected", "notRun", "short"].map((form) =>
+      change(`optional ${form} explicitly undefined`, { sentence: { ...base.sentence, [form]: undefined } }, true),
+    ),
     ...previewBoundaryCases().map(({ name, preview, valid }) =>
       change(name, { preview, links: [{ rel: "open", href: "/app/demo" }] }, valid),
     ),

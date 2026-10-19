@@ -126,6 +126,12 @@ export const capabilityReviewView = (
         row("Send at", "Sendezeit", p.sendAt, "date-time");
         for (const warning of p.warnings ?? []) row("Warning", "Warnung", warning);
         row("Body", "Text", p.body, p.format === "markdown" ? "markdown" : undefined, true);
+        if (p.truncated)
+          row(
+            "Shortened",
+            "Gekürzt",
+            de ? "Den ganzen Text öffnest du über den Link unten." : "Open the full text through the link below.",
+          );
         break;
       }
       case "event":
@@ -154,6 +160,12 @@ export const capabilityReviewView = (
         row("Title", "Titel", p.title);
         row("Place", "Ort", p.place);
         row("Body", "Text", p.body, p.format === "markdown" ? "markdown" : undefined, true);
+        if (p.truncated)
+          row(
+            "Shortened",
+            "Gekürzt",
+            de ? "Den ganzen Text öffnest du über den Link unten." : "Open the full text through the link below.",
+          );
         for (const change of p.changes ?? [])
           row(
             change.change === "added" ? "Added" : "Removed",

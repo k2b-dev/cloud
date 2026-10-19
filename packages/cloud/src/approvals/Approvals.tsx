@@ -97,6 +97,7 @@ const detailText = (detail: ReviewDetail, locale: string): string => {
   return detail.value;
 };
 
+// Keep SSR and the first client render identical; the next card slice adds the reader's zone.
 const reviewView = (item: PendingApproval) => (item.review ? capabilityReviewView(item.review, { timeZone: "UTC" }) : undefined);
 const inlineDetails = (item: PendingApproval) =>
   (reviewView(item)?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");

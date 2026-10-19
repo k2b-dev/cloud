@@ -463,6 +463,7 @@ export const CapabilityActionReviewSchema = z
   .strict()
   .superRefine((review, ctx) => {
     for (const [form, text] of Object.entries(review.sentence)) {
+      if (text === undefined) continue;
       const complete = form === "action" || form === "running" || form === "done";
       for (const message of capabilitySentenceIssues(text, review.slots, complete, form === "action"))
         ctx.addIssue({ code: "custom", path: ["sentence", form], message });
@@ -953,6 +954,14 @@ const readableManifest = (value: unknown): unknown => {
   const queryIds = new Set(readableQueries.map((query) => query.localId));
   const policies: Record<string, CapabilityActionPolicy> = {};
   const sentPolicies = sent.policies;
+  // Not a plain policy map: leave the value to the manifest schema, which rejects it.
+  if (
+    sentPolicies !== undefined &&
+    (sentPolicies === null ||
+      typeof sentPolicies !== "object" ||
+      (Object.getPrototypeOf(sentPolicies) !== Object.prototype && Object.getPrototypeOf(sentPolicies) !== null))
+  )
+    return value;
   const readableActions = actions.filter((action) => {
     if (!sentPolicies || typeof sentPolicies !== "object" || !Object.hasOwn(sentPolicies, action.localId)) return true;
     const parsed = CapabilityActionPolicySchema.safeParse(Object.getOwnPropertyDescriptor(sentPolicies, action.localId)?.value);
