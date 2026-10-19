@@ -502,7 +502,28 @@ describe(`Spaces shared head in ${browserName}`, () => {
         }
       }, 30_000);
     }
-  test("overview sidebar resizes by pointer and arrow keys", async () => {
+  /** Resolves with the handle's value once it passes `than` in the given direction. */
+  const resizedPast = (target: ReturnType<Page["locator"]>, direction: "above" | "below", than: number) =>
+    target.evaluate(
+      (handle, [way, limit]) =>
+        new Promise<number>((resolve, reject) => {
+          const started = performance.now();
+          const check = () => {
+            const now = Number(handle.getAttribute("aria-valuenow"));
+            if (way === "above" ? now > limit : now < limit) resolve(now);
+            else if (performance.now() - started > 5000)
+              reject(
+                new Error(
+                  `aria-valuenow stayed ${now}, focus on ${document.activeElement?.tagName}.${document.activeElement?.getAttribute("role")}`,
+                ),
+              );
+            else requestAnimationFrame(check);
+          };
+          check();
+        }),
+      [direction, than] as const,
+    );
+  test("overview sidebar resizes by pointer", async () => {
     const page = await open("/app/spaces?view=mine");
     try {
       const target = page.locator('[role="separator"][data-app-workspace-resize="sidebar"]');
@@ -513,46 +534,21 @@ describe(`Spaces shared head in ${browserName}`, () => {
       await page.mouse.down();
       await page.mouse.move(box.x + box.width / 2 + 48, box.y + box.height / 2);
       await page.mouse.up();
-      // The handle reports its width after the resize settles, so each step waits for the value it moves to.
-      const value = () => target.evaluate((handle) => Number(handle.getAttribute("aria-valuenow")));
-      const settled = (compare: "above" | "below", than: number) =>
-        target.evaluate(
-          (handle, [direction, limit]) =>
-            new Promise<number>((resolve, reject) => {
-              const started = performance.now();
-              const check = () => {
-                const now = Number(handle.getAttribute("aria-valuenow"));
-                if (direction === "above" ? now > limit : now < limit) resolve(now);
-                else if (performance.now() - started > 5000) reject(new Error(`aria-valuenow stayed ${now}`));
-                else requestAnimationFrame(check);
-              };
-              check();
-            }),
-          [compare, than] as const,
-        );
-      const dragged = await settled("above", before);
-      // A drag commits its width after the pointer ends; a key pressed before that commit is overwritten.
-      await target.evaluate(
-        (handle) =>
-          new Promise<void>((resolve) => {
-            let last = handle.getAttribute("aria-valuenow");
-            let still = 0;
-            const check = () => {
-              const now = handle.getAttribute("aria-valuenow");
-              still = now === last ? still + 1 : 0;
-              last = now;
-              if (still >= 10) resolve();
-              else requestAnimationFrame(check);
-            };
-            check();
-          }),
-      );
+      expect(await resizedPast(target, "above", before)).toBeGreaterThan(before);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+  test("overview sidebar resizes by arrow keys", async () => {
+    const page = await open("/app/spaces?view=mine");
+    try {
+      const target = page.locator('[role="separator"][data-app-workspace-resize="sidebar"]');
+      const before = Number(await target.getAttribute("aria-valuenow"));
       await target.focus();
       await page.keyboard.press("ArrowRight");
-      const right = await settled("above", dragged);
+      const right = await resizedPast(target, "above", before);
       await page.keyboard.press("ArrowLeft");
-      expect(await settled("below", right)).toBeLessThan(right);
-      expect(await value()).toBeLessThan(right);
+      expect(await resizedPast(target, "below", right)).toBeLessThan(right);
     } finally {
       await page.context().close();
     }

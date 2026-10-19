@@ -10,6 +10,7 @@ import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
 import * as mailIntegration from "../../service/mail-integration";
+import * as overview from "../../service/overview";
 import { spacesPublicResources } from "../../service/public-resources";
 import { defaultCalendarFilter } from "./_components/calendar/filter";
 import * as workspaceState from "./_components/workspace/workspace-state";
@@ -82,6 +83,7 @@ const state: Extract<SpacesWorkspaceState, { kind: "ok" }> = {
 const spies: { mockRestore(): void }[] = [];
 beforeEach(() => {
   spies.push(
+    spyOn(overview, "loadSpacesSidebar").mockResolvedValue({ spaces: [], pinnedSpaceIds: [], myWorkCount: 0 }),
     stubRailSnapshot(),
     spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null),
     spyOn(cloudServices, "get").mockResolvedValue("https://cloud.test"),
