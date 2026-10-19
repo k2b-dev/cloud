@@ -12,8 +12,9 @@ column is part of that surface, with no fill, frame, or shadow. The bottom
 drawer uses the subtle surface.
 Keep region wrappers transparent. A view that fills `Main`—a canvas, graph,
 editor, or empty state—is `Main`'s surface and draws no radius or border of its
-own. Cards and table frames inset with `Main`'s padding stay allowed where the
-content needs another visual level. An object, such as a Kanban card that you
+own. Placeholders in `Main` draw no box, and new views add no inset cards or
+table frames (maintainer decision, 16 October 2026); applications remove their
+existing frames in their own changes. An object, such as a Kanban card that you
 drag and open, may be a rounded surface; a group of objects uses space and a
 heading instead.
 

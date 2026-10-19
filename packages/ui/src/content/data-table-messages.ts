@@ -8,11 +8,13 @@ const dataTableMessages = i18n.define({
       dataTable: "Data table",
       noColumns: "No columns.",
       noRecords: "No records",
+      loadingRows: "Loading rows",
     },
     de: {
       dataTable: "Datentabelle",
       noColumns: "Keine Spalten.",
       noRecords: "Keine Einträge",
+      loadingRows: "Zeilen werden geladen",
     },
   },
 });

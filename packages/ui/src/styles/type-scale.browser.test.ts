@@ -136,8 +136,8 @@ const measure = (page: Page) =>
   }, probes) as Promise<Record<keyof typeof probes, Probe>>;
 
 // Heights on main before the larger type, the same in Chromium and WebKit.
-// The table splits its 64px between header and row by half a pixel
-// differently per engine, so the two count together.
+// The table counts header and row together, as engines once split a shared
+// line between them differently.
 const baseline = {
   sidebarItem: 32,
   sidebarSection: 16,
@@ -159,7 +159,7 @@ const baseline = {
 } as const;
 
 // The C Kontrast scale: [font size, weight, color] per primitive.
-const ink = { text: "rgb(9, 9, 11)", secondary: "rgb(39, 39, 42)" };
+const ink = { text: "rgb(9, 9, 11)", secondary: "rgb(39, 39, 42)", muted: "rgb(69, 69, 78)" };
 const scale = {
   sidebarItem: ["13px", "400", ink.text],
   sidebarSection: ["12px", "600", ink.secondary],
@@ -172,7 +172,8 @@ const scale = {
   fieldLabel: ["13px", "600", ink.secondary],
   fieldDescription: ["12px", "400", ink.secondary],
   badge: ["10px", "600", "rgb(4, 120, 87)"],
-  tableHeader: ["12px", "700", ink.text],
+  // The minimal table's quiet header: smaller than the 12px rows, medium, muted.
+  tableHeader: ["11px", "500", ink.muted],
 } as const;
 
 describe(`type scale in ${browserName}`, () => {
@@ -186,7 +187,8 @@ describe(`type scale in ${browserName}`, () => {
         // A sixty-fourth of a pixel is how the engines round a line box, not a shift.
         for (const [name, height] of Object.entries(baseline))
           expect({ name, height: heights[name]! }).toEqual({ name, height: expect.closeTo(height, 1) });
-        expect(probe.tableHeader.height + probe.tableRow.height).toBe(64);
+        // The minimal table: a 34px header line above 44px rows (data-table-minimal.browser.test.ts owns the rest).
+        expect(probe.tableHeader.height + probe.tableRow.height).toBe(78);
 
         const type: Record<string, readonly string[]> = Object.fromEntries(
           Object.keys(scale).map((name) => {

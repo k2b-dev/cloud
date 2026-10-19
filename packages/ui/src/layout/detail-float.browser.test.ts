@@ -10,7 +10,7 @@ const entry = resolve(import.meta.dir, "detail-float.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, DetailPanel, DataTable, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, DetailPanel, DataTable, MovedHint, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const params = new URLSearchParams(document.body.dataset.params);
 const [open, setOpen] = createSignal(params.has("initial"));
 let selected = 0;
@@ -29,6 +29,16 @@ const mainContent = () => {
   toolbar.id = "toolbar";
   toolbar.textContent = "Fixed toolbar";
   toolbar.style.cssText = "height:40px;flex-shrink:0";
+  let hint = null;
+  if (params.has("moved-hint")) {
+    const target = document.createElement("button");
+    target.textContent = "Filters";
+    toolbar.append(target);
+    hint = createComponent(MovedHint, {
+      open:true, target:() => target, onDismiss:() => { document.body.dataset.hintDismissed = "true"; },
+      action:{label:"Show filters",href:"#filters"}, children:"Tags moved to the filters.",
+    });
+  }
   if (params.has("table")) {
     return [toolbar, createComponent(DataTable, {
       class:"fixture-table", surface:"paper", fillHeight:true, scrollClass:"k2b-detail-trail",
@@ -45,7 +55,7 @@ const mainContent = () => {
       renderCell:({row,col,value}) => col.id === "0" ? button(row.index) : col.id === "date" ? row.date.toISOString().slice(0,10) : value,
     })];
   }
-  if (!params.has("trail")) return [toolbar, ...Array.from({length:40}, (_, index) => button(index))];
+  if (!params.has("trail")) return [toolbar, hint, ...Array.from({length:40}, (_, index) => button(index))];
   const trail = document.createElement("div");
   trail.id = "board";
   trail.className = "k2b-detail-trail fixture-board";
@@ -63,7 +73,7 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancesto
   get children() { return [
     createComponent(AppWorkspace.Sidebar, { id:"navigation", maxSize:960, get children() { return createComponent(AppWorkspace.SidebarDesktop, {get children() {return createComponent(AppWorkspace.SidebarItem, {href:"/devices", active:true, children:"Devices"});}}); } }),
     createComponent(AppWorkspace.Content, { get children() { return [
-      createComponent(AppWorkspace.Main, { class:"fixture-main", scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
+      createComponent(AppWorkspace.Main, { class:"fixture-main", minWidth:params.has("moved-hint") ? 760 : undefined, scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
       createComponent(AppWorkspace.Detail, {
         id:"record", phone:params.has("phone-page") ? "page" : "sheet", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
           document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + direction);
@@ -911,6 +921,36 @@ describe("floating workspace detail", () => {
         const card = document.getElementById("row-1")!.getBoundingClientRect();
         return card.left >= 0 && card.right <= innerWidth;
       });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an open MovedHint leaves detail J/K stepping and Escape drawer parking available", async () => {
+    const page = await load(1194, 900, "initial=1&moved-hint=1");
+    try {
+      const detail = page.locator(".k2b-app-workspace__detail");
+      const toggle = page.locator("[data-app-workspace-detail-toggle]");
+      const hint = page.locator(".k2b-moved-hint");
+      await page.waitForFunction(() => document.querySelector(".k2b-moved-hint")?.matches(":popover-open"));
+      await toggle.focus();
+      await page.keyboard.press("Enter");
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+      await detail.locator("h2").focus();
+      await page.keyboard.press("j");
+      expect(await page.locator("body").getAttribute("data-steps")).toBe("1");
+      await page.keyboard.press("k");
+      expect(await page.locator("body").getAttribute("data-steps")).toBe("0");
+      expect(await hint.evaluate((element) => element.matches(":popover-open"))).toBe(true);
+      await detail.locator("h2").focus();
+      expect(await detail.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+      await page.keyboard.press("Escape");
+      expect(await detail.isVisible()).toBe(false);
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(await detail.getAttribute("hidden")).toBeNull();
+      expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      expect(await page.locator("body").getAttribute("data-hint-dismissed")).toBeNull();
+      expect(await hint.evaluate((element) => element.matches(":popover-open"))).toBe(true);
     } finally {
       await page.close();
     }

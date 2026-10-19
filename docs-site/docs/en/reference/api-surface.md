@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # API surface
@@ -31,7 +31,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
-| `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters |
+| `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
@@ -321,6 +321,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
+| `@k2b/cloud/browser/hints` | Supported, browser | `markHintSeen`: remembers a moved-path hint in the browser cookie before dismissal or navigation | [One-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop and, under an open modal dialog, offers the reload once the dialog closes; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@k2b/cloud/browser/panel` | Supported, browser | `openPanel` and `closePanel`: open a visible provider or close the current panel | [Panels](/en/docs/platform/panels) |
