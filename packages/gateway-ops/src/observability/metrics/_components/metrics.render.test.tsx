@@ -39,6 +39,29 @@ const renderTokens = (tokens: MetricsToken[], timeZone: string) =>
     }),
   );
 
+/** Drops Solid's hydration comments, repeated until none is left. */
+const withoutComments = (html: string) => {
+  let current = html;
+  for (let previous = ""; previous !== current; ) {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, "");
+  }
+  return current;
+};
+
+const expectNeutralTag = (html: string, label: string, count = 1) => {
+  const tags = [...withoutComments(html).matchAll(/<span class="([^"]*\btag\b[^"]*)">([^<]*)<\/span>/g)].filter(
+    (match) => match[2] === label,
+  );
+  expect(tags).toHaveLength(count);
+  for (const tag of tags) {
+    const classes = tag[1]!;
+    expect(classes).toContain("bg-[var(--ui-surface-muted)]");
+    expect(classes).toContain("text-secondary");
+    expect(classes).not.toMatch(/bg-blue-(?:50|100)|text-zinc-/);
+  }
+};
+
 describe("metrics presentation", () => {
   test("keeps token dates in the requested timezone and preserves token actions", () => {
     const berlin = renderTokens([token], "Europe/Berlin");
@@ -47,6 +70,7 @@ describe("metrics presentation", () => {
     expect(newYork).toContain("08:30");
     expect(berlin).toContain("metrics_visible_prefix");
     expect(berlin).toContain("metrics:read");
+    expectNeutralTag(berlin, "metrics:read");
     expect(berlin).toContain("Monitoring");
     expect(berlin).toContain("—");
     expect(berlin).toContain('aria-label="Revoke metrics token Monitoring"');
@@ -85,5 +109,7 @@ describe("metrics presentation", () => {
     expect(html).toContain("cloud_ok");
     expect(html).toContain("cloud_degraded");
     expect(html).toContain("cloud_error");
+    for (const label of ["ok", "degraded", "error"]) expectNeutralTag(html, label);
+    expectNeutralTag(html, "gauge", 3);
   });
 });

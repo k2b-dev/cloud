@@ -122,7 +122,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
             label={t.removeAssignee({ name: assignee().displayName })}
             size="xs"
             onClick={() => remove(assignee().id)}
-            class="k2b-progressive-action text-zinc-400 hover:text-red-500"
+            class="k2b-progressive-action text-dimmed hover:text-red-500"
             title={t.removeAssignee({ name: assignee().displayName })}
           >
             <i class="ti ti-x text-sm" />

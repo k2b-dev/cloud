@@ -46,7 +46,7 @@ const channelChip = (channel: string, t: GatewayOpsMessages): JSX.Element => {
       ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
       : channel === "browser"
         ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-200"
-        : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200";
+        : "bg-[var(--ui-surface-muted)] text-secondary";
   return (
     <span class={`inline-flex h-6 items-center gap-1 rounded-full px-2 text-[10px] font-medium ${tone}`}>
       <i class={`${notificationChannelIcon(channel)} text-xs`} />
@@ -511,12 +511,12 @@ export default ssr<AuthContext>(async (c) => {
             <NotificationFilterBar search={search} status={status} />
             {searchSummary && (
               <div class="flex flex-wrap items-center gap-1.5">
-                <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ui-surface-muted)] text-secondary px-2.5 text-xs font-medium">
                   <i class="ti ti-search text-sm" />
                   {t.matches({ count: formatNumber(searchSummary.total, { locale }) })}
                 </span>
                 <span
-                  class={`inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${searchSummary.error > 0 ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}
+                  class={`inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${searchSummary.error > 0 ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" : "bg-[var(--ui-surface-muted)] text-secondary"}`}
                 >
                   <i class="ti ti-alert-circle text-sm" />
                   {t.errorCountLabel({ count: formatNumber(searchSummary.error, { locale }) })}
