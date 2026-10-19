@@ -237,6 +237,38 @@ for (const navigationApi of [true, false]) {
       expect(history.length).toBe(length);
     });
 
+    test("an entry released just before disposal stays, and its queued Back never starts", async () => {
+      const core = createDialogCore();
+      const a = trigger("a");
+      a.button.focus();
+      const first = core.open(view("First"), { history: true });
+      let closeSecond = () => {};
+      const second = core.open(
+        (close) => {
+          closeSecond = close;
+          return view("Second")();
+        },
+        { history: true },
+      );
+      const length = history.length;
+      const go = spyOn(history, "go");
+      const back = spyOn(history, "back");
+      // A link inside the dialog closes it and starts the content swap in the same task.
+      closeSecond();
+      dispose(a.parent);
+      expect(await second).toBeUndefined();
+      expect(await first).toBeUndefined();
+      await settle();
+      expect(go).not.toHaveBeenCalled();
+      expect(back).not.toHaveBeenCalled();
+      expect(history.length).toBe(length);
+      // Both entries count as page entries now: a later dialog's close goes back only onto them.
+      const next = core.open(view("Next"), { history: true });
+      core.close();
+      expect(await next).toBeUndefined();
+      expect(go.mock.calls).toEqual([[-1]]);
+    });
+
     test("a dialog disposed while an earlier Back is on its way settles only after that Back lands", async () => {
       // Registered before the core, so it sees the traversal even when the core stops its propagation.
       let landed = false;

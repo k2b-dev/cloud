@@ -249,6 +249,14 @@ export const createDialogCore = () => {
       queueMicrotask(() => {
         disposingIslands = false;
       });
+      // Entries released just before, whose Back has not started yet, stay as well: the router owns history now.
+      // A Back already on its way still settles through `returning`.
+      historySyncScheduled = false;
+      const live = new Set([...state.stack, ...historyHolders].map((entry) => entry.historyId));
+      for (const id of historyIds) {
+        if (live.has(id) || !issued.delete(id)) continue;
+        forgotten.add(id);
+      }
     }
     disposals++;
     while (state.stack.length > 0) popTop(undefined);

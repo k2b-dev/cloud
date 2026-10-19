@@ -415,10 +415,11 @@ such a dialog then leaves that history alone.
 When islands are disposed, for example because navigation replaces the page
 content, every open dialog closes, top first, whichever code opened it. The
 dismiss guard does not apply. A dialog that waits for an earlier Back never
-opens once islands were disposed in the meantime. A closed history dialog's
-entry stays in the browser and is left to the router. The dialog core then
-treats it like a page entry, so a later Back onto it closes only dialogs opened
-after it.
+opens once islands were disposed in the meantime. Disposal never moves
+history: the entries of these dialogs, and of history dialogs closed just
+before, stay in the browser for the router. The dialog core then treats them
+like page entries, so a later Back onto one closes only dialogs opened after
+it.
 
 Use the option for dialogs a person opens on purpose. Leave it off for
 confirmations inside another dialog, which Back closes together with their
