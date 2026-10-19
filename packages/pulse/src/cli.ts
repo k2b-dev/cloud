@@ -19,8 +19,12 @@ const module = defineCliCommands({
   name: "pulse",
   summary: "Inspect Pulse data and manage Pulse bases, sources, queries, and dashboards.",
   groupSummaries: {
-    admin: "Connect and check the operator-provided Pulse data store",
+    admin: "Administer Pulse as a Cloud admin: data store, base policy, limits and internal targets",
     "admin store": "Manage the Pulse ClickHouse connection",
+    "admin policy": "Read and set who may create bases and the starting values for new bases",
+    "admin bases": "List bases with state and usage, set their limits, and recover failed or blocked bases",
+    "admin orphans": "List and delete ClickHouse databases that belong to no base",
+    "admin targets": "Release and revoke internal scrape targets per base",
     access: "Manage direct access to Pulse bases",
     dashboards: "Create, inspect, and publish Pulse dashboards",
     fields: "Inspect observed telemetry fields",

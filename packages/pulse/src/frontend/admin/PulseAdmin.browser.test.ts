@@ -150,7 +150,7 @@ const open = async (view: View, snapshot: Snapshot, options: { dark?: boolean; l
     if (url.pathname === "/api/pulse/admin/orphans") {
       await released;
       return route.fulfill({
-        json: options.answer?.[call]?.json ?? { items: [{ database: "pulse_0f3c2b1a9d8e4f7a6b5c4d3e2f1a0b9c" }], nextOffset: null },
+        json: options.answer?.[call]?.json ?? { items: [{ database: "pulse_0f3c2b1a9d8e4f7a6b5c4d3e2f1a0b9c" }], nextCursor: null },
       });
     }
     const answer = options.answer?.[call];

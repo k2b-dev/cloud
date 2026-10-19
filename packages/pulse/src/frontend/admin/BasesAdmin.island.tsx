@@ -317,24 +317,24 @@ const openLimitsDialog = (
 
 /** Orphaned databases come from ClickHouse, so the browser reads them after the page is shown. */
 const Orphans = (props: { t: PulseAdminMessages; signal: AbortSignal }) => {
-  type View = { kind: "loading" } | { kind: "error" } | { kind: "ready"; items: OrphanDatabase[]; nextOffset: number | null };
+  type View = { kind: "loading" } | { kind: "error" } | { kind: "ready"; items: OrphanDatabase[]; nextCursor: string | null };
   const [view, setView] = createSignal<View>({ kind: "loading" });
   const [busy, setBusy] = createSignal<string | null>(null);
   const load = async () => {
     setView({ kind: "loading" });
     try {
       const page = await adminClient.orphans({ limit: PAGE_SIZE }, props.signal);
-      setView({ kind: "ready", items: page.items, nextOffset: page.nextOffset });
+      setView({ kind: "ready", items: page.items, nextCursor: page.nextCursor });
     } catch {
       if (!props.signal.aborted) setView({ kind: "error" });
     }
   };
   const more = async () => {
     const current = view();
-    if (current.kind !== "ready" || current.nextOffset === null) return;
+    if (current.kind !== "ready" || current.nextCursor === null) return;
     try {
-      const page = await adminClient.orphans({ limit: PAGE_SIZE, offset: current.nextOffset }, props.signal);
-      setView({ kind: "ready", items: [...current.items, ...page.items], nextOffset: page.nextOffset });
+      const page = await adminClient.orphans({ limit: PAGE_SIZE, after: current.nextCursor }, props.signal);
+      setView({ kind: "ready", items: [...current.items, ...page.items], nextCursor: page.nextCursor });
     } catch (cause) {
       if (!props.signal.aborted) toast.error(adminErrorText(props.t, codeOf(cause)));
     }
@@ -382,7 +382,8 @@ const Orphans = (props: { t: PulseAdminMessages; signal: AbortSignal }) => {
       >
         {(ready) => (
           <Show
-            when={ready().items.length > 0}
+            // A bounded scan may end before it found an orphan; "Show more" continues it.
+            when={ready().items.length > 0 || ready().nextCursor !== null}
             fallback={<Placeholder variant="inline" align="left" icon="ti ti-circle-check" title={props.t.orphansNone} />}
           >
             <ul class="flex flex-col">
@@ -406,7 +407,7 @@ const Orphans = (props: { t: PulseAdminMessages; signal: AbortSignal }) => {
                 )}
               </For>
             </ul>
-            <Show when={ready().nextOffset !== null}>
+            <Show when={ready().nextCursor !== null}>
               <div>
                 <Button size="sm" variant="ghost" onClick={() => void more()}>
                   {props.t.loadMore}

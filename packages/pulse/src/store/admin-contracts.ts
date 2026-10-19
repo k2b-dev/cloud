@@ -79,7 +79,7 @@ export type AdminBasesPage = {
   items: AdminBaseRow[];
   total: number;
   nextOffset: number | null;
-  /** Measured storage of all bases that are not being deleted, not only of this page. */
+  /** Measured storage of all bases that still have a row, not only of this page. */
   usedBytes: number;
   /** Free space of the ClickHouse instance, from system.disks; null before the first measurement. */
   disk: InstanceDisk | null;
@@ -87,7 +87,7 @@ export type AdminBasesPage = {
 
 /** A `pulse_<hex>` database in ClickHouse without a base ("verwaist"). */
 export type OrphanDatabase = { database: string };
-export type OrphanDatabasesPage = { items: OrphanDatabase[]; nextOffset: number | null };
+export type OrphanDatabasesPage = { items: OrphanDatabase[]; nextCursor: string | null };
 
 /** `host`: every port of a host; `host_port`: exactly one port; `network`: a CIDR range, every port. */
 export const INTERNAL_TARGET_SCOPES = ["host", "host_port", "network"] as const;

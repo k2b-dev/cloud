@@ -26,9 +26,9 @@ export const notSetUpMessages = i18n.define({
 });
 
 /**
- * Until a Cloud admin connects the data store, every Pulse page answers 503 with the same state. Signed-out
- * visitors of signed-in pages still reach the normal sign-in redirect first; the public display page stays
- * outside the Cloud shell and names no admin path.
+ * Until a Cloud admin connects the data store, every Pulse page answers 503 with the same state. Mount it after
+ * the route's authentication, which resolves the actor; the public display page stays outside the Cloud shell
+ * and names no admin path.
  */
 export const pulseNotSetUpGate =
   (options: { publicDisplay?: boolean } = {}): MiddlewareHandler<AuthContext> =>

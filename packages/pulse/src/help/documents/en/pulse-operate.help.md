@@ -53,7 +53,7 @@ passwords only with `--password-file` or `--password-stdin`. Without this connec
 
 A new base provisions its own database and becomes active before accepting
 changes. Clearing keeps sources, tokens, dashboards and queries. Deletion
-revokes tokens, public links and SQL access first. If an operation fails,
+revokes tokens, public links and read access first. If an operation fails,
 choose **Retry**. A Cloud administrator can also retry it under Administration → Pulse
 → Bases, where profiles, limits and measured storage appear without contents.
 

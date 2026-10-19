@@ -16,7 +16,7 @@ import {
 import { getPolicy, setPolicy } from "../../service/base-policy";
 import { ADMIN_ERROR_CODES } from "../../store/admin-contracts";
 import { AdminBaseRowSchema, LimitsUpdateSchema, PulsePolicySchema, PulsePolicyUpdateSchema } from "../../store/admin-schemas";
-import { BaseStoreError } from "../../store/base-store";
+import { BaseStoreError, baseStore } from "../../store/base-store";
 import { StoreQueryError } from "../../store/client";
 import { StoreAdminError } from "../../store/service";
 
@@ -28,6 +28,11 @@ const page = z.object({
     .string()
     .regex(/^[0-9A-Za-z]{6}$/)
     .optional(),
+});
+const orphanNamePattern = `^(${baseStore.prefix}[0-9a-f]{32})?$`;
+const orphanPage = z.object({
+  limit: page.shape.limit,
+  after: z.string().regex(new RegExp(orphanNamePattern)).default(""),
 });
 const TargetInput = z.object({ baseId: z.string().regex(/^[0-9A-Za-z]{6}$/), entry: z.string().min(1).max(300) }).strict();
 const TargetSchema = z.object({
@@ -112,9 +117,16 @@ const routes = new Hono<AuthContext>()
     "/orphans",
     metadata(
       "List orphan Pulse databases",
-      z.object({ items: z.array(z.object({ database: z.string() })), nextOffset: z.number().nullable() }),
+      z.object({ items: z.array(z.object({ database: z.string() })), nextCursor: z.string().nullable() }),
     ),
-    async (c) => c.json(await listOrphans({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, page.parse(c.req.query()))),
+    describeRoute({
+      parameters: [
+        { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 } },
+        { name: "after", in: "query", schema: { type: "string", pattern: orphanNamePattern, default: "" } },
+      ],
+    }),
+    async (c) =>
+      c.json(await listOrphans({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, orphanPage.parse(c.req.query()))),
   )
   .delete("/orphans/:database", metadata("Delete an orphan Pulse database", z.object({ ok: z.literal(true) })), async (c) =>
     c.json(await deleteOrphan({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("database"))),

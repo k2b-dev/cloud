@@ -95,14 +95,14 @@ export const listAdminBases = async (
   const pattern = query ? `%${query.replace(/([\\%_])/g, "\\$1")}%` : null;
   const rows = await sql<
     { id: string }[]
-  >`SELECT id FROM pulse.bases WHERE deletion_started_at IS NULL AND (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\' OR short_id=${query}) ORDER BY (short_id=${query}) DESC,created_at,id LIMIT ${limit} OFFSET ${offset}`;
+  >`SELECT id FROM pulse.bases WHERE (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\' OR short_id=${query}) ORDER BY (short_id=${query}) DESC,created_at,id LIMIT ${limit} OFFSET ${offset}`;
   const [count] = await sql<
     { count: number }[]
-  >`SELECT count(*)::int AS count FROM pulse.bases WHERE deletion_started_at IS NULL AND (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\' OR short_id=${query})`;
+  >`SELECT count(*)::int AS count FROM pulse.bases WHERE (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\' OR short_id=${query})`;
   const [disk] = await sql<{ free_bytes: string; total_bytes: string; measured_at: Date }[]>`SELECT * FROM pulse.store_instance`;
   const [used] = await sql<
     { bytes: string }[]
-  >`SELECT COALESCE(sum(s.usage_bytes),0)::text AS bytes FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.deletion_started_at IS NULL`;
+  >`SELECT COALESCE(sum(s.usage_bytes),0)::text AS bytes FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id`;
   const total = count?.count ?? 0;
   return {
     items: await Promise.all(rows.map((r) => adminBaseRow(r.id))),
@@ -143,7 +143,7 @@ export const adminBaseAction = async (identity: StoreIdentity, id: string, actio
   } else {
     const changed = await sql.begin(async (tx) => {
       await tx`SELECT id FROM pulse.bases WHERE id=${base.id}::uuid FOR UPDATE`;
-      return tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',attempts=0,updated_at=now() WHERE base_id=${base.id}::uuid AND state='active' RETURNING base_id`;
+      return tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',schema_version=0,attempts=0,updated_at=now() WHERE base_id=${base.id}::uuid AND state='active' RETURNING base_id`;
     });
     if (!changed.length) throw new BaseAdminError("BASE_BUSY", 409);
     await submitBaseLifecycleJob(base.id, base.short_id);
@@ -215,26 +215,52 @@ export const removeInternalTarget = async (identity: StoreIdentity, id: string) 
   if (!result.count) throw new BaseAdminError("NOT_FOUND", 404);
   return { ok: true as const };
 };
-export const listOrphans = async (
-  identity: StoreIdentity,
-  params: { limit?: number; offset?: number } = {},
-  store = baseStore,
-): Promise<OrphanDatabasesPage> => {
-  requireStoreAdmin(identity);
-  const { limit, offset } = paging(params.limit, params.offset);
-  const rows = await store.query("SELECT name FROM system.databases WHERE match(name,{pattern:String}) ORDER BY name LIMIT 1000", {
-    pattern: `^${store.prefix}[0-9a-f]{32}$`,
-  });
-  const candidates = rows.flatMap((r) => (typeof r.name === "string" ? [r.name] : []));
+const reservedDatabases = async (candidates: string[], prefix: string): Promise<string[]> => {
+  const baseIds = candidates.map((name) => databaseBaseId(name, prefix));
   const references = await sql<
     { database_name: string }[]
-  >`SELECT database_name FROM pulse.base_stores WHERE database_name=ANY(${toPgTextArray(candidates)}::text[])`;
-  const referenced = new Set(references.map((r) => r.database_name));
-  const names = rows.flatMap((r) => (typeof r.name === "string" && !referenced.has(r.name) ? [r.name] : []));
-  return {
-    items: names.slice(offset, offset + limit).map((database) => ({ database })),
-    nextOffset: offset + limit < names.length ? offset + limit : null,
-  };
+  >`SELECT database_name FROM pulse.base_stores WHERE database_name=ANY(${toPgTextArray(candidates)}::text[])
+    UNION ALL SELECT ${prefix} || replace(id::text,'-','') AS database_name FROM pulse.bases WHERE id=ANY(${toPgTextArray(baseIds)}::uuid[])`;
+  return references.map((row) => row.database_name);
+};
+const databaseBaseId = (database: string, prefix: string) => {
+  const hex = database.slice(prefix.length);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+export const listOrphans = async (
+  identity: StoreIdentity,
+  params: { limit?: number; after?: string } = {},
+  store = baseStore,
+  findReserved = reservedDatabases,
+): Promise<OrphanDatabasesPage> => {
+  requireStoreAdmin(identity);
+  const { limit } = paging(params.limit);
+  let after = params.after ?? "";
+  if (after) {
+    try {
+      assertStoreName(after, store.prefix);
+    } catch {
+      throw new BaseAdminError("INVALID_INPUT");
+    }
+  }
+  const items: OrphanDatabasesPage["items"] = [];
+  // Bound both ClickHouse and Postgres work even when every database is reserved.
+  const batchSize = 500;
+  for (let batch = 0; batch < 4; batch++) {
+    const rows = await store.query(
+      "SELECT name FROM system.databases WHERE match(name,{pattern:String}) AND name > {after:String} ORDER BY name LIMIT 500",
+      { pattern: `^${store.prefix}[0-9a-f]{32}$`, after },
+    );
+    const candidates = rows.flatMap((row) => (typeof row.name === "string" ? [row.name] : []));
+    const reserved = new Set(await findReserved(candidates, store.prefix));
+    for (const [index, database] of candidates.entries()) {
+      after = database;
+      if (!reserved.has(database)) items.push({ database });
+      if (items.length === limit) return { items, nextCursor: index < candidates.length - 1 || rows.length === batchSize ? after : null };
+    }
+    if (rows.length < batchSize) return { items, nextCursor: null };
+  }
+  return { items, nextCursor: after };
 };
 export const deleteOrphan = async (identity: StoreIdentity, database: string, store = baseStore) => {
   requireStoreAdmin(identity);
@@ -245,7 +271,7 @@ export const deleteOrphan = async (identity: StoreIdentity, database: string, st
     throw new BaseAdminError("INVALID_INPUT");
   }
   const hex = database.slice(store.prefix.length),
-    baseId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    baseId = databaseBaseId(database, store.prefix);
   return sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('pulse.base.creation',0))`;
     const [used] =

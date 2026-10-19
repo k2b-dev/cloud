@@ -28,7 +28,8 @@ const workspacePages = new Hono<AuthContext>()
 export default new Hono<AuthContext>()
   .use("*", middleware.noTransform())
   .get("/display/:token", pulseNotSetUpGate({ publicDisplay: true }), ...publicPage)
-  .use("*", pulseNotSetUpGate())
+  // Authentication runs first: it resolves the actor the gate needs and keeps the sign-in redirect.
+  .use("*", auth.requireRole("user", ssr.access), pulseNotSetUpGate())
   .get("/:baseId/query-reference", auth.requireRole("user", ssr.access), ...queryReferencePage)
   .get("/", auth.requireRole("user", ssr.access), ...page)
   .route("/:baseId", workspacePages);

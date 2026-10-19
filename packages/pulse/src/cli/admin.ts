@@ -229,7 +229,10 @@ adminCommands.push(
   ),
   command("admin orphans list", {
     summary: "List databases without a base",
-    flags: pageFlags,
+    flags: {
+      limit: pageFlags.limit,
+      after: flag.string({ description: "Continue after the previous page's nextCursor" }),
+    },
     async run({ ctx, flags }) {
       show(ctx, await adminRequest(ctx, `/orphans${queryString(flags)}`));
     },

@@ -80,7 +80,7 @@ cld pulse admin bases limits Base01 --profile small --values-per-minute 2000 --b
 cld pulse admin bases retry Base01
 cld pulse admin bases recheck Base01
 cld pulse admin bases recreate Base01
-cld pulse admin orphans list --limit 50 --offset 0
+cld pulse admin orphans list --limit 50
 cld pulse admin orphans delete pulse_00000000000040008000000000000000
 cld pulse admin targets list --base Base01
 cld pulse admin targets add --base Base01 web-01:9100
@@ -98,3 +98,13 @@ and recreates read access after restore. Orphan deletion rechecks that no base
 references the database. Administration shows amounts and state, never contents.
 Host and CIDR target entries cover every port; host:port covers one. `/0` is
 refused. Revocation blocks the next scrape, including redirect targets.
+
+Base lists include deleting bases and failed deletions until their rows are
+removed; use Retry to resume a failed delete. Recreate also repairs missing
+tables and views in a partially restored database.
+
+Orphan lists return `items` and `nextCursor`. Pass a non-null cursor as
+`cld pulse admin orphans list --after <nextCursor>`. Each request scans at most
+four batches of 500 database names, so an empty page can still have a cursor.
+Continue until `nextCursor` is null. Names reserved by a store row or base UUID
+are excluded.

@@ -44,7 +44,7 @@ export const adminClient = {
     request<AdminBaseRow>(`/bases/${encodeURIComponent(baseId)}/limits`, { method: "PUT", body: JSON.stringify(input), signal }),
   baseAction: (baseId: string, action: "retry" | "recheck" | "recreate", signal?: AbortSignal) =>
     request<AdminBaseRow>(`/bases/${encodeURIComponent(baseId)}/${action}`, { method: "POST", signal }),
-  orphans: (params: { limit?: number; offset?: number }, signal?: AbortSignal) =>
+  orphans: (params: { limit?: number; after?: string }, signal?: AbortSignal) =>
     request<OrphanDatabasesPage>(`/orphans${page(params)}`, { signal }),
   deleteOrphan: (database: string, signal?: AbortSignal) =>
     request<{ ok: true }>(`/orphans/${encodeURIComponent(database)}`, { method: "DELETE", signal }),
