@@ -11,7 +11,7 @@ if (testInfra.database && testInfra.valkey && testInfra.clickhouse) {
 const { createBaseStore } = await import("../store/base-store");
 const { measureBaseUsage, measureInstanceDisk } = await import("../store/maintenance");
 const { createIngestQuota } = await import("./ingest-quota");
-const { createIngestWriter } = await import("./ingest-writer");
+const { createIngestWriter, ingestByApiKey } = await import("./ingest-writer");
 const { runMetricsSourceScrape } = await import("./metrics-scraper");
 const { recordInstanceDisk, recordStorageThreshold, recordStoreOutage, notificationOutbox } = await import("./store-health");
 const { assertWrite, writeFixture } = await import("./write.test-fixture");
@@ -21,6 +21,39 @@ suiteFor(
   "valkey",
   "clickhouse",
 )("Pulse quota and store protection", () => {
+  test("source token ingestion returns the write-block recovery message instead of 404", async () => {
+    const f = await writeFixture("token-write-block");
+    try {
+      await sql`UPDATE pulse.base_stores SET write_block_reason='checkpoint_mismatch' WHERE base_id=${f.base.id}::uuid`;
+      expect(
+        await ingestByApiKey({
+          serviceAccount: {
+            id: f.sourceId,
+            name: "Write-blocked source",
+            kind: "resource_bound",
+            status: "active",
+            delegatedUserId: null,
+            appId: "pulse",
+            resourceType: "pulse_source",
+            resourceId: f.sourceId.replaceAll("-", "").slice(0, 6),
+            createdBy: null,
+            createdAt: f.clock().toISOString(),
+          },
+          scopes: ["pulse:ingest"],
+          batch: { events: [{ kind: "blocked" }] },
+        }),
+      ).toEqual({
+        ok: false,
+        error: {
+          code: "PULSE_BASE_WRITE_BLOCKED",
+          status: 409,
+          message: "Pulse base writes are blocked. A Cloud admin must recheck or recreate its data store.",
+        },
+      });
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("write fixtures discard another suite's disk-low measurement", async () => {
     await sql`INSERT INTO pulse.store_instance(singleton,free_bytes,total_bytes,disk_low_at)
       VALUES(true,1,100,'2026-10-17T12:00:00Z') ON CONFLICT(singleton)

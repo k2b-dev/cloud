@@ -6,6 +6,7 @@ import type { PulseBase } from "../contracts";
 import { jsonFetch } from "./http";
 import { usePulseMessages } from "./use-messages";
 import { baseStoreMessages } from "./workspace/base-store-messages";
+import { installPeriodicRefresh } from "./workspace/periodic-refresh";
 
 type Props = {
   bases: PulseBase[];
@@ -19,7 +20,9 @@ const DeletingBaseNotice = (props: { base: PulseBase }) => {
   const locale = useLocale();
   const t = createMemo(() => baseStoreMessages.resolve([locale()]).t);
   const [base, setBase] = createSignal(props.base);
-  const failed = () => base().store.state === "failed";
+  // The base is gone (or no longer visible) once its deletion finished; the card stays in place until a reload.
+  const [deleted, setDeleted] = createSignal(false);
+  const failed = () => !deleted() && base().store.state === "failed";
   const retry = mutation.create<PulseBase, void>({
     mutation: (_intent, { abortSignal }) =>
       jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}/retry`, { method: "POST", signal: abortSignal }, t().retryFailed),
@@ -30,12 +33,27 @@ const DeletingBaseNotice = (props: { base: PulseBase }) => {
     onError: () => toast.error(t().retryFailed),
   });
   onCleanup(() => retry.abort());
+  // Follow the running deletion so a finish or a new failure shows here without a reload.
+  installPeriodicRefresh({
+    active: () => !deleted() && !failed() && !retry.loading(),
+    refresh: async () => {
+      const gone = new Error("PULSE_BASE_GONE");
+      const next = await jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}`, undefined, t().retryFailed, (status) =>
+        status === 404 || status === 403 ? gone : new Error(t().retryFailed),
+      ).catch((error: unknown) => {
+        if (error !== gone) throw error;
+        setDeleted(true);
+        return null;
+      });
+      if (next) setBase(next);
+    },
+  });
   return (
     <NoticeCard
       tone={failed() ? "danger" : "neutral"}
       title={base().name}
-      meta={failed() ? t().stateFailed : t().stateDeleting}
-      detail={failed() ? t().failedDelete : t().deletingText}
+      meta={deleted() ? t().stateDeleted : failed() ? t().stateFailed : t().stateDeleting}
+      detail={deleted() ? t().deletedText : failed() ? t().failedDelete : t().deletingText}
       aria-live="polite"
     >
       {/* The button keeps its place after a retry so the card does not change height. */}

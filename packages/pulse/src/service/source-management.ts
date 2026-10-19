@@ -513,7 +513,7 @@ export const resolveIngestSourceForServiceAccount = async (
     WHERE s.short_id = ${serviceAccount.resourceId}
       AND s.kind = 'http_ingest'::pulse.source_kind
       AND s.enabled = TRUE AND NOT s.deleted
-      AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL) AND b.deletion_started_at IS NULL
+      AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND b.deletion_started_at IS NULL
       AND (
         b.data_clear_started_at IS NULL
         OR b.data_clear_completed_at IS NOT NULL

@@ -8,7 +8,7 @@ import type { PulseWorkspaceProps } from "./workspace/types";
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 
 let browser: Browser;
-let page: (props: PulseWorkspaceProps, locale?: string) => string;
+let page: Awaited<ReturnType<typeof buildWorkspaceHarness>>;
 
 beforeAll(async () => {
   page = await buildWorkspaceHarness();
@@ -153,6 +153,59 @@ describe("Pulse base page after the cut", () => {
       await tab.clock.runFor(5_100);
       await retry.waitFor();
       expect(calls).toContain("/api/pulse/bases");
+    } finally {
+      await tab.close();
+    }
+  }, 60_000);
+
+  test("a deleting base on the overview follows its deletion to a failure, a retry and the end, in place", async () => {
+    const base = workspaceFixture.initialBases[0]!;
+    const deleting = {
+      ...base,
+      deletionStartedAt: "2026-10-19T12:30:00.000Z",
+      store: { ...base.store, state: "deleting" as const, operation: "delete" as const },
+    };
+    const failed = { ...deleting, store: { ...deleting.store, state: "failed" as const, errorCode: "STORE_UNAVAILABLE" } };
+    let answer: { status: number; json: unknown } = { status: 200, json: failed };
+    const tab = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await tab.clock.install({ time: new Date("2026-10-19T12:40:00.000Z") });
+    await tab.clock.pauseAt(new Date("2026-10-19T12:40:00.000Z"));
+    const calls: string[] = [];
+    await tab.route(`${origin}/api/**`, (route) => {
+      const path = new URL(route.request().url()).pathname;
+      calls.push(`${route.request().method()} ${path}`);
+      if (path.endsWith("/retry")) return route.fulfill({ status: 200, json: deleting });
+      return route.fulfill(answer);
+    });
+    await tab.route(`${origin}/app/pulse/**`, (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: page(workspaceFixture, "de", false, { bases: [], deletingBases: [deleting], initialQuery: "" }),
+      }),
+    );
+    try {
+      await tab.goto(`${origin}/app/pulse/overview`);
+      const card = tab.locator("article", { hasText: base.name });
+      const retry = card.getByRole("button", { name: "Erneut versuchen" });
+      await card.getByText("Wird gelöscht").waitFor();
+      const box = await card.boundingBox();
+      expect(await retry.isDisabled()).toBe(true);
+      // A new failure shows in place, with Retry enabled.
+      await tab.clock.runFor(5_100);
+      await card.getByText("Fehlgeschlagen").waitFor();
+      expect(await retry.isEnabled()).toBe(true);
+      await retry.click();
+      await card.getByText("Wird gelöscht").waitFor();
+      // The deletion finishes: the card says so and keeps its place until the next reload.
+      answer = { status: 404, json: { code: "NOT_FOUND", message: "Pulse base not found" } };
+      await tab.clock.runFor(5_100);
+      await card.getByText("Gelöscht", { exact: true }).waitFor();
+      expect(await retry.isDisabled()).toBe(true);
+      const after = await card.boundingBox();
+      expect(after?.y).toBe(box?.y);
+      expect(after?.height).toBe(box?.height);
+      expect(calls.filter((call) => call === `GET /api/pulse/bases/${base.id}`).length).toBe(2);
+      expect(await overflow(tab)).toBe(0);
     } finally {
       await tab.close();
     }

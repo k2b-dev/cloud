@@ -1,6 +1,8 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ComponentProps } from "solid-js";
 import type { PulseSource } from "../contracts";
+import type PulseOverview from "./PulseOverview.island";
 import type { PulseWorkspaceProps } from "./workspace/types";
 
 // Fixture data and the client bundle of the Pulse base page, shared by the browser test and screenshots.
@@ -157,10 +159,10 @@ export const buildWorkspaceHarness = async () => {
   };
   const fonts = await Promise.all(["@k2b/ui/icons/tabler.css", "@k2b/ui/fonts/plex.css"].map(inlineFonts));
   const css = ["@layer properties, theme, base, components, utilities;", ...fonts, appCss, globalCss].join("\n");
-  return (props: PulseWorkspaceProps, locale = "de", dark = false) =>
+  return (props: PulseWorkspaceProps, locale = "de", dark = false, overview?: ComponentProps<typeof PulseOverview>) =>
     `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
     `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" data-app-id="pulse">` +
     `<main class="layout-content-main min-h-0 min-w-0 flex-1 p-4"><div id="root"></div></main></div>` +
-    `<script>window.__pulse=${JSON.stringify({ locale, props })}</script><script>${bundle}</script></body></html>`;
+    `<script>window.__pulse=${JSON.stringify({ locale, props, overview })}</script><script>${bundle}</script></body></html>`;
 };
