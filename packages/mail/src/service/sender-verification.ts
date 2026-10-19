@@ -7,6 +7,7 @@ import type { auditActorFromRequest } from "./auth";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "./command-authorization";
 import { imapSmtpConnector } from "./connectors";
 import { resolveRoleFolder } from "./folders";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { type ProviderOperationTurn, withMailboxProviderOperationTurn } from "./provider-operation-lock";
 
@@ -119,13 +120,14 @@ const markRejected = (tx: SqlClient, senderIdentityId: string) => tx`
 `;
 
 /** Sends the verification message and records the result; runs while the caller holds the mailbox's provider turn. */
-const performSenderVerification = (
+const performSenderVerification = async (
   request: SenderVerificationRequest,
   authority: SenderVerificationAuthority,
   remoteResourceId: string,
   assertLeaseActive: () => Promise<void>,
-): Promise<Result<{ senderIdentityId: string }>> =>
-  sql.begin(async (tx) => {
+): Promise<Result<{ senderIdentityId: string }>> => {
+  let enqueued = false;
+  const result = await sql.begin(async (tx) => {
     const [mailbox] = await tx<{ id: string }[]>`
       SELECT id FROM mail.mailboxes WHERE id = ${request.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
     `;
@@ -173,11 +175,15 @@ const performSenderVerification = (
       await assertLeaseActive();
       if (result.accepted.length === 0 || result.rejected.includes(request.verificationRecipient)) {
         await markRejected(tx, current.id);
+        await enqueueMailInvalidation(tx, { mailboxId: request.mailboxId });
+        enqueued = true;
         return fail(err.badInput("The provider did not accept the sender identity verification message"));
       }
     } catch (error) {
       if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") throw error;
       await markRejected(tx, current.id);
+      await enqueueMailInvalidation(tx, { mailboxId: request.mailboxId });
+      enqueued = true;
       return fail(err.badInput("The provider rejected sender identity verification"));
     }
 
@@ -236,8 +242,13 @@ const performSenderVerification = (
       tx,
     );
     await assertLeaseActive();
+    await enqueueMailInvalidation(tx, { mailboxId: request.mailboxId });
+    enqueued = true;
     return ok({ senderIdentityId: updated.id });
   });
+  if (enqueued) mailLive.wake();
+  return result;
+};
 
 /** The place of an identity's verification in its mailbox's provider lease line, kept from the request to its queued command. */
 const senderVerificationWaiter = (senderIdentityId: string): string => `sender-verification:${senderIdentityId}`;

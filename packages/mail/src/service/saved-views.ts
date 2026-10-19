@@ -13,6 +13,7 @@ import { MAIL_SEARCH_MATCHES_NOTHING, mailSearchReferences, replaceMailSearchRef
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { lockMailboxForCollaboration } from "./collaboration";
 import { hasCurrentMailboxUserPermission } from "./collaborators";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import * as publicResources from "./public-resources";
 import * as search from "./search";
 
@@ -268,7 +269,7 @@ export const createSavedConversationView = async (params: {
     return fail(err.forbidden("Private saved views require a user-backed actor"));
   }
   try {
-    return await sql.begin(async (tx): Promise<Result<SavedConversationView>> => {
+    const result = await sql.begin(async (tx): Promise<Result<SavedConversationView>> => {
       const allowed = await lockMailboxForCollaboration(
         params.context,
         params.mailboxId,
@@ -310,8 +311,11 @@ export const createSavedConversationView = async (params: {
           metadata: { scope: row.scope, name: row.name },
         });
       }
+      if (row.scope === "private") await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
       return mapCurrentView(row, tx);
     });
+    if (result.ok) mailLive.wake();
+    return result;
   } catch (error) {
     return isUniqueViolation(error)
       ? fail(err.conflict("A saved view with this name already exists in this scope"))
@@ -326,7 +330,7 @@ export const updateSavedConversationView = async (params: {
   input: UpdateSavedConversationView;
 }): Promise<Result<SavedConversationView>> => {
   try {
-    return await sql.begin(async (tx): Promise<Result<SavedConversationView>> => {
+    const result = await sql.begin(async (tx): Promise<Result<SavedConversationView>> => {
       const read = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx);
       if (!read.ok) return read;
       const userId = userBackedActor(params.context)?.id ?? null;
@@ -368,8 +372,11 @@ export const updateSavedConversationView = async (params: {
           metadata: { scope: row.scope, name: row.name, revision },
         });
       }
+      if (row.scope === "private") await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
       return mapCurrentView(row, tx);
     });
+    if (result.ok) mailLive.wake();
+    return result;
   } catch (error) {
     return isUniqueViolation(error)
       ? fail(err.conflict("A saved view with this name already exists in this scope"))
@@ -384,7 +391,7 @@ export const deleteSavedConversationView = async (params: {
   expectedRevision: number;
 }): Promise<Result<{ id: string }>> => {
   try {
-    return await sql.begin(async (tx): Promise<Result<{ id: string }>> => {
+    const result = await sql.begin(async (tx): Promise<Result<{ id: string }>> => {
       const read = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx);
       if (!read.ok) return read;
       const current = await loadVisibleView({
@@ -413,8 +420,11 @@ export const deleteSavedConversationView = async (params: {
         });
       }
       await tx`DELETE FROM mail.saved_conversation_views WHERE id = ${current.id}::uuid`;
+      if (current.scope === "private") await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
       return ok({ id: current.id });
     });
+    if (result.ok) mailLive.wake();
+    return result;
   } catch {
     return fail(err.internal("Failed to delete saved conversation view"));
   }

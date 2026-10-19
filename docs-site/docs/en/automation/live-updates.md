@@ -150,7 +150,11 @@ $$;
   second.
 
 Mail writes its updates this way, from a trigger on its activity log, with
-one update per conversation and transaction. The AI tables write Core's AI
+one update per conversation and transaction. Changes without an activity row,
+such as mailbox settings, sender identities and their verification, provider
+connections, and private saved views, write a mailbox-wide update in their own
+transaction. These updates contain no private view content and reach both
+mailbox-wide and assigned-only readers. The AI tables write Core's AI
 live updates this way, one for each user who reads the changed data, without
 a coalesce key, because each update names its own changed views. Grids writes the updates of
 record changes from the function that also records its own record events,
