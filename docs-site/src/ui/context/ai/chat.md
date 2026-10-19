@@ -26,20 +26,30 @@ the optional `accent` only for source or application identity; `success`, `warni
 `danger` tones continue to own semantic state colors. Keep the rich activity
 body in the host so `Chat` remains independent from tool protocols.
 Activity labels use the normal font weight, and their description has the same
-size; hierarchy comes from color and indent. Use `ariaLabel` on an expandable
-activity whose visible text abbreviates, for example "Worked 3 minutes, 49
-steps" for "Worked 3 min · 49 steps".
+size; hierarchy comes from color and indent. Use `ariaLabel` only for the
+whole-row summary form when its visible text abbreviates, for example "Worked
+3 minutes, 49 steps" for "Worked 3 min · 49 steps".
 Set `busy` on an activity while work is running. It applies a quiet horizontal
-text-color-to-transparency shimmer to the activity icon and title; reduced-
-motion clients keep the text static. Streaming messages retain the minimal
-three-dot indicator. Applications should not add another spinner or visible
-generating label.
+text-color-to-transparency shimmer to the title and static icon. Without a
+semantic tone or `accent`, the busy icon uses `--k2b-ai-accent`, also with
+reduced motion. Spinning icons stay solid so they remain visible. Reduced-motion
+clients keep the text static. Streaming messages retain the minimal three-dot
+indicator. Applications should not add another generating label.
 Activity bodies are inset beneath their row by default. Set `bodyInset={false}`
 when the body is a peer list that should align with the activity row itself.
-Labels and descriptions end in an ellipsis on one line. Set `wrap` on a system
-line whose whole sentence matters, such as why a background run stopped; its
-label and description wrap and its icon stays on the first line.
-An expandable row opens on a press anywhere in it, also while its label or
+On a chat timeline narrower than 48 rem or on a phone, labels wrap when the
+row has no description. Rows with descriptions keep one line and truncate the
+muted metadata first. Wide surfaces keep one line with an ellipsis. Set `wrap`
+when the whole label and description must remain visible at every width; the
+icon stays on the first line.
+
+Put one `Chat.Activity.Toggle` in the `label` when only a few words, such as
+"3 of 4 tasks", should open the body. The toggle is a button with its chevron
+right after the words. The rest of the row stays ordinary content, and chips
+keep their links. Pass `children` or `renderBody` for the body. Without a body,
+the toggle renders plain text. Use one toggle per row.
+Without a toggle, an expandable row uses `<details>` and `<summary>` and opens
+on a press anywhere in it, also while its label or
 trailing text re-renders, such as a ticking clock: presses land on the row, and
 only links, buttons, and other controls inside it stay their own targets. With
 a controlled `open`, the body renders as soon as the row opens, before the host
@@ -97,7 +107,9 @@ inside its button.
 The sentence, preview title, header rows, and answers share one left edge, with
 no separate column or card surface. Reason, preview line, outcome, and activity
 text start 24 px from that edge, after their icon. The sentence uses
-`--k2b-chat-decision-size`: 18 px, or 17 px below 48 rem, at weight 400.
+`--k2b-chat-decision-size`: 18 px, or 17 px when the chat timeline is narrower
+than 48 rem, at weight 400. Outside a timeline, the window sets this breakpoint.
+On narrow surfaces the answers grow to share the row.
 
 Use [ReferenceChip](/en/ui/content/label-chip#referencechip) for objects, places,
 people, and times inside the sentence. Chips show at most 40 user-perceived
@@ -144,6 +156,8 @@ will be sent. `Excerpt` preserves line breaks and fades after about three lines.
 `ReadMore` should open the exact version being reviewed. `Lines` names a list of
 consequences, and `Line` can also stand alone for an attachment or warning.
 `People` shows overlapping decorative avatars followed by readable names.
+A preview inside an activity body uses 13 px, including metadata and warnings.
+Elsewhere it keeps 14.5 px.
 
 Use `Chat.Mark change="added"` for new words and `change="removed"` for removed
 words, or mark an entire preview line with its `mark` prop. Screen readers hear
@@ -151,9 +165,9 @@ words, or mark an entire preview line with its `mark` prop. Screen readers hear
 `--k2b-mark-accent`, which defaults to `--k2b-ai-accent`; a host may override it
 for the local context. Use `Chat.Activity tone="warning"` for a partial result
 or an answer whose outcome is not yet known. An activity `label` may be a
-sentence with `ReferenceChip`s, such as "Read [Week 42]". In an expandable
-activity the whole row is the disclosure `<summary>`, so give its chips no
-`href`: a link inside the summary would be a nested control.
+sentence with `ReferenceChip`s, such as "Read [Week 42]". With
+`Chat.Activity.Toggle`, chips in an expandable row keep their `href`. In the
+whole-row summary form, give chips no `href` to avoid nested controls.
 
 ```tsx typecheck
 import { Chat, ReferenceChip, type ChatDecisionState } from "@k2b/ui";
@@ -587,9 +601,14 @@ type ChatActivityProps = {
   label: JSX.Element; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
   tone?: ChatActivityTone; busy?: boolean; wrap?: boolean; trailing?: JSX.Element; open?: boolean;
   onOpenChange?: (open: boolean) => void; defaultOpen?: boolean; bodyInset?: boolean;
-  anchorId?: string | number; children?: JSX.Element; class?: string;
+  anchorId?: string | number; children?: JSX.Element; renderBody?: () => JSX.Element; class?: string;
 };
+
+type ChatActivityToggleProps = { children: JSX.Element };
 ```
+
+`Chat.Activity.Toggle` takes `ChatActivityToggleProps`. Put it in an activity's
+`label` to open only that activity's body.
 
 `ChatRootProps` belongs to `Chat`, the other component props to `.Timeline`, `.Composer`, `.Message`, and `.Activity`. `ChatActionBase` is the common shape shown here; consumers import `ChatAction`. For usage data see [Context usage](/en/ui/ai/context-usage#api-reference).
 
@@ -652,11 +671,14 @@ Feedback actions can set `pressedTone="success"` or `pressedTone="danger"` to
 mark their selected state with the semantic icon color and no persistent
 background. `pressed` continues to expose the toggle state to assistive technology.
 
-Activity rows keep their label and muted metadata on one line. Use `renderBody`
-for expensive diagnostic details: it is mounted only while the activity is open.
+Activity labels without descriptions wrap on narrow chat surfaces and phones.
+Rows with descriptions and wide surfaces keep one line with an ellipsis. Use
+`renderBody` for expensive
+diagnostic details: it is mounted only while the activity is open.
 Use a bounded, keyboard-focusable scrolling region for long input/output payloads.
-Busy activity uses the same text shimmer as inline guidance, with reduced-motion
-and forced-colors support. Waiting for user input is a separate state.
+Busy titles and static icons use the same text shimmer as inline guidance, with
+reduced-motion and forced-colors support. Spinning icons stay solid. Waiting for
+user input is a separate state.
 
 ## Working plans
 

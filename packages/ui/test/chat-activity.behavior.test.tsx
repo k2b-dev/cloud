@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
 if (isServer) test.skip("requires browser conditions", () => {});
@@ -75,3 +75,90 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+if (!isServer) {
+  test("the activity toggle reports changes and follows controlled open", async () => {
+    const dom = createDomTestHarness();
+    // Each test owns a new document; cached Solid modules delegated to the previous one.
+    delegateEvents(["click"], dom.document);
+    const { Chat } = await import("../src/chat");
+    const [open, setOpen] = createSignal(false);
+    const changes: boolean[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Chat.Activity, {
+          get label() {
+            return createComponent(Chat.Activity.Toggle, { children: "3 of 4 tasks" });
+          },
+          get open() {
+            return open();
+          },
+          onOpenChange: (next) => {
+            changes.push(next);
+            setOpen(next);
+          },
+          children: "Task list",
+        }),
+      dom.root,
+    );
+    try {
+      const button = dom.root.querySelector("button")!;
+      const body = dom.root.querySelector<HTMLElement>(".k2b-chat-activity__body")!;
+      expect(body.hidden).toBe(true);
+      button.click();
+      expect(changes).toEqual([true]);
+      expect(open()).toBe(true);
+      expect(body.hidden).toBe(false);
+      expect(button.getAttribute("aria-expanded")).toBe("true");
+      button.click();
+      expect(changes).toEqual([true, false]);
+      expect(body.hidden).toBe(true);
+      setOpen(true);
+      expect(body.hidden).toBe(false);
+      setOpen(false);
+      expect(body.hidden).toBe(true);
+      expect(button.getAttribute("aria-expanded")).toBe("false");
+      expect(changes).toEqual([true, false]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("toggle renderBody mounts only while open and removes its content on close", async () => {
+    const dom = createDomTestHarness();
+    // Each test owns a new document; cached Solid modules delegated to the previous one.
+    delegateEvents(["click"], dom.document);
+    const { Chat } = await import("../src/chat");
+    let mounts = 0;
+    const dispose = render(
+      () =>
+        createComponent(Chat.Activity, {
+          get label() {
+            return createComponent(Chat.Activity.Toggle, { children: "3 of 4 tasks" });
+          },
+          renderBody: () => {
+            mounts++;
+            return "Lazy task list";
+          },
+        }),
+      dom.root,
+    );
+    try {
+      const button = dom.root.querySelector("button")!;
+      expect(mounts).toBe(0);
+      expect(dom.root.textContent).not.toContain("Lazy task list");
+      button.click();
+      expect(mounts).toBe(1);
+      expect(dom.root.textContent).toContain("Lazy task list");
+      button.click();
+      expect(dom.root.textContent).not.toContain("Lazy task list");
+      button.click();
+      expect(mounts).toBe(2);
+      expect(dom.root.textContent).toContain("Lazy task list");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+}

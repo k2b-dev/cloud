@@ -34,7 +34,7 @@ const measure = async (wrap: boolean, width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 600 }, colorScheme: "light" });
   try {
     await page.setContent(
-      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:16px">${html(wrap)}</body></html>`,
+      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:16px;max-width:40rem">${html(wrap)}</body></html>`,
     );
     return await page.$eval(".k2b-chat-activity", (activity) => {
       const label = activity.querySelector<HTMLElement>(".k2b-chat-activity__copy strong")!;
@@ -67,7 +67,7 @@ for (const width of [390, 1440]) {
 }
 
 test("an activity without wrap keeps its one line", async () => {
-  const single = await measure(false, 390);
+  const single = await measure(false, 1440);
   expect(single.lines).toBe(1);
   expect(single.hidden).toBeGreaterThan(0);
 });

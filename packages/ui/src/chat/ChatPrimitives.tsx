@@ -1,4 +1,16 @@
-import { createRenderEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import {
+  type Accessor,
+  children,
+  createContext,
+  createRenderEffect,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  onCleanup,
+  Show,
+  useContext,
+} from "solid-js";
 import { Button } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
@@ -302,7 +314,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
   );
 }
 
-const ActivityContent = (props: ChatActivityProps & { disclosure?: boolean }) => (
+const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclosure?: boolean }) => (
   <>
     <span class="k2b-chat-activity__leading" aria-hidden="true">
       <Show when={props.leading} fallback={<i class={props.icon ?? "ti ti-sparkles"} />}>
@@ -322,6 +334,48 @@ const ActivityContent = (props: ChatActivityProps & { disclosure?: boolean }) =>
   </>
 );
 
+type ActivityDisclosure = {
+  /** Whether the activity has a body this toggle can open. */
+  expandable: Accessor<boolean>;
+  open: Accessor<boolean>;
+  toggle: () => void;
+  bodyId: string;
+  register: () => void;
+};
+
+const ActivityDisclosureContext = createContext<ActivityDisclosure>();
+
+export type ChatActivityToggleProps = {
+  /** The words that open the body, usually the count, such as "3 of 4 tasks". */
+  children: JSX.Element;
+};
+
+/**
+ * The words of an activity label that open its body, with the chevron right after them. With a toggle in its label,
+ * only these words are the disclosure, and the rest of the row, chips with links included, stays ordinary content.
+ * Outside an activity with a body it renders its words as plain text.
+ */
+export function ChatActivityToggle(props: ChatActivityToggleProps): JSX.Element {
+  const disclosure = useContext(ActivityDisclosureContext);
+  disclosure?.register();
+  return (
+    <Show when={disclosure?.expandable() ? disclosure : undefined} fallback={props.children}>
+      {(current) => (
+        <button
+          type="button"
+          class="k2b-chat-activity__toggle"
+          aria-expanded={current().open() ? "true" : "false"}
+          aria-controls={current().bodyId}
+          onClick={() => current().toggle()}
+        >
+          <span class="k2b-chat-activity__toggle-label">{props.children}</span>
+          <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
+        </button>
+      )}
+    </Show>
+  );
+}
+
 export function ChatActivity(props: ChatActivityProps): JSX.Element {
   // The disclosure's real state. A controlled `open` sets it, and every toggle reports it, so the body renders whenever
   // the row is open, also when a host has not yet passed its new `open` back.
@@ -331,52 +385,104 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
     if (open !== undefined) setExpanded(open);
   });
   const open = expanded;
+  const setOpen = (next: boolean) => {
+    if (next === expanded()) return;
+    setExpanded(next);
+    props.onOpenChange?.(next);
+  };
   const tone = () => props.tone ?? "neutral";
   const style = () => (props.accent ? { "--k2b-chat-activity-accent": props.accent } : undefined);
+  const expandable = () => Boolean(props.renderBody || props.children);
+  // A `Chat.Activity.Toggle` in the label registers while the label resolves, before the row picks its element, so the
+  // server and the first browser frame agree on whether the whole row or only the toggle is the disclosure.
+  const [toggles, setToggles] = createSignal(0);
+  const bodyId = createUniqueId();
+  const disclosure: ActivityDisclosure = {
+    expandable,
+    open,
+    toggle: () => setOpen(!expanded()),
+    bodyId,
+    register: () => {
+      setToggles((count) => count + 1);
+      onCleanup(() => setToggles((count) => count - 1));
+    },
+  };
+  const body = () =>
+    props.renderBody ? <Show when={open() ? props.renderBody : undefined}>{(render) => render()()}</Show> : props.children;
   return (
-    <Show
-      when={props.renderBody || props.children}
-      fallback={
-        <div
-          class={`k2b-chat-activity ${props.class ?? ""}`}
-          data-tone={tone()}
-          data-accent={props.accent ? "true" : undefined}
-          data-busy={props.busy ? "true" : undefined}
-          data-wrap={props.wrap ? "true" : undefined}
-          data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
-          style={style()}
-          aria-busy={props.busy ? "true" : undefined}
-        >
-          <div class="k2b-chat-activity__row">
-            <ActivityContent {...props} />
-          </div>
-        </div>
-      }
-    >
-      <details
-        class={`k2b-chat-activity ${props.class ?? ""}`}
-        data-tone={tone()}
-        data-accent={props.accent ? "true" : undefined}
-        data-busy={props.busy ? "true" : undefined}
-        data-wrap={props.wrap ? "true" : undefined}
-        data-body-inset={props.bodyInset === false ? "false" : undefined}
-        data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
-        style={style()}
-        open={open()}
-        onToggle={(event) => {
-          setExpanded(event.currentTarget.open);
-          props.onOpenChange?.(event.currentTarget.open);
-        }}
-        aria-busy={props.busy ? "true" : undefined}
-      >
-        <summary class="k2b-chat-activity__row" aria-label={props.ariaLabel}>
-          <ActivityContent {...props} disclosure />
-        </summary>
-        <div class="k2b-chat-activity__body">
-          {props.renderBody ? <Show when={open() ? props.renderBody : undefined}>{(render) => render()()}</Show> : props.children}
-        </div>
-      </details>
-    </Show>
+    <ActivityDisclosureContext.Provider value={disclosure}>
+      {(() => {
+        const label = children(() => props.label);
+        return (
+          <Show
+            when={expandable()}
+            fallback={
+              <div
+                class={`k2b-chat-activity ${props.class ?? ""}`}
+                data-tone={tone()}
+                data-accent={props.accent ? "true" : undefined}
+                data-busy={props.busy ? "true" : undefined}
+                data-wrap={props.wrap ? "true" : undefined}
+                data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
+                style={style()}
+                aria-busy={props.busy ? "true" : undefined}
+              >
+                <div class="k2b-chat-activity__row">
+                  <ActivityContent {...props} label={label()} />
+                </div>
+              </div>
+            }
+          >
+            <Show
+              when={toggles() === 0}
+              fallback={
+                <div
+                  class={`k2b-chat-activity ${props.class ?? ""}`}
+                  data-tone={tone()}
+                  data-accent={props.accent ? "true" : undefined}
+                  data-busy={props.busy ? "true" : undefined}
+                  data-wrap={props.wrap ? "true" : undefined}
+                  data-body-inset={props.bodyInset === false ? "false" : undefined}
+                  data-open={open() ? "true" : "false"}
+                  data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
+                  style={style()}
+                  aria-busy={props.busy ? "true" : undefined}
+                >
+                  <div class="k2b-chat-activity__row">
+                    <ActivityContent {...props} label={label()} />
+                  </div>
+                  <div id={bodyId} class="k2b-chat-activity__body" hidden={!open()}>
+                    {body()}
+                  </div>
+                </div>
+              }
+            >
+              <details
+                class={`k2b-chat-activity ${props.class ?? ""}`}
+                data-tone={tone()}
+                data-accent={props.accent ? "true" : undefined}
+                data-busy={props.busy ? "true" : undefined}
+                data-wrap={props.wrap ? "true" : undefined}
+                data-body-inset={props.bodyInset === false ? "false" : undefined}
+                data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
+                style={style()}
+                open={open()}
+                onToggle={(event) => {
+                  setExpanded(event.currentTarget.open);
+                  props.onOpenChange?.(event.currentTarget.open);
+                }}
+                aria-busy={props.busy ? "true" : undefined}
+              >
+                <summary class="k2b-chat-activity__row" aria-label={props.ariaLabel}>
+                  <ActivityContent {...props} label={label()} disclosure />
+                </summary>
+                <div class="k2b-chat-activity__body">{body()}</div>
+              </details>
+            </Show>
+          </Show>
+        );
+      })()}
+    </ActivityDisclosureContext.Provider>
   );
 }
 
