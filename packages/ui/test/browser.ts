@@ -1,6 +1,7 @@
 import {
   type Browser,
   type BrowserContext,
+  type Cookie,
   chromium,
   errors,
   type LaunchOptions,
@@ -462,6 +463,31 @@ export const keptThrough = async (
     return { replaced: !after.same, heightChange: after.height - before };
   } finally {
     await original.dispose();
+  }
+};
+
+/**
+ * WebKit stores document.cookie writes asynchronously (#1496); wait until its store agrees with the document.
+ * For cookies page scripts write: HttpOnly cookies are invisible to the document.
+ */
+export const storedCookie = async (page: Page, name: string): Promise<Cookie | undefined> => {
+  const deadline = Date.now() + 10_000;
+  while (true) {
+    const documentValue = await page.evaluate((name) => {
+      const prefix = `${name}=`;
+      return document.cookie
+        .split(";")
+        .map((entry) => entry.trimStart())
+        .find((entry) => entry.startsWith(prefix))
+        ?.slice(prefix.length);
+    }, name);
+    const cookie = (await page.context().cookies(page.url())).find((entry) => entry.name === name);
+    if (cookie?.value === documentValue) return cookie;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `storedCookie timed out waiting for '${name}'; document.cookie: ${JSON.stringify(documentValue)}; browser store: ${JSON.stringify(cookie?.value)}.`,
+      );
+    }
   }
 };
 
