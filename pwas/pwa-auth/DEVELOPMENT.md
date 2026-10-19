@@ -51,8 +51,15 @@ it started (its `createdAt`, on the device clock) and its code in groups of thre
 and requires an explicit choice after comparing it.
 Terminal sign-ins also show the client name in the title, the Cloud host, the
 login lifetime and every scope in plain words (unknown codes verbatim).
-`src/decision.browser.test.ts` checks in Chromium that the sheet and the dialog
-keep their height when an ending replaces the request. The image build has no
+A browser sign-in from a Cloud that announces `login-context` shows who asks
+above the code: browser and system, approximate place and network operator
+(only when GeoIP knows the address), the same-address hint, the start time and the known-browser
+line, then Core's `hint` or `warn` note. `warn` makes **Deny** the main button
+and keeps a denial in place. The rows are a snapshot of the request the sheet
+opened with. A request without `context` shows the earlier sheet.
+`src/decision.browser-harness.ts` holds a fixture per state;
+`src/decision.browser.test.ts` checks that the sheet and the dialog keep their
+height when an ending or the offline note replaces part of the request. The image build has no
 browser and skips `*.browser.test.*`; the gate runs them in Chromium and WebKit.
 Actions appear per Cloud and open a review only on a tap or a tapped
 notification. The row's **Review** button loads a fresh SDK-checked view first
@@ -62,7 +69,7 @@ Cloud and loads the Action directly, also when the inbox left it out. The
 review renders app text without HTML or links and arms approve/deny after
 500 ms. Every ending of an Action (approved, denied, **Not applied** for HTTP
 409, **Not confirmed** for an uncertain result, **Expired**) and of a sign-in
-(**Not confirmed**, **Expired**) replaces the request in place at the same
+(**Not confirmed**, **Expired**, and **Denied** after a warning) replaces the request in place at the same
 height, with a focused **Done** button. A 409 also removes the row. An uncertain result
 is never sent again, including from another tab. Language and theme
 preferences are local.

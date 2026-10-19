@@ -55,6 +55,16 @@ The link expires after five minutes. Do not share it outside this setup.
 6. Approve only the request that you started, and only with the matching code.
 :::
 
+When Cloud supplies browser details, the app shows them above the code:
+
+- Browser, system, and start time in your phone's time zone.
+- **Approximately {city}, {country}** and **Network: …**, only when Cloud's location database knows the address. The network names the operator.
+- **Same internet address as this phone**, only when true. Its absence says nothing.
+- **Known browser · since …** or **Cloud does not know this browser yet**. Neither appears during the first 14 days after the update. Known means “signed in here before”, not “safe”.
+- A known browser in a new country gets a calm note about country history. A new browser can get **Did you start this sign-in?**. This warning requires no sign-in from that country in the last 90 days and existing sign-in countries for your account. A younger history uses its start date. **Deny** is then the main button, with **Approve anyway** available.
+
+Only passkeys are phishing-resistant. A phishing page can relay the app's code. A nearby proxy can match place and network.
+
 Without the app, local accounts can still use an email link, and FreeIPA accounts can use their password. Existing passkeys stay available.
 
 After sign-in, Cloud asks you to accept its terms and acknowledge the privacy policy if you have not done so yet. Confirm to continue, or cancel to sign out.

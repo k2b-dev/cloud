@@ -59,4 +59,4 @@ packages/venue/test/clarity.behavior.test.tsx | 6
 packages/venue/test/shift-detail.behavior.test.tsx | 1
 pwas/pwa-auth/src/App.behavior.test.tsx | 2
 pwas/pwa-auth/src/Clouds.behavior.test.tsx | 5
-pwas/pwa-auth/src/authenticator.behavior.test.ts | 4
+pwas/pwa-auth/src/authenticator.behavior.test.ts | 3

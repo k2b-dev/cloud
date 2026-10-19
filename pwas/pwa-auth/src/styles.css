@@ -155,11 +155,33 @@ body {
   align-content: start;
   gap: 1.25rem;
 }
-.auth-decision__request > p {
+.auth-decision__request > p,
+.auth-decision__hint > p {
   margin: 0;
   color: var(--k2b-text-secondary);
   font-size: 0.9375rem;
   line-height: 1.5;
+}
+/* The comparison hint and the offline reason share one cell, as high as the taller of the two. */
+.auth-decision__hint {
+  display: grid;
+}
+.auth-decision__hint > * {
+  grid-area: 1 / 1;
+}
+.auth-decision__hint > p {
+  align-self: center;
+}
+.auth-decision__hint[data-offline] > p,
+.auth-decision__hint:not([data-offline]) > .k2b-notice-card {
+  visibility: hidden;
+}
+/* Every ending this request can reach lies in one cell, so the place is as high as the longest. */
+.auth-decision__sizer {
+  display: grid;
+}
+.auth-decision__sizer > * {
+  grid-area: 1 / 1;
 }
 .auth-decision__started {
   display: flex;
@@ -187,6 +209,27 @@ body {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.06em;
   line-height: 1.1;
+}
+/* Who asks, in the reading size of the request: an icon stands where a terminal row has its label. */
+.auth-decision__details[data-context] {
+  grid-template-columns: 1.125rem minmax(0, 1fr);
+  gap: 0.5rem 0.625rem;
+  font-size: 0.9375rem;
+}
+.auth-decision__details[data-context] dt {
+  display: flex;
+  align-items: center;
+  height: 1lh;
+}
+.auth-decision__details[data-context] dt > i {
+  font-size: 1.125rem;
+}
+.auth-decision__details[data-context] dd {
+  overflow-wrap: anywhere;
+}
+.auth-decision__details[data-context] dd:first-of-type {
+  color: var(--k2b-text);
+  font-weight: 600;
 }
 /* Rows the Cloud reported for this sign-in; a value with several parts lists one per line. */
 .auth-decision__details ul {
@@ -565,7 +608,8 @@ body {
   color: var(--k2b-text-muted);
   font-size: 2rem;
 }
-.auth-action-result[data-outcome="approve"] .auth-action-result__icon {
+.auth-action-result[data-outcome="approve"] .auth-action-result__icon,
+.auth-action-result[data-outcome="denied"] .auth-action-result__icon {
   background: var(--k2b-success-surface);
   color: var(--k2b-success-text);
 }

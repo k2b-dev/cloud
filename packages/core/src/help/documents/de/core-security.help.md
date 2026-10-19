@@ -55,6 +55,16 @@ Der Link gilt fünf Minuten. Teile ihn nicht außerhalb dieser Einrichtung.
 6. Bestätige nur deine eigene Anfrage und nur mit dem übereinstimmenden Code.
 :::
 
+Wenn Cloud Browserdetails liefert, zeigt die App sie über dem Code:
+
+- Browser, System und Startzeit in der Zeitzone deines Telefons.
+- **Ungefähr {Ort}** und **Netz: …**, nur wenn die Standortdatenbank von Cloud die Adresse kennt. Das Netz nennt den Betreiber.
+- **Gleiche Internetadresse wie dieses Telefon**, nur wenn das zutrifft. Fehlt die Zeile, sagt das nichts aus.
+- **Bekannter Browser · seit …** oder **Cloud kennt diesen Browser noch nicht**. Beides fehlt in den ersten 14 Tagen nach dem Update. Bekannt heißt „hier schon angemeldet“, nicht „sicher“.
+- Ein bekannter Browser in einem neuen Land bekommt einen ruhigen Hinweis zur Länderhistorie. Bei einem neuen Browser kann **Hast du diese Anmeldung gestartet?** erscheinen. Die Warnung erscheint nur, wenn dein Konto schon Anmeldeländer hat, aber keine Anmeldung aus diesem Land in den letzten 90 Tagen. Bei kürzerer Historie gilt deren Startdatum. **Ablehnen** ist dann der Hauptknopf, **Trotzdem erlauben** bleibt verfügbar.
+
+Nur Passkeys sind phishingresistent. Eine Phishingseite kann den App-Code weiterleiten. Ein naher Proxy kann Ort und Netz nachbilden.
+
 Ohne App können lokale Konten weiter einen E-Mail-Link nutzen und FreeIPA-Konten ihr Passwort. Bestehende Passkeys bleiben verfügbar.
 
 Nach der Anmeldung bittet dich Cloud einmalig, die Nutzungsbedingungen anzunehmen und die Datenschutzhinweise zur Kenntnis zu nehmen. Bestätige, um fortzufahren, oder brich ab, um dich abzumelden.
