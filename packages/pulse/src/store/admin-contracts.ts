@@ -118,10 +118,16 @@ export type RetentionPreviewItem = {
   rows: number;
   bytes: number;
 };
+export type BaseRetention = {
+  rawRetentionDays: number;
+  rollupRetentionDays: number;
+  sensitiveRetentionHours: number;
+};
 export type RetentionConfirmationRequired = {
   code: "PULSE_RETENTION_CONFIRMATION_REQUIRED";
   message: string;
   preview: RetentionPreviewItem[];
+  previewedFrom: BaseRetention;
 };
 
 /** Fixed codes the Pulse admin API answers with as `{ code }`. */

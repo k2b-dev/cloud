@@ -128,6 +128,13 @@ export const UpdateBaseSchema = z
     rollupRetentionDays: z.number().int().min(1).max(3650).optional(),
     sensitiveRetentionHours: z.number().int().min(1).max(8760).optional(),
     confirmShorterRetention: z.boolean().optional(),
+    expectedRetention: z
+      .object({
+        rawRetentionDays: z.number().int().min(1).max(3650),
+        rollupRetentionDays: z.number().int().min(1).max(3650),
+        sensitiveRetentionHours: z.number().int().min(1).max(8760),
+      })
+      .optional(),
   })
   .strict();
 

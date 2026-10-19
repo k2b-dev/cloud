@@ -106,8 +106,21 @@ const routes = new Hono<AuthContext>()
       const result = await pulseService.base
         .update({ baseId: baseId.value, user: requestAccessScope(c), ...c.req.valid("json") })
         .finally(() => setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS));
-      if (!result.ok && result.error.code === "PULSE_RETENTION_CONFIRMATION_REQUIRED" && "preview" in result.error)
-        return c.json({ code: result.error.code, message: result.error.message, preview: result.error.preview }, 409);
+      if (
+        !result.ok &&
+        result.error.code === "PULSE_RETENTION_CONFIRMATION_REQUIRED" &&
+        "preview" in result.error &&
+        "previewedFrom" in result.error
+      )
+        return c.json(
+          {
+            code: result.error.code,
+            message: result.error.message,
+            preview: result.error.preview,
+            previewedFrom: result.error.previewedFrom,
+          },
+          409,
+        );
       return respond(
         c,
         projectResult(result, (item) => projectBases([item]).then(([value]) => value!)),

@@ -1,12 +1,15 @@
 import { text } from "@k2b/stdlib";
 import { prompts } from "@k2b/ui";
 import { For } from "solid-js";
-import type { RetentionPreviewItem } from "../../store/admin-contracts";
+import type { BaseRetention, RetentionPreviewItem } from "../../store/admin-contracts";
 import { baseStoreMessages } from "./base-store-messages";
 
 /** The server's 409 for a shorter retention: what goes, from which date, and how much. */
 export class RetentionConfirmationError extends Error {
-  constructor(readonly preview: RetentionPreviewItem[]) {
+  constructor(
+    readonly preview: RetentionPreviewItem[],
+    readonly previewedFrom: BaseRetention,
+  ) {
     super("PULSE_RETENTION_CONFIRMATION_REQUIRED");
   }
 }
@@ -28,7 +31,24 @@ const isPreviewItem = (value: unknown): value is RetentionPreviewItem =>
 export const baseUpdateError = (_status: number, body: unknown): Error => {
   if (body && typeof body === "object" && "code" in body && body.code === "PULSE_RETENTION_CONFIRMATION_REQUIRED") {
     const preview: unknown = "preview" in body ? body.preview : undefined;
-    if (Array.isArray(preview) && preview.every(isPreviewItem)) return new RetentionConfirmationError(preview);
+    const previewedFrom = "previewedFrom" in body ? body.previewedFrom : undefined;
+    if (
+      Array.isArray(preview) &&
+      preview.every(isPreviewItem) &&
+      previewedFrom &&
+      typeof previewedFrom === "object" &&
+      "rawRetentionDays" in previewedFrom &&
+      typeof previewedFrom.rawRetentionDays === "number" &&
+      "rollupRetentionDays" in previewedFrom &&
+      typeof previewedFrom.rollupRetentionDays === "number" &&
+      "sensitiveRetentionHours" in previewedFrom &&
+      typeof previewedFrom.sensitiveRetentionHours === "number"
+    )
+      return new RetentionConfirmationError(preview, {
+        rawRetentionDays: previewedFrom.rawRetentionDays,
+        rollupRetentionDays: previewedFrom.rollupRetentionDays,
+        sensitiveRetentionHours: previewedFrom.sensitiveRetentionHours,
+      });
   }
   return new Error(
     body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : "Request failed",

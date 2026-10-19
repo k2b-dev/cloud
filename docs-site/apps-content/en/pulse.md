@@ -219,6 +219,10 @@ maximum to 3,650 days. Hourly values allow 1–3,650 days and sensitive event
 fields 1–8,760 hours. Shortening any period requires confirming a preview of
 the cutoff, affected rows, and estimated bytes. For sensitive fields, the
 preview counts nonempty fields to clear; their event rows remain.
+A confirmation in the web app applies only to the settings it previewed; if
+someone changed retention in the meantime, Pulse asks you to review the
+preview again. The CLI flag `--confirm-shorter-retention` confirms against the
+current settings.
 
 ClickHouse TTLs expire events and state history by raw retention, hourly values
 by their own retention, and sensitive fields by a separate column TTL.

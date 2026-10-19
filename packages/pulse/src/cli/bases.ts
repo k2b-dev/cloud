@@ -86,7 +86,7 @@ export const baseCommands = [
       ...baseFlag,
       confirmShorterRetention: flag.boolean({
         name: "confirm-shorter-retention",
-        description: "Confirm data removal by shorter retention",
+        description: "Confirm data removal by shorter retention using current settings, even if they changed since the preview",
       }),
       name: flag.string({ description: "New base name" }),
       description: flag.string({ description: "New base description" }),

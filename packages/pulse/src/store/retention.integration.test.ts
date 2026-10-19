@@ -108,6 +108,90 @@ suite("Pulse per-base retention", () => {
         await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
       }
     }, 60_000);
+  test("confirmed retention refuses a stale preview baseline without saving any settings", async () => {
+    const base = await fixtureBase(),
+      store = fixtureStore(),
+      settings = settingsFixture();
+    const submit = spyOn(lifecycle, "submitBaseLifecycleJob").mockResolvedValue(undefined);
+    const [user] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.users(uid,provider,profile,display_name) VALUES(${`confirm-race-${base.id}`},'local','user','Confirmation fixture') RETURNING id`;
+    const previewedFrom = { rawRetentionDays: 30, rollupRetentionDays: 365, sensitiveRetentionHours: 24 };
+    try {
+      await createBaseLifecycle(store)(base.id);
+      const [grant] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(user_id,permission) VALUES(${user!.id}::uuid,'admin') RETURNING id`;
+      await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${base.id}::uuid,${grant!.id}::uuid)`;
+      const intent = { baseId: base.id, user: { id: user!.id }, name: "Must not save", rawRetentionDays: 1 };
+      expect(await updateBase({ ...intent, clock: fixtureClock, store })).toMatchObject({
+        ok: false,
+        error: { code: "PULSE_RETENTION_CONFIRMATION_REQUIRED", status: 409, previewedFrom },
+      });
+      // Each period matters, even when the confirmed update only changes raw retention.
+      for (const field of ["retention_days", "rollup_retention_days", "sensitive_retention_hours"]) {
+        await sql`UPDATE pulse.bases SET retention_days=30,rollup_retention_days=365,sensitive_retention_hours=24 WHERE id=${base.id}::uuid`;
+        await sql`UPDATE pulse.bases SET ${sql(field)}=2 WHERE id=${base.id}::uuid`;
+        const [before] = await sql`SELECT * FROM pulse.bases WHERE id=${base.id}::uuid`;
+        expect(await updateBase({ ...intent, confirmShorterRetention: true, expectedRetention: previewedFrom })).toMatchObject({
+          ok: false,
+          error: { code: "PULSE_BASE_CHANGED", status: 409 },
+        });
+        const [after] = await sql`SELECT * FROM pulse.bases WHERE id=${base.id}::uuid`;
+        expect(after).toEqual(before);
+      }
+      expect(submit).not.toHaveBeenCalled();
+      await sql`UPDATE pulse.bases SET retention_days=30,rollup_retention_days=365,sensitive_retention_hours=24 WHERE id=${base.id}::uuid`;
+      expect(await updateBase({ ...intent, confirmShorterRetention: true, expectedRetention: previewedFrom })).toMatchObject({
+        ok: true,
+        data: { name: "Must not save", rawRetentionDays: 1 },
+      });
+    } finally {
+      submit.mockRestore();
+      settings.restore();
+      await cleanupFixtureBase(base);
+      await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
+    }
+  }, 60_000);
+  test("a lowered policy permits unchanged raw retention but refuses changes above the maximum", async () => {
+    const base = await fixtureBase(),
+      store = fixtureStore(),
+      settings = settingsFixture();
+    const submit = spyOn(lifecycle, "submitBaseLifecycleJob").mockResolvedValue(undefined);
+    const [user] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.users(uid,provider,profile,display_name) VALUES(${`retention-policy-${base.id}`},'local','user','Policy fixture') RETURNING id`;
+    try {
+      await createBaseLifecycle(store)(base.id);
+      const [grant] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(user_id,permission) VALUES(${user!.id}::uuid,'admin') RETURNING id`;
+      await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${base.id}::uuid,${grant!.id}::uuid)`;
+      settings.values["pulse.max_raw_retention_days"] = 7;
+      const intent = { baseId: base.id, user: { id: user!.id }, rollupRetentionDays: 365, sensitiveRetentionHours: 24 };
+      expect(await updateBase({ ...intent, name: "Renamed", rawRetentionDays: 30 })).toMatchObject({
+        ok: true,
+        data: { name: "Renamed", rawRetentionDays: 30 },
+      });
+      for (const rawRetentionDays of [31, 29]) {
+        expect(await updateBase({ ...intent, rawRetentionDays, confirmShorterRetention: true })).toMatchObject({
+          ok: false,
+          error: { status: 400, message: "Raw retention must be between 1 and 7 days" },
+        });
+      }
+      const [saved] = await sql`SELECT name,retention_days FROM pulse.bases WHERE id=${base.id}::uuid`;
+      expect(saved).toMatchObject({ name: "Renamed", retention_days: 30 });
+      expect(await updateBase({ ...intent, rawRetentionDays: 7, confirmShorterRetention: true })).toMatchObject({
+        ok: true,
+        data: { rawRetentionDays: 7 },
+      });
+    } finally {
+      submit.mockRestore();
+      settings.restore();
+      await cleanupFixtureBase(base);
+      await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
+    }
+  }, 60_000);
   test("TTL definitions converge and shorter retention previews real rows and estimated bytes", async () => {
     const base = await fixtureBase(),
       store = fixtureStore(),

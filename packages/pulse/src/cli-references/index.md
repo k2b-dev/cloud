@@ -84,6 +84,10 @@ bytes, then fails without changing settings. Review it and repeat the update
 with `--confirm-shorter-retention`. For sensitive retention, rows means
 nonempty fields to clear; events remain. Raw retention is also bounded by the
 Cloud administrator's policy. Current states do not expire.
+Over the API, `PULSE_RETENTION_CONFIRMATION_REQUIRED` carries
+`previewedFrom`. Send it back as `expectedRetention` with the confirmation:
+if retention changed in the meantime, Pulse answers `409 PULSE_BASE_CHANGED`.
+`--confirm-shorter-retention` confirms against the current settings.
 
 Base access levels are `read`, `write`, and `admin`. An agent's effective
 access is capped by its credential scopes. Managing access, deleting, or
