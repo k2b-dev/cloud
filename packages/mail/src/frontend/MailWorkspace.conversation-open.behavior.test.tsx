@@ -117,9 +117,10 @@ const B = rowId(60);
 
 /** Polls an observable state with a bounded deadline. */
 const until = async (condition: () => boolean, label: string) => {
-  const deadline = Date.now() + 2_000;
+  // The tests pin the system time, so the deadline runs on the monotonic clock.
+  const deadline = performance.now() + 2_000;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`);
+    if (performance.now() > deadline) throw new Error(`Timed out waiting for ${label}`);
     await Bun.sleep(5);
   }
 };
