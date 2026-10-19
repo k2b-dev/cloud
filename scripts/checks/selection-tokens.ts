@@ -185,6 +185,21 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     subject: 'class: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200",',
     reason: "Data: field type color.",
   },
+  {
+    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
+    subject: 'isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"',
+    reason: "Control: drop target under a dragged card.",
+  },
+  {
+    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
+    subject: 'isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "bg-transparent"',
+    reason: "Control: drop target under a dragged card.",
+  },
+  {
+    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
+    subject: 'active() ? "bg-[var(--ui-selected)]" : ""',
+    reason: "Control: drop target under a dragged card.",
+  },
 ];
 
 const BASELINE = "scripts/checks/selection-tokens.baseline";
