@@ -80,8 +80,11 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
         try {
           if (target) contributors = await replay({ docId, after: stored.cursor, until: target, doc, signal: options.signal });
         } catch (error) {
+          // A cancelled request is not a sync failure: it throws like every other abort before publication.
+          options.signal?.throwIfAborted();
           return { status: "syncFailed", error };
         }
+        options.signal?.throwIfAborted();
         const ytext = doc.getText(SHARED_TEXT_NAME);
         const text = ytext.toString();
         const next = await update({ text, contributors, state: () => Y.encodeStateAsUpdate(doc) });

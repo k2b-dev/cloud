@@ -206,6 +206,24 @@ test("edit cancelled during the callback publishes and saves nothing", async () 
   expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
 });
 
+test("edit cancelled during replay throws instead of reporting a sync failure and never runs the callback", async () => {
+  const f = fixture();
+  await f.append("current");
+  const abort = new AbortController();
+  f.failures.replay = 1;
+  let called = false;
+  const edit = f.documents.edit("doc", { actor: null, signal: abort.signal }, ({ text }) => {
+    called = true;
+    return `${text}!`;
+  });
+  abort.abort(new Error("cancelled"));
+  await expect(edit).rejects.toThrow("cancelled");
+  expect(called).toBe(false);
+  expect(f.events).toHaveLength(1);
+  expect(f.saves).toHaveLength(0);
+  expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
+});
+
 test("an edit of fallback text without a snapshot keeps the edit in the saved state", async () => {
   const f = fixture();
   f.setStored({ state: null, text: "hello", cursor: null, restoreRevision: "r" });

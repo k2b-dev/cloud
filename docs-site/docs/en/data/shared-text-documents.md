@@ -107,7 +107,8 @@ and replays to the log end before calling `update`. The callback receives
 Return the next text, synchronously or asynchronously. Returning the same text
 publishes and saves nothing. Callback errors propagate unchanged after the
 Yjs documents are destroyed. When `signal` aborts before publication,
-`edit` throws its reason and publishes nothing.
+`edit` throws its reason and publishes nothing; an aborted signal also skips
+the callback. An abort after publication ends as `persistFailed`.
 
 For changed text, `edit` applies a minimal diff against the replayed text,
 publishes the update with its actor, then replays from the original snapshot
