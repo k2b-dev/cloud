@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, mock, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -182,6 +182,7 @@ describe("Mail workspace search return", () => {
   let invalidSearch: boolean;
   let heldSearchResponse: Promise<Response> | undefined;
   let heldCursorResponse: Promise<Response> | undefined;
+  let heldNavigationResponse: Promise<Response> | undefined;
 
   const snapshotFor = (href: string): MailboxPageData => {
     const url = new URL(href, "http://localhost");
@@ -239,6 +240,7 @@ describe("Mail workspace search return", () => {
     invalidSearch = false;
     heldSearchResponse = undefined;
     heldCursorResponse = undefined;
+    heldNavigationResponse = undefined;
     builderResult = undefined;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
@@ -247,6 +249,7 @@ describe("Mail workspace search return", () => {
           const href = url.searchParams.get("href") ?? "";
           workspaceRequests.push(href);
           if (new URL(href, "http://localhost").searchParams.has("q") && heldSearchResponse) return heldSearchResponse;
+          if (!new URL(href, "http://localhost").searchParams.has("q") && heldNavigationResponse) return heldNavigationResponse;
           return Response.json(snapshotFor(href));
         }
         if (url.pathname.endsWith("/workspace-list")) {
@@ -266,6 +269,8 @@ describe("Mail workspace search return", () => {
     dialogCore.close();
     dispose();
     toast.dismissAll();
+    if (jest.isFakeTimers()) jest.clearAllTimers();
+    jest.useRealTimers();
     await Bun.sleep(20);
     globalThis.fetch = originalFetch;
     Reflect.set(globalThis, "WebSocket", originalWebSocket);
@@ -333,6 +338,39 @@ describe("Mail workspace search return", () => {
     await settle();
     expect(dom.root.querySelector('[data-conversation-id="page-two"]')).not.toBeNull();
   };
+
+  for (const action of ["Reset", "view tab"]) {
+    test(`head ${action} cancels a pending quick search before a slow navigation`, async () => {
+      jest.useFakeTimers();
+      setSystemTime(new Date(now));
+      mount("q=old");
+      const response = Promise.withResolvers<Response>();
+      heldNavigationResponse = response.promise;
+      const target = action === "Reset" ? path : `${path}?view=needs_action`;
+      const head = dom.root.querySelector(".k2b-app-workspace__head")!;
+      type("new");
+      jest.advanceTimersByTime(100);
+      if (action === "Reset") {
+        [...head.querySelectorAll<HTMLAnchorElement>("a")].find((link) => link.textContent?.trim() === "Reset")!.click();
+      } else {
+        head.querySelector<HTMLAnchorElement>(`a[href="${target}"]`)!.click();
+      }
+      const flush = async () => {
+        for (let turn = 0; turn < 40; turn++) await Promise.resolve();
+      };
+      await flush();
+      expect(workspaceRequests).toEqual([target]);
+      jest.advanceTimersByTime(300);
+      await flush();
+      response.resolve(Response.json(snapshotFor(target)));
+      await flush();
+      expect(location.pathname + location.search).toBe(target);
+      expect(workspaceRequests).toEqual([target]);
+      expect(new URL(location.href).searchParams.has("q")).toBe(false);
+      expect(input().value).toBe("");
+      expect(title()).toBe(action === "Reset" ? "All mail" : "Needs action");
+    });
+  }
 
   for (const method of ["delete", "Escape", "button"]) {
     test(`clearing a pending first quick search via ${method} supersedes its response`, async () => {

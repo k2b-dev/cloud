@@ -653,7 +653,10 @@ function MailWorkspaceView(props: {
     transition.resolve("failed");
   });
 
+  // A later head or link navigation wins over pending search text.
+  let searchControls: { cancelPending: () => void } | undefined;
   const navigateWorkspace = async (nav: LinkNavigateEvent) => {
+    searchControls?.cancelPending();
     // A later navigation wins over a conversation still opening, also when it reloads the shown view.
     cancelConversationDetail();
     captureSearchStart(nav.href);
@@ -2441,7 +2444,14 @@ function MailWorkspaceView(props: {
       <AppWorkspace.Head
         views={
           currentTab() !== null ? (
-            <MailboxViewTabs items={viewTabs()} current={currentTab()!} onOpenHref={(href) => void openWorkspaceHref(href)} />
+            <MailboxViewTabs
+              items={viewTabs()}
+              current={currentTab()!}
+              onOpenHref={(href) => {
+                searchControls?.cancelPending();
+                void openWorkspaceHref(href);
+              }}
+            />
           ) : undefined
         }
         filters={
@@ -2451,13 +2461,19 @@ function MailWorkspaceView(props: {
               search={data.search}
               folders={data.folders}
               localTags={data.localTags}
-              onOpenHref={(href) => void openWorkspaceHref(href)}
+              onOpenHref={(href) => {
+                searchControls?.cancelPending();
+                void openWorkspaceHref(href);
+              }}
             />
           )
         }
         filtered={searchFiltered()}
         resetHref={searchFiltered() ? buildMailSearchClearHref(mailRouteUrl(requestPath())) : undefined}
-        onReset={() => void openWorkspaceHref(buildMailSearchClearHref(mailRouteUrl(requestPath())))}
+        onReset={() => {
+          searchControls?.cancelPending();
+          void openWorkspaceHref(buildMailSearchClearHref(mailRouteUrl(requestPath())));
+        }}
         actions={
           <>
             <Show when={!data.scheduledMode && !data.draftsMode}>
@@ -2558,6 +2574,9 @@ function MailWorkspaceView(props: {
                           }
                     }
                     onOpenHref={openWorkspaceHref}
+                    onSearchControls={(controls) => {
+                      searchControls = controls;
+                    }}
                     onLoadMore={loadMoreConversations}
                     onRefresh={reconcileWorkspace}
                   />

@@ -114,6 +114,7 @@ export default function MailConversationList(props: {
   onManageTags: (item: MailListItem) => void | Promise<void>;
   onMergeItem?: (item: MailListItem) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
+  onSearchControls?: (controls: { cancelPending: () => void }) => void;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
 }) {
@@ -245,6 +246,13 @@ export default function MailConversationList(props: {
     (query: string, fields: MailQuickSearchField[], replace: boolean) => applyQuickSearch(query, fields, replace),
     300,
   );
+  props.onSearchControls?.({
+    cancelPending: () => {
+      quickSearch.cancel();
+      quickSearchPending = false;
+      setSearchValue(props.query);
+    },
+  });
 
   createEffect(() => {
     quickSearch.cancel();
