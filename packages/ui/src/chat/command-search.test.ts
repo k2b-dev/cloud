@@ -148,6 +148,19 @@ describe("section list model", () => {
     const scoped = model({ ...input, query: "note q3", scopes });
     expect(scoped.groups.map((group) => group.scopeTitle)).toEqual(["Notizen"]);
   });
+  test("a hidden section also hides its loading state, so Nothing found is not held back", () => {
+    const sections = [
+      { id: "recent", label: "Recent", overviewOnly: true, pending: true, searched: true },
+      { id: "files", label: "Files", searchOnly: true, pending: true, searched: true },
+    ];
+    const search = model({ sections, query: "xylo", searching: true });
+    expect(search.groups.map((group) => group.section?.id)).toEqual(["files"]);
+    const settled = model({ sections: [sections[0]!], query: "xylo" });
+    expect(settled.groups).toEqual([]);
+    expect(settled.empty).toBe(true);
+    const overview = model({ sections, searching: true });
+    expect(overview.groups.map((group) => [group.section?.id, group.pendingRows])).toEqual([["recent", 3]]);
+  });
   test("deduplicates by key: first section wins, then static over server; unknown sections trail", () => {
     const commands = [command("Later", { id: "same", section: "second" }), command("Static", { id: "local", section: "first" })];
     const searchResults = [command("Earlier", { id: "same", section: "first" }), command("Server", { id: "local", section: "first" })];

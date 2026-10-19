@@ -112,11 +112,13 @@ export function chatCommandListModel(input: {
     ? [{ scopeTitle: scope.title, rows: [], loading: input.searching, placeholder: false, pendingRows: 0 }]
     : [
         ...(input.sections ?? []).map((section) => {
-          const pendingRows = section.pending && !(overview && section.searchOnly) ? (overview ? 3 : 1) : 0;
+          // A section hidden for this query also hides its loading state.
+          const hidden = overview ? section.searchOnly : section.overviewOnly;
+          const pendingRows = section.pending && !hidden ? (overview ? 3 : 1) : 0;
           return {
             section,
             rows: [],
-            loading: Boolean(pendingRows || (section.searched && input.searching && !(overview && section.searchOnly))),
+            loading: Boolean(pendingRows || (section.searched && input.searching && !hidden)),
             placeholder: false,
             pendingRows,
           };
@@ -137,8 +139,7 @@ export function chatCommandListModel(input: {
   const seen = new Set<string>();
   for (const [index, group] of groups.entries()) {
     // A search-only section is absent from the overview, rows and placeholder included; an overview-only one while searching.
-    if (overview && group.section?.searchOnly) continue;
-    if (!overview && group.section?.overviewOnly) continue;
+    if (overview ? group.section?.searchOnly : group.section?.overviewOnly) continue;
     const ranked: (ChatCommandRow & { rank: number })[] = [];
     for (const { command, server } of buckets[index]!) {
       const key = chatCommandKey(command);
