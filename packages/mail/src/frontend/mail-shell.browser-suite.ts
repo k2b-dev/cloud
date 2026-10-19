@@ -50,6 +50,17 @@ const measurements = [
 // Rows below the fold render lazily (content-visibility); only what the person sees must hold still.
 const geometrySource = `() => Array.from(document.querySelectorAll(${JSON.stringify(measurements)})).map((e,i)=>{const r=e.getBoundingClientRect();const part=String(e.className).split(" ").filter(Boolean).join(" ");return r.bottom<=0||r.top>=innerHeight?{part,index:i,x:0,y:-1,width:0,height:0}:{part,index:i,x:r.x,y:r.y,width:r.width,height:r.height}})`;
 type Frame = { part: string; index: number; x: number; y: number; width: number; height: number }[];
+// The head's view strip as a person sees it: every rendered label at its full width, the current tab inside the strip.
+const stripSource = `() => {const list=document.querySelector(${JSON.stringify(`${tabsSelector} .k2b-view-tabs__list`)});if(!list)return null;const b=list.getBoundingClientRect();const fade=list.getAttribute("data-scroll-fade");const current=list.querySelector('.k2b-view-tabs__tab[aria-current="page"]');const c=current&&current.getClientRects().length>0?current.getBoundingClientRect():null;return {overflow:list.scrollWidth-list.clientWidth,current:current?.getAttribute("href")??null,left:c?c.left-b.left:null,right:c?b.right-c.right:null,leftInset:fade==="top"||fade==="both"?parseFloat(getComputedStyle(list).scrollPaddingLeft)||0:0,rightInset:fade==="bottom"||fade==="both"?parseFloat(getComputedStyle(list).scrollPaddingRight)||0:0,labels:Array.from(list.querySelectorAll(".k2b-view-tabs__tab .k2b-view-tabs__label")).filter(l=>l.getClientRects().length>0).map(l=>({text:l.textContent,scroll:l.scrollWidth,width:l.clientWidth}))}}`;
+type Strip = {
+  overflow: number;
+  current: string | null;
+  left: number | null;
+  right: number | null;
+  leftInset: number;
+  rightInset: number;
+  labels: { text: string | null; scroll: number; width: number }[];
+};
 let css = "";
 let controller = "";
 let browser: Browser;
@@ -61,14 +72,17 @@ const pageHtml = (url: URL) => {
   const html = renderToString(() => createComponent(Fixture, { source: `${url.pathname}${url.search}`, locale, theme }));
   return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0"><main style="container-type:inline-size;container-name:k2b-app-area;display:flex;flex-direction:column;height:100dvh">${html}</main><script>${controller}</script><script type="module">
     const geometry=${geometrySource};
+    const strip=${stripSource};
     await document.fonts.ready;
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     document.documentElement.dataset.serverGeometry=JSON.stringify(geometry());
+    document.documentElement.dataset.serverStrip=JSON.stringify(strip());
     document.documentElement.dataset.serverCurrent=document.querySelector('${tabsSelector} [aria-current="page"]')?.getAttribute('href')??'';
     await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));
     // The first frame the browser paints after hydration, as a person sees it.
     await new Promise(resolve=>requestAnimationFrame(resolve));
     document.documentElement.dataset.hydratedGeometry=JSON.stringify(geometry());
+    document.documentElement.dataset.hydratedStrip=JSON.stringify(strip());
     document.documentElement.dataset.mailShellReady='true';
     </script></body></html>`;
 };
@@ -581,6 +595,30 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
     }
+
+    for (const locale of ["en", "de"] as const)
+      test(`390 ${locale}: Focus and mailbox tabs keep full labels, and the current tab is in the strip before and after hydration`, async () => {
+        for (const path of ["/app/mail", "/app/mail?view=all", boxPath, `${boxPath}?view=snoozed`]) {
+          const page = await open(`${path}${path.includes("?") ? "&" : "?"}locale=${locale}`, 390);
+          try {
+            for (const name of ["server", "hydrated", "settled"] as const) {
+              const label = `${path} ${locale} ${name}`;
+              const strip: Strip | null =
+                name === "settled"
+                  ? await page.evaluate(`(${stripSource})()`)
+                  : JSON.parse((await page.locator("html").getAttribute(`data-${name}-strip`)) ?? "null");
+              if (!strip) throw new Error(`${label}: missing view strip`);
+              expect(strip.labels.length, `${label}: visible tab labels`).toBeGreaterThanOrEqual(3);
+              for (const tab of strip.labels) expect(tab.scroll, `${label}: "${tab.text}" is clipped`).toBeLessThanOrEqual(tab.width);
+              expect(strip.current, label).toBe(path);
+              expect(strip.left, `${label}: current tab's left edge`).toBeGreaterThanOrEqual(strip.leftInset - 0.5);
+              expect(strip.right, `${label}: current tab's right edge`).toBeGreaterThanOrEqual(strip.rightInset - 0.5);
+            }
+          } finally {
+            await close(page);
+          }
+        }
+      }, 60_000);
 
     for (const width of [1440, 834, 390] as const)
       test(`${width}: a folder is named where the person sees it`, async () => {
