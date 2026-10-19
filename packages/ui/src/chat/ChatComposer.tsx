@@ -915,6 +915,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const start = textareaRef.selectionStart;
     const end = textareaRef.selectionEnd;
     batch(() => {
+      // Emoji suggestions for a `:shortcode` at the caret give way; they would hold the list closed.
+      setDismissed(true);
       setAddQuery("");
       setAddSearch({ start, end });
     });
