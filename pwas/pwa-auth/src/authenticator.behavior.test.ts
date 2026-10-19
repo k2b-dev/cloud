@@ -62,6 +62,8 @@ const operations: string[] = [];
 let features: string[] = [];
 const inboxCommands: Array<{ operation: string; accept?: string[] }> = [];
 let inboxLogins: Login[] = [];
+const pendingCommands: Array<{ operation: string; accept?: string[] }> = [];
+let pendingLogins: Login[] = [];
 let actStatus = 200;
 let dropAct = false;
 const vault: Vault = {
@@ -86,6 +88,8 @@ beforeEach(() => {
   features = [];
   inboxCommands.length = 0;
   inboxLogins = [];
+  pendingCommands.length = 0;
+  pendingLogins = [];
   actStatus = 200;
   dropAct = false;
   // The Cloud: discovery, then signed device commands. Signatures are the SDK's concern and are not checked here.
@@ -108,6 +112,10 @@ beforeEach(() => {
       if (command.operation === "inbox") {
         inboxCommands.push(command);
         return Response.json({ logins: inboxLogins, actions: [actionSummary()], moreActions: 2, pollAfterSeconds: 5 });
+      }
+      if (command.operation === "pending") {
+        pendingCommands.push(command);
+        return Response.json({ requests: pendingLogins, pollAfterSeconds: 5 });
       }
       if (command.operation === "action") return Response.json(actionView());
       if (command.operation === "act") {
@@ -143,9 +151,18 @@ const login = () => ({
   requestId: crypto.randomUUID(),
   challenge: "A".repeat(43),
   comparison: "123456",
-  createdAt: new Date().toISOString(),
+  createdAt: "2026-10-19T10:00:00.000Z",
   expiresAt: new Date(Date.now() + 60_000).toISOString(),
 });
+const loginContext: NonNullable<Login["context"]> = {
+  level: "warn",
+  browser: "edge",
+  os: "windows",
+  country: "PL",
+  city: "Warsaw",
+  network: "OVH",
+  history: { knownSince: null, newCountry: true, countriesSince: null },
+};
 
 test("account details merge into the latest encrypted record without dropping its label or push token", async () => {
   const { auth, binding } = await paired();
@@ -238,6 +255,46 @@ for (const terminal of [false, true]) {
     for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
     expect(inboxCommands).toEqual([terminal ? { operation: "inbox", accept: ["terminal-logins"] } : { operation: "inbox" }]);
     expect(auth.states()[binding.id]?.requests).toEqual([request]);
+  });
+}
+
+for (const accepted of [[], ["terminal-logins"], ["login-context"], ["terminal-logins", "login-context"]]) {
+  test(`inbox filters opt-ins for Cloud features ${JSON.stringify(["actions", ...accepted])} and preserves logins`, async () => {
+    features = ["actions", ...accepted];
+    const request: Login = { ...login(), ...(accepted.includes("login-context") ? { context: loginContext } : {}) };
+    inboxLogins = [request];
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(inboxCommands).toEqual([{ operation: "inbox", ...(accepted.length ? { accept: accepted } : {}) }]);
+    expect(auth.states()[binding.id]?.requests).toEqual([request]);
+    expect(auth.states()[binding.id]?.error).toBeUndefined();
+  });
+}
+
+for (const context of [false, true]) {
+  test(`pending ${context ? "opts in to login-context and preserves it" : "omits accept for an older Cloud"}`, async () => {
+    features = context ? ["login-context"] : [];
+    const request: Login = { ...login(), ...(context ? { context: loginContext } : {}) };
+    pendingLogins = [request];
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(pendingCommands).toEqual([context ? { operation: "pending", accept: ["login-context"] } : { operation: "pending" }]);
+    expect(auth.states()[binding.id]?.requests).toEqual([request]);
+    expect(auth.states()[binding.id]?.error).toBeUndefined();
+  });
+}
+
+for (const actions of [false, true]) {
+  test(`${actions ? "inbox" : "pending"} accepts missing context from a Cloud offering login-context`, async () => {
+    features = actions ? ["actions", "login-context"] : ["login-context"];
+    const request = login();
+    inboxLogins = [request];
+    pendingLogins = [request];
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(actions ? inboxCommands : pendingCommands).toEqual([{ operation: actions ? "inbox" : "pending", accept: ["login-context"] }]);
+    expect(auth.states()[binding.id]?.requests).toEqual([request]);
+    expect(auth.states()[binding.id]?.error).toBeUndefined();
   });
 }
 

@@ -5,7 +5,7 @@ section: Companion apps
 order: 500
 description: Approve sign-ins and Actions for multiple Clouds from one installable app.
 tags: [authentication, pwa, devices]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Cloud Login
@@ -29,6 +29,21 @@ and choose the authenticator address. Use the app configured by your Cloud.
    the QR code or paste its link into Cloud Login, then compare and confirm the codes.
 4. When you start a sign-in, open Cloud Login or tap its notification. Compare
    the code shown in the request with the sign-in page, then approve or deny it.
+
+A browser sign-in can show the browser and system, approximate place, network
+operator, start time in your phone's time zone, and whether the browser signed
+in to this account before. Place and network rows appear only when your Cloud
+has a location database. **Same internet address as this phone** appears only
+when true. During the first 14 days after the Cloud update, no known/new browser
+claim appears. Older Clouds, or requests without these details, show the
+earlier dialog with the start time.
+
+**Did you start this sign-in?** warns about a new browser in a country without
+a sign-in in Cloud's recent history, when your account already has sign-in
+countries. **Deny** is then the main button, with **Approve anyway** available.
+Known means “signed in here before”, not “safe”. Only passkeys are
+phishing-resistant; a phishing page can relay an app comparison code. See
+[Read the request details](/en/docs/accounts/app-sign-in#read-the-request-details).
 
 A terminal sign-in shows **Terminal sign-in** with the client name in the
 title, the Cloud host, the comparison code, how long the terminal stays signed

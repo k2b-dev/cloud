@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Run Cloud Login
@@ -250,6 +250,15 @@ with the waiting browser, and explicitly approve or deny it.
 A failing Cloud does not block the others. After an uncertain response, check
 the original browser and start a new sign-in if needed; Cloud Login does not
 silently resend the decision.
+
+Cloud Login opts in to `login-context` on both `inbox` and `pending` reads
+only when the Cloud announces it in `/info.features`; the public SDK filters
+the signed opt-in. Upgrade **Core before Cloud Login**. No new configuration
+is required. Browser requests then show
+[sign-in context](/en/docs/accounts/app-sign-in#read-the-request-details).
+Context stays optional: requests started before the Core upgrade or trimmed
+for the 8 KiB response budget can omit it. Those requests and older Clouds
+keep the earlier dialog with the start time. Terminal sign-ins are unchanged.
 
 Cloud Login opts in to `terminal-logins` only when the Cloud announces it in
 `/info.features`. Older Clouds keep browser sign-ins only. A terminal sign-in

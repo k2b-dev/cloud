@@ -5,7 +5,7 @@ section: Operations
 order: 1146
 description: Understand the bundled sign-in location snapshot, updates, proxy requirements, and privacy limits.
 tags: [operations, identity, privacy]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Sign-in locations
@@ -15,7 +15,8 @@ sign-in request by browser, operating system, approximate place, and network
 operator. Successful browser sign-ins now use this module to remember browsers
 and countries. Paired apps can request browser sign-in context through the
 [signed app approval API](./app-approval.md#read-browser-sign-in-context).
-Cloud Login does not display this context yet.
+Cloud Login displays it when the Cloud announces support; see
+[Read the request details](/en/docs/accounts/app-sign-in#read-the-request-details).
 
 ## Bundled snapshot and updates
 
