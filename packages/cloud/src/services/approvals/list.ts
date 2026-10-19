@@ -1,5 +1,5 @@
 import { sql } from "bun";
-import { storedActionReview } from "../../ai/action-review";
+import { type AiStoredActionReview, storedActionReview } from "../../ai/action-review";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals } from "../../ai/approvals";
 import type { AiTurnRunConfig } from "../../ai/types";
 import type { RuntimeAppMeta } from "../../contracts/app";
@@ -19,6 +19,7 @@ export type PendingApprovalRow = {
   assurance: ApprovalAssurance;
   sentence: string;
   details: unknown;
+  storedReview: AiStoredActionReview | null;
   createdAt: Date;
   expiresAt: Date;
   cursorCreatedAt: string;
@@ -62,9 +63,17 @@ export const listPending = async (input: {
       to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt",
       question.short_id AS "conversationShortId", question.title AS "conversationTitle",
       question.allow_chat AS "allowChat", question.allow_always AS "allowAlways",
-      question.remember_tool_name AS "rememberToolName", question.tool_name AS "toolName", question.run_config AS "runConfig"
+      question.remember_tool_name AS "rememberToolName", question.tool_name AS "toolName", question.run_config AS "runConfig",
+      question.stored_review AS "storedReview"
     FROM open r JOIN LATERAL (
-      SELECT c.short_id, c.title, p.allow_chat, p.allow_always, p.remember_tool_name, p.tool_name, t.run_config
+      SELECT c.short_id, c.title, p.allow_chat, p.allow_always, p.remember_tool_name, p.tool_name, t.run_config,
+        (SELECT m.meta->'toolReviews'->p.call_id FROM (
+          SELECT meta, conversation_id, loop_id, role, seq FROM ai.messages
+          UNION ALL
+          SELECT meta, conversation_id, loop_id, role, seq FROM ai.task_messages
+        ) m WHERE m.conversation_id=p.conversation_id AND m.loop_id=p.turn_id::text AND m.role='assistant'
+          AND m.meta->'toolReviews'->p.call_id IS NOT NULL
+        ORDER BY m.seq DESC LIMIT 1) AS stored_review
       FROM ai.pending_actions p JOIN ai.conversations c ON c.id=p.conversation_id JOIN ai.turns t ON t.id=p.turn_id
       WHERE p.approval_id=r.id AND p.status='pending' ORDER BY p.created_at DESC, p.id DESC LIMIT 1
     ) question ON true
@@ -99,7 +108,12 @@ export const presentPendingApproval = (
   const app = apps.find((entry) => entry.id === row.appId);
   const review = CapabilityActionReviewDataSchema.nullable().safeParse(row.details);
   const originalReview = review.success ? review.data : null;
-  const displayReview = originalReview && "sentence" in originalReview ? storedActionReview(originalReview, policy) : originalReview;
+  const displayReview =
+    originalReview && "sentence" in originalReview
+      ? row.storedReview && "sentence" in row.storedReview
+        ? row.storedReview
+        : storedActionReview(originalReview, policy)
+      : originalReview;
   const remember = row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
   return {
     id: row.id,

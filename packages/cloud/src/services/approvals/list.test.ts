@@ -19,8 +19,9 @@ const row: PendingApprovalRow = {
   assurance: "standard",
   sentence: "Mail: Send draft",
   details: { message: "Send it?" },
-  createdAt: new Date(),
-  expiresAt: new Date(),
+  storedReview: null,
+  createdAt: new Date("2026-10-11T10:00:00Z"),
+  expiresAt: new Date("2026-10-11T11:00:00Z"),
   cursorCreatedAt: "2026-10-11T10:00:00.123456Z",
   conversationShortId: "ab12345678",
   conversationTitle: "Send a letter",
@@ -93,4 +94,26 @@ test("fills only the returned new review reason from policy, keeping the approva
     ask: "sensitive",
   });
   expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual({ message: "Send it?" });
+});
+
+test("the stored call review wins over current or missing policy without changing the approval snapshot", () => {
+  const review = reviewFixture();
+  const storedReview = { ...review, ask: "sensitive" as const };
+  const pending = { ...row, details: review, storedReview };
+  const before = JSON.stringify(pending);
+  expect(presentPendingApproval(pending, [], { ask: "sends" }).review).toEqual(storedReview);
+  expect(presentPendingApproval(pending, []).review).toEqual(storedReview);
+  expect(JSON.stringify(pending)).toBe(before);
+  expect(
+    presentPendingApproval({ ...row, storedReview: { legacy: { question: "Send it?", rows: [] } } }, [], { ask: "sends" }).review,
+  ).toEqual({ message: "Send it?" });
+});
+
+test("a missing stored call review falls back to current policy", () => {
+  const review = reviewFixture();
+  expect(presentPendingApproval({ ...row, details: review, storedReview: null }, [], { ask: "sends" }).review).toEqual({
+    ...review,
+    ask: "sends",
+  });
+  expect(presentPendingApproval({ ...row, details: review, storedReview: null }, []).review).toEqual(review);
 });
