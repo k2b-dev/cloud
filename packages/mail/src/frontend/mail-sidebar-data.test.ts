@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
-import { err, fail, ok } from "@k2b/stdlib";
+import { ok } from "@k2b/stdlib";
 import { focus, type MailRequestContext, mailboxes, mailboxPreferences, publicResources } from "../service";
 import { loadMailSidebarData } from "./mail-sidebar-data";
 
@@ -62,24 +62,20 @@ const publicIds = () =>
     }),
   );
 
-test("sidebar reads mailboxes, preferences and counts concurrently and projects public IDs", async () => {
+test("sidebar reads mailboxes and preferences concurrently and projects public IDs", async () => {
   publicIds();
   const list = Promise.withResolvers<Awaited<ReturnType<typeof mailboxes.listMailboxes>>>();
   const preferences = Promise.withResolvers<Awaited<ReturnType<typeof mailboxPreferences.listMailboxPreferences>>>();
-  const counts = Promise.withResolvers<Awaited<ReturnType<typeof focus.listMailboxCounts>>>();
   const readList = spyOn(mailboxes, "listMailboxes").mockReturnValue(list.promise);
   const readPreferences = spyOn(mailboxPreferences, "listMailboxPreferences").mockReturnValue(preferences.promise);
-  const readCounts = spyOn(focus, "listMailboxCounts").mockReturnValue(counts.promise);
-  spies.push(readList, readPreferences, readCounts);
+  spies.push(readList, readPreferences);
   const loading = loadMailSidebarData(context);
   try {
     expect(readList).toHaveBeenCalledWith(context, 200);
     expect(readPreferences).toHaveBeenCalledWith(context);
-    expect(readCounts).toHaveBeenCalledWith(context);
   } finally {
     list.resolve(ok([mailbox(internal, "read"), mailbox(hidden, "read"), mailbox(denied, "none")]));
     preferences.resolve({ pinnedMailboxIds: [internal], hiddenMailboxIds: [hidden] });
-    counts.resolve(ok([{ mailboxId: internal, unread: 7, needsAction: 3 }]));
   }
   const result = await loading;
   expect(result.mailboxes.map((box) => box.id)).toEqual(["Box001", "Box002"]);
@@ -92,15 +88,18 @@ test("sidebar reads mailboxes, preferences and counts concurrently and projects 
   });
   expect(result.pinnedMailboxIds).toEqual(["Box001"]);
   expect(result.hiddenMailboxIds).toEqual(["Box002"]);
-  expect(result.mailboxCounts).toEqual([{ mailboxId: "Box001", unread: 7, needsAction: 3 }]);
 });
-test("failed counts leave readable mailboxes and preferences available", async () => {
+test("mailbox sidebar never reads cross-mailbox Focus counts and still returns mailboxes, pins and hidden mailboxes", async () => {
   publicIds();
-  spies.push(spyOn(mailboxes, "listMailboxes").mockResolvedValue(ok([mailbox(internal, "read")])));
-  spies.push(spyOn(mailboxPreferences, "listMailboxPreferences").mockResolvedValue({ pinnedMailboxIds: [internal], hiddenMailboxIds: [] }));
-  spies.push(spyOn(focus, "listMailboxCounts").mockResolvedValue(fail(err.internal("Counts unavailable"))));
+  spies.push(spyOn(mailboxes, "listMailboxes").mockResolvedValue(ok([mailbox(internal, "read"), mailbox(hidden, "read")])));
+  spies.push(
+    spyOn(mailboxPreferences, "listMailboxPreferences").mockResolvedValue({ pinnedMailboxIds: [internal], hiddenMailboxIds: [hidden] }),
+  );
+  const readCounts = spyOn(focus, "listMailboxCounts").mockResolvedValue(ok([]));
+  spies.push(readCounts);
   const result = await loadMailSidebarData(context);
-  expect(result.mailboxes.map((box) => box.id)).toEqual(["Box001"]);
+  expect(readCounts).not.toHaveBeenCalled();
+  expect(result.mailboxes.map((box) => box.id)).toEqual(["Box001", "Box002"]);
   expect(result.pinnedMailboxIds).toEqual(["Box001"]);
-  expect(result.mailboxCounts).toEqual([]);
+  expect(result.hiddenMailboxIds).toEqual(["Box002"]);
 });

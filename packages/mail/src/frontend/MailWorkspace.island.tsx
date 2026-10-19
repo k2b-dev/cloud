@@ -35,7 +35,7 @@ import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
-import MailSidebar, { type MailSidebarMailbox, type MailSidebarMailboxCounts } from "./_components/MailSidebar";
+import MailSidebar, { type MailSidebarMailbox } from "./_components/MailSidebar";
 import { MailboxHeadFilters, MailboxViewTabs, MailListModeMenu } from "./_components/MailWorkspaceHead";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import { createMailActionQueue } from "./_components/mail-action-queue";
@@ -144,12 +144,11 @@ function MailWorkspaceView(props: {
   /** `null` under Automatic: only the browser knows the device scheme, and it is read on mount. */
   initialTheme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
-  /** The mailboxes the sidebar lists, with this person's pins, hidden mailboxes, and counts. */
+  /** The mailboxes the sidebar lists, with this person's pins and hidden mailboxes. */
   sidebar: {
     mailboxes: MailSidebarMailbox[];
     pinnedMailboxIds: string[];
     hiddenMailboxIds: string[];
-    mailboxCounts: MailSidebarMailboxCounts[];
   };
 }) {
   const locale = useLocale();
@@ -2413,7 +2412,8 @@ function MailWorkspaceView(props: {
         contactDirectory={props.contactDirectory}
         mailboxes={props.sidebar.mailboxes}
         preferences={mailboxPreferences}
-        counts={props.sidebar.mailboxCounts}
+        // Other mailboxes' counts require the cross-mailbox Focus read; keep mailbox opens fast.
+        counts={[]}
         open={{
           mailboxId: data.mailbox.id,
           mailboxName: data.mailbox.name,
@@ -2508,6 +2508,7 @@ function MailWorkspaceView(props: {
                     query={data.query}
                     search={data.search}
                     title={data.listTitle}
+                    namedByTabs={currentTab() !== null}
                     items={listView().items}
                     leavingKeys={listView().leavingKeys}
                     error={data.listError}

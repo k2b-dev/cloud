@@ -295,7 +295,6 @@ describe("Mail workspace search return", () => {
             mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
             pinnedMailboxIds: [],
             hiddenMailboxIds: [],
-            mailboxCounts: [],
           },
         }),
       dom.root,

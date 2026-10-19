@@ -270,6 +270,10 @@ describe(`Mail SSR and hydration shell in ${browserName}`, () => {
         const other = sidebar(page).locator('[data-mailbox="Box002"] a').first();
         expect(await other.getAttribute("href")).toBe("/app/mail/Box002");
         expect(await other.evaluate((e) => e.tagName)).toBe("A");
+        const countSlot = other.locator(".mail-sidebar-needs-action");
+        expect(await countSlot.count()).toBe(1);
+        expect(await countSlot.textContent()).toBe(path === boxPath ? "" : "4");
+        expect(await other.locator(".mail-sidebar-unread-dot").count()).toBe(path === boxPath ? 0 : 1);
       } finally {
         await close(page);
       }
@@ -395,29 +399,34 @@ describe(`Mail SSR and hydration shell in ${browserName}`, () => {
     test(`${permission}: head and sidebar share the authorized mailbox menu`, async () => {
       const page = await open(`${boxPath}?permission=${permission}`);
       try {
-        const buttons = page.getByRole("button", { name: "Options for Example support", exact: true });
+        const head = page.locator(".k2b-app-workspace__head-actions").getByRole("button", { name: "Options for Example support" });
+        const row = sidebar(page).getByRole("button", { name: "Options for Example support" });
+        // The open row's "…" also holds its own pin and hide, which need no mailbox-wide access. The fixture pins it.
+        const rowOnly = ["Unpin Example support", "Hide Example support"];
+        const expected =
+          permission === "assigned-only"
+            ? []
+            : [
+                permission === "read" ? "About this mailbox" : "Mailbox details",
+                "Automations",
+                "Mailing lists",
+                "Remote images",
+                "Email link setup",
+                "Settings",
+                ...(permission === "admin" ? ["Sync mailbox", "Mailbox health", "Shared links"] : []),
+              ];
         if (permission === "assigned-only") {
-          expect(await buttons.count()).toBe(0);
+          expect(await head.count()).toBe(0);
           expect(await page.getByRole("link", { name: "Compose", exact: true }).count()).toBe(0);
-          return;
-        }
-        expect(await buttons.count()).toBe(2);
-        const expected = [
-          permission === "read" ? "About this mailbox" : "Mailbox details",
-          "Automations",
-          "Mailing lists",
-          "Remote images",
-          "Email link setup",
-          "Settings",
-          ...(permission === "admin" ? ["Sync mailbox", "Mailbox health", "Shared links"] : []),
-        ].sort();
-        for (const trigger of [
-          page.locator(".k2b-app-workspace__head-actions").getByRole("button", { name: "Options for Example support" }),
-          sidebar(page).getByRole("button", { name: "Options for Example support" }),
+        } else expect(await head.count()).toBe(1);
+        expect(await row.count()).toBe(1);
+        for (const [trigger, items] of [
+          ...(permission === "assigned-only" ? [] : [[head, expected] as const]),
+          [row, [...expected, ...rowOnly]] as const,
         ]) {
           await trigger.click();
           await page.getByRole("menu").waitFor();
-          expect((await page.getByRole("menuitem").allTextContents()).map((text) => text.trim()).sort()).toEqual(expected);
+          expect((await page.getByRole("menuitem").allTextContents()).map((text) => text.trim()).sort()).toEqual([...items].sort());
           await page.keyboard.press("Escape");
           await page.getByRole("menu").waitFor({ state: "hidden" });
         }
@@ -570,6 +579,51 @@ describe(`Mail SSR and hydration shell in ${browserName}`, () => {
       }
     });
   }
+
+  for (const width of [1440, 834, 390] as const)
+    test(`${width}: a folder is named where the person sees it`, async () => {
+      const page = await open(`${boxPath}?folder=Filed1`, width);
+      try {
+        const heading = page.locator("[data-mail-list-heading]");
+        expect(await heading.textContent()).toBe("Filed");
+        const box = await heading.boundingBox();
+        if (width === 1440) {
+          // Beside the sidebar its marked row names the folder; the heading stays for assistive technology.
+          expect(await sidebar(page).locator('a[href$="folder=Filed1"]').getAttribute("aria-current")).toBe("page");
+          expect(box?.width ?? 0).toBeLessThanOrEqual(1);
+        } else {
+          // Below 64 rem the sidebar is out of view and folders have no tab: the list heading names the folder.
+          expect(await sidebar(page).isVisible()).toBe(false);
+          expect(box?.width ?? 0).toBeGreaterThan(20);
+          expect(await heading.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+        }
+      } finally {
+        await close(page);
+      }
+    });
+
+  test("the open mailbox's name stays readable beside its row actions at the default width", async () => {
+    const page = await open(boxPath);
+    try {
+      const row = sidebar(page).locator('.mail-sidebar-mailbox[data-mailbox="Box001"]');
+      // The open row shows its actions without hover; only "…" stays there, with pin and hide inside it.
+      // The menu renders inside the actions; its items are not row buttons.
+      const buttons = row.locator('.k2b-app-workspace__sidebar-item-actions button:not([role="menuitem"])');
+      expect(await buttons.count()).toBe(1);
+      expect(await buttons.getAttribute("aria-label")).toBe("Options for Example support");
+      const fit = await row.evaluate((element) => {
+        const label = element.querySelector(".k2b-app-workspace__sidebar-item-label")!;
+        const range = document.createRange();
+        range.selectNodeContents(label);
+        const action = element.querySelector(".k2b-app-workspace__sidebar-item-actions button[aria-haspopup]")!.getBoundingClientRect();
+        return { textEnd: range.getBoundingClientRect().right, actionStart: action.x, actionWidth: action.width };
+      });
+      expect(fit.actionWidth).toBeGreaterThan(0);
+      expect(fit.textEnd).toBeLessThanOrEqual(fit.actionStart);
+    } finally {
+      await close(page);
+    }
+  });
 
   // One browser, one context per viewport/theme; Focus and mailbox share that context.
   for (const theme of ["light", "dark"] as const)

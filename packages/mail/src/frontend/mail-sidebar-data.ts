@@ -1,13 +1,12 @@
 import type { MailRequestContext } from "../service";
-import { focus, mailboxes, mailboxPreferences, publicResources } from "../service";
-import type { MailSidebarMailbox, MailSidebarMailboxCounts } from "./_components/MailSidebar";
-import { projectSsrMailboxList, projectSsrPaths, type SsrPublicPath } from "./ssr-public-boundary";
+import { mailboxes, mailboxPreferences, publicResources } from "../service";
+import type { MailSidebarMailbox } from "./_components/MailSidebar";
+import { projectSsrMailboxList } from "./ssr-public-boundary";
 
 export type MailSidebarData = {
   mailboxes: MailSidebarMailbox[];
   pinnedMailboxIds: string[];
   hiddenMailboxIds: string[];
-  mailboxCounts: MailSidebarMailboxCounts[];
 };
 
 /** The readable mailboxes a sidebar lists, at most as many as the readable-mailbox endpoint returns. */
@@ -32,21 +31,14 @@ export const loadSidebarPreferences = async (context: MailRequestContext) => {
 };
 
 /**
- * Everything the mailbox page's sidebar shows besides the open mailbox: the same mailboxes, pins, hidden mailboxes,
- * and counts as Focus, read through the same services. A failed count read leaves the counts out, not the page.
+ * The mailbox page's sidebar names the other mailboxes without counts, alongside pins and hidden mailboxes.
+ * Their counts need the cross-mailbox Focus read that would slow every mailbox open; Focus shows them.
  */
 export const loadMailSidebarData = async (context: MailRequestContext): Promise<MailSidebarData> => {
-  const [list, preferences, counts] = await Promise.all([
-    loadSidebarMailboxes(context),
-    loadSidebarPreferences(context),
-    focus.listMailboxCounts(context),
-  ]);
-  const internalCounts = counts.ok ? counts.data : [];
-  const paths: SsrPublicPath[] = internalCounts.map((_, index) => ({ table: "mailboxes", segments: [index, "mailboxId"] }));
+  const [list, preferences] = await Promise.all([loadSidebarMailboxes(context), loadSidebarPreferences(context)]);
   return {
     mailboxes: list.map(({ id, name, health, healthReason, receivingAddress }) => ({ id, name, health, healthReason, receivingAddress })),
     pinnedMailboxIds: preferences.publicPinnedMailboxIds,
     hiddenMailboxIds: preferences.publicHiddenMailboxIds,
-    mailboxCounts: await projectSsrPaths(internalCounts, paths),
   };
 };

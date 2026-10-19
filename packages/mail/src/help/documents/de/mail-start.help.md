@@ -15,9 +15,9 @@ Der E-Mail-Anbieter bleibt die Quelle für übertragbare E-Mail-Zustände. Wenn 
 - Wenn du Mail über die App-Navigation öffnest, siehst du **Fokus**. Fokus ist eine gemeinsame Arbeitsliste für alle Postfächer, die du ansehen kannst.
 - **Für mich** zeigt dir zugewiesene Unterhaltungen mit Handlungsbedarf. **Nicht zugewiesen** zeigt Arbeit mit Handlungsbedarf, der niemand zugewiesen ist, der sie noch bearbeiten kann.
 - **Wartet** zeigt deine zugewiesenen Unterhaltungen, die auf eine Antwort warten. **Alle aktiven** zeigt alle nicht erledigten Unterhaltungen, die du ansehen kannst und die nicht unter **Später** liegen.
-- Jede Postfachschaltfläche zeigt, wie viele Unterhaltungen Handlungsbedarf haben. Ein Punkt am Postfachsymbol bedeutet ungelesene Unterhaltungen außerhalb von Papierkorb und Spam. Zeige auf die Schaltfläche, um beide genauen Zahlen zu sehen.
+- In Fokus zeigt jede Postfachschaltfläche, wie viele Unterhaltungen Handlungsbedarf haben. Ein Punkt am Postfachsymbol bedeutet ungelesene Unterhaltungen außerhalb von Papierkorb und Spam. Zeige auf die Schaltfläche, um beide genauen Zahlen zu sehen. In einem Postfach zeigen die anderen Postfächer keine Zahlen, und das offene Postfach zeigt die Zahlen seiner Ansichten und Ordner.
 - Öffne ein Postfach, wenn du Ordner, eine Suche im ganzen Postfach oder Einstellungen brauchst.
-- Wähle die Fahne neben einem Postfach, um es oben in der Liste anzuheften.
+- Wähle die Fahne neben einem Postfach, um es oben in der Liste anzuheften. Beim offenen Postfach liegen Fahne und Auge unter **…** in seiner Zeile.
 - Wähle das durchgestrichene Auge, um ein selten genutztes Postfach auszublenden, etwa eine No-Reply-Adresse. Das Postfach verschwindet aus der Liste, und seine Unterhaltungen verschwinden aus Fokus und den Zahlen in Fokus.
 - Ausgeblendete Postfächer liegen unter **Ausgeblendet** unterhalb der Liste. Öffne diesen Abschnitt, um eines zu erreichen, und wähle das Auge, um es wieder einzublenden.
 - Deine angehefteten und ausgeblendeten Postfächer gelten auf jedem Gerät, auf dem du dich anmeldest. Sie gelten nur für dich. Andere mit Zugriff auf ein Postfach behalten ihre eigenen.

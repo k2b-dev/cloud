@@ -14,7 +14,7 @@ import { mailOverviewMessages } from "../mail-overview-messages";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
 import type { MailboxCreationContext } from "./create-mailbox-dialog";
-import { type MailboxMenu, MailboxMenuButton } from "./MailboxMenu";
+import { type MailboxMenu, MailboxMenuButton, type MailboxMenuSection } from "./MailboxMenu";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailboxHealthPresentation, mailboxOverviewSubtitle } from "./mail-health-presentation";
 import { type MailboxPreferences, orderMailboxes } from "./mail-mailbox-preferences";
@@ -126,8 +126,19 @@ export default function MailSidebar(
   };
 
   // The open mailbox's commands, for the command palette.
+  const commandMailbox = createMemo(
+    () => {
+      const open = props.open;
+      return open ? { mailboxId: open.mailboxId, mailboxName: open.mailboxName, canCompose: open.canWrite && !open.assignedOnly } : null;
+    },
+    undefined,
+    {
+      equals: (previous, next) =>
+        previous?.mailboxId === next?.mailboxId && previous?.mailboxName === next?.mailboxName && previous?.canCompose === next?.canCompose,
+    },
+  );
   createEffect(() => {
-    const open = props.open;
+    const open = commandMailbox();
     if (!open) return;
     const copy = mailCommandMessages.resolve([locale()]).t;
     onCleanup(
@@ -142,7 +153,7 @@ export default function MailSidebar(
         },
       }),
     );
-    if (!open.canWrite || open.assignedOnly) return;
+    if (!open.canCompose) return;
     const href = `/app/mail/compose?mailbox=${open.mailboxId}&autostart=1`;
     onCleanup(
       registerContextAwareCommand({
@@ -151,7 +162,7 @@ export default function MailSidebar(
         description: copy.composeDescription({ name: open.mailboxName }),
         icon: "ti ti-mail-plus",
         shortcut: "mod+alt+n",
-        action: () => open.onCompose({ fallback: () => navigateTo(href), progressToast: true }),
+        action: () => untrack(() => props.open)?.onCompose({ fallback: () => navigateTo(href), progressToast: true }),
       }),
     );
   });
@@ -451,6 +462,28 @@ export default function MailSidebar(
   );
 
   // Rows ----------------------------------------------------------------------------------------------------------------
+  /** Pin and hide of the open row, the same actions the other rows show as buttons. */
+  const rowSections = (mailbox: MailSidebarMailbox): MailboxMenuSection[] => {
+    const name = mailboxName(mailbox);
+    if (props.preferences.isHidden(mailbox.id))
+      return [
+        { items: [{ id: "show", label: overviewText().showMailbox({ name }), icon: "ti ti-eye", action: () => toggleHidden(mailbox) }] },
+      ];
+    const pinned = props.preferences.isPinned(mailbox.id);
+    return [
+      {
+        items: [
+          {
+            id: "pin",
+            label: pinned ? overviewText().unpinMailbox({ name }) : overviewText().pinMailbox({ name }),
+            icon: pinned ? "ti ti-flag-off" : "ti ti-flag",
+            action: () => togglePin(mailbox),
+          },
+          { id: "hide", label: overviewText().hideMailbox({ name }), icon: "ti ti-eye-off", action: () => toggleHidden(mailbox) },
+        ],
+      },
+    ];
+  };
   const mailboxRow = (mailbox: MailSidebarMailbox) => {
     const pinned = () => props.preferences.isPinned(mailbox.id);
     const hidden = () => props.preferences.isHidden(mailbox.id);
@@ -479,44 +512,55 @@ export default function MailSidebar(
           }}
           actions={
             <AppWorkspace.SidebarItemActions visibility="hover">
+              {/* The open row always shows its actions, over its name: one "…" with pin and hide first leaves the
+                  name readable, which is the only place the open mailbox is named. */}
               <Show
-                when={!hidden()}
+                when={rowOpen()}
                 fallback={
-                  <IconButton
-                    label={overviewText().showMailbox({ name: mailboxName(mailbox) })}
-                    size="xs"
-                    variant="text"
-                    onClick={() => toggleHidden(mailbox)}
+                  <Show
+                    when={!hidden()}
+                    fallback={
+                      <IconButton
+                        label={overviewText().showMailbox({ name: mailboxName(mailbox) })}
+                        size="xs"
+                        variant="text"
+                        onClick={() => toggleHidden(mailbox)}
+                      >
+                        <i class="ti ti-eye" aria-hidden="true" />
+                      </IconButton>
+                    }
                   >
-                    <i class="ti ti-eye" aria-hidden="true" />
-                  </IconButton>
+                    <IconButton
+                      label={
+                        pinned()
+                          ? overviewText().unpinMailbox({ name: mailboxName(mailbox) })
+                          : overviewText().pinMailbox({ name: mailboxName(mailbox) })
+                      }
+                      size="xs"
+                      variant="text"
+                      aria-pressed={pinned()}
+                      onClick={() => togglePin(mailbox)}
+                    >
+                      <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
+                    </IconButton>
+                    <IconButton
+                      label={overviewText().hideMailbox({ name: mailboxName(mailbox) })}
+                      size="xs"
+                      variant="text"
+                      onClick={() => toggleHidden(mailbox)}
+                    >
+                      <i class="ti ti-eye-off" aria-hidden="true" />
+                    </IconButton>
+                  </Show>
                 }
               >
-                <IconButton
-                  label={
-                    pinned()
-                      ? overviewText().unpinMailbox({ name: mailboxName(mailbox) })
-                      : overviewText().pinMailbox({ name: mailboxName(mailbox) })
-                  }
-                  size="xs"
-                  variant="text"
-                  aria-pressed={pinned()}
-                  onClick={() => togglePin(mailbox)}
-                >
-                  <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
-                </IconButton>
-                <IconButton
-                  label={overviewText().hideMailbox({ name: mailboxName(mailbox) })}
-                  size="xs"
-                  variant="text"
-                  onClick={() => toggleHidden(mailbox)}
-                >
-                  <i class="ti ti-eye-off" aria-hidden="true" />
-                </IconButton>
-              </Show>
-              <Show when={rowOpen()}>
                 {(current) => (
-                  <MailboxMenuButton menu={current().menu} size="xs" label={messages().mailboxMenu({ name: mailboxName(mailbox) })} />
+                  <MailboxMenuButton
+                    menu={current().menu}
+                    leading={rowSections(mailbox)}
+                    size="xs"
+                    label={messages().mailboxMenu({ name: mailboxName(mailbox) })}
+                  />
                 )}
               </Show>
             </AppWorkspace.SidebarItemActions>

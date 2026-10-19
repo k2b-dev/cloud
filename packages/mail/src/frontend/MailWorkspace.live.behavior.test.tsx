@@ -234,7 +234,6 @@ describe("Mail workspace live updates", () => {
             mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
             pinnedMailboxIds: [],
             hiddenMailboxIds: [],
-            mailboxCounts: [],
           },
         }),
       dom.root,

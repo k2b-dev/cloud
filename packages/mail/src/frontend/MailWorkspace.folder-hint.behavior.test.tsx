@@ -230,7 +230,6 @@ describe("Mail workspace hint for folders whose mail stays inside them", () => {
             mailboxes: [{ ...data.mailbox, receivingAddress: overrides.receivingAddress ?? null }],
             pinnedMailboxIds: [],
             hiddenMailboxIds: [],
-            mailboxCounts: [],
           },
         }),
       dom.root,

@@ -302,7 +302,6 @@ describe("Mail workspace list pages", () => {
             mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
             pinnedMailboxIds: [],
             hiddenMailboxIds: [],
-            mailboxCounts: [],
           },
         }),
       dom.root,

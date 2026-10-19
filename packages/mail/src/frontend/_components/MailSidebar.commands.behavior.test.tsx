@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
@@ -89,6 +89,62 @@ if (!isServer) {
       expect(commands()).toEqual([]);
     } finally {
       dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("live mailbox counts keep commands registered while a rename updates their descriptions", async () => {
+    const dom = createDomTestHarness();
+    const { default: MailSidebar, mailSidebarFixture, openMailboxFixture } = modules!;
+    const { contextCommandsWithShortcuts } = await import("@k2b/cloud/browser/testing");
+    const commandsModule = await import("@k2b/cloud/browser/commands");
+    const register = commandsModule.registerContextAwareCommand;
+    let unregistered = 0;
+    const registration = spyOn(commandsModule, "registerContextAwareCommand").mockImplementation((command) => {
+      const remove = register(command);
+      return () => {
+        unregistered++;
+        remove();
+      };
+    });
+    const [needsAction, setNeedsAction] = createSignal(2);
+    const [name, setName] = createSignal("Support");
+    let dispose: (() => void) | undefined;
+    try {
+      dispose = render(() => {
+        const open = openMailboxFixture();
+        return (
+          <MailSidebar
+            {...mailSidebarFixture()}
+            open={{
+              ...open,
+              mailboxName: name(),
+              viewCounts: { ...open.viewCounts, needs_action: needsAction() },
+            }}
+          />
+        );
+      }, dom.root);
+      const commands = () => contextCommandsWithShortcuts();
+      expect(commands().map((command) => command.id)).toEqual(["mail.search", "mail.compose"]);
+      expect(registration).toHaveBeenCalledTimes(2);
+      expect(unregistered).toBe(0);
+
+      setNeedsAction(7);
+      expect(dom.root.querySelector(".mail-sidebar-needs-action")?.textContent).toBe("7");
+      expect(registration).toHaveBeenCalledTimes(2);
+      expect(unregistered).toBe(0);
+      expect(commands().map((command) => command.id)).toEqual(["mail.search", "mail.compose"]);
+
+      setName("Dispatch");
+      expect(registration).toHaveBeenCalledTimes(4);
+      expect(unregistered).toBe(2);
+      expect(commands().find((command) => command.id === "mail.search")?.description).toContain("Dispatch");
+      expect(commands().find((command) => command.id === "mail.compose")?.description).toBe(
+        "Write an email from “Dispatch”. Nothing is sent yet.",
+      );
+    } finally {
+      dispose?.();
+      registration.mockRestore();
       dom.cleanup();
     }
   });

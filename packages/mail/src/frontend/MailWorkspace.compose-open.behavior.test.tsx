@@ -302,7 +302,6 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
             mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
             pinnedMailboxIds: [],
             hiddenMailboxIds: [],
-            mailboxCounts: [],
           },
         }),
       dom.root,

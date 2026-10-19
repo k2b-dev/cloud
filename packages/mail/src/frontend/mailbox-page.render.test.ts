@@ -56,7 +56,6 @@ beforeEach(() => {
       mailboxes: [],
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
-      mailboxCounts: [],
     }),
   );
   spies.push(spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null));

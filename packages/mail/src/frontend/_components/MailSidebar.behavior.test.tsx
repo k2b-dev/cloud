@@ -229,7 +229,12 @@ test.skipIf(isServer)("hiding the open mailbox opens the closed Hidden section, 
     // The Hidden section starts closed: the open mailbox is not hidden yet.
     expect(shown(dom.root.querySelector('[data-mailbox="Box002"]'))).toBe(false);
     expect(shown(inbox())).toBe(true);
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Hide Support"]')!.click();
+    // The open row keeps one "…": its pin and hide come first in that menu.
+    expect(dom.root.querySelector('[data-mailbox="Box001"] button[aria-label="Hide Support"]')).toBeNull();
+    dom.root.querySelector<HTMLButtonElement>('[data-mailbox="Box001"] button[aria-label="Options for Support"]')!.click();
+    const items = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    expect(items.slice(0, 2).map((item) => item.textContent?.trim())).toEqual(["Pin Support", "Hide Support"]);
+    items[1]!.click();
     expect(dom.root.querySelector('[data-mailbox="Box001"][data-hidden="true"]')).not.toBeNull();
     expect(shown(inbox())).toBe(true);
   } finally {

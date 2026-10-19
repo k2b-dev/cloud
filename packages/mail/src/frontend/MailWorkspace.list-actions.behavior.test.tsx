@@ -315,7 +315,6 @@ describe("Mail list actions", () => {
             mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
             pinnedMailboxIds: [],
             hiddenMailboxIds: [],
-            mailboxCounts: [],
           },
         }),
       dom.root,

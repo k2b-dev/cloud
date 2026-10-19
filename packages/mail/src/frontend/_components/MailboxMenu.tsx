@@ -131,11 +131,21 @@ export function createMailboxMenu(options: () => MailboxMenuOptions) {
 
 export type MailboxMenu = ReturnType<typeof createMailboxMenu>;
 
-/** "…" for the mailbox. Renders nothing when the person may use no entry. */
-export function MailboxMenuButton(props: { menu: MailboxMenu; label: string; size?: "xs" | "sm"; class?: string }) {
+/**
+ * "…" for the mailbox. `leading` entries come first, such as the sidebar row's own pin and hide. Renders nothing when
+ * the person may use no entry.
+ */
+export function MailboxMenuButton(props: {
+  menu: MailboxMenu;
+  label: string;
+  leading?: MailboxMenuSection[];
+  size?: "xs" | "sm";
+  class?: string;
+}) {
+  const sections = () => [...(props.leading ?? []), ...props.menu.sections()];
   return (
-    <Show when={props.menu.sections().length > 0}>
-      <Dropdown.Root items={props.menu.sections()} position="bottom-right" label={props.label} phone="sheet">
+    <Show when={sections().length > 0}>
+      <Dropdown.Root items={sections()} position="bottom-right" label={props.label} phone="sheet">
         <Dropdown.Trigger
           iconOnly
           type="button"

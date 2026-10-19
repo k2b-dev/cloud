@@ -57,8 +57,8 @@ export const sidebar: ComponentProps<typeof MailWorkspace>["sidebar"] = {
   mailboxes,
   pinnedMailboxIds: ["Box002", "Box001"],
   hiddenMailboxIds: ["Box005"],
-  mailboxCounts: mailboxes.map((box, index) => ({ mailboxId: box.id, unread: index + 2, needsAction: index + 3 })),
 };
+const focusMailboxCounts = mailboxes.map((box, index) => ({ mailboxId: box.id, unread: index + 2, needsAction: index + 3 }));
 const folders = [
   ...["inbox", "drafts", "sent", "archive", "trash", "junk"].map((role) =>
     mailTestFolder(`${role[0]!.toUpperCase()}${role.slice(1)}1`, {
@@ -119,7 +119,7 @@ export const focusPage = (view: MailFocusView): MailFocusPage => ({
     .map((row) => ({ ...row, mailboxId: "Box001", mailboxName: "Example support", workStatus: row.workStatus ?? "needs_action" })),
   nextCursor: null,
   counts: focusCounts,
-  mailboxCounts: sidebar.mailboxCounts,
+  mailboxCounts: focusMailboxCounts,
 });
 
 /** URL state is resolved for every SSR request and every in-place workspace API read. */
@@ -324,7 +324,7 @@ export default function MailShellFixture(props: { source: string; locale?: "en" 
   const overview = {
     pages: { mine: focusPage("mine"), unassigned: focusPage("unassigned"), waiting: focusPage("waiting"), all: focusPage("all") },
     counts: focusCounts,
-    mailboxCounts: sidebar.mailboxCounts,
+    mailboxCounts: focusMailboxCounts,
   };
   return (
     <LocaleProvider locale={locale}>

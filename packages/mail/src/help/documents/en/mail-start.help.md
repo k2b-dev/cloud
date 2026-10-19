@@ -16,9 +16,9 @@ The email provider stays the source for portable mail state. When you move a mes
 - When you open Mail from the app navigation, you see **Focus**. Focus is one work queue across every mailbox that you can view.
 - **For me** shows conversations assigned to you that need action. **Unassigned** shows work that needs action and has no assignee who can still work on it.
 - **Waiting** shows your assigned conversations that wait for a reply. **All active** shows every unfinished conversation that you can view and that is not in **Later**.
-- Each mailbox button shows how many conversations need action. A dot on the mailbox icon means unread conversations outside Trash and Junk. Point at the button to see both exact counts.
+- In Focus, each mailbox button shows how many conversations need action. A dot on the mailbox icon means unread conversations outside Trash and Junk. Point at the button to see both exact counts. Inside a mailbox, the other mailboxes show no counts, and the open mailbox shows the counts of its views and folders.
 - Open a mailbox when you need folders, a search across the mailbox, or settings.
-- Choose the flag next to a mailbox to pin it to the top of the list.
+- Choose the flag next to a mailbox to pin it to the top of the list. For the open mailbox, the flag and the eye are under **…** on its row.
 - Choose the crossed-out eye to hide a mailbox that you rarely need, such as a no-reply address. The mailbox leaves the list, and its conversations leave Focus and the Focus counts.
 - Hidden mailboxes wait under **Hidden mailboxes** below the list. Open that section to reach one, and choose the eye to show it again.
 - Your pinned and hidden mailboxes apply on every device where you sign in. They are yours alone. Others with access to a mailbox keep their own.

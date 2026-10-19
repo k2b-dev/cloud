@@ -260,7 +260,10 @@ for the storage this takes.
 ## Delete and restore a mailbox
 
 The Mail overview lists your mailboxes in a sidebar with their unread and
-needs-action counts; opening one enters its workspace. The page itself is the
+needs-action counts; opening one enters its workspace. Inside a mailbox the
+same sidebar names the other mailboxes without counts, so opening a mailbox
+never waits for the cross-mailbox counts; the open mailbox shows its folders
+with live counts, and its pin and hide sit under **…** on its row. The page itself is the
 cross-mailbox focus queue (for me, unassigned, waiting, all active) with
 **Compose** as its primary action.
 

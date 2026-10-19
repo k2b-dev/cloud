@@ -26,6 +26,7 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       query: "",
       search: resolveMailSearchRoute(new URL(overrides.requestUrl ?? "/app/mail/Box001?view=needs_action", "https://cloud.test")),
       title: "Needs action",
+      namedByTabs: true,
       items: [],
       error: null,
       selectedConversationId: null,
@@ -89,6 +90,13 @@ describe("Mail conversation list", () => {
     expect(html).toContain('aria-label="Search filters"');
     expect(html).not.toContain("mail-search-summary");
     expect(html).not.toContain('aria-label="Choose list view"');
+  });
+
+  test("names a folder in a visible heading where the sidebar is out of view, and leaves a view's name to its tab", () => {
+    const folder = renderList({ requestUrl: "/app/mail/Box001?folder=Fld001", title: "Archive", namedByTabs: false });
+    // The class is visible by default; only the 64 rem container query in app.css hides it beside the sidebar.
+    expect(folder).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="mail-list-heading [^"]*"[^>]*>Archive<\/h1>/);
+    expect(renderList({ namedByTabs: true })).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
   });
 
   test("explains a failed search instead of showing service text", () => {

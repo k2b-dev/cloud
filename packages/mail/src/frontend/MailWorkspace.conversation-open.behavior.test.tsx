@@ -385,7 +385,6 @@ describe("Mail workspace conversation open", () => {
             mailboxes: [{ ...snapshotFor(href).mailbox, receivingAddress: snapshotFor(href).receivingAddress }],
             pinnedMailboxIds: [],
             hiddenMailboxIds: [],
-            mailboxCounts: [],
           },
         }),
       dom.root,
