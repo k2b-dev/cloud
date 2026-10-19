@@ -79,7 +79,7 @@ packages/spaces/src/frontend/[id]/_components/calendar/calendar-days.browser-sui
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-month.browser-suite.ts | 20
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts | 1
 packages/spaces/src/frontend/[id]/_components/detail/item-detail.browser-suite.ts | 29
-packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts | 76
+packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts | 72
 packages/spaces/src/frontend/[id]/_components/list/item-list.browser-suite.ts | 2
 packages/spaces/src/frontend/[id]/_components/sidebar/item-templates.browser-suite.ts | 6
 packages/ui/src/actions/drag-and-drop.browser.test.ts | 3

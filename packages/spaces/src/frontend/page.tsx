@@ -3,13 +3,13 @@ import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/serv
 import { logger } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { spacesService } from "@/service";
-import { loadOverviewWork, loadSpaceOverviewStats } from "@/service/overview";
-import { spacesPublicResources } from "@/service/public-resources";
+import { loadOverviewWork, loadSpacesSidebar } from "@/service/overview";
 import { ssr } from "../config";
 import { spacesPageHelp } from "../help";
-import { parseLastSpaceId, parsePinnedSpaceIds } from "./[id]/_components/settings/SpaceSettingsStore";
+import { parseLastSpaceId } from "./[id]/_components/settings/SpaceSettingsStore";
 import { overviewMessages } from "./overview-messages";
 import SpacesOverview from "./SpacesOverview.island";
+import { firstOpenSpacesHint } from "./spaces-hints";
 
 const log = logger("spaces:overview");
 
@@ -25,9 +25,10 @@ export default ssr<AuthContext>(async (c) => {
   const cookieHeader = c.req.raw.headers.get("Cookie") ?? undefined;
 
   const subject = { type: "user" as const, userId: user.id };
-  const [spacesPage, initialWork, activityResult] = await Promise.all([
-    spacesService.space.list({ subject }),
-    loadOverviewWork({ userId: user.id, view, dateConfig: getDateConfig(c) }),
+  const work = loadOverviewWork({ userId: user.id, view, dateConfig: getDateConfig(c) });
+  const [sidebar, initialWork, activityResult] = await Promise.all([
+    loadSpacesSidebar({ userId: user.id, cookieHeader, dateConfig: getDateConfig(c), myWorkCount: work.then((work) => work.counts.mine) }),
+    work,
     spacesService.activity
       .list({ subject, limit: 30 })
       .then((page) => ({ page, error: null }))
@@ -36,16 +37,10 @@ export default ssr<AuthContext>(async (c) => {
         return { page: { items: [], nextCursor: null }, error: t.activityLoadFailed };
       }),
   ]);
-  const [userSpaces, spaceStats] = await Promise.all([
-    spacesPublicResources.projectSpaces(spacesPage.items),
-    loadSpaceOverviewStats({ spaceIds: spacesPage.items.map((space) => space.id) }),
-  ]);
-  const statsBySpace = new Map(spaceStats.map((stats) => [stats.spaceId, stats]));
-
   // Redirect to last opened space if ?recent=true
-  if (url.searchParams.get("recent") === "true" && userSpaces.length > 0) {
+  if (url.searchParams.get("recent") === "true" && sidebar.spaces.length > 0) {
     const lastId = parseLastSpaceId(cookieHeader);
-    if (lastId && userSpaces.some((s) => s.id === lastId)) {
+    if (lastId && sidebar.spaces.some((s) => s.id === lastId)) {
       return c.redirect(`/app/spaces/${lastId}`);
     }
   }
@@ -53,12 +48,10 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} help={spacesPageHelp.overview} title={[{ title: t.start, href: "/" }, { title: "Spaces" }]}>
       <SpacesOverview
-        spaces={userSpaces.map((space, index) => {
-          const stats = statsBySpace.get(spacesPage.items[index]!.id);
-          return { ...space, openItemCount: stats?.openItemCount ?? 0, lastActivityAt: stats?.lastActivityAt ?? space.updatedAt };
-        })}
+        spaces={sidebar.spaces}
+        sidebarHint={firstOpenSpacesHint(c, [{ id: "spaces.overview-sidebar", allowed: true }]) === "spaces.overview-sidebar"}
         initialView={view}
-        initialPinnedSpaceIds={parsePinnedSpaceIds(cookieHeader)}
+        initialPinnedSpaceIds={sidebar.pinnedSpaceIds}
         initialWork={initialWork}
         initialActivity={{
           items: activityResult.page.items.map((item) => ({

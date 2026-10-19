@@ -1,14 +1,21 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
+import type { SpaceAssignableUser } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import ItemDetailRoute from "../detail/ItemDetailRoute.island";
+import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
 import { boardFilter, defaultFilter, parseFilterFromUrl } from "../filter/types";
 import SpaceSidebar from "../sidebar/SpaceSidebar";
+import type { SpacesSidebarData } from "../sidebar/SpacesSidebarList";
+import { spacePrimaryHref } from "../sidebar/space-primary";
 import type { SpaceContext } from "../sidebar/types";
 import RememberSpace from "./RememberSpace.island";
+import SpaceHeadActions from "./SpaceHeadActions.island";
 import SpaceLiveEvents from "./SpaceLiveEvents.island";
 import SpacesCalendarRoute from "./SpacesCalendarRoute.island";
 import SpacesKanbanRoute from "./SpacesKanbanRoute.island";
 import SpacesListRoute from "./SpacesListRoute.island";
+import SpaceViewTabs from "./SpaceViewTabs.island";
 import {
   buildSpacesItemLinkBaseUrl,
   buildSpacesPaginationBaseUrl,
@@ -52,11 +59,15 @@ const routeContext = (state: OkWorkspaceState, initialDetail: SpaceItemDetail | 
 };
 
 export default function SpacesWorkspace(props: {
+  sidebar: SpacesSidebarData;
+  hints: { sidebarSwitch: boolean; viewTabs: boolean; spaceMenu: boolean };
+  people: SpaceAssignableUser[];
   userId?: string;
   state: OkWorkspaceState;
   dateConfig?: DateContext;
   mailIntegrationAvailable: boolean;
 }) {
+  const t = useSpaceMessages();
   const state = props.state;
   const initialDetail: SpaceItemDetail | null = state.selectedItemDetail;
   const route = routeContext(state, initialDetail, props.dateConfig);
@@ -87,7 +98,51 @@ export default function SpacesWorkspace(props: {
         dateConfig={props.dateConfig}
       />
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
-        <SpaceSidebar ctx={sidebarContext} baseUrl={state.icalBaseUrl} dateConfig={props.dateConfig} />
+        <SpaceSidebar
+          ctx={sidebarContext}
+          dateConfig={props.dateConfig}
+          sidebar={props.sidebar}
+          hint={{ id: "spaces.sidebar-switch", open: props.hints.sidebarSwitch }}
+        />
+        <AppWorkspace.Head
+          views={
+            <SpaceViewTabs spaceId={state.space.id} query={state.query} currentView={state.currentView} hintOpen={props.hints.viewTabs} />
+          }
+          filters={
+            state.currentView !== "calendar" ? (
+              <SpaceHeadFilters
+                spaceId={state.space.id}
+                columns={state.space.columns}
+                tags={state.space.tags}
+                currentView={state.currentView}
+                initialSource={route.itemLinkBaseUrl}
+                initialTotal={state.currentView === "kanban" ? undefined : state.itemsResult.total}
+              />
+            ) : undefined
+          }
+          actions={
+            <SpaceHeadActions
+              spaceId={state.space.id}
+              spaceName={state.space.name}
+              icalToken={state.space.icalToken}
+              baseUrl={state.icalBaseUrl}
+              dateConfig={props.dateConfig}
+              currentView={state.currentView}
+              canWrite={state.canWrite}
+              people={props.people}
+              hintOpen={props.hints.spaceMenu}
+            />
+          }
+          primary={
+            state.canWrite
+              ? {
+                  label: state.currentView === "calendar" ? t.newEvent : t.newTask,
+                  icon: "ti ti-plus",
+                  href: spacePrimaryHref(sidebarContext),
+                }
+              : undefined
+          }
+        />
 
         <AppWorkspace.Content>
           <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>

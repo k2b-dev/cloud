@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Spaces
@@ -14,9 +14,12 @@ Spaces organizes tasks and events for a team, project, household, class, or
 recurring process. The same items can be viewed as a list, table, Kanban board,
 or calendar without copying the work into separate systems.
 
-Open the Space name in the sidebar or phone menu to switch Spaces. Signed-in
-users can choose **New space** to create and open a blank Space. The overview
-also offers the task board, event calendar, and project tracker starters.
+Open another Space in the sidebar, shared by the overview and every Space.
+On phones, open the title menu **Space name ⌄**, or **Spaces ⌄** on the overview.
+Both offer **My work**, every accessible Space, and **New space** for signed-in
+users. The create dialog offers **Template** with **Blank space**, **Task board**,
+**Event calendar**, and **Project tracker**; choosing one fills the form and sets
+the starting view. Every field stays editable before creating the Space.
 
 ## Use Spaces
 
@@ -33,12 +36,22 @@ also offers the task board, event calendar, and project tracker starters.
   enabled calendar feed to another calendar client.
 
 The Spaces start page brings accessible work together without changing its
-owning Space. A sidebar lists your Spaces with their open items and last
-activity; opening one enters its workspace, and **New space** starts one from
-a starter. Pin frequently used Spaces, search Spaces, tasks, and events,
-and switch between **For me**, **Today**, and **Upcoming**. On larger screens,
-the Activity panel shows recent Space and item changes; on mobile it opens
-from the Activity button.
+owning Space. **My work** in the sidebar opens it and shows the count assigned
+to you. Each Space row shows its open item count; pinned Spaces come first.
+The sidebar width is shared between the overview and Space pages and can be
+resized. In the page header, switch between **For me**, **Today**, and
+**Upcoming**, search Spaces, tasks, and events, or choose **New task** to choose
+a Space for a new task. On larger screens, the Activity panel shows recent
+Space and item changes; on mobile it opens from the **Activity** button.
+
+Inside a Space, **List**, **Table**, **Kanban**, and **Calendar** are tabs in the
+page header. Search and filter chips share that header in list, table, and
+Kanban; **Reset** clears active filters and search. The calendar keeps its own
+toolbar. The header also offers scoped search, **New task** or **New event**,
+and the **…** menu for **Space settings**, **Copy iCal URL** when enabled, and
+**Keyboard shortcuts** in Kanban. On phones, the primary action is a round
+**+** button. If you can edit the Space, the header previews people with access
+beside the menu or inside it when space is limited.
 
 The selected work view and its counters arrive with the page. Switching work
 views loads the selected list on demand; Back and Forward restore the view
@@ -221,8 +234,9 @@ fetched server-side, cached in Valkey for five minutes per Space, and never
 fetched while a page renders: a first view shows the plain link and the
 detail panel fills the preview once. Public repositories work without
 configuration. A Space administrator can store one GitHub token per Space
-under **Settings › GitHub**; it is encrypted at rest, used only to preview
-links in that Space, and never displayed again. Without a token, private links
+under **… → Space settings → Connections → GitHub**; it is encrypted at rest,
+used only to preview links in that Space, and never displayed again. Without a
+token, private links
 render without a preview. Spaces never writes to GitHub.
 
 Task checklist entries are deliberately small: one completion state and one

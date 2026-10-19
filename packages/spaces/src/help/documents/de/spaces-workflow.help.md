@@ -10,6 +10,8 @@ Spaces funktioniert am besten, wenn jeder Eintrag einen klaren nächsten Schritt
 
 ## Eintrag erstellen {icon="square-plus"}
 
+Wähle **Neue Aufgabe** im Kopfbereich. Im Kalender heißt diese Schaltfläche **Neuer Termin**. Nutze auf dem Handy die runde Schaltfläche **+**.
+
 Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunächst Aufgabe oder Termin aus. Du kannst den Typ oben im Dialog wechseln. Das kompakte Formular fragt nach Titel und Beschreibung. Termine brauchen zusätzlich ihre Zeit.
 
 Wähle **Weitere Optionen**, um alle Felder für Aufgaben oder Termine zu sehen. Deine Eingaben bleiben erhalten. Eine Aufgabe bekommt den Status, in dem du sie erstellst, oder den ersten Status, wenn keiner ausgewählt ist.
@@ -110,7 +112,7 @@ Ein Eintrag kann bis zu 20 verschiedene Emojis haben. Wenn er 20 hat, reagiere m
 - Wenn ein Eintrag geöffnet ist, drücke **J** für den nächsten und **K** für den vorherigen Eintrag in Liste, Tabelle und Kanban.
 - Drücke **Cmd/Strg+Alt+N**, um eine Aufgabe oder in der Kalenderansicht einen Termin zu erstellen.
 - Drücke **Cmd/Strg+Umschalt+K**, um den aktuellen Space zu durchsuchen.
-- Fokussiere in Kanban das Board und wechsle mit den Pfeiltasten zwischen Karten. Die Tastatur-Schaltfläche über dem Board listet diese Kürzel.
+- Fokussiere in Kanban das Board und wechsle mit den Pfeiltasten zwischen Karten. **… → Tastenkürzel** im Kopfbereich zeigt diese Kürzel.
 - Um eine Karte zu verschieben, fokussiere ihren Griff, drücke die **Leertaste** und nutze die Pfeiltasten. Drücke die **Leertaste**, um sie abzulegen, oder **Escape**, um abzubrechen.
 - Drücke die **Eingabetaste**, um die fokussierte Karte zu öffnen, **M**, um sie dir zuzuweisen, oder **D**, um sie zu erledigen.
 

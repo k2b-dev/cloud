@@ -1,7 +1,9 @@
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import type { ItemListResult } from "@/contracts";
+import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
 import { defaultFilter } from "../filter/types";
+import SpaceHeadActions from "../workspace/SpaceHeadActions.island";
 import SpacesKanbanRoute from "../workspace/SpacesKanbanRoute.island";
 import SpacesListRoute from "../workspace/SpacesListRoute.island";
 
@@ -40,8 +42,8 @@ export default function KanbanFixture(props: Props) {
     );
   return (
     <LocaleProvider locale={props.locale}>
-      {props.workspace ? (
-        <AppWorkspace>
+      <AppWorkspace>
+        {props.workspace && (
           <AppWorkspace.Sidebar>
             <AppWorkspace.SidebarDesktop>
               <AppWorkspace.SidebarItem href="/app/spaces/Space1" active>
@@ -49,18 +51,41 @@ export default function KanbanFixture(props: Props) {
               </AppWorkspace.SidebarItem>
             </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
-          <AppWorkspace.Content>
-            <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
-              {route()}
-            </AppWorkspace.Main>
+        )}
+        <AppWorkspace.Head
+          filters={
+            <SpaceHeadFilters
+              spaceId={props.spaceId}
+              columns={props.columns}
+              tags={props.tags}
+              currentView={props.workspace === "table" ? "table" : "kanban"}
+              initialSource={props.baseUrl}
+              initialTotal={props.itemsResult?.total}
+            />
+          }
+          actions={
+            <SpaceHeadActions
+              spaceId={props.spaceId}
+              spaceName="Project"
+              icalToken={null}
+              baseUrl={props.baseUrl}
+              currentView={props.workspace === "table" ? "table" : "kanban"}
+              canWrite={props.canWrite}
+              people={[]}
+            />
+          }
+        />
+        <AppWorkspace.Content>
+          <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
+            {route()}
+          </AppWorkspace.Main>
+          {props.workspace && (
             <AppWorkspace.Detail id="item" open>
               Selected item
             </AppWorkspace.Detail>
-          </AppWorkspace.Content>
-        </AppWorkspace>
-      ) : (
-        route()
-      )}
+          )}
+        </AppWorkspace.Content>
+      </AppWorkspace>
     </LocaleProvider>
   );
 }

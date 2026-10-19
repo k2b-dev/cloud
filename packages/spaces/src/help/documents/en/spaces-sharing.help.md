@@ -11,7 +11,12 @@ Give each person and group only the access they need in this Space.
 
 ## Open Space settings {icon="settings"}
 
-Choose **Space settings** in the Space sidebar. The settings open in a dialog, so you return to the current view without leaving the Space.
+:::steps
+1. Open **…** in the page header.
+2. Choose **Space settings**.
+:::
+
+The settings open in a dialog. Closing it returns you to the current view.
 
 The categories sort the settings by owner and effect:
 
@@ -39,4 +44,14 @@ Prefer a fine-grained token that can only read issues and pull requests of the r
 
 ## Share a calendar export {icon="calendar-share"}
 
-Use the calendar export when people need scheduled work in an external calendar. Treat an export URL like access that lets someone read the event details.
+Use the calendar export when people need scheduled work in an external calendar. **Copy iCal URL** appears only when the export is enabled.
+
+:::warning Calendar links are access links
+Anyone with the export URL can read the exported event details.
+:::
+
+:::steps
+1. Open **…** in the page header.
+2. Choose **Copy iCal URL**.
+3. Add the copied URL as a subscription in your calendar app.
+:::
