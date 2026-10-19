@@ -232,6 +232,26 @@ for (const [locale, added, removed] of [
     expect(faces.nextElementSibling!.textContent).toBe("Lea and Tom");
   });
 
+test("an excerpt without a page of its own shows the rest in place", () => {
+  const body = render(() => [
+    createComponent(Chat.Preview.Excerpt, { id: "body-1", children: "One\nTwo\nThree\nFour" }),
+    createComponent(Chat.Preview.ShowAll, { controls: "body-1", onShow: () => undefined, children: "Read it all" }),
+    createComponent(Chat.Preview.Excerpt, { id: "body-2", expanded: true, children: "Shown whole" }),
+  ]);
+  const [closed, open] = body.querySelectorAll(".k2b-chat-preview__excerpt");
+  expect(closed!.hasAttribute("data-expanded")).toBe(false);
+  expect(closed!.hasAttribute("tabindex")).toBe(false);
+  // A shown text takes the focus from the button that leaves, so reading goes on there.
+  expect([open!.getAttribute("data-expanded"), open!.getAttribute("tabindex")]).toEqual(["true", "-1"]);
+  const button = body.querySelector("button.k2b-chat-preview__more")!;
+  expect([
+    button.getAttribute("type"),
+    button.getAttribute("aria-controls"),
+    button.getAttribute("aria-expanded"),
+    button.textContent,
+  ]).toEqual(["button", "body-1", "false", "Read it all"]);
+});
+
 describe("ReferenceChip", () => {
   test("object and place link to their targets with a decorative accented icon", () => {
     for (const kind of ["object", "place"] as const) {

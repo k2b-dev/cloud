@@ -192,7 +192,14 @@ function ApprovalCard(props: {
           remember={remember()}
           onConfirm={() => props.decide({ approved: true })}
           onDecline={() => props.decide({ approved: false })}
-          outcome={<ActionReceipt card={card()} lines={outcomeLines(card(), t(), props.reopen)} current={current()} />}
+          // The outcome lines join the card's sentence, so they speak the stored review's language.
+          outcome={
+            <ActionReceipt
+              card={card()}
+              lines={outcomeLines(card(), approvalMessages.resolve([card().locale]).t, props.reopen)}
+              current={current()}
+            />
+          }
         />
       </Armed>
     </article>

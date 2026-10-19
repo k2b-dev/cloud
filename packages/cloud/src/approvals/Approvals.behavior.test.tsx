@@ -106,6 +106,24 @@ describe("Approvals", () => {
     }
   });
 
+  test("a review in another language keeps that language in its outcome line too", async () => {
+    const { actionFixtures } = await import("../ai/chat/action-question.fixtures");
+    const review = actionFixtures("de").mail!.block.review!;
+    if (!("sentence" in review)) throw new Error("Expected a new review");
+    const view = await mount({ initial: page([item("a1", { review })]) }, () => Response.json({ status: "rejected" }));
+    try {
+      const row = () => view.dom.root.querySelector<HTMLElement>("article.cloud-approval")!;
+      await Bun.sleep(550);
+      row().querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[1]!.click();
+      await waitFor(() => row().dataset.decided === "rejected", "the outcome");
+      const line = row().querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent ?? "";
+      expect(line).toContain("Du hast abgelehnt.");
+      expect(line).not.toContain("You declined.");
+    } finally {
+      view.cleanup();
+    }
+  });
+
   test("a request decided elsewhere or gone says so; another failure offers to answer again", async () => {
     const statuses = new Map([
       ["/api/approvals/a1/decision", 409],

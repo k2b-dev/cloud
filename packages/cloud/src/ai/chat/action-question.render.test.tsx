@@ -470,6 +470,26 @@ describe("card v4 outcome line", () => {
     );
   });
 
+  test("a long text without a page of its own offers to show the rest in place; one with a page links to it", () => {
+    const review = de.mail!.block.review!;
+    if (!("sentence" in review)) throw new Error("Expected a new review");
+    const withPage = renderTurn(
+      { ...de.mail!.block, review: { ...review, links: [{ rel: "open", href: "/app/mail/drafts/dr-1" }] } },
+      "de",
+    );
+    expect(withPage).toContain('href="/app/mail/drafts/dr-1"');
+    expect(withPage).not.toContain("aria-controls");
+    const alone = renderTurn({ ...de.mail!.block, review: { ...review, links: [] } }, "de");
+    const button = /<button[^>]*class="k2b-chat-preview__more"[^>]*>([^<]*)</.exec(alone);
+    expect(button?.[1]).toBe("Ganze Mail lesen");
+    const controls = /aria-controls="([^"]+)"/.exec(button![0])?.[1];
+    expect(alone).toContain(`id="${controls}"`);
+    // A text that fits three lines even in a narrow panel needs no button.
+    if (review.preview?.kind !== "message") throw new Error("Expected a message preview");
+    const short = renderTurn({ ...de.mail!.block, review: { ...review, links: [], preview: { ...review.preview, body: "Kurz." } } }, "de");
+    expect(short).not.toContain("aria-controls");
+  });
+
   test("an old review's done line is the app's old summary", () => {
     const block = actionFixtures("en").legacy!.block;
     const done = outcome(decided(block, { status: "completed", result: { data: {}, summary: "Draft queued for sending." } }));

@@ -652,3 +652,26 @@ domTest("one click on a website receipt revokes the chat approval for its origin
     dom.cleanup();
   }
 });
+
+domTest("a long text without a page of its own shows the rest in place and keeps the focus there", async () => {
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const fixture = actionFixtures("en").mail!.block;
+  const review = fixture.review!;
+  if (!("sentence" in review)) throw new Error("Expected a new review");
+  const view = await mountTurn([{ ...fixture, status: "awaiting_approval", review: { ...review, links: [] } }]);
+  try {
+    const excerpt = view.place().querySelector<HTMLElement>(".k2b-chat-preview__excerpt")!;
+    const show = view.button("Read the whole email");
+    expect(show.getAttribute("aria-controls")).toBe(excerpt.id);
+    expect(excerpt.dataset.expanded).toBeUndefined();
+    show.click();
+    await tick();
+    expect(excerpt.dataset.expanded).toBe("true");
+    expect(view.button("Read the whole email")).toBeUndefined();
+    expect(document.activeElement).toBe(excerpt);
+    // The question itself still waits for its answer.
+    expect(view.question()).not.toBeNull();
+  } finally {
+    view.cleanup();
+  }
+});

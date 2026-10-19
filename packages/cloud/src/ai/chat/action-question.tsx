@@ -11,7 +11,7 @@ import {
   StructuredDataPreview,
 } from "@k2b/ui";
 import { Lexer, type Token, type Tokens } from "marked";
-import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { CapabilityPerson, CapabilityPreview } from "../../contracts/capabilities";
 import { formatBytes } from "../../shared/format";
 import type { ActionCard, ActionChip, ActionPreviewModel, ActionText } from "./action-card";
@@ -148,6 +148,34 @@ const markdownWords = (tokens: readonly Token[]): string =>
     })
     .join("");
 
+/** About what one line holds in the narrowest column a card stands in, a 20 rem panel. */
+const EXCERPT_LINE_CHARS = 40;
+
+/** Whether a text may need more than the excerpt's three lines; counted alike on the server and in the browser. */
+const mayOverflow = (text: string): boolean =>
+  text.split("\n").reduce((lines, line) => lines + Math.max(1, Math.ceil(line.length / EXCERPT_LINE_CHARS)), 0) > 3;
+
+/**
+ * The first lines of a text. With the app's link, its "read" link follows the preview; without one, a text that may
+ * not fit offers to show the rest in place, so nothing a person approves stays out of reach.
+ */
+function PreviewExcerpt(props: { text: string; readMore?: string; label: string }) {
+  const id = createUniqueId();
+  const [expanded, setExpanded] = createSignal(false);
+  return (
+    <>
+      <Chat.Preview.Excerpt id={id} expanded={expanded()}>
+        {props.text}
+      </Chat.Preview.Excerpt>
+      <Show when={!props.readMore && !expanded() && mayOverflow(props.text)}>
+        <Chat.Preview.ShowAll controls={id} onShow={() => setExpanded(true)}>
+          {props.label}
+        </Chat.Preview.ShowAll>
+      </Show>
+    </>
+  );
+}
+
 /** A short excerpt of a body: plain text as it is, Markdown as its words. */
 const excerptText = (body: string, format: "plain" | "markdown"): string =>
   format === "plain" ? body : markdownWords(Lexer.lex(body)).trimEnd();
@@ -220,7 +248,7 @@ function MessagePreview(props: {
       <Chat.Preview.Header rows={rows()} note={note()} />
       <Chat.Preview.Title>{props.preview.subject || t().noSubject}</Chat.Preview.Title>
       <Show when={props.preview.body.trim()}>
-        <Chat.Preview.Excerpt>{excerptText(props.preview.body, props.preview.format)}</Chat.Preview.Excerpt>
+        <PreviewExcerpt text={excerptText(props.preview.body, props.preview.format)} readMore={props.readMore} label={t().readMail} />
       </Show>
       <For each={props.preview.attachments ?? []}>
         {(attachment) => (
@@ -310,7 +338,9 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
                   </Chat.Preview.People>
                 )}
               </Show>
-              <Show when={event().description?.trim()}>{(text) => <Chat.Preview.Excerpt>{text()}</Chat.Preview.Excerpt>}</Show>
+              <Show when={event().description?.trim()}>
+                {(text) => <PreviewExcerpt text={text()} readMore={props.readMore} label={t().readMore} />}
+              </Show>
               {readMore(t().readMore)}
             </>
           )}
@@ -354,7 +384,9 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
                   </Chat.Preview.Line>
                 )}
               </Show>
-              <Show when={task().description?.trim()}>{(text) => <Chat.Preview.Excerpt>{text()}</Chat.Preview.Excerpt>}</Show>
+              <Show when={task().description?.trim()}>
+                {(text) => <PreviewExcerpt text={text()} readMore={props.readMore} label={t().readMore} />}
+              </Show>
               {readMore(t().readMore)}
             </>
           )}
@@ -364,7 +396,7 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
             <>
               <Chat.Preview.Title meta={page().place}>{page().title}</Chat.Preview.Title>
               <Show when={page().body.trim()}>
-                <Chat.Preview.Excerpt>{excerptText(page().body, page().format)}</Chat.Preview.Excerpt>
+                <PreviewExcerpt text={excerptText(page().body, page().format)} readMore={props.readMore} label={t().readPage} />
               </Show>
               <Show when={page().changes?.length ? page().changes : undefined}>
                 {(changes) => (
@@ -409,7 +441,7 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
                 <ActionTextView text={props.model.when ?? []} accent={props.card.app.accent} />
               </Chat.Preview.Sentence>
               <Show when={rule().does.trim()}>
-                <Chat.Preview.Excerpt>{rule().does}</Chat.Preview.Excerpt>
+                <PreviewExcerpt text={rule().does} readMore={props.readMore} label={t().readRule} />
               </Show>
               {readMore(t().readRule)}
               <Chat.Preview.Lines label={rule().seesChat ? t().changes : t().ruleMay}>
