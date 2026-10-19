@@ -6,6 +6,7 @@ import { sql } from "bun";
 import type { InferResponseType } from "hono/client";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { composeMailListSnapshot, pickMailWorkspaceFrame } from "../frontend/_components/mail-workspace-frame";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import * as access from "../service/access";
@@ -17,7 +18,13 @@ import * as messages from "../service/messages";
 import * as publicResources from "../service/public-resources";
 import * as scheduledSends from "../service/scheduled-sends";
 import * as senderIdentities from "../service/sender-identities";
-import { loadMailboxListView, loadMailboxPageData, type MailboxListView, resolveWorkspaceRequest } from "../service/workspace";
+import {
+  loadMailboxListView,
+  loadMailboxPageData,
+  type MailboxListView,
+  type MailboxPageData,
+  resolveWorkspaceRequest,
+} from "../service/workspace";
 import app from ".";
 import type { apiClient } from "./client";
 
@@ -29,6 +36,10 @@ const inferredListView = (data: ListResponse): MailboxListView => data;
 // (the whole workspace and the open conversation's detail), workspace-list 3,411 bytes. The budget sits between them
 // with room for row fields, and fails when a list page carries the workspace or the selection again.
 const WORKSPACE_LIST_PAGE_TWO_MAX_BYTES = 5_000;
+// Page 1 of the folder fixture on a folder switch, measured on 2026-10-19: workspace-route sends 48,045 bytes (the
+// list plus mailbox, folders, counts, identities and saved views), workspace-list 44,940 bytes. Fifty rows dominate
+// this small mailbox; the budget sits between the two and fails when the switch carries the mailbox frame again.
+const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_000;
 const anchor = new Date("2026-10-01T12:00:00.000Z");
 const suite = suiteFor("database", "nats", "valkey");
 const contextFor = (user: User): MailRequestContext => ({
@@ -89,6 +100,22 @@ suite("Mail workspace list pages", () => {
     { name: "drafts", params: { folder: draftsShortId } },
     { name: "scheduled", params: { scheduled: "1" } },
   ];
+  // Every unselected scope available from the workspace sidebar or search control.
+  const switchScopes = (): Scope[] => [
+    ...scopes().filter((scope) => scope.name !== "search" && scope.name !== "messages"),
+    { name: "assigned to me", params: { view: "mine" } },
+    { name: "search", params: { q: "Page", searchFrom: `folder=${folderShortId}` } },
+    { name: "all mail", params: {} },
+  ];
+  const switchHref = (scope: Scope) => {
+    const query = new URLSearchParams(scope.params).toString();
+    return `/app/mail/${mailboxShortId}${query ? `?${query}` : ""}`;
+  };
+  const snapshot = async (href: string, token: string): Promise<MailboxPageData> => {
+    const response = await request("workspace-route", href, token);
+    expect(response.status, href).toBe(200);
+    return response.json();
+  };
   const hrefFor = (scope: Scope, cursor?: string) =>
     `/app/mail/${mailboxShortId}?${new URLSearchParams({
       ...scope.params,
@@ -315,6 +342,72 @@ suite("Mail workspace list pages", () => {
       for (const spy of spies) spy.mockRestore();
     }
   }, 30_000);
+
+  for (const token of ["owner", "reader"])
+    test(`${token}: composing a different scope's frame and target list equals the entire target snapshot`, async () => {
+      for (const target of switchScopes()) {
+        const href = switchHref(target);
+        const startScope = switchScopes().find((scope) => switchHref(scope) !== href)!;
+        const startHref = switchHref(startScope);
+        const expected = await snapshot(href, token);
+        for (const selected of [false, true]) {
+          const start = new URL(startHref, "https://cloud.test");
+          if (selected) start.searchParams.set("conversation", conversationShortId);
+          const frame = pickMailWorkspaceFrame(await snapshot(`${start.pathname}${start.search}`, token));
+          const list = await page("workspace-list", href, token, target);
+          expect(composeMailListSnapshot(frame, list), `${token}: ${target.name}, selected start: ${selected}`).toEqual(expected);
+        }
+      }
+    }, 30_000);
+
+  test("switch work guard: HTTP page 1 never rebuilds the frame or reads selection detail", async () => {
+    const spies = [
+      spyOn(messages, "getConversationViewCounts"),
+      spyOn(senderIdentities, "listSenderIdentities"),
+      spyOn(mailboxes, "getMailbox"),
+      spyOn(scheduledSends, "countScheduledSends"),
+      spyOn(mailboxes, "getMailboxReceivingAddress"),
+      spyOn(mailLive, "cursor"),
+      spyOn(localTags, "listLocalTags"),
+      spyOn(messages, "listConversationMessageDetails"),
+      spyOn(messages, "getMessage"),
+      spyOn(access, "requireVisibleConversation"),
+    ];
+    try {
+      for (const token of ["owner", "reader"])
+        for (const scope of switchScopes()) {
+          await page("workspace-list", switchHref(scope), token, scope);
+          for (const spy of spies) expect(spy, `${token}: ${scope.name}`).not.toHaveBeenCalled();
+        }
+      // The same HTTP snapshot routes must reach these exact spies, including selected snapshots.
+      for (const scope of switchScopes()) {
+        const href = switchHref(scope);
+        await snapshot(href, "owner");
+        const selected = new URL(href, "https://cloud.test");
+        selected.searchParams.set("conversation", conversationShortId);
+        selected.searchParams.set("message", messageShortId);
+        await snapshot(`${selected.pathname}${selected.search}`, "owner");
+      }
+      // A message-only selection exercises getMessage, which a conversation selection supersedes.
+      await snapshot(`/app/mail/${mailboxShortId}?message=${messageShortId}`, "owner");
+      for (const spy of spies) expect(spy).toHaveBeenCalled();
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  }, 30_000);
+
+  test("a folder switch's page 1 stays within the list byte budget", async () => {
+    const href = switchHref(switchScopes()[0]!);
+    const before = await request("workspace-route", href);
+    const after = await request("workspace-list", href);
+    expect(before.status).toBe(200);
+    expect(after.status).toBe(200);
+    const beforeBytes = (await before.arrayBuffer()).byteLength;
+    const afterBytes = (await after.arrayBuffer()).byteLength;
+    const sizes = `folder switch: workspace-route ${beforeBytes} bytes; workspace-list ${afterBytes} bytes`;
+    expect(afterBytes, sizes).toBeLessThanOrEqual(WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES);
+    expect(WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES, sizes).toBeLessThan(beforeBytes);
+  });
 
   test("resolves public list IDs once and never resolves the selection", async () => {
     const spy = spyOn(publicResources, "resolveMailboxPublicId");

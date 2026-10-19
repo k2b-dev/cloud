@@ -293,7 +293,8 @@ HTML-heavy thread, rare, common, and structured search, three folder switches,
 view counts, a message arriving live, and opening compose for a new message
 and a reply. `list-paging-workspace` loads page 1 through `workspace-route`
 as an untimed cursor prerequisite, then measures list pages 2–5 through
-`workspace-list`.
+`workspace-list`. `folder-medium-list` measures page 1 of the medium folder
+through `workspace-list`.
 
 For each scenario the run records cold, median, and p95 times, response and
 island props bytes, Server-Timing phases, and the statement count and
