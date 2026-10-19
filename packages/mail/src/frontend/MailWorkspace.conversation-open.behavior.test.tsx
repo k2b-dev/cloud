@@ -597,6 +597,22 @@ describe("Mail workspace conversation open", () => {
     held[0]!(200);
   });
 
+  test("switching views while a row refresh loads ends that refresh without a failure notice", async () => {
+    mount();
+    const held: Array<(status: number) => void> = [];
+    routeStatus = () => new Promise<number>((resolve) => held.push(resolve));
+    revisions.set(rowId(22), 2);
+    open(rowId(22));
+    await until(() => held.length === 1, "the row refresh");
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?view=needs_action"]`)!.click();
+    await until(() => held.length === 2, "the view switch");
+    held[1]!(200);
+    await until(() => heading() === null && rows()[0] !== undefined, "the new view");
+    held[0]!(200);
+    await settle();
+    expect(dom.document.body.textContent).not.toContain("Could not refresh this mailbox yet");
+  });
+
   test("a reload of the shown view that ends after a conversation opened keeps that conversation and its URL", async () => {
     mount();
     let release = () => {};

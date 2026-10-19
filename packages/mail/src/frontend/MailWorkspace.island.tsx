@@ -1161,9 +1161,11 @@ function MailWorkspaceView(props: {
       setRowRefreshes((count) => count + 1);
       void workspaceQuery
         .invalidate()
-        .catch((error: unknown) =>
-          reportRefreshFailure(error instanceof Error ? error : new Error(String(error)), t().refreshMailboxFailed),
-        )
+        .catch((error: unknown) => {
+          // A navigation that replaced the list cancels this reload; that is not a failure.
+          if (error instanceof Error && error.name === "AbortError") return;
+          reportRefreshFailure(error instanceof Error ? error : new Error(String(error)), t().refreshMailboxFailed);
+        })
         .finally(() => setRowRefreshes((count) => count - 1));
     }
     return "applied";
