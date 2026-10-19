@@ -205,3 +205,21 @@ test("edit cancelled during the callback publishes and saves nothing", async () 
   expect(f.saves).toHaveLength(0);
   expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
 });
+
+test("an edit of fallback text without a snapshot keeps the edit in the saved state", async () => {
+  const f = fixture();
+  f.setStored({ state: null, text: "hello", cursor: null, restoreRevision: "r" });
+  const result = await f.documents.edit("doc", { actor: null }, ({ text }) => `${text}!`);
+  expect(result).toMatchObject({ status: "edited", text: "hello!" });
+  expect(f.saves[0]?.input.text).toBe("hello!");
+  const saved = new Y.Doc();
+  try {
+    Y.applyUpdate(saved, f.saves[0]!.input.state);
+    expect(saved.getText(SHARED_TEXT_NAME).toString()).toBe("hello!");
+    expect(saved.store.pendingStructs).toBeNull();
+  } finally {
+    saved.destroy();
+  }
+  // A later read from the same fallback replays the published edit, too.
+  expect((await f.documents.read("doc"))?.text).toBe("hello!");
+});

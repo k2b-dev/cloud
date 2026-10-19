@@ -24,11 +24,23 @@ type DocumentLog = {
   }): Promise<SharedTextContributor[]>;
 };
 
+/**
+ * Fallback text becomes the same Yjs items in every copy: an update published
+ * against one copy then applies to the next one, which a random client ID
+ * would leave pending and silently drop from the saved state.
+ */
+const FALLBACK_CLIENT_ID = 0;
+
 const createDoc = (stored: SharedTextStoredState): Y.Doc => {
   const doc = new Y.Doc({ gc: true });
   try {
     if (stored.state) Y.applyUpdate(doc, stored.state, "snapshot");
-    else if (stored.text) doc.getText(SHARED_TEXT_NAME).insert(0, stored.text);
+    else if (stored.text) {
+      const clientID = doc.clientID;
+      doc.clientID = FALLBACK_CLIENT_ID;
+      doc.getText(SHARED_TEXT_NAME).insert(0, stored.text);
+      doc.clientID = clientID;
+    }
     return doc;
   } catch (error) {
     doc.destroy();

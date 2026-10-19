@@ -53,6 +53,8 @@ carries application data such as version or activity attribution.
   `{ state, cursor, restoreRevision, text }`. `state` is a Yjs snapshot, or
   `null`; `text` is fallback content when there is no snapshot. Either may be
   null. The store must anchor legacy cursors to this log before returning.
+  Without a snapshot, every `read` and `edit` builds the same Yjs state from
+  `text`, so keep `text` unchanged until a save stores a snapshot.
 - `restoreRevision` is an opaque token. `save` must check it against the
   current row so an edit cannot overwrite a restore performed since `load`.
 - `save(docId, input, context)` receives `{ state, text, cursor,
