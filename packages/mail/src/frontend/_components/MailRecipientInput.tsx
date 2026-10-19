@@ -146,6 +146,8 @@ export default function MailRecipientInput(props: {
   createEffect(() => {
     const value = query().trim();
     const mailboxId = props.mailboxId;
+    // A highlight belongs to the list it was made in; after typing, Enter commits the typed text until new results arrive.
+    setActiveIndex(-1);
     if (timer) clearTimeout(timer);
     controller?.abort();
     controller = null;

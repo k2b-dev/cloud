@@ -110,6 +110,8 @@ suite("mailbox recipient suggestions", () => {
     await seed([{ email: "literal_tag@example.test" }]);
     await seed([{ email: "literalxxxtag@example.test" }]);
     await seed([{ email: "not an email" }]);
+    for (let i = 0; i < 3; i++) await seed([{ email: "team@localhost" }]);
+    await seed([{ email: "team@example.test", name: "N".repeat(250) }], 2);
     await seed([
       { email: "distinct-one@example.test", role: "from" },
       { email: "distinct-one@example.test", role: "reply_to" },
@@ -187,6 +189,12 @@ suite("mailbox recipient suggestions", () => {
   test("excludes own identities, other mailboxes, Junk overrides and deleted placements", async () => {
     for (const query of ["own@", "reply@", "other-only", "junk-only", "mixed-junk", "override-only", "deleted-only", "not an"])
       expect(await list(query)).toEqual([]);
+  });
+  test("invalid imported addresses never take a result slot; names fit the recipient name limit", async () => {
+    const [item, ...rest] = await list("team@", 1);
+    expect(rest).toEqual([]);
+    expect(item?.address).toBe("team@example.test");
+    expect(item?.displayName).toBe("N".repeat(200));
   });
   test("scores each message only once even when an address occurs in several roles", async () => {
     expect((await list("distinct-")).map((item) => item.address)).toEqual(["distinct-two@example.test", "distinct-one@example.test"]);

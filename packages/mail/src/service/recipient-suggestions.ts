@@ -1,6 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { type MailRecipientSuggestions, mailRecipientSuggestionSchema } from "../contracts";
+import { z } from "zod";
+import { MAIL_RECIPIENT_NAME_MAX, type MailRecipientSuggestions, mailRecipientSuggestionSchema } from "../contracts";
 import type { MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
 
@@ -52,7 +53,7 @@ export const recipientSuggestionsQuery = (params: QueryParams, db: typeof sql = 
       SELECT LOWER(BTRIM(reply_to)) FROM mail.sender_identities WHERE mailbox_id = ${params.mailboxId}::uuid AND reply_to IS NOT NULL
     ), addresses AS MATERIALIZED (
       SELECT address.message_id, address.role, address.position, address.normalized_email,
-        NULLIF(LEFT(BTRIM(address.display_name), 500), '') AS display_name
+        NULLIF(LEFT(BTRIM(address.display_name), ${MAIL_RECIPIENT_NAME_MAX}), '') AS display_name
       FROM mail.message_addresses address
       WHERE address.message_id = ANY((SELECT ids FROM live_ids)::uuid[])
     ), outgoing AS MATERIALIZED (
@@ -67,6 +68,8 @@ export const recipientSuggestionsQuery = (params: QueryParams, db: typeof sql = 
       JOIN live ON live.id = address.message_id
       LEFT JOIN outgoing ON outgoing.message_id = address.message_id
       WHERE NOT EXISTS (SELECT 1 FROM own_addresses own WHERE own.address = address.normalized_email)
+        -- Only addresses the composer accepts, so invalid imported ones never take a result slot.
+        AND address.normalized_email ~ ${z.regexes.email.source}
     ), matching AS (
       SELECT address FROM occurrences
       GROUP BY address

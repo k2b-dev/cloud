@@ -216,7 +216,16 @@ if (!isServer)
       expect(options().map((option) => option.getAttribute("aria-selected"))).toEqual(["false", "true"]);
       press(input, "ArrowDown");
       expect(input.getAttribute("aria-activedescendant")).toBe(options()[0]!.id);
-      press(input, "ArrowUp");
+      // Typing again drops the highlight, so Enter takes what was typed and never a stale entry.
+      input.value = "grace@example.test";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(input.getAttribute("aria-activedescendant")).toBeNull();
+      press(input, "Enter");
+      expect(recipients).toEqual(["grace@example.test"]);
+      recipients = [];
+      await typeQuery(input);
+      press(input, "ArrowDown");
+      press(input, "ArrowDown");
       press(input, "Enter");
       expect(recipients).toEqual(["grace@example.test"]);
       expect(dom.root.querySelector('[role="listbox"]')).toBeNull();
