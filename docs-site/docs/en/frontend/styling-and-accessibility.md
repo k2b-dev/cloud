@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Styling and accessibility
@@ -121,9 +121,11 @@ uses the app's selection fill and ink. Tabs, view tabs, segmented controls, and
 active filter chips share the navigation fill. Other controls and options keep
 the platform selection color: select options, keyboard-active options, pressed
 toolbar buttons, and checked cards. Status keeps its status colors. In the
-Cloud repository, the `selection-tokens` check rejects new platform fills and
-raw `--app-accent` color mixes. Control and status uses belong in its
-allowlist with a reason.
+Cloud repository, the `selection-tokens` check rejects new platform fills,
+raw `--app-accent` color mixes, and the raw `--app-accent` as text ink, border
+color, or focus outline. App ink uses `--ui-app-accent-text`, and focus rings
+use the platform focus. Control and status uses belong in its allowlist with a
+reason.
 
 ## Use shared components first
 

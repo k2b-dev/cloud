@@ -23,11 +23,10 @@ import { ssr } from "../config";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
 import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../observability/telemetry/service";
 import { listRegisteredAppStatus, type RegisteredAppStatus } from "../registered-apps";
+import { AppIcon } from "./AppIcon";
 import RemoveRegisteredAppButton from "./RemoveRegisteredAppButton.island";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-const APP_ICON_CLASSES = "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400";
 
 const timeAgo = (ts: number, t: GatewayOpsMessages) => {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -44,7 +43,7 @@ const fmtUptime = (ms: number, locale: string) => {
 };
 
 const Check = () => <i class="ti ti-check text-emerald-500 text-xs" />;
-const Dash = () => <i class="ti ti-minus text-zinc-300 dark:text-zinc-600 text-xs" />;
+const Dash = () => <i class="ti ti-minus text-dimmed text-xs" />;
 
 type GatewayAppRow = RegisteredAppStatus & {
   traffic: { count: number; totalMs: number; errors: number } | undefined;
@@ -303,9 +302,7 @@ export default ssr<AuthContext>(async (c) => {
                 if (col.id === "app") {
                   return (
                     <div class="flex items-center gap-2">
-                      <div class={`w-6 h-6 rounded grid place-items-center shrink-0 ${APP_ICON_CLASSES}`}>
-                        <i class={`${app.icon} text-[10px]`} />
-                      </div>
+                      <AppIcon icon={app.icon} accent={app.appearance?.accent} />
                       <span class="font-medium text-primary text-xs">{app.name}</span>
                       <code class="text-[9px] text-dimmed">{app.id}</code>
                     </div>

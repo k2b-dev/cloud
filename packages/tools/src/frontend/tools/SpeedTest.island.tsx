@@ -453,7 +453,7 @@ export function Metric(props: {
       class="rounded-lg p-3 flex flex-col gap-1.5 transition-colors"
       classList={{
         "bg-zinc-50 dark:bg-zinc-800/50": !props.active,
-        "bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-400/40": props.active,
+        "bg-[var(--k2b-info-surface)] ring-1 ring-(--k2b-info-text)/25": props.active,
       }}
     >
       <div class="flex items-center gap-1.5 text-xs text-dimmed">

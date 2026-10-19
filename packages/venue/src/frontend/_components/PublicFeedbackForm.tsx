@@ -57,7 +57,7 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
                   classList={{
                     "border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-400":
                       active(),
-                    "border-zinc-200 bg-zinc-50 text-zinc-400 hover:border-amber-200 hover:text-amber-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500 dark:hover:border-amber-500/40 dark:hover:text-amber-400":
+                    "border-zinc-200 bg-zinc-50 text-dimmed hover:border-amber-200 hover:text-amber-500 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-amber-500/40 dark:hover:text-amber-400":
                       !active(),
                   }}
                   onMouseEnter={() => setHoverRating(value)}
