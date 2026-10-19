@@ -102,6 +102,9 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                   description={t().metricFiltersDescription}
                   value={metricFilters}
                   onValueChange={setMetricFilters}
+                  placeholder="node_cpu_seconds_total, node_filesystem_*"
+                  icon="ti ti-filter"
+                  monospace
                   multiline
                   error={filtersValid() ? undefined : t().invalidMetricFilters}
                 />
