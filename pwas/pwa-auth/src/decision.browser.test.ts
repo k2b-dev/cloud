@@ -16,6 +16,20 @@ const views: Record<string, BrowserContextOptions> = {
 let browser: Browser;
 beforeAll(async () => {
   browser = await launchBrowser();
+  // The engine's first sheet happens here, in the launch budget: in WebKit, the first entrance animation took
+  // about 3 s to settle under load and pushed whichever test ran first past its 5 s budget.
+  const warm = await browser.newContext();
+  try {
+    await warm.route("https://login.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+    const page = await warm.newPage();
+    await page.goto("https://login.test/");
+    await page.addScriptTag({ content: script });
+    await page.evaluate(() => window.openDecision({ locale: "de", state: "known", answer: "ok" }));
+    await page.locator("dialog[open]").waitFor();
+    await settled(page);
+  } finally {
+    await warm.close();
+  }
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -148,11 +162,17 @@ describe("sign-in sheet", () => {
                 expect(await page.locator(".auth-decision__started").textContent()).toBe("Gestartet um 09:14");
                 return;
               }
-              // Each row is one line next to its icon, with nothing cut off.
-              for (const row of await rows.all()) {
-                const { height } = await row.boundingBox().then((value) => value!);
-                expect(height, `${state} ${await row.textContent()}`).toBeLessThan(32);
-                expect(await row.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+              // Each row is one line next to its icon, with nothing cut off; measured in one round trip.
+              const measured = await rows.evaluateAll((dds) =>
+                dds.map((dd) => ({
+                  text: dd.textContent,
+                  height: dd.getBoundingClientRect().height,
+                  fits: dd.scrollWidth <= dd.clientWidth,
+                })),
+              );
+              for (const row of measured) {
+                expect(row.height, `${state} ${row.text}`).toBeLessThan(32);
+                expect(row.fits, `${state} ${row.text}`).toBe(true);
               }
               const last = await box(page, ".auth-decision__details[data-context]");
               const note = page.locator(".auth-decision__request > .k2b-notice-card");
