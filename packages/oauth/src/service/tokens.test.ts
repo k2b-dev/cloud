@@ -2351,3 +2351,19 @@ suite("OAuth resource access tokens", () => {
     }
   });
 });
+
+test("OAuth JWKS revalidates weak ETags without database access", async () => {
+  const jwks = spyOn(oauth.tokens, "getJwks").mockResolvedValue({ keys: [] });
+  try {
+    const initial = await oauthRoutes.request("/.well-known/jwks.json");
+    expect(initial.status).toBe(200);
+    const etag = initial.headers.get("ETag");
+    if (!etag) throw new Error("Missing JWKS ETag");
+    for (const header of [`W/${etag}`, `"other", W/${etag}`, "*"]) {
+      expect((await oauthRoutes.request("/.well-known/jwks.json", { headers: { "If-None-Match": header } })).status).toBe(304);
+    }
+    expect((await oauthRoutes.request("/.well-known/jwks.json", { headers: { "If-None-Match": 'W/"other"' } })).status).toBe(200);
+  } finally {
+    jwks.mockRestore();
+  }
+});

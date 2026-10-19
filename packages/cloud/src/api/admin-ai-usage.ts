@@ -3,6 +3,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { aiUsage } from "../ai/usage";
 import { type AuthContext, auth, err, fail, ok, respond, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { AiUsageQuerySchema } from "../shared/ai-usage";
 
 export const createAdminAiUsageRoutes = (
@@ -10,6 +11,7 @@ export const createAdminAiUsageRoutes = (
   service: typeof aiUsage = aiUsage,
 ) =>
   new Hono<AuthContext>()
+    .use("*", noTransform())
     .use("*", authenticate)
     .get(
       "/report",

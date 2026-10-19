@@ -48,6 +48,7 @@ import {
   requiresAuth,
   v,
 } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { logger, settings } from "../services";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
@@ -741,6 +742,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     (c.req.param("kind") === "actions" ? requireWriteScope : requireReadScope)(c, next);
 
   return new Hono<AuthContext>()
+    .use("/capabilities/v1/*", noTransform())
     .use("/capabilities/v1/*", dependencies.authenticate ?? auth.requireRole("authenticated"))
     .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
     .post(
