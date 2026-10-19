@@ -462,8 +462,8 @@ test("Plus opens its search over emoji suggestions for a shortcode at the caret"
   h.textarea.focus();
   h.textarea.setSelectionRange(8, 8);
   h.textarea.click();
-  const deadline = Date.now() + 5_000;
-  while (!h.root.querySelector('[role="listbox"][aria-label="Emoji suggestions"]') && Date.now() < deadline) await flush();
+  const deadline = performance.now() + 5_000;
+  while (!h.root.querySelector('[role="listbox"][aria-label="Emoji suggestions"]') && performance.now() < deadline) await flush();
   expect(h.root.querySelector('[role="listbox"][aria-label="Emoji suggestions"]')).not.toBeNull();
   h.plus().click();
   expect(h.search()).not.toBeNull();
