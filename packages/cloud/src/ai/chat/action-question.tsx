@@ -217,6 +217,8 @@ function MessagePreview(props: {
   locale: string;
   timeZone: string;
   readMore?: string;
+  /** Only a question that sends says when the mail goes out; a draft that is created or deleted goes nowhere. */
+  sends: boolean;
 }) {
   const t = () => actionMessages(props.locale);
   const rows = () => {
@@ -233,6 +235,7 @@ function MessagePreview(props: {
   };
   const note = () => {
     const p = props.preview;
+    if (!props.sends) return undefined;
     if (p.sendAt) {
       const [before, after] = t().sendsAt({ at: "\u0000" }).split("\u0000");
       return (
@@ -307,7 +310,15 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
     <Chat.Preview>
       <Switch>
         <Match when={preview()?.kind === "message" ? (preview() as Extract<CapabilityPreview, { kind: "message" }>) : undefined}>
-          {(message) => <MessagePreview preview={message()} locale={locale()} timeZone={tz()} readMore={props.readMore} />}
+          {(message) => (
+            <MessagePreview
+              preview={message()}
+              locale={locale()}
+              timeZone={tz()}
+              readMore={props.readMore}
+              sends={props.card.reason.code === "sends"}
+            />
+          )}
         </Match>
         <Match when={preview()?.kind === "event" ? (preview() as Extract<CapabilityPreview, { kind: "event" }>) : undefined}>
           {(event) => (

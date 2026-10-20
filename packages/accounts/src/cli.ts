@@ -11,6 +11,7 @@ import {
   printRows as printJsonOrTable,
   printStructured,
 } from "@k2b/cloud/cli";
+import { principalLabel } from "@k2b/cloud/shared";
 
 type UserProvider = "local" | "ipa";
 type UserProfile = "user" | "guest";
@@ -369,14 +370,25 @@ const requestRows = (items: AccountRequest[]) =>
     id: request.id,
   }));
 
-const auditRows = (items: AuditEvent[]) =>
+const auditRows = (items: AuditEvent[], locale?: string) =>
   items.map((event) => ({
     id: event.id,
     createdAt: event.createdAt,
     outcome: event.outcome,
     action: event.action,
-    actor: event.actor.uid ?? event.actor.userId ?? "",
-    target: event.target.label ?? event.target.id ?? "",
+    actor:
+      event.actor.uid ?? (event.actor.userId ? principalLabel({ principal: { type: "user", userId: event.actor.userId } }, locale) : ""),
+    target:
+      event.target.type === "user"
+        ? principalLabel({ principal: { type: "user", userId: event.target.id ?? "" }, displayName: event.target.label }, locale)
+        : event.target.type === "group"
+          ? principalLabel({ principal: { type: "group", groupId: event.target.id ?? "" }, displayName: event.target.label }, locale)
+          : event.target.type === "service_account"
+            ? principalLabel(
+                { principal: { type: "service_account", serviceAccountId: event.target.id ?? "" }, displayName: event.target.label },
+                locale,
+              )
+            : (event.target.label ?? event.target.id ?? ""),
     error: truncate(event.errorMessage ?? event.reason, 72),
   }));
 
@@ -1291,7 +1303,7 @@ export default defineCliCommands({
             days: flags.days,
           })}`,
         );
-        printJsonOrTable(ctx, response, auditRows(response.events), [
+        printJsonOrTable(ctx, response, auditRows(response.events, ctx.options.locale), [
           { key: "id" },
           { key: "createdAt" },
           { key: "outcome" },

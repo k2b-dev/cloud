@@ -50,6 +50,46 @@ const envelopeOnly: MessageDetail = {
   attachments: [],
 };
 
+const supportIdentity: SenderIdentity = {
+  id: "Send01",
+  mailboxId: "Box001",
+  label: "Support",
+  displayName: "Support",
+  fromAddress: "support@example.com",
+  replyTo: null,
+  defaultCc: [],
+  defaultBcc: [],
+  defaultFormat: "markdown",
+  defaultPriority: "normal",
+  defaultDeliveryReceipt: false,
+  defaultReadReceipt: false,
+  vcard: null,
+  envelopeSender: null,
+  defaultSignatureTemplateId: null,
+  transport: {
+    mode: "mailbox",
+    host: null,
+    port: null,
+    tlsMode: null,
+    username: null,
+    secret: { kind: null, isSet: false },
+    revision: 0,
+    status: "active",
+    capabilities: { dsn: false, size: false, maxMessageBytes: null },
+    lastVerifiedAt: null,
+    lastError: null,
+  },
+  authenticationPolicy: { automation: "mailbox" },
+  sentFolderId: null,
+  draftsFolderId: null,
+  isDefault: true,
+  status: "unverified",
+  statusReason: "sent_folder_missing",
+  pendingVerificationCommandId: null,
+  createdAt: now,
+  updatedAt: now,
+};
+
 const waitFor = async (condition: () => boolean) => {
   for (let attempt = 0; attempt < 100; attempt++) {
     if (condition()) return;
@@ -435,45 +475,7 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
   const error = spyOn(prompts, "error").mockResolvedValue(undefined);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(async () => Response.json([]), { preconnect: originalFetch.preconnect });
-  const identity: SenderIdentity = {
-    id: "Send01",
-    mailboxId: "Box001",
-    label: "Support",
-    displayName: "Support",
-    fromAddress: "support@example.com",
-    replyTo: null,
-    defaultCc: [],
-    defaultBcc: [],
-    defaultFormat: "markdown",
-    defaultPriority: "normal",
-    defaultDeliveryReceipt: false,
-    defaultReadReceipt: false,
-    vcard: null,
-    envelopeSender: null,
-    defaultSignatureTemplateId: null,
-    transport: {
-      mode: "mailbox",
-      host: null,
-      port: null,
-      tlsMode: null,
-      username: null,
-      secret: { kind: null, isSet: false },
-      revision: 0,
-      status: "active",
-      capabilities: { dsn: false, size: false, maxMessageBytes: null },
-      lastVerifiedAt: null,
-      lastError: null,
-    },
-    authenticationPolicy: { automation: "mailbox" },
-    sentFolderId: null,
-    draftsFolderId: null,
-    isDefault: true,
-    status: "unverified",
-    statusReason: "sent_folder_missing",
-    pendingVerificationCommandId: null,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const identity = supportIdentity;
   const { MailConversationReader } = modules!;
   let opened = 0;
   const [canAdmin, setCanAdmin] = createSignal(true);
@@ -821,6 +823,195 @@ test.skipIf(isServer)("printing marks the complete conversation as a region and 
   } finally {
     dispose();
     print.mockRestore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)(
+  "printing a long conversation shows every message for the print and folds the older ones again afterward",
+  async () => {
+    const dom = createDomTestHarness();
+    const { MailConversationReader } = modules!;
+    const older = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-older-messages]");
+    const print = spyOn(window, "print").mockImplementation(() => {
+      expect(older()).toBeNull();
+      expect(dom.root.querySelectorAll("[data-mail-message-id]")).toHaveLength(5);
+    });
+    const messages = Array.from({ length: 5 }, (_, index): MessageDetail => {
+      const date = new Date(Date.parse(now) - (5 - index) * 60_000).toISOString();
+      return { ...envelopeOnly, id: `Msg00${index + 1}`, internalDate: date, sentAt: date };
+    });
+    const dispose = render(() => createComponent(MailConversationReader, { ...readerProps, messages }), dom.root);
+    try {
+      await waitFor(() => older() !== null);
+      expect(older()!.textContent).toBe("2 older messages");
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="More conversation actions"]')!.click();
+      const printAction = () =>
+        [...dom.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+          (item) => item.textContent?.trim() === "Print conversation",
+        );
+      await waitFor(() => printAction() !== undefined);
+      printAction()!.click();
+      await waitFor(() => print.mock.calls.length === 1);
+      window.dispatchEvent(new Event("afterprint"));
+      await waitFor(() => older() !== null);
+      expect(older()!.textContent).toBe("2 older messages");
+      expect(dom.root.querySelectorAll("[data-mail-message-id]")).toHaveLength(3);
+    } finally {
+      dispose();
+      print.mockRestore();
+      dom.cleanup();
+    }
+  },
+);
+
+test.skipIf(isServer)("a new message never folds away a shown message, including the one that holds focus", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([1, 2, 3, 4, 5, 6].map(message));
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  const older = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-older-messages]");
+  try {
+    await waitFor(() => older() !== null);
+    expect(older()!.textContent).toBe("3 older messages");
+    // The third visible message is the oldest one above the fold. New messages keep it mounted, also an
+    // unfocused card whose dialog may be open, and the same older messages stay folded.
+    const card = dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg004"]')!;
+    setMessages((current) => [...current, message(7)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg007"]') !== null);
+    expect(card.isConnected).toBe(true);
+    expect(older()!.textContent).toBe("3 older messages");
+    const header = card.querySelector<HTMLElement>("[data-mail-message-header]")!;
+    header.focus();
+    expect(dom.document.activeElement).toBe(header);
+    setMessages((current) => [...current, message(8)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg008"]') !== null);
+    expect(header.isConnected).toBe(true);
+    expect(dom.document.activeElement).toBe(header);
+    expect(older()!.textContent).toBe("3 older messages");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a conversation keeps the messages a live arrival showed when the person comes back to it", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const first = { selectionKey: "Conv01", messages: [1, 2, 3, 4, 5, 6].map(message) };
+  const [selected, setSelected] = createSignal(first);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get selectionKey() {
+          return selected().selectionKey;
+        },
+        get selectedConversationId() {
+          return selected().selectionKey;
+        },
+        get messages() {
+          return selected().messages;
+        },
+      }),
+    dom.root,
+  );
+  const shown = () => [...dom.root.querySelectorAll("[data-mail-message-id]")].map((card) => card.getAttribute("data-mail-message-id"));
+  try {
+    await waitFor(() => shown().length === 3);
+    setSelected({ ...first, messages: [...first.messages, message(7)] });
+    await waitFor(() => shown().includes("Msg007"));
+    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    setSelected({ selectionKey: "Conv02", messages: [{ ...message(8), id: "Msg099" }] });
+    await waitFor(() => shown().includes("Msg099"));
+    setSelected({ ...first, messages: [...first.messages, message(7)] });
+    await waitFor(() => shown().includes("Msg007"));
+    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("the fifth message folds none of the four shown messages away", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([1, 2, 3, 4].map(message));
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg001"]') !== null);
+    const header = dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"] [data-mail-message-header]')!;
+    header.focus();
+    setMessages((current) => [...current, message(5)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg005"]') !== null);
+    expect(header.isConnected).toBe(true);
+    expect(dom.document.activeElement).toBe(header);
+    expect(dom.root.querySelector("[data-mail-older-messages]")).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("the reply box names whom Reply writes to, also when this mailbox sent the newest message", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const later = new Date(Date.parse(now) + 60_000).toISOString();
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        identities: [supportIdentity],
+        messages: [
+          envelopeOnly,
+          {
+            ...envelopeOnly,
+            id: "Msg002",
+            internalDate: later,
+            sentAt: later,
+            from: [{ name: "Support", address: "support@example.com" }],
+            to: [{ name: "Grace Hopper", address: "grace@example.com" }],
+          },
+        ],
+      }),
+    dom.root,
+  );
+  try {
+    const box = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-box]");
+    await waitFor(() => box() !== null);
+    expect(box()!.textContent?.trim()).toBe("Reply to Grace Hopper…");
+  } finally {
+    dispose();
     dom.cleanup();
   }
 });

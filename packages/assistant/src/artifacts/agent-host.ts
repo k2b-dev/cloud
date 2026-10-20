@@ -26,6 +26,7 @@ import { runCodeAi } from "./ai-service";
 import { createArtifactServiceRoutes } from "./api";
 import { backgroundCodeRouteAllowed, backgroundDatabaseOperation } from "./background-code-policy";
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
+import { ChatReference } from "./chat-access";
 import { codeApprovalMessage } from "./code-approval-message";
 import type { CodeToolContext } from "./code-tools";
 import { LIMITS } from "./contracts";
@@ -175,7 +176,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
     theme = context.theme ?? "light";
   if (config.background && url.pathname === "/api/assistant/artifacts/runtime/check/start") {
     const { input } = z
-      .object({ input: CodeCheckInput, conversationId: z.uuid() })
+      .object({ input: CodeCheckInput, conversationId: ChatReference })
       .strict()
       .parse(await new Request(url, init).json());
     if (input.id) {

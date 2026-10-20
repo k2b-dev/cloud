@@ -3,8 +3,6 @@ import {
   AiQuotaError,
   AiTaskRequestSchema,
   AiViewInvalidError,
-  aiConversations,
-  aiProjects,
   CODE_SOURCE_TOOLS,
   createAiConversationView,
   isAiSettingsError,
@@ -26,6 +24,7 @@ import { ActionInputError, ArtifactCompileError, parseActionInput, sourceActions
 import { adminIdentity, artifactAdmin } from "./admin";
 import { runCodeAi } from "./ai-service";
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
+import { ChatReference, requireToolChat } from "./chat-access";
 import { ChatPresentationInput } from "./chat-presentation-contracts";
 import { chatPresentations } from "./chat-presentations";
 import { ClientCall, ClientCallResult, clientCalls } from "./client-calls";
@@ -200,7 +199,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       v(
         "json",
         z.strictObject({
-          conversationId: z.union([z.uuid(), CodeResourceId]),
+          conversationId: ChatReference,
           turnId: z.string().min(1).max(80),
           runId: z.string().min(1).max(180),
           index: z.number().int().min(0).max(63),
@@ -211,21 +210,11 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         const input = c.req.valid("json");
         const viewer = identity(c);
         if (viewer.actor.kind !== "user") throw new ArtifactError("ACCESS_DENIED");
-        const ownerUserId = viewer.actor.user.id;
-        const chat = z.uuid().safeParse(input.conversationId).success
-          ? await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId })
-          : await aiConversations.getConversationByShortId({ shortId: input.conversationId, ownerUserId });
-        if (
-          !chat ||
-          chat.archivedAt ||
-          (chat.allowedTools && !chat.allowedTools.includes("code_run")) ||
-          (chat.projectId && !(await aiProjects.get(chat.projectId, viewer.accessSubject, "read")))
-        )
-          throw new ArtifactError("ACCESS_DENIED");
-        return respond(c, ok(await createAiConversationView({ ...input, conversationId: chat.id, ownerUserId })));
+        const chat = await requireToolChat(input.conversationId, viewer, "code_run");
+        return respond(c, ok(await createAiConversationView({ ...input, conversationId: chat.id, ownerUserId: viewer.actor.user.id })));
       },
     )
-    .post("/runtime/check/start", v("json", z.object({ input: CodeCheckInput, conversationId: z.uuid() }).strict()), async (c) => {
+    .post("/runtime/check/start", v("json", z.object({ input: CodeCheckInput, conversationId: ChatReference }).strict()), async (c) => {
       const input = c.req.valid("json");
       const assets = await checkFrameAssets();
       return respond(
@@ -244,27 +233,32 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     })
     .post(
       "/runtime/check/record",
-      v("json", z.object({ input: CodeCheckInput, conversationId: z.uuid(), report: CheckReport }).strict()),
+      v("json", z.object({ input: CodeCheckInput, conversationId: ChatReference, report: CheckReport }).strict()),
       async (c) => {
         const input = c.req.valid("json");
         await appChecks.record(input.report, input.input, input.conversationId, identity(c));
         return respond(c, ok({ recorded: true }));
       },
     )
-    .post("/runtime/check/gate", v("json", z.object({ id: CodeResourceId, conversationId: z.uuid() }).strict()), async (c) => {
+    .post("/runtime/check/gate", v("json", z.object({ id: CodeResourceId, conversationId: ChatReference }).strict()), async (c) => {
       const input = c.req.valid("json");
+      // Only the code_open tool (operation "open") reaches the gate; scoped chats grant it separately from code_run.
+      const chat = await requireToolChat(input.conversationId, identity(c), "code_open");
       const opened = await sql.begin(async (db) => {
         await databaseConfigLock(db);
         const { row, permission } = await requireArtifact(db, input.id, identity(c), "read");
         const app = await readArtifactRevision(db, row, permission, permission === "admin" ? row.revision : row.published_revision!);
-        await appChecks.assert(app.source, app.id, identity(c), input.conversationId, db);
+        await appChecks.assert(app.source, app.id, identity(c), chat.id, db);
         return { id: app.id, title: app.title };
       });
       return respond(c, ok(opened));
     })
     .post(
       "/runtime/check/capability",
-      v("json", z.object({ name: z.string(), input: z.json(), conversationId: z.uuid(), artifactId: CodeResourceId.optional() }).strict()),
+      v(
+        "json",
+        z.object({ name: z.string(), input: z.json(), conversationId: ChatReference, artifactId: CodeResourceId.optional() }).strict(),
+      ),
       async (c) => {
         const input = c.req.valid("json");
         return respond(c, ok(await runtimeCapabilities.check(input, identity(c), caller(c))));

@@ -1,3 +1,4 @@
+import { principalLabel } from "../access/principal-label";
 import type { AccessEntry, EntityListItem, PermissionLevel, Principal } from "../contracts";
 import { arg, command, confirmFlag, flag, paginationFlags } from "./commands";
 import type { CloudCliContext, CloudCliTableColumn } from "./index";
@@ -120,21 +121,7 @@ const principalKey = (principal: Principal): string => {
   }
 };
 
-const entryDisplayName = (entry: AccessEntry): string => {
-  if (entry.displayName) return entry.displayName;
-  switch (entry.principal.type) {
-    case "user":
-      return entry.principal.userId;
-    case "group":
-      return entry.principal.groupId;
-    case "service_account":
-      return entry.principal.serviceAccountId;
-    case "authenticated":
-      return "All users (incl. guests)";
-    case "public":
-      return "Public";
-  }
-};
+const entryDisplayName = (entry: AccessEntry, locale?: string): string => principalLabel(entry, locale);
 
 const formatEntityCandidate = (item: EntityListItem): string => {
   if (item.kind === "user") return `${item.user.displayName} (${item.user.uid}${item.user.mail ? `, ${item.user.mail}` : ""})`;
@@ -257,17 +244,20 @@ const entryTypeLabel = (entry: AccessEntry): string => {
 };
 
 // Resource-bound service accounts back resource API keys, which are managed with those keys.
-const accessRows = (entries: AccessEntry[], options: { includeServiceAccounts?: boolean; scopes?: readonly string[] } = {}) =>
+const accessRows = (
+  entries: AccessEntry[],
+  options: { includeServiceAccounts?: boolean; scopes?: readonly string[]; locale?: string } = {},
+) =>
   entries
     .filter((entry) => options.includeServiceAccounts || entry.serviceAccountKind !== "resource_bound")
     .sort((a, b) => {
       const rank = permissionRank(b.permission) - permissionRank(a.permission);
       if (rank !== 0) return rank;
-      return entryDisplayName(a).localeCompare(entryDisplayName(b));
+      return entryDisplayName(a, options.locale).localeCompare(entryDisplayName(b, options.locale));
     })
     .map((entry) => ({
       accessId: entry.id,
-      principal: entryDisplayName(entry),
+      principal: entryDisplayName(entry, options.locale),
       type: entryTypeLabel(entry),
       permission: entry.permission,
       ...(options.scopes ? { scope: entry.scope ?? options.scopes[0] } : {}),
@@ -287,7 +277,7 @@ export const printAccessEntries = (
   options: { includeServiceAccounts?: boolean; jsonValue?: unknown; scopes?: readonly string[] } = {},
 ) => {
   if (printStructured(ctx, options.jsonValue ?? entries)) return;
-  const rows = accessRows(entries, options);
+  const rows = accessRows(entries, { ...options, locale: ctx.options.locale });
   if (rows.length === 0) {
     ctx.print("No direct grants.");
     return;
@@ -426,7 +416,7 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
       const principal = await resolveAccessPrincipal(ctx, flags as PrincipalFlags, adapter);
       const entry = await adapter.grant(ctx, resource, principal, permission, scope);
       if (!printStructured(ctx, { resource, entry }))
-        ctx.print(`Granted ${permission}${scopeSuffix(scope)} on ${resource.label} to ${entryDisplayName(entry)}.`);
+        ctx.print(`Granted ${permission}${scopeSuffix(scope)} on ${resource.label} to ${entryDisplayName(entry, ctx.options.locale)}.`);
     },
   });
 
@@ -462,13 +452,15 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
       if (existing) {
         await adapter.update(ctx, resource, existing.id, permission, scope);
         if (!printStructured(ctx, { resource, accessId: existing.id, permission, scope, action: "updated" })) {
-          ctx.print(`Updated ${entryDisplayName(existing)} to ${permission}${scopeSuffix(scope)} on ${resource.label}.`);
+          ctx.print(
+            `Updated ${entryDisplayName(existing, ctx.options.locale)} to ${permission}${scopeSuffix(scope)} on ${resource.label}.`,
+          );
         }
         return;
       }
       const entry = await adapter.grant(ctx, resource, principal, permission, scope);
       if (!printStructured(ctx, { resource, entry, action: "created" })) {
-        ctx.print(`Granted ${permission}${scopeSuffix(scope)} on ${resource.label} to ${entryDisplayName(entry)}.`);
+        ctx.print(`Granted ${permission}${scopeSuffix(scope)} on ${resource.label} to ${entryDisplayName(entry, ctx.options.locale)}.`);
       }
     },
   });
@@ -496,7 +488,7 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
         const entry = entries.find((candidate) => principalKey(candidate.principal) === principalKey(principal));
         if (!entry) throw new Error("No direct grant for that principal.");
         accessId = entry.id;
-        label = entryDisplayName(entry);
+        label = entryDisplayName(entry, ctx.options.locale);
       } else if (principalFlagCount(flags as PrincipalFlags) > 0) {
         throw new Error("Pass either --access-id or one principal flag, not both.");
       }

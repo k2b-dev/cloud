@@ -17,6 +17,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { logger } from "@k2b/cloud/services";
+import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import * as c from "./capability-contracts";
@@ -3328,7 +3329,11 @@ const actionDefinitions = {
                 ? t.assignmentSummary({
                     count,
                     mode: t.assignmentMode({ mode: input.mode }),
-                    users: result.assignees.map((user) => user.displayName).join(", ") || input.assigneeUserIds.join(", "),
+                    users:
+                      result.assignees.map((user) => user.displayName).join(", ") ||
+                      input.assigneeUserIds
+                        .map((userId) => principalLabel({ principal: { type: "user", userId } }, context.locale))
+                        .join(", "),
                     missing,
                   })
                 : t.unassignedConversations({ count, missing }),

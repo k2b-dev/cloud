@@ -7,7 +7,8 @@ import type { User } from "../contracts/shared";
 import type { HelpDocumentManifest, HelpDocumentPayload } from "../shared/help";
 import { appAppearanceStyle } from "./app-appearance";
 import Layout from "./Layout";
-import { LayoutHelpPage, type LayoutHelpPageProps, LayoutHelpPanel, type LayoutHelpPanelProps } from "./LayoutHelp";
+import { LayoutHelpPage, type LayoutHelpPageProps } from "./LayoutHelp";
+import { LayoutHelpPanel, type LayoutHelpPanelProps } from "./LayoutHelpPanel.server";
 import { helpArticlePartsServer } from "./layout-help-article.server";
 import PanelLayout from "./PanelLayout";
 import { readPanelContext } from "./panel-context";
@@ -66,7 +67,7 @@ const app = defineApp({
   routes: ["/"],
 });
 type Environment = { Variables: { runtime: CloudRuntime; user: User } };
-const PropsSnapshot = (props: { value: LayoutHelpPanelProps | LayoutHelpPageProps }) => (
+const PropsSnapshot = (props: { value: LayoutHelpPageProps }) => (
   <script id="help-fixture-props" type="application/json" innerHTML={JSON.stringify(props.value).replace(/</g, "\\u003c")} />
 );
 export const server = new Hono<Environment>()
@@ -99,10 +100,7 @@ export const server = new Hono<Environment>()
       };
       return () => (
         <PanelLayout c={c} title="Help">
-          <div id="help-fixture-root" class="flex h-full min-h-0 flex-1 flex-col">
-            <LayoutHelpPanel {...props} />
-          </div>
-          <PropsSnapshot value={props} />
+          <LayoutHelpPanel {...props} />
         </PanelLayout>
       );
     }),

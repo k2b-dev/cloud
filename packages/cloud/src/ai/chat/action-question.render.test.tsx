@@ -108,6 +108,27 @@ describe("Action question fixtures", () => {
 });
 
 describe("card v4 question", () => {
+  test("only a question that sends says when the mail goes out", () => {
+    // A draft that is deleted or created shows its message preview, but it goes nowhere: no "Wird sofort gesendet".
+    const mail = actionFixtures("de").mail!.block;
+    const review = mail.review && "sentence" in mail.review ? mail.review : undefined;
+    if (!review) throw new Error("The mail fixture has a review");
+    const { from: _from, ...preview } = review.preview as Extract<NonNullable<typeof review.preview>, { kind: "message" }>;
+    const draft = {
+      ...mail,
+      review: {
+        ...review,
+        ask: "deletes" as const,
+        check: undefined,
+        preview: { ...preview, sendAt: "2026-10-20T06:00:00.000Z" },
+        sentence: { ...review.sentence, action: "Entwurf {subject} an {to} löschen" },
+      },
+    };
+    const de = text(renderTurn(draft, "de"));
+    expect(de).toContain("An Lea Berg lea.berg@example.com");
+    expect(de).not.toContain("gesendet");
+    expect(text(renderTurn(mail, "de"))).toContain("Wird sofort gesendet.");
+  });
   test("a question is one sentence with typed chips, Cloud's reason, the thing, and two answers that name deed and target", () => {
     const de = text(renderTurn(actionFixtures("de").mail!.block, "de")).replace(/\s+([.,?])/g, "$1");
     expect(de).toContain("Mail Wartungsfenster Dienstag an Lea Berg senden?");

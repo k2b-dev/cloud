@@ -12,7 +12,17 @@ import {
 } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
+import {
+  AppWorkspace,
+  type AppWorkspaceWidthShare,
+  announce,
+  openSpotlightSearch,
+  Placeholder,
+  prompts,
+  type ToastHandle,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -30,7 +40,7 @@ import { readApiError } from "./_components/api-response";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailConversationList from "./_components/MailConversationList";
-import MailConversationReader from "./_components/MailConversationReader";
+import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
@@ -113,6 +123,20 @@ import {
 } from "./_components/mail-workspace-refresh";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 import { assertCursorProgress } from "./pagination";
+
+/**
+ * F2, wide windows: the list grows with the app card from 320 to 440 px (25 % of the card minus 24 px); its pane
+ * also holds the 12 px gap to the reader. A Detail is a column only while the reader beside the list keeps 440 px,
+ * so Main's minimum is the list pane plus that reader width.
+ */
+const MAIL_READER_BESIDE_DETAIL = 440;
+const MAIL_LIST_WIDTH = { share: 0.25, offset: -12, min: 332, max: 452 } satisfies AppWorkspaceWidthShare;
+const MAIL_MAIN_WITH_LIST = {
+  share: MAIL_LIST_WIDTH.share,
+  offset: MAIL_LIST_WIDTH.offset + MAIL_READER_BESIDE_DETAIL,
+  min: MAIL_LIST_WIDTH.min + MAIL_READER_BESIDE_DETAIL,
+  max: MAIL_LIST_WIDTH.max + MAIL_READER_BESIDE_DETAIL,
+} satisfies AppWorkspaceWidthShare;
 
 const rank = (permission: string): number => (permission === "admin" ? 3 : permission === "write" ? 2 : permission === "read" ? 1 : 0);
 const mailListScope = (href: string): string => {
@@ -1103,6 +1127,7 @@ function MailWorkspaceView(props: {
   });
 
   const hasSelection = createMemo(() => Boolean(data.selectedConversationId || data.selectedMessageId));
+  const listOpen = () => !listCollapsed() || !hasSelection();
   const selectedListItem = createMemo(() =>
     selectableRows().find((item) =>
       item.selectionKind === "message" ? item.id === data.selectedMessageId : item.conversationId === data.selectedConversationId,
@@ -2518,7 +2543,13 @@ function MailWorkspaceView(props: {
         }
       />
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="p-0" aria-busy={routeLoading()} mobilePane={hasSelection() ? "main" : "conversations"} scroll={false}>
+        <AppWorkspace.Main
+          class="p-0"
+          aria-busy={routeLoading()}
+          mobilePane={hasSelection() ? "main" : "conversations"}
+          scroll={false}
+          minWidth={data.scheduledMode || data.draftsMode ? undefined : listOpen() ? MAIL_MAIN_WITH_LIST : MAIL_READER_BESIDE_DETAIL}
+        >
           <Show
             when={data.scheduledMode || data.draftsMode}
             fallback={
@@ -2527,8 +2558,8 @@ function MailWorkspaceView(props: {
                   id="conversations"
                   label={t().conversationList}
                   scroll={false}
-                  open={!listCollapsed() || !hasSelection()}
-                  defaultSize={430}
+                  open={listOpen()}
+                  defaultSize={MAIL_LIST_WIDTH}
                   minSize={300}
                   maxSize={620}
                 >
@@ -2692,7 +2723,7 @@ function MailWorkspaceView(props: {
           </Show>
         </AppWorkspace.Main>
         <AppWorkspace.Detail
-          id="mail-context"
+          id={MAIL_CONTEXT_DETAIL_ID}
           openOnChoice={false}
           open={detailsOpen() && canShowDetails()}
           onClose={() => setDetailsVisible(false)}
