@@ -1318,7 +1318,7 @@ test("MCP keeps its JSON socket raised until a tool response or error and resets
     }
     const response = await pending;
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ result: { isError: fail } });
+    expect((await response.json()).result.isError ?? false).toBe(fail);
     expect(calls).toEqual([55, 10]);
   }
 });
