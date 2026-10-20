@@ -353,8 +353,10 @@ vetoes. A click or `swapPage()` veto resolves it immediately; Back/Forward
 resolves only when rollback restores the entry. A failed rollback never
 resolves it.
 Async dialogs veto first, wait for `event.restored`, then open; after
-confirmation they clear dirty state and retry with `swapPage(event.url.href)`
-or `history.go(event.delta)`.
+confirmation they clear dirty state and retry a Back with
+`history.go(event.delta)`, a Forward or click with `swapPage(event.url.href)`:
+a history-backed dialog pushes onto the restored entry and so removes the
+forward entries.
 
 A check must not write history itself. During a vetoed Back/Forward, compare
 `state.moves` before and after `allowsLeave`: pushes and URL-changing replaces

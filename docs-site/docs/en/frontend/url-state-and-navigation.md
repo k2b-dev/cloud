@@ -253,7 +253,8 @@ onBeforeLeave((event) => {
     .then((confirmed) => {
       if (!confirmed) return;
       setDirty(false);
-      if (event.delta !== undefined) history.go(event.delta);
+      // A history-backed dialog replaced the forward entries: only Back can traverse again.
+      if (event.delta !== undefined && event.delta < 0) history.go(event.delta);
       else void swapPage(event.url.href);
     });
 });
