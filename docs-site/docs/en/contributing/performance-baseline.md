@@ -700,12 +700,12 @@ overlapped the after run from 18:03:38 to 18:12:02 UTC. This affects both
 Chromium profiles, WebKit desktop, and the beginning of WebKit phone
 (18:11:55–18:12:40). The original output has no per-sample UTC bounds, so no
 individual WebKit phone sample can be certified as undisturbed. All before
-samples are retained; the after values below are disturbed observations
-awaiting a browser-only remeasurement, not an isolation-qualified comparison.
+samples are retained; the first after values below are disturbed observations.
+The later browser-only remeasurement follows them separately.
 
 Each cell is median (min–max), in milliseconds:
 
-| Engine | Profile | Before | After |
+| Engine | Profile | Before | First after, disturbed |
 | --- | --- | ---: | ---: |
 | Chromium | Desktop | 1,436.9 (1,240–1,949.9) | 639.5 (605.9–675.7) |
 | Chromium | Phone, CPU/network throttled | 6,127.8 (5,878.6–6,500.2) | 2,539.3 (2,227.4–2,590.2) |
@@ -752,6 +752,51 @@ application bundles with the measurement-size correction. The after run is
 `.local/mail-perf/sol-after-20261020/result.json`, built from its recorded
 clean checkpoint. All four after profiles completed five samples, with no
 server, browser, or cleanup errors.
+
+#### Browser-only remeasurement
+
+The single follow-up run used the same application bundles built from
+`d9137b4bd`, without rebuilding or repeating server scenarios or before
+measurements. Before/after aggregate hashes of the core, Mail, and gateway
+bundle files matched. Its recorded source is `5f7b80d28` with the new scroll
+regression test uncommitted; that source marker identifies the measurement
+harness, rather than a new application build. Both fixture digests match the
+earlier runs.
+
+The run held the default machine heavy slot from 18:55:08 to 19:02:42 UTC.
+Lock snapshots at its start and 18:59:41 showed only that holder, after the
+other lane's extra-slot work ended. This establishes the checked scheduling
+boundaries, not an idle host: the one-minute load average was 23.86 → 18.47
+on the same 24 logical CPUs, with background services and unrelated work.
+The retained log records UTC bounds around every sample; the JSON timing
+samples themselves have no epoch fields.
+
+| Engine | Profile | Sample window, UTC | Median (min–max), ms |
+| --- | --- | --- | ---: |
+| Chromium | Desktop | 18:59:13–18:59:29 | 766.0 (619.7–830.7) |
+| Chromium | Phone, CPU/network throttled | 18:59:33–19:01:03 | 2,448.1 (2,151.7–2,960.6) |
+| WebKit | Desktop | 19:01:21–19:02:00 | 1,866 (1,721–4,426) |
+| WebKit | Phone viewport, unthrottled | 19:02:00–19:02:37 | 1,051 (996–1,348) |
+
+All four profiles completed five samples, with one workspace request per
+switch and no runner, browser, or cleanup errors. Chromium's main response
+was about 57 KB; median server/transfer time was 201.5/1.0 ms on desktop and
+209.5/279.1 ms on the throttled phone. Its phone median was about 60% below
+the retained before measurement. The desktop target below 300 ms remains
+unmet in both engines.
+
+The two separate Chromium trace samples, excluded from those medians, were:
+
+| Profile | Elapsed | Busy | Island mount | Style/layout | JS execution | Parse/compile | Other |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop | 1,010.6 | 818.0 | 0 | 261.2 | 32.0 | 0 | 524.8 |
+| Phone | 2,710.9 | 2,364.9 | 0 | 599.3 | 118.0 | 0 | 1,647.6 |
+
+The result is
+`.local/mail-perf/sol-after-browser-only-20261020/result.json`. Browser-only
+mode omits the earlier server scenarios' cache warming and fixture mutations;
+matching fixture digests do not establish equivalent cache conditions. Keep
+that limitation and the shared-host load alongside the observed reduction.
 
 This checkpoint is not ready to ship: nonzero list scroll still needs the
 shared SSR history owner to restore the destination after asynchronous
