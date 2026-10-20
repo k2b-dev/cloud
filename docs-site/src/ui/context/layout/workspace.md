@@ -68,7 +68,12 @@ The head follows these rules as well:
 - The back link goes with the title. Beside a visible sidebar it remains
   only for pages deeper than the sidebar lists: the sidebar marks their
   container with `active="ancestor"`, not the page itself.
-- Tabs, chips, and actions share one row while they fit.
+- Tabs, chips, and actions share one row while they fit. As the head narrows,
+  the quiet count goes first, filters wrap, and views become compact with
+  “More +n” before scrolling sideways. The primary action then keeps only its
+  icon and accessible name. If the lead and actions still do not fit, they
+  use separate rows. The head measures its own width, including space lost
+  to neighboring panels; controls never draw over each other.
 - Exactly one action is filled. On the phone it becomes a round button; a
   host with a bottom bar, such as Cloud, places it beside the bar.
 - Files keeps its path in the head (exception D1 to "no title").

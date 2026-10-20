@@ -1994,6 +1994,8 @@ html {
   width: auto;
   height: auto;
   min-height: 3.5rem;
+  container: k2b-head / inline-size;
+  flex-wrap: wrap;
   margin: 0;
   align-items: flex-start;
   gap: 0.5rem;
@@ -2011,6 +2013,7 @@ html {
 }
 
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
+  min-width: min(100%, 18rem);
   flex-wrap: wrap;
   gap: 0.25rem 0.5rem;
   container: k2b-head-lead / inline-size;
@@ -2053,6 +2056,17 @@ html {
   min-height: var(--k2b-workspace-head-line, 2.5rem);
   flex: 0 1 auto;
   align-items: center;
+}
+
+/* An application may wrap the view strip in an island or a hint host. Its
+   automatic minimum must not let the strip paint beyond the lead. */
+.k2b-ui .k2b-app-workspace__head-views > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.k2b-ui .k2b-app-workspace__head-views .k2b-view-tabs {
+  flex: 1 1 auto;
 }
 
 /* The filters move as one group; on their own row they scroll sideways.
@@ -2123,6 +2137,9 @@ html {
   display: flex;
   min-height: var(--k2b-workspace-head-line, 2.5rem);
   flex: none;
+  max-width: 100%;
+  flex-wrap: wrap;
+  margin-inline-start: auto;
   align-items: center;
   gap: 0.25rem;
 }
@@ -2143,6 +2160,28 @@ html {
 
   .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__more-count[data-level="compact"] {
     display: inline;
+  }
+}
+
+/* After filters and compact views give way, the primary keeps its name
+   for assistive technology while its icon frees space for the view strip.
+   If the lead and actions still cannot fit, flex puts them on separate rows. */
+@container k2b-head (width < 32rem) {
+  .k2b-ui .k2b-app-workspace__head-primary {
+    width: 2.5rem;
+    min-width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-primary-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
