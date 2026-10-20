@@ -482,6 +482,7 @@ export const documentedOnlyUiCatalogExports = {
   abbreviations: "Documented completion dictionary used by editor examples.",
   activatePanesItem: "Documented pure Panes activation helper.",
   applyPanesIntent: "Documented programmatic Panes move and split helper.",
+  appWorkspaceDetailElementId: "Documented AppWorkspace Detail DOM id helper for application controls.",
   appWorkspacePanelVariable: "Documented AppWorkspace panel-variable helper.",
   appWorkspaceResizeLimits: "Documented AppWorkspace resize helper.",
   canPreviewFile: "Documented FileView capability helper.",

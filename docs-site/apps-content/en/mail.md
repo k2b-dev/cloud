@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Mail
@@ -26,6 +26,17 @@ Remove that chip or use **Reset** to clear filters. Folders, Scheduled, and
 Send problems have no view tabs. **Choose list view**, the **…** mailbox menu,
 and **Compose** are also in the head. The mailbox menu contains details,
 tools, and Settings according to your access.
+
+On wide screens the conversation list grows with the window from 320 to
+440 px, and the subject and messages stay in a centered reading column of at
+most 760 px. **Conversation details** stand beside the reader while the reader
+keeps 440 px next to them; otherwise they wait behind **Details** and open with
+one click, also from the reader's own details button. Hiding the list gives
+the reader that room. In Focus, a conversation opens its details beside the
+queue, or over its end when there is no room; on a phone it opens in its
+mailbox. List rows have three lines (sender and time, subject with its marks,
+preview) and a fourth only for tags or **Waiting**. When the reader is narrow,
+Reply all and Forward show only their icons, then move into **…**.
 
 Signed-in users can choose **New mailbox**; after creation, its delivery
 settings open before you enter the mailbox. If settings cannot load, the

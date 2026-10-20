@@ -7,7 +7,12 @@ import {
   installAppWorkspaceController,
   parkWorkspaceDetailDrawers,
 } from "./app-workspace-controller";
-import { APP_WORKSPACE_DETAIL_DEFAULT, APP_WORKSPACE_SIDEBAR_COLLAPSED, fitAppWorkspacePaneSizes } from "./app-workspace-state";
+import {
+  APP_WORKSPACE_DETAIL_DEFAULT,
+  APP_WORKSPACE_MAIN_MIN,
+  APP_WORKSPACE_SIDEBAR_COLLAPSED,
+  fitAppWorkspacePaneSizes,
+} from "./app-workspace-state";
 
 type Frame = (time: number) => void;
 type Rect = { height: number; width: number };
@@ -157,6 +162,160 @@ afterEach(() => {
 });
 
 describe("AppWorkspace resize controller behaviour", () => {
+  test("Main's share resolves against the root border box for interactive sidebar limits", () => {
+    const { root, handle } = workspace({ width: 1462 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    main.dataset.workspaceMainMin = "share:0.25,428,772,892";
+    root.append(main);
+    handle.dataset.workspaceMaxSize = "960";
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      dispatchKey(handle, "End");
+      expect(handle.getAttribute("aria-valuemax")).toBe("668"); // floor(1462 - 793.5)
+      expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("668px");
+      setRect(root, { width: 1536, height: 700 });
+      dispatchKey(handle, "End");
+      expect(handle.getAttribute("aria-valuemax")).toBe("724"); // 1536 - 812
+    } finally {
+      dispose();
+    }
+  });
+
+  for (const levels of [false, true]) {
+    test(`a share default stays CSS-owned on attach, resize and reset (levels ${levels})`, () => {
+      const { root } = workspace({ width: 1462 });
+      const main = document.createElement("main");
+      main.className = "k2b-app-workspace__main";
+      if (levels) main.dataset.workspaceLevels = "";
+      setRect(main, { width: 1100, height: 700 });
+      const pane = document.createElement("section");
+      pane.id = "share-list";
+      pane.className = "k2b-app-workspace__main-pane";
+      pane.dataset.workspaceResizable = "true";
+      if (levels) {
+        pane.dataset.workspaceLevel = "1";
+        pane.dataset.workspaceLevelLast = "";
+      }
+      const variable = "--k2b-workspace-pane-list-width";
+      let cssWidth = 353.5;
+      // Emulate CSS resolving the share and its pane fit, which Happy DOM cannot evaluate.
+      setDynamicRect(pane, () => ({ width: Number.parseFloat(root.style.getPropertyValue(variable)) || cssWidth, height: 700 }));
+      const handle = document.createElement("button");
+      handle.dataset.appWorkspaceResize = "pane";
+      handle.dataset.workspacePanelId = "list";
+      handle.dataset.workspaceResizeEdge = "end";
+      handle.dataset.workspaceDefaultSize = "share:0.25,-12,332,452";
+      handle.setAttribute("aria-controls", pane.id);
+      main.append(pane, handle);
+      root.append(main);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        flushFrames();
+        expect(root.style.getPropertyValue(variable)).toBe("");
+        expect(handle.getAttribute("aria-valuenow")).toBe("354");
+        dispatchKey(handle, "ArrowRight");
+        expect(root.style.getPropertyValue(variable)).toBe("362px");
+        handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+        expect(root.style.getPropertyValue(variable)).toBe("");
+        expect(handle.getAttribute("aria-valuenow")).toBe("354");
+        cssWidth = 372;
+        setRect(root, { width: 1536, height: 700 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(root.style.getPropertyValue(variable)).toBe("");
+        expect(handle.getAttribute("aria-valuenow")).toBe("372");
+        // A subpixel difference at CSS's Main clamp must not store a pixel width.
+        setRect(main, { width: cssWidth + APP_WORKSPACE_MAIN_MIN - 0.25, height: 700 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(root.style.getPropertyValue(variable)).toBe("");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  test("share defaults that crowd Main's primary region together are fitted like stored widths", () => {
+    const { root } = workspace({ width: 1462 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    setRect(main, { width: 1000, height: 700 });
+    const handles = ["left", "right"].map((id) => {
+      const pane = document.createElement("section");
+      pane.id = `share-${id}`;
+      pane.className = "k2b-app-workspace__main-pane";
+      pane.dataset.workspaceResizable = "true";
+      const variable = `--k2b-workspace-pane-${id}-width`;
+      // CSS clamps each share default only against Main: 400 px each would leave the primary region 200 px.
+      setDynamicRect(pane, () => ({ width: Number.parseFloat(root.style.getPropertyValue(variable)) || 400, height: 700 }));
+      const handle = document.createElement("button");
+      handle.dataset.appWorkspaceResize = "pane";
+      handle.dataset.workspacePanelId = id;
+      handle.dataset.workspaceResizeEdge = "end";
+      handle.dataset.workspaceDefaultSize = "share:0.3,-40,240,400";
+      handle.dataset.workspaceMinSize = "240";
+      handle.setAttribute("aria-controls", pane.id);
+      main.append(pane, handle);
+      return { variable };
+    });
+    root.append(main);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      const widths = handles.map(({ variable }) => Number.parseFloat(root.style.getPropertyValue(variable)));
+      expect(widths.every((width) => width >= 240)).toBe(true);
+      expect(widths[0]! + widths[1]!).toBeLessThanOrEqual(1000 - 320);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("a share default crowding Main with non-resizable siblings is fitted like a stored width", () => {
+    const { root } = workspace({ width: 1000 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    setRect(main, { width: 1000, height: 700 });
+    const fixedPanes = [200, 200].map((width) => {
+      const pane = document.createElement("section");
+      pane.className = "k2b-app-workspace__main-pane";
+      pane.dataset.workspaceResizable = "false";
+      setRect(pane, { width, height: 700 });
+      main.append(pane);
+      return pane;
+    });
+    const pane = document.createElement("section");
+    pane.id = "share-list";
+    pane.className = "k2b-app-workspace__main-pane";
+    pane.dataset.workspaceResizable = "true";
+    const variable = "--k2b-workspace-pane-list-width";
+    setDynamicRect(pane, () => ({ width: Number.parseFloat(root.style.getPropertyValue(variable)) || 400, height: 700 }));
+    const handle = document.createElement("button");
+    handle.dataset.appWorkspaceResize = "pane";
+    handle.dataset.workspacePanelId = "list";
+    handle.dataset.workspaceResizeEdge = "end";
+    handle.dataset.workspaceDefaultSize = "share:0.4,0,240,400";
+    handle.dataset.workspaceMinSize = "240";
+    handle.setAttribute("aria-controls", pane.id);
+    main.append(pane, handle);
+    root.append(main);
+    const primaryWidth = () =>
+      main.getBoundingClientRect().width -
+      fixedPanes.reduce((total, fixed) => total + fixed.getBoundingClientRect().width, 0) -
+      pane.getBoundingClientRect().width;
+    expect(primaryWidth()).toBeLessThan(APP_WORKSPACE_MAIN_MIN);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      expect(root.style.getPropertyValue(variable)).toBe("280px");
+      expect(primaryWidth()).toBe(APP_WORKSPACE_MAIN_MIN);
+      expect(handle.getAttribute("aria-valuenow")).toBe("280");
+      expect(handle.getAttribute("aria-valuemax")).toBe("280");
+    } finally {
+      dispose();
+    }
+  });
+
   test("restoring a sidebar width preserves the server overlay despite Main's configured minimum", () => {
     const { root, handle } = workspace({ width: 1064, sidebarWidth: 360 });
     root.style.setProperty("--k2b-workspace-main-min", "760px");
@@ -2141,6 +2300,210 @@ describe("waiting detail drawers", () => {
     fixture.aside.style.setProperty("--k2b-workspace-detail-waiting", "1");
     return { ...fixture, toggle };
   };
+
+  for (const region of ["Main", "Detail"] as const) {
+    for (const interaction of ["pointer", "keyboard"] as const) {
+      test(`${region}'s ${interaction} request toggles a waiting drawer without closing the Detail`, async () => {
+        const { root, main, aside, title, toggle, closed } = waitingWorkspace();
+        aside.dataset.workspaceDetailChoice = "request";
+        const control = document.createElement("button");
+        control.setAttribute("aria-controls", `another-region ${aside.id}`);
+        control.setAttribute("aria-pressed", "true");
+        const icon = document.createElement("span");
+        control.append(icon);
+        (region === "Main" ? main : aside).append(control);
+        let applicationClicks = 0;
+        control.addEventListener("click", () => {
+          applicationClicks++;
+          aside.hidden = !aside.hidden;
+        });
+        const dispose = installAppWorkspaceController({ root });
+        try {
+          flushFrames();
+          expect(control.getAttribute("aria-expanded")).toBe("false");
+          const click = () => {
+            control.focus();
+            const event = new MouseEvent("click", { bubbles: true, cancelable: true, detail: interaction === "pointer" ? 1 : 0 });
+            icon.dispatchEvent(event);
+            expect(event.defaultPrevented).toBe(true);
+          };
+          click();
+          expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+          expect(control.getAttribute("aria-expanded")).toBe("true");
+          expect(document.activeElement === (interaction === "pointer" ? control : title)).toBe(true);
+          click();
+          expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+          expect(control.getAttribute("aria-expanded")).toBe("false");
+          // A control inside the parked drawer leaves with it; focus goes to Details.
+          expect(document.activeElement === (region === "Detail" ? toggle : control)).toBe(true);
+          click();
+          title.focus();
+          detailKey(title, "Escape");
+          await window.happyDOM.whenAsyncComplete();
+          expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+          expect(control.getAttribute("aria-expanded")).toBe("false");
+          expect(document.activeElement === toggle).toBe(true);
+          expect(applicationClicks).toBe(0);
+          expect(aside.hidden).toBe(false);
+          expect(control.getAttribute("aria-pressed")).toBe("true");
+          expect(closed).toHaveLength(0);
+        } finally {
+          dispose();
+        }
+        expect(control.hasAttribute("aria-expanded")).toBe(false);
+      });
+    }
+  }
+
+  for (const [interaction, init] of [
+    ["Ctrl", { ctrlKey: true }],
+    ["Meta", { metaKey: true }],
+    ["Shift", { shiftKey: true }],
+    ["Alt", { altKey: true }],
+    ["middle button", { button: 1 }],
+    ["secondary button", { button: 2 }],
+    ["already prevented", {}],
+  ] as const) {
+    test(`${interaction} request clicks stay application-owned while waiting`, () => {
+      const { root, main, aside } = waitingWorkspace();
+      const control = document.createElement("a");
+      control.href = "#detail";
+      control.setAttribute("aria-controls", aside.id);
+      main.append(control);
+      let applicationClicks = 0;
+      control.addEventListener("click", () => applicationClicks++);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        flushFrames();
+        const event = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1, ...init });
+        if (interaction === "already prevented") event.preventDefault();
+        control.dispatchEvent(event);
+        expect(applicationClicks).toBe(1);
+        expect(event.defaultPrevented).toBe(interaction === "already prevented");
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        expect(control.getAttribute("aria-expanded")).toBe("false");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  for (const state of ["column", "closed", "phone", "unlinked", "other workspace", "sidebar", "head", "nested workspace"] as const) {
+    test(`a request click stays application-owned in ${state}`, () => {
+      const { root, main, aside, sidebar, content } = waitingWorkspace();
+      const control = document.createElement("button");
+      control.setAttribute("aria-controls", aside.id);
+      control.setAttribute("aria-pressed", "true");
+      main.append(control);
+      if (state === "column") aside.style.removeProperty("--k2b-workspace-detail-waiting");
+      if (state === "closed") aside.hidden = true;
+      if (state === "phone") window.innerWidth = 390;
+      if (state === "unlinked") control.removeAttribute("aria-controls");
+      if (state === "other workspace") {
+        const other = waitingWorkspace();
+        other.aside.id = "other-detail";
+        control.setAttribute("aria-controls", other.aside.id);
+      }
+      if (state === "sidebar") sidebar.append(control);
+      if (state === "head") content.prepend(control);
+      if (state === "nested workspace") {
+        const nested = document.createElement("div");
+        nested.dataset.k2bAppWorkspace = "";
+        main.append(nested);
+        nested.append(control);
+      }
+      let applicationClicks = 0;
+      control.addEventListener("click", () => applicationClicks++);
+      const expanded = spyOn(control, "setAttribute");
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        flushFrames();
+        const event = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+        control.dispatchEvent(event);
+        expect(applicationClicks).toBe(1);
+        expect(event.defaultPrevented).toBe(false);
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        expect(control.hasAttribute("aria-expanded")).toBe(false);
+        expect(expanded.mock.calls.filter(([name]) => name === "aria-expanded")).toHaveLength(0);
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  for (const rendered of [null, "false", "true"]) {
+    test(`request expansion restores the application's ${rendered ?? "absent"} attribute after waiting`, async () => {
+      const { root, main, aside, toggle } = waitingWorkspace();
+      const control = document.createElement("button");
+      control.setAttribute("aria-controls", aside.id);
+      control.setAttribute("aria-pressed", "true");
+      if (rendered !== null) control.setAttribute("aria-expanded", rendered);
+      main.append(control);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        flushFrames();
+        expect(control.getAttribute("aria-expanded")).toBe("false");
+        toggle.click();
+        await window.happyDOM.whenAsyncComplete();
+        expect(control.getAttribute("aria-expanded")).toBe("true");
+        parkWorkspaceDetailDrawers(root);
+        await window.happyDOM.whenAsyncComplete();
+        expect(control.getAttribute("aria-expanded")).toBe("false");
+        aside.style.removeProperty("--k2b-workspace-detail-waiting");
+        resizeObservers.forEach((observer) => observer.trigger());
+        expect(control.getAttribute("aria-expanded")).toBe(rendered);
+        aside.style.setProperty("--k2b-workspace-detail-waiting", "1");
+        resizeObservers.forEach((observer) => observer.trigger());
+        expect(control.getAttribute("aria-expanded")).toBe("false");
+        aside.hidden = true;
+        await window.happyDOM.whenAsyncComplete();
+        expect(control.getAttribute("aria-expanded")).toBe(rendered === null ? null : "false");
+        expect(control.getAttribute("aria-pressed")).toBe("true");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  test("closing a parked Detail keeps the application's collapsed request expansion", async () => {
+    const { root, main, aside } = waitingWorkspace();
+    const control = document.createElement("button");
+    control.setAttribute("aria-controls", aside.id);
+    control.setAttribute("aria-expanded", "true");
+    main.append(control);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      expect(control.getAttribute("aria-expanded")).toBe("false");
+      control.setAttribute("aria-expanded", "false");
+      aside.hidden = true;
+      await window.happyDOM.whenAsyncComplete();
+      expect(control.getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("a control added while waiting restores its latest application-rendered expansion", async () => {
+    const { root, main, aside } = waitingWorkspace();
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      const control = document.createElement("button");
+      control.setAttribute("aria-controls", aside.id);
+      main.append(control);
+      await window.happyDOM.whenAsyncComplete();
+      expect(control.getAttribute("aria-expanded")).toBe("false");
+      control.setAttribute("aria-expanded", "true");
+      await window.happyDOM.whenAsyncComplete();
+      expect(control.getAttribute("aria-expanded")).toBe("false");
+      control.removeAttribute("aria-controls");
+      await window.happyDOM.whenAsyncComplete();
+      expect(control.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      dispose();
+    }
+  });
 
   for (const interaction of ["pointer", "Enter", " ", "assistive"] as const) {
     test(`a parked open Detail reopens after a marked ${interaction} choice settles`, async () => {

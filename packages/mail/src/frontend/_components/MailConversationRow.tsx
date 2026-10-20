@@ -6,13 +6,12 @@ import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { buildMailAttachmentDownloadHref, buildMailSelectionHref, isMailListItemActive, type MailListItem } from "./mail-navigation";
 
-const statusIcon = (item: MailListItem): string | null => {
-  if (item.workStatus === "needs_action") return "ti ti-message-reply";
-  if (item.workStatus === "waiting") return "ti ti-hourglass";
-  if (item.workStatus === "done") return "ti ti-checkbox";
-  if (item.assigneeUserIds.length > 0) return "ti ti-user-check";
-  return null;
-};
+/** Tags shown as pills on a row's fourth line; the rest are counted. */
+const MAX_ROW_TAGS = 3;
+
+/** A row has a fourth line only for its tags or for "Waiting"; every other row has the same three-line height. */
+export const mailRowHasFourthLine = (item: Pick<MailListItem, "localTags" | "workStatus">): boolean =>
+  item.localTags.length > 0 || item.workStatus === "waiting";
 
 type MailConversationRowState = {
   selectedConversationId: string | null;
@@ -60,18 +59,10 @@ export default function MailConversationRow(props: {
     if (actionId === "junk") return t().junk;
     return t().trash;
   };
-  const statusLabel = (item: MailListItem): string | null => {
-    if (item.workStatus === "needs_action") return t().needsAction;
-    if (item.workStatus === "waiting") return t().waitingForReply;
-    if (item.workStatus === "done") return t().done;
-    if (item.assigneeUserIds.length > 0) return t().assigned;
-    return null;
-  };
   const correspondentLabels = (item: MailListItem): string[] =>
     item.participantLabels.length > 0 ? item.participantLabels : [item.participantSummary || t().unknownSender];
   const selected = () => isMailListItemActive(props.item, props.state.selectedConversationId, props.state.selectedMessageId);
-  const stateLabel = () => statusLabel(props.item);
-  const stateIcon = () => statusIcon(props.item);
+  const fourthLine = () => mailRowHasFourthLine(props.item);
   const correspondents = () => correspondentLabels(props.item);
   const primaryCorrespondent = () => correspondents()[0] ?? t().unknownSender;
   const additionalCorrespondents = () => Math.max(0, correspondents().length - 1);
@@ -101,6 +92,7 @@ export default function MailConversationRow(props: {
       inert={props.leaving}
       aria-hidden={props.leaving ? "true" : undefined}
       class="mail-list-entry k2b-progressive-row relative"
+      data-lines={fourthLine() ? "4" : "3"}
       classList={{
         "mail-list-entry-active": selected(),
         "mail-list-entry-unread": props.item.unread,
@@ -175,22 +167,14 @@ export default function MailConversationRow(props: {
             ? `${t().flaggedItem({ kind: props.item.selectionKind === "message" ? t().message : t().conversation })} `
             : ""}
         </span>
-        <span class="mail-list-copy">
-          <span
-            class="mail-list-primary-text flex min-w-0 items-center gap-1 text-sm"
-            classList={{
-              "font-semibold": props.item.unread,
-              "font-medium": !props.item.unread,
-            }}
-          >
-            <Show when={props.item.unread}>
-              <span class="mail-list-unread-dot" aria-hidden="true" />
-            </Show>
-            <span class="min-w-0 truncate">{primaryCorrespondent()}</span>
+        <span class="mail-row-dot" aria-hidden="true" />
+        <span class="mail-row-lines">
+          <span class="mail-row-from">
+            <span class="mail-row-sender">{primaryCorrespondent()}</span>
             <Show when={additionalCorrespondents() > 0}>
               <Tooltip.Anchor content={correspondents().join(", ")}>
                 <span
-                  class="shrink-0 text-xs font-normal text-dimmed"
+                  class="mail-row-more"
                   role="img"
                   aria-label={t().additionalCorrespondents({
                     count: additionalCorrespondents(),
@@ -201,85 +185,97 @@ export default function MailConversationRow(props: {
                 </span>
               </Tooltip.Anchor>
             </Show>
+            <time
+              class="mail-list-time mail-row-time"
+              dateTime={props.item.latestMessageAt}
+              title={dates.formatDateTime(props.item.latestMessageAt, props.state.dateConfig)}
+            >
+              {dates.formatDateTimeRelative(props.item.latestMessageAt, props.state.dateConfig)}
+            </time>
           </span>
-          <span
-            class="mail-list-primary-text min-w-0 truncate text-xs"
-            classList={{
-              "font-semibold": props.item.unread,
-              "font-medium": !props.item.unread,
-            }}
-          >
+          <span class="mail-row-subject-line">
             <Show when={props.item.primaryReference}>
-              <span class="mr-1 font-mono text-[0.6875rem] text-dimmed">{props.item.primaryReference}</span>
+              <span class="mail-row-reference">{props.item.primaryReference}</span>
             </Show>
-            {props.item.subject || t().noSubject}
+            <span class="mail-row-subject">{props.item.subject || t().noSubject}</span>
+            <Show when={props.item.selectionKind === "conversation" && props.item.messageCount > 1}>
+              <span class="mail-row-count" role="img" aria-label={t().messageCount({ count: props.item.messageCount })}>
+                {props.item.messageCount}
+              </span>
+            </Show>
+            <span class="mail-row-marks">
+              <Show when={props.item.hasAttachments}>
+                <Tooltip.Anchor content={t().hasAttachments}>
+                  <span class="mail-row-mark" role="img" aria-label={t().hasAttachments}>
+                    <i class="ti ti-paperclip" aria-hidden="true" />
+                  </span>
+                </Tooltip.Anchor>
+              </Show>
+              <Show when={props.item.kept}>
+                <Tooltip.Anchor content={t().kept}>
+                  <span class="mail-row-mark" role="img" aria-label={t().keptConversation} data-mail-kept-indicator>
+                    <i class="ti ti-lock" aria-hidden="true" />
+                  </span>
+                </Tooltip.Anchor>
+              </Show>
+              <Show when={props.item.flagged}>
+                <Tooltip.Anchor content={t().flagged}>
+                  <span class="mail-row-mark mail-row-flag" role="img" aria-label={t().flaggedConversation}>
+                    <i class={getMailAction("flag").icon} aria-hidden="true" />
+                  </span>
+                </Tooltip.Anchor>
+              </Show>
+              <Show when={props.item.assigneeUserIds.length > 0}>
+                <Tooltip.Anchor content={t().assigned}>
+                  <span class="mail-row-mark" role="img" aria-label={t().status({ value: t().assigned })}>
+                    <i class="ti ti-user-check" aria-hidden="true" />
+                  </span>
+                </Tooltip.Anchor>
+              </Show>
+            </span>
           </span>
           <Show when={props.item.attachmentMatch} fallback={<span class="mail-list-preview">{props.item.preview || "\u00a0"}</span>}>
             {(match) => (
               <span
-                class="mail-list-preview flex min-w-0 items-center gap-1"
+                class="mail-list-preview mail-row-match"
                 title={t().matchedAttachmentTitle({ name: match().filename ?? t().untitledAttachment })}
               >
-                <i class="ti ti-paperclip shrink-0" aria-hidden="true" />
-                <span class="min-w-0 truncate">
+                <i class="ti ti-paperclip" aria-hidden="true" />
+                <span class="mail-row-match-text">
                   {t().matchedAttachment({ name: match().filename?.trim() || t().attachment, snippet: match().snippet })}
                 </span>
               </span>
             )}
           </Show>
-        </span>
-        <span class="mail-list-meta">
-          <time
-            class="mail-list-time shrink-0 tabular-nums transition-opacity"
-            dateTime={props.item.latestMessageAt}
-            title={dates.formatDateTime(props.item.latestMessageAt, props.state.dateConfig)}
-          >
-            {dates.formatDateTimeRelative(props.item.latestMessageAt, props.state.dateConfig)}
-          </time>
-          <span class="mail-list-meta-icons">
-            <Show when={props.item.localTags.length > 0}>
-              <Tooltip.Anchor content={t().tagNames({ names: tagLabel() })}>
-                <span class="mail-list-tag-markers" role="img" aria-label={t().tagNames({ names: tagLabel() })}>
-                  <For each={props.item.localTags.slice(0, 2)}>
-                    {(tag) => <span class="mail-list-tag-dot" style={{ "background-color": tag.color }} aria-hidden="true" />}
+          <Show when={fourthLine()}>
+            <span class="mail-row-extra">
+              <Show when={props.item.localTags.length > 0}>
+                {/* Long tag names shorten; the group's tooltip keeps every full name. */}
+                <Tooltip.Anchor class="mail-row-tags" content={t().tagNames({ names: tagLabel() })}>
+                  <For each={props.item.localTags.slice(0, MAX_ROW_TAGS)}>
+                    {(tag) => (
+                      <span class="mail-row-tag" style={{ "--mail-tag": tag.color }}>
+                        {tag.name}
+                      </span>
+                    )}
                   </For>
-                  <Show when={props.item.localTags.length > 2}>
-                    <span class="mail-list-tag-overflow" aria-hidden="true">
-                      +{props.item.localTags.length - 2}
-                    </span>
-                  </Show>
+                </Tooltip.Anchor>
+              </Show>
+              <Show when={props.item.localTags.length > MAX_ROW_TAGS}>
+                <Tooltip.Anchor content={t().tagNames({ names: tagLabel() })}>
+                  <span class="mail-row-tag-more" role="img" aria-label={t().tagNames({ names: tagLabel() })}>
+                    +{props.item.localTags.length - MAX_ROW_TAGS}
+                  </span>
+                </Tooltip.Anchor>
+              </Show>
+              <Show when={props.item.workStatus === "waiting"}>
+                <span class="mail-row-waiting">
+                  <i class="ti ti-hourglass" aria-hidden="true" />
+                  {t().waitingShort}
                 </span>
-              </Tooltip.Anchor>
-            </Show>
-            <Show when={props.item.kept}>
-              <Tooltip.Anchor content={t().kept}>
-                <span class="inline-flex" role="img" aria-label={t().keptConversation} data-mail-kept-indicator>
-                  <i class="ti ti-lock" aria-hidden="true" />
-                </span>
-              </Tooltip.Anchor>
-            </Show>
-            <Show when={props.item.flagged}>
-              <Tooltip.Anchor content={t().flagged}>
-                <span class="inline-flex text-orange-600 dark:text-orange-400" role="img" aria-label={t().flaggedConversation}>
-                  <i class={getMailAction("flag").icon} aria-hidden="true" />
-                </span>
-              </Tooltip.Anchor>
-            </Show>
-            <Show when={stateLabel() && stateIcon()}>
-              <Tooltip.Anchor content={stateLabel() ?? ""}>
-                <span class="inline-flex" role="img" aria-label={t().status({ value: stateLabel() ?? "" })}>
-                  <i class={stateIcon() ?? ""} aria-hidden="true" />
-                </span>
-              </Tooltip.Anchor>
-            </Show>
-            <Show when={props.item.hasAttachments}>
-              <Tooltip.Anchor content={t().hasAttachments}>
-                <span class="inline-flex" role="img" aria-label={t().hasAttachments}>
-                  <i class="ti ti-paperclip" aria-hidden="true" />
-                </span>
-              </Tooltip.Anchor>
-            </Show>
-          </span>
+              </Show>
+            </span>
+          </Show>
         </span>
       </a>
       <Show when={attachmentDownloadHref()}>

@@ -48,6 +48,13 @@ import {
   appWorkspaceLayoutStyle,
   appWorkspacePanelVariable,
 } from "./app-workspace-state";
+import {
+  type AppWorkspaceWidthShare,
+  appWorkspaceInverseWidthCss,
+  appWorkspaceWidthCss,
+  appWorkspaceWidthToken,
+  isAppWorkspaceWidthShare,
+} from "./app-workspace-width";
 import BottomSheet, { bottomSheetAdaptiveOptions } from "./BottomSheet";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
@@ -57,6 +64,8 @@ import { createScrollFade, scrollFadeEdges } from "./scroll-fade";
 import { rememberSidebarScroll } from "./sidebar-scroll-memory";
 import { assertStableUiId, assertUniqueStableUiIds } from "./stable-id";
 import { useWorkspaceMessages } from "./workspace-messages";
+
+export type { AppWorkspaceWidthShare } from "./app-workspace-width";
 
 const ResizeContext = createContext(true);
 /** The enclosing workspace: its head names the sidebar, and a nested workspace leaves the page title to it. */
@@ -140,7 +149,7 @@ type ResizeHandleProps = {
   edge: "start" | "end";
   controls?: string;
   panelId?: string;
-  defaultSize: number;
+  defaultSize: number | AppWorkspaceWidthShare;
   minSize: number;
   maxSize: number;
   shadow?: boolean;
@@ -166,7 +175,10 @@ function ResizeHandle(props: ResizeHandleProps): JSX.Element {
           : props.kind === "detail"
             ? state?.detailWidths?.[id]
             : state?.drawerHeights?.[id];
-    return Math.min(props.maxSize, Math.max(props.minSize, size ?? props.defaultSize));
+    return Math.min(
+      props.maxSize,
+      Math.max(props.minSize, size ?? (typeof props.defaultSize === "number" ? props.defaultSize : props.defaultSize.min)),
+    );
   };
   return (
     <button
@@ -193,7 +205,7 @@ function ResizeHandle(props: ResizeHandleProps): JSX.Element {
       data-workspace-panel-id={props.panelId}
       data-workspace-resize-edge={props.edge}
       data-workspace-resize-shadow={props.shadow ? "true" : undefined}
-      data-workspace-default-size={props.defaultSize}
+      data-workspace-default-size={appWorkspaceWidthToken(props.defaultSize)}
       data-workspace-min-size={props.minSize}
       data-workspace-max-size={props.maxSize}
       style={props.style}
@@ -238,13 +250,13 @@ export type AppWorkspaceMainProps = {
   /** `"content"` centers the children as one reading column with the shared page width on large screens. */
   width?: "full" | "content";
   /**
-   * The width in px that Main keeps beside the sidebar and an open Detail,
+   * The width in px or a workspace width share that Main keeps beside the sidebar and an open Detail,
    * from 48rem (768 px); at least the default 320. A Detail that does not fit
    * beside it waits behind the head's Details button, and from 64rem of host
    * width a sidebar that does not fit becomes the overlay. CSS decides, so
    * the server renders the first frame.
    */
-  minWidth?: number;
+  minWidth?: number | AppWorkspaceWidthShare;
   mobilePane?: string;
   /** Levels in DOM order, shallowest first. The URL selects the deepest level by id. */
   level?: string;
@@ -268,7 +280,7 @@ export type AppWorkspaceMainPaneProps = {
   open?: boolean;
   resizable?: boolean;
   resizeShadow?: boolean;
-  defaultSize?: number;
+  defaultSize?: number | AppWorkspaceWidthShare;
   minSize?: number;
   maxSize?: number;
   class?: string;
@@ -706,11 +718,19 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
   // as `AppWorkspace.Detail` does with its width.
   const minWidth = () => {
     const value = props.minWidth;
-    return value !== undefined && Number.isFinite(value) && value > APP_WORKSPACE_MAIN_MIN ? Math.round(value) : undefined;
+    return isAppWorkspaceWidthShare(value)
+      ? value
+      : typeof value === "number" && Number.isFinite(value) && value > APP_WORKSPACE_MAIN_MIN
+        ? Math.round(value)
+        : undefined;
   };
-  const minWidthRule = (value: number) => {
-    const main = `.k2b-app-workspace__main[data-workspace-main-min="${value}"]`;
-    return `.k2b-app-workspace:has(> .k2b-app-workspace__content > ${main}, > .k2b-app-workspace__content > :is(solid-island, solid-client) > ${main}){--k2b-workspace-main-min:${value}px}`;
+  const minWidthRule = (value: number | AppWorkspaceWidthShare) => {
+    const main = `.k2b-app-workspace__main[data-workspace-main-min="${appWorkspaceWidthToken(value)}"]`;
+    const inverse =
+      typeof value === "number"
+        ? ""
+        : `;--k2b-workspace-main-min-grid:${appWorkspaceInverseWidthCss(value, "100%")};--k2b-workspace-main-min-cq:${appWorkspaceInverseWidthCss(value, "100cqi")}`;
+    return `.k2b-app-workspace:has(> .k2b-app-workspace__content > ${main}, > .k2b-app-workspace__content > :is(solid-island, solid-client) > ${main}){--k2b-workspace-main-min:${appWorkspaceWidthCss(value, "100%")}${inverse}}`;
   };
 
   return (
@@ -719,7 +739,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
       <div
         ref={mainElement}
         class={`k2b-app-workspace__main ${hasPanes() ? "has-panes" : ""} ${props.class ?? ""}`}
-        data-workspace-main-min={minWidth()}
+        data-workspace-main-min={minWidth() === undefined ? undefined : appWorkspaceWidthToken(minWidth()!)}
         data-workspace-levels={levelsMode() ? "" : undefined}
         data-workspace-level-count={levelsMode() ? levels().length : undefined}
         data-mobile-pane={levelsMode() ? undefined : props.mobilePane}
@@ -755,7 +775,10 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
               const variable = appWorkspacePanelVariable("pane", panelId);
               const isAnchor = () => region === anchorRegion();
               const resizable = () => !isAnchor() && (pane.props.resizable ?? rootResizable);
-              const defaultSize = () => pane.props.defaultSize ?? APP_WORKSPACE_PANE_DEFAULT;
+              const defaultSize = () => {
+                const value = pane.props.defaultSize;
+                return typeof value === "number" || isAppWorkspaceWidthShare(value) ? value : APP_WORKSPACE_PANE_DEFAULT;
+              };
               const minSize = () => pane.props.minSize ?? APP_WORKSPACE_PANE_MIN;
               const maxSize = () => Math.max(minSize(), pane.props.maxSize ?? APP_WORKSPACE_PANE_MAX);
               const before = () => levelsMode() || region.index < (anchorRegion()?.index ?? 0);
@@ -802,7 +825,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                         ? undefined
                         : {
                             // A stored width keeps to this pane's limits before the controller attaches.
-                            "--k2b-workspace-panel-size": `clamp(${minSize()}px, var(${variable}, ${defaultSize()}px), ${maxSize()}px)`,
+                            "--k2b-workspace-panel-size": `clamp(${minSize()}px, var(${variable}, ${appWorkspaceWidthCss(defaultSize(), "var(--k2b-workspace-width)")}), ${maxSize()}px)`,
                             "--k2b-workspace-panel-min": `${minSize()}px`,
                           }
                     }
@@ -845,11 +868,14 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
   );
 }
 
+/** The Detail region's DOM id, for application controls that target it with aria-controls. */
+export const appWorkspaceDetailElementId = (id: string): string => `k2b-workspace-detail-${assertStableUiId(id, "AppWorkspace.Detail id")}`;
+
 function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   const workspaceMessages = useWorkspaceMessages();
   const rootResizable = useContext(ResizeContext);
   const panelId = () => assertStableUiId(props.id, "AppWorkspace.Detail id");
-  const domId = () => `k2b-workspace-detail-${panelId()}`;
+  const domId = () => appWorkspaceDetailElementId(props.id);
   const variable = () => appWorkspacePanelVariable("detail", panelId());
   // Start widths of 20, 26, 30, and 34 rem. They feed `aria-valuenow` and the
   // `var(…, Npx)` first-paint fallback, so they are behaviour, not taste.
