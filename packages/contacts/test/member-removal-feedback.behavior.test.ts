@@ -113,7 +113,8 @@ describe("Contact member removal feedback", () => {
     const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     try {
       expect(await removeMember(() => Promise.reject(new Error("Service unavailable")))).toEqual([]);
-      expect(errors.mock.calls).toEqual([["The member was removed, but the contact could not be reloaded."]]);
+      expect(errors.mock.calls[0]?.[0]).toBe("The member was removed, but the contact could not be reloaded.");
+      expect(errors.mock.calls[0]?.[1]?.action?.label).toBe("Retry");
     } finally {
       errors.mockRestore();
     }

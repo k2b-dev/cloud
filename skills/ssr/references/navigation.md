@@ -58,18 +58,21 @@ import { installPageSwap } from "@k2b/ssr/nav";
 onMount(() => onCleanup(installPageSwap()));
 ```
 
+- in a swap host, the loader imports modules used only outside the column first; a module with any instance in the column loads with the column (importing it mounts every instance), so an installer outside the column precedes column islands that write history; use the installer island only outside the column; `listenPopState()` remains safe in either order
 - `data-nav-shell` is an opaque signature; a fetched page with a different one loads as a document, so put app, user, locale, layout kind, and build into it
 - `data-nav-scope` is a path prefix (`/demo` takes `/demo/x`, not `/demobox`); `data-nav-root` is the replaced column; `data-nav-attributes` lists shell attributes the fetched page sets or removes
-- `data-nav-document` on a link keeps document navigation; prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too
+- `data-nav-document` on a link keeps document navigation; mark in-scope links to non-HTML resources with it or `download`, otherwise the server receives the request twice (the swap fetch, then the document); prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too
 - the swap loads the new page's island modules before it disposes the old islands; then it pushes history, replaces the column, sets title and attributes, mounts, focuses the first heading, and announces the title; island cleanups should not navigate
 - the newest navigation wins (another swap, Back/Forward, a native link, a native form submission, an enhanced `Link` click, `navigate()`, `documentNavigate()`), and a swap that starts later turns a pending `Link` handler's `push`, `replaceWith`, and `fallback` into no-ops; any failure (status, not HTML, redirect out of scope, signature, module prefix, `<base>`, stylesheet set, module error) loads the requested URL as a document
 - `swapPage(href, { replace })` swaps from code
+- `window` receives `ssr:nav-swapped` once per committed push, replace, Back or Forward, with `detail: { root }` for the inserted column, after mount, scroll, focus and announcement; failures and document loads emit nothing, and listener errors never trigger a document load
 - inline scripts in the fetched page do not run; keep page data in island props
 - Back and Forward swap another server page's column fresh from the server; a failure or a different final URL reloads the arriving URL. Same-page traversals reach `listenPopState()` without a fetch; cross-page traversals stay hidden from island listeners
 - install before raw `popstate` listeners, or replace them with `listenPopState()`, which is safe in any order; code that keeps its own history bookkeeping, and shell code outside the swapped column (a panel, a rail), listens to `ssr:nav-popstate` on `window` for allowed cross-page swaps (`detail` is the hidden `PopStateEvent`)
 - keep history state a plain object or `null`; nav keeps caller fields and reserves `"@k2b/ssr/nav"` for `{ page, position, scroll? }`. Non-plain state stays unchanged and unmarked, so returning to it fetches the page or reloads
 - nav restores window and keyed region scroll from the arriving entry once, right after its islands mount; same-page region scroll remains the island's job unless its handler calls `deferScrollRestore()` before an asynchronous replacement, then calls the returned completion immediately after the DOM commit. Nav supplies the saved entry snapshot and ignores stale completions after newer navigation, uninstall, or user input. The application still guards stale data commits. No second history map is needed, and without an installed swap the completion does nothing. Cross-page islands that load content after mounting still manage that rendering themselves. `history.scrollRestoration` is `"manual"` while installed; uninstall restores the previous value for the current entry only, entries created meanwhile stay manual; the history wrappers remain but become inert
 - reloads keep page identity, bfcache returns check the arriving entry, and dialog-only traversals remain with the dialog history owner
+- add `data-scroll-page` to a keyed `data-scroll-preserve` region to restore it on Back/Forward and reload recovery without carrying the departing page's position into push or replace swaps; those start at the top or hash target
 
 ## Protect unsaved input
 

@@ -61,8 +61,8 @@ const providers: ReadonlyArray<{
   {
     appId: "pulse",
     definitions: pulseCapabilities,
-    types: ["base", "resource", "saved_query", "source"],
-    searches: ["base.search", "resource.search"],
+    types: ["base", "source"],
+    searches: ["base.search"],
   },
   {
     appId: "spaces",
@@ -205,9 +205,6 @@ describe("Capability v2 Assistant discovery", () => {
     ["find backlinks to note", "notebooks", "notebooks.note.links"],
     ["edit note content", "notebooks", "notebooks.note.edit"],
     ["search bases", "pulse", "pulse.base.search"],
-    ["search telemetry resources", "pulse", "pulse.resource.search"],
-    ["execute telemetry query", "pulse", "pulse.query.execute"],
-    ["run saved telemetry query", "pulse", "pulse.saved_query.execute"],
     ["list comments", "spaces", "spaces.comment.list"],
     ["create a task", "spaces", "spaces.task.create"],
     ["create calendar event", "spaces", "spaces.event.create"],

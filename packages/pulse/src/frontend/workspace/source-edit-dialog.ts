@@ -1,6 +1,7 @@
 import { prompts } from "@k2b/ui";
 import type { PulseSource } from "../../contracts";
 import type { pulseMessages } from "../../messages";
+import { MetricFiltersSchema, parseMetricFilterInput } from "../../metric-filters";
 import { usePulseMessages } from "../use-messages";
 import { normalizeEndpointInput, parseScrapeInterval } from "./helpers";
 
@@ -37,6 +38,15 @@ const sourceEditFields = (source: PulseSource, t: Messages): SourceEditFields =>
       description: t.scrapeIntervalEditDescription,
       default: String(source.scrapeIntervalSeconds ?? 60),
     },
+    metricFilters: {
+      type: "text",
+      multiline: true,
+      label: t.metricFilters,
+      description: t.metricFiltersDescription,
+      default: source.metricFilters.join(", "),
+      validate: (value) =>
+        MetricFiltersSchema.safeParse(parseMetricFilterInput(String(value ?? ""))).success ? null : t.invalidMetricFilters,
+    },
     bearerToken: {
       type: "text",
       label: t.newBearerToken,
@@ -72,6 +82,7 @@ const metricsSourcePatchFromResult = (source: PulseSource, result: SourceEditRes
 
   const patch: Record<string, unknown> = {
     endpointUrl: normalizeEndpointInput(endpoint),
+    metricFilters: parseMetricFilterInput(String(result?.metricFilters ?? "")),
     scrapeIntervalSeconds: scrapeIntervalFromResult(source, result),
   };
   const bearerToken = bearerTokenFromResult(result);

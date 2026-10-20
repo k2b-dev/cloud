@@ -52,6 +52,7 @@ test("pinned transport preserves HTTP failures and bytes, never redirects, and l
       if (path === "/redirect")
         return new Response(null, { status: 302, headers: { location: "https://127.0.0.1/secret", "set-cookie": "secret" } });
       if (path === "/big") return new Response("x".repeat(1025));
+      if (path === "/declared-big") return new Response("x".repeat(1025), { headers: { "content-length": "1025" } });
       if (path === "/encoded") return new Response("compressed", { headers: { "content-encoding": "gzip" } });
       return new Response(await req.arrayBuffer(), {
         status: 429,
@@ -88,9 +89,10 @@ test("pinned transport preserves HTTP failures and bytes, never redirects, and l
     expect(received[0]).toEqual({ path: "/echo", authorization: "fixture-token", host: `api.example.com:${server.port}` });
     expect((await send("/redirect")).status).toBe(302);
     expect(requests).toBe(2);
-    await expect(send("/big")).rejects.toThrow("HTTP_FAILED");
+    await expect(send("/big")).rejects.toThrow("HTTP_TOO_LARGE");
+    await expect(send("/declared-big")).rejects.toThrow("HTTP_TOO_LARGE");
     await expect(send("/encoded")).rejects.toThrow("HTTP_FAILED");
-    expect(requests).toBe(4);
+    expect(requests).toBe(5);
   } finally {
     await server.stop(true);
   }
@@ -111,4 +113,39 @@ test("cancellation bounds even a stalled DNS lookup", async () => {
   abort.abort();
   await expect(result).rejects.toThrow("HTTP_CANCELLED");
   expect(sent).toBe(false);
+});
+
+test("cancellation destroys a response that has sent headers but never finishes its body", async () => {
+  const controller = new AbortController();
+  const closed = Promise.withResolvers<void>();
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () =>
+      new Response(
+        new ReadableStream({
+          start(stream) {
+            stream.enqueue(new Uint8Array([1]));
+          },
+        }),
+      ),
+  });
+  try {
+    const result = requestPublicHttps(
+      { ...base, url: `https://images.example.com:${server.port}/stall`, signal: controller.signal },
+      {
+        resolve: async () => [{ address: "127.0.0.1", family: 4 }],
+        request: (options, callback) =>
+          request({ ...options, protocol: "http:" }, (response) => {
+            response.on("close", () => closed.resolve());
+            callback(response);
+            controller.abort();
+          }),
+      },
+    );
+    await expect(result).rejects.toThrow("HTTP_FAILED");
+    await closed.promise;
+  } finally {
+    await server.stop(true);
+  }
 });

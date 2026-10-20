@@ -2,9 +2,24 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { createServer, type RequestListener, type Server } from "node:http";
 import { parseNetworkAllowlistEnv } from "../shared/network-address";
 import { createAllowedNetworkFetch } from "./allowed-network-fetch";
-import { NetworkTargetBlockedError } from "./network-security";
+import { NetworkTargetBlockedError, type resolveAllowedNetworkAddresses } from "./network-security";
 
 const allow = (...entries: string[]) => parseNetworkAllowlistEnv("TEST_ALLOWED_TARGETS", entries);
+test("forwards the URL's effective port to the address policy", async () => {
+  for (const [url, expected] of [
+    ["http://target.example/", 80],
+    ["https://target.example/", 443],
+    ["http://target.example:9100/", 9100],
+  ] as const) {
+    let received: number | undefined;
+    const resolve: typeof resolveAllowedNetworkAddresses = async (_host, _allowlist, _lookup, port) => {
+      received = port;
+      throw new NetworkTargetBlockedError("Fixture stops before connecting");
+    };
+    await expect(createAllowedNetworkFetch(allow(), { resolve })(url)).rejects.toBeInstanceOf(NetworkTargetBlockedError);
+    expect(received).toBe(expected);
+  }
+});
 const servers: Server[] = [];
 afterEach(async () => {
   await Promise.all(

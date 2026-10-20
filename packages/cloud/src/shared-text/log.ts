@@ -1,9 +1,10 @@
-import type { TopicConfig } from "@k2b/sync";
+import { RetentionGapError, type TopicConfig } from "@k2b/sync";
 import type * as Y from "yjs";
 import { getProcessSync } from "../_internal/process-sync";
 import { compareStreamCursor } from "./cursor";
 import { bindDocuments } from "./documents";
-import { applySharedTextEvent } from "./events";
+import { applySharedTextEvent, MalformedSharedTextEventError } from "./events";
+import { snapshots } from "./snapshots";
 import type { SharedTextContributor, SharedTextStore, SharedTextSyncEvent } from "./types";
 
 const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "deadLetterRetention" | "maxPayloadBytes">>) => {
@@ -33,11 +34,58 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
     return [...contributors.values()];
   };
 
+  const recover = async (config: {
+    docId: string;
+    after: string | null;
+    until: string;
+    doc: Y.Doc;
+    signal?: AbortSignal;
+  }): Promise<{ recoveredUpdates: number; malformedUpdates: number; historyGaps: number }> => {
+    const handle = topic();
+    let recoveredUpdates = 0;
+    let malformedUpdates = 0;
+    let historyGaps = 0;
+    let after = config.after ?? handle.cursorAt(0);
+    while (compareStreamCursor(after, config.until) < 0) {
+      config.signal?.throwIfAborted();
+      try {
+        for await (const event of handle.replay({ tenantId: config.docId, after, until: config.until, signal: config.signal })) {
+          try {
+            applySharedTextEvent(config.doc, event, config.docId);
+            recoveredUpdates++;
+          } catch (error) {
+            if (!(error instanceof MalformedSharedTextEventError)) throw error;
+            malformedUpdates++;
+          }
+          after = event.cursor;
+        }
+        // The replay covered every document event up to the captured head.
+        after = config.until;
+      } catch (error) {
+        if (!(error instanceof RetentionGapError) || !error.resumeAfter || compareStreamCursor(error.resumeAfter, after) <= 0) throw error;
+        historyGaps++;
+        // Skip only unavailable sequences; include the first retained event.
+        // Strict forward progress and a fixed head bound this loop even if
+        // retention advances concurrently. Never advance past the captured head.
+        after = compareStreamCursor(error.resumeAfter, config.until) > 0 ? config.until : error.resumeAfter;
+      }
+    }
+    config.signal?.throwIfAborted();
+    return { recoveredUpdates, malformedUpdates, historyGaps };
+  };
+
   return {
     id: topicConfig.id,
     topicConfig,
     topic,
     replay,
+    recover,
+    async firstSequence(): Promise<number> {
+      for await (const entry of getProcessSync().listTopics({ idPrefix: topicConfig.id })) {
+        if (entry.id === topicConfig.id) return entry.firstSequence;
+      }
+      return 0;
+    },
     withStore<Saved, Context>(store: SharedTextStore<Saved, Context>) {
       return bindDocuments({ topic, replay }, store);
     },
@@ -45,4 +93,4 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
 };
 
 /** Server-only document logs. Applications authorize callers before read/edit. */
-export const sharedText = { define };
+export const sharedText = { define, snapshots };

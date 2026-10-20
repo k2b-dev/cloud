@@ -307,7 +307,9 @@ navigation rail, an open side panel) stays. Declare the parts in server HTML:
 - `data-nav-attributes`: optional names of shell attributes that the fetched
   page sets or removes.
 - `data-nav-root`: one element inside the shell, replaced as a whole.
-- `data-nav-document`: keeps document navigation for one link.
+- `data-nav-document`: keeps document navigation for one link. Use it (or
+  `download`) on in-scope links to non-HTML resources; otherwise the swap
+  fetch learns the type first and the server receives the request twice.
 
 Install it once, from an island outside the root:
 
@@ -324,6 +326,13 @@ island handlers run first and a prevented click is never swapped. Modifier
 keys, other buttons, `target`, `download`, `rel="external"`, other origins,
 links outside the scope, and hash links on the same page stay native.
 `swapPage(href, { replace })` starts the same swap from code.
+
+In a swap host, the loader imports modules used only outside the column
+first. A module with an instance in the column loads after them, also for its
+instances outside, because importing a module mounts every instance. So an
+island outside the column can install page swaps before column islands write
+history. Use the installer island only outside the column.
+`listenPopState()` stays safe in either installation order.
 
 A swap fetches the page, then loads its island modules, and only then disposes
 the old islands. It pushes history, replaces the column, sets the title and
@@ -372,6 +381,10 @@ or reload before the response arrives. Call the completion immediately after the
 DOM commit, even if user input cancelled the replay, so later scroll captures
 observe the new list.
 
+Add `data-scroll-page` to a keyed region to restore it on Back/Forward and
+reload recovery while starting push and replace swaps at the top or hash
+target, without copying the departing page's position.
+
 For a traversal that proceeds to a swap, nav dispatches `ssr:nav-popstate` on
 `window` with the `PopStateEvent` as `detail`, for code that keeps its own history
 bookkeeping, such as `@k2b/ui` dialogs. Shell code outside the swapped
@@ -389,6 +402,12 @@ installed stay manual. The history wrappers stay installed but become
 inert. Reloads retain page identity and scroll snapshots for up to 50 entries;
 `"@k2b/ssr/nav:scroll"` is reserved in sessionStorage. bfcache returns check the
 arriving entry. Dialog-only traversals remain with the dialog history owner.
+
+After every committed swap, nav dispatches `ssr:nav-swapped` on `window` with
+`detail: { root }` for the inserted column. It fires once after islands mount,
+scroll restores, focus moves, and the title is announced, for pushes, replaces,
+Back, and Forward. Failures and document loads emit nothing. Listener errors
+do not trigger document navigation.
 
 ### Protect unsaved input
 

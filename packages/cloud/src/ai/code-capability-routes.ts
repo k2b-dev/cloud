@@ -1,6 +1,7 @@
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
+import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import { dispatchCapability } from "../api/capabilities";
 import { dispatchCapabilityStream } from "../api/capability-streams";
 import { CAPABILITY_MAX_REQUEST_BYTES } from "../contracts/capabilities";
@@ -37,30 +38,33 @@ export function createCodeCapabilityRoutes(
     credentialKind: "session",
     scopes: [],
   });
-  const invoke = async (c: Context<AuthContext>, review = false) => {
-    const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
-    const input = body.ok ? Input.safeParse(body.data) : null;
-    if (!input?.success) return Response.json({ code: "VALIDATION_FAILED", message: "Invalid capability input" }, { status: 400 });
-    const conversation = await store.getConversation({ conversationId: c.req.param("conversationId")! });
-    const appId = c.req.param("appId")!;
-    const capabilityId = c.req.param("capabilityId")!;
-    if (conversation?.allowedTools && !conversation.allowedTools.includes(`${appId}.${capabilityId}`)) return denied();
-    const config = await store.getTurnRunConfig({ conversationId: c.req.param("conversationId")!, turnId: c.req.param("turnId")! });
-    if (!config || config.kind === "compact") return denied();
-    return (dependencies.dispatch ?? dispatchCapability)({
-      request: c.req.raw,
-      authority: turnAuthority(c),
-      origin: "assistant",
-      continuation: codeCapabilityOperation(c.req.param("conversationId")!, c.req.param("turnId")!),
-      mandate: config.mandate ? { mandateId: config.mandate.id, mandateRevision: config.mandate.revision, ownerAppId: "core" } : undefined,
-      review,
-      kind: review || c.req.param("kind") === "actions" ? "actions" : "queries",
-      appId,
-      capabilityId,
-      input: input.data.input,
-      locale: getLocale(c),
+  const invoke = async (c: Context<AuthContext>, review = false) =>
+    withCapabilityRequestTimeout(c, review ? "review" : c.req.param("kind") === "actions" ? "action" : "query", async () => {
+      const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
+      const input = body.ok ? Input.safeParse(body.data) : null;
+      if (!input?.success) return Response.json({ code: "VALIDATION_FAILED", message: "Invalid capability input" }, { status: 400 });
+      const conversation = await store.getConversation({ conversationId: c.req.param("conversationId")! });
+      const appId = c.req.param("appId")!;
+      const capabilityId = c.req.param("capabilityId")!;
+      if (conversation?.allowedTools && !conversation.allowedTools.includes(`${appId}.${capabilityId}`)) return denied();
+      const config = await store.getTurnRunConfig({ conversationId: c.req.param("conversationId")!, turnId: c.req.param("turnId")! });
+      if (!config || config.kind === "compact") return denied();
+      return (dependencies.dispatch ?? dispatchCapability)({
+        request: c.req.raw,
+        authority: turnAuthority(c),
+        origin: "assistant",
+        continuation: codeCapabilityOperation(c.req.param("conversationId")!, c.req.param("turnId")!),
+        mandate: config.mandate
+          ? { mandateId: config.mandate.id, mandateRevision: config.mandate.revision, ownerAppId: "core" }
+          : undefined,
+        review,
+        kind: review || c.req.param("kind") === "actions" ? "actions" : "queries",
+        appId,
+        capabilityId,
+        input: input.data.input,
+        locale: getLocale(c),
+      });
     });
-  };
   return new Hono<AuthContext>()
     .use("/:conversationId/:turnId/*", async (c, next) => {
       await next();

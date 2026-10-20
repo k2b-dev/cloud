@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { FilegateError } from "@k2b/filegate";
 import { FilesError } from "../service";
 import { apiError, describeError } from "./api-error";
+import { errorMessage } from "./messages";
 
 test("each failing step keeps its own code: template, storage, coordination, and Cloud defects", () => {
   expect(apiError(new FilesError("template_missing", 503))).toEqual({ code: "template_missing", status: 503 });
@@ -36,4 +37,10 @@ test("the log entry names the underlying cause", () => {
 
 test("unreadable configuration keeps its conflict code and status", () => {
   expect(apiError(new FilesError("configuration_unreadable", 409))).toEqual({ code: "configuration_unreadable", status: 409 });
+});
+
+test.each(["activity_scope_missing", "activity_scope_mismatch"])("%s is an internal failure with generic localized feedback", (code) => {
+  expect(apiError(new FilesError(code, 500))).toEqual({ code, status: 500 });
+  expect(errorMessage(code, "en")).toBe("Files could not complete this operation. Try again.");
+  expect(errorMessage(code, "de")).toBe("Dateien konnte diese Aktion nicht abschließen. Versuche es erneut.");
 });

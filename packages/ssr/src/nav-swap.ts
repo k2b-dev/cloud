@@ -768,6 +768,8 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
       !inScope(finalUrl, context.scope) ||
       (traversal && finalUrl.href.split("#")[0] !== requested.href.split("#")[0])
     ) {
+      // A rejected body is never read; stop its download before the document load requests the URL again.
+      response.body?.cancel().catch(() => undefined);
       fail();
       return;
     }
@@ -840,6 +842,7 @@ const commit = (
     return;
   }
   let committed = false;
+  let swappedRoot: Element | undefined;
   try {
     const target = new URL(finalUrl.href);
     target.hash = requested.hash;
@@ -906,7 +909,14 @@ const commit = (
     const restored = traversal ? savedScroll(state, entry) : undefined;
     if (restored) restoreScroll(restored);
     else {
-      if (!traversal) restoreScroll(snapshot, { window: false });
+      if (!traversal) {
+        const pageKeys = new Set(
+          [root, ...root.querySelectorAll("[data-scroll-page]")]
+            .filter((region) => region.hasAttribute("data-scroll-page"))
+            .map((region) => region.getAttribute("data-scroll-preserve")),
+        );
+        restoreScroll({ ...snapshot, regions: snapshot.regions.filter((region) => !pageKeys.has(region.key)) }, { window: false });
+      }
       window.scrollTo(0, 0);
       if (hashId) document.getElementById(hashId)?.scrollIntoView();
     }
@@ -914,8 +924,10 @@ const commit = (
     if (!focus.hasAttribute("tabindex")) focus.setAttribute("tabindex", "-1");
     focus.focus({ preventScroll: true });
     state.announcer.textContent = document.title;
+    swappedRoot = root;
   } catch (error) {
     console.error("[@k2b/ssr/nav] Page swap failed; falling back to document navigation.", error);
     recoverCommit(Boolean(options.replace) || committed);
   }
+  if (swappedRoot) window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: swappedRoot } }));
 };

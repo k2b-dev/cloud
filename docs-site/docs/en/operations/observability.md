@@ -140,6 +140,8 @@ interaction measurement, not zero latency. Reports may arrive when the page
 is hidden. Keep the latest value per metric ID before aggregating; returning
 from the back-forward cache produces a new measurement. These are document
 navigation metrics, not separate measurements for every in-page tab change.
+In an application with `pageSwap`, INP and CLS also cover the pages swapped
+into that document and keep the route template of its first page.
 
 Compare cold and warm visits to the same production build, including its
 precompressed assets, on a machine without competing builds. Keep browser
@@ -291,9 +293,10 @@ Use **Admin > Observability > Metrics** to create a dedicated scrape token.
 Send it as a Bearer token to `/metrics` from Pulse or a Prometheus-compatible
 collector. The token is restricted to metrics; anonymous requests are rejected.
 
-If Pulse reaches `/metrics` through an internal address, add the exact host to
-`PULSE_SCRAPE_ALLOWED_TARGETS` in the Pulse container environment. For example,
-allow the gateway service name when that is the host in the metrics source URL.
+If Pulse reaches `/metrics` through an internal address, a Cloud admin releases
+the host or `host:port` for that base under **Administration → Pulse → Internal
+targets**. For example, release the gateway service name and port used by the
+metrics source. Revocation blocks its next scrape.
 
 Gateway Ops caches each snapshot for 15 seconds and shares concurrent refreshes.
 Collectors have bounded response times. A timed-out collector keeps its execution

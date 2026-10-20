@@ -727,7 +727,7 @@ export const recordCommands = [
           limit: flags.limit,
         })}`,
       );
-      printJsonOrTable(ctx, payload, combinedAuditRows(payload.items), [
+      printJsonOrTable(ctx, payload, combinedAuditRows(payload.items, ctx.options.locale), [
         { key: "createdAt", label: "TIME" },
         { key: "action", label: "ACTION" },
         { key: "recordId", label: "RECORD" },
@@ -965,7 +965,7 @@ export const snapshotCommands = [
         ctx,
         `/documents/snapshots/by-record/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}`,
       );
-      printJsonOrTable(ctx, payload, snapshotRows(payload.items), [
+      printJsonOrTable(ctx, payload, snapshotRows(payload.items, ctx.options.locale), [
         { key: "id", label: "ID" },
         { key: "recordId", label: "RECORD" },
         { key: "createdAt", label: "CREATED" },

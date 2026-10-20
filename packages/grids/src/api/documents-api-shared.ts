@@ -83,7 +83,9 @@ export const PublicRecordSnapshotSchema = z.object({
   createdBy: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
 });
-export const PublicRecordSnapshotSummarySchema = PublicRecordSnapshotSchema.omit({ root: true, graph: true });
+export const PublicRecordSnapshotSummarySchema = PublicRecordSnapshotSchema.omit({ root: true, graph: true }).extend({
+  createdByName: z.string().optional(),
+});
 export const PublicRecordSnapshotListResponseSchema = z.object({ items: z.array(PublicRecordSnapshotSummarySchema) });
 export const PublicCreateRecordSnapshotResponseSchema = z.object({ snapshot: PublicRecordSnapshotSchema });
 
@@ -283,12 +285,13 @@ export const projectRecordSnapshotSummaries = async (snapshots: InternalRecordSn
       snapshots.map((snapshot) => snapshot.recordId),
     ),
   ]);
-  return snapshots.map(({ id, baseId, tableId, recordId, createdBy, createdAt }) => ({
+  return snapshots.map(({ id, baseId, tableId, recordId, createdBy, createdByName, createdAt }) => ({
     id: requiredPublicId(publicSnapshots, id, "document snapshot"),
     baseId: requiredPublicId(bases, baseId, "base"),
     tableId: requiredPublicId(tables, tableId, "table"),
     recordId: requiredPublicId(records, recordId, "record"),
     createdBy,
+    createdByName,
     createdAt,
   }));
 };

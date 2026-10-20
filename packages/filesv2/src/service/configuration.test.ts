@@ -5,6 +5,7 @@ import { readConfiguration, resetConfiguration, writeConfiguration } from "./con
 
 const area = { enabled: false, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" };
 const input = {
+  activityRetentionDays: 365,
   url: "http://filegate.test",
   cloud: { ...area, autoCreate: false, autoArchive: true },
   freeipa: { ...area, root: "freeipa" },
@@ -54,4 +55,27 @@ test("reset deletes the override without reading it", async () => {
   await resetConfiguration();
   expect(remove).toHaveBeenCalledWith("filesv2.configuration");
   expect(read).not.toHaveBeenCalled();
+});
+
+test("older stored configuration reads with 365 days of history retention", async () => {
+  const { activityRetentionDays: _retention, ...older } = input;
+  spyOn(app.settings, "read").mockResolvedValue({ stored: "readable", value: JSON.stringify({ ...older, token: "saved-token" }) });
+  expect((await readConfiguration()).activityRetentionDays).toBe(365);
+});
+test("history retention round-trips through encrypted settings storage", async () => {
+  const write = spyOn(app.settings, "set").mockResolvedValue();
+  await writeConfiguration({ ...input, token: "replacement", activityRetentionDays: 730 });
+  const stored = write.mock.calls[0]![1];
+  spyOn(app.settings, "read").mockResolvedValue({ stored: "readable", value: stored });
+  expect((await readConfiguration()).activityRetentionDays).toBe(730);
+});
+test.each([29, 3651, 30.5])("history retention rejects %s days before saving", async (days) => {
+  const write = spyOn(app.settings, "set").mockResolvedValue();
+  await expect(writeConfiguration({ ...input, token: "replacement", activityRetentionDays: days })).rejects.toThrow();
+  expect(write).not.toHaveBeenCalled();
+});
+test.each([30, 3650])("history retention accepts boundary %s", async (days) => {
+  const write = spyOn(app.settings, "set").mockResolvedValue();
+  await writeConfiguration({ ...input, token: "replacement", activityRetentionDays: days });
+  expect(JSON.parse(write.mock.calls[0]![1]).activityRetentionDays).toBe(days);
 });

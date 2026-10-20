@@ -19,7 +19,16 @@ export const sourceCommands = [
         ctx,
         sources.map((resource) => withCloudResourcePermalink(ctx, "pulse.source", resource)),
         sourceRows(sources),
-        [{ key: "id" }, { key: "name" }, { key: "kind" }, { key: "enabled" }, { key: "interval" }, { key: "token" }, { key: "lastSeenAt" }],
+        [
+          { key: "id" },
+          { key: "name" },
+          { key: "kind" },
+          { key: "enabled" },
+          { key: "interval" },
+          { key: "token" },
+          { key: "newestDataAt", label: "Newest data" },
+          { key: "throttled", label: "Throttled" },
+        ],
       );
     },
   }),
@@ -31,6 +40,10 @@ export const sourceCommands = [
       kind: sourceKindFlag,
       endpointUrl: flag.string({ name: "endpoint-url", description: "Metrics endpoint URL" }),
       ...bearerTokenFlags,
+      metricFilter: flag.stringList({
+        name: "metric-filter",
+        description: "Include this metric family or prefix (repeatable; trailing * supported)",
+      }),
       scrapeIntervalSeconds: flag.int({
         name: "scrape-interval-seconds",
         min: 60,
@@ -54,6 +67,7 @@ export const sourceCommands = [
           endpointUrl: flags.endpointUrl ?? null,
           bearerToken: bearerToken ?? null,
           scrapeIntervalSeconds: flags.scrapeIntervalSeconds ?? null,
+          metricFilters: flags.metricFilter?.length ? flags.metricFilter : undefined,
         }),
       );
       if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.source", source)))
@@ -68,6 +82,11 @@ export const sourceCommands = [
       enabled: flag.enum(["true", "false"], { description: "Enable or disable the source" }),
       endpointUrl: flag.string({ name: "endpoint-url", description: "Metrics endpoint URL" }),
       ...bearerTokenFlags,
+      metricFilter: flag.stringList({
+        name: "metric-filter",
+        description: "Include this metric family or prefix (repeatable; trailing * supported)",
+      }),
+      clearMetricFilters: flag.boolean({ name: "clear-metric-filters", description: "Include all metric families" }),
       clearBearerToken: flag.boolean({ name: "clear-bearer-token", description: "Remove the configured metrics bearer token" }),
       scrapeIntervalSeconds: flag.int({
         name: "scrape-interval-seconds",
@@ -78,6 +97,7 @@ export const sourceCommands = [
     },
     args: { args: arg.rest({ valueLabel: "base source", required: true }) },
     async run({ ctx, args, flags }) {
+      if (flags.clearMetricFilters && flags.metricFilter?.length) throw new Error("Pass either --metric-filter or --clear-metric-filters.");
       if ((flags.bearerTokenFile || flags.bearerTokenStdin) && flags.clearBearerToken) {
         throw new Error("Pass either a bearer token input or --clear-bearer-token, not both.");
       }
@@ -95,6 +115,7 @@ export const sourceCommands = [
           endpointUrl: flags.endpointUrl,
           bearerToken,
           scrapeIntervalSeconds: flags.scrapeIntervalSeconds,
+          metricFilters: flags.clearMetricFilters ? [] : flags.metricFilter?.length ? flags.metricFilter : undefined,
         }),
       );
       if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.source", updated)))

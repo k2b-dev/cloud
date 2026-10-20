@@ -539,3 +539,96 @@ describe("Layout page Help payload", () => {
     });
   }
 });
+
+const swapApp = defineApp({
+  id: "swap",
+  name: "Swap",
+  icon: "ti ti-box",
+  description: "Page swap render fixture",
+  baseUrl: "http://swap:3000",
+  routes: ["/app/swap"],
+  pageSwap: true,
+});
+const swapServer = new Hono<{ Variables: { runtime: RuntimeContext; user: import("../contracts/shared").User | undefined } }>()
+  .use(async (c, next) => {
+    c.set("runtime", {
+      apps: [
+        {
+          id: "swap",
+          name: "Swap",
+          icon: "ti ti-box",
+          description: "Swap",
+          routes: ["/app/swap"],
+          nav: { href: "/app/swap", section: "primary" },
+          panel: { href: "/app/swap/panel", label: "Panel", icon: "ti ti-box" },
+        },
+      ],
+    });
+    if (c.req.query("anonymous") !== "true") c.set("user", person);
+    await next();
+  })
+  .get(
+    "/app/swap",
+    ...swapApp.ssr(
+      (c) => () =>
+        createComponent(Layout, {
+          c,
+          title: "Swap page",
+          fullPage: c.req.query("fullPage") === "true",
+          fullWidth: c.req.query("fullWidth") === "true",
+          focusMode: c.req.query("focusMode") === "true",
+          children: "Swappable content",
+        }),
+    ),
+  );
+
+test("page swap replaces only the content column and its page data", async () => {
+  const { createDomTestHarness } = await import("../../../ui/test/dom");
+  const spies = [
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
+  ];
+  const dom = createDomTestHarness();
+  const window = dom.window;
+  try {
+    let signature: string | null = null;
+    let canvasClass: string | null = null;
+    for (const query of ["", "?fullPage=true", "?fullWidth=true"]) {
+      window.document.body.innerHTML = await (await swapServer.request(`/app/swap${query}`)).text();
+      const canvas = window.document.querySelector(".cloud-app-canvas")!;
+      const column = canvas.querySelector(".layout-shell-content")!;
+      expect(canvas.getAttribute("data-nav-shell")).toMatch(/^[a-f0-9]{32}$/);
+      expect(canvas.getAttribute("data-nav-scope")).toBe("/app/swap");
+      expect(canvas.getAttribute("data-nav-attributes")).toBe("data-layout-full-page data-workspace-sidebar-collapsed");
+      signature ??= canvas.getAttribute("data-nav-shell");
+      canvasClass ??= canvas.getAttribute("class");
+      expect(canvas.getAttribute("data-nav-shell")).toBe(signature);
+      expect(canvas.getAttribute("class")).toBe(canvasClass);
+      expect(canvasClass).toBe("cloud-app-canvas relative flex w-full min-h-dvh md:h-dvh md:overflow-hidden");
+      expect(canvas.querySelectorAll("[data-nav-root]")).toHaveLength(1);
+      expect(column.hasAttribute("data-nav-root")).toBe(true);
+      expect(column.firstElementChild?.id).toBe("cloud-shell-data");
+      expect(column.lastElementChild?.hasAttribute("data-print-fallback")).toBe(true);
+      expect(window.document.querySelectorAll("#cloud-shell-data")).toHaveLength(1);
+      // Not a keyed region: nav keeps keyed regions across pushes, and a new page starts at the top as after a load.
+      expect(column.querySelector("main")?.getAttribute("data-scroll-preserve")).toBe("cloud-main");
+      expect(column.querySelector("main")?.getAttribute("data-scroll-page")).toBe("");
+      for (const selector of ["#cloud-panel", ".layout-rail", ".cloud-tab-bar", ".cloud-shell-reveal"]) {
+        expect(canvas.querySelector(selector)).not.toBeNull();
+        expect(column.querySelector(selector)).toBeNull();
+      }
+      expect(column.querySelectorAll("solid-island,solid-client")).toHaveLength(1);
+      expect(canvas.querySelectorAll("solid-island,solid-client").length).toBeLessThanOrEqual(4);
+      expect(canvas.firstElementChild?.tagName).toBe("SOLID-ISLAND"); // ShellRuntime stays in the document.
+    }
+    window.document.body.innerHTML = await (await swapServer.request("/app/swap?focusMode=true")).text();
+    expect(window.document.querySelector("[data-nav-shell],[data-nav-root],[data-nav-scope]")).toBeNull();
+    window.document.body.innerHTML = await (await swapServer.request("/app/swap?anonymous=true")).text();
+    expect(window.document.querySelector("[data-nav-root] #cloud-shell-data")).not.toBeNull();
+    expect(window.document.querySelector("[data-nav-shell]")?.getAttribute("data-nav-shell")).not.toBe(signature);
+  } finally {
+    dom.cleanup();
+    for (const spy of spies) spy.mockRestore();
+  }
+});

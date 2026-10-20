@@ -18,7 +18,6 @@ const allowed: RegExp[] = [
   /^packages\/ssr\//,
   // Operator verification tools that run against a live installation, not application runtime.
   /^packages\/oauth\/src\/verification\//,
-  /^packages\/pulse\/src\/service\/high-cardinality-load\.ts$/,
   // Test-only worker process; the parent test passes its targets explicitly.
   /^packages\/grids\/src\/service\/document-workflow-crash\.worker\.ts$/,
   /^packages\/grids\/src\/service\/document-zip-crash\.worker\.ts$/,

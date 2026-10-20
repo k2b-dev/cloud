@@ -53,6 +53,7 @@ type ContactHistoryMode = "push" | "replace";
 
 const commitSelectedContactUrl = (contactId: string | null, bookId: string | null, historyMode: ContactHistoryMode) => {
   const url = new URL(window.location.href);
+  url.searchParams.delete("contactOutcome");
   if (contactId) {
     url.searchParams.set("contact", contactId);
   } else {

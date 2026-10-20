@@ -307,13 +307,18 @@ export const checkSnapshotTarget = async (
 ): Promise<Result<void>> => {
   const validation = validateResolvedSnapshotConfig(config);
   if (!validation.ok || !config.enabled) return validation;
-  let host: string;
+  let target: URL;
   try {
-    host = presignSnapshotObject(config, "notebooks/target-check").hostname;
+    target = presignSnapshotObject(config, "notebooks/target-check");
   } catch {
     return fail(err.badInput("S3 endpoint and region must form a valid storage address."));
   }
-  return (await isNetworkTargetBlocked(host, snapshotAllowlist(), options)) ? fail(snapshotTargetBlocked()) : ok(undefined);
+  return (await isNetworkTargetBlocked(target.hostname, snapshotAllowlist(), {
+    ...options,
+    port: Number(target.port || (target.protocol === "https:" ? 443 : 80)),
+  }))
+    ? fail(snapshotTargetBlocked())
+    : ok(undefined);
 };
 
 export const getConfig = async (params: { notebookId: string }): Promise<NotebookSnapshotConfig> => {

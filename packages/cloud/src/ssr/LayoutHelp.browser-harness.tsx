@@ -100,7 +100,7 @@ if (!main) throw new Error("Missing Layout main");
 const embedded = params.has("embedded");
 const referenceHost = params.get("host");
 if (referenceHost === "grids" || referenceHost === "pulse") {
-  // The Grids and Pulse query reference windows: one article beside the reference sidebar, without the Cloud shell.
+  // The Grids query reference windows: one article beside the reference sidebar, without the Cloud shell.
   const host = document.createElement("div");
   host.className = "h-dvh";
   document.body.replaceChildren(host);

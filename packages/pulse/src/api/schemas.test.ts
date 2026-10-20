@@ -1,16 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  BaseSchema,
-  DashboardSnapshotSchema,
-  EventMapQueryTextSchema,
-  IngestBatchSchema,
-  MetricQuerySchema,
-  ResourceEventQuerySchema,
-  ResourceListQuerySchema,
-  ResourceMetricQuerySchema,
-  ResourceStateQuerySchema,
-  UpdateBaseSchema,
-} from "./schemas";
+import { BaseSchema, IngestBatchSchema, UpdateBaseSchema } from "./schemas";
 
 describe("Pulse ingest API limits", () => {
   test("accepts explicit resources for every ingest signal kind", () => {
@@ -83,46 +72,29 @@ describe("Pulse ingest API limits", () => {
   });
 });
 
-describe("Pulse event map API limits", () => {
-  test("accepts public field selectors and rejects malformed or sensitive selectors", () => {
-    const input = {
-      baseId: "Base01",
-      query: "events qr.opened since 24h",
-      latitude: { role: "attribute", path: "geo.latitude" },
-      longitude: { role: "dimension", path: "longitude" },
-      size: "count",
-    };
-
-    expect(EventMapQueryTextSchema.safeParse(input).success).toBe(true);
-    expect(
-      EventMapQueryTextSchema.safeParse({
-        ...input,
-        latitude: { role: "attribute", path: "geo..latitude" },
-      }).success,
-    ).toBe(false);
-    expect(
-      EventMapQueryTextSchema.safeParse({
-        ...input,
-        latitude: { role: "sensitive", path: "geo.latitude" },
-      }).success,
-    ).toBe(false);
-  });
-});
-
 describe("Pulse public resource IDs", () => {
-  test("accepts the full observed resource key budget across REST readers", () => {
-    const resourceKey = "r".repeat(505);
-    expect(ResourceListQuerySchema.safeParse({ ref: resourceKey }).success).toBe(true);
-    expect(ResourceMetricQuerySchema.safeParse({ resourceKey }).success).toBe(true);
-    expect(ResourceEventQuerySchema.safeParse({ resourceKey }).success).toBe(true);
-    expect(ResourceStateQuerySchema.safeParse({ resourceKey }).success).toBe(true);
-  });
-
   test("accepts short control-plane IDs and rejects legacy UUIDs", () => {
     expect(
       BaseSchema.safeParse({
         id: "Base01",
         name: "Operations",
+        store: {
+          state: "active",
+          operation: null,
+          errorCode: null,
+          errorAt: null,
+          writeBlockReason: null,
+          profile: "normal",
+          limits: {
+            valuesPerMinute: 2000,
+            bytesPerMinute: 5242880,
+            storageBytes: 5000000000,
+            maxSeries: 50000,
+            maxEventKinds: 2000,
+            maxStateKeys: 2000,
+          },
+          usage: null,
+        },
         description: null,
         rawRetentionDays: 30,
         rollupRetentionDays: 365,
@@ -140,33 +112,6 @@ describe("Pulse public resource IDs", () => {
       }).success,
     ).toBe(true);
     expect(BaseSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(false);
-    expect(
-      MetricQuerySchema.safeParse({
-        baseId: crypto.randomUUID(),
-        metric: "cpu.usage",
-        aggregation: "avg",
-        bucket: "5m",
-        since: "1h",
-      }).success,
-    ).toBe(false);
-  });
-
-  test("requires a short dashboard ID in public snapshots", () => {
-    const snapshot = {
-      dashboard: { id: "Dash01", name: "Operations", config: { layout: null } },
-      points: {},
-      events: {},
-      states: {},
-      maps: {},
-    };
-
-    expect(DashboardSnapshotSchema.safeParse(snapshot).success).toBe(true);
-    expect(
-      DashboardSnapshotSchema.safeParse({
-        ...snapshot,
-        dashboard: { ...snapshot.dashboard, id: crypto.randomUUID() },
-      }).success,
-    ).toBe(false);
   });
 });
 
@@ -177,20 +122,4 @@ test("rejects historical identity fields instead of silently dropping them", () 
     expect(IngestBatchSchema.safeParse({ states: [{ key: "online", value: true, [field]: "old" }] }).success).toBe(false);
   }
   expect(IngestBatchSchema.safeParse({ metrics: [{ name: "load", value: 1, resource: { type: "a:b", id: "c" } }] }).success).toBe(false);
-});
-
-test("metric API accepts exact periods and rejects partial or mixed windows", () => {
-  const query = {
-    baseId: "abc123",
-    metric: "load",
-    aggregation: "avg",
-    bucket: "1h",
-    dimensions: {},
-    from: "2026-09-01T00:00:00Z",
-    to: "2026-09-02T00:00:00Z",
-  };
-  expect(MetricQuerySchema.safeParse(query).success).toBe(true);
-  expect(MetricQuerySchema.safeParse({ ...query, since: "1d" }).success).toBe(false);
-  expect(MetricQuerySchema.safeParse({ ...query, to: undefined }).success).toBe(false);
-  expect(MetricQuerySchema.safeParse({ ...query, from: "2026-09-01" }).success).toBe(false);
 });

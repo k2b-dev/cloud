@@ -1,4 +1,4 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { PermissionEditor, principalLabel } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts/shared";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
@@ -31,21 +31,12 @@ const listBaseAccess = async (baseId: string, fallback: string): Promise<ScopedA
   return (await response.json()) as ScopedAccessEntry[];
 };
 
-/** Audiences keep the localized label; the server's audience name is English. */
-export const entryLabel = (entry: AccessEntry, signedInUsers: string, publicLabel: string): string => {
-  if (entry.principal.type === "authenticated") return signedInUsers;
-  if (entry.principal.type === "public") return publicLabel;
-  if (entry.displayName) return entry.displayName;
-  if (entry.principal.type === "user") return entry.principal.userId;
-  if (entry.principal.type === "group") return entry.principal.groupId;
-  return entry.principal.serviceAccountId;
-};
-
-const openPermissionDialog = async (props: AdminGridsActionsProps, entries: ScopedAccessEntry[]) => {
+/** Exported for the behavior test; the island opens it from its menu. */
+export const openPermissionDialog = async (props: AdminGridsActionsProps, entries: ScopedAccessEntry[]) => {
   const PermissionDialog = () => {
     const locale = useLocale();
     const t = () => gridsAdminMessages.resolve([locale()]).t;
-    const label = (entry: AccessEntry) => entryLabel(entry, t().signedInUsers, t().public);
+    const label = (entry: AccessEntry) => principalLabel(entry, locale());
     const permissionLabel = (permission: AccessEntry["permission"]) => {
       if (permission === "none") return t().permissionNone;
       if (permission === "read") return t().permissionRead;

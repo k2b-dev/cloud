@@ -17,6 +17,5 @@ packages/filesv2/test/markdown.behavior.test.tsx | 1
 packages/gateway/src/proxy.test.ts | 1
 packages/mail/src/cli.test.ts | 1
 packages/mail/src/frontend/MailWorkspace.list-actions.behavior.test.tsx | 5
-packages/pulse/src/frontend/workspace/near-realtime-controller.behavior.test.ts | 4
 packages/ui/test/calendar-month-drag.behavior.test.ts | 3
 pwas/pwa-auth/src/vault.behavior.test.ts | 1

@@ -1,6 +1,6 @@
 import { type ResourceApiKey, ResourceApiKeys, type ResourceApiKeysProps } from "@k2b/cloud/access/ui";
-import { Button, DataTable, type DataTableColumn, DescriptionList, DetailPanel, IconButton, Tooltip, useLocale } from "@k2b/ui";
-import { type JSX, Show } from "solid-js";
+import { Button, DataTable, type DataTableColumn, DescriptionList, DetailPanel, IconButton, StatusBadge, Tooltip } from "@k2b/ui";
+import { For, type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
 import { localizedSourceError } from "../../messages";
 import { usePulseMessages } from "../use-messages";
@@ -8,7 +8,6 @@ import { compactDateWithDelta, type PulseDateContext } from "./helpers";
 
 type Props = {
   source: PulseSource;
-  published: { resources: number; metricVariants: number; states: number; events: number };
   origin: string;
   dateContext: PulseDateContext;
   loading: boolean;
@@ -17,7 +16,6 @@ type Props = {
   scrapeColumns: DataTableColumn<PulseSourceScrape>[];
   renderScrapeCell: (scrape: PulseSourceScrape, col: DataTableColumn<PulseSourceScrape>) => JSX.Element;
   copySetupText: (text: string, label: string) => void;
-  openSourceResources: (source: PulseSource) => void;
   editSource: (source: PulseSource) => void | Promise<void>;
   toggleSource: (source: PulseSource) => void | Promise<void>;
   close: () => void;
@@ -32,6 +30,7 @@ const httpIngestExample = (source: PulseSource, origin: string) =>
     ? `curl -fsS -X POST ${origin}/api/pulse/ingest \\
   -H "Authorization: Bearer <api-key>" \\
   -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: import-2026-10-19-0001" \\
   --data '{
     "metrics": [
       { "name": "orders.created", "value": 1, "type": "counter", "dimensions": { "channel": "webshop" } },
@@ -50,8 +49,7 @@ const httpIngestExample = (source: PulseSource, origin: string) =>
 
 export default function SourceDetailView(props: Props) {
   const t = usePulseMessages();
-  const locale = useLocale();
-  const renderCodeSection = (params: { title: string; code: string }) => (
+  const renderCodeSection = (params: { title: string; code: string; hint?: string }) => (
     <DetailPanel.Section
       title={params.title}
       icon="ti ti-code"
@@ -64,6 +62,9 @@ export default function SourceDetailView(props: Props) {
         </div>
       }
     >
+      <Show when={params.hint}>
+        <p class="mb-2 text-xs text-secondary">{params.hint}</p>
+      </Show>
       <pre class="max-h-72 overflow-auto rounded-lg bg-zinc-100 p-3 text-[11px] leading-relaxed text-secondary dark:bg-zinc-900/80">
         <code>{params.code}</code>
       </pre>
@@ -71,17 +72,67 @@ export default function SourceDetailView(props: Props) {
   );
 
   const httpExample = () => httpIngestExample(props.source, props.origin);
+  const status = () => props.source.status;
   const statusItems = () => [
+    {
+      term: t().newestData,
+      description: status().newestDataAt ? compactDateWithDelta(status().newestDataAt!, props.dateContext) : t().noDataYet,
+    },
     {
       term: t().lastSeen,
       description: props.source.lastSeenAt ? compactDateWithDelta(props.source.lastSeenAt, props.dateContext) : t().waiting,
     },
-    ...(props.source.kind === "metrics" ? [{ term: t().interval, description: `${props.source.scrapeIntervalSeconds ?? 60}s` }] : []),
-    ...(props.source.lastError
+    ...(props.source.kind === "metrics"
+      ? [
+          { term: t().interval, description: `${props.source.scrapeIntervalSeconds ?? 60}s` },
+          {
+            term: t().metricsKept,
+            description: props.source.metricFilters.length ? (
+              <span class="break-all font-mono text-xs">{props.source.metricFilters.join(", ")}</span>
+            ) : (
+              t().allMetrics
+            ),
+          },
+        ]
+      : []),
+    ...(status().throttled
+      ? [
+          {
+            term: t().status,
+            description: (
+              <span class="flex flex-col items-start gap-1">
+                <StatusBadge label={t().throttled} tone="warning" />
+                <span class="text-xs text-secondary">{t().throttledDetail}</span>
+              </span>
+            ),
+          },
+        ]
+      : []),
+    ...(status().refusedHistograms.length
+      ? [
+          {
+            term: t().refusedHistograms,
+            description: (
+              <ul class="flex flex-col gap-0.5 text-xs">
+                <For each={status().refusedHistograms}>
+                  {(item) => (
+                    <li class="break-all">
+                      <span class="font-mono">{item.family}</span>
+                      <span class="text-secondary"> · {t().refusedHistogramReason({ reason: item.reason })}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            ),
+          },
+        ]
+      : []),
+    ...(status().skippedSummaries ? [{ term: t().skipped, description: t().skippedSummaries({ count: status().skippedSummaries }) }] : []),
+    ...(status().lastError
       ? [
           {
             term: t().error,
-            description: <span class="break-all text-red-600 dark:text-red-300">{localizedSourceError(props.source.lastError, t())}</span>,
+            description: <span class="break-all text-red-600 dark:text-red-300">{localizedSourceError(status().lastError, t())}</span>,
           },
         ]
       : []),
@@ -95,7 +146,7 @@ export default function SourceDetailView(props: Props) {
         meta={t().source}
         subtitle={
           <>
-            {props.source.kind}
+            {props.source.kind === "metrics" ? t().metricsEndpoint : t().httpIngest}
             {props.source.enabled ? ` · ${t().enabled}` : ` · ${t().paused}`}
             {props.source.bearerTokenConfigured ? ` · ${t().bearerAuth}` : ""}
           </>
@@ -115,9 +166,6 @@ export default function SourceDetailView(props: Props) {
             <Button type="button" variant="secondary" size="sm" onClick={() => void props.toggleSource(props.source)}>
               <i class={`ti ${props.source.enabled ? "ti-player-pause" : "ti-player-play"}`} />
               {props.source.enabled ? t().pause : t().resume}
-            </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={() => props.openSourceResources(props.source)}>
-              <i class="ti ti-cube" /> {t().resources}
             </Button>
             <Show when={props.source.kind === "metrics"}>
               <Button
@@ -140,32 +188,10 @@ export default function SourceDetailView(props: Props) {
         </DetailPanel.Summary>
 
         <DetailPanel.Group label={t().sourceData}>
-          <DetailPanel.Section title={t().published} icon="ti ti-chart-dots" tone="accent">
-            <div class="flex flex-col gap-2">
-              <DetailPanel.Action
-                type="button"
-                title={t().resources}
-                description={t().publishedCount({ count: props.published.resources.toLocaleString(locale()) })}
-                leading={<i class="ti ti-cube" aria-hidden="true" />}
-                trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                onClick={() => props.openSourceResources(props.source)}
-              />
-              <DescriptionList
-                items={[
-                  { term: t().metrics, description: t().variants({ count: props.published.metricVariants.toLocaleString(locale()) }) },
-                  { term: t().states, description: props.published.states.toLocaleString(locale()) },
-                  { term: t().events, description: t().recentCount({ count: props.published.events.toLocaleString(locale()) }) },
-                ]}
-                layout="rows"
-                size="sm"
-              />
-            </div>
-          </DetailPanel.Section>
-
           <DetailPanel.Section title={t().target} icon="ti ti-target" tone="neutral">
             <Show
               when={props.source.kind === "metrics"}
-              fallback={<p class="text-xs text-secondary">{t().ingestEndpoint({ kind: props.source.kind })}</p>}
+              fallback={<p class="break-all font-mono text-xs text-secondary">{`POST ${props.origin}/api/pulse/ingest`}</p>}
             >
               <p class="break-all text-xs text-secondary">{props.source.endpointUrl ?? t().noEndpoint}</p>
             </Show>
@@ -204,7 +230,9 @@ export default function SourceDetailView(props: Props) {
           />
         </Show>
 
-        <Show when={httpExample()}>{(command) => renderCodeSection({ title: t().httpIngestExample, code: command() })}</Show>
+        <Show when={httpExample()}>
+          {(command) => renderCodeSection({ title: t().httpIngestExample, code: command(), hint: t().idempotencyHint })}
+        </Show>
 
         <DetailPanel.Section
           title={t().dangerZone}

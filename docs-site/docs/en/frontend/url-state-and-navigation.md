@@ -122,7 +122,8 @@ page swap where the host installed one.
 
 A page swap keeps the document and replaces only the content column with the
 next server page. A navigation rail or an open side panel stays as it is.
-Every application can use it; it is part of `@k2b/ssr/nav`, not of Cloud.
+Every application can use the generic `@k2b/ssr/nav` contract. Cloud provides
+the opt-in integration described below.
 
 The server page declares the parts:
 
@@ -146,7 +147,10 @@ The server page declares the parts:
 - `data-nav-attributes` names shell attributes that the fetched page sets or
   removes, for example a layout mode.
 - `data-nav-document` on a link keeps its document navigation, for example
-  for a file download without `download`.
+  for a file download without `download`. Mark every in-scope link to a
+  non-HTML resource this way or with `download`: otherwise the swap fetch
+  learns the type first, and the server receives the request twice. Keep
+  this in mind for single-use links.
 
 An island outside the column installs the swap once:
 
@@ -156,6 +160,13 @@ import { onCleanup, onMount } from "solid-js";
 
 onMount(() => onCleanup(installPageSwap()));
 ```
+
+In a swap host, the loader imports modules that are used only outside the
+column first. Modules with an instance in the column load after them, also
+for their instances outside it, because importing a module mounts every
+instance. An installer outside the column therefore precedes column islands
+that write history. Use the installer island only outside the column.
+`listenPopState()` remains safe in either installation order.
 
 A click that an island handler prevented is never swapped. Modifier keys,
 `target`, `download`, `rel="external"`, other origins, links outside the
@@ -188,6 +199,10 @@ still own region scroll. An asynchronous same-page replacement can ask nav to
 Cross-page islands that load content after mounting still manage that later
 rendering themselves. A traversal that cannot swap reloads the arriving URL.
 
+Add `data-scroll-page` to a keyed region to restore it on Back/Forward and
+reload recovery while starting push and replace swaps at the top or hash
+target, without copying the departing page's position.
+
 For a traversal that proceeds to a swap, nav dispatches `ssr:nav-popstate` on
 `window` with the `PopStateEvent` as `detail`, for code that keeps its own history
 bookkeeping, such as `@k2b/ui` dialogs. Shell code outside the swapped
@@ -205,6 +220,46 @@ installed stay manual. The history wrappers stay installed but become
 inert. Reloads retain page identity and scroll snapshots for up to 50 entries;
 `"@k2b/ssr/nav:scroll"` is reserved in sessionStorage. bfcache returns check the
 arriving entry. Dialog-only traversals remain with the dialog history owner.
+
+After each committed swap, `window` receives `ssr:nav-swapped` with
+`detail: { root }`, where `root` is the inserted column. It fires once after
+islands mount, scroll restores, focus moves, and the title is announced.
+This includes pushes, replaces, Back, and Forward. Document loads and failed
+swaps emit no event. A listener error does not trigger a document load.
+
+## Cloud page swaps
+
+Opt in with `defineApp({ pageSwap: true, ... })`. The default is off.
+Cloud keeps the rail, phone tab bar, panel slot, and provider document.
+It replaces the header, banners, warnings, page trail, main content, footer,
+and the page's shell data and Help ids. Regular and full-page layouts can
+swap between each other.
+
+Back and Forward restore the page scroller; a link opens the next page at the
+top, or at its hash target.
+
+The panel follows the arriving page's consent answer, and the rail and phone
+tab bar follow its rail preferences.
+
+`focusMode` pages and links outside the current app route prefix load a
+document. So does a page whose kept shell would differ from a reload: another
+user, session kind, locale, theme preference, page theme, or build, other panel providers,
+navigation entries, legal or search links, or profile, a new announcement, or
+other Help. Every swap fetch passes through the same server route policies as a
+reload.
+
+Column islands use `listenPopState()` and `navigate()` for their own URL state.
+The loader mounts the shell islands that are used only outside the column
+first, so Cloud installs page swaps before column islands write history.
+`listenPopState()` is safe regardless of installation order and reports only
+same-page traversals. Shell code follows `ssr:nav-popstate` for cross-page
+traversals and `ssr:nav-swapped` for the committed content.
+
+Web Vitals belong to the document. INP and CLS cover every swapped page and
+carry the route template of the page that loaded the document.
+
+Protect unsaved column state with `onBeforeLeave()` as described below.
+`beforeunload` is not consulted during swaps; keep it for document loads.
 
 ## Protect unsaved input
 

@@ -40,4 +40,29 @@ describe("readBoundedJson", () => {
     });
     expect(await readBoundedJson(new Response(broken), 32)).toEqual({ ok: false, reason: "invalid_json" });
   });
+
+  test("aborts a stalled read without waiting for the source's cancellation hook", async () => {
+    const controller = new AbortController();
+    const reading = Promise.withResolvers<void>();
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull() {
+          reading.resolve();
+        },
+        cancel() {
+          cancelled = true;
+          return new Promise<void>(() => {});
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const response = new Response(body);
+    const result = readBoundedJson(response, 32, controller.signal);
+    await reading.promise;
+    controller.abort(new DOMException("Caller cancelled", "AbortError"));
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    expect(cancelled).toBe(true);
+    expect(body.locked).toBe(false);
+  });
 });
