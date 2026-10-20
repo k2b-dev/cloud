@@ -119,6 +119,28 @@ describe("MapView geometry", () => {
       expect(pinOffsets(pins, f)).toEqual(offsets);
     }
   });
+  test("keeps stops apart and decides separation at phone width", () => {
+    // A wide route: C and "+" are a pin apart on a wide screen but would cover each other on a phone.
+    const pins = sortMarkers([
+      marker("c", "C", 48.493, 9.399),
+      marker("plus", "+", 48.493, 9.43),
+      marker("d", "D", 48.491, 9.204),
+      marker("a", "A", 48.398, 9.991),
+    ]);
+    const f = mapFrame({ markers: pins }, 360, 48)!;
+    const offsets = pinOffsets(pins, f);
+    expect(offsets.get("c")).toEqual({ dx: 0, dy: 0 });
+    expect(Math.hypot(offsets.get("plus")!.dx, offsets.get("plus")!.dy)).toBeCloseTo(28, 9);
+    const phoneScale = f.overlapWidth / f.spanX;
+    expect(f.overlapWidth).toBeCloseTo(390 - 96, 9);
+    const at = (id: string) => {
+      const m = pins.find((pin) => pin.id === id)!;
+      const p = projectPoint(m.point);
+      const o = offsets.get(id)!;
+      return { x: (p.x - f.minX) * phoneScale + o.dx, y: (p.y - f.minY) * phoneScale + o.dy };
+    };
+    expect(Math.hypot(at("plus").x - at("c").x, at("plus").y - at("c").y)).toBeGreaterThanOrEqual(28 - 1e-9);
+  });
   test("never fits further out than MapLibre allows: the world stays at least as tall as the map", () => {
     // Pins across the whole world on a phone: the narrow width would ask for a zoom below the one where the world fills 400 px.
     const markers = [marker("west", 1, 0, -170), marker("east", 2, 0, 170)];

@@ -70,8 +70,16 @@ style declares its own attribution.
 Marker and area tones are `accent`, `second`, `neutral`, and `warning`.
 Line tones are `accent`, `muted`, `preview`, and `previous`. Preview and
 previous lines are dashed. Pins appear in number, letter, `+`, then unmarked
-order. Nearby pins receive deterministic offsets that remain the same when
-the map image arrives or the camera changes.
+order. Pins that would cover each other on a 390 px phone are kept apart at
+every width: a numbered pin at a stop sits top right of the stop's letter,
+and any other overlapping pin moves to the first free place around its point.
+The offsets come from the data alone, so they stay the same when the map image
+arrives or the camera changes. Filled pins pick a text colour per tone and
+theme that keeps 4.5:1 contrast.
+
+The scale bar names the distance for the fitted map: the server frame uses
+the widest fit, the browser corrects it for the real width, and after the map
+loads it follows the camera.
 
 Until someone moves or zooms the camera, geometry changes and resizing fit
 again without animation. A selected pin outside the view is brought into view.

@@ -2,6 +2,8 @@ import type { MapViewFrameProps, MapViewLine, MapViewMarker, MapViewPoint } from
 
 export const MIN_SPAN = 256 / (512 * 2 ** 16);
 export const EARTH_CIRCUMFERENCE = 40075016.686;
+/** Phones are first-class: pin separation is decided for the narrowest common screen, then holds at every width. */
+const PHONE_WIDTH = 390;
 /**
  * `referenceWidth` is the fitted width when the container is wide enough; `minWidth` keeps the whole world at least as
  * tall as the map, the smallest zoom MapLibre allows, so a world-scale fit lands where MapLibre puts it.
@@ -14,6 +16,8 @@ export type MapFrame = {
   aspect: number;
   referenceWidth: number;
   minWidth: number;
+  /** The fitted width on a 390 px phone: pins are kept apart at this scale, so they never cover each other there. */
+  overlapWidth: number;
 };
 
 export function decodePolyline6(encoded: string): MapViewPoint[] {
@@ -79,7 +83,9 @@ export function mapFrame(
   minY -= (spanY - (maxY - minY)) / 2;
   const aspect = spanX / spanY;
   const minWidth = spanX * height;
-  return { minX, minY, spanX, spanY, aspect, referenceWidth: Math.max((height - 2 * padding) * aspect, minWidth), minWidth };
+  const referenceWidth = Math.max((height - 2 * padding) * aspect, minWidth);
+  const overlapWidth = Math.max(minWidth, Math.min(referenceWidth, PHONE_WIDTH - 2 * padding));
+  return { minX, minY, spanX, spanY, aspect, referenceWidth, minWidth, overlapWidth };
 }
 export function fitCamera(frame: MapFrame, width: number, padding = 48): { center: [number, number]; zoom: number } {
   const w = Math.max(Number.EPSILON, frame.minWidth, Math.min(width - 2 * padding, frame.referenceWidth));
@@ -103,18 +109,34 @@ export function sortMarkers(markers: MapViewMarker[]): MapViewMarker[] {
   });
 }
 export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame): Map<string, { dx: number; dy: number }> {
-  const scale = frame.referenceWidth / frame.spanX;
+  const scale = frame.overlapWidth / frame.spanX;
   const position = (marker: MapViewMarker) => {
     const p = projectPoint(marker.point);
     return { x: (p.x - frame.minX) * scale, y: (p.y - frame.minY) * scale };
   };
+  const candidates = [28, 56].flatMap((radius) =>
+    [-45, 45, 135, -135, 0, 90, 180, -90].map((angle) => ({
+      dx: radius * Math.cos((angle * Math.PI) / 180),
+      dy: radius * Math.sin((angle * Math.PI) / 180),
+    })),
+  );
   const stops = sortedMarkers.filter(isStop);
-  const placed = stops.map((marker) => ({ id: marker.id, ...position(marker) }));
-  const offsets = new Map(stops.map((marker) => [marker.id, { dx: 0, dy: 0 }]));
+  const placed: { id: string; x: number; y: number }[] = [];
+  const offsets = new Map<string, { dx: number; dy: number }>();
+  // Stops come first in mark order; a later stop that would cover an earlier one (such as "+" beside C) moves aside.
+  for (const stop of stops) {
+    const p = position(stop);
+    const free = (candidate: { dx: number; dy: number }) =>
+      placed.every((other) => Math.hypot(p.x + candidate.dx - other.x, p.y + candidate.dy - other.y) >= 28 - 1e-9);
+    const offset = free({ dx: 0, dy: 0 }) ? { dx: 0, dy: 0 } : (candidates.find(free) ?? { dx: 0, dy: 0 });
+    offsets.set(stop.id, offset);
+    placed.push({ id: stop.id, x: p.x + offset.dx, y: p.y + offset.dy });
+  }
+  const stopPosition = new Map(placed.map((stop) => [stop.id, stop]));
   for (const marker of sortedMarkers.filter((marker) => !isStop(marker))) {
     const p = position(marker);
     const anchor = stops.find((stop) => {
-      const s = position(stop);
+      const s = stopPosition.get(stop.id)!;
       return Math.hypot(p.x - s.x, p.y - s.y) < 28;
     });
     let offset = anchor ? { dx: 17, dy: -17 } : { dx: 0, dy: 0 };
@@ -123,15 +145,7 @@ export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame): Map
       placed.every(
         (other) => other.id === anchor?.id || Math.hypot(p.x + candidate.dx - other.x, p.y + candidate.dy - other.y) >= 28 - 1e-9,
       );
-    if (!free(offset)) {
-      const candidates = [28, 56].flatMap((radius) =>
-        [-45, 45, 135, -135, 0, 90, 180, -90].map((angle) => ({
-          dx: radius * Math.cos((angle * Math.PI) / 180),
-          dy: radius * Math.sin((angle * Math.PI) / 180),
-        })),
-      );
-      offset = candidates.find(free) ?? offset;
-    }
+    if (!free(offset)) offset = candidates.find(free) ?? offset;
     offsets.set(marker.id, offset);
     placed.push({ id: marker.id, x: p.x + offset.dx, y: p.y + offset.dy });
   }

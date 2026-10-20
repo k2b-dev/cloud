@@ -6256,7 +6256,12 @@
   --k2b-map-surface: var(--k2b-surface);
   --k2b-map-accent: var(--k2b-action-solid);
   --k2b-map-accent-on: #fff;
-  --k2b-map-second: #0d9488;
+  --k2b-map-accent-ink: var(--k2b-map-accent);
+  /* Text on a filled pin keeps 4.5:1 against its tone in both themes. */
+  --k2b-map-second-on: #fff;
+  --k2b-map-neutral-on: #fff;
+  --k2b-map-warning-on: #fff;
+  --k2b-map-second: #0f766e;
   --k2b-map-second-ink: #0f766e;
   --k2b-map-neutral: #52525b;
   --k2b-map-warning: #b45309;
@@ -6274,6 +6279,10 @@
 .k2b-ui :where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-view,
 .k2b-ui .k2b-map-view:where(.dark, .k2b-dark, [data-theme="dark"]) {
   --k2b-map-land: #1a1f26;
+  --k2b-map-accent-ink: color-mix(in srgb, var(--k2b-map-accent) 55%, #fff);
+  --k2b-map-second-on: #042f2e;
+  --k2b-map-neutral-on: #18181b;
+  --k2b-map-warning-on: #1c1917;
   --k2b-map-second: #14b8a6;
   --k2b-map-second-ink: #5eead4;
   --k2b-map-neutral: #a1a1aa;
@@ -6285,10 +6294,10 @@
 .k2b-ui .k2b-map-view[data-state="ready"] .k2b-map-view__live { opacity: 1; }
 .k2b-ui .k2b-map-view__fit { position: absolute; pointer-events: none; }
 .k2b-ui .k2b-map-view__geometry { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.k2b-ui .k2b-map-view [data-tone] { --k2b-map-tone: var(--k2b-map-accent); --k2b-map-ink: var(--k2b-map-accent); }
-.k2b-ui .k2b-map-view [data-tone="second"] { --k2b-map-tone: var(--k2b-map-second); --k2b-map-ink: var(--k2b-map-second-ink); }
-.k2b-ui .k2b-map-view [data-tone="neutral"] { --k2b-map-tone: var(--k2b-map-neutral); --k2b-map-ink: var(--k2b-map-neutral); }
-.k2b-ui .k2b-map-view [data-tone="warning"] { --k2b-map-tone: var(--k2b-map-warning); --k2b-map-ink: var(--k2b-map-warning); }
+.k2b-ui .k2b-map-view [data-tone] { --k2b-map-tone: var(--k2b-map-accent); --k2b-map-ink: var(--k2b-map-accent-ink); --k2b-map-on: var(--k2b-map-accent-on); }
+.k2b-ui .k2b-map-view [data-tone="second"] { --k2b-map-tone: var(--k2b-map-second); --k2b-map-ink: var(--k2b-map-second-ink); --k2b-map-on: var(--k2b-map-second-on); }
+.k2b-ui .k2b-map-view [data-tone="neutral"] { --k2b-map-tone: var(--k2b-map-neutral); --k2b-map-ink: var(--k2b-map-neutral); --k2b-map-on: var(--k2b-map-neutral-on); }
+.k2b-ui .k2b-map-view [data-tone="warning"] { --k2b-map-tone: var(--k2b-map-warning); --k2b-map-ink: var(--k2b-map-warning); --k2b-map-on: var(--k2b-map-warning-on); }
 .k2b-ui .k2b-map-view__area { fill: var(--k2b-map-tone); fill-opacity: .14; stroke: var(--k2b-map-tone); stroke-opacity: .6; stroke-width: 1.5px; }
 .k2b-ui .k2b-map-view__line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .k2b-ui .k2b-map-view__casing { stroke: var(--k2b-map-surface); stroke-width: 8.5px; }
@@ -6319,13 +6328,16 @@
   transform: translate(calc(-50% + var(--k2b-map-pin-dx)), calc(-50% + var(--k2b-map-pin-dy)));
 }
 .k2b-ui .k2b-map-view__pin[data-stop],
-.k2b-ui .k2b-map-view__pin:is([aria-pressed="true"], [data-selected]) { background: var(--k2b-map-tone); color: var(--k2b-map-accent-on); }
+.k2b-ui .k2b-map-view__pin:is([aria-pressed="true"], [data-selected]) { background: var(--k2b-map-tone); color: var(--k2b-map-on); }
 .k2b-ui .k2b-map-view__pin:is([aria-pressed="true"], [data-selected]) { width: 28px; height: 28px; font-size: 12.5px; z-index: 2; }
 .k2b-ui .k2b-map-view__pin[data-drop] {
   width: 20px; height: 28px; border-radius: 10px; background: transparent; box-shadow: none;
   transform: translate(calc(-50% + var(--k2b-map-pin-dx)), calc(-100% + var(--k2b-map-pin-dy)));
 }
 .k2b-ui .k2b-map-view__pin[data-drop] > span { position: absolute; inset: 0; border-radius: 50% 50% 0 0; background: var(--k2b-map-tone); clip-path: polygon(0 0, 100% 0, 100% 68%, 50% 100%, 0 68%); }
+/* A selected drop pin grows and gains a surface centre, so selection never rests on stacking order alone. */
+.k2b-ui .k2b-map-view__pin[data-drop]:is([aria-pressed="true"], [data-selected]) { width: 24px; height: 34px; }
+.k2b-ui .k2b-map-view__pin[data-drop]:is([aria-pressed="true"], [data-selected]) > span::after { content: ""; position: absolute; left: 50%; top: 34%; width: 8px; height: 8px; border-radius: 50%; background: var(--k2b-map-surface); transform: translate(-50%, -50%); }
 .k2b-ui button.k2b-map-view__pin:hover { filter: brightness(.94); }
 .k2b-ui span.k2b-map-view__pin { cursor: default; pointer-events: none; }
 .k2b-ui .k2b-map-view__pin:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }

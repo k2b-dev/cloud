@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMoun
 import { Button, IconButton } from "../actions/Button";
 import { prefersReducedMotion } from "../motion";
 import { MapAttribution, MapGeometry, type MapScale, MapScaleBar, referenceScale, selectedMarker } from "./MapViewFrame";
-import { fitCamera, mapFrame, metersPerPixel, pinOffsets, scaleBar, sortMarkers, unprojectPoint } from "./map-view-geometry";
+import { fitCamera, type MapFrame, mapFrame, metersPerPixel, pinOffsets, scaleBar, sortMarkers, unprojectPoint } from "./map-view-geometry";
 import { useMapViewMessages } from "./map-view-messages";
 import type { MapViewProps, MapViewStyle } from "./map-view-types";
 
@@ -32,6 +32,20 @@ export function MapView(props: MapViewProps): JSX.Element {
   const [dark, setDark] = createSignal(false);
   const [boxStyle, setBoxStyle] = createSignal<JSX.CSSProperties>();
   const [liveScale, setLiveScale] = createSignal<MapScale>();
+  const [measuredWidth, setMeasuredWidth] = createSignal<number>();
+  // The server picks the scale bar for the widest fit; once the width is known, the bar names a distance that fits it.
+  const scale = createMemo((): MapScale | undefined => {
+    const f = frame();
+    if (!f) return undefined;
+    const live = liveScale();
+    if (live) return live;
+    const width = measuredWidth();
+    if (width === undefined) return referenceScale(f, props.padding ?? 48);
+    const camera = fitCamera(f, width, props.padding ?? 48);
+    const mpp = metersPerPixel(camera.center[1], camera.zoom);
+    const bar = scaleBar(mpp);
+    return { label: bar.label, width: `${bar.meters / mpp}px` };
+  });
   const resolvedStyle = (): MapViewStyle => {
     const source = props.style;
     return typeof source === "object" && "dark" in source ? (dark() ? source.dark : source.light) : source;
@@ -60,11 +74,14 @@ export function MapView(props: MapViewProps): JSX.Element {
     currentStyle = undefined;
     replacingStyle = false;
   };
+  // MapLibre wraps its center across the antimeridian; geometry is drawn in the world copy nearest the camera.
+  const worldCopy = (live: LiveMap, f: MapFrame): number => Math.round((live.getCenter().lng + 180) / 360 - (f.minX + f.spanX / 2));
   const syncOverlay = () => {
     const f = frame();
     if (!map || !f || state() !== "ready") return;
-    const a = unprojectPoint(f.minX, f.minY);
-    const b = unprojectPoint(f.minX + f.spanX, f.minY + f.spanY);
+    const copy = worldCopy(map, f);
+    const a = unprojectPoint(f.minX + copy, f.minY);
+    const b = unprojectPoint(f.minX + copy + f.spanX, f.minY + f.spanY);
     const top = map.project([a.lon, a.lat]);
     const bottom = map.project([b.lon, b.lat]);
     setBoxStyle({
@@ -74,11 +91,9 @@ export function MapView(props: MapViewProps): JSX.Element {
       height: `${bottom.y - top.y}px`,
       transform: "none",
     });
-    if (touched) {
-      const mpp = metersPerPixel(map.getCenter().lat, map.getZoom());
-      const bar = scaleBar(mpp);
-      setLiveScale({ label: bar.label, width: `${bar.meters / mpp}px` });
-    }
+    const mpp = metersPerPixel(map.getCenter().lat, map.getZoom());
+    const bar = scaleBar(mpp);
+    setLiveScale({ label: bar.label, width: `${bar.meters / mpp}px` });
   };
   const refit = () => {
     const f = frame();
@@ -163,7 +178,9 @@ export function MapView(props: MapViewProps): JSX.Element {
       observer.observe(ancestor, { attributes: true, attributeFilter: ["class", "data-theme"] });
       themes.push(observer);
     }
+    setMeasuredWidth(root.clientWidth);
     resize = new ResizeObserver(() => {
+      setMeasuredWidth(root.clientWidth);
       map?.resize();
       refit();
     });
@@ -214,14 +231,15 @@ export function MapView(props: MapViewProps): JSX.Element {
     if (!marker || state() !== "ready" || !map) return;
     untrack(() => {
       if (!map) return;
-      const p = map.project([marker.point.lon, marker.point.lat]);
       const f = frame();
+      const lon = marker.point.lon + (f ? worldCopy(map, f) * 360 : 0);
+      const p = map.project([lon, marker.point.lat]);
       const offset = f ? pinOffsets(sortMarkers(props.markers ?? []), f).get(marker.id) : undefined;
       const x = p.x + (offset?.dx ?? 0);
       const y = p.y + (offset?.dy ?? 0);
       if (x >= 16 && x <= root.clientWidth - 16 && y >= 16 && y <= root.clientHeight - 16) return;
       touched = true;
-      const camera = { center: [marker.point.lon, marker.point.lat] satisfies [number, number] };
+      const camera = { center: [lon, marker.point.lat] satisfies [number, number] };
       if (prefersReducedMotion()) map.jumpTo(camera);
       else map.easeTo(camera);
     });
@@ -264,7 +282,7 @@ export function MapView(props: MapViewProps): JSX.Element {
         {(value) => (
           <>
             <MapGeometry {...props} frame={value()} boxStyle={boxStyle()} onSelect={props.onSelect} interactive />
-            <MapScaleBar scale={liveScale() ?? referenceScale(value(), props.padding ?? 48)} />
+            <MapScaleBar scale={scale() ?? referenceScale(value(), props.padding ?? 48)} />
           </>
         )}
       </Show>

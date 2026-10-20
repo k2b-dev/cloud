@@ -15,9 +15,10 @@ const directory = mkdtempSync(resolve(tmpdir(), "k2b-map-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: directory });
 Bun.plugin(plugin());
 const { MapView } = await import("./MapView");
+const { MapViewFrame } = await import("./MapViewFrame");
 const { Button } = await import("../actions/Button");
 const dist = resolve(import.meta.dir, "../../dist");
-type FixtureOptions = { stylePath: string; darkPath?: string; empty?: boolean; polar?: boolean };
+type FixtureOptions = { stylePath: string; darkPath?: string; empty?: boolean; polar?: boolean; dateline?: boolean };
 // Shared data and tree, without compiled JSX closures: SSR and the browser create the very same fixture.
 function fixtureTree(
   components: {
@@ -31,19 +32,24 @@ function fixtureTree(
   const { MapView, Button, createComponent, createSignal } = components;
   const markers = options.empty
     ? []
-    : options.polar
+    : options.dateline
       ? [
-          { id: "west", mark: 1, label: "West", point: { lat: 80, lon: -45 } },
-          { id: "east", mark: 2, label: "East", point: { lat: 80, lon: 45 } },
+          { id: "west", mark: 1, label: "West", point: { lat: 0, lon: 179.998 } },
+          { id: "east", mark: 2, label: "East", point: { lat: 0, lon: 179.9995 } },
         ]
-      : [
-          { id: "two", mark: 2, label: "Garden", point: { lat: 48.405, lon: 9.999 } },
-          { id: "a", mark: "A", label: "Start", point: { lat: 48.397, lon: 9.982 } },
-          { id: "one", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
-        ];
+      : options.polar
+        ? [
+            { id: "west", mark: 1, label: "West", point: { lat: 80, lon: -45 } },
+            { id: "east", mark: 2, label: "East", point: { lat: 80, lon: 45 } },
+          ]
+        : [
+            { id: "two", mark: 2, label: "Garden", point: { lat: 48.405, lon: 9.999 } },
+            { id: "a", mark: "A", label: "Start", point: { lat: 48.397, lon: 9.982 } },
+            { id: "one", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
+          ];
   const [selectedId, setSelectedId] = createSignal("one");
   const [ownLocation, setOwnLocation] = createSignal(
-    options.empty || options.polar ? undefined : { point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 },
+    options.empty || options.polar || options.dateline ? undefined : { point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 },
   );
   return [
     createComponent(MapView, {
@@ -63,7 +69,7 @@ function fixtureTree(
       },
       onLocate: () => setOwnLocation({ point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 }),
       lines:
-        options.empty || options.polar
+        options.empty || options.polar || options.dateline
           ? []
           : [
               {
@@ -84,7 +90,7 @@ function fixtureTree(
               },
             ],
       areas:
-        options.empty || options.polar
+        options.empty || options.polar || options.dateline
           ? []
           : [
               {
@@ -220,6 +226,7 @@ const server = Bun.serve({
       darkPath: url.searchParams.has("darkfail") ? "/dark.json?fail" : "/dark.json",
       empty: url.searchParams.has("empty"),
       polar: url.searchParams.has("polar"),
+      dateline: url.searchParams.has("dateline"),
     };
     const html = renderToString(() => fixtureTree({ MapView, Button, createComponent, createSignal }, options));
     const spacer = url.searchParams.has("spacer") ? '<div style="height:2000px"></div>' : "";
@@ -345,6 +352,74 @@ test("a wide fit near the pole keeps its pins when the map loads", async () => {
     const frames = await page.evaluate(() => [window.mapServerFrame, window.mapFirstFrame]);
     sameFrame(frames[0]!, frames[1]!);
     sameFrame(frames[0]!, await page.evaluate(measureFrame));
+  } finally {
+    await page.close();
+  }
+});
+
+test("pins follow the map across the antimeridian", async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 800 }, reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?dateline`);
+    await ready(page);
+    const before = await page.evaluate(measureFrame);
+    const root = before.root;
+    // Drag west by 300 px: the camera's center moves east past 180° and MapLibre wraps it to -180°.
+    await page.mouse.move(root.x + root.width / 2, root.y + root.height - 80);
+    await page.mouse.down();
+    for (let step = 1; step <= 10; step++) await page.mouse.move(root.x + root.width / 2 - step * 30, root.y + root.height - 80);
+    await page.mouse.up();
+    await settled(page);
+    const after = await page.evaluate(measureFrame);
+    for (let i = 0; i < before.pins.length; i++) {
+      expect(Math.abs(after.pins[i]!.x - (before.pins[i]!.x - 300))).toBeLessThanOrEqual(2);
+      expect(Math.abs(after.pins[i]!.y - before.pins[i]!.y)).toBeLessThanOrEqual(2);
+    }
+  } finally {
+    await page.close();
+  }
+});
+
+test("pin marks keep 4.5:1 contrast for every tone, filled and outlined, in light and dark", async () => {
+  const tones = ["accent", "second", "neutral", "warning"] as const;
+  const markup = renderToString(() =>
+    createComponent(MapViewFrame, {
+      height: 300,
+      markers: tones.flatMap((tone, index) => [
+        { id: `${tone}-stop`, mark: String.fromCharCode(65 + index), label: tone, tone, point: { lat: 48.4, lon: 10 + index / 100 } },
+        { id: `${tone}-hit`, mark: index + 1, label: tone, tone, point: { lat: 48.41, lon: 10 + index / 100 } },
+      ]),
+    }),
+  );
+  const page = await browser.newPage();
+  try {
+    for (const dark of [false, true]) {
+      await page.setContent(
+        `<!doctype html><html class="${dark ? "dark" : ""}"><head><style>${readFileSync(resolve(dist, "styles.css"), "utf8")}</style></head><body class="k2b-ui">${markup}</body></html>`,
+      );
+      await settled(page);
+      const ratios = await page.evaluate(() => {
+        const rgb = (value: string) => {
+          const canvas = document.createElement("canvas").getContext("2d")!;
+          canvas.fillStyle = value;
+          canvas.fillRect(0, 0, 1, 1);
+          return Array.from(canvas.getImageData(0, 0, 1, 1).data).slice(0, 3);
+        };
+        const luminance = (value: string) => {
+          const [r, g, b] = rgb(value).map((channel) => {
+            const c = channel / 255;
+            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+        };
+        return Array.from(document.querySelectorAll<HTMLElement>(".k2b-map-view__pin"), (pin) => {
+          const style = getComputedStyle(pin);
+          const [a, b] = [luminance(style.color), luminance(style.backgroundColor)].sort((x, y) => y - x);
+          return { id: pin.dataset.id, ratio: (a! + 0.05) / (b! + 0.05) };
+        });
+      });
+      for (const { id, ratio } of ratios) expect(ratio, `${dark ? "dark" : "light"} ${id}`).toBeGreaterThanOrEqual(4.5);
+    }
   } finally {
     await page.close();
   }
