@@ -6252,7 +6252,20 @@
 
 /* MapView: shared static geometry and the progressively loaded map image. */
 .k2b-ui .k2b-map-view {
+  /* The map image palette; mapPalette in map-palette.ts carries the same values, and a test keeps them equal. */
   --k2b-map-land: #f1efe9;
+  --k2b-map-green: #e3ecd9;
+  --k2b-map-water: #cfe3f3;
+  --k2b-map-building: #e8e5dd;
+  --k2b-map-road: #ffffff;
+  --k2b-map-road-casing: #dcd8ce;
+  --k2b-map-motorway: #f6c76b;
+  --k2b-map-motorway-casing: #d9a443;
+  --k2b-map-rail: #c4bfb4;
+  --k2b-map-boundary: #aea89c;
+  --k2b-map-label: #52525b;
+  --k2b-map-label-strong: #27272a;
+  --k2b-map-water-label: #3f6a8a;
   --k2b-map-surface: var(--k2b-surface);
   --k2b-map-accent: var(--k2b-action-solid);
   --k2b-map-accent-on: #fff;
@@ -6279,6 +6292,18 @@
 .k2b-ui :where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-view,
 .k2b-ui .k2b-map-view:where(.dark, .k2b-dark, [data-theme="dark"]) {
   --k2b-map-land: #1a1f26;
+  --k2b-map-green: #1c2a22;
+  --k2b-map-water: #14283a;
+  --k2b-map-building: #20262e;
+  --k2b-map-road: #2c333d;
+  --k2b-map-road-casing: #222830;
+  --k2b-map-motorway: #5d6470;
+  --k2b-map-motorway-casing: #444a54;
+  --k2b-map-rail: #39404a;
+  --k2b-map-boundary: #4f5763;
+  --k2b-map-label: #a1a1aa;
+  --k2b-map-label-strong: #e4e4e7;
+  --k2b-map-water-label: #8fb5d3;
   --k2b-map-accent-ink: color-mix(in srgb, var(--k2b-map-accent) 55%, #fff);
   --k2b-map-second-on: #042f2e;
   --k2b-map-neutral-on: #18181b;
