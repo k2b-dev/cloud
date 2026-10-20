@@ -643,7 +643,10 @@ rows, an incomplete preview, additional recipients or attachments also set it.
 If the full JSON still exceeds 8 KiB in UTF-8, Cloud drops details from the
 end, then shortens the message.
 
-A truncated question with reason `sends` is browser-only: it is absent from
+A question whose review names no reason takes it from the Action's declared
+policy, as the approvals page does; if Cloud cannot read that policy, a
+truncated question counts as a `sends` question. A truncated question with
+reason `sends` is browser-only: it is absent from
 the device inbox and detail endpoint and triggers no device push. It still
 counts in `moreActions`. The person decides in Cloud, where the full message
 is visible. To fill the inbox past such questions, one inbox call reads at

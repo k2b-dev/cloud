@@ -314,3 +314,24 @@ test("the incomplete marker follows the block before any consequences", () => {
     "  Also:        Also logs the send",
   ]);
 });
+
+test("people the question names only as 'more' leave the text incomplete unless a row lists each of them", () => {
+  const people = ["a", "b", "c", "d"].map((name) => ({ name, address: `${name}@example.com` }));
+  const sentence = { action: "Send to {to}", running: "Sending to {to}", done: "Sent to {to}", confirm: "Send", decline: "Don't send" };
+  const review = (overrides: Partial<CapabilityActionCallReview>): CapabilityActionCallReview => ({
+    locale: "en",
+    ask: "sends",
+    sentence,
+    slots: { to: { kind: "person", people } },
+    ...overrides,
+  });
+  const text = (value: CapabilityActionCallReview) =>
+    actionCardText(reviewActionCard(value, { locale: "en", timeZone: "UTC", app: { name: "Mail", icon: "ti ti-mail" } }));
+  expect(text(review({})).question).toBe("Send to a <a@example.com>, b <b@example.com>, c <c@example.com>, and 1 more?");
+  expect(text(review({})).incomplete).toBe(true);
+  const listed = review({
+    preview: { kind: "message", from: people[0], to: people, subject: "Hi", body: "Hello", format: "plain" },
+  });
+  expect(text(listed).incomplete).toBe(false);
+  expect(text(review({ slots: { to: { kind: "person", people: people.slice(0, 2), total: 3 } } })).incomplete).toBe(true);
+});

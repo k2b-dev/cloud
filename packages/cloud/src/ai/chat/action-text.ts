@@ -211,6 +211,15 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
     for (const consequence of model.consequences)
       row(consequence.mark === "added" ? t.added : consequence.mark === "removed" ? t.removed : t.also, consequence.plain);
   }
+  // The question names at most three people of a slot, then "N more". Those people count as shown only when a row
+  // lists each of them; people the app left out entirely are never shown.
+  for (const slot of Object.values(card.slots ?? {})) {
+    if (slot.kind !== "person") continue;
+    const total = slot.total ?? slot.people.length;
+    if (total > slot.people.length) incomplete = true;
+    else if (total > 3 && !slot.people.every((person) => rows.some((entry) => entry.value.includes(capabilityPersonText(person)))))
+      incomplete = true;
+  }
   return {
     locale: card.locale,
     question: card.questionText,

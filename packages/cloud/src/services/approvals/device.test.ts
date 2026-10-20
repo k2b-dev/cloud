@@ -256,3 +256,20 @@ test("all bounded fields cut within their limits and keep the first eight rows i
   expect(view.truncated).toBe(true);
   expect(AppActionViewSchema.parse(view)).toEqual(view);
 });
+
+test("a relayed review without its own reason takes the declared policy, and an unknown policy keeps incomplete questions off the device", async () => {
+  const { ask: _ask, ...withoutAsk } = mailReview();
+  const review: CapabilityActionCallReview = {
+    ...withoutAsk,
+    preview: { ...(mailReview().preview as Extract<CapabilityActionCallReview["preview"], { kind: "message" }>), truncated: true },
+  };
+  const relayed = { ...row, details: review, storedReview: null };
+  const sends = await appActionView(relayed, { ...options, policy: { ask: "sends" } });
+  expect(sends.truncated).toBe(true);
+  expect(sends.message).toBe("I'm asking because this leaves Cloud.");
+  expect(appActionOffered(sends, pendingApprovalCard(relayed, options.appName, { ask: "sends" }), { ask: "sends" })).toBe(false);
+  const unknown = await appActionView(relayed, { ...options, policy: null });
+  expect(appActionOffered(unknown, pendingApprovalCard(relayed, options.appName, null), null)).toBe(false);
+  const other = await appActionView(relayed, { ...options, policy: { ask: "app_asks" } });
+  expect(appActionOffered(other, pendingApprovalCard(relayed, options.appName, { ask: "app_asks" }), { ask: "app_asks" })).toBe(true);
+});

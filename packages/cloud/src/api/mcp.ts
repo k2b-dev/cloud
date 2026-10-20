@@ -690,11 +690,16 @@ const createMcpServer = (
     const receipt = response.ok && selected.kind === "actions" ? CapabilityActionReceiptSchema.safeParse(body.receipt) : null;
     let receiptText: string | undefined;
     if (receipt?.success) {
-      const locale = preferredLocale(request.headers) ?? (await resolveHelpLocale());
-      const timeZone = normalizeTimeZone(
-        await (dependencies.getOperatorTimeZone ?? (() => get<string>("app.timezone")))().catch(() => "UTC"),
-      );
-      receiptText = capabilitySentenceText(receipt.data.text, receipt.data.slots ?? {}, { locale, timeZone });
+      // The receipt line is extra presentation: if Cloud cannot word it, the completed Action's result still goes out.
+      try {
+        const locale = preferredLocale(request.headers) ?? (await resolveHelpLocale());
+        const timeZone = normalizeTimeZone(
+          await (dependencies.getOperatorTimeZone ?? (() => get<string>("app.timezone")))().catch(() => "UTC"),
+        );
+        receiptText = capabilitySentenceText(receipt.data.text, receipt.data.slots ?? {}, { locale, timeZone });
+      } catch (error) {
+        log.warn("MCP receipt text unavailable", { error: error instanceof Error ? error.message : String(error) });
+      }
     }
     const resultFor = (value: Record<string, unknown>, withReceipt = true): CallToolResult => {
       const result = toolResult(value, !response.ok);

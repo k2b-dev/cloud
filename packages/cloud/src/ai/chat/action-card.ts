@@ -98,6 +98,8 @@ export type ActionCard = {
   hasCheck: boolean;
   /** The receipt text of an old review's success summary. */
   summary?: string;
+  /** A new review's slots, so plain text can tell whether the question left people out. */
+  slots?: CapabilityActionCallReview["slots"];
 };
 
 const REASON_LOOK: Record<CapabilityAskReason, Omit<ActionReason, "code" | "text">> = {
@@ -259,6 +261,7 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
       : plainText(context.app.name),
     short: capabilityReviewSentence(review, "short", tz),
     hasCheck: Boolean(review.check),
+    slots: review.slots,
   };
 };
 

@@ -4,7 +4,13 @@ import { APP_ACTION_LIMITS, type AppActionSummary } from "../contracts/app-appro
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import type { AppDeviceActions } from "../services/app-approval";
 import { listPending } from "../services/approvals";
-import { appActionOffered, appActionSummary, appActionView, pendingApprovalCard } from "../services/approvals/device";
+import {
+  appActionOffered,
+  appActionSummary,
+  appActionView,
+  loadDeviceActionPolicies,
+  pendingApprovalCard,
+} from "../services/approvals/device";
 
 /** Pages of open requests one inbox poll reads at most while it skips browser-only questions. */
 const INBOX_PAGES = 5;
@@ -14,8 +20,9 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
     const { items } = await listPending({ approverUserId: userId, id: actionId, limit: 1 });
     const row = items[0];
     if (!row) return null;
-    const mapped = await appActionView(row, { issuer, appName });
-    return appActionOffered(mapped, pendingApprovalCard(row, appName)) ? mapped : null;
+    const policy = (await loadDeviceActionPolicies([row]))(row);
+    const mapped = await appActionView(row, { issuer, appName, policy });
+    return appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy) ? mapped : null;
   };
   return {
     inbox: async ({ userId, issuer }) => {
@@ -27,9 +34,11 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
       for (let page = 0; page < INBOX_PAGES && actions.length < APP_ACTION_LIMITS.inboxActions; page += 1) {
         const result = await listPending({ approverUserId: userId, limit: APPROVALS_PAGE_SIZE, ...(cursor ? { cursor } : {}) });
         count = result.count;
+        const policyOf = await loadDeviceActionPolicies(result.items);
         for (const row of result.items) {
-          const mapped = await appActionView(row, { issuer, appName });
-          if (appActionOffered(mapped, pendingApprovalCard(row, appName))) actions.push(appActionSummary(mapped));
+          const policy = policyOf(row);
+          const mapped = await appActionView(row, { issuer, appName, policy });
+          if (appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy)) actions.push(appActionSummary(mapped));
           if (actions.length === APP_ACTION_LIMITS.inboxActions) break;
         }
         if (!result.nextCursor) break;
