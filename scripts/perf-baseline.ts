@@ -8,7 +8,17 @@ import { TIMEZONE_COOKIE } from "../packages/cloud/src/shared/time";
 import { runUnderHeavyLock } from "./heavy-lock";
 import { measureStatic } from "./perf-baseline/assets";
 import { Browsers, measuredLocale, measuredTimeZone } from "./perf-baseline/browser";
-import { pageApps, parseArgs, type Result, renderSummary, resultSchema, sortedJson, validatePage } from "./perf-baseline/model";
+import {
+  pageApps,
+  panelVerdict,
+  parseArgs,
+  type Result,
+  renderSummary,
+  resultSchema,
+  sortedJson,
+  validatePage,
+} from "./perf-baseline/model";
+import { measurePanel, panelApps, panelNavigations } from "./perf-baseline/panel";
 import { buildRoot, command, freeLoopbackPort, localTls, Runtime, repository, runtimeImage, worktreePath } from "./perf-baseline/runtime";
 import { Api, defaultPaths, seed, waitForRoutes } from "./perf-baseline/seed";
 
@@ -38,10 +48,17 @@ before checking authenticated routes or seeding fixtures. Every page is
 measured with that administrator session.
 
   --help             Show this help; no build, Docker or browser launch.
-  --pages a,b        Restrict pages (default: all seven):
+  --pages a,b        Restrict pages (default: all eight):
                      document,faq,mail-mailbox,assistant-chat,
-                     notebooks-editor,files,accounts
-  --runs N           Cold runs per browser/profile (default: 3).
+                     notebooks-editor,files,accounts,spaces
+  --panel            Measure visible Help content after full-document navigation;
+                     no page baseline. Column 1440x900, drawer 834x1194,
+                     sheet 390x844 @3; Chromium sheet CPU 4x + phone network,
+                     WebKit unthrottled. Sheet starts closed; time Help tap.
+                     Warm cache. Desktop lag <=400 ms; WebKit sheet <=1000 ms.
+                     Worst medians within 10% are borderline. Chromium sheet
+                     is information only. Cannot use --pages or --compare.
+  --runs N           Runs per browser/profile (default: 3).
   --skip-build       Reuse .local/perf-baseline/build/<app>/dist;
                      does not verify that these builds match current source.
   --out <dir>        Write result.json and summary.md here, within this
@@ -117,6 +134,7 @@ async function run() {
       static: null,
       browsers: [],
     })),
+    ...(options.panel ? { panel: { navigations: [], observations: [], verdict: panelVerdict({ navigations: [] }) } } : {}),
     errors: [],
   };
   // Reserve both files before doing expensive work, without overwriting a previous baseline.
@@ -138,7 +156,9 @@ async function run() {
     const origin = runtime.origin;
     result.metadata.origin = origin;
     await mkdir(join(runtime.directory, "tmp"), { recursive: true });
-    const apps = ["core", ...new Set(options.pages.map((id) => pageApps[id]).filter((id) => id !== "core")), "gateway"];
+    const apps = options.panel
+      ? panelApps
+      : ["core", ...new Set(options.pages.map((id) => pageApps[id]).filter((id) => id !== "core")), "gateway"];
     await runtime.build(apps, options.skipBuild);
     await runtime.start(apps);
     browsers = new Browsers(controller.signal);
@@ -147,7 +167,11 @@ async function run() {
     const api = new Api(origin, controller.signal);
     const userId = await api.login(runtime.adminToken);
     await waitForRoutes(api, apps, runtime);
-    result.pages = await seed(api, runtime, options.pages, userId);
+    if (options.panel && result.panel) {
+      const fixtures = await seed(api, runtime, ["spaces", "mail-mailbox", "notebooks-editor"], userId);
+      result.panel.navigations = panelNavigations(fixtures);
+      await measurePanel(browsers, api, options.runs, result.panel);
+    } else result.pages = await seed(api, runtime, options.pages, userId);
     for (const page of result.pages) {
       controller.signal.throwIfAborted();
       if (page.status === "failed") continue;
@@ -201,13 +225,19 @@ async function run() {
         page.status = "failed";
         page.errors.push("Not measured: run stopped before this page completed");
       }
+    if (result.panel) result.panel.verdict = panelVerdict(result.panel);
     result.metadata.loadAverage.end = oneMinuteLoad();
     resultSchema.parse(result);
     await writeFile(join(out, "result.json"), sortedJson(result));
     await writeFile(join(out, "summary.md"), renderSummary(result, previous));
     console.log(`Result: ${join(out, "result.json")}\nSummary: ${join(out, "summary.md")}`);
   }
-  if (controller.signal.aborted || result.errors.length || result.pages.some((page) => page.status === "failed"))
+  if (
+    controller.signal.aborted ||
+    result.errors.length ||
+    result.pages.some((page) => page.status === "failed") ||
+    result.panel?.navigations.some((nav) => nav.status === "failed" || nav.profiles.some((row) => row.status === "failed"))
+  )
     process.exitCode = controller.signal.aborted ? 130 : 1;
 }
 

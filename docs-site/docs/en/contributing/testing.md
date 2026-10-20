@@ -152,10 +152,26 @@ In browser tests, fixtures stamp their data from a fixed clock, and each
 context gets an init script that replaces the page's `Date` with one that
 starts at that clock and flows from there. The Chat harness starts at
 `chatTestNow`, exposes its flowing clock as `harness.now()`, and pins pages
-with `pinPageClock` in `ChatWorkspace.browser.test.ts`. Do not use
-Playwright's `clock` for this: even `setSystemTime` replaces timers,
-animation frames, and `performance`, and the Chat read-state tests then
-failed in WebKit. Use `performance.now()` for durations and deadlines.
+with `pinPageClock` in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`.
+A page built with `setContent` keeps the window of its blank page, so the
+continuous month test in `@k2b/ui` runs the same function with
+`page.evaluate` before `setContent`. Use `performance.now()` for durations
+and deadlines.
+
+Do not pin the date with Playwright's `clock`. `setFixedTime` and
+`setSystemTime` also install its fake clock, which replaces timers,
+animation frames, and `performance`. Scroll- and frame-driven UI then runs
+on a timer instead of the page's rendering, so a test sees state that lags
+only in the test. The Chat read-state tests failed in WebKit this way, and so
+did the continuous month title
+([#1139](https://github.com/k2b-dev/cloud/issues/1139)).
+
+The `test-clock` check flags `.clock.setFixedTime(` and
+`.clock.setSystemTime(` calls on a page or context. A line comment
+`// playwright clock: <reason>` on the same line or directly above allows a
+pin in a test whose subject is fake timers. The reason must be non-empty.
+`clock.install()`, `runFor`, and `fastForward` stay allowed for deliberate
+timer control, and `setSystemTime` from `bun:test` is not a finding.
 
 Measure browser timing on the browser's clock. Playwright events such as
 `request` reach the test process late under load, so tests that assert a browser
@@ -180,7 +196,19 @@ still there. The live-routes slow-client test waits for the server's `1013`
 close before it resumes the client. A test about the moment before a debounce
 or delay fires acts in the same task as the trigger, as the Notebooks Timeline
 scroll-restore test does, because a check after a real-time wait that the delay
-has not fired yet fails on a slow runner.
+has not fired yet fails on a slow runner. Wait for the state you assert, not
+for a step before it: the continuous month test waits until the grid rests at
+the week and the header names the month, because the view names the month in
+an animation frame after the scroll event.
+
+A live region that a component fills after a timer is read with a bounded
+wait, such as `waitForFunction` on its text, never once after `settled()`.
+`settled()` waits for fonts, animations, and frames, not for timers. The
+outcome line of `ChatOutcome` in `@k2b/ui` empties its `role="status"` region
+and fills it 40 ms later, so that the same words spoken again are announced.
+The answering case in `action-question.browser.test.ts` holds the fixture's
+answer, waits until the status names the pending line, and only then releases
+the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
 
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
 with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
@@ -777,8 +805,10 @@ bun run test --integration
 ```
 
 `--integration` first prepares the test database by running Core setup and every application migration (idempotent, a few seconds), then runs only the integration files, one fresh global per file. `--shard <n>/<total>` splits
-the suites across parallel jobs, which is how the gate runs them; `--exclude <name>`
-leaves out suites whose name or path matches, and `--filter <name>` keeps only those.
+the suites across parallel jobs, balanced by measured suite time, which is how
+the gate runs them. `--max-minutes <m>` fails a run that takes longer than m
+minutes. `--exclude <name>` leaves out suites whose name or path matches, and
+`--filter <name>` keeps only those.
 
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right
@@ -879,6 +909,17 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
+Unit and WebKit tests run in five shards each, balanced by
+`scripts/test-weights.json`: measured seconds per suite, longest first. An
+unknown suite counts as the median of its table. Each shard prints its
+predicted and actual time. It fails with an annotation when it runs longer
+than 20 of its 30 minutes, even when every suite passed. To refresh the weights,
+run `bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest
+green merge-queue runs. Add a shard when the printed slowest shard exceeds
+15 minutes. One third of the job limit stays in reserve because setup and
+GitHub's job finalization count against it. Finalization took up to about
+5 minutes during a GitHub Actions incident.
+
 The `packed` job packs `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with
 `npm pack`, using the same file list as `npm publish`. It installs them in a
 fresh project outside the workspace, typechecks the public source, builds a
@@ -973,6 +1014,41 @@ locally. To move to another Poppler version, bump the image in
 described under [Where CI images come from](#where-ci-images-come-from). The
 image's publisher deletes its date tags after about eight months, so move the
 pin to a newer tag before that.
+
+### Scale acceptance
+
+The nightly `scale-acceptance` job runs `scripts/scale-acceptance.ts`. It boots
+one gateway and two replicas each of Core, Mail, Chat, and Notebooks from
+`compose.prod.yml` and the test overlay `compose.scale-test.yml`, in its own
+Compose project with its own PostgreSQL, NATS, Valkey, and SMTP sink. It never
+uses the development stack or `.env`, and it removes every container, volume,
+and built image tag when it ends, also after a failure or a signal.
+
+Each scenario step addresses one replica container through its own published
+port, so no step can reach the same replica twice by accident:
+
+- a Chat message posted on replica A reaches a live socket on replica B;
+- a Notebooks Yjs update sent through replica A reaches a client on replica B;
+- one durable outgoing mail is delivered once while two Core replicas run;
+- a Mail draft lease taken on replica A is saved and renewed on replica B;
+- a second acquire of that lease on replica B returns 409 with the holder;
+- Core is killed with SIGKILL while it sends a mail, and the other Core
+  replica delivers it exactly once after recovery, which takes about five
+  minutes.
+
+At the end, the run fails unless both replicas of every app are different
+running containers and each served at least one step. It runs nightly, not on
+pull requests, because it builds five images. Run it locally with Docker:
+
+```bash
+bun run --cwd packages/ui build
+bun --no-env-file scripts/scale-acceptance.ts
+```
+
+The script takes a heavy slot itself. Add `--image-tag <tag>` to use published
+images instead of building them. `--replicas 1` is the negative control: every
+step reaches the only container of each app, and the final check fails because
+replica B is replica A.
 
 ### Where CI images come from
 
@@ -1072,7 +1148,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in three shards with `bun run test --browser`, against
+them again in WebKit in five shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

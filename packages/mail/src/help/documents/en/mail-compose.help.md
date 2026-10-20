@@ -3,7 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-16
+updated: 2026-10-19
 order: 30
 kind: task
 ---
@@ -13,6 +13,8 @@ kind: task
 Choose **Compose** for a new message. In a conversation, choose **Reply**, **Reply all**, **Forward**, or **Quote selection**. Mail first creates a shared draft and then opens its focused composer page. Mail keeps the purpose of the draft, so the final action button says **Send**, **Reply**, **Reply all**, or **Forward**.
 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
+
+While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the contact directory first. Then it suggests addresses this mailbox wrote to or received mail from. Mailbox suggestions also work without the Contacts app. A mail icon marks them. Use the arrow keys to highlight a suggestion and Enter to add it. People who see only assigned conversations get no mailbox suggestions.
 
 The composer is separate from the mailbox workspace. **Back to mailbox** saves the latest changes, releases the editing lease, and returns to the mailbox. **Open in new window** moves the same draft to its own browser window. It never creates a second draft.
 
@@ -74,6 +76,8 @@ Mail saves the shared draft while you work. It also keeps a recovery journal in 
 Only the session that currently holds the editing lease can change the draft. Mail refuses saves, attachment changes, and discards from every other session, tab, agent, or CLI call, and it names the current editor. If nobody holds the lease, the next editor can change the draft again. Your own expired session therefore never blocks you.
 
 If another tab or person edits the draft, Mail names that session when possible. You can continue read-only or move editing to this tab on purpose. After the dialog closes, the composer keeps a quiet reminder.
+
+Mail resumes editing on its own after a hidden tab, sleep, or a slow response. It asks only when another tab, device, or person holds the draft.
 
 :::warning Take over makes the other editor read-only
 Choose **Take over** only when you want the other editor to lose editing.

@@ -5737,6 +5737,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     color 150ms ease-out;
 }
 
+/* A FilterToggle link looks like the chip button beside it. */
+.k2b-ui a.k2b-filter-chip {
+  text-decoration: none;
+}
+
 .k2b-ui .k2b-filter-chip:hover {
   color: var(--k2b-text);
   background: color-mix(in srgb, var(--k2b-text) 6%, var(--k2b-field-surface, var(--k2b-surface-muted)));
@@ -12597,8 +12602,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* View tabs: links to the views of one object, in the same soft look as the
    tabs. The open view is a fill in the app's selection tint with its ink;
    weight and box never change, so nothing beside a tab moves. "More +n" ends
-   the strip with the views that do not get a place. Narrow, the strip
-   scrolls sideways, and the ring sits inside each tab so it is never cut. */
+   the strip with the views that do not get a place. Every view keeps its
+   full label and count at any width: a strip too narrow for its views
+   scrolls sideways, the current view is scrolled into view before the first
+   paint, and a soft edge fade marks each side where more views wait. The
+   ring sits inside each tab, so it is never cut. */
 .k2b-ui .k2b-view-tabs {
   display: flex;
   min-width: 0;
@@ -12614,6 +12622,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0;
   overflow: auto hidden;
   list-style: none;
+  /* At least the edge fade (1rem), so a tab scrolled into view by focus or
+     by the current view never sits under the fade. */
+  scroll-padding-inline: 1rem;
   scrollbar-width: none;
 }
 
@@ -12621,13 +12632,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: none;
 }
 
-/* Views shrink before the strip scrolls: a long label ends in an ellipsis, so
-   the current view, which always has a place, stays on screen. "More" keeps
-   its size. */
+/* Views never shrink below their content: the strip scrolls instead, so no
+   label is cut to a fragment. "More" keeps its size too. */
 .k2b-ui .k2b-view-tabs__item {
   display: flex;
-  min-width: 2.75rem;
-  flex: 0 1 auto;
+  flex: none;
 }
 
 .k2b-ui .k2b-view-tabs__more {

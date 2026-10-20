@@ -1,10 +1,10 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
-import { requestContactDirectory } from "../contact-directory-settings";
 import { mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
 import type { MailRequestContext } from "../service";
 import { focus, mailboxes, mailboxPreferences, publicResources } from "../service";
+import { requestContactDirectory } from "../service/contact-directory";
 import { localizeMailError } from "../service/error-messages";
 import { loadMailboxConversationDetail } from "../service/workspace";
 import { mailWorkspaceCookie, readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
@@ -93,6 +93,7 @@ export default ssr<AuthContext>(async (c) => {
     (async () => focus.listFocusOverview({ context, excludedMailboxIds: (await preferencesPromise).hiddenMailboxIds }))(),
   ]);
   const initialFocus = focusResult.ok ? await projectSsrFocusOverview(focusResult.data) : null;
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout c={c} printHint={t.printHint} title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}>
       <MailOverview
@@ -105,7 +106,7 @@ export default ssr<AuthContext>(async (c) => {
         initialPinnedMailboxIds={preferences.publicPinnedMailboxIds}
         initialHiddenMailboxIds={preferences.publicHiddenMailboxIds}
         currentUserEmail={user.mail}
-        contactDirectory={requestContactDirectory(c)}
+        contactDirectory={directory}
         dateConfig={getDateConfig(c)}
       />
     </Layout>

@@ -2025,6 +2025,9 @@ html {
 .k2b-ui .k2b-app-workspace__head-views .k2b-view-tabs__list {
   margin: -0.25rem;
   padding: 0.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters {
   scroll-padding-inline: 0.25rem;
 }
 

@@ -1,6 +1,6 @@
 // Playwright is an existing @k2b/ui devDependency in this isolated-linker workspace.
 import { createRequire } from "node:module";
-import type { Browser, BrowserContext, CDPSession, Page, Request } from "playwright";
+import type { Browser, BrowserContext, CDPSession, Page } from "playwright";
 import { TIMEZONE_COOKIE } from "../../packages/cloud/src/shared/time";
 import {
   aggregateMetrics,
@@ -161,6 +161,133 @@ export type LoadHooks<T> = {
   afterLoad?: (page: Page, timing: LoadTiming, cdp: CDPSession | undefined) => Promise<T>;
 };
 
+type ScriptRequest = { frame(): object; resourceType(): string; url(): string };
+type ScriptEvent = "request" | "requestfinished" | "requestfailed";
+type ScriptSource = {
+  mainFrame(): object;
+  on(event: ScriptEvent, listener: (request: ScriptRequest) => void): unknown;
+  off(event: ScriptEvent, listener: (request: ScriptRequest) => void): unknown;
+};
+
+/** Main-frame scripts only: child-frame resources have no timing entry in the host timeline. */
+export function trackHostScripts(page: ScriptSource) {
+  const pending = new Set<ScriptRequest>();
+  const urls = new Set<string>();
+  let lastScript = performance.now();
+  const begin = (request: ScriptRequest) => {
+    if (request.frame() !== page.mainFrame() || request.resourceType() !== "script") return;
+    pending.add(request);
+    urls.add(request.url());
+    lastScript = performance.now();
+  };
+  const finish = (request: ScriptRequest) => {
+    if (pending.delete(request)) lastScript = performance.now();
+  };
+  page.on("request", begin);
+  page.on("requestfinished", finish);
+  page.on("requestfailed", finish);
+  return {
+    pending,
+    urls,
+    last: () => lastScript,
+    reset() {
+      pending.clear();
+      urls.clear();
+      lastScript = performance.now();
+    },
+    stop() {
+      page.off("request", begin);
+      page.off("requestfinished", finish);
+      page.off("requestfailed", finish);
+    },
+  };
+}
+
+/** Shared page-baseline TTI definition; waits on animation frames, never network idle. */
+export async function observeTti(
+  page: Page,
+  scripts: ReturnType<typeof trackHostScripts>,
+  signal: AbortSignal,
+  errors: string[],
+  start = performance.now(),
+  domContentLoadedMs = 0,
+  timeoutMs = measurementTimeoutMs,
+) {
+  let timing:
+    | (Pick<Probe, "fcp" | "lcp" | "shifts" | "resources" | "longtasks" | "errors"> & { mountStarts: number[]; mountTimes: number[] })
+    | null = null;
+  // The last observed state, so a timeout names which TTI condition never held.
+  let last = "no probe read";
+  // The scripts that were finished and timed when the observation decided to stop. An idle-time
+  // import can start more scripts while the final probe read is in flight; they are after the stop.
+  let observedScripts: string[] = [];
+  while (performance.now() - start < timeoutMs) {
+    signal.throwIfAborted();
+    const urls = [...scripts.urls];
+    const state = await page.evaluate((urls) => {
+      const p = window.__cloudPerf;
+      // WebKit adds resource entries for runtime-injected modulepreload links well after the
+      // request finished; the observation waits for them instead of stopping without timing.
+      p.flush();
+      const timed = new Set(p.resources.map((entry) => entry.name));
+      return {
+        initial: p.initial?.length ?? null,
+        mounted: p.initial?.filter((element) => p.mounted.has(element)).length ?? 0,
+        untimedScripts: urls.filter((url) => !timed.has(url)).length,
+        timed: p.resources.length,
+        errors: p.errors,
+      };
+    }, urls);
+    if (state.errors.length || errors.length) throw new Error([...state.errors, ...errors].join("; "));
+    last = `${state.initial === null ? "islands not collected" : `${state.mounted}/${state.initial} islands mounted`}, ${scripts.pending.size} scripts pending, ${state.untimedScripts}/${urls.length} scripts without timing, ${state.timed} resource entries, quiet ${Math.round(performance.now() - scripts.last())} ms`;
+    if (
+      state.initial !== null &&
+      interactive({
+        initial: state.initial,
+        mounted: state.mounted,
+        pendingScripts: scripts.pending.size,
+        untimedScripts: state.untimedScripts,
+        quietMs: performance.now() - scripts.last(),
+      })
+    ) {
+      observedScripts = urls;
+      timing = await page.evaluate(() => {
+        const p = window.__cloudPerf;
+        p.flush();
+        for (const observer of p.observers) observer.disconnect();
+        const mountTimes = (p.initial ?? []).map((element) => {
+          const time = p.mounted.get(element);
+          if (time === undefined) throw new Error("Initial island mount time missing at observation stop");
+          return time;
+        });
+        const mountStarts = (p.initial ?? []).map((element) => {
+          const time = p.started.get(element);
+          if (time === undefined) throw new Error("Initial island mount start missing at observation stop");
+          return time;
+        });
+        return {
+          mountStarts,
+          mountTimes,
+          resources: p.resources,
+          fcp: p.fcp,
+          lcp: p.lcp,
+          shifts: p.shifts,
+          longtasks: p.longtasks,
+          errors: p.errors,
+        };
+      });
+      break;
+    }
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  }
+  if (timing === null)
+    throw new Error(
+      `TTI timed out after ${timeoutMs} ms (initial islands did not mount, scripts did not become quiet, or script resource timings did not arrive); DOMContentLoaded after ${domContentLoadedMs} ms; last state: ${last}`,
+    );
+  const tti = timeToInteractive({ ...timing, scriptUrls: observedScripts });
+  return { ...timing, tti };
+}
+
 export class Browsers {
   readonly engines = new Map<Engine, Browser>();
   webkitSkip: string | null = null;
@@ -272,28 +399,17 @@ export class Browsers {
       const bytes = { document: 0, js: 0, css: 0, other: 0 };
       const counts = { document: 0, js: 0, css: 0, other: 0 };
       const encodings = { js: new Set<string>(), css: new Set<string>() };
-      const pendingScripts = new Set<Request>();
-      const scriptUrls = new Set<string>();
+      const scripts = trackHostScripts(page);
       const requests = new Map<string, TransferType>();
       const sizeJobs: Promise<void>[] = [];
       const errors: string[] = [];
       let collecting = true;
-      let lastScript = performance.now();
-      const finishScript = (request: Request) => {
-        if (pendingScripts.delete(request)) lastScript = performance.now();
-      };
       page.on("request", (request) => {
         if (!collecting) return;
         counts[transferType(request.resourceType())]++;
-        if (request.resourceType() === "script") {
-          pendingScripts.add(request);
-          scriptUrls.add(request.url());
-          lastScript = performance.now();
-        }
       });
       page.on("requestfinished", (request) => {
         if (!collecting) return;
-        finishScript(request);
         if (engine === "webkit")
           sizeJobs.push(
             request
@@ -310,7 +426,6 @@ export class Browsers {
         if (!collecting) return;
         const error = failedRequestError(request.resourceType(), request.url(), request.failure()?.errorText);
         if (error) errors.push(error);
-        finishScript(request);
       });
       let documents = 0;
       page.on("framenavigated", (frame) => {
@@ -364,81 +479,12 @@ export class Browsers {
       if (!response) throw new Error("No document response");
       validatePage(response.status(), url, page.url(), await response.text());
       const domContentLoadedMs = Math.round(performance.now() - start);
-      let timing:
-        | (Pick<Probe, "fcp" | "lcp" | "shifts" | "resources" | "longtasks" | "errors"> & { mountStarts: number[]; mountTimes: number[] })
-        | null = null;
-      // The last observed state, so a timeout names which TTI condition never held.
-      let last = "no probe read";
-      // The scripts that were finished and timed when the observation decided to stop. An idle-time
-      // import can start more scripts while the final probe read is in flight; they are after the stop.
-      let observedScripts: string[] = [];
-      while (performance.now() - start < measurementTimeoutMs) {
-        this.signal.throwIfAborted();
-        const urls = [...scriptUrls];
-        const state = await page.evaluate((urls) => {
-          const p = window.__cloudPerf;
-          // WebKit adds resource entries for runtime-injected modulepreload links well after the
-          // request finished; the observation waits for them instead of stopping without timing.
-          p.flush();
-          const timed = new Set(p.resources.map((entry) => entry.name));
-          return {
-            initial: p.initial?.length ?? null,
-            mounted: p.initial?.filter((element) => p.mounted.has(element)).length ?? 0,
-            untimedScripts: urls.filter((url) => !timed.has(url)).length,
-            timed: p.resources.length,
-            errors: p.errors,
-          };
-        }, urls);
-        if (state.errors.length || errors.length) throw new Error([...state.errors, ...errors].join("; "));
-        last = `${state.initial === null ? "islands not collected" : `${state.mounted}/${state.initial} islands mounted`}, ${pendingScripts.size} scripts pending, ${state.untimedScripts}/${urls.length} scripts without timing, ${state.timed} resource entries, quiet ${Math.round(performance.now() - lastScript)} ms`;
-        if (
-          state.initial !== null &&
-          interactive({
-            initial: state.initial,
-            mounted: state.mounted,
-            pendingScripts: pendingScripts.size,
-            untimedScripts: state.untimedScripts,
-            quietMs: performance.now() - lastScript,
-          })
-        ) {
-          observedScripts = urls;
-          timing = await page.evaluate(() => {
-            const p = window.__cloudPerf;
-            p.flush();
-            for (const observer of p.observers) observer.disconnect();
-            const mountTimes = (p.initial ?? []).map((element) => {
-              const time = p.mounted.get(element);
-              if (time === undefined) throw new Error("Initial island mount time missing at observation stop");
-              return time;
-            });
-            const mountStarts = (p.initial ?? []).map((element) => {
-              const time = p.started.get(element);
-              if (time === undefined) throw new Error("Initial island mount start missing at observation stop");
-              return time;
-            });
-            return {
-              mountStarts,
-              mountTimes,
-              resources: p.resources,
-              fcp: p.fcp,
-              lcp: p.lcp,
-              shifts: p.shifts,
-              longtasks: p.longtasks,
-              errors: p.errors,
-            };
-          });
-          break;
-        }
-        await Bun.sleep(50);
-      }
-      if (timing === null)
-        throw new Error(
-          `TTI timed out after ${measurementTimeoutMs} ms (initial islands did not mount, scripts did not become quiet, or script resource timings did not arrive); DOMContentLoaded after ${domContentLoadedMs} ms; last state: ${last}`,
-        );
+      const timing = await observeTti(page, scripts, this.signal, errors, start, domContentLoadedMs);
+      scripts.stop();
       collecting = false;
       await Promise.all(sizeJobs);
       if (timing.errors.length || errors.length) throw new Error([...timing.errors, ...errors].join("; "));
-      const tti = timeToInteractive({ ...timing, scriptUrls: observedScripts });
+      const tti = timing.tti;
       const cls = cumulativeLayoutShift(timing.shifts);
       const longtasks =
         engine === "chromium" ? longTaskMetrics(timing.longtasks, timing.fcp, tti) : { lastLongTaskEndMs: null, totalBlockingTimeMs: null };

@@ -1,9 +1,9 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
-import { requestContactDirectory } from "../../../../contact-directory-settings";
 import type { MailRequestContext } from "../../../../service";
 import { loadMailIncomingAutomationsWorkspace } from "../../../../service/automation-workspace";
+import { requestContactDirectory } from "../../../../service/contact-directory";
 import type { IncomingAutomationPreset } from "../../../_components/MailIncomingAutomationSettings";
 import MailIncomingAutomationsPage from "../../../MailIncomingAutomationsPage.island";
 import { mailPageMessages } from "../../../pages-messages";
@@ -34,6 +34,7 @@ export default ssr<AuthContext>(async (c) => {
     : requested === "1"
       ? "blank"
       : null;
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
@@ -48,12 +49,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.breadcrumbIncomingMail },
       ]}
     >
-      <MailIncomingAutomationsPage
-        data={data}
-        currentUserEmail={user.mail}
-        contactDirectory={requestContactDirectory(c)}
-        openPreset={openPreset}
-      />
+      <MailIncomingAutomationsPage data={data} currentUserEmail={user.mail} contactDirectory={directory} openPreset={openPreset} />
     </Layout>
   );
 });

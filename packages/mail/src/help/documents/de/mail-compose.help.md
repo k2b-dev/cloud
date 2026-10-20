@@ -3,7 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-10-16
+updated: 2026-10-19
 order: 30
 ---
 
@@ -12,6 +12,8 @@ order: 30
 Wähle **Verfassen** für eine neue Nachricht. Wähle in einer Unterhaltung **Antworten**, **Allen antworten**, **Weiterleiten** oder **Auswahl zitieren**. Mail erstellt zuerst einen gemeinsamen Entwurf und öffnet dann die Seite des Editors. Mail behält den Zweck des Entwurfs bei, deshalb heißt die letzte Aktionsschaltfläche **Senden**, **Antworten**, **Allen antworten** oder **Weiterleiten**.
 
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
+
+Während du in **An**, **Cc** oder **Bcc** tippst, schlägt Mail zuerst Kontakte aus dem Kontaktverzeichnis vor. Danach folgen Adressen, an die dieses Postfach geschrieben oder von denen es E-Mails erhalten hat. Diese Vorschläge funktionieren auch ohne die Contacts-App. Ein Briefsymbol kennzeichnet sie. Mit den Pfeiltasten markierst du einen Vorschlag, mit der Eingabetaste fügst du ihn hinzu. Wer nur zugewiesene Unterhaltungen sieht, bekommt keine Vorschläge aus dem Postfach.
 
 Der Editor ist vom Arbeitsbereich des Postfachs getrennt. **Zurück zum Postfach** speichert die letzten Änderungen, gibt die Bearbeitungssperre frei und kehrt zum Postfach zurück. **In neuem Fenster öffnen** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf.
 
@@ -73,6 +75,8 @@ Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt 
 Nur die Sitzung mit der aktuellen Bearbeitungssperre kann den Entwurf ändern. Mail lehnt Speichern, Änderungen an Anhängen und Verwerfen aus jeder anderen Sitzung, jedem Tab, Agenten oder CLI-Aufruf ab und nennt die bearbeitende Person. Hält niemand die Sperre, kann die nächste Sitzung den Entwurf wieder ändern. Deine eigene abgelaufene Sitzung blockiert dich also nie.
 
 Bearbeitet ein anderer Tab oder eine andere Person den Entwurf, nennt Mail diese Sitzung nach Möglichkeit. Du kannst schreibgeschützt weiterarbeiten oder die Bearbeitung gezielt in diesen Tab holen. Nach dem Schließen des Dialogs zeigt der Editor einen ruhigen Hinweis.
+
+Nach einem ausgeblendeten Tab, dem Ruhezustand oder einer langsamen Antwort setzt Mail die Bearbeitung selbst fort. Mail fragt nur nach, wenn ein anderer Tab, ein anderes Gerät oder eine andere Person den Entwurf gerade hält.
 
 :::warning Bearbeitung übernehmen macht die andere Sitzung schreibgeschützt
 Wähle **Bearbeitung übernehmen** nur, wenn die andere Sitzung die Bearbeitung verlieren soll.

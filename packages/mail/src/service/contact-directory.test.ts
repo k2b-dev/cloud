@@ -245,3 +245,40 @@ describe("Mail contact directory administration", () => {
     expect(writes).toEqual([]);
   });
 });
+
+describe("request-local contact directory registration", () => {
+  test("hides every function when the provider is unregistered", async () => {
+    const { resolveRegisteredContactDirectory } = await import("./contact-directory");
+    const { MAIL_CONTACT_DIRECTORY_DEFAULTS } = await import("../contact-directory-settings");
+    expect(await resolveRegisteredContactDirectory(MAIL_CONTACT_DIRECTORY_DEFAULTS, async () => false)).toEqual({
+      suggest: null,
+      resolve: null,
+      read: null,
+      listWritableBooks: null,
+      create: null,
+    });
+  });
+  test("keeps registered mappings and transient registry failures", async () => {
+    const { resolveRegisteredContactDirectory } = await import("./contact-directory");
+    const { MAIL_CONTACT_DIRECTORY_DEFAULTS, DEFAULT_MAIL_CONTACT_DIRECTORY } = await import("../contact-directory-settings");
+    expect(await resolveRegisteredContactDirectory(MAIL_CONTACT_DIRECTORY_DEFAULTS, async () => true)).toEqual(
+      DEFAULT_MAIL_CONTACT_DIRECTORY,
+    );
+    expect(
+      await resolveRegisteredContactDirectory(MAIL_CONTACT_DIRECTORY_DEFAULTS, async () => {
+        throw new Error("Registry interrupted");
+      }),
+    ).toEqual(DEFAULT_MAIL_CONTACT_DIRECTORY);
+  });
+  test("never asks the registry about an invalid app ID", async () => {
+    const { resolveRegisteredContactDirectory } = await import("./contact-directory");
+    const { MAIL_CONTACT_DIRECTORY_DEFAULTS } = await import("../contact-directory-settings");
+    let calls = 0;
+    const result = await resolveRegisteredContactDirectory({ ...MAIL_CONTACT_DIRECTORY_DEFAULTS, appId: "Invalid App" }, async () => {
+      calls++;
+      return true;
+    });
+    expect(calls).toBe(0);
+    expect(Object.values(result).every((value) => value === null)).toBe(true);
+  });
+});

@@ -1,0 +1,88 @@
+# Disposable test overlay for scripts/scale-acceptance.ts, not part of any deployment.
+networks:
+  traefik:
+    external: false
+    driver: bridge
+    internal: true
+
+x-ready: &ready
+  test: ["CMD", "bun", "-e", "const r = await fetch('http://127.0.0.1:3000/_cloud/ready'); if (!r.ok) process.exit(1)"]
+  interval: 2s
+  timeout: 2s
+  retries: 90
+  start_period: 2s
+
+x-scaled: &scaled
+  ports: ["127.0.0.1::3000"]
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck: *ready
+
+services:
+  postgres:
+    image: ghcr.io/k2b-dev/mirror/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    command: ["postgres", "-c", "max_connections=300"]
+    networks: [cloud-internal]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports: ["127.0.0.1::5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  nats:
+    image: ghcr.io/k2b-dev/mirror/nats:2.14.3-alpine@sha256:c11af972c99ae542de8925e6a7d9c533aa1eb039660420d2074beed6089b3bf0
+    command: ["--config", "/etc/nats.conf", "-m", "8222"]
+    volumes: ["./.github/nats-ci.conf:/etc/nats.conf:ro"]
+    networks:
+      cloud-internal:
+        aliases: [nats-1, nats-2, nats-3]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  valkey:
+    image: ghcr.io/k2b-dev/mirror/valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+    networks: [cloud-internal]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  sinks:
+    image: ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f
+    command: ["bun", "/fixtures/scale-sinks.ts"]
+    volumes: ["./scripts/fixtures:/fixtures:ro"]
+    networks: [cloud-internal]
+    ports: ["127.0.0.1::8025"]
+    expose: ["2525"]
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r = await fetch('http://127.0.0.1:8025/messages'); if (!r.ok) process.exit(1)"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  gateway:
+    ports: ["127.0.0.1::3000"]
+    environment:
+      SYNC_REPLICAS: "1"
+  app-core:
+    <<: *scaled
+    environment:
+      SYNC_REPLICAS: "1"
+  app-mail:
+    <<: *scaled
+    environment:
+      SYNC_REPLICAS: "1"
+  app-chat:
+    <<: *scaled
+    environment:
+      SYNC_REPLICAS: "1"
+  app-notebooks:
+    <<: *scaled
+    environment:
+      SYNC_REPLICAS: "1"

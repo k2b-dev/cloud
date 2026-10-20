@@ -113,6 +113,7 @@ export const defaultPaths: Record<PageId, string> = {
   "notebooks-editor": "/app/notebooks",
   files: "/app/filesv2",
   accounts: "/app/accounts/users",
+  spaces: "/app/spaces",
 };
 
 /** Only public application APIs create domain state. Every run has a fresh database. */
@@ -130,7 +131,16 @@ export async function seed(api: Api, runtime: Runtime, selected: PageId[], userI
     runtime.signal.throwIfAborted();
     console.log(`Seeding ${page.id}…`);
     try {
-      if (page.id === "faq") {
+      if (page.id === "spaces") {
+        const space = resourceSchema.parse(
+          await api.request("/api/spaces", "POST", {
+            name: "Performance baseline space",
+            description: "Deterministic production measurement fixture",
+            starter: "tasks",
+          }),
+        );
+        page.path = `/app/spaces/${space.id}`;
+      } else if (page.id === "faq") {
         for (const [question, answer] of [
           [
             "How is the performance baseline measured?",
@@ -223,6 +233,7 @@ export async function waitForRoutes(api: Api, apps: string[], runtime: Runtime) 
     mail: "/app/mail",
     assistant: "/app/assistant",
     notebooks: "/app/notebooks",
+    spaces: "/app/spaces",
     filesv2: "/app/filesv2",
     accounts: "/app/accounts/users",
   };

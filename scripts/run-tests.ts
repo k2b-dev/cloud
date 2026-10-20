@@ -6,7 +6,8 @@
  *   bun run test --browser          only non-integration files that start a browser through packages/ui/test/browser
  *   bun run test --filter gateway   suites whose name or path contains "gateway"
  *   bun run test --exclude grids    everything except suites matching "grids"
- *   bun run test --shard 2/4        deterministic slice of the suite list
+ *   bun run test --shard 2/4        slice balanced by measured suite time in scripts/test-weights.json
+ *   bun run test --max-minutes 20   fail the run when it takes longer than 20 minutes, even when every suite passed
  *
  * Browser behavior tests (`*.behavior.test.{ts,tsx}`) belong to this runner:
  * each workspace gets one extra suite that runs them with browser conditions
@@ -40,6 +41,7 @@ import { join, relative } from "node:path";
 import { applyTestRuntimeEnv, dotenvLeak, hasIntegrationTarget, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
 import { sweepStaleTestNamespaces } from "./fixtures/test-sync";
 import { runUnderHeavyLock } from "./heavy-lock";
+import committedWeights from "./test-weights.json";
 
 type PackageJson = {
   name?: string;
@@ -53,12 +55,18 @@ export type TestSuite = {
   command: string[];
 };
 
+export type TestWeights = {
+  browser: Record<string, number>;
+  unit: Record<string, number>;
+};
+
 export type Options = {
   integration: boolean;
   browser?: boolean;
   filter?: string;
   exclude?: string;
   shard?: { index: number; total: number };
+  maxMinutes?: number;
 };
 
 const ignoredTestPaths = ["node_modules/", "dist/", "build/", "_ssr/"];
@@ -149,7 +157,53 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
   return selectSuites(suites, options, workspaceRoot);
 };
 
-export const selectSuites = (suites: TestSuite[], options: Options, workspaceRoot: string): TestSuite[] => {
+/** Unknown or invalid weights use the median of the table's valid measurements. */
+export const suiteWeight = (name: string, table: Record<string, number>): number => {
+  const valid = (value: number): boolean => Number.isFinite(value) && value >= 0;
+  const weight = table[name];
+  if (weight !== undefined && valid(weight)) return weight;
+  const values = Object.values(table)
+    .filter(valid)
+    .sort((a, b) => a - b);
+  if (values.length === 0) return 1;
+  const middle = Math.floor(values.length / 2);
+  return values.length % 2 === 1 ? values[middle]! : values[middle - 1]! / 2 + values[middle]! / 2;
+};
+
+/** Longest processing time first, with stable membership and discovery order inside each shard. */
+export const planShards = (
+  suites: TestSuite[],
+  total: number,
+  table: Record<string, number>,
+): { suites: TestSuite[]; seconds: number }[] => {
+  const shards: { suites: TestSuite[]; seconds: number }[] = Array.from({ length: total }, () => ({ suites: [], seconds: 0 }));
+  const assignments: number[] = [];
+  const counts = Array.from({ length: total }, () => 0);
+  const weighted = suites.map((suite, position) => ({ suite, position, seconds: suiteWeight(suite.name, table) }));
+  weighted.sort((a, b) => b.seconds - a.seconds || (a.suite.name < b.suite.name ? -1 : a.suite.name > b.suite.name ? 1 : 0));
+  for (const entry of weighted) {
+    let target = 0;
+    for (let index = 1; index < shards.length; index += 1) {
+      if (
+        shards[index]!.seconds < shards[target]!.seconds ||
+        (shards[index]!.seconds === shards[target]!.seconds && counts[index]! < counts[target]!)
+      )
+        target = index;
+    }
+    assignments[entry.position] = target;
+    shards[target]!.seconds += entry.seconds;
+    counts[target]! += 1;
+  }
+  for (const [position, suite] of suites.entries()) shards[assignments[position]!]!.suites.push(suite);
+  return shards;
+};
+
+export const selectSuites = (
+  suites: TestSuite[],
+  options: Options,
+  workspaceRoot: string,
+  weights: TestWeights = committedWeights,
+): TestSuite[] => {
   let selected = suites;
   const matches = (suite: TestSuite, needle: string): boolean =>
     suite.name.includes(needle) || relative(workspaceRoot, suite.cwd).includes(needle);
@@ -163,7 +217,7 @@ export const selectSuites = (suites: TestSuite[], options: Options, workspaceRoo
   }
   if (options.shard) {
     const { index, total } = options.shard;
-    selected = selected.filter((_, position) => position % total === index - 1);
+    selected = planShards(selected, total, options.browser ? weights.browser : weights.unit)[index - 1]!.suites;
   }
   return selected;
 };
@@ -182,6 +236,13 @@ export const parseArgs = (argv: string[]): Options => {
       const total = Number(match?.[2]);
       if (!match || index < 1 || index > total) throw new Error(`--shard expects i/n with 1 <= i <= n, got "${argv[i]}"`);
       options.shard = { index, total };
+    } else if (arg === "--max-minutes") {
+      const value = argv[++i];
+      const minutes = Number(value);
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        throw new Error(`--max-minutes expects a positive number of minutes, got "${value}"`);
+      }
+      options.maxMinutes = minutes;
     } else throw new Error(`unknown argument "${arg}"`);
   }
   if (options.filter === undefined && argv.includes("--filter")) throw new Error("--filter expects a workspace substring");
@@ -190,6 +251,7 @@ export const parseArgs = (argv: string[]): Options => {
 
 const run = async (): Promise<void> => {
   runUnderHeavyLock();
+  const started = performance.now();
   const workspaceRoot = join(import.meta.dir, "..");
   const options = parseArgs(Bun.argv.slice(2));
   if (options.integration && !hasIntegrationTarget()) {
@@ -198,6 +260,12 @@ const run = async (): Promise<void> => {
   }
 
   const suites = await discoverTestSuites(workspaceRoot, options);
+  const label = options.shard ? `shard ${options.shard.index}/${options.shard.total}` : "test run";
+  if (options.shard) {
+    const table = options.browser ? committedWeights.browser : committedWeights.unit;
+    const seconds = suites.reduce((sum, suite) => sum + suiteWeight(suite.name, table), 0);
+    console.log(`${label}: ${suites.length} suites, about ${(seconds / 60).toFixed(1)} min by scripts/test-weights.json`);
+  }
   // An empty browser run would pass while WebKit tested nothing, for example after the launcher moved.
   if (options.browser && suites.length === 0) {
     console.error("--browser selected no test file that imports packages/ui/test/browser.");
@@ -258,10 +326,20 @@ const run = async (): Promise<void> => {
     console.log(`\n${skipped} integration test file(s) skipped: no CLOUD_TEST_* variable is set.`);
   }
 
+  const minutes = (performance.now() - started) / 60_000;
+  const limit = options.maxMinutes === undefined ? "" : ` (limit ${options.maxMinutes} min)`;
+  console.log(`\n${label} took ${minutes.toFixed(1)} min${limit}`);
+  const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
+  if (overLimit) {
+    console.log(
+      `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${options.maxMinutes}-min limit; refresh scripts/test-weights.json with \`bun scripts/test-weights.ts --run <id>\` or add a shard`,
+    );
+  }
   if (failed.length > 0) {
     console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);
     process.exit(1);
   }
+  if (overLimit) process.exit(1);
 
   console.log(`\nAll ${suites.length} test suites passed.`);
 };

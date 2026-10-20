@@ -31,6 +31,7 @@ import {
   type ComposePreview,
   type ComposeSafetyApproval,
   type ComposeSafetyReview,
+  DRAFT_LEASE_ERROR_CODES,
   type DraftEditableContent,
   type DraftEditableContentInput,
   type DraftIntent,
@@ -81,6 +82,7 @@ const intentIcon = (intent: DraftIntent): string =>
 
 export default function MailComposer(props: {
   mailboxId: string;
+  mailboxRecipientSuggestions?: boolean;
   currentActor: { kind: "user" | "service_account"; id: string };
   identities: SenderIdentity[];
   signatures: MailComposerSignatures;
@@ -205,6 +207,7 @@ export default function MailComposer(props: {
   };
   const draftSession = createMailDraftSession({
     mailboxId: props.mailboxId,
+    currentActor: props.currentActor,
     initialDraft: props.initialDraft,
     initialSeed: props.initialSeed,
     hasVerifiedIdentity: () => verifiedIdentities().length > 0,
@@ -230,6 +233,7 @@ export default function MailComposer(props: {
     draft,
     setDraft,
     lease,
+    materializedLeasePending,
     leaseConflict,
     lifecycleTransition,
     status,
@@ -334,7 +338,11 @@ export default function MailComposer(props: {
   });
   createEffect(on(previewQuery.data, () => setPreviewError(undefined), { defer: true }));
   const canEditDraft = createMemo(
-    () => verifiedIdentities().length > 0 && status() !== "preparing" && status() !== "readonly" && (Boolean(lease()) || !draft()),
+    () =>
+      verifiedIdentities().length > 0 &&
+      status() !== "preparing" &&
+      status() !== "readonly" &&
+      (Boolean(lease()) || !draft() || materializedLeasePending()),
   );
   const editable = createMemo(() => canEditDraft() && composerTransition.active() === null);
   const focusFreshEditorAtStart = (element: HTMLTextAreaElement) => {
@@ -524,19 +532,30 @@ export default function MailComposer(props: {
       if (!selected) return void (await prompts.error(t().recoveryCopyUnavailable));
       const currentLease = lease();
       if (!canEditDraft() || !currentLease) return void (await prompts.error(t().draftNotEditable));
-      const restoreResponse = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][
-        ":recoveryCopyId"
-      ].restore.$post(
-        {
-          param: {
-            mailboxId: props.mailboxId,
-            draftId: currentDraft.id,
-            recoveryCopyId: selected.id,
+      const restore = (leaseToken: string) =>
+        apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][":recoveryCopyId"].restore.$post(
+          {
+            param: {
+              mailboxId: props.mailboxId,
+              draftId: currentDraft.id,
+              recoveryCopyId: selected.id,
+            },
+            json: { expectedRevision: currentDraft.revision, leaseToken },
           },
-          json: { expectedRevision: currentDraft.revision, leaseToken: currentLease.token },
-        },
-        { init: { signal: controller.signal } },
-      );
+          { init: { signal: controller.signal } },
+        );
+      let restoreResponse = await restore(currentLease.token);
+      if (restoreResponse.status === 409) {
+        const body: unknown = await restoreResponse
+          .clone()
+          .json()
+          .catch(() => null);
+        if (typeof body === "object" && body !== null && "code" in body && body.code === DRAFT_LEASE_ERROR_CODES.NOT_OWNED) {
+          const acquired = await acquireLease(currentDraft);
+          if (!acquired) return;
+          restoreResponse = await restore(acquired.token);
+        }
+      }
       if (!restoreResponse.ok) throw new Error(await readApiError(restoreResponse, t().restoreFailed));
       const restored = await restoreResponse.json();
       if (disposed || recoveryController !== controller) return;
@@ -1317,7 +1336,13 @@ export default function MailComposer(props: {
             <span class="text-dimmed">{t().to}</span>
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <MailRecipientInput placeholder={t().recipients} value={to} onChange={setTo} disabled={!editable()} />
+                <MailRecipientInput
+                  mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                  placeholder={t().recipients}
+                  value={to}
+                  onChange={setTo}
+                  disabled={!editable()}
+                />
               </div>
               <Show when={!showCc()}>
                 <Button variant="ghost" size="sm" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
@@ -1329,11 +1354,23 @@ export default function MailComposer(props: {
           <Show when={showCc()}>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Cc</span>
-              <MailRecipientInput placeholder={t().ccRecipients} value={cc} onChange={setCc} disabled={!editable()} />
+              <MailRecipientInput
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().ccRecipients}
+                value={cc}
+                onChange={setCc}
+                disabled={!editable()}
+              />
             </div>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Bcc</span>
-              <MailRecipientInput placeholder={t().bccRecipients} value={bcc} onChange={setBcc} disabled={!editable()} />
+              <MailRecipientInput
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().bccRecipients}
+                value={bcc}
+                onChange={setBcc}
+                disabled={!editable()}
+              />
             </div>
           </Show>
           <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2 lg:col-span-2">

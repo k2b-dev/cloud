@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Build and deploy
@@ -105,6 +105,29 @@ Add `scripts/build-extras.ts` only when the application must generate another
 artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.
 
 The build precompresses supported static files with Brotli and gzip.
+
+The application's `app.css` and `favicon.svg` URLs carry `?v=<content hash>`.
+The shared stylesheets (`fonts.css`, `tabler-icons.css`, and `global.css`)
+carry Core's registered release. URLs stay the same across restarts, and all
+applications use the same shared stylesheet URLs. Core's `/branding/favicon`
+keeps its unversioned URL.
+
+In production, these files use `immutable` only when the requested version
+matches the serving process's version. Other requests use `no-cache` with an
+ETag: revalidation takes one round trip and sends no body if the file is
+unchanged. Images built with the default `CLOUD_RELEASE=local` link the shared
+stylesheets without a version, so browsers revalidate them on each page.
+Set `CLOUD_RELEASE` to one immutable `sha-<commit>` value per build.
+
+During the first upgrade to a Cloud version with this behavior, stop every
+old instance of Core and of each application before a new instance receives
+traffic. Use stop-then-start, such as the Compose default or the Kubernetes
+`Recreate` strategy, because a rolling or surge update overlaps old and new
+instances even with one replica. An old instance answers every `/public` file
+`immutable`, also under a version that names the new build. A browser that
+gets the old file this way keeps it until the file changes in a later release.
+Later upgrades can roll, because new instances answer only their own versions
+`immutable`.
 
 Island URLs are `/inventory/_ssr/<content-hash>/<island>.js`. The hash covers
 built island JavaScript, so it stays stable across restarts and releases that

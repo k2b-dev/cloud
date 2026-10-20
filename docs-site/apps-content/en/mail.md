@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Mail
@@ -516,9 +516,34 @@ cld mail admin contact-directory reset --yes
 | `mail.contact_directory.create` | `contact.create` | No; empty hides **New contact** |
 
 Mail calls the selected app as the requesting person, so that app's
-permissions decide which contacts appear. When the app is missing, stopped, or
-returns data that no longer matches the contract, Mail degrades exactly as when
-Contacts is unavailable.
+permissions decide which contacts appear. When the selected app is not installed
+(not registered), Mail hides contact features without an error. Recipient
+suggestions still come from the mailbox. The details panel has no contacts
+block. **Administration → Mail** still reports the missing app.
+
+When a registered app stops briefly or returns data that no longer matches the
+contract, the details panel shows **Contacts unavailable** with **Retry**.
+Recipient fields still offer mailbox addresses.
+
+### Mailbox recipient suggestions
+
+While you type in **To**, **Cc**, or **Bcc**, contact-directory suggestions come
+first. Addresses known from this mailbox follow, marked with a mail icon.
+They work without the Contacts app. Duplicate addresses appear once. The arrow
+keys highlight a suggestion and Enter adds it.
+
+`GET /api/mail/mailboxes/:mailboxId/recipient-suggestions?query=ada&limit=8`
+returns `{ items: [{ address, displayName, lastSeenAt, writtenTo }] }`.
+It requires mailbox-wide read access. Assigned-only access gets `403`.
+Users and service accounts use the same route and permission check.
+
+The query has 2–320 characters after trimming. The limit defaults to 8 and has
+a maximum of 20. Mail reads the newest 2,000 messages of the mailbox. Within
+them, it skips messages with no live placement or with any live Junk or Drafts
+placement, so those messages still count toward the 2,000. It also skips this
+mailbox's sender and reply-to identities. Addresses the mailbox wrote to come
+first; recency and frequency decide the remaining order. Older correspondents
+come from the contact directory.
 
 ## Find detailed product help
 
@@ -642,6 +667,30 @@ mutation or delivery operation to read its current fields and safety checks.
 To clean up existing mail from one sender or domain, check the count with `cld mail sender preview --match domain --value example.com`, then run `cld mail sender move --match domain --value example.com --destination archive --yes`. Use `--destination trash` or `--folder <name-or-id>` for other targets and `--match sender` for one address. Moving needs write access. Like incoming automations, it matches the first From address and never the mailbox's own sender addresses. It leaves mail in Sent, Drafts, Trash, and Junk where it is, and it does not move kept conversations to Trash. On Gmail, it moves each message once from the Inbox, so Archive removes only the Inbox label and a folder replaces it with that label; only Trash and Junk also take archived mail from All Mail. Each call queues at most 500 moves; when the result says `truncated`, run it again after those commands finish.
 
 To find commands that did not complete, run `cld mail command list --state failed` or `--state needs_attention`. A full page ends with the `--before` value for the next page. Mailbox admins resolve an unclear provider result with `cld mail operator run reconcile --command <id>`; `operator run retry` repeats only failed maintenance reads, not moves or sends.
+
+### Coordinate draft editing
+
+Use `cld mail draft lease get|acquire|heartbeat|release` to inspect, acquire,
+renew, or release a draft editing lease. Acquire returns a token for heartbeat
+and release. Keep it out of logs. All three lease errors return HTTP 409:
+
+| Code | Meaning | Client action |
+| --- | --- | --- |
+| `DRAFT_LEASE_HELD` | Another session holds the draft, including another tab of the same person. | Ask before taking over with `draft lease acquire --takeover`. |
+| `DRAFT_LEASE_NOT_OWNED` | The token expired, was released, or was replaced by a takeover. | Acquire a lease again. |
+| `DRAFT_LEASE_BUSY` | Lease state is being updated. | Retry shortly. |
+
+Draft save, discard, attachment upload, and attachment removal check the lease
+too. They answer `DRAFT_LEASE_HELD` or `DRAFT_LEASE_BUSY`. Restoring a recovery
+copy needs the token and can also answer `DRAFT_LEASE_NOT_OWNED`. Earlier
+versions answered `CONFLICT` for a busy or expired lease.
+
+An editor may send its own `editorId` (a UUID per editor instance) with
+acquire. A repeated acquire with the same `editorId` returns that editor's own
+lease, so a retry after a lost answer does not look like another session.
+
+A lease does not replace revision checks. Keep the local expected revision
+when acquiring again so a concurrent change becomes a recovery copy.
 
 ## Agent-oriented capabilities
 

@@ -112,9 +112,22 @@ current view. Opening the menu is the only step that reads CSS visibility;
 the server already renders the final strip and both counts.
 
 Every view is a document link, in the strip and under **More**, so reload,
-back, and forward show the view that the URL names. A long view name shrinks
-before the strip scrolls and fades out at its end with the shared
-[fade utility](/en/ui/layout/navigation#label-overflow).
+back, and forward show the view that the URL names.
+
+A view tab never shrinks below its label and count, at any width. When the
+strip is too narrow for its visible views, as on a phone or in a narrow head,
+it scrolls sideways and keeps every label whole. The levels do not change:
+the strip still keeps three views and **More** when narrow. The current view
+is in view in the first painted frame: an inline script in the server markup
+scrolls the strip before paint, and the component does the same after a
+client render, when `current` changes in place, and when the strip resizes.
+Only the strip scrolls, never the page, and it scrolls without animation.
+A soft edge fade marks each side where more views wait, through the shared
+`data-scroll-fade-axis="horizontal"` scroll-fade contract that `Tabs` uses;
+forced colors drop the fade. Focus scrolls a tab clear of the fade, so its
+ring stays fully visible. Labels keep the shared
+[fade utility](/en/ui/layout/navigation#label-overflow), which stays inactive
+while a label fits.
 
 Both tab controls have a soft appearance: no tray, baseline, selection ring,
 or underline. The selected view uses the app tint. Font weight never changes
