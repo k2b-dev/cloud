@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
+import postcss, { type Rule } from "postcss";
 import type { GotenbergConfig } from "./gotenberg";
 import {
   buildMarkdownPdfHtml,
   buildPresetPdfHtml,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
+  MARKDOWN_PDF_TEMPLATE_IDS,
   MarkdownPdfError,
   renderMarkdownToPdfWithConfig,
 } from "./markdown";
@@ -17,6 +19,93 @@ const config = {
 } satisfies GotenbergConfig;
 
 describe("Markdown PDF renderer", () => {
+  for (const variant of [...MARKDOWN_PDF_TEMPLATE_IDS, "default", "custom-only"] as const) {
+    test(`keeps table cells whole after prose styles and before overrides: ${variant}`, () => {
+      const templateId = variant === "default" || variant === "custom-only" ? undefined : variant;
+      for (const customCss of variant === "custom-only"
+        ? ["th, td { overflow-wrap: normal; }"]
+        : [undefined, "th, td { overflow-wrap: normal; }"]) {
+        const html = buildPresetPdfHtml({
+          html: "<table><tr><td>100</td></tr></table>",
+          templateId,
+          css: "th, td { word-break: keep-all; }",
+          customCss,
+        });
+        const stylesheet = /<style>([\s\S]*?)<\/style>/u.exec(html)?.[1];
+        expect(stylesheet).toBeDefined();
+        const rules: Rule[] = [];
+        postcss.parse(stylesheet!).walkRules((rule) => {
+          rules.push(rule);
+        });
+        const cellRule = rules.findIndex((rule) => {
+          const declarations = Object.fromEntries(rule.nodes.filter((node) => node.type === "decl").map((node) => [node.prop, node.value]));
+          return (
+            rule.selectors.join(", ") === "th, td" &&
+            declarations["overflow-wrap"] === "break-word" &&
+            declarations["word-break"] === "normal"
+          );
+        });
+        expect(cellRule).toBeGreaterThan(-1);
+        for (const [index, rule] of rules.entries()) {
+          if (rule.selector === ".markdown-document") {
+            expect(rule.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ prop: "overflow-wrap", value: "anywhere" })]));
+            expect(index).toBeLessThan(cellRule);
+          }
+          rule.walkDecls((declaration) => {
+            if (declaration.value === "keep-all" || (declaration.value === "normal" && declaration.prop === "overflow-wrap")) {
+              expect(index).toBeGreaterThan(cellRule);
+            }
+          });
+        }
+        // Descendants such as short link/code values must inherit break-word too.
+        for (const rule of rules) {
+          if (rule.selector !== ".markdown-document" && rule.selector !== "pre") {
+            rule.walkDecls("overflow-wrap", (declaration) => {
+              expect(declaration.value).not.toBe("anywhere");
+            });
+          }
+        }
+      }
+    });
+  }
+
+  test("adds cell break opportunities every 20 code points without changing short values or prose", () => {
+    const run = "abcdefghijklmnopqrst";
+    const long = `${run}${run}z`;
+    const prose = `<h2>${long}</h2>\n<p data-label='unchanged'>${long} &amp;</p><ul><li>${long}</li></ul><pre>${long}</pre>`;
+    const html = buildPresetPdfHtml({
+      html: `${prose}<table><tr><th>Nr.</th><th>${long}</th></tr><tr><td>100</td><td>${run} ${long}\t${run}\n${run}</td><td><code>limit</code><a href="/${long}">limit</a></td><td><code>${long}</code><a href="/${long}">${long}</a></td><td>${"😀".repeat(21)}</td></tr></table>`,
+    });
+    expect(html).toContain(prose);
+    expect(html).toContain(`<th>Nr.</th><th>${run}<wbr>${run}<wbr>z</th>`);
+    expect(html).toContain(`<td>100</td><td>${run} ${run}<wbr>${run}<wbr>z\t${run}\n${run}</td>`);
+    expect(html).toContain(`<code>limit</code><a href="/${long}">limit</a>`);
+    expect(html).toContain(`<code>${run}<wbr>${run}<wbr>z</code><a href="/${long}">${run}<wbr>${run}<wbr>z</a>`);
+    expect(html).toContain(`<td>${"😀".repeat(20)}<wbr>😀</td>`);
+  });
+
+  test("counts each character reference as one non-whitespace unit without splitting it", () => {
+    for (const entity of ["&amp;", "&#160;", "&#xA0;", "&nbsp;"]) {
+      const prefix = "a".repeat(19);
+      const html = buildPresetPdfHtml({ html: `<table><tr><td>${prefix}${entity}b ${prefix}b${entity}</td></tr></table>` });
+      expect(html).toContain(`<td>${prefix}${entity}<wbr>b ${prefix}b<wbr>${entity}</td>`);
+    }
+  });
+
+  test("buffers long cell text across streaming parser chunks", () => {
+    const groups = Array.from({ length: 500 }, () => "abcdefghijklmnopqrst");
+    const html = buildPresetPdfHtml({ html: `<table><tr><td>${groups.join("")}z</td></tr></table>` });
+    expect(html).toContain(`<td>${groups.join("<wbr>")}<wbr>z</td>`);
+  });
+
+  test("leaves SVG, MathML, styles and scripts in cells untouched and resumes after self-closing elements", () => {
+    const long = "a".repeat(21);
+    const skipped = `<svg><g><text>${long}</text></g><svg><text>${long}</text></svg></svg><math><mtext>${long}</mtext></math><style>p { color: ${long}; }</style><script>const x = '${long}';</script><svg/><math/>`;
+    const html = buildPresetPdfHtml({ html: `<table><tr><td>${skipped}${long}</td><th>${skipped}${long}</th></tr></table>` });
+    expect(html).toContain(`<td>${skipped}${"a".repeat(20)}<wbr>a</td>`);
+    expect(html).toContain(`<th>${skipped}${"a".repeat(20)}<wbr>a</th>`);
+  });
+
   test("builds standalone CSP-protected preset, layered, and custom documents", () => {
     const html = buildMarkdownPdfHtml({
       markdown: "# Report\n\n| A | B |\n| - | - |\n| 1 | 2 |",

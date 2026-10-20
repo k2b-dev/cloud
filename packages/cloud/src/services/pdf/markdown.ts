@@ -165,6 +165,71 @@ a.k2b-reference { padding: .05em .3em; border-radius: .3em; background: #eeeff2;
 .k2b-reference__icon, .k2b-text-link__external { display: none; }
 `;
 
+/**
+ * Break-anywhere lowers table column width to one character, splitting even
+ * short numbers. Cells keep words whole; long runs get explicit break points.
+ */
+const TABLE_CELL_PRINT_CSS = `
+th, td { overflow-wrap: break-word; word-break: normal; }
+`;
+
+// On the document preset's A4 page with 20 mm side margins, about 90 table
+// characters fit per row. Four columns capped at 20 plus padding still fit.
+// Ordinary words stay whole; Chromium uses these opportunities in longer URLs,
+// code, hashes or paths only when the column is narrower than the run.
+const MAX_CELL_RUN = 20;
+
+const breakLongCellRuns = (html: string): string => {
+  let skippedDepth = 0;
+  let buffer = "";
+  // Count a character reference as one unit without splitting or decoding it.
+  // In particular, &nbsp; is not a whitespace break opportunity.
+  const units = /&[#a-zA-Z0-9]+;|[\s\S]/gu;
+  const breakText = (text: string): string => {
+    let output = "";
+    let runLength = 0;
+    for (const [unit] of text.matchAll(units)) {
+      if (/^\s$/u.test(unit)) {
+        runLength = 0;
+      } else {
+        if (runLength === MAX_CELL_RUN) {
+          output += "<wbr>";
+          runLength = 0;
+        }
+        runLength += 1;
+      }
+      output += unit;
+    }
+    return output;
+  };
+
+  return new HTMLRewriter()
+    .on("td svg, th svg, td math, th math, td style, th style, td script, th script", {
+      element(element) {
+        // Self-closing foreign elements have no end tag to restore the depth.
+        if (element.selfClosing) return;
+        skippedDepth += 1;
+        element.onEndTag(() => {
+          skippedDepth -= 1;
+        });
+      },
+    })
+    .on("td, th", {
+      text(chunk) {
+        if (skippedDepth) return;
+        // HTMLRewriter may split one text node (even an entity) into chunks.
+        buffer += chunk.text;
+        if (chunk.lastInTextNode) {
+          chunk.replace(breakText(buffer), { html: true });
+          buffer = "";
+        } else {
+          chunk.remove();
+        }
+      },
+    })
+    .transform(html);
+};
+
 const byteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
 
 const escapeHtml = (value: string): string =>
@@ -258,7 +323,9 @@ export const buildPresetPdfHtml = (input: BuildPresetPdfHtmlInput): string => {
   const suppliedCustomCss = input.customCss?.trim() ?? "";
   const customCss = suppliedCustomCss ? validateCustomCss(input.customCss ?? "") : "";
   const presetCss = templateId ? TEMPLATE_CSS[templateId] : customCss ? "" : TEMPLATE_CSS.document;
-  const baseCss = [presetCss, INFO_BLOCK_PRINT_CSS, LINK_PRINT_CSS, input.css ? styleText(input.css) : ""].filter(Boolean).join("\n");
+  const baseCss = [presetCss, INFO_BLOCK_PRINT_CSS, LINK_PRINT_CSS, TABLE_CELL_PRINT_CSS, input.css ? styleText(input.css) : ""]
+    .filter(Boolean)
+    .join("\n");
   const stylesheet = `${baseCss}${baseCss && customCss ? `\n/* Custom CSS overrides */\n` : ""}${customCss}`;
   return `<!doctype html>
 <html lang="en">
@@ -268,7 +335,7 @@ export const buildPresetPdfHtml = (input: BuildPresetPdfHtmlInput): string => {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src 'none'; font-src 'none'; form-action 'none'; frame-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; style-src 'unsafe-inline'">
 <style>${stylesheet}</style>
 </head>
-<body><main class="markdown-document">${input.html}</main></body>
+<body><main class="markdown-document">${breakLongCellRuns(input.html)}</main></body>
 </html>`;
 };
 
