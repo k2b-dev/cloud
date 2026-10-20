@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # OAuth clients and flows
@@ -504,7 +504,8 @@ rejected. ID tokens and client-credentials tokens do not carry this claim.
 Signing an account out everywhere ends its OAuth sign-ins: refresh families,
 authorization codes and device codes approved but not yet redeemed (in the
 browser or in Cloud Login), and already issued user access tokens. This
-includes a password reset by link, an administrator signing the account out
+includes password changes in the profile or at sign-in, administrator password
+resets, password resets by link, an administrator signing the account out
 everywhere, account expiry, and directory synchronization that ends the
 account's sessions. The next refresh or code
 exchange returns `invalid_grant`; access tokens stop working on the next

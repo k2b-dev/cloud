@@ -391,7 +391,7 @@ const app = new Hono<AuthContext>()
       tags: ["Users"],
       summary: "Reset user password",
       description:
-        "Reset a FreeIPA user's password to a temporary generated password (admin only). The user will be forced to change it on next login.",
+        "Reset a FreeIPA user's password to a temporary generated password (admin only). Ends every sign-in of that user; Cloud Login phones stay paired. The user will be forced to change it on next login.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(ResetPasswordResponseSchema, "Password reset"),

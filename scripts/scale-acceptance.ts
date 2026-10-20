@@ -206,6 +206,8 @@ const poll = async <T>(label: string, probe: () => Promise<T | undefined | false
 
 type Inspect = {
   Id: string;
+  Name: string;
+  RestartCount: number;
   State: { Running: boolean };
   Config: { Labels: Record<string, string> };
   NetworkSettings: {
@@ -495,16 +497,16 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       }
     }
     await compose(["up", "-d", "--wait", ...infrastructure]);
-    // Core alone migrates shared schemas. Each app's first instance migrates before its second starts.
-    await compose(["up", "-d", "--wait", "gateway", devServiceName("core")]);
-    await compose(["up", "-d", "--wait", ...SCALED_APPS.filter((app) => app !== "core").map(devServiceName)]);
+    // All Core replicas migrate shared schemas before the other applications start.
+    await compose(["up", "-d", "--wait", "--scale", `${devServiceName("core")}=${options.replicas}`, "gateway", devServiceName("core")]);
+    const applications = SCALED_APPS.filter((app) => app !== "core");
     await compose([
       "up",
       "-d",
       "--wait",
       "--no-recreate",
-      ...SCALED_APPS.flatMap((app) => ["--scale", `${devServiceName(app)}=${options.replicas}`]),
-      ...SCALED_APPS.map(devServiceName),
+      ...applications.flatMap((app) => ["--scale", `${devServiceName(app)}=${options.replicas}`]),
+      ...applications.map(devServiceName),
     ]);
     for (const app of SCALED_APPS) {
       const resolved = await containers(devServiceName(app));
@@ -549,6 +551,12 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         },
         180_000,
       );
+    // Inspect again after readiness so setup failures followed by a successful restart cannot pass.
+    for (const app of APPS) {
+      for (const container of await containers(devServiceName(app))) {
+        check(container.RestartCount === 0, `${container.Name}: expected RestartCount 0, got ${container.RestartCount}`);
+      }
+    }
     phase("ready", { project, replicas: Object.fromEntries([...evidence].map(([app, value]) => [app, { a: value.a, b: value.b }])) });
     const login = async () => {
       const response = await http(gateway, "/api/auth/admin-login", "POST", { token: env.ADMIN_LOGIN_TOKEN });

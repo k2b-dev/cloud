@@ -1532,7 +1532,7 @@ test("reinstall skips reload restoration and keeps in-memory departure scroll", 
 });
 
 test.each(["swap", "push", "pagehide", "traversal"])("%s saves the shown entry after a dialog-only Back hidden from nav", async (mode) => {
-  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "page", index: 0 } });
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "page", index: 0 }, entries: () => [] });
   Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
   let y = 120;
   Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
@@ -1719,7 +1719,7 @@ test("a fragment after non-plain island state stays native with the Navigation A
 });
 
 test("a fragment navigation during a pending traversal belongs to the arriving page and swaps it", async () => {
-  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 3 } });
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 3 }, entries: () => [] });
   Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
   try {
     install();
@@ -2138,7 +2138,7 @@ test.each(["push", "replace"])("a navigate() %s before the initial islands mount
 });
 
 test("Navigation API supplies base and arriving positions and captures the departing entry before popstate", async () => {
-  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 71 } });
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 71 }, entries: () => [] });
   Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
   try {
     install();

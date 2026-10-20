@@ -80,7 +80,8 @@
       "@codemirror/state": "6.7.1",
       "@codemirror/view": "6.43.7",
       "@k2b/nessi": "0.18.0",
-      "axe-core": "4.11.0"
+      "axe-core": "4.11.0",
+      "maplibre-gl": "6.14.0"
     }
   },
   "overrides": {

@@ -25,8 +25,11 @@ import {
   type SignInMethod,
   setBrowserCookie,
 } from "../known-browsers";
+import { logger } from "../logging";
 import * as settings from "../settings";
 import { loadJwtSession, loadJwtSessionIdentity } from "./user";
+
+const log = logger("auth:session");
 
 export type SessionKind = "web" | "app";
 
@@ -90,12 +93,13 @@ const verifyForRequest = (c: Context, token: string): Promise<CloudSessionClaims
 /** Moves the account's authentication epoch, which ends every session issued before it.
  * Request-time expiry uses only this: device operations check expiry themselves and an
  * administrator can lift it, so revoking devices would depend on which request came first. */
-const endSessions = async (db: SQL, userId: string): Promise<void> => {
-  const [updated] = await db<Array<{ id: string }>>`
+const endSessions = async (db: SQL, userId: string): Promise<number> => {
+  const [updated] = await db<Array<{ auth_epoch: string | number | bigint }>>`
     UPDATE auth.users SET auth_epoch = auth_epoch + 1
-    WHERE id = ${userId}::uuid RETURNING id
+    WHERE id = ${userId}::uuid RETURNING auth_epoch
   `;
   if (!updated) throw new Error("Cannot revoke sessions for an unknown user");
+  return Number(updated.auth_epoch);
 };
 
 const authenticateVerified = async (credential: CloudSessionClaims): Promise<AuthenticatedSession | null> => {
@@ -291,7 +295,7 @@ const issueJwtSession = async (
   options: SessionIssueOptions,
   attempt = 0,
   committedNotice: NewBrowserSignInNotice | null = null,
-): Promise<{ token: string; notice: NewBrowserSignInNotice | null }> => {
+): Promise<{ token: string; expiresAt: Date; notice: NewBrowserSignInNotice | null }> => {
   const signer = await prepareIdentitySigner("session");
   let family: PreparedFamily;
   try {
@@ -305,7 +309,7 @@ const issueJwtSession = async (
   }
   const token = await signFamily(family);
   const notice = committedNotice ?? family.notice;
-  if (token) return { token, notice };
+  if (token) return { token, expiresAt: family.expiresAt, notice };
   if (attempt === 0) return issueJwtSession(c, userId, { ...options, sid: undefined }, 1, notice);
   throw new Error("Cloud session signer changed repeatedly during issuance");
 };
@@ -343,6 +347,176 @@ const issueInTransaction = async <T>(
     if (!family) return { value, token: null };
     const token = await signFamily(family);
     return { value, token: token ?? (await issueJwtSession(c, family.userId, { ...family.options, sid: undefined }, 1)).token };
+  }
+};
+
+/** Revokes the account's active mobile app phones and records each phone. */
+const revokePhones = async (
+  tx: SQL,
+  userId: string,
+  reason: "sign_out_everywhere" | "sign_out_others" | "password_change" | "password_reset",
+): Promise<void> => {
+  const phones = await tx<Array<{ id: string }>>`
+    UPDATE auth.pwa_devices SET revoked_at = now(), revocation_reason = ${reason}
+    WHERE user_id = ${userId}::uuid AND revoked_at IS NULL RETURNING id
+  `;
+  for (const phone of phones)
+    await audit.record(
+      {
+        action: "auth.pwa.device.revoke",
+        outcome: "allowed",
+        target: { type: "pwa_device", id: phone.id },
+        metadata: { targetUserId: userId, provenance: "system", reason },
+      },
+      tx,
+    );
+};
+
+/** Copies a web family to a new sid, epoch and signer; sign-in time, expiry, origin and the Cloud Login device
+ * that approved it stay the same, so removing that device still ends the copy. */
+const copyFamily = async (tx: SQL, from: string, to: { sid: string; authEpoch: number; kid: string }): Promise<void> => {
+  await tx`
+    INSERT INTO auth.session_families (
+      sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent, legal_pending,
+      pwa_device_id, app_device_id
+    )
+    SELECT ${to.sid}::uuid, user_id, ${to.authEpoch}, ${to.kid}, issued_at, expires_at,
+      created_request_id, created_user_agent, legal_pending, pwa_device_id, app_device_id
+    FROM auth.session_families WHERE sid = ${from}::uuid
+  `;
+};
+
+/** Ends other sign-ins and moves the chosen browser to a new session id with its sign-in time and expiry.
+ * The epoch change ends the account's other browser sessions, its OAuth sign-ins and access tokens, and pending
+ * Cloud Login pairings and device changes; mobile app phones are revoked with an audit entry per phone. Unlike
+ * `revokeAllForUser`, Cloud Login devices stay paired. API keys, passkeys and mandates stay valid.
+ * `keep` is the browser sign-in the request authenticated, with the epoch it was authenticated at. The kept
+ * family is revoked and replaced, so every check by session id rejects old copies of its cookie, and a
+ * request that a concurrent change already ended keeps nothing.
+ * If preparing the signer fails or it stays inactive after one retry, ends all sign-ins without keeping a browser.
+ * If its signer changes after commit, retries once with a new family unless another sign-out intervened.
+ * `kept` is null when no browser was kept: no `keep`, its epoch is no longer current, the family was not
+ * a current active web session of the account, or signing it after the change failed. That browser must
+ * sign in again. */
+const endOtherSignIns = async (
+  userId: string,
+  options: { keep?: { sid: string; authEpoch: number } | null; reason: "password_change" | "password_reset" | "sign_out_others" },
+): Promise<{ kept: { token: string; expiresAt: Date } | null }> => {
+  const extendSigner = async (tx: SQL, signer: PreparedIdentitySigner, expiresAt: Date): Promise<void> => {
+    const [activeKey] = await tx<Array<{ kid: string }>>`
+      UPDATE auth.signing_keys
+      SET verify_until = GREATEST(verify_until, ${new Date(expiresAt.getTime() + IDENTITY_CLOCK_TOLERANCE_SECONDS * 1_000 + IDENTITY_ROLLOUT_MARGIN_MS)})
+      WHERE kid = ${signer.kid} AND purpose = 'session' AND state = 'active' AND sign_until > now()
+      RETURNING kid
+    `;
+    if (!activeKey) throw new Error(SIGNER_INACTIVE);
+  };
+  let keep = options.keep ?? null;
+  for (let attempt = 0; ; attempt += 1) {
+    let signer: PreparedIdentitySigner | null = null;
+    if (keep) {
+      try {
+        signer = await prepareIdentitySigner("session");
+      } catch {
+        log.warn("Could not prepare session signer; ending all sign-ins", { userId });
+        keep = null;
+      }
+    }
+    let family: PreparedFamily | null;
+    try {
+      family = await sql.begin(async (tx): Promise<PreparedFamily | null> => {
+        const [user] = await tx<Array<{ auth_epoch: string | number | bigint }>>`
+          SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid FOR NO KEY UPDATE
+        `;
+        if (!user) throw new Error("Cannot revoke sessions for an unknown user");
+        const [kept] =
+          keep && Number(user.auth_epoch) === keep.authEpoch
+            ? // Locking the key orders this keep before a concurrent emergency key revocation. It is the
+              // lock extendSigner takes for the same current key, so concurrent keeps queue instead of deadlocking.
+              await tx<Array<{ sid: string; issued_at: Date; expires_at: Date }>>`
+              SELECT sf.sid, sf.issued_at, sf.expires_at FROM auth.session_families sf
+              JOIN auth.signing_keys sk ON sk.kid = sf.signing_kid AND sk.state <> 'revoked'
+              WHERE sf.sid = ${keep.sid}::uuid AND sf.user_id = ${userId}::uuid
+                AND sf.pwa_device_id IS NULL AND sf.revoked_at IS NULL AND sf.expires_at > now()
+                AND sf.auth_epoch = ${user.auth_epoch}
+              FOR UPDATE OF sf FOR NO KEY UPDATE OF sk
+            `
+            : [];
+        const authEpoch = await endSessions(tx, userId);
+        let prepared: PreparedFamily | null = null;
+        if (kept && signer) {
+          const issuedAt = new Date(kept.issued_at);
+          const expiresAt = new Date(kept.expires_at);
+          await extendSigner(tx, signer, expiresAt);
+          const sid = crypto.randomUUID();
+          await copyFamily(tx, kept.sid, { sid, authEpoch, kid: signer.kid });
+          await tx`
+            UPDATE auth.session_families SET revoked_at = now(), revocation_reason = 'rotated'
+            WHERE sid = ${kept.sid}::uuid
+          `;
+          prepared = {
+            userId,
+            sid,
+            authEpoch,
+            issuedAt,
+            expiresAt,
+            signer,
+            options: { ttlSeconds: (expiresAt.getTime() - issuedAt.getTime()) / 1_000, recordLogin: false },
+            notice: null,
+          };
+        }
+        await revokePhones(tx, userId, options.reason);
+        return prepared;
+      });
+    } catch (error) {
+      if (signer && isSignerInactive(error)) {
+        if (attempt === 0) {
+          invalidateIdentitySignerCache("session", signer.kid);
+          continue;
+        }
+        if (attempt === 1) {
+          log.warn("Session signer stayed inactive; ending all sign-ins", { userId });
+          keep = null;
+          continue;
+        }
+      }
+      throw error;
+    }
+    if (!family) return { kept: null };
+    try {
+      const token = await signFamily(family);
+      if (token) return { kept: { token, expiresAt: family.expiresAt } };
+      const freshSigner = await prepareIdentitySigner("session");
+      const replacement = await sql.begin(async (tx): Promise<PreparedFamily | null> => {
+        const [user] = await tx<Array<{ auth_epoch: string | number | bigint }>>`
+          SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid FOR NO KEY UPDATE
+        `;
+        if (!user || Number(user.auth_epoch) !== family.authEpoch) return null;
+        // Device removal can skip this already-revoked family, so the replacement must recheck its device.
+        const [revoked] = await tx<Array<{ sid: string }>>`
+          SELECT sf.sid FROM auth.session_families sf
+          WHERE sf.sid = ${family.sid}::uuid AND sf.user_id = ${userId}::uuid
+            AND sf.revocation_reason = 'signer_revoked_during_issuance'
+            AND (sf.app_device_id IS NULL OR EXISTS (
+              SELECT 1 FROM auth.app_devices d WHERE d.id = sf.app_device_id AND d.revoked_at IS NULL
+            )) FOR UPDATE
+        `;
+        if (!revoked) return null;
+        await extendSigner(tx, freshSigner, family.expiresAt);
+        const sid = crypto.randomUUID();
+        await copyFamily(tx, revoked.sid, { sid, authEpoch: family.authEpoch, kid: freshSigner.kid });
+        return { ...family, sid, signer: freshSigner };
+      });
+      if (!replacement) return { kept: null };
+      const replacementToken = await signFamily(replacement);
+      if (!replacementToken) throw new Error("Cloud session signer changed repeatedly during issuance");
+      return { kept: { token: replacementToken, expiresAt: replacement.expiresAt } };
+    } catch (error) {
+      log.warn("Could not keep browser signed in after ending other sign-ins", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { kept: null };
+    }
   }
 };
 
@@ -416,7 +590,11 @@ export const session = {
     const ttlSeconds = Math.floor(expiryHours * 60 * 60);
     const cookie = readBrowserCookie(c) ?? newBrowserCookie();
     const { browser, os, country, city } = describeRequest(c);
-    const { token: clientToken, notice } = await issueJwtSession(c, userId, {
+    const {
+      token: clientToken,
+      expiresAt,
+      notice,
+    } = await issueJwtSession(c, userId, {
       ttlSeconds,
       authEpoch: signIn.authEpoch,
       appDeviceId: signIn.appDeviceId,
@@ -435,16 +613,24 @@ export const session = {
     // Handoff precedes the response so the person signing in cannot turn the notice off first.
     if (signIn.notify !== null && notice) await announceNewBrowser(signIn.notify, notice);
 
-    setCookie(c, "session_token", clientToken, {
-      httpOnly: true,
-      secure: !env.IS_DEVELOPMENT,
-      sameSite: "Lax",
-      maxAge: ttlSeconds,
-      path: "/",
-    });
+    session.setWebCookie(c, clientToken, expiresAt);
     setBrowserCookie(c, cookie);
     return clientToken;
   },
+
+  /** Sets the `session_token` cookie the way `create` does. Use it for the token that `endOtherSignIns` keeps:
+   * the max age runs to `expiresAt`, so that browser keeps its original expiry. */
+  setWebCookie: (c: Context, token: string, expiresAt: Date): void => {
+    setCookie(c, "session_token", token, {
+      httpOnly: true,
+      secure: !env.IS_DEVELOPMENT,
+      sameSite: "Lax",
+      maxAge: Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1_000)),
+      path: "/",
+    });
+  },
+
+  endOtherSignIns,
 
   revoke: revokeToken,
 
@@ -457,25 +643,12 @@ export const session = {
 
   issueInTransaction,
 
-  /** Signs the account out everywhere: every session, every paired sign-in device and every paired phone, audited per device. */
-  revokeAllForUser: async (userId: string): Promise<void> => {
-    await sql.begin(async (tx) => {
-      await endSessions(tx, userId);
-      // The epoch change already ends the phones; revoking them keeps lists and the audit log truthful.
-      const phones = await tx<Array<{ id: string }>>`
-        UPDATE auth.pwa_devices SET revoked_at = now(), revocation_reason = 'sign_out_everywhere'
-        WHERE user_id = ${userId}::uuid AND revoked_at IS NULL RETURNING id
-      `;
-      for (const phone of phones)
-        await audit.record(
-          {
-            action: "auth.pwa.device.revoke",
-            outcome: "allowed",
-            target: { type: "pwa_device", id: phone.id },
-            metadata: { targetUserId: userId, provenance: "system", reason: "sign_out_everywhere" },
-          },
-          tx,
-        );
+  /** Signs the account out everywhere: every session, every paired sign-in device and every paired phone, audited per device.
+   * Returns the new authentication epoch so a following sign-in can stay bound to this sign-out. */
+  revokeAllForUser: async (userId: string): Promise<number> => {
+    return sql.begin(async (tx) => {
+      const authEpoch = await endSessions(tx, userId);
+      await revokePhones(tx, userId, "sign_out_everywhere");
       // A paired device approves new sign-ins on its own, so a lost one would outlive the epoch change.
       const devices = await tx<Array<{ id: string }>>`
         UPDATE auth.app_devices SET revoked_at = now() WHERE user_id = ${userId}::uuid AND revoked_at IS NULL RETURNING id
@@ -490,6 +663,7 @@ export const session = {
           },
           tx,
         );
+      return authEpoch;
     });
   },
 

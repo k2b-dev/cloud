@@ -2,7 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { pdfFonts, pdfLigatures, pdfText } from "../../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import type { GotenbergConfig } from "./gotenberg";
-import { renderMarkdownToPdfWithConfig } from "./markdown";
+import { MARKDOWN_PDF_TEMPLATE_IDS, renderMarkdownToPdfWithConfig } from "./markdown";
 
 suiteFor("gotenberg")("Markdown PDF presets in Gotenberg", () => {
   let config: GotenbergConfig;
@@ -10,6 +10,74 @@ suiteFor("gotenberg")("Markdown PDF presets in Gotenberg", () => {
   beforeAll(() => {
     config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
   });
+
+  for (const templateId of MARKDOWN_PDF_TEMPLATE_IDS) {
+    test(`${templateId} keeps short table values whole and long runs within the page`, async () => {
+      const urlPrefix = "https://example.test/";
+      const url = urlPrefix + "a".repeat(120 - urlPrefix.length);
+      // GFM does not autolink this token: plain text needs the same protection.
+      const tokenPrefix = "example.org/";
+      const token = tokenPrefix + "b".repeat(120 - tokenPrefix.length);
+      const description =
+        "Fictional order for a wooden storage cabinet. The panels are carefully packed for delivery. Assembly instructions and spare fittings are included in the shipment.";
+      const markdown = [
+        "| Nr. | Beschreibung | Menge | Preis |",
+        "| --- | --- | --- | --- |",
+        `| 100 | ${description} | 1 | 19.50 |`,
+        `| 110 | ${description} | 2 | 29.50 |`,
+        `| 120 | ${description} ${url} | 3 | 39.50 |`,
+        `| \`limit\` | ${token} | 4 | 49.50 |`,
+      ].join("\n");
+      const { pdf } = await renderMarkdownToPdfWithConfig({ markdown, templateId }, config);
+      const text = await pdfText(pdf, { layout: true });
+
+      for (const value of ["Nr\\.", "100", "110", "120", "limit"]) {
+        expect(text).toMatch(new RegExp(`^\\s*${value}\\s{2,}`, "mu"));
+      }
+      expect(text).not.toMatch(/^\s*(?:10|11|12|0|N|r\.|lim|it)\s{2,}/mu);
+      // A break-word-only fix clips these columns when the plain token widens the table.
+      for (const value of ["Menge", "Preis", "19.50", "29.50", "39.50", "49.50"]) {
+        expect(text).toContain(value);
+      }
+      // Remove the other cells from layout output, then rejoin wrapped text.
+      // This checks every URL/token character, including across line breaks.
+      const descriptionText = text
+        .replace(/^\s*(?:100|110|120|limit)\s{2,}/gmu, "")
+        .replace(/\s{2,}[1-4]\s+\d{2}\.50\s*$/gmu, "")
+        .replace(/[\s↗]/gu, "");
+      expect(descriptionText).toContain(url);
+      expect(descriptionText).toContain(token);
+    }, 60_000);
+  }
+
+  test("document keeps the last of six long code and URL columns on the page", async () => {
+    const code = Array.from({ length: 6 }, (_, index) => `codevalue${index}`.repeat(12));
+    const urls = Array.from({ length: 6 }, (_, index) => `https://example.test/${index}/`.padEnd(120, String(index)));
+    const markdown = [
+      "| First | Second | Third | Fourth | Fifth | Final |",
+      "| --- | --- | --- | --- | --- | --- |",
+      `| ${code.map((value) => `\`${value}\``).join(" | ")} |`,
+      `| ${urls.join(" | ")} |`,
+    ].join("\n");
+    const { pdf } = await renderMarkdownToPdfWithConfig({ markdown, templateId: "document" }, config);
+    const text = await pdfText(pdf, { layout: true });
+
+    expect(text).toContain("Final");
+    // Layout keeps columns apart with spaces; rejoin the last column's wraps.
+    const lastColumn = text
+      .split("\n")
+      .map(
+        (line) =>
+          line
+            .trim()
+            .split(/\s{2,}/u)
+            .at(-1) ?? "",
+      )
+      .join("")
+      .replace(/[\s↗]/gu, "");
+    expect(lastColumn).toContain(code[5]!);
+    expect(lastColumn).toContain(urls[5]!);
+  }, 60_000);
 
   test("the report body forms f-ligatures that copy as plain letters", async () => {
     // The heading has no f-ligature words, so every ligature comes from the serif body.

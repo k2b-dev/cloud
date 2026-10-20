@@ -120,8 +120,24 @@ export const buildNotePdfHtml = (
   const css = html.includes("notebook-book-math") ? `${NOTE_PRINT_CSS}\n${KATEX_PRINT_CSS}` : NOTE_PRINT_CSS;
   const imageCss = `.notebook-book-image { max-width: 100%; height: auto; max-height: ${NOTE_PDF_PAGE_BOX_MM[preset].height}mm; object-fit: contain; }
 .notebook-book-image-missing { display: inline-block; box-sizing: border-box; max-width: 100%; padding: .5em .75em; border: 1px dashed #94a3b8; border-radius: 4px; color: #475569; font-style: italic; font-size: .9em; line-height: 1.4; vertical-align: middle; }`;
+  // Table wrapping inserts <wbr> into long runs in cells. Each image slot is
+  // isolated first, so neither the slot nor the text beside it counts as one
+  // run, and rejoined afterwards, so preparation finds every token intact.
+  const prefix = images[0]?.token.replace(/\d+END$/, "");
+  const isolated = prefix ? html.replace(new RegExp(`${prefix}\\d+END`, "g"), "<wbr>$&<wbr>") : html;
+  let document = buildPresetPdfHtml({
+    html: isolated,
+    templateId: input.templateId,
+    customCss: input.customCss,
+    css: `${css}\n${imageCss}`,
+  });
+  if (prefix) {
+    const loose = Array.from(prefix, (character) => character.replace(/\W/gu, "\\$&")).join("(?:<wbr>)?");
+    const slots = new RegExp(`<wbr>${loose}(?:(?:<wbr>)?\\d)+(?:<wbr>)?E(?:<wbr>)?N(?:<wbr>)?D<wbr>`, "g");
+    document = document.replace(slots, (slot) => slot.replaceAll("<wbr>", ""));
+  }
   return {
-    html: buildPresetPdfHtml({ html, templateId: input.templateId, customCss: input.customCss, css: `${css}\n${imageCss}` }),
+    html: document,
     omissions,
     images,
     preset,
