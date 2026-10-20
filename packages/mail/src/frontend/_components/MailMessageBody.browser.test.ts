@@ -132,6 +132,7 @@ type OpenMessageOptions = {
   colorScheme?: BrowserContextOptions["colorScheme"];
   reducedMotion?: BrowserContextOptions["reducedMotion"];
   hostMotion?: "reduced";
+  viewport?: BrowserContextOptions["viewport"];
 };
 
 const withOpenedMessage = async (
@@ -141,7 +142,11 @@ const withOpenedMessage = async (
 ): Promise<void> => {
   const browser = await launchBrowser();
   try {
-    const page = await browser.newPage({ colorScheme: options.colorScheme, reducedMotion: options.reducedMotion });
+    const page = await browser.newPage({
+      colorScheme: options.colorScheme,
+      reducedMotion: options.reducedMotion,
+      viewport: options.viewport,
+    });
     const errors: string[] = [];
     page.on("console", (message) => {
       if (message.type() === "error" && !message.text().includes("502")) errors.push(message.text());
@@ -865,4 +870,63 @@ describe("HTML mail from Cloud's Markdown composer", () => {
       { html: received, attachments: [] },
     );
   }, 30_000);
+});
+
+describe("HTML mail with Markdown dividers", () => {
+  for (const [label, viewport] of [
+    ["desktop", { width: 1440, height: 1000 }],
+    ["phone", { width: 375, height: 812 }],
+  ] as const) {
+    test(`keeps two full-width 1px dividers with paragraph spacing on ${label}`, async () => {
+      const rendered = renderComposeContent({
+        body: "Hello Grace,\n\nthe garden plan is ready.\n\n---\n\nWe meet on Friday.\nSee you soon\n---\nAda",
+        format: "markdown",
+        customCss: "",
+        renderLiquid: false,
+        context: {
+          actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+          mailbox: { name: "Example Team", description: "" },
+          sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+          message: { subject: "Garden", to: ["grace@example.test"], cc: [] },
+        },
+      });
+      if (!rendered.ok || !rendered.data.html) throw new Error("The divider message did not render");
+      const received = sanitizeIncomingMailHtml(rendered.data.html);
+      await withOpenedMessage(
+        false,
+        async ({ frame, errors }) => {
+          await frame.getByText("Ada", { exact: true }).waitFor();
+          const dividers = await frame.locator("hr").evaluateAll((elements) =>
+            elements.map((element) => {
+              const rect = element.getBoundingClientRect();
+              const before = element.previousElementSibling;
+              const after = element.nextElementSibling;
+              if (before?.tagName !== "P" || after?.tagName !== "P") throw new Error("Divider needs neighboring paragraphs");
+              const previous = before.getBoundingClientRect();
+              const next = after.getBoundingClientRect();
+              return {
+                height: rect.height,
+                width: rect.width,
+                paragraphWidth: previous.width,
+                nextWidth: next.width,
+                above: rect.top - previous.bottom,
+                below: next.top - rect.bottom,
+              };
+            }),
+          );
+          expect(dividers).toHaveLength(2);
+          for (const divider of dividers) {
+            expect(divider.height).toBeGreaterThanOrEqual(0.5);
+            expect(divider.height).toBeLessThanOrEqual(1.5);
+            expect(Math.abs(divider.width - divider.paragraphWidth)).toBeLessThanOrEqual(1);
+            expect(Math.abs(divider.width - divider.nextWidth)).toBeLessThanOrEqual(1);
+            expect(divider.above).toBeGreaterThanOrEqual(8);
+            expect(divider.below).toBeGreaterThanOrEqual(8);
+          }
+          expect(errors).toEqual([]);
+        },
+        { html: received, attachments: [], viewport },
+      );
+    }, 30_000);
+  }
 });

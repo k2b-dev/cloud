@@ -828,6 +828,28 @@ suite("mail compose templates", () => {
     expect(sent.data.logoUsed).toBe(false);
   });
 
+  test("preview and send preserve the same Markdown dividers and dash underlines", async () => {
+    const draft: DraftEditableContentInput = {
+      senderIdentityId,
+      to: [{ name: null, address: "reader@example.test" }],
+      cc: [],
+      bcc: [],
+      subject: "Dividers",
+      body: "Hello\n\n---\n\nWorld\n\na\n---\nb",
+      format: "markdown",
+      signatureTemplateId: null,
+    };
+    const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft, conversationId: null } });
+    if (!preview.ok) throw new Error(preview.error.message);
+    const sent = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid: true, logoSource: "cid" });
+    if (!sent.ok) throw new Error(sent.error.message);
+    expect(sent.data.html).toBe(preview.data.html);
+    expect(sent.data.text).toBe(preview.data.text);
+    expect(sent.data.html?.match(/<hr\b/g)).toHaveLength(2);
+    expect(sent.data.html).not.toContain("<h2");
+    expect(sent.data.text).toBe(`Hello\n\n${"-".repeat(40)}\n\nWorld\n\na\n\n${"-".repeat(40)}\n\nb`);
+  });
+
   test("keeps rendering stored designs safe and available while saving stays strict", async () => {
     const customCss = String.raw`.mail-content { color: #123456; font-family: "\5FAE\8F6F\96C5\9ED1", sans-serif; }
 h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`;

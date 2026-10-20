@@ -424,3 +424,66 @@ describe("Mail composer preview with extra blank lines", () => {
     }, 30_000);
   }
 });
+
+describe("Mail composer preview with Markdown dividers", () => {
+  const previewWithDividers = () => {
+    const rendered = renderComposeContent({
+      body: "Hello Grace,\n\nthe garden plan is ready.\n\n---\n\nWe meet on Friday.\nSee you soon\n---\nAda",
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Garden", to: ["grace@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The divider message did not render");
+    return rendered.data.html;
+  };
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`shows two full-width 1px dividers with paragraph spacing on ${label}`, async () => {
+      const page = await load({ context, theme: "light", locale: "en" });
+      try {
+        await page.waitForSelector('iframe[sandbox=""]');
+        await page.evaluate((html) => window.setPreviewHtml(html), previewWithDividers());
+        const frame = page.frameLocator('iframe[sandbox=""]');
+        await frame.getByText("Ada", { exact: true }).waitFor();
+        const dividers = await frame.locator("hr").evaluateAll((elements) =>
+          elements.map((element) => {
+            const rect = element.getBoundingClientRect();
+            const before = element.previousElementSibling;
+            const after = element.nextElementSibling;
+            if (before?.tagName !== "P" || after?.tagName !== "P") throw new Error("Divider needs neighboring paragraphs");
+            const previous = before.getBoundingClientRect();
+            const next = after.getBoundingClientRect();
+            return {
+              height: rect.height,
+              width: rect.width,
+              paragraphWidth: previous.width,
+              nextWidth: next.width,
+              above: rect.top - previous.bottom,
+              below: next.top - rect.bottom,
+            };
+          }),
+        );
+        expect(dividers).toHaveLength(2);
+        for (const divider of dividers) {
+          expect(divider.height).toBeGreaterThanOrEqual(0.5);
+          expect(divider.height).toBeLessThanOrEqual(1.5);
+          expect(Math.abs(divider.width - divider.paragraphWidth)).toBeLessThanOrEqual(1);
+          expect(Math.abs(divider.width - divider.nextWidth)).toBeLessThanOrEqual(1);
+          expect(divider.above).toBeGreaterThanOrEqual(8);
+          expect(divider.below).toBeGreaterThanOrEqual(8);
+        }
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+});
