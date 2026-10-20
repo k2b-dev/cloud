@@ -80,7 +80,7 @@ export default function SqlConsoleView(props: {
           <h1 class="truncate text-lg font-semibold text-primary">{title()}</h1>
         </div>
         <Button variant="secondary" disabled={c.assistantState() === "launching"} onClick={() => void c.launchAssistant()}>
-          <i class="ti ti-sparkles" />
+          <i class="ti ti-sparkles" aria-hidden="true" />
           {t().sqlAskAssistant}
         </Button>
       </header>
@@ -146,7 +146,7 @@ export default function SqlConsoleView(props: {
             disabled={c.state().kind !== "running" && !c.canRun()}
             onClick={() => void (c.state().kind === "running" ? c.cancel() : c.run())}
           >
-            <i class={c.state().kind === "running" ? "ti ti-player-stop" : "ti ti-player-play"} />
+            <i class={c.state().kind === "running" ? "ti ti-player-stop" : "ti ti-player-play"} aria-hidden="true" />
             {c.state().kind === "running" ? t().sqlCancel : t().sqlRun}
           </Button>
           <span class="text-xs text-dimmed">⌘ / Ctrl ↵</span>
