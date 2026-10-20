@@ -2,13 +2,15 @@ import { createHash } from "node:crypto";
 import type { ServiceAccount } from "@k2b/cloud/contracts";
 import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { sql, type TransactionSQL } from "bun";
+import { sql } from "bun";
 import type { PulseEvent, PulseIngestBatch, PulseMetric, PulseState } from "../contracts";
 import {
   PULSE_INGEST_IDEMPOTENCY_KEY_MAX_LENGTH,
   PULSE_INGEST_IDEMPOTENCY_TTL_HOURS,
   PULSE_INTERNAL_INGEST_BATCH_LIMIT,
 } from "../ingest-limits";
+import { BaseStoreError, baseStore } from "../store/base-store";
+import { StoreQueryError } from "../store/client";
 import {
   validateDimensions,
   validateEventAttributes,
@@ -17,31 +19,34 @@ import {
   validateResourceIdentity,
 } from "../telemetry-contract";
 import { requireBaseWritable } from "./access-control";
-import { type PulseSqlClient, prepareIngestBatch, writePreparedIngestBatchInTransaction } from "./ingest-bulk";
+import {
+  type IngestStore,
+  type PlannedStates,
+  type PulseSqlClient,
+  planIngestStates,
+  prepareIngestBatch,
+  registerIngestBatch,
+  writePreparedIngestBatchInTransaction,
+} from "./ingest-bulk";
+import { type IngestQuota, ingestQuota, type QuotaError } from "./ingest-quota";
 import { MetricSeriesLimitError } from "./metric-cardinality";
 import { PULSE_INGEST_SCOPE, resolveIngestSourceForServiceAccount } from "./source-management";
+import { recordStoreOutage } from "./store-health";
 
-type SqlClient = typeof sql;
 const log = logger("pulse:ingest");
-
 class IngestTransactionFailure extends Error {
   constructor(readonly serviceError: ServiceError) {
     super(serviceError.message);
   }
 }
-
 const parseTime = (value: string | undefined): Result<Date> => {
-  if (!value) return ok(new Date());
+  if (!value) return ok(new Date(0));
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? fail(err.badInput("Invalid timestamp")) : ok(date);
 };
 
 const countBatchItems = (batch: PulseIngestBatch): number =>
   (batch.metrics?.length ?? 0) + (batch.events?.length ?? 0) + (batch.states?.length ?? 0);
-
-const touchSourceLastSeen = async (sourceId: string, db: SqlClient = sql): Promise<void> => {
-  await db`UPDATE pulse.sources SET last_seen_at = now(), updated_at = now() WHERE id = ${sourceId}::uuid`;
-};
 
 const validateMetric = (metric: PulseMetric): Result<void> => {
   if (metric.resource) {
@@ -118,155 +123,272 @@ const validateBatch = (batch: PulseIngestBatch): Result<void> => {
   return ok();
 };
 
-type IngestCounts = { metrics: number; events: number; states: number };
+export type IngestCounts = { metrics: number; events: number; states: number };
+export type IngestFailure =
+  | ServiceError
+  | QuotaError
+  | { code: "PULSE_STORE_UNAVAILABLE" | "PULSE_STORE_DISK_LOW"; status: 503; message: string; retryAfter: number };
+export type IngestResult = { ok: true; data: IngestCounts } | { ok: false; error: IngestFailure };
+class IngestRefusal extends Error {
+  constructor(readonly failure: IngestFailure) {
+    super(failure.message);
+  }
+}
 
-const lockIngestScope = async (params: { baseId: string; sourceId: string; db: PulseSqlClient }): Promise<void> => {
-  const active = await requireBaseWritable(params.baseId, params.db);
-  if (!active.ok) throw new IngestTransactionFailure(active.error);
-  if (!params.sourceId) throw new IngestTransactionFailure(err.badInput("An ingest source is required"));
-  const [source] = await params.db`
-    SELECT enabled FROM pulse.sources
-    WHERE id = ${params.sourceId}::uuid AND base_id = ${params.baseId}::uuid
-    FOR NO KEY UPDATE
-  `;
+export const validateIngestTimestamps = (batch: PulseIngestBatch, now: Date): Result<void> => {
+  for (const collection of ["metrics", "events", "states"] as const) {
+    for (const [index, item] of (batch[collection] ?? []).entries()) {
+      if (item.ts && Date.parse(item.ts) > now.getTime() + 5 * 60_000) {
+        const identity = "name" in item ? `name "${item.name}"` : "kind" in item ? `kind "${item.kind}"` : `key "${item.key}"`;
+        return fail(
+          err.badInput(
+            `${collection}[${index}] (${identity}) has timestamp ${new Date(item.ts).toISOString()}, more than 5 minutes in the future`,
+          ),
+        );
+      }
+    }
+  }
+  return ok();
+};
+const lockIngestScope = async (baseId: string, sourceId: string, db: PulseSqlClient) => {
+  const writable = await requireBaseWritable(baseId, db);
+  if (!writable.ok) throw new IngestTransactionFailure(writable.error);
+  const [source] = await db<
+    { enabled: boolean; last_accepted_at: Date | null }[]
+  >`SELECT enabled,last_accepted_at FROM pulse.sources WHERE id=${sourceId}::uuid AND base_id=${baseId}::uuid AND NOT deleted FOR NO KEY UPDATE`;
   if (!source) throw new IngestTransactionFailure(err.notFound("Pulse source"));
   if (!source.enabled) throw new IngestTransactionFailure(err.conflict("Pulse source is disabled"));
+  const [base] = await db<{ database_name: string; retention_days: number; reset_generation: string }[]>`
+    SELECT s.database_name,b.retention_days,s.reset_generation::text AS reset_generation
+    FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.id=${baseId}::uuid`;
+  if (!base) throw new IngestTransactionFailure(err.notFound("Pulse base"));
+  return { ...base, lastAcceptedAt: source.last_accepted_at };
 };
-
-const ingestBatchInClient = async (params: {
+type KeyRow = {
+  request_hash: string;
+  state: "pending" | "done";
+  accepted_at: Date;
+  response: IngestCounts | null;
+  planned_states: PlannedStates | null;
+};
+export type IngestParams = {
   baseId: string;
   sourceId: string;
   batch: PulseIngestBatch;
-  db: PulseSqlClient;
-}): Promise<IngestCounts> => {
-  const prepared = prepareIngestBatch(params.batch, params.sourceId);
-  await writePreparedIngestBatchInTransaction({ baseId: params.baseId, sourceId: params.sourceId, batch: prepared, db: params.db });
-  await touchSourceLastSeen(params.sourceId, params.db);
-  return {
-    metrics: prepared.metrics.length,
-    events: prepared.events.length,
-    states: prepared.states.length,
+  idempotencyKey?: string | null;
+  requestBytes?: number;
+  locale?: string;
+};
+export const createIngestWriter = ({
+  store = baseStore,
+  database = sql,
+  clock = store.clock,
+  quota = ingestQuota,
+}: {
+  store?: IngestStore;
+  database?: typeof sql;
+  clock?: () => Date;
+  quota?: IngestQuota;
+} = {}) => {
+  const ingest = async (params: IngestParams): Promise<IngestResult> => {
+    const count = countBatchItems(params.batch),
+      now = clock(),
+      key = params.idempotencyKey?.trim() || null;
+    if (!count) return fail(err.badInput("Ingest batch is empty"));
+    if (count > PULSE_INTERNAL_INGEST_BATCH_LIMIT)
+      return fail(err.badInput(`Ingest batch exceeds the internal limit of ${PULSE_INTERNAL_INGEST_BATCH_LIMIT} items`));
+    if (key && key.length > PULSE_INGEST_IDEMPOTENCY_KEY_MAX_LENGTH)
+      return fail(err.badInput(`Idempotency key exceeds ${PULSE_INGEST_IDEMPOTENCY_KEY_MAX_LENGTH} characters`));
+    const valid = validateBatch(params.batch);
+    if (!valid.ok) return valid;
+    const times = validateIngestTimestamps(params.batch, now);
+    if (!times.ok) return times;
+    const hash = createHash("sha256").update(JSON.stringify(params.batch)).digest("hex");
+    let reserved = false,
+      writing = false;
+    try {
+      const connectedStore = { ...store, query: await store.prepare() };
+      // T1 is deliberately a separate, committed transaction.
+      const preflight = await database.begin(async (tx) => {
+        await tx`SET LOCAL statement_timeout='30s'`.simple();
+        await tx`SET LOCAL lock_timeout='30s'`.simple();
+        const base = await lockIngestScope(params.baseId, params.sourceId, tx);
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`pulse.ingest:${params.baseId}`},0))`;
+        let acceptedAt = new Date(Math.max(now.getTime(), base.lastAcceptedAt ? base.lastAcceptedAt.getTime() + 1 : now.getTime()));
+        let plannedStates: PlannedStates | null = null;
+        if (key) {
+          await tx`DELETE FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} AND expires_at<=${now}`;
+          await tx`INSERT INTO pulse.ingest_idempotency(source_id,idempotency_key,request_hash,state,accepted_at,created_at,expires_at)
+            VALUES(${params.sourceId}::uuid,${key},${hash},'pending',${acceptedAt},${now},${new Date(now.getTime() + PULSE_INGEST_IDEMPOTENCY_TTL_HOURS * 3_600_000)}) ON CONFLICT(source_id,idempotency_key) DO NOTHING`;
+          const [existing] = await tx<
+            KeyRow[]
+          >`SELECT * FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
+          if (!existing) throw new Error("Missing idempotency reservation");
+          if (existing.request_hash !== hash)
+            throw new IngestTransactionFailure(err.conflict("Idempotency key was already used for a different ingest batch"));
+          if (existing.state === "done" && existing.response)
+            return { response: existing.response, acceptedAt: existing.accepted_at, base };
+          acceptedAt = existing.accepted_at;
+          plannedStates = existing.planned_states;
+        }
+        const [limits] =
+          await tx`SELECT values_per_minute,bytes_per_minute,storage_bytes,usage_bytes FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
+        if (!limits) throw new IngestTransactionFailure(err.notFound("Pulse base store"));
+        if (limits.usage_bytes !== null && Number(limits.usage_bytes) >= Number(limits.storage_bytes))
+          throw new IngestTransactionFailure({
+            code: "PULSE_BASE_STORAGE_FULL",
+            status: 409,
+            message: "Pulse base storage threshold reached. A base admin can shorten retention or a Cloud admin can raise the threshold.",
+          });
+        const [disk] = await tx`SELECT free_bytes,total_bytes FROM pulse.store_instance WHERE singleton`;
+        if (disk?.total_bytes && Number(disk.total_bytes) > 0 && Number(disk.free_bytes) / Number(disk.total_bytes) < 0.1)
+          throw new IngestRefusal({
+            code: "PULSE_STORE_DISK_LOW",
+            status: 503,
+            message: "Pulse data store disk space is low. Retry later.",
+            retryAfter: 300,
+          });
+        const prepared = prepareIngestBatch(params.batch, params.sourceId, acceptedAt, key);
+        if (prepared.metrics.some((m) => Date.parse(m.ts) < acceptedAt.getTime() - base.retention_days * 86_400_000))
+          throw err.badInput("Metric timestamps must be within the raw retention window");
+        const quotaError = await quota.consume({
+          baseId: params.baseId,
+          values: count,
+          bytes: params.requestBytes ?? new TextEncoder().encode(JSON.stringify(params.batch)).byteLength,
+          valuesPerMinute: Number(limits.values_per_minute),
+          bytesPerMinute: Number(limits.bytes_per_minute),
+        });
+        if (quotaError) throw new IngestRefusal(quotaError);
+        await registerIngestBatch({
+          baseId: params.baseId,
+          sourceId: params.sourceId,
+          database: base.database_name,
+          batch: prepared,
+          db: tx,
+          store: connectedStore,
+          now,
+          acceptedAt,
+        });
+        if (plannedStates === null) {
+          plannedStates = await planIngestStates(params.baseId, params.sourceId, prepared, tx);
+          if (key)
+            await tx`UPDATE pulse.ingest_idempotency SET planned_states=(${JSON.stringify(plannedStates)}::jsonb #>> '{}')::jsonb
+              WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key}`;
+        }
+        await tx`UPDATE pulse.sources SET last_accepted_at=greatest(last_accepted_at,${acceptedAt}) WHERE id=${params.sourceId}::uuid`;
+        return { response: null, acceptedAt, base, prepared, plannedStates };
+      });
+      if (preflight.response) return ok(preflight.response);
+      reserved = Boolean(key);
+      const { prepared, plannedStates } = preflight;
+      const counts = { metrics: prepared.metrics.length, events: prepared.events.length, states: prepared.states.length };
+      return await database.begin(async (tx) => {
+        await tx`SET LOCAL statement_timeout='30s'`.simple();
+        await tx`SET LOCAL lock_timeout='30s'`.simple();
+        const base = await lockIngestScope(params.baseId, params.sourceId, tx);
+        // Source locks serialize this source; lifecycle SHARE locks protect all inserts.
+        if (base.reset_generation !== preflight.base.reset_generation)
+          throw new IngestTransactionFailure({ code: "CONFLICT", status: 409, message: "Base data was reset during ingest" });
+        if (key) {
+          const [existing] = await tx<
+            KeyRow[]
+          >`SELECT * FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
+          if (!existing || existing.request_hash !== hash || existing.accepted_at.getTime() !== preflight.acceptedAt.getTime())
+            throw new Error("Idempotency reservation changed during ingest");
+          if (existing.state === "done" && existing.response) return ok(existing.response);
+        }
+        // Every HTTP insert has a 30-second timeout; five collections fit comfortably inside the durable 10-minute lease.
+        if (clock().getTime() - now.getTime() > 5 * 60_000) throw new Error("Ingest preflight lease expired; retry");
+        writing = true;
+        await writePreparedIngestBatchInTransaction({
+          baseId: params.baseId,
+          sourceId: params.sourceId,
+          database: base.database_name,
+          batch: prepared,
+          plannedStates,
+          db: tx,
+          // Leave the full request timeout before T1's lease expires, even if SQL locks delayed T2.
+          store: {
+            ...connectedStore,
+            query: async (statement, params) => {
+              if (clock().getTime() + 30_000 >= now.getTime() + 10 * 60_000) throw new Error("Ingest write lease expired; retry");
+              return connectedStore.query(statement, params);
+            },
+          },
+          now: clock(),
+        });
+        const changeIds = plannedStates.flatMap((s) => (s.change_id ? [s.change_id] : []));
+        if (changeIds.length)
+          await tx`UPDATE pulse.state_variants SET pending_change_id=NULL,pending_change_at=NULL
+            WHERE base_id=${params.baseId}::uuid AND pending_change_id=ANY(${sql.array(changeIds, "UUID")})`;
+        if (key)
+          await tx`UPDATE pulse.ingest_idempotency SET state='done',response=(${JSON.stringify(counts)}::jsonb #>> '{}')::jsonb WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key}`;
+        return ok(counts);
+      });
+    } catch (error) {
+      if (error instanceof IngestRefusal) {
+        if (error.failure.code === "PULSE_BASE_THROTTLED")
+          await database`UPDATE pulse.sources SET throttled_at=${now} WHERE id=${params.sourceId}::uuid`;
+        return { ok: false, error: error.failure };
+      }
+      if (error instanceof IngestTransactionFailure) return fail(error.serviceError);
+      if (isServiceError(error)) return fail(error);
+      if (!reserved && !writing && error instanceof MetricSeriesLimitError) return fail(err.badInput(error.message));
+      if (error instanceof StoreQueryError && error.kind === "unreachable") {
+        try {
+          await recordStoreOutage(clock(), database, params.locale);
+        } catch (outageError) {
+          log.error("Pulse outage could not be recorded", {
+            errorClass: outageError instanceof Error ? outageError.constructor.name : typeof outageError,
+          });
+        }
+      }
+      // Do not log queries, endpoints, credentials or remote bodies.
+      log.error("Pulse ingest unavailable", {
+        baseId: params.baseId,
+        sourceId: params.sourceId,
+        idempotent: Boolean(key),
+        errorClass: error instanceof Error ? error.constructor.name : typeof error,
+        storeError: error instanceof StoreQueryError || error instanceof BaseStoreError,
+        ...(error instanceof StoreQueryError ? { storeKind: error.kind, storeCode: error.code } : {}),
+      });
+      return {
+        ok: false,
+        error: {
+          code: "PULSE_STORE_UNAVAILABLE",
+          status: 503,
+          message:
+            !key && writing
+              ? "Pulse data store is unavailable. The batch may be partly stored, and sending it again can store those parts twice. Send every batch with an Idempotency-Key from the first attempt to retry safely."
+              : key
+                ? "Pulse data store is unavailable. Retry this batch with the same Idempotency-Key."
+                : "Pulse data store is unavailable. Retry this batch with an Idempotency-Key.",
+          retryAfter: 30,
+        },
+      };
+    }
   };
+  return ingest;
 };
-
-export const ingestBatch = async (params: {
-  baseId: string;
-  sourceId: string;
-  batch: PulseIngestBatch;
-  transaction?: TransactionSQL;
-}): Promise<Result<{ metrics: number; events: number; states: number }>> => {
-  const requestedCount = countBatchItems(params.batch);
-  if (requestedCount === 0) return fail(err.badInput("Ingest batch is empty"));
-  if (requestedCount > PULSE_INTERNAL_INGEST_BATCH_LIMIT) {
-    return fail(err.badInput(`Ingest batch exceeds the internal limit of ${PULSE_INTERNAL_INGEST_BATCH_LIMIT} items`));
-  }
-  const valid = validateBatch(params.batch);
-  if (!valid.ok) return fail(valid.error);
-
-  // Ingest batches are all-or-nothing: once preflight passes, every write participates in this transaction.
-  try {
-    const write = async (tx: SqlClient): Promise<Result<IngestCounts>> => {
-      await lockIngestScope({ baseId: params.baseId, sourceId: params.sourceId, db: tx });
-      return ok(await ingestBatchInClient({ baseId: params.baseId, sourceId: params.sourceId, batch: params.batch, db: tx }));
-    };
-    return await (params.transaction ? params.transaction.savepoint(write) : sql.begin(write));
-  } catch (error) {
-    if (error instanceof MetricSeriesLimitError) return fail(err.badInput(error.message));
-    if (error instanceof IngestTransactionFailure) return fail(error.serviceError);
-    if (isServiceError(error)) return fail(error);
-    log.error("Pulse batch ingest failed", {
-      baseId: params.baseId,
-      sourceId: params.sourceId ?? null,
-      items: requestedCount,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return fail(err.internal("Failed to ingest Pulse batch"));
-  }
-};
-
+export const ingestBatch = createIngestWriter();
 export const ingestByApiKey = async (params: {
   serviceAccount: ServiceAccount;
   scopes: string[];
   batch: PulseIngestBatch;
   idempotencyKey?: string | null;
-}): Promise<Result<IngestCounts>> => {
-  if (!params.scopes.includes(PULSE_INGEST_SCOPE) && !params.scopes.includes("write") && !params.scopes.includes("admin")) {
+  requestBytes?: number;
+  locale?: string;
+}): Promise<IngestResult> => {
+  if (!params.scopes.some((s) => [PULSE_INGEST_SCOPE, "write", "admin"].includes(s)))
     return fail(err.forbidden("API key cannot ingest Pulse data"));
-  }
   const source = await resolveIngestSourceForServiceAccount(params.serviceAccount);
-  if (!source.ok) return fail(source.error);
-  const idempotencyKey = params.idempotencyKey?.trim() || null;
-  if (!idempotencyKey) return ingestBatch({ baseId: source.data.baseId, sourceId: source.data.id, batch: params.batch });
-  if (idempotencyKey.length > PULSE_INGEST_IDEMPOTENCY_KEY_MAX_LENGTH) {
-    return fail(err.badInput(`Idempotency key exceeds ${PULSE_INGEST_IDEMPOTENCY_KEY_MAX_LENGTH} characters`));
-  }
-
-  const requestedCount = countBatchItems(params.batch);
-  if (requestedCount === 0) return fail(err.badInput("Ingest batch is empty"));
-  if (requestedCount > PULSE_INTERNAL_INGEST_BATCH_LIMIT) {
-    return fail(err.badInput(`Ingest batch exceeds the internal limit of ${PULSE_INTERNAL_INGEST_BATCH_LIMIT} items`));
-  }
-  const valid = validateBatch(params.batch);
-  if (!valid.ok) return fail(valid.error);
-
-  const requestHash = createHash("sha256").update(JSON.stringify(params.batch)).digest("hex");
-  try {
-    return await sql.begin(async (tx): Promise<Result<IngestCounts>> => {
-      await lockIngestScope({ baseId: source.data.baseId, sourceId: source.data.id, db: tx });
-      const inserted = await tx<{ request_hash: string }[]>`
-        INSERT INTO pulse.ingest_idempotency (source_id, idempotency_key, request_hash, expires_at)
-        VALUES (
-          ${source.data.id}::uuid,
-          ${idempotencyKey},
-          ${requestHash},
-          now() + (${PULSE_INGEST_IDEMPOTENCY_TTL_HOURS}::text || ' hours')::interval
-        )
-        ON CONFLICT (source_id, idempotency_key) DO NOTHING
-        RETURNING request_hash
-      `;
-      if (inserted.length === 0) {
-        const [existing] = await tx<{ request_hash: string; response: IngestCounts | null }[]>`
-          SELECT request_hash, response
-          FROM pulse.ingest_idempotency
-          WHERE source_id = ${source.data.id}::uuid AND idempotency_key = ${idempotencyKey}
-        `;
-        if (!existing) throw new Error("Failed to resolve ingest idempotency record");
-        if (existing.request_hash !== requestHash) {
-          throw new IngestTransactionFailure({
-            code: "CONFLICT",
-            message: "Idempotency key was already used for a different ingest batch",
-            status: 409,
-          });
-        }
-        const response = existing.response;
-        if (!response) throw new Error("Idempotent ingest response is unavailable");
-        return ok(response);
-      }
-
-      const counts = await ingestBatchInClient({
-        baseId: source.data.baseId,
-        sourceId: source.data.id,
-        batch: params.batch,
-        db: tx,
-      });
-      await tx`
-        UPDATE pulse.ingest_idempotency
-        SET response = (${JSON.stringify(counts)}::jsonb #>> '{}')::jsonb
-        WHERE source_id = ${source.data.id}::uuid AND idempotency_key = ${idempotencyKey}
-      `;
-      return ok(counts);
-    });
-  } catch (error) {
-    if (error instanceof MetricSeriesLimitError) return fail(err.badInput(error.message));
-    if (error instanceof IngestTransactionFailure) return fail(error.serviceError);
-    if (isServiceError(error)) return fail(error);
-    log.error("Pulse API-key ingest failed", {
-      baseId: source.data.baseId,
-      sourceId: source.data.id,
-      items: requestedCount,
-      idempotent: true,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return fail(err.internal("Failed to ingest Pulse batch"));
-  }
+  if (!source.ok) return source;
+  return ingestBatch({
+    baseId: source.data.baseId,
+    sourceId: source.data.id,
+    batch: params.batch,
+    idempotencyKey: params.idempotencyKey,
+    requestBytes: params.requestBytes,
+    locale: params.locale,
+  });
 };

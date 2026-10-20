@@ -1,8 +1,6 @@
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import type { PulseBase, PulseDashboard, PulseSavedQuery, PulseSource } from "../contracts";
+import type { PulseBase, PulseSource } from "../contracts";
 import { exactMatch, readApi } from "./shared";
-
-export type SourceFilterFlags = { source?: string; sourceId?: string };
 
 export const PULSE_BASE_DEFAULT_KEY = "pulse.base";
 
@@ -58,32 +56,3 @@ export const listSources = (ctx: CloudCliContext, baseId: string): Promise<Pulse
 
 export const resolveSource = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PulseSource> =>
   exactMatch(await listSources(ctx, baseId), ref, [(source) => source.id, (source) => source.name], "source");
-
-export const listDashboards = (ctx: CloudCliContext, baseId: string): Promise<PulseDashboard[]> =>
-  readApi<PulseDashboard[]>(ctx, `/bases/${encodeURIComponent(baseId)}/dashboards`);
-
-export const resolveDashboard = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PulseDashboard> =>
-  exactMatch(await listDashboards(ctx, baseId), ref, [(dashboard) => dashboard.id, (dashboard) => dashboard.name], "dashboard");
-
-export const listSavedQueries = (ctx: CloudCliContext, baseId: string): Promise<PulseSavedQuery[]> =>
-  readApi<PulseSavedQuery[]>(ctx, `/bases/${encodeURIComponent(baseId)}/saved-queries`);
-
-export const resolveSavedQuery = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PulseSavedQuery> =>
-  exactMatch(await listSavedQueries(ctx, baseId), ref, [(query) => query.id, (query) => query.name], "saved query");
-
-export const resolveSavedQueryId = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<string> =>
-  SHORT_ID_RE.test(ref) ? ref : (await resolveSavedQuery(ctx, baseId, ref)).id;
-
-export const resolveSourceFilter = async (
-  ctx: CloudCliContext,
-  baseId: string,
-  filters: SourceFilterFlags,
-): Promise<string | undefined> => {
-  if (filters.source && filters.sourceId) throw new Error("Pass either --source or --source-id, not both.");
-  if (filters.sourceId) {
-    if (!SHORT_ID_RE.test(filters.sourceId)) throw new Error("Source ID must be a 6-character short ID.");
-    return filters.sourceId;
-  }
-  if (!filters.source) return undefined;
-  return (await resolveSource(ctx, baseId, filters.source)).id;
-};

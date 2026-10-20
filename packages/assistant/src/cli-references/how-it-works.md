@@ -210,7 +210,7 @@ Common reference types:
 | Mailbox or mail conversation | `mail.mailbox`, `mail.conversation` |
 | File or folder | `filesv2.entry` |
 | Address book or contact | `contacts.book`, `contacts.contact` |
-| Pulse base or saved query | `pulse.base`, `pulse.saved_query` |
+| Pulse base or source | `pulse.base`, `pulse.source` |
 
 The live list is every `manifest.types` entry with a `reader` in
 `cld capabilities catalog --json`. Cloud rejects a type that does not exist or

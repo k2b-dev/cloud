@@ -6,6 +6,7 @@ import { BaseOperationSuperseded, baseStore, storeErrorCode } from "../store/bas
 import { measureBaseUsage, measureInstanceDisk, verifyBaseCheckpoint, writeBaseCheckpoint } from "../store/maintenance";
 import { pulseStoreConfigured } from "../store/service";
 import { resumePulseBaseJobs } from "./base-lifecycle";
+import { mirrorPendingSources } from "./source-mirror";
 
 const log = logger("pulse:base-maintenance");
 
@@ -40,6 +41,7 @@ export const runUsageScan = async (
   if (!base) return null;
   try {
     await measureBaseUsage(base.base_id, store);
+    await mirrorPendingSources(base.base_id, store);
   } catch (error) {
     if (!(error instanceof BaseOperationSuperseded))
       warn("Pulse base usage failed", { baseId: base.base_id, errorCode: storeErrorCode(error) });

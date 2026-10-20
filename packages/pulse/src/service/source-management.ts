@@ -4,8 +4,10 @@ import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/
 import { sql } from "bun";
 import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
+import { SourceConfigSchema } from "../metric-filters";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
 import { checkScrapeTarget } from "./scrape-target";
+import { tryMirrorSource } from "./source-mirror";
 import { iso, isoNullable } from "./telemetry-values";
 
 export const PULSE_APP_ID = "pulse";
@@ -22,6 +24,11 @@ type SourceRow = {
   endpoint_url: string | null;
   bearer_token_encrypted: string | null;
   scrape_interval_seconds: number | null;
+  config: { metricFilters?: string[] };
+  last_data_at: Date | string | null;
+  throttled_at: Date | string | null;
+  refused_histograms: PulseSource["status"]["refusedHistograms"];
+  skipped_summaries: number;
   last_seen_at: Date | string | null;
   last_error: string | null;
   last_error_at: Date | string | null;
@@ -53,6 +60,7 @@ type UpdateSourceParams = {
   endpointUrl?: string | null;
   bearerToken?: string | null;
   scrapeIntervalSeconds?: number | null;
+  metricFilters?: string[];
 };
 
 type SourceUpdateValues = {
@@ -61,9 +69,10 @@ type SourceUpdateValues = {
   endpointUrl: string | null;
   bearerTokenEncrypted: string | null;
   scrapeIntervalSeconds: number | null;
+  config: { metricFilters?: string[] };
 };
 
-const mapSource = (row: SourceRow): PulseSource => ({
+const mapSource = (row: SourceRow, now = new Date()): PulseSource => ({
   id: row.id,
   baseId: row.base_id,
   kind: row.kind,
@@ -72,6 +81,19 @@ const mapSource = (row: SourceRow): PulseSource => ({
   endpointUrl: row.endpoint_url,
   bearerTokenConfigured: Boolean(row.bearer_token_encrypted),
   scrapeIntervalSeconds: row.scrape_interval_seconds,
+  metricFilters: row.config.metricFilters ?? [],
+  status: {
+    newestDataAt: isoNullable(row.last_data_at),
+    throttled:
+      row.throttled_at !== null &&
+      new Date(row.throttled_at).getTime() > now.getTime() - 5 * 60_000 &&
+      new Date(row.throttled_at).getTime() <= now.getTime(),
+    throttledAt: isoNullable(row.throttled_at),
+    refusedHistograms: row.refused_histograms,
+    skippedSummaries: row.skipped_summaries,
+    lastError: row.last_error,
+    lastErrorAt: isoNullable(row.last_error_at),
+  },
   lastSeenAt: isoNullable(row.last_seen_at),
   lastError: row.last_error,
   lastErrorAt: isoNullable(row.last_error_at),
@@ -114,13 +136,17 @@ const sourceApiKeyPermission = (scopes: string[]): PermissionLevel => {
 
 type HttpIngestSource = { source: PulseSource; shortId: string };
 
-const ensureHttpIngestSource = async (params: { baseId: string; sourceId: string }): Promise<Result<HttpIngestSource>> => {
-  const [source] = await sql<SourceRow[]>`
+const ensureHttpIngestSource = async (
+  params: { baseId: string; sourceId: string },
+  db: typeof sql = sql,
+): Promise<Result<HttpIngestSource>> => {
+  const [source] = await db<SourceRow[]>`
     SELECT *
     FROM pulse.sources
-    WHERE id = ${params.sourceId}::uuid
+    WHERE NOT deleted AND id = ${params.sourceId}::uuid
       AND base_id = ${params.baseId}::uuid
       AND kind = 'http_ingest'::pulse.source_kind
+    FOR SHARE
   `;
   return source ? ok({ source: mapSource(source), shortId: source.short_id }) : fail(err.notFound("Ingest source"));
 };
@@ -128,7 +154,7 @@ const ensureHttpIngestSource = async (params: { baseId: string; sourceId: string
 export const listSources = async (
   baseId: string,
   user: AccessScope,
-  params: { query?: string | null; limit?: number; offset?: number } = {},
+  params: { query?: string | null; limit?: number; offset?: number; now?: Date } = {},
 ): Promise<Result<PulseSource[]>> => {
   const access = await requireBaseAccess(baseId, user, "read");
   if (!access.ok) return fail(access.error);
@@ -139,20 +165,21 @@ export const listSources = async (
   const rows = await sql<SourceRow[]>`
     SELECT *
     FROM pulse.sources
-    WHERE base_id = ${baseId}::uuid
+    WHERE NOT deleted AND base_id = ${baseId}::uuid
       AND (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\')
     ORDER BY created_at DESC, id ASC
     LIMIT ${limit}
     OFFSET ${offset}
   `;
-  return ok(rows.map(mapSource));
+  const now = params.now ?? new Date();
+  return ok(rows.map((row) => mapSource(row, now)));
 };
 
-export const getSource = async (sourceId: string, user: AccessScope): Promise<Result<PulseSource>> => {
-  const [row] = await sql<SourceRow[]>`SELECT * FROM pulse.sources WHERE id = ${sourceId}::uuid`;
+export const getSource = async (sourceId: string, user: AccessScope, now = new Date()): Promise<Result<PulseSource>> => {
+  const [row] = await sql<SourceRow[]>`SELECT * FROM pulse.sources WHERE NOT deleted AND id = ${sourceId}::uuid`;
   if (!row) return fail(err.notFound("Source"));
   const access = await requireBaseAccess(row.base_id, user, "read");
-  return access.ok ? ok(mapSource(row)) : fail(access.error);
+  return access.ok ? ok(mapSource(row, now)) : fail(access.error);
 };
 
 export const listSourceScrapes = async (params: {
@@ -181,6 +208,7 @@ export const createSource = async (params: {
   endpointUrl?: string | null;
   bearerToken?: string | null;
   scrapeIntervalSeconds?: number | null;
+  metricFilters?: string[];
 }): Promise<Result<PulseSource>> => {
   if (
     params.scrapeIntervalSeconds != null &&
@@ -193,10 +221,14 @@ export const createSource = async (params: {
   }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  return sql.begin(async (db) => {
+  const result = await sql.begin(async (db) => {
     const active = await requireBaseActive(params.baseId, db);
     if (!active.ok) return fail(active.error);
 
+    if (params.metricFilters !== undefined && params.kind !== "metrics")
+      return fail(err.badInput("Metric filters are only supported for metrics sources"));
+    const config = SourceConfigSchema.safeParse({ ...(params.metricFilters === undefined ? {} : { metricFilters: params.metricFilters }) });
+    if (!config.success) return fail(err.badInput("Invalid metric filters or source config exceeds 16 KiB"));
     const encryptedBearer = params.bearerToken?.trim() ? await encryptSecret(params.bearerToken.trim()) : null;
     const endpointUrl = normalizeEndpointUrl(params.endpointUrl);
     if (params.kind === "metrics" && !endpointUrl) return fail(err.badInput("A valid metrics endpoint URL is required"));
@@ -216,7 +248,7 @@ export const createSource = async (params: {
       name,
       endpoint_url,
       bearer_token_encrypted,
-      scrape_interval_seconds
+      scrape_interval_seconds, config
     )
     VALUES (
       ${shortId},
@@ -225,7 +257,7 @@ export const createSource = async (params: {
       ${params.name.trim()},
       ${endpointUrl},
       ${encryptedBearer},
-      ${params.scrapeIntervalSeconds ?? null}
+      ${params.scrapeIntervalSeconds ?? null}, (${JSON.stringify(config.data)}::jsonb #>> '{}')::jsonb
     )
     RETURNING *
   `;
@@ -235,6 +267,8 @@ export const createSource = async (params: {
     if (!row) return fail(err.internal("Failed to create Pulse source"));
     return ok(mapSource(row));
   });
+  if (result.ok) await tryMirrorSource(params.baseId, result.data.id);
+  return result;
 };
 
 export const removeSource = async (params: { baseId: string; sourceId: string; user: AccessScope }): Promise<Result<void>> => {
@@ -254,14 +288,15 @@ export const removeSource = async (params: { baseId: string; sourceId: string; u
         AND account.resource_id = source.short_id
     `;
     const deleted = await tx`
-      DELETE FROM pulse.sources
-      WHERE id = ${params.sourceId}::uuid
+      UPDATE pulse.sources SET deleted=true,enabled=false,mirror_pending=true,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond')
+      WHERE NOT deleted AND id = ${params.sourceId}::uuid
         AND base_id = ${params.baseId}::uuid
     `;
     return ok(deleted.count ?? 0);
   });
   if (!result.ok) return result;
   if (result.data === 0) return fail(err.notFound("Pulse source"));
+  await tryMirrorSource(params.baseId, params.sourceId);
   return ok();
 };
 
@@ -288,7 +323,15 @@ const normalizeSourceUpdateValues = async (
     const target = await checkScrapeTarget(endpointUrl, params.baseId, undefined, undefined, db);
     if (!target.ok) return target;
   }
+  if (params.metricFilters !== undefined && existing.kind !== "metrics")
+    return fail(err.badInput("Metric filters are only supported for metrics sources"));
+  const config = SourceConfigSchema.safeParse({
+    ...existing.config,
+    ...(params.metricFilters === undefined ? {} : { metricFilters: params.metricFilters }),
+  });
+  if (!config.success) return fail(err.badInput("Invalid metric filters or source config exceeds 16 KiB"));
   return ok({
+    config: config.data,
     name: sourceUpdateName(existing, params.name),
     enabled: params.enabled ?? existing.enabled,
     endpointUrl,
@@ -317,14 +360,14 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
   }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  return sql.begin(async (db) => {
+  const result = await sql.begin(async (db) => {
     const active = await requireBaseActive(params.baseId, db);
     if (!active.ok) return fail(active.error);
     const [existing] = await db<SourceRow[]>`
     SELECT *
     FROM pulse.sources
-    WHERE id = ${params.sourceId}::uuid
-      AND base_id = ${params.baseId}::uuid
+    WHERE NOT deleted AND id = ${params.sourceId}::uuid
+      AND base_id = ${params.baseId}::uuid FOR UPDATE
   `;
     if (!existing) return fail(err.notFound("Pulse source"));
 
@@ -339,14 +382,18 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
       endpoint_url = ${values.data.endpointUrl},
       bearer_token_encrypted = ${values.data.bearerTokenEncrypted},
       scrape_interval_seconds = ${values.data.scrapeIntervalSeconds},
-      updated_at = now()
-    WHERE id = ${params.sourceId}::uuid
+      config = (${JSON.stringify(values.data.config)}::jsonb #>> '{}')::jsonb,
+      mirror_pending = true,
+      updated_at = greatest(clock_timestamp(),updated_at+interval '1 microsecond')
+    WHERE NOT deleted AND id = ${params.sourceId}::uuid
       AND base_id = ${params.baseId}::uuid
     RETURNING *
   `;
     if (!row) return fail(err.internal("Failed to update Pulse source"));
     return ok(mapSource(row));
   });
+  if (result.ok) await tryMirrorSource(params.baseId, result.data.id);
+  return result;
 };
 
 export const listSourceApiKeys = async (params: {
@@ -388,40 +435,47 @@ export const createSourceApiKey = async (params: {
 }): Promise<Result<{ credential: PulseSourceApiKey; token: string }>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
-  return sql.begin(async (db) => {
+  const active = await requireBaseActive(params.baseId);
+  if (!active.ok) return fail(active.error);
+  const source = await ensureHttpIngestSource({ baseId: params.baseId, sourceId: params.sourceId });
+  if (!source.ok) return fail(source.error);
+  const name = params.name.trim();
+  if (!name) return fail(err.badInput("API key name is required"));
+  if (params.permission !== "write") return fail(err.badInput("Source API keys can only use ingest permission"));
+
+  const serviceAccount = await serviceAccounts.getOrCreateResourceBound({
+    name: `${source.data.source.name} ingest API keys`,
+    appId: PULSE_APP_ID,
+    resourceType: PULSE_SOURCE_RESOURCE_TYPE,
+    resourceId: source.data.shortId,
+    createdBy: params.user.id,
+  });
+  if (!serviceAccount.ok) return fail(serviceAccount.error);
+
+  const created = await serviceAccountCredentials.createResourceApiToken({
+    serviceAccountId: serviceAccount.data.id,
+    actor: params.user,
+    name,
+    expiresAt: params.expiresAt ?? null,
+    scopes: [PULSE_INGEST_SCOPE, "write"],
+  });
+  if (!created.ok) return fail(created.error);
+
+  // Deletion changes the base state before removing source accounts: this check sees it, or deletion removes the token later.
+  const checked = await sql.begin(async (db) => {
     const active = await requireBaseActive(params.baseId, db);
-    if (!active.ok) return fail(active.error);
-    const source = await ensureHttpIngestSource({ baseId: params.baseId, sourceId: params.sourceId });
-    if (!source.ok) return fail(source.error);
-    const name = params.name.trim();
-    if (!name) return fail(err.badInput("API key name is required"));
-    if (params.permission !== "write") return fail(err.badInput("Source API keys can only use ingest permission"));
+    const source = active.ok ? await ensureHttpIngestSource({ baseId: params.baseId, sourceId: params.sourceId }, db) : active;
+    if (!source.ok) await serviceAccountCredentials.revoke({ credentialId: created.data.credential.id, actor: params.user }, { db });
+    return source;
+  });
+  if (!checked.ok) return fail(checked.error);
 
-    const serviceAccount = await serviceAccounts.getOrCreateResourceBound({
-      name: `${source.data.source.name} ingest API keys`,
-      appId: PULSE_APP_ID,
-      resourceType: PULSE_SOURCE_RESOURCE_TYPE,
-      resourceId: source.data.shortId,
-      createdBy: params.user.id,
-    });
-    if (!serviceAccount.ok) return fail(serviceAccount.error);
-
-    const created = await serviceAccountCredentials.createResourceApiToken({
-      serviceAccountId: serviceAccount.data.id,
-      actor: params.user,
-      name,
-      expiresAt: params.expiresAt ?? null,
-      scopes: [PULSE_INGEST_SCOPE, "write"],
-    });
-    if (!created.ok) return fail(created.error);
-
-    return ok({
-      credential: {
-        ...created.data.credential,
-        permission: sourceApiKeyPermission(created.data.credential.scopes),
-      },
-      token: created.data.token,
-    });
+  return ok({
+    credential: {
+      ...created.data.credential,
+      permission: sourceApiKeyPermission(created.data.credential.scopes),
+    },
+    token: created.data.token,
   });
 };
 
@@ -433,14 +487,12 @@ export const removeSourceApiKey = async (params: {
 }): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
-  return sql.begin(async (db) => {
-    const active = await requireBaseActive(params.baseId, db);
-    if (!active.ok) return fail(active.error);
-    const keys = await listSourceApiKeys(params);
-    if (!keys.ok) return fail(keys.error);
-    if (!keys.data.some((key) => key.id === params.credentialId)) return fail(err.notFound("API key"));
-    return serviceAccountCredentials.revoke({ credentialId: params.credentialId, actor: params.user });
-  });
+  const active = await requireBaseActive(params.baseId);
+  if (!active.ok) return fail(active.error);
+  const keys = await listSourceApiKeys(params);
+  if (!keys.ok) return fail(keys.error);
+  if (!keys.data.some((key) => key.id === params.credentialId)) return fail(err.notFound("API key"));
+  return serviceAccountCredentials.revoke({ credentialId: params.credentialId, actor: params.user });
 };
 
 export const resolveIngestSourceForServiceAccount = async (
@@ -460,8 +512,8 @@ export const resolveIngestSourceForServiceAccount = async (
     JOIN pulse.bases b ON b.id = s.base_id
     WHERE s.short_id = ${serviceAccount.resourceId}
       AND s.kind = 'http_ingest'::pulse.source_kind
-      AND s.enabled = TRUE
-      AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL) AND b.deletion_started_at IS NULL
+      AND s.enabled = TRUE AND NOT s.deleted
+      AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND b.deletion_started_at IS NULL
       AND (
         b.data_clear_started_at IS NULL
         OR b.data_clear_completed_at IS NOT NULL

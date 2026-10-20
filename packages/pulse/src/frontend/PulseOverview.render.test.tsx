@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { PulseBase, PulseCapabilitySnapshot } from "../contracts";
+import type { PulseBase } from "../contracts";
 
 const root = mkdtempSync(join(tmpdir(), "pulse-overview-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
@@ -49,12 +49,12 @@ const base = (id: string, name: string, description: string | null): PulseBase =
   },
 });
 
-const render = (bases: PulseBase[], capabilities: PulseCapabilitySnapshot | null = null, deletingBases: PulseBase[] = []) =>
+const render = (bases: PulseBase[], deletingBases: PulseBase[] = []) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "en",
       get children() {
-        return createComponent(PulseOverview, { bases, deletingBases, capabilities, initialQuery: "" });
+        return createComponent(PulseOverview, { bases, deletingBases, initialQuery: "" });
       },
     }),
   );
@@ -72,12 +72,11 @@ test("renders Pulse bases as cards under one page header with one create action"
   expect(html).not.toContain("k2b-app-overview__aside");
 });
 
-test("keeps the empty state and the TimescaleDB notice on the page", () => {
-  const html = render([], { timescaleEnabled: false, timeBucketAvailable: false, continuousAggregatesAvailable: false });
+test("keeps the empty state on the page", () => {
+  const html = render([]);
 
   expect(html).toContain("No Pulse bases yet");
   expect(html).toContain("New base");
-  expect(html).toContain("k2b-notice");
   expect(html).not.toContain("k2b-app-overview__cards");
 });
 
@@ -90,7 +89,7 @@ test("keeps a base in deletion on the overview, with Retry enabled only after a 
       store: { ...value.store, state, operation: "delete", errorCode: state === "failed" ? "STORE_UNREACHABLE" : null },
     };
   };
-  const html = render([], null, [deleting("Old001", "Old metrics", "deleting"), deleting("Gone01", "Legacy", "failed")]);
+  const html = render([], [deleting("Old001", "Old metrics", "deleting"), deleting("Gone01", "Legacy", "failed")]);
 
   expect(html).toContain("No Pulse bases yet");
   expect(html).toContain("Old metrics");

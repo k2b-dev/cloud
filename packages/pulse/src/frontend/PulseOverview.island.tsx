@@ -2,17 +2,17 @@ import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { AppOverview, Button, LinkCard, NoticeCard, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { PulseBase, PulseCapabilitySnapshot } from "../contracts";
+import type { PulseBase } from "../contracts";
 import { jsonFetch } from "./http";
 import { usePulseMessages } from "./use-messages";
 import { baseStoreMessages } from "./workspace/base-store-messages";
+import { installPeriodicRefresh } from "./workspace/periodic-refresh";
 
 type Props = {
   bases: PulseBase[];
   /** Bases the person administers whose deletion is still running or failed; they stay here until the deletion finishes. */
   deletingBases?: PulseBase[];
   initialQuery: string;
-  capabilities: PulseCapabilitySnapshot | null;
 };
 
 /** A base admin follows a running deletion and resumes a failed one from the overview, since the base itself is gone from the list. */
@@ -20,7 +20,9 @@ const DeletingBaseNotice = (props: { base: PulseBase }) => {
   const locale = useLocale();
   const t = createMemo(() => baseStoreMessages.resolve([locale()]).t);
   const [base, setBase] = createSignal(props.base);
-  const failed = () => base().store.state === "failed";
+  // The base is gone (or no longer visible) once its deletion finished; the card stays in place until a reload.
+  const [deleted, setDeleted] = createSignal(false);
+  const failed = () => !deleted() && base().store.state === "failed";
   const retry = mutation.create<PulseBase, void>({
     mutation: (_intent, { abortSignal }) =>
       jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}/retry`, { method: "POST", signal: abortSignal }, t().retryFailed),
@@ -31,16 +33,38 @@ const DeletingBaseNotice = (props: { base: PulseBase }) => {
     onError: () => toast.error(t().retryFailed),
   });
   onCleanup(() => retry.abort());
+  // Follow the running deletion so a finish or a new failure shows here without a reload. A failed lookup says so
+  // in the card and enables Retry, which asks again at once.
+  const followed = installPeriodicRefresh({
+    active: () => !deleted() && !failed() && !retry.loading(),
+    refresh: async () => {
+      const gone = new Error("PULSE_BASE_GONE");
+      const next = await jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}`, undefined, t().retryFailed, (status) =>
+        status === 404 || status === 403 ? gone : new Error(t().retryFailed),
+      ).catch((error: unknown) => {
+        if (error !== gone) throw error;
+        setDeleted(true);
+        return null;
+      });
+      if (next) setBase(next);
+    },
+  });
   return (
     <NoticeCard
       tone={failed() ? "danger" : "neutral"}
       title={base().name}
-      meta={failed() ? t().stateFailed : t().stateDeleting}
-      detail={failed() ? t().failedDelete : t().deletingText}
+      meta={deleted() ? t().stateDeleted : failed() ? t().stateFailed : t().stateDeleting}
+      detail={deleted() ? t().deletedText : failed() ? t().failedDelete : followed.failed() ? t().staleText : t().deletingText}
       aria-live="polite"
     >
       {/* The button keeps its place after a retry so the card does not change height. */}
-      <Button size="xs" variant="secondary" disabled={!failed()} loading={retry.loading()} onClick={() => void retry.mutate()}>
+      <Button
+        size="xs"
+        variant="secondary"
+        disabled={!failed() && !followed.failed()}
+        loading={retry.loading()}
+        onClick={() => (failed() ? void retry.mutate() : followed.retry())}
+      >
         {t().retry}
       </Button>
     </NoticeCard>
@@ -130,11 +154,6 @@ export default function PulseOverview(props: Props) {
           />
         }
       >
-        <Show when={props.capabilities && !props.capabilities.timescaleEnabled}>
-          <NoticeCard tone="warning" class="mb-3">
-            {t().timescaleWarning}
-          </NoticeCard>
-        </Show>
         <Show
           when={props.bases.length > 0}
           fallback={

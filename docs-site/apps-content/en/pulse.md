@@ -3,270 +3,271 @@ title: Pulse
 navTitle: Pulse
 section: Operations
 order: 420
-description: Explore metrics, events, states, resources, queries, and dashboards in one telemetry workspace.
-tags: [pulse, telemetry, metrics, dashboards]
-updated: 2026-10-17
+description: Collect metrics, events, and states through HTTP ingest and Prometheus sources.
+tags: [pulse, telemetry, metrics]
+updated: 2026-10-19
 ---
 
 # Pulse
 
-Pulse turns incoming metrics, events, and current states into browsable
-resources, reusable queries, and dashboards. It can describe infrastructure,
-application behavior, or business activity without requiring one fixed domain
-model.
+Pulse collects metrics, events, and states in bases. Add sources, send batches
+through HTTP ingest, or let Pulse scrape Prometheus endpoints. Measurements go
+to one ClickHouse database per base; Postgres keeps control data.
 
-## Set up the data store
+Dashboards and questions return with SQL in the next update. Their place in the
+base shows **Dashboards and questions are coming back**, explains the upcoming
+SQL workflow, and offers **Go to sources**. Source collection remains available.
 
-A Cloud admin connects an operator-provided ClickHouse instance in
-**Administration → Pulse → Data store**. The page shows three steps: provide
-a dedicated ClickHouse 26.9 or newer instance, run the setup script as its
-admin, then enter the service address and credentials and choose **Check and
-connect**. Pulse checks the connection, version, rights and read-profile limits
-before saving. A failed check names the problem and how to fix it; the saved
-connection stays unchanged.
+## Connect the data store
 
-Operators can use `cld pulse admin store get|set|check|setup-sql` for the same
-workflow. Password input uses a private file or stdin. See
-[Provide ClickHouse for Pulse](/en/docs/operations/deployment-requirements#provide-clickhouse-for-pulse)
-for memory, isolation and backup requirements.
+The operator provides a dedicated, single-node ClickHouse instance, version
+26.9 or newer, with its own volume. A Cloud administrator opens
+**Administration → Pulse → Data store**, obtains the setup script, and has the
+ClickHouse administrator run it. Enter the service address and credentials,
+then choose **Check and connect**. Pulse checks the connection, version, access,
+and read profiles before saving; failed checks leave the saved connection unchanged.
 
-Without a saved connection, Pulse shows “not set up” and its data API returns
-`PULSE_STORE_NOT_CONFIGURED`. Cloud and the Pulse administration pages remain available.
+Without a connection, Pulse shows **Pulse is not set up yet**. Its data API
+returns `503 PULSE_STORE_NOT_CONFIGURED`; setup and other Cloud apps remain
+available. See [Provide ClickHouse for Pulse](/en/docs/operations/deployment-requirements#provide-clickhouse-for-pulse)
+for setup, sizing, and backups, and [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#pulse-requires-clickhouse-and-starts-empty)
+before updating an existing installation. The full
+[Deployment requirements](/en/docs/operations/deployment-requirements) cover
+Cloud startup dependencies and readiness checks.
 
 ## Bases and administration
 
-Each base is a tenant with its own ClickHouse database, read user and six SQL
-views. Read access excludes internal tables, sensitive fields, payloads and
-other bases. Base admins manage members, sources, tokens, queries, dashboards
-and retention; they do not need the Cloud admin role. By default, people and
-agents with write credentials can create a base and become its admin. A Cloud
-admin can restrict creation to people or Cloud admins and set the maximum
-(default 200) under **Administration → Pulse → Bases**. The policy judges who
-sends the request: a service account counts as an agent, also when it acts for
-a person, and the admin grant then goes to that person.
+Each base is a tenant with its own database, read user, and six restricted read
+views. Read access excludes internal tables, sensitive fields, payloads, and
+other bases. A base administrator controls members, sources, tokens, and
+retention without needing the Cloud administrator role. Cloud administrators
+set installation policy, profiles, limits, and internal scrape targets; their
+administration pages show amounts and state, without measurement contents.
 
-New bases are `provisioning`, then `active`. Only active bases accept changes.
-Clearing (`clearing`) keeps sources, tokens, dashboards and queries. Deleting
-(`deleting`) revokes source tokens, public links and read access before removing
-the store. A base in deletion stays on its admins' Pulse overview until the
-deletion finishes. After five failed runs, the operation is `failed`; a base
-admin can choose **Retry** in the base settings or on the overview, and a Cloud
-admin can retry from the Bases page.
+By default, people and agents with write credentials can create a base and
+receive its `admin` access. For a delegated agent, that access goes to its
+person. Cloud administrators can restrict creation to people or Cloud
+administrators and change the default maximum of 200 bases under
+**Administration → Pulse → Bases**. Every service account counts as an agent
+for this policy, including one acting for a person. Source-bound credentials
+cannot create bases.
 
-Cloud admins see state, amounts and limits, without measurement contents. They
-choose a read profile (small: 1 GB/10 s; normal: 2 GB/10 s; large: 4 GB/30 s),
-each limited to 10,000 rows and 4 MiB per query. Defaults per base are 2,000
-values/minute, 5 MiB/minute, 5 GB storage, 50,000 series, 2,000 event kinds and
-2,000 state keys. Pulse measures each base's storage every five minutes and
-shows it, with the free space of the store, to base admins and Cloud admins.
+A new base moves from `provisioning` to `active`. Changes require an active
+base. Clearing (`clearing`) discards measurements and keeps sources, tokens,
+settings, and access. Deleting (`deleting`) revokes source tokens and database
+read access before removing the database. The overview keeps a deleting base
+visible to its administrators until deletion finishes. After five failed
+attempts the operation is `failed`. A base administrator chooses **Retry** in
+the base settings or overview; a Cloud administrator can retry from **Bases**.
+Open pages check a running operation every five seconds. If that check fails,
+the overview card and the **Bases** row say the status is unknown, keep
+checking, and offer **Retry** to check again at once.
 
-Raw retention is 1–730 days by default (Cloud admins can raise the maximum to
-3,650); rollups allow 1–3,650 days and sensitive fields 1–8,760 hours. Shortening
-any period returns a cutoff and affected-row preview with estimated bytes; for
-sensitive fields it counts the non-empty fields that are cleared, while their
-rows stay. Confirm it to apply the change. Sensitive fields use column TTL; physical
-removal follows ClickHouse merges. Current states have no TTL.
+| Per-base setting | Default or fixed profile |
+| --- | --- |
+| Values per minute | 2,000 metrics, events, and states combined |
+| Bytes per minute | 5 MiB |
+| Storage threshold | 5 GB |
+| Metric series | 50,000 across the base; at most 10,000 per metric |
+| Event kinds / state keys | 2,000 each |
+| Small read profile | 1 GB memory, 10 seconds |
+| Normal read profile | 2 GB memory, 10 seconds |
+| Large read profile | 4 GB memory, 30 seconds |
+| Result limit for each read profile | 10,000 rows and 4 MiB |
+
+Pulse measures storage and instance free space every five minutes. Base
+administrators and Cloud administrators can inspect those amounts.
 
 Hourly checkpoints compare Postgres and ClickHouse. A missing database or a
-mismatch blocks measurement writes, and a base admin cannot clear the base
-while it is blocked. After restoring matching backups, a Cloud admin chooses
-**Recheck** to verify and recreate read access, or **Recreate** to discard
-measurements and start empty. When Pulse starts, it re-creates missing read
-users of bases whose checkpoints match. Databases without a base appear as
-orphans and can be deleted separately.
+checkpoint mismatch blocks measurement writes and prevents a base
+administrator from clearing data. Restore matching backups, then have a Cloud
+administrator choose **Check again**. **Start empty** discards measurements and
+recreates an empty base store. At startup, Pulse restores missing read users for matching databases.
+Databases with no base appear as orphans and can be deleted separately.
 
-## Use Pulse
+## Send a batch with HTTP ingest
 
-- Check Sources first when expected data is missing or stale.
-- Browse Resources when the question concerns one host, container, service,
-  customer, order, or other observed object.
-- Open Metrics, Events, or States when the signal name is already known.
-- Test and save a query before using it in a dashboard.
-- Publish a focused dashboard when a read-only link should show results without
-  exposing the rest of the base.
+Create an HTTP ingest source and a source token. Keep the token in the
+collector's secret store. Send JSON to `POST /api/pulse/ingest` with
+`Authorization: Bearer <source-token>` and `Content-Type: application/json`.
+The credential selects the source; the body cannot override it.
 
-Pulse must be deployed and available to your account.
+The body has optional `metrics`, `events`, and `states` arrays. Each array
+accepts at most 500 entries, with 1,500 entries total and a 5 MiB limit on the
+validated batch's encoded JSON. Empty batches are refused. Metrics use finite
+numbers and type `gauge` or `counter`; counters must be nonnegative. The first
+accepted value fixes a metric name's type and unit within its base. Later
+batches must match both. See `cld pulse reference ingest.md` for fields and examples.
 
-## Understand the Pulse model
+**Send an `Idempotency-Key` from the first attempt.** The key is scoped to the
+source and accepts at most 200 characters. Pulse reserves the key and its
+acceptance time before writing measurements. For its 24-hour lifetime:
 
-| Resource | Responsibility |
+- The same key and identical batch return the same successful
+  `{ metrics, events, states }` counts.
+- A different batch with that key returns `409`.
+- An interrupted batch stays pending. Retrying the same batch with the same
+  key writes the same row identities with the original acceptance time.
+
+After expiry, reusing a key starts a new batch and keeps earlier events.
+
+Keep the body and key until delivery completes. Without a key, a failed batch
+can already be partly stored. The error says **The batch may be partly
+stored, and sending it again can store those parts twice**. Adding a key
+afterwards cannot deduplicate the first attempt. Send every batch with an
+`Idempotency-Key` from the first attempt to retry safely.
+
+Invalid input or registry caps return `400`, missing ingest access `403`, an
+unknown source `404`, and a disabled source, busy or blocked base, or conflicting
+key `409`. Successful ingest returns `200` with the three counts. Temporary
+refusals and their retry delays are described below.
+
+## Timestamps, corrections, and states
+
+Omitting `ts` uses the batch's acceptance time. A supplied timestamp must be an
+ISO datetime and can be at most five minutes in the future. A future-time error
+names the array, item index, metric name, event kind or state key, and timestamp.
+Metric timestamps must also fall within raw retention. A sealed metric hour
+refuses writes even if retention is later extended.
+
+For the same metric series and timestamp, the newest accepted value wins. The
+restricted read view shows the correction at once, without waiting for storage
+merges. A correction marks its hour for recomputation and also updates the
+counter increase in the hour of the next observation, even across empty hours.
+
+For each state key, source, and dimension/object identity, a newer timestamp
+wins. At equal timestamps, later acceptance wins; input order breaks ties in
+one batch. Older states change nothing. Pulse stores history for the initial
+value and subsequent value changes, while equal values update the current
+snapshot without adding history.
+
+A keyed retry completes its original state history even if newer batches have
+arrived. Their newer current states remain current. An unkeyed resend of a
+failed state batch still records its change once, with the time of the
+observation that first carried the new value. If a different value arrives
+before the resend, only the newer change is recorded; send state batches with
+an `Idempotency-Key` to keep every change.
+
+Hourly metric values keep count, sum, minimum, maximum, last value and its
+timestamp, and counter increase. A counter reset contributes its new value;
+otherwise the increase is the difference from the previous observation.
+Calculation spans empty hours and can use the preceding hourly value after
+raw data expires. Corrections trigger recomputation rather than adding to an
+old total.
+
+## Scrape Prometheus metrics
+
+A metrics source needs an endpoint. Intervals are whole minutes from 60 to
+86,400 seconds. Only one scrape per source runs at a time. Lookup, connection,
+headers, and body share a 15-second timeout. Responses must use identity
+encoding and fit 10 MiB. A scrape accepts at most 50,000 selected sample lines;
+all stored samples use the same collection time.
+
+Pulse accepts declared gauge, counter, and histogram families. Histogram
+`_bucket` samples keep the upper bound in the `le` dimension; finite bounds
+are normalized. Buckets, `_sum`, and `_count` are stored as counters. Each
+label group must have a `+Inf` bucket and nonnegative cumulative bucket counts.
+A supplied `_count` must match `+Inf`, and `_sum` cannot be negative. An invalid
+group refuses the whole family. The source shows refused families and reasons
+(up to 20), plus the number of skipped summary samples. Summaries, untyped,
+malformed, and nonfinite samples are skipped.
+
+**Only these metrics (empty = all)** accepts exact family names or a prefix
+ending in `*`, separated by commas or newlines. For example, `node_*` includes
+families starting with `node_`. Histogram filters name the family, without the
+`_bucket`, `_sum`, or `_count` suffix. Filters apply before sample and series
+limits; excluded families consume neither. The filter list allows 100 entries
+of at most 128 characters, with only a trailing wildcard. That cap comes from
+the source configuration's 16 KiB budget: 100 × (128 characters + 3 JSON bytes)
+uses 13,100 bytes and leaves room for other configuration.
+
+The CLI supports repeatable `--metric-filter` on `sources create` and
+`sources update`. On update, `--clear-metric-filters` includes all families again.
+
+Public endpoints work by default. A Cloud administrator allows internal targets
+per base under **Administration → Pulse → Internal targets**: a host or IP
+covers every port, `host:port` or `[ipv6]:port` covers one port, and a CIDR
+covers every port in its range. `/0` is refused. Reserved names need an exact
+host entry. Pulse checks the current entries on save, every scrape, and each
+redirect (at most three), resolves again, and pins the connection. Removing an
+entry blocks the next scrape and reports how to repair it.
+
+## Quotas, storage, and outages
+
+Values and bytes share a token bucket per base across replicas, HTTP ingest,
+CLI ingest, and scrapes. Buckets hold one minute's allowance and refill
+continuously. HTTP ingest counts original body bytes; other paths count their
+serialized batch. Completed keyed retries return their stored counts without
+using quota again. A batch larger than one minute's allowance can use a full
+bucket. Its full cost is charged, so later batches wait until enough quota has
+refilled.
+
+| Condition | Response and recovery |
 | --- | --- |
-| Base | Access, retention, sources, queries, and dashboards for one telemetry context |
-| Source | Metrics endpoint or HTTP ingest connection |
-| Resource | Stable observed object that groups its metrics, events, and states |
-| Signal | Named metric, event, or state published by one or more sources |
-| Query and dashboard | Reusable analysis and its operator-facing presentation |
+| Base value or byte quota exhausted | `429 PULSE_BASE_THROTTLED` with a whole-second `Retry-After`; wait, then retry the same keyed batch. The source shows throttling for five minutes. |
+| Quota service unavailable | `503 PULSE_QUOTA_UNAVAILABLE`, `Retry-After: 30`. |
+| Measured base storage reaches its threshold | `409 PULSE_BASE_STORAGE_FULL`; reads continue. Shorten retention or ask a Cloud administrator to raise the threshold. |
+| Instance disk below 10% free | `503 PULSE_STORE_DISK_LOW`, `Retry-After: 300`; reads continue. Cloud administrators receive a notification. |
+| Data store unreachable | `503 PULSE_STORE_UNAVAILABLE`, `Retry-After: 30`; retry with the same key. Scrapes fail and record the error. |
 
-Dimensions distinguish stable variants such as region, route, mount, or
-service. Put unique request IDs, sessions, full URLs, and protected details in
-event fields rather than metric dimensions.
-
-## How Pulse fits Cloud
-
-Pulse owns ingestion, retention, inventory, query execution, saved queries,
-and dashboards inside each base. Cloud supplies identity, resource access,
-application routing, lifecycle hooks, and operational primitives. A source
-credential belongs to one source and does not grant access to unrelated bases.
-
-## Find detailed product help
-
-Open **Help** inside Pulse for the data model, source health, query language,
-dashboard DSL, retention, public displays, and troubleshooting. Developers can
-read [Observability](/en/docs/operations/observability),
-[Resource authorization](/en/docs/identity/authorization), and
-[Resource API keys](/en/docs/identity/resource-api-keys) for adjacent Cloud
-contracts.
-
-## Inspect Pulse from the terminal
-
-The native module can inspect a deployment before a script chooses a base:
-
-```bash
-cld pulse list --json
-cld pulse capabilities --json
-```
-
-Run `cld pulse help` for bases, sources, signals, queries, dashboards, and
-access. Run `cld pulse <command> --help` before ingesting data or changing a
-base.
-
-## Deployment requirements
-
-See [Deployment requirements](/en/docs/operations/deployment-requirements) for
-this app’s startup prerequisites, optional integrations, configuration and
-functional checks.
-
-Pulse initializes its tables atomically in a fresh `pulse` schema. Later starts
-reuse that installation without changing its data. Existing Alpha schemas are
-rejected: there is no automatic upgrade or data repair. Before replacing a
-disposable Alpha installation, explicitly remove only its Pulse schema; the
-application never deletes it on startup.
-
-## Server collection before deployment
-
-Metrics support gauges and nonnegative counters. Type and unit are fixed per metric name within a base; conflicting input rejects the entire batch. Counter rates use observed consecutive samples and correct resets before combining series. Histogram and summary aggregation is not supported.
-
-Prometheus sources accept declared gauge/counter families and expose skipped samples in source diagnostics. Scrapes use whole-minute intervals (minimum 60 seconds), one collection timestamp, and a 15-second timeout covering lookup, connection, headers, and body. Sources with no instance, host, or node label use the endpoint host and port as their target resource.
-
-Public endpoints work for every base. A Cloud admin releases internal targets per
-base under **Administration → Pulse → Internal targets**: a host or IP for all
-ports, `host:port` or `[ipv6]:port` for one port, or a CIDR range for all ports.
-`/0` is refused. Reserved names need an exact host entry. Pulse checks on save,
-every scrape and every redirect (at most three), resolves again and pins the
-connection. Revoking an entry blocks the next scrape and names the repair path.
-Responses must use identity encoding.
-
-The initial operator scenario is 20–50 servers, approximately ten websites, 60-second sampling and 30-day raw retention. Website backends send events using secret source tokens. This is a test scenario, not a measured production capacity guarantee.
+Storage notifications go once per threshold crossing to direct user base
+administrators; group access is not expanded. Disk notifications go once per
+crossing to Cloud administrators. Store outages notify Cloud administrators
+once per outage; a successful disk measurement closes the outage. Delivery
+follows notification preferences. A failed or throttled scrape waits for its
+next scheduled attempt.
 
 ## Retention and complete metric hours
 
-Pulse records whether each metric hour is dirty, complete or sealed. The hourly
-worker resumes unfinished hours after downtime without a fixed lookback limit.
-Late samples and corrections inside raw retention mark the hour dirty again;
-queries use its raw samples until recomputation completes. Each query combines
-complete rollups with remaining raw samples in one database snapshot.
+Raw retention allows 1–730 days by default; Cloud administrators can raise the
+maximum to 3,650 days. Hourly values allow 1–3,650 days and sensitive event
+fields 1–8,760 hours. Shortening any period requires confirming a preview of
+the cutoff, affected rows, and estimated bytes. For sensitive fields, the
+preview counts nonempty fields to clear; their event rows remain.
+A confirmation in the web app applies only to the settings it previewed; if
+someone changed retention in the meantime, Pulse asks you to review the
+preview again. The CLI flag `--confirm-shorter-retention` confirms against the
+current settings.
 
-Raw metric retention preserves the entire boundary hour. Older raw hours are
-removed only after successful rollup and sealing. Sealed hours reject later
-writes, including after an operator extends retention: deleted samples cannot be
-reconstructed. Metric ingestion rejects timestamps older than raw retention.
-Rollup retention also applies to full hours.
+ClickHouse TTLs expire events and state history by raw retention, hourly values
+by their own retention, and sensitive fields by a separate column TTL.
+Physical removal follows storage merges. Current states have no TTL.
 
-Hourly rollups retain sample count, sum, minimum, maximum and the last value with
-its actual timestamp. They support count, sum, average, minimum, maximum and
-latest in whole-hour bucket sizes. Counter rate/increase and sample percentiles
-require raw data. Queries outside available retention fail explicitly; partial
-historical hours cannot be reconstructed from an hourly aggregate.
+Raw metric samples use daily partitions. The nightly retention job at 03:17
+UTC removes a partition only when its whole day is past raw retention and all
+recorded metric hours in that day are sealed. Late data and corrections inside
+retention mark hours dirty again; the hourly job resumes unfinished hours
+after downtime. An hour whose calculation fails waits one hour before its next
+attempt, so other bases continue. **Hourly values are lagging** under
+**Administration → Pulse → Bases** indicates dirty hours more than three hours
+old awaiting processing, or sealing that delays partition removal by more than
+a day. Check the hourly and retention jobs before discarding data.
 
-Retention also removes expired scrape history and unreferenced metric series,
-definitions, resources and field metadata. Current state persists until replaced
-or explicitly cleared, independently of history retention. A resource or field
-still needed by current state or retained observations remains in its catalog.
-Continuously creating new state identities therefore requires an explicit
-operator lifecycle; raw retention does not bound that inventory.
+Retention also removes expired request keys and scrape history, and unused
+series, metric definitions, event kinds, and state keys. Keys with a current
+state remain.
 
-On default Timescale installations, retention also releases closed empty chunks
-once ordinary vacuum has emptied their heap. Each candidate is checked again
-under lock; chunks containing another base's data or raw samples awaiting
-aggregation remain intact. Maintenance yields to concurrent readers and writers
-and uses bounded retries. Keep autovacuum enabled; physical space reclamation is
-asynchronous. This cleanup covers uncompressed partitions with a single time
-dimension.
+## Check source status and credentials
 
-## Website analytics from your backend
+Open **Sources** or run `cld pulse sources list --json`. Status shows the
+newest data timestamp, recent throttling, refused histogram families, skipped
+summary samples, and the last error and its time. Scrape history adds success,
+counts, duration, and finish time; push requests do not create scrape history.
 
-Create one HTTP ingest source per website and keep its source token in the
-website backend's secret store. Send to `POST /api/pulse/ingest` with
-`Authorization: Bearer <source-token>`. Do not include this token in browser
-JavaScript. Token rotation keeps the same source and identity namespace.
+A metrics endpoint's bearer token is bound to its origin (scheme, host, and
+port). Changing that origin deletes the stored token unless you supply a
+replacement. A path-only change keeps it.
 
-Use `page.viewed` for an observed pageview and `conversion.completed` for an
-explicit business outcome. For both, use one website resource, for example
-`{"type":"website","id":"example.com"}`. Do not create resources for individual
-requests or visitors.
+For HTTP ingest, create a separate labeled token per collector deployment:
 
-| Field | Website convention |
-| --- | --- |
-| `dimensions.route` | Route template such as `/articles/:slug`, not a unique URL |
-| `dimensions.campaign` | Optional controlled campaign name |
-| `attributes.referrerHost` | Optional hostname, with URL parameters removed |
-| `actorId` | Optional opaque visitor ID supplied by the backend |
-| `sessionId` | Optional opaque session ID supplied by the backend |
-| `sensitive` | Optional short-lived sensitive fields, under the base's separate policy |
-| `payload` | Additional event details that should not become dimensions |
-
-Pulse does not derive identities from IP addresses or user agents and does not
-create sessions. Unique counts exclude missing IDs and distinguish identical IDs
-from different sources, including after source deletion. A period-wide unique
-count is calculated over all events in that period, never by adding daily counts.
-
-A backend delivery can use this request. Persist the body and delivery ID before
-sending if delivery must survive a backend restart:
-
-```ts
-const body = JSON.stringify({
-  events: [{
-    kind: "page.viewed",
-    ts: new Date().toISOString(),
-    resource: { type: "website", id: "example.com" },
-    dimensions: { route: "/articles/:slug" },
-    actorId: visitorId,
-    sessionId,
-  }],
-});
-const response = await fetch(`${pulseUrl}/api/pulse/ingest`, {
-  method: "POST",
-  headers: {
-    authorization: `Bearer ${sourceToken}`,
-    "content-type": "application/json",
-    "idempotency-key": deliveryId,
-  },
-  body,
-  signal: AbortSignal.timeout(15_000),
-});
-if (!response.ok) throw new Error(`Pulse ingest failed: ${response.status}`);
+```sh
+cld pulse source-tokens create --base Base01 Src001 --name collector --output-file ./pulse.token
 ```
 
-On a timeout, connection failure, 429 or server error, retry the unchanged body
-with the same delivery ID within 24 hours, using bounded backoff in your backend
-queue. Other client errors require correcting the request. A correlation ID is
-not a deduplication key. Automatic indefinite retries and durable backend queues
-are not provided by this example.
+`--output-file` is required. It creates a new file with mode `0600` and refuses
+an existing path. Text, JSON, and JSONL output contain only ID, name, and path;
+the token is never printed. Move it into the collector's secret store without
+copying it into chat, logs, or shell arguments.
 
-Use either a relative `since` range or an absolute `from`/`to` pair. Absolute
-values require UTC or an explicit offset. Both forms use a fixed, exclusive upper
-bound: `[from,to)`. Queries older than the base's retained history fail explicitly.
-Metric historical ranges use exact UTC hours after raw data expires.
-
-```text
-events page.viewed unique actor every all from 2026-09-01T00:00:00+02:00 to 2026-10-01T00:00:00+02:00
-events page.viewed count every day timezone Europe/Berlin since 7d group by route
-events conversion.completed count every month timezone Europe/Berlin since 90d
-metric system.cpu.usage avg every 1h from 2026-09-01T00:00:00Z to 2026-09-02T00:00:00Z
-```
-
-`day`, `week` and `month` use calendar boundaries in the required IANA time zone;
-weeks begin on Monday. Daylight saving transitions can produce 23- or 25-hour
-days. Duration buckets such as `1d` remain fixed 24-hour UTC intervals. `every all`
-returns one point per group for the whole selected window. An empty ungrouped
-window returns zero for counts and uniques, and null for sum.
+Run `cld pulse --help` for current commands and open **Help** inside Pulse for
+source setup, data types, and recovery.

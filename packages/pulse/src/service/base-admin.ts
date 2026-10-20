@@ -57,7 +57,7 @@ const paging = (limit = 50, offset = 0) => ({
   limit: z.number().int().min(1).max(100).parse(limit),
   offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse(offset),
 });
-const adminBaseRow = async (baseId: string) => {
+const adminBaseRow = async (baseId: string, now = new Date()) => {
   const [base] = await sql<
     {
       short_id: string;
@@ -66,13 +66,18 @@ const adminBaseRow = async (baseId: string) => {
       rollup_retention_days: number;
       sensitive_retention_hours: number;
       created_at: Date;
+      rollup_lag: boolean;
     }[]
-  >`SELECT * FROM pulse.bases WHERE id=${baseId}::uuid`;
+  >`SELECT b.*,EXISTS(SELECT 1 FROM pulse.metric_hours h WHERE h.base_id=b.id AND (
+    (h.state='dirty' AND h.hour<${now}::timestamptz-interval '3 hours') OR
+    (h.state<>'sealed' AND date_trunc('day',h.hour,'UTC')+interval '1 day'<${now}::timestamptz-(b.retention_days+1)*interval '1 day')
+  )) AS rollup_lag FROM pulse.bases b WHERE b.id=${baseId}::uuid`;
   if (!base) throw new BaseAdminError("NOT_FOUND", 404);
   const names = await sql<
     { name: string; count: number }[]
   >`SELECT count(*) OVER()::int AS count,COALESCE(u.display_name,sa.name,g.name,'Member') AS name FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin' ORDER BY a.created_at LIMIT 3`;
   return {
+    rollupLag: base.rollup_lag,
     id: base.short_id,
     name: base.name,
     admins: names.slice(0, 3).map((n) => n.name),
@@ -87,6 +92,7 @@ const adminBaseRow = async (baseId: string) => {
 export const listAdminBases = async (
   identity: StoreIdentity,
   params: { limit?: number; offset?: number; q?: string } = {},
+  clock = () => new Date(),
 ): Promise<AdminBasesPage> => {
   requireStoreAdmin(identity);
   const { limit, offset } = paging(params.limit, params.offset);
@@ -99,17 +105,21 @@ export const listAdminBases = async (
   const [count] = await sql<
     { count: number }[]
   >`SELECT count(*)::int AS count FROM pulse.bases WHERE (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\' OR short_id=${query})`;
-  const [disk] = await sql<{ free_bytes: string; total_bytes: string; measured_at: Date }[]>`SELECT * FROM pulse.store_instance`;
+  const [disk] = await sql<
+    { free_bytes: string | null; total_bytes: string | null; measured_at: Date | null }[]
+  >`SELECT * FROM pulse.store_instance`;
   const [used] = await sql<
     { bytes: string }[]
   >`SELECT COALESCE(sum(s.usage_bytes),0)::text AS bytes FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id`;
   const total = count?.count ?? 0;
   return {
-    items: await Promise.all(rows.map((r) => adminBaseRow(r.id))),
+    items: await Promise.all(rows.map((r) => adminBaseRow(r.id, clock()))),
     total,
     nextOffset: offset + rows.length < total ? offset + rows.length : null,
     usedBytes: Number(used?.bytes ?? 0),
-    disk: disk ? { freeBytes: Number(disk.free_bytes), totalBytes: Number(disk.total_bytes), measuredAt: iso(disk.measured_at) } : null,
+    disk: disk?.measured_at
+      ? { freeBytes: Number(disk.free_bytes), totalBytes: Number(disk.total_bytes), measuredAt: iso(disk.measured_at) }
+      : null,
   };
 };
 export const updateBaseLimits = async (identity: StoreIdentity, id: string, input: unknown) => {
@@ -143,7 +153,7 @@ export const adminBaseAction = async (identity: StoreIdentity, id: string, actio
   } else {
     const changed = await sql.begin(async (tx) => {
       await tx`SELECT id FROM pulse.bases WHERE id=${base.id}::uuid FOR UPDATE`;
-      return tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',schema_version=0,pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${base.id}::uuid AND state='active' RETURNING base_id`;
+      return tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1,state='clearing',operation='clear',schema_version=0,pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${base.id}::uuid AND state='active' RETURNING base_id`;
     });
     if (!changed.length) throw new BaseAdminError("BASE_BUSY", 409);
     await submitBaseLifecycleJob(base.id, base.short_id);
@@ -272,6 +282,7 @@ export const deleteOrphan = async (identity: StoreIdentity, database: string, st
   }
   const hex = database.slice(store.prefix.length),
     baseId = databaseBaseId(database, store.prefix);
+  store = { ...store, query: await store.prepare() };
   return sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('pulse.base.creation',0))`;
     const [used] =

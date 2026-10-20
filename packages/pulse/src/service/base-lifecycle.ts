@@ -13,98 +13,6 @@ type BaseJobInput = {
   publicBaseId: string;
 };
 
-const deleteMetricSamplesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT series_id, ts
-      FROM pulse.metric_samples
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.metric_samples item
-    USING victim
-    WHERE item.base_id = ${baseId}::uuid AND item.series_id = victim.series_id AND item.ts = victim.ts
-  `;
-  return result.count ?? 0;
-};
-
-const deleteMetricRollupsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT series_id, bucket
-      FROM pulse.metric_rollups_hourly
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.metric_rollups_hourly item
-    USING victim
-    WHERE item.base_id = ${baseId}::uuid AND item.series_id = victim.series_id AND item.bucket = victim.bucket
-  `;
-  return result.count ?? 0;
-};
-
-const deleteStateChangesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT ctid
-      FROM pulse.state_changes
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.state_changes item
-    USING victim
-    WHERE item.ctid = victim.ctid
-  `;
-  return result.count ?? 0;
-};
-
-const deleteEventsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT id, ts
-      FROM pulse.events
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.events item
-    USING victim
-    WHERE item.base_id = ${baseId}::uuid AND item.id = victim.id AND item.ts = victim.ts
-  `;
-  return result.count ?? 0;
-};
-
-const deleteCurrentStatesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT ctid
-      FROM pulse.states_current
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.states_current item
-    USING victim
-    WHERE item.ctid = victim.ctid
-  `;
-  return result.count ?? 0;
-};
-
-const deleteMetricSeriesDimensionsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT dims.series_id, dims.key
-      FROM pulse.metric_series_dimensions dims
-      JOIN pulse.metric_series series ON series.id = dims.series_id
-      WHERE series.base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.metric_series_dimensions item
-    USING victim
-    WHERE item.series_id = victim.series_id
-      AND item.key = victim.key
-  `;
-  return result.count ?? 0;
-};
-
 const deleteSourceScrapesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
   const result = await db`
     WITH victim AS (
@@ -167,66 +75,6 @@ const deleteMetricDefsChunk = async (baseId: string, db: typeof sql = sql): Prom
   return result.count ?? 0;
 };
 
-const deleteSignalFieldsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT ctid
-      FROM pulse.signal_fields
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.signal_fields item
-    USING victim
-    WHERE item.ctid = victim.ctid
-  `;
-  return result.count ?? 0;
-};
-
-const deleteObservedResourcesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT ctid
-      FROM pulse.observed_resources
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.observed_resources item
-    USING victim
-    WHERE item.ctid = victim.ctid
-  `;
-  return result.count ?? 0;
-};
-
-const deleteSavedQueriesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT ctid
-      FROM pulse.saved_queries
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.saved_queries item
-    USING victim
-    WHERE item.ctid = victim.ctid
-  `;
-  return result.count ?? 0;
-};
-
-const deleteDashboardsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
-  const result = await db`
-    WITH victim AS (
-      SELECT ctid
-      FROM pulse.dashboards
-      WHERE base_id = ${baseId}::uuid
-      LIMIT ${BASE_DELETE_BATCH_SIZE}
-    )
-    DELETE FROM pulse.dashboards item
-    USING victim
-    WHERE item.ctid = victim.ctid
-  `;
-  return result.count ?? 0;
-};
-
 const deleteSourcesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
   const result = await db`
     WITH victim AS (
@@ -263,50 +111,52 @@ const deleteMetricHoursChunk = async (baseId: string, db: typeof sql = sql): Pro
   return result.count ?? 0;
 };
 
+const deleteRegistryChunk = async (baseId: string, table: "state_variants" | "state_keys" | "event_kinds", db: typeof sql) => {
+  const result =
+    await db`WITH victim AS (SELECT ctid FROM ${sql(`pulse.${table}`)} WHERE base_id=${baseId}::uuid LIMIT ${BASE_DELETE_BATCH_SIZE})
+    DELETE FROM ${sql(`pulse.${table}`)} r USING victim WHERE r.ctid=victim.ctid`;
+  return result.count ?? 0;
+};
+
 const BASE_DELETE_STEPS: Array<{ phase: string; run: (baseId: string, db: typeof sql) => Promise<number> }> = [
-  { phase: "metric_samples", run: deleteMetricSamplesChunk },
-  { phase: "metric_rollups_hourly", run: deleteMetricRollupsChunk },
+  { phase: "state_variants", run: (id, db) => deleteRegistryChunk(id, "state_variants", db) },
+  { phase: "state_keys", run: (id, db) => deleteRegistryChunk(id, "state_keys", db) },
+  { phase: "event_kinds", run: (id, db) => deleteRegistryChunk(id, "event_kinds", db) },
   { phase: "metric_hours", run: deleteMetricHoursChunk },
-  { phase: "state_changes", run: deleteStateChangesChunk },
-  { phase: "events", run: deleteEventsChunk },
-  { phase: "states_current", run: deleteCurrentStatesChunk },
-  { phase: "metric_series_dimensions", run: deleteMetricSeriesDimensionsChunk },
   { phase: "source_scrapes", run: deleteSourceScrapesChunk },
   { phase: "ingest_idempotency", run: deleteIngestIdempotencyChunk },
   { phase: "metric_series", run: deleteMetricSeriesChunk },
   { phase: "metric_defs", run: deleteMetricDefsChunk },
-  { phase: "signal_fields", run: deleteSignalFieldsChunk },
-  { phase: "observed_resources", run: deleteObservedResourcesChunk },
-  { phase: "saved_queries", run: deleteSavedQueriesChunk },
-  { phase: "dashboards", run: deleteDashboardsChunk },
   { phase: "sources", run: deleteSourcesChunk },
 ];
 
 const BASE_DATA_CLEAR_STEPS: Array<{ phase: string; run: (baseId: string, db: typeof sql) => Promise<number> }> = [
-  { phase: "metric_samples", run: deleteMetricSamplesChunk },
-  { phase: "metric_rollups_hourly", run: deleteMetricRollupsChunk },
+  { phase: "state_variants", run: (id, db) => deleteRegistryChunk(id, "state_variants", db) },
+  { phase: "state_keys", run: (id, db) => deleteRegistryChunk(id, "state_keys", db) },
+  { phase: "event_kinds", run: (id, db) => deleteRegistryChunk(id, "event_kinds", db) },
   { phase: "metric_hours", run: deleteMetricHoursChunk },
-  { phase: "state_changes", run: deleteStateChangesChunk },
-  { phase: "events", run: deleteEventsChunk },
-  { phase: "states_current", run: deleteCurrentStatesChunk },
-  { phase: "metric_series_dimensions", run: deleteMetricSeriesDimensionsChunk },
   { phase: "source_scrapes", run: deleteSourceScrapesChunk },
   { phase: "ingest_idempotency", run: deleteIngestIdempotencyChunk },
   { phase: "metric_series", run: deleteMetricSeriesChunk },
   { phase: "metric_defs", run: deleteMetricDefsChunk },
-  { phase: "signal_fields", run: deleteSignalFieldsChunk },
-  { phase: "observed_resources", run: deleteObservedResourcesChunk },
 ];
 
 export const createBaseLifecycle =
-  (store = baseStore) =>
+  (configuredStore = baseStore) =>
   async (baseId: string): Promise<{ done: boolean }> => {
+    const store = { ...configuredStore, query: await configuredStore.prepare() };
     const initial = await loadStoreRow(baseId);
     if (!initial || initial.state === "failed") return { done: true };
     const operation = initial.state === "active" ? "reconcile" : initial.operation;
     if (!operation) return { done: true };
     const step = (name: string, run: (row: StoreRow, db: typeof sql) => Promise<void>) =>
-      store.step(baseId, operation, name, run, operation === "reconcile" ? undefined : initial.updated_at_version);
+      store.step(
+        baseId,
+        operation,
+        name,
+        (row, db) => run.call(store, row, db),
+        operation === "reconcile" ? undefined : initial.updated_at_version,
+      );
     try {
       if (operation === "delete") {
         await step("drop_reader", store.dropReader);
@@ -350,11 +200,16 @@ export const createBaseLifecycle =
       }
       await step("active", async (_row, db) => {
         await db`UPDATE pulse.base_stores SET state='active',operation=NULL,attempts=0,last_error=NULL,last_error_at=NULL,reconcile_needed=CASE WHEN updated_at::text=${initial.updated_at_version} THEN false ELSE reconcile_needed END,
+        sealed_before=CASE WHEN ${operation === "clear"} THEN NULL ELSE sealed_before END,
+        usage_bytes=CASE WHEN ${operation === "clear"} THEN NULL ELSE usage_bytes END,
+        usage_rows=CASE WHEN ${operation === "clear"} THEN NULL ELSE usage_rows END,
+        usage_measured_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE usage_measured_at END,
+        storage_exceeded_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE storage_exceeded_at END,
         write_block_reason=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_block_reason END,
         write_blocked_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_blocked_at END,updated_at=now() WHERE base_id=${baseId}::uuid`;
         if (operation === "clear") {
           await db`UPDATE pulse.bases SET data_clear_completed_at=now(),data_clear_failed_at=NULL,data_clear_error=NULL WHERE id=${baseId}::uuid`;
-          await db`UPDATE pulse.sources SET last_seen_at=NULL,last_error=NULL,last_error_at=NULL WHERE base_id=${baseId}::uuid`;
+          await db`UPDATE pulse.sources SET last_seen_at=NULL,last_data_at=NULL,throttled_at=NULL,last_error=NULL,last_error_at=NULL WHERE base_id=${baseId}::uuid`;
         }
       });
       return { done: true };

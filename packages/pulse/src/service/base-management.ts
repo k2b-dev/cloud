@@ -13,6 +13,7 @@ import { type ServiceAccountKind, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { PulseBase } from "../contracts";
 import { withShortId } from "../lib/short-id";
+import type { BaseRetention } from "../store/admin-contracts";
 import { baseStoreStatus, insertBaseStore } from "../store/base-status";
 import type { baseStore } from "../store/base-store";
 import { RetentionStoreUnavailable, retentionPreview } from "../store/retention";
@@ -411,6 +412,7 @@ export const updateBase = async (params: {
   rollupRetentionDays?: number;
   sensitiveRetentionHours?: number;
   confirmShorterRetention?: boolean;
+  expectedRetention?: BaseRetention;
   clock?: () => Date;
   store?: typeof baseStore;
 }): Promise<Result<PulseBase>> => {
@@ -423,7 +425,7 @@ export const updateBase = async (params: {
   const proposed = normalizeBaseUpdateValues(params, before);
   if (!proposed.ok) return proposed;
   const policy = await readBasePolicy();
-  if (params.rawRetentionDays !== undefined && proposed.data.rawRetentionDays > policy.maxRawRetentionDays)
+  if (proposed.data.rawRetentionDays !== before.retention_days && proposed.data.rawRetentionDays > policy.maxRawRetentionDays)
     return fail(err.badInput(`Raw retention must be between 1 and ${policy.maxRawRetentionDays} days`));
   // ClickHouse scans must not hold the row lock that ingest and scrapes share.
   // A confirmed save needs no preview, and so no data store.
@@ -443,7 +445,11 @@ export const updateBase = async (params: {
     if (
       existing.retention_days !== before.retention_days ||
       existing.rollup_retention_days !== before.rollup_retention_days ||
-      existing.sensitive_retention_hours !== before.sensitive_retention_hours
+      existing.sensitive_retention_hours !== before.sensitive_retention_hours ||
+      (params.expectedRetention !== undefined &&
+        (existing.retention_days !== params.expectedRetention.rawRetentionDays ||
+          existing.rollup_retention_days !== params.expectedRetention.rollupRetentionDays ||
+          existing.sensitive_retention_hours !== params.expectedRetention.sensitiveRetentionHours))
     )
       return fail({
         code: "PULSE_BASE_CHANGED",
@@ -456,6 +462,11 @@ export const updateBase = async (params: {
         status: 409,
         message: "Shorter retention removes older data. Confirm the preview to continue.",
         preview,
+        previewedFrom: {
+          rawRetentionDays: before.retention_days,
+          rollupRetentionDays: before.rollup_retention_days,
+          sensitiveRetentionHours: before.sensitive_retention_hours,
+        },
       });
     // Preserve unrelated concurrent name/description changes when those fields were omitted.
     const values = normalizeBaseUpdateValues(params, existing);
@@ -476,13 +487,14 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
 
+  // Settings reads use the global pool: never wait for a second connection inside the locked transaction.
+  const policy = await readBasePolicy();
   const queued = await sql.begin(async (tx): Promise<Result<void>> => {
     await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
     const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!authorized.ok) return authorized;
-    await insertBaseStore(params.baseId, await readBasePolicy(), tx);
-    await tx`UPDATE pulse.base_stores SET state='deleting',operation='delete',attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
-    await tx`UPDATE pulse.dashboards SET public_enabled=false,public_token_hash=NULL,public_token_encrypted=NULL WHERE base_id=${params.baseId}::uuid`;
+    await insertBaseStore(params.baseId, policy, tx);
+    await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1,state='deleting',operation='delete',attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases
       SET deletion_started_at = now(),
@@ -493,7 +505,7 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
     `;
     await tx`
       UPDATE pulse.sources
-      SET enabled = FALSE, updated_at = now()
+      SET enabled = FALSE, updated_at = greatest(now(), updated_at)
       WHERE base_id = ${params.baseId}::uuid
     `;
     await deleteBoundServiceAccounts(params.baseId, tx);
@@ -527,7 +539,7 @@ export const clearBaseData = async (params: { baseId: string; user: AccessScope 
           "Writes to this base are blocked after a checkpoint mismatch. A Cloud admin decides under Administration -> Pulse -> Bases.",
       });
     // A clear gets a fresh checkpoint identity; retries of this clear keep the one its first run prepared.
-    await tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
+    await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1,state='clearing',operation='clear',pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases
       SET data_clear_started_at = now(),

@@ -26,6 +26,7 @@ import type {
   PulsePolicy,
   ReadProfileName,
 } from "../../store/admin-contracts";
+import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import { AdminClientError, adminClient } from "./admin-client";
 import { adminErrorText, type PulseAdminMessages, pulseAdminMessages } from "./pulse-admin-messages";
 
@@ -477,6 +478,22 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
     }
   };
   const replace = (next: AdminBaseRow) => setRows(rows().map((row) => (row.id === next.id ? next : row)));
+  // A queued operation finishes or fails in the background: follow every running row to its end. A deleted base
+  // keeps its row, marked deleted, until the next reload.
+  const [deletedIds, setDeletedIds] = createSignal<ReadonlySet<string>>(new Set());
+  const running = () => rows().filter((row) => !deletedIds().has(row.id) && storeBadge(t(), row.store)?.tone === "running");
+  // A failed lookup keeps the last row and marks the running rows as not current, with Retry in the failed-row place.
+  const followed = installPeriodicRefresh({
+    active: () => running().length > 0 && rowBusy() === null,
+    refresh: async () => {
+      for (const row of running()) {
+        const page = await adminClient.bases({ q: row.id, limit: 1 }, controller.signal);
+        const next = page.items.find((item) => item.id === row.id);
+        if (next) replace(next);
+        else if (row.store.state === "deleting") setDeletedIds(new Set([...deletedIds(), row.id]));
+      }
+    },
+  });
 
   const setCreation = async (value: BaseCreationPolicy) => {
     const current = policy();
@@ -667,15 +684,29 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
             onRowClick={(row) => row.store.state !== "deleting" && void editLimits(row)}
             empty={<Placeholder title={t().basesEmpty} description={t().basesEmptyDescription} icon="ti ti-database" />}
             renderCell={({ row, col, render }) => {
-              const badge = () => storeBadge(t(), row.store);
+              const stale = () => followed.failed() && running().some((item) => item.id === row.id);
+              const badge = () =>
+                deletedIds().has(row.id)
+                  ? { tone: "neutral" as const, label: t().stateDeleted }
+                  : stale()
+                    ? { tone: "warning" as const, label: t().stateStale }
+                    : storeBadge(t(), row.store);
               if (col.id === "base")
                 return (
-                  <span class="flex min-w-0 items-center gap-2">
+                  <span class="flex min-w-0 flex-wrap items-center gap-2">
                     <span class="truncate font-medium text-primary">{row.name}</span>
                     <Show when={badge()}>
                       {(value) => (
-                        <StatusBadge tone={value().tone} variant="text" label={value().label} title={row.store.errorCode ?? undefined} />
+                        <StatusBadge
+                          tone={value().tone}
+                          variant="text"
+                          label={value().label}
+                          title={stale() ? t().staleHelp : (row.store.errorCode ?? undefined)}
+                        />
                       )}
+                    </Show>
+                    <Show when={row.rollupLag}>
+                      <StatusBadge tone="warning" variant="text" label={t().rollupLag} />
                     </Show>
                   </span>
                 );
@@ -708,19 +739,24 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
                 return (
                   // DataTable ignores row clicks from nested controls, so these never open the dialog twice.
                   <span class="flex justify-end gap-1">
-                    <Show when={row.store.state === "failed"}>
+                    <Show when={row.store.state === "failed" || stale()}>
                       <Button
                         size="xs"
                         variant="secondary"
                         loading={rowBusy() === row.id}
                         disabled={rowBusy() !== null}
-                        title={failedOperationText(t(), row.store)}
-                        onClick={() => void act(row, "retry")}
+                        title={stale() ? t().staleHelp : failedOperationText(t(), row.store)}
+                        onClick={() => (stale() ? followed.retry() : void act(row, "retry"))}
                       >
                         {t().retry}
                       </Button>
                     </Show>
-                    <Button size="xs" variant="ghost" disabled={row.store.state === "deleting"} onClick={() => void editLimits(row)}>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      disabled={row.store.state === "deleting" || deletedIds().has(row.id)}
+                      onClick={() => void editLimits(row)}
+                    >
                       {t().limits}
                     </Button>
                   </span>

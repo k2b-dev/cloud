@@ -1,8 +1,10 @@
-import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { beforeAll, expect, spyOn, test } from "bun:test";
+import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import { SQL, sql } from "bun";
 import { clickhouseAdminQuery as admin, clickhouseTestPrefix as prefix } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { READ_VIEWS } from "../store/base-schema";
 import { createBaseStore, loadStoreRow } from "../store/base-store";
 import {
@@ -17,17 +19,118 @@ import { clickhouseQuery } from "../store/client";
 import { quoteIdentifier as q } from "../store/validation";
 import { requireBaseActive, requireBaseWritable } from "./access-control";
 import { createBaseLifecycle } from "./base-lifecycle";
-import { createDashboard } from "./dashboard-management";
 import { ingestBatch } from "./ingest-writer";
-import { createSource } from "./source-management";
+import { createSource, createSourceApiKey, removeSourceApiKey } from "./source-management";
 
 const suite = suiteFor("database", "clickhouse");
 const runUntilDone = async (run: () => Promise<{ done: boolean }>) => {
   for (let n = 0; n < 100; n++) if ((await run()).done) return;
   throw new Error("LIFECYCLE_DID_NOT_FINISH");
 };
+const sourceKeyFixture = async () => {
+  const base = await fixtureBase();
+  await createBaseLifecycle(fixtureStore())(base.id);
+  const identity = adminFixtureIdentity(crypto.randomUUID());
+  if (identity.actor.kind !== "user") throw new Error("Expected user fixture");
+  const user = identity.actor.user;
+  const sourceId = crypto.randomUUID(),
+    shortId = newShortId();
+  await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${user.id}::uuid,${user.id},'local','user')`;
+  const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${user.id}::uuid,'admin') RETURNING id`;
+  await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${base.id}::uuid,${access!.id}::uuid)`;
+  await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${shortId},${base.id}::uuid,'http_ingest','Key fixture')`;
+  return {
+    baseId: base.id,
+    sourceId,
+    user,
+    cleanup: async () => {
+      await sql`DELETE FROM auth.service_accounts WHERE app_id='pulse' AND resource_type='pulse_source' AND resource_id=${shortId}`;
+      await cleanupFixtureBase(base);
+      await sql`DELETE FROM auth.users WHERE id=${user.id}::uuid`;
+    },
+  };
+};
 suite("Pulse per-base store lifecycle", () => {
   beforeAll(installFixtureStore, 30_000);
+  test("source key creation and removal exceed a two-connection pool without nested reservations", async () => {
+    const f = await sourceKeyFixture();
+    const database = new SQL({ max: 2 });
+    const begin = database.begin.bind(database);
+    const boundary = spyOn(sql, "begin").mockImplementation((run) => {
+      if (typeof run === "string") throw new Error("Unexpected transaction options in source key fixture");
+      return begin(run);
+    });
+    // Make pool-backed service calls contend for the same bounded pool as Pulse transactions.
+    const getOrCreate = serviceAccounts.getOrCreateResourceBound;
+    const accountLookup = spyOn(serviceAccounts, "getOrCreateResourceBound").mockImplementation(async (params) => {
+      await database`SELECT 1`;
+      return getOrCreate(params);
+    });
+    const list = serviceAccountCredentials.listOverview;
+    const credentialLookup = spyOn(serviceAccountCredentials, "listOverview").mockImplementation(async (params) => {
+      await database`SELECT 1`;
+      return list(params);
+    });
+    const pending: Promise<unknown>[] = [];
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("Source keys starved the SQL pool")), 10000);
+    });
+    try {
+      const creates = Array.from({ length: 6 }, (_, i) =>
+        createSourceApiKey({ baseId: f.baseId, sourceId: f.sourceId, user: f.user, name: `Key ${i}`, permission: "write" }),
+      );
+      pending.push(...creates);
+      const created = await Promise.race([Promise.all(creates), deadline]);
+      const removes = created.map((result) => {
+        if (!result.ok) throw new Error(result.error.message);
+        return removeSourceApiKey({ baseId: f.baseId, sourceId: f.sourceId, user: f.user, credentialId: result.data.credential.id });
+      });
+      pending.push(...removes);
+      expect((await Promise.race([Promise.all(removes), deadline])).every((result) => result.ok)).toBe(true);
+    } finally {
+      clearTimeout(timeout);
+      await database.close({ timeout: 1 });
+      await Promise.allSettled(pending);
+      boundary.mockRestore();
+      accountLookup.mockRestore();
+      credentialLookup.mockRestore();
+      await f.cleanup();
+    }
+  }, 30000);
+  test.each(["clearing", "deleting", "source removed"])(
+    "a key created during %s is revoked by the locked post-check",
+    async (state) => {
+      const f = await sourceKeyFixture();
+      const create = serviceAccountCredentials.createResourceApiToken;
+      let credentialId: string | undefined;
+      const boundary = spyOn(serviceAccountCredentials, "createResourceApiToken").mockImplementation(async (params) => {
+        const result = await create(params);
+        if (result.ok) {
+          credentialId = result.data.credential.id;
+          if (state === "source removed") await sql`UPDATE pulse.sources SET deleted=true WHERE id=${f.sourceId}::uuid`;
+          else await sql`UPDATE pulse.base_stores SET state=${state} WHERE base_id=${f.baseId}::uuid`;
+        }
+        return result;
+      });
+      try {
+        expect(
+          await createSourceApiKey({ baseId: f.baseId, sourceId: f.sourceId, user: f.user, name: "Racing key", permission: "write" }),
+        ).toMatchObject({
+          ok: false,
+          error: { status: state === "source removed" ? 404 : 409 },
+        });
+        expect(credentialId).toBeDefined();
+        expect(await sql<{ status: string }[]>`SELECT status FROM auth.service_account_credentials WHERE id=${credentialId}::uuid`).toEqual(
+          [{ status: "revoked" }],
+        );
+      } finally {
+        boundary.mockRestore();
+        await f.cleanup();
+      }
+    },
+    30000,
+  );
   test("provisions tables, six SELECT grants and the selected read profile", async () => {
     const base = await fixtureBase(),
       store = fixtureStore();
@@ -67,7 +170,7 @@ suite("Pulse per-base store lifecycle", () => {
       await cleanupFixtureBase(base);
     }
   }, 60_000);
-  test("ingest, source creation and dashboard saves refuse every non-active state", async () => {
+  test("ingest and source creation refuse every non-active state", async () => {
     const base = await fixtureBase();
     const [user] = await sql<
       { id: string }[]
@@ -81,7 +184,6 @@ suite("Pulse per-base store lifecycle", () => {
           false,
         );
         expect((await createSource({ baseId: base.id, user: { id: user!.id }, name: "Refused", kind: "http_ingest" })).ok).toBe(false);
-        expect((await createDashboard({ baseId: base.id, user: { id: user!.id }, name: "Refused" })).ok).toBe(false);
       }
     } finally {
       await cleanupFixtureBase(base);
@@ -109,19 +211,14 @@ suite("Pulse per-base store lifecycle", () => {
       operation: "clear",
       state: "clearing",
       steps: [
-        "postgres:metric_samples",
-        "postgres:metric_rollups_hourly",
+        "postgres:state_variants",
+        "postgres:state_keys",
+        "postgres:event_kinds",
         "postgres:metric_hours",
-        "postgres:state_changes",
-        "postgres:events",
-        "postgres:states_current",
-        "postgres:metric_series_dimensions",
         "postgres:source_scrapes",
         "postgres:ingest_idempotency",
         "postgres:metric_series",
         "postgres:metric_defs",
-        "postgres:signal_fields",
-        "postgres:observed_resources",
         "password",
         "database",
         "schema",
@@ -140,21 +237,14 @@ suite("Pulse per-base store lifecycle", () => {
       state: "deleting",
       steps: [
         "drop_reader",
-        "postgres:metric_samples",
-        "postgres:metric_rollups_hourly",
+        "postgres:state_variants",
+        "postgres:state_keys",
+        "postgres:event_kinds",
         "postgres:metric_hours",
-        "postgres:state_changes",
-        "postgres:events",
-        "postgres:states_current",
-        "postgres:metric_series_dimensions",
         "postgres:source_scrapes",
         "postgres:ingest_idempotency",
         "postgres:metric_series",
         "postgres:metric_defs",
-        "postgres:signal_fields",
-        "postgres:observed_resources",
-        "postgres:saved_queries",
-        "postgres:dashboards",
         "postgres:sources",
         "drop_database",
         "access",
@@ -261,10 +351,16 @@ suite("Pulse per-base store lifecycle", () => {
       await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${source}::uuid,${newShortId()},${base.id}::uuid,'http_ingest','Preserved source')`;
       await sql`INSERT INTO auth.service_accounts(name,kind,app_id,resource_type,resource_id) VALUES('Source token fixture','resource_bound','pulse','pulse_source',${(await sql`SELECT short_id FROM pulse.sources WHERE id=${source}::uuid`)[0]!.short_id})`;
       await store.query(`INSERT INTO ${q(base.database)}._events(id,ts,kind,version) VALUES(generateUUIDv4(),now64(3),'marker',1)`);
-      await sql`UPDATE pulse.base_stores SET state='clearing',operation='clear' WHERE base_id=${base.id}::uuid`;
+      // A base over its storage threshold: after the clear, ingest must not refuse it until the next usage scan.
+      await sql`UPDATE pulse.base_stores SET state='clearing',operation='clear',usage_bytes=storage_bytes,usage_rows=1,usage_measured_at=now(),storage_exceeded_at=now() WHERE base_id=${base.id}::uuid`;
       await runUntilDone(() => createBaseLifecycle(store)(base.id));
       const [count] = await store.query(`SELECT count() AS n FROM ${q(base.database)}._events`);
       expect(Number(count?.n)).toBe(0);
+      expect(
+        (
+          await sql`SELECT usage_bytes,usage_rows,usage_measured_at,storage_exceeded_at FROM pulse.base_stores WHERE base_id=${base.id}::uuid`
+        )[0],
+      ).toEqual({ usage_bytes: null, usage_rows: null, usage_measured_at: null, storage_exceeded_at: null });
       expect((await sql`SELECT id FROM pulse.sources WHERE id=${source}::uuid`).length).toBe(1);
       const [tokens] =
         await sql`SELECT count(*)::int AS n FROM auth.service_accounts WHERE kind='resource_bound' AND resource_id=(SELECT short_id FROM pulse.sources WHERE id=${source}::uuid)`;

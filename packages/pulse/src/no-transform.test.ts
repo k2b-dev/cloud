@@ -6,40 +6,15 @@ const storeService = await import("./store/service");
 const configured = spyOn(storeService, "pulseStoreConfigured").mockResolvedValue(true);
 afterAll(() => configured.mockRestore());
 
-const { pulseService } = await import("./service");
-const missing = spyOn(pulseService.dashboard, "publicSnapshot").mockResolvedValue({
-  ok: false,
-  error: { code: "NOT_FOUND", message: "Missing dashboard", status: 404 },
-});
-afterAll(() => missing.mockRestore());
-
 const { default: api } = await import("./api/index");
 const { default: pages } = await import("./frontend/index");
 
 describe("compression boundaries", () => {
   for (const path of [
     "/bases",
-    "/query/metric-text",
-    "/query/metric-text/__new_route__",
-    "/bases/base/inventory",
-    "/bases/base/inventory/__new_route__",
-    "/bases/base/resource-events",
-    "/bases/base/resource-events/__new_route__",
-    "/bases/base/resource-states",
-    "/bases/base/resource-states/__new_route__",
-    "/bases/base/recent-events",
-    "/bases/base/recent-events/__new_route__",
-    "/bases/base/states",
-    "/bases/base/states/__new_route__",
-    "/dashboards/dashboard/snapshot",
-    "/dashboards/dashboard/snapshot/__new_route__",
-    "/public-dashboard/token",
-    "/public-dashboard/token/__new_route__",
-    "/bases/base/metrics",
-    "/bases/base/series",
-    "/bases/base/resources",
-    "/bases/base/resource-metrics",
     "/bases/base/sources",
+    "/bases/base/sources/source/scrapes",
+    "/bases/base/sources/source/api-keys",
     "/__new_route__",
   ]) {
     test(`api ${path} opts out`, async () => {
@@ -48,10 +23,12 @@ describe("compression boundaries", () => {
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
-  for (const path of ["/query/metric", "/query/event-map", "/query/compile-text"]) {
+  for (const path of ["/ingest", "/bases/base/sources/source/ingest"]) {
     test(`api POST ${path} opts out`, async () => {
       const response = await api.request(path, { method: "POST" });
       expect(response.status).toBeLessThan(500);
+      expect(response.status).not.toBe(404);
+      expect(api.router.match("POST", path)[0].some(([[, route]]) => route.method === "POST")).toBe(true);
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
@@ -63,8 +40,6 @@ describe("compression boundaries", () => {
     "/base/resources",
     "/base/explorer",
     "/base/dashboards/dashboard",
-    "/display/token",
-    "/display/token/__new_route__",
     "/base/query-reference",
     "/__new_route__",
   ]) {
@@ -76,9 +51,14 @@ describe("compression boundaries", () => {
   }
 });
 
-test("every existing workspace address still reaches its authentication guard", async () => {
+test("every existing workspace address mounts a page and keeps its authentication guard", async () => {
   for (const path of [
     "/base",
+    "/base/dashboards",
+    "/base/query-reference",
+    "/base/events",
+    "/base/metrics",
+    "/base/states",
     "/base/dashboards/dashboard/edit",
     "/base/dashboards/dashboard",
     "/base/sources/source",
@@ -93,18 +73,14 @@ test("every existing workspace address still reaches its authentication guard", 
     "/base/signals/states",
     "/base/signals/metrics",
     "/base/signals",
+    "/base/signals/events/old-signal",
+    "/base/resources/type/resource",
+    "/base/query-reference/old-topic",
   ]) {
     const response = await pages.request(path);
     expect(response.status).toBeLessThan(500);
     expect(response.status).not.toBe(404);
+    expect(pages.router.match("GET", path)[0].some(([[, route]]) => route.method === "GET")).toBe(true);
     expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
   }
 });
-
-for (const path of ["/query/event-map", "/query/event-map/__new_route__"]) {
-  test(`POST ${path} opts out`, async () => {
-    const response = await api.request(path, { method: "POST" });
-    expect(response.status).toBeLessThan(500);
-    expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
-  });
-}

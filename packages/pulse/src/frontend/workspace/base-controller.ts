@@ -2,6 +2,7 @@ import { mutation } from "@k2b/stdlib/solid";
 import { prompts, toast, useLocale } from "@k2b/ui";
 import { type Accessor, onCleanup, type Setter } from "solid-js";
 import type { PulseBase } from "../../contracts";
+import type { BaseRetention } from "../../store/admin-contracts";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
 import { type BaseSettingsSaveResult, openPulseBaseSettingsDialog } from "./base-settings-dialog";
@@ -34,6 +35,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     sensitiveRetentionHours: number;
     /** Set only after the person confirmed the date and amount a shorter retention removes. */
     confirmShorterRetention?: true;
+    expectedRetention?: BaseRetention;
   };
   const updateMutation = mutation.create<PulseBase, SettingsIntent>({
     mutation: ({ baseId, ...body }, { abortSignal }) =>
@@ -121,7 +123,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
       if (refused instanceof RetentionConfirmationError) {
         // A shorter retention deletes data: save only after the person saw from when and how much.
         if (!(await confirmShorterRetention(refused.preview, locale())) || disposed) return "failed";
-        await updateMutation.mutate({ ...intent, confirmShorterRetention: true });
+        await updateMutation.mutate({ ...intent, confirmShorterRetention: true, expectedRetention: refused.previewedFrom });
         if (disposed) return "failed";
       }
       if (updateMutation.error()) throw updateMutation.error();
@@ -222,6 +224,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
         loading: deps.loading,
         writeBlocked: deps.writeBlocked,
         updateBaseSettings: updateSettings,
+        currentStore: () => deps.selectedBase()?.store ?? null,
         retryStore: () => retryStore(base),
         clearBaseData: () => clearData(base),
         deleteBase: () => deleteBase(base),

@@ -6,13 +6,13 @@ import api from ".";
 
 const configured = spyOn(service, "pulseStoreConfigured").mockResolvedValue(false);
 afterAll(() => configured.mockRestore());
-test("unconfigured Pulse refuses data APIs and public dashboards without affecting other apps", async () => {
+test("unconfigured Pulse refuses source APIs and ingest without affecting other apps", async () => {
   const router = new Hono().route("/api/pulse", api).get("/api/core/health", (c) => c.json({ ok: true }));
   for (const [method, path] of [
     ["GET", "/api/pulse/bases"],
     ["GET", "/api/pulse/bases/health"],
     ["POST", "/api/pulse/bases"],
-    ["GET", "/api/pulse/public/token"],
+    ["GET", "/api/pulse/bases/abc123/sources"],
     ["POST", "/api/pulse/ingest"],
   ]) {
     const response = await router.request(path!, { method });

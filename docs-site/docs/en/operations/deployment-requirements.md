@@ -179,6 +179,14 @@ Per replica, the built-in applications reserve:
 | Pulse | 6 | none | 396 MiB |
 | IPA Hosts | 1 | none | 66 MiB |
 
+Pulse's six default jobs are `pulse:metrics:scrape`, `pulse:rollup:hourly`,
+`pulse:retention`, `pulse:base-lifecycle`, `pulse:base-usage`, and
+`pulse:base-checkpoint`. Its scheduler `pulse` checks due scrapes every minute,
+submits hourly calculation at minute 23, and runs retention at 03:17 UTC.
+Scheduler `pulse:stores` sweeps unfinished lifecycle work every minute,
+measures usage every five minutes, and writes checkpoints on the hour.
+Scheduler definitions are separate from the six jobs in the reservation table.
+
 Together, that is about 16 GiB per replica for every built-in application.
 Size `max_file_store` for the applications you deploy with headroom for
 standalone applications, and check the live reservation of your account:
@@ -380,7 +388,7 @@ or mutate real data without approval.
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
-| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
+| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. The release workflow publishes the Pulse image. | Ingest a disposable batch through its source credential and inspect source health. |
 
 ### Work applications
 
@@ -548,11 +556,12 @@ own persistent volume. Keep the instance dedicated to Pulse: ClickHouse user
 management is instance-wide, so the service user can alter any user, including
 ClickHouse admins. Whoever operates ClickHouse as admin can read all Pulse data.
 
-For the **normal** read profile, plan at least **10 GB RAM**: three concurrent
-reads at 2 GB, 1 GB for maintenance, and reserve. Choose **klein** (small) on
-smaller servers. The setup script also creates **groß** (large); each read
-profile has fixed memory, execution, scan and result limits that readers cannot
-override. A Cloud admin selects each base’s read profile and limits under
+Budget memory for the selected read profile and expected parallel work:
+**small** allows 1 GB per read, **normal** 2 GB, and **large** 4 GB. The
+maintenance profile allows 1 GB. Leave additional memory for ClickHouse itself
+and storage merges; the per-read limit is not an instance-wide memory budget.
+Each read profile has fixed execution, scan, and result limits that readers
+cannot override. A Cloud admin selects the profile and base limits under
 **Administration → Pulse → Bases**.
 
 A Cloud admin opens **Administration → Pulse → Data store** (`/admin/pulse`),
@@ -582,17 +591,39 @@ Remote response bodies are never echoed in errors. The answer time can still
 tell a closed port from an open one, so the Cloud admin role carries reach into
 the internal network that Cloud can connect to.
 
+Pulse shares per-base value and byte quotas through Cloud Valkey across all
+replicas and write paths. Buckets hold one minute’s allowance and refill
+continuously. Throttled ingest returns `429 PULSE_BASE_THROTTLED` with
+`Retry-After`; unavailable Valkey returns `503 PULSE_QUOTA_UNAVAILABLE` with
+`Retry-After: 30`. Scrapes record the refusal and wait for the next tick.
+
+Every five minutes, Pulse measures storage and disk. A base at its storage
+threshold refuses new values with `409 PULSE_BASE_STORAGE_FULL`; a base admin
+can shorten retention or a Cloud admin can raise the threshold. Below 10% free
+instance disk, all bases refuse new values with `503 PULSE_STORE_DISK_LOW` and
+`Retry-After: 300`. Existing data stays readable. Pulse queues one notification
+per crossing to direct user base admins (storage) or effective Cloud admins
+(disk). Group base grants are not expanded. Delivery follows user preferences.
+
+An unreachable store returns `503 PULSE_STORE_UNAVAILABLE` and
+`Retry-After: 30`. The first failed write or disk measurement opens one outage
+and queues a notification for each Cloud admin. A successful disk measurement
+closes it and records recovery. Notification outbox rows commit with each
+transition and are dispatched afterwards; background notifications use the
+operator’s `app.locale` setting, and request-triggered outages retain the
+request locale.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
 Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
-answer `503 PULSE_STORE_NOT_CONFIGURED`. Administration remains available for
-setup. Production Compose does not provision ClickHouse; the operator supplies it.
+answer `503 PULSE_STORE_NOT_CONFIGURED`, and the Pulse page shows **Pulse is not
+set up yet**. Administration remains available for setup. Production Compose does not provision ClickHouse; the operator supplies it.
 
 After a restore, Pulse compares each database’s checkpoint with Postgres and
 blocks measurement writes if they differ or the database is missing. A Cloud
 admin can recheck a corrected restore or recreate an empty database. Recreating
-removes measurements while preserving sources, source credentials and dashboards.
+removes measurements while preserving sources, source credentials, settings, and access.
 
 ## Verify readiness and upgrades
 
@@ -638,15 +669,16 @@ applications need.
 
 ### Prepare Pulse's new data store
 
-This release adds an optional ClickHouse connection and versioned Pulse
-Postgres migrations. A complete existing Pulse installation is adopted without
-replaying its baseline; older images must not start against ledger versions
-they do not recognize. An incomplete Alpha schema still requires an explicit
-reset and is never upgraded automatically.
+This update deletes all existing Pulse data without confirmation: bases,
+members, sources, source tokens, measurements, dashboards, and saved queries.
+Read [Pulse requires ClickHouse and starts empty](/en/docs/reference/deprecations-and-migrations#pulse-requires-clickhouse-and-starts-empty)
+for the preparation steps, removed commands, and lack of an old-measurement
+export path. Stop old Pulse replicas before starting the new image.
 
-Provision and [connect ClickHouse](#provide-clickhouse-for-pulse) before the
-later releases that move telemetry there. No data moves in this release, and
-an unset store does not change startup or existing Pulse features.
+Provide and [connect ClickHouse](#provide-clickhouse-for-pulse) before resuming
+collection. A fresh or reset installation creates no Postgres extension.
+Measurements live in each base's ClickHouse database; Postgres keeps control
+data and write reservations. Later starts preserve the new data.
 
 ### Upgrade Spaces task deadlines
 

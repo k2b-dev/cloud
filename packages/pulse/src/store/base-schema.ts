@@ -144,5 +144,27 @@ export const BASE_SCHEMA_VERSIONS = [
       ];
     },
   },
+  {
+    version: 2,
+    statements: (ctx: BaseSchemaContext): string[] => {
+      const db = assertStoreName(ctx.database, ctx.prefix);
+      const columns = ["value", "dimensions", "resource_key", "source_id", "updated_at"];
+      return [
+        `ALTER TABLE ${db}._sources ADD COLUMN IF NOT EXISTS deleted UInt8 DEFAULT 0`,
+        // Physical replacement must preserve the view's timestamp priority after a merge, too.
+        // Atomic CREATE OR REPLACE reads the old table before swapping; replay copies rows again without losing them.
+        `CREATE OR REPLACE TABLE ${db}._states_current (
+          state_key String, variant_key String, value String, dimensions String, resource_key String,
+          source_id Nullable(UUID), updated_at DateTime64(3, 'UTC'), version UInt64,
+          merge_version UInt128 MATERIALIZED (bitShiftLeft(toUInt128(toInt128(toUnixTimestamp64Milli(updated_at)) + 9223372036854775808),64) + toUInt128(version))
+        ) ENGINE = ReplacingMergeTree(merge_version) ORDER BY (state_key, variant_key)
+        AS SELECT state_key, variant_key, value, dimensions, resource_key, source_id, updated_at, version FROM ${db}._states_current`,
+        `CREATE OR REPLACE VIEW ${db}.states DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT state_key, variant_key, ${columns.map((c) => `argMax(tuple(src.${c}), tuple(src.updated_at, src.version)).1 AS ${c}`).join(", ")} FROM ${db}._states_current AS src GROUP BY state_key, variant_key`,
+        `CREATE OR REPLACE VIEW ${db}.sources DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT id, short_id, kind, name FROM (SELECT id, argMax(src.short_id,src.version) AS short_id, argMax(src.kind,src.version) AS kind, argMax(src.name,src.version) AS name, argMax(src.deleted,src.version) AS deleted FROM ${db}._sources AS src GROUP BY id) WHERE deleted=0`,
+        `ALTER TABLE ${db}._series ADD COLUMN IF NOT EXISTS deleted UInt8 DEFAULT 0`,
+        `CREATE OR REPLACE VIEW ${db}.series DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT series_id, metric, type, unit, source_id, resource_key, resource_type, resource_id, dimensions FROM ${db}._series FINAL WHERE deleted=0`,
+      ];
+    },
+  },
 ];
-export const LATEST_BASE_SCHEMA_VERSION = 1;
+export const LATEST_BASE_SCHEMA_VERSION = 2;

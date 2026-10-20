@@ -1,4 +1,5 @@
 import { defineApp } from "@k2b/cloud";
+import { NOTIFICATIONS } from "./notifications";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
@@ -6,12 +7,12 @@ export const app = defineApp({
   cli: { pulse: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Pulse",
   icon: "ti ti-activity-heartbeat",
-  description: "Metrics, events, states, and realtime dashboards.",
+  description: "Collect metrics, events, and states.",
   presentation: {
     baseLocale: "en",
     translations: {
       de: {
-        description: "Metriken, Ereignisse, Zustände und Echtzeit-Dashboards.",
+        description: "Metriken, Ereignisse und Zustände sammeln.",
         adminGroups: { pulse: "Pulse" },
         adminLinks: { "/admin/pulse": "Pulse" },
       },
@@ -28,6 +29,7 @@ export const app = defineApp({
     requiresRoles: ["user"],
   },
   skills: SKILLS,
+  notifications: NOTIFICATIONS,
   adminHref: "/admin/pulse",
   adminNav: [{ id: "pulse", label: "Pulse", links: [{ label: "Pulse", href: "/admin/pulse", icon: "ti ti-activity-heartbeat" }] }],
   settings: {

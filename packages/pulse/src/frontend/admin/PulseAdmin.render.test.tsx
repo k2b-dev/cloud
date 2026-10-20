@@ -42,6 +42,7 @@ const policy: PulsePolicy = {
   defaultLimits: limits,
 };
 const row = (id: string, name: string, store: Partial<AdminBaseRow["store"]> = {}): AdminBaseRow => ({
+  rollupLag: false,
   id,
   name,
   admins: ["Jana Berger"],
@@ -64,7 +65,7 @@ const row = (id: string, name: string, store: Partial<AdminBaseRow["store"]> = {
 });
 const page: AdminBasesPage = {
   items: [
-    row("Bet001", "Betrieb"),
+    { ...row("Bet001", "Betrieb"), rollupLag: true },
     row("Lad001", "Laden", { state: "failed", operation: "provision", errorCode: "STORE_UNREACHABLE", usage: null }),
     row("Web001", "Website", { writeBlockReason: "checkpoint_mismatch" }),
   ],
@@ -77,6 +78,7 @@ const page: AdminBasesPage = {
 test("the bases tab shows policy, starting values, usage against limits and every state in the first frame", () => {
   const html = render("de", () => createComponent(BasesAdmin, { initialPolicy: policy, initialPage: page }));
   expect(html).toContain("Alle Personen und Agenten");
+  expect(html).toContain("Stundenwerte hängen hinterher");
   expect(html).toContain("höchstens 730 Tage Rohdaten");
   expect(html).toContain("3 Bases · 2,2 GB belegt · 41 GB frei");
   expect(html).toContain("1,8 GB von 5 GB");

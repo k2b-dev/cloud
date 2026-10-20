@@ -1,8 +1,4 @@
-import { fail, ok, type Result } from "@k2b/cloud/server";
-import { sql } from "bun";
-import type { PulseCapabilitySnapshot, PulseDashboardDslCompileResult, PulseDashboardSnapshot } from "../contracts";
-import { compileDashboardDsl } from "../dashboard-dsl";
-import { compilePulseQueryText } from "../query-dsl";
+import { fail, type Result } from "@k2b/cloud/server";
 import { type AccessScope, requireBaseAccess } from "./access-control";
 import {
   clearBaseData,
@@ -17,46 +13,8 @@ import {
   updateBase,
   updateBaseAccess,
 } from "./base-management";
-import { validateDashboardSources } from "./dashboard-config";
-import {
-  createDashboard,
-  deleteDashboard,
-  disablePublicDashboard,
-  enablePublicDashboard,
-  listDashboards,
-  updateDashboard,
-} from "./dashboard-management";
-import { queryEventMapData } from "./event-map-query";
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
-import {
-  getDashboardSnapshot as getDashboardSnapshotWithDeps,
-  getPublicDashboardSnapshot as getPublicDashboardSnapshotWithDeps,
-} from "./public-dashboard-snapshot";
-import { queryEventAggregateData, queryEventsData, queryMetricData, queryStatesData } from "./query-execution";
-import {
-  compileQueryText,
-  executeCompiledQuery,
-  executeDashboardTextQueries,
-  queryEventMapText,
-  queryMetric,
-  queryMetricText,
-} from "./query-management";
-import { createSavedQuery, deleteSavedQuery, getSavedQuery, listSavedQueries, readSavedQuery } from "./saved-query-management";
-import {
-  getResource,
-  listCurrentStates,
-  listInventory,
-  listMetricSeries,
-  listMetrics,
-  listRecentEvents,
-  listResourceEvents,
-  listResourceMetrics,
-  listResourceStates,
-  listResources,
-  listSignalFields,
-  searchResources,
-} from "./signal-catalog";
 import {
   createSource,
   createSourceApiKey,
@@ -83,60 +41,6 @@ const scrapeSource = async (params: {
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
   return scrapeMetricsSource({ baseId: params.baseId, sourceId: params.sourceId });
-};
-
-const compileDashboardDslText = async (params: {
-  baseId: string;
-  text: string;
-  user: AccessScope;
-}): Promise<Result<PulseDashboardDslCompileResult>> => {
-  const access = await requireBaseAccess(params.baseId, params.user, "read");
-  if (!access.ok) return fail(access.error);
-  const compiled = compileDashboardDsl(params.text, (query) => {
-    const result = compilePulseQueryText(params.baseId, query);
-    return result.ok ? { ok: true, data: result.data } : { ok: false, message: result.error.message };
-  });
-  if (!compiled.ok) {
-    return ok({ ok: false, diagnostics: compiled.diagnostics, config: null });
-  }
-  const config = compiled.data;
-  const validated = await validateDashboardSources(params.baseId, config);
-  if (!validated.ok)
-    return ok({ ok: false, diagnostics: [{ severity: "error", message: validated.error.message, line: 1, column: 1 }], config: null });
-  return ok({ ok: true, diagnostics: compiled.diagnostics, config: validated.data });
-};
-
-const getPublicDashboardSnapshot = async (token: string): Promise<Result<PulseDashboardSnapshot>> => {
-  return getPublicDashboardSnapshotWithDeps(token, {
-    queryMetricData,
-    queryEventAggregateData,
-    queryEventsData,
-    queryStatesData,
-    queryEventMapData,
-  });
-};
-
-const getDashboardSnapshot = async (params: { dashboardId: string; user: AccessScope }): Promise<Result<PulseDashboardSnapshot>> =>
-  getDashboardSnapshotWithDeps(params.dashboardId, params.user, {
-    queryMetricData,
-    queryEventAggregateData,
-    queryEventsData,
-    queryStatesData,
-    queryEventMapData,
-  });
-
-const capabilities = async (): Promise<Result<PulseCapabilitySnapshot>> => {
-  const [extension] = await sql<{ installed: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
-    ) AS installed
-  `;
-  const enabled = extension?.installed === true;
-  return ok({
-    timescaleEnabled: enabled,
-    timeBucketAvailable: enabled,
-    continuousAggregatesAvailable: enabled,
-  });
 };
 
 export const pulseService = {
@@ -170,47 +74,8 @@ export const pulseService = {
     remove: removeSource,
     scrape: scrapeSource,
   },
-  dashboard: {
-    list: listDashboards,
-    create: createDashboard,
-    update: updateDashboard,
-    remove: deleteDashboard,
-    compileDsl: compileDashboardDslText,
-    snapshot: getDashboardSnapshot,
-    enablePublic: enablePublicDashboard,
-    disablePublic: disablePublicDashboard,
-    publicSnapshot: getPublicDashboardSnapshot,
-  },
-  savedQuery: {
-    list: listSavedQueries,
-    get: getSavedQuery,
-    read: readSavedQuery,
-    create: createSavedQuery,
-    remove: deleteSavedQuery,
-  },
   ingest: {
     batch: ingestBatch,
     byApiKey: ingestByApiKey,
   },
-  query: {
-    metric: queryMetric,
-    metricText: queryMetricText,
-    eventMapText: queryEventMapText,
-    compileText: compileQueryText,
-    executeCompiled: executeCompiledQuery,
-    dashboardTexts: executeDashboardTextQueries,
-    metrics: listMetrics,
-    series: listMetricSeries,
-    recentEvents: listRecentEvents,
-    currentStates: listCurrentStates,
-    fields: listSignalFields,
-    inventory: listInventory,
-    resources: listResources,
-    resource: getResource,
-    searchResources,
-    resourceMetrics: listResourceMetrics,
-    resourceEvents: listResourceEvents,
-    resourceStates: listResourceStates,
-  },
-  capabilities,
 };

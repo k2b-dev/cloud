@@ -26,6 +26,9 @@ const precedingBaseId = (id: string) => {
 const suite = suiteFor("database", "clickhouse");
 suite("Pulse accounting and restore checkpoints", () => {
   beforeAll(installFixtureStore, 30_000);
+  test("shared stores reject host-dependent disk measurements before querying ClickHouse", async () => {
+    await expect(measureInstanceDisk(fixtureStore())).rejects.toThrow("Tests must inject disk measurements");
+  });
   test("usage comes from parts and a checkpoint mismatch blocks writes until rechecked or recreated", async () => {
     const base = await fixtureBase(),
       store = fixtureStore();
@@ -35,7 +38,7 @@ suite("Pulse accounting and restore checkpoints", () => {
         `INSERT INTO ${q(base.database)}._samples(row_id,series_id,ts,value,version) VALUES(generateUUIDv4(),generateUUIDv4(),now64(3),1,1)`,
       );
       await measureBaseUsage(base.id, store);
-      await measureInstanceDisk(store);
+      await measureInstanceDisk({ ...store, query: async () => [{ free_space: 50, total_space: 100 }] });
       const [usage] = await sql`SELECT usage_bytes,usage_rows FROM pulse.base_stores WHERE base_id=${base.id}::uuid`;
       const [parts] = await store.query(
         "SELECT sum(bytes_on_disk) AS bytes,sum(rows) AS rows FROM system.parts WHERE active AND database={db:String}",
