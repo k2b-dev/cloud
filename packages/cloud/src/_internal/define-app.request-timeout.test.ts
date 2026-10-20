@@ -191,11 +191,15 @@ test("forwards the Bun server and owns capability JSON timeouts until success or
       }
     }
     const beforeAbort = runStarts;
-    const locale = Promise.withResolvers<string>();
+    const releaseBody = Promise.withResolvers<void>();
     const preparing = Promise.withResolvers<void>();
-    const delayedLocale = spyOn(settingsService, "get").mockImplementationOnce(async () => {
-      preparing.resolve();
-      return locale.promise;
+    const delayedBody = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        preparing.resolve();
+        await releaseBody.promise;
+        controller.enqueue(new TextEncoder().encode('{"input":{}}'));
+        controller.close();
+      },
     });
     const controller = new AbortController();
     try {
@@ -204,18 +208,17 @@ test("forwards the Bun server and owns capability JSON timeouts until success or
           method: "POST",
           signal: controller.signal,
           headers: { "x-cloud-capability-schema-hash": manifest.queries[0]!.schemaHash },
-          body: '{"input":{}}',
+          body: delayedBody,
         }),
         fakeServer,
       );
       await preparing.promise;
       controller.abort();
-      locale.resolve("en");
+      releaseBody.resolve();
       expect((await pending).status).toBe(499);
       expect(runStarts).toBe(beforeAbort);
     } finally {
-      locale.resolve("en");
-      delayedLocale.mockRestore();
+      releaseBody.resolve();
     }
   } finally {
     release.resolve();

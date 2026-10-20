@@ -681,6 +681,7 @@ const runCapabilityDispatch = async (
   const body = upstreamBody.data as Record<string, unknown>;
   if (!params.review && body.stream !== undefined) {
     const stream = CapabilityStreamSchema.safeParse(body.stream);
+    const authority = params.authority;
     if (
       !stream.success ||
       !operation.stream ||
@@ -688,7 +689,7 @@ const runCapabilityDispatch = async (
       stream.data.size > operation.stream.maxBytes ||
       Date.parse(stream.data.expiresAt) <= Date.now() ||
       Date.parse(stream.data.expiresAt) > Date.now() + 86_400_000 ||
-      !params.authority
+      !authority
     )
       return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain");
     try {
@@ -698,7 +699,7 @@ const runCapabilityDispatch = async (
           kind: params.kind,
           capabilityId: params.capabilityId,
           schemaHash: operation.schemaHash,
-          authority: params.authority,
+          authority,
           requestId,
           origin: params.origin,
           continuation: params.continuation,

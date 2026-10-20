@@ -26,7 +26,7 @@ Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only"
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
 const executionStore = await import("../capabilities/executions");
-let recordExecution = async () => crypto.randomUUID();
+let recordExecution: () => Promise<string> = async () => crypto.randomUUID();
 mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, () => ({
   ...executionStore,
   recordCapabilityExecution: () => recordExecution(),
