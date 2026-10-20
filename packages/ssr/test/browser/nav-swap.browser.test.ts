@@ -1651,6 +1651,10 @@ test("a fragment navigation during a pending traversal belongs to the arriving p
     );
     navigation.currentEntry = { key: "arrival", index: 1 };
     arrive({ [markerKey]: { page: "other", position: 1 } }, "/app/new");
+    // The hash link in the still-shown old column aborts the pending fetch before its fragment navigation.
+    click("/app/new#section");
+    expect(requests[0]!.aborted).toBe(true);
+    await Promise.resolve();
     navigation.dispatchEvent(
       Object.assign(new Event("navigate"), { navigationType: "push", destination: { key: "fragment" }, hashChange: true }),
     );

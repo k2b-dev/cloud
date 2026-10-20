@@ -16,7 +16,6 @@ type SwapState = {
   currentEntry: Entry;
   /** Traversal moves history before the DOM, so its scroll still belongs to the shown entry. */
   shown: Entry;
-  traversing?: Traversal;
   stopRestore: () => void;
   scroll: Map<string, ScrollSnapshot>;
   decide: (event: PopStateEvent) => "page" | "nav";
@@ -115,9 +114,10 @@ const loadScroll = (): Map<string, ScrollSnapshot> => {
 const savedScroll = (state: SwapState, entry: Entry): ScrollSnapshot | undefined => state.scroll.get(entryKey(entry)) ?? entry.scroll;
 const newPage = (state: SwapState): string => `${state.token}:${++state.counter}`;
 const currentEntry = (state: SwapState): Entry => marker(window.history.state) ?? state.currentEntry;
-// Islands and dialogs own every entry of the shown page, including traversals hidden from nav.
+// Islands and dialogs own every entry of the shown page, including traversals hidden from nav. An entry of another
+// page means a cross-page traversal has not committed, so the DOM still shows the tracked entry.
 const shownEntry = (state: SwapState, current: Entry | undefined = marker(window.history.state)): Entry =>
-  !state.traversing && current?.page === state.currentPage ? current : state.shown;
+  current?.page === state.currentPage ? current : state.shown;
 const persistScroll = (writes: HistoryWrites, entry: Marker, snapshot: ScrollSnapshot): void => {
   if (JSON.stringify(entry.scroll) === JSON.stringify(snapshot)) return;
   try {
@@ -166,7 +166,6 @@ const stillCurrent = (state: SwapState, traversal: Traversal): boolean => {
 const abort = (state: SwapState): void => {
   state.active?.abort();
   state.active = undefined;
-  state.traversing = undefined;
 };
 const shellContext = (doc: Document) => {
   const shells = doc.querySelectorAll<HTMLElement>("[data-nav-shell]");
@@ -394,7 +393,8 @@ export function installPageSwap(): () => void {
     const from =
       departure && departure.key === navigation?.currentEntry?.key ? departure : { entry: state.currentEntry, scroll: captureScroll() };
     const shown = shownEntry(state, from.entry);
-    const pending = state.traversing;
+    // History already left the shown page while its DOM stays: a cross-page traversal has not committed.
+    const pending = from.entry.page !== state.currentPage;
     abort(state);
     departure = undefined;
     remember(state, shown, from.scroll);
@@ -501,7 +501,6 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
   }
   const controller = new AbortController();
   state.active = controller;
-  state.traversing = traversal;
   const active = () => {
     if (state.native?.controller === controller && state.native.event.eventPhase === Event.NONE && !state.native.event.defaultPrevented) {
       // Dispatch finished without prevention, so the browser's native default action ran and wins.
@@ -580,7 +579,6 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
     fail(error);
   } finally {
     if (state.active === controller) state.active = undefined;
-    if (state.traversing === traversal) state.traversing = undefined;
   }
 }
 
