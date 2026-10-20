@@ -17,7 +17,7 @@ Bun.plugin(plugin());
 const { MapView } = await import("./MapView");
 const { Button } = await import("../actions/Button");
 const dist = resolve(import.meta.dir, "../../dist");
-type FixtureOptions = { stylePath: string; darkPath?: string; empty?: boolean };
+type FixtureOptions = { stylePath: string; darkPath?: string; empty?: boolean; polar?: boolean };
 // Shared data and tree, without compiled JSX closures: SSR and the browser create the very same fixture.
 function fixtureTree(
   components: {
@@ -31,14 +31,19 @@ function fixtureTree(
   const { MapView, Button, createComponent, createSignal } = components;
   const markers = options.empty
     ? []
-    : [
-        { id: "two", mark: 2, label: "Garden", point: { lat: 48.405, lon: 9.999 } },
-        { id: "a", mark: "A", label: "Start", point: { lat: 48.397, lon: 9.982 } },
-        { id: "one", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
-      ];
+    : options.polar
+      ? [
+          { id: "west", mark: 1, label: "West", point: { lat: 80, lon: -45 } },
+          { id: "east", mark: 2, label: "East", point: { lat: 80, lon: 45 } },
+        ]
+      : [
+          { id: "two", mark: 2, label: "Garden", point: { lat: 48.405, lon: 9.999 } },
+          { id: "a", mark: "A", label: "Start", point: { lat: 48.397, lon: 9.982 } },
+          { id: "one", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
+        ];
   const [selectedId, setSelectedId] = createSignal("one");
   const [ownLocation, setOwnLocation] = createSignal(
-    options.empty ? undefined : { point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 },
+    options.empty || options.polar ? undefined : { point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 },
   );
   return [
     createComponent(MapView, {
@@ -57,40 +62,42 @@ function fixtureTree(
         return ownLocation();
       },
       onLocate: () => setOwnLocation({ point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 }),
-      lines: options.empty
-        ? []
-        : [
-            {
-              id: "route",
-              points: [
-                { lat: 48.397, lon: 9.982 },
-                { lat: 48.398, lon: 9.992 },
-                { lat: 48.405, lon: 9.999 },
-              ],
-            },
-            {
-              id: "preview",
-              tone: "preview",
-              points: [
-                { lat: 48.398, lon: 9.992 },
-                { lat: 48.406, lon: 9.988 },
-              ],
-            },
-          ],
-      areas: options.empty
-        ? []
-        : [
-            {
-              id: "area",
-              tone: "second",
-              polygon: [
-                { lat: 48.394, lon: 9.976 },
-                { lat: 48.394, lon: 10.006 },
-                { lat: 48.41, lon: 10.006 },
-                { lat: 48.41, lon: 9.976 },
-              ],
-            },
-          ],
+      lines:
+        options.empty || options.polar
+          ? []
+          : [
+              {
+                id: "route",
+                points: [
+                  { lat: 48.397, lon: 9.982 },
+                  { lat: 48.398, lon: 9.992 },
+                  { lat: 48.405, lon: 9.999 },
+                ],
+              },
+              {
+                id: "preview",
+                tone: "preview",
+                points: [
+                  { lat: 48.398, lon: 9.992 },
+                  { lat: 48.406, lon: 9.988 },
+                ],
+              },
+            ],
+      areas:
+        options.empty || options.polar
+          ? []
+          : [
+              {
+                id: "area",
+                tone: "second",
+                polygon: [
+                  { lat: 48.394, lon: 9.976 },
+                  { lat: 48.394, lon: 10.006 },
+                  { lat: 48.41, lon: 10.006 },
+                  { lat: 48.41, lon: 9.976 },
+                ],
+              },
+            ],
     }),
     ...markers.map((marker) =>
       createComponent(Button, {
@@ -212,6 +219,7 @@ const server = Bun.serve({
       stylePath: url.searchParams.has("flaky") ? "/flaky.json" : "/light.json",
       darkPath: url.searchParams.has("darkfail") ? "/dark.json?fail" : "/dark.json",
       empty: url.searchParams.has("empty"),
+      polar: url.searchParams.has("polar"),
     };
     const html = renderToString(() => fixtureTree({ MapView, Button, createComponent, createSignal }, options));
     const spacer = url.searchParams.has("spacer") ? '<div style="height:2000px"></div>' : "";
@@ -328,6 +336,19 @@ for (const width of [390, 1024]) {
     }
   });
 }
+
+test("a wide fit near the pole keeps its pins when the map loads", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?polar`);
+    await ready(page);
+    const frames = await page.evaluate(() => [window.mapServerFrame, window.mapFirstFrame]);
+    sameFrame(frames[0]!, frames[1]!);
+    sameFrame(frames[0]!, await page.evaluate(measureFrame));
+  } finally {
+    await page.close();
+  }
+});
 
 test("defers both the map chunk and same-origin worker until intersection", async () => {
   const page = await browser.newPage({ viewport: { width: 1024, height: 700 }, reducedMotion: "reduce" });

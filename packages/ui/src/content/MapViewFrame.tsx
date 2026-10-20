@@ -62,7 +62,8 @@ export function MapGeometry(
   const messages = useMapViewMessages();
   const markers = createMemo(() => sortMarkers(props.markers ?? []));
   const offsets = createMemo(() => pinOffsets(markers(), props.frame));
-  const selected = createMemo(() => selectedMarker(markers(), props.selectedId));
+  // Input order decides the fallback selection, as in MapView; sorting is only for drawing and keys.
+  const selected = createMemo(() => selectedMarker(props.markers ?? [], props.selectedId));
   const keydown = (event: KeyboardEvent & { currentTarget: HTMLButtonElement }, marker: MapViewMarker) => {
     const index = markers().indexOf(marker);
     let next: number;
@@ -88,7 +89,7 @@ export function MapGeometry(
     event.stopPropagation();
     const target = markers()[next];
     if (target) {
-      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(".k2b-map-view__pin")[next]?.focus();
+      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(".k2b-map-view__pin")[next]?.focus({ preventScroll: true });
       props.onSelect?.(target.id);
     }
   };

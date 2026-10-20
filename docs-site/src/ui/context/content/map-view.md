@@ -80,7 +80,8 @@ gestures respect both the operating system's reduced motion setting and
 `data-k2b-motion="reduced"` on `html`: the camera jumps instead of flying or
 easing. MapLibre reads the setting when the map starts. Geometry that spans
 most of the world never fits further out than the zoom at which the world is
-as tall as the map, which is as far as MapLibre goes.
+as tall as the map. Near the poles the live camera keeps the fitted center, so
+the pins stay where the server put them.
 
 ## States in the same space
 
