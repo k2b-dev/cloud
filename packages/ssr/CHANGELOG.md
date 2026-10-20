@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.17.0...npm-ssr-v0.18.0) (2026-10-20)
+
+
+### Features
+
+* **ssr:** let nav swap a server-rendered page into the content column, newest navigation wins, any failure loads the document ([#1589](https://github.com/k2b-dev/cloud/issues/1589)) ([353e3fa](https://github.com/k2b-dev/cloud/commit/353e3fa069b2e16825ccd5e4a3ac8a0c7db5260a))
+* **ssr:** mount islands in inserted content, and on removal dispose them and close open dialogs ([#1570](https://github.com/k2b-dev/cloud/issues/1570)) ([1c176dd](https://github.com/k2b-dev/cloud/commit/1c176dd731b4854629e5bd39bf7737f32c04e8fe)), closes [#1560](https://github.com/k2b-dev/cloud/issues/1560)
+
 ## [0.17.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.16.0...npm-ssr-v0.17.0) (2026-10-16)
 
 
