@@ -187,8 +187,8 @@ still own region scroll. An island that loads its content later keeps its
 own position, for example in its history state, and restores it after loading. A traversal that cannot swap reloads the arriving
 URL.
 
-Before nav hides a traversal, it dispatches `ssr:nav-popstate` on `window` with
-the `PopStateEvent` as `detail`, for code that keeps its own history
+For a traversal that proceeds to a swap, nav dispatches `ssr:nav-popstate` on
+`window` with the `PopStateEvent` as `detail`, for code that keeps its own history
 bookkeeping, such as `@k2b/ui` dialogs. Shell code outside the swapped
 column, such as a panel or a rail, misses cross-page traversals through
 `popstate` and `listenPopState()` as well; it follows them through
@@ -205,10 +205,97 @@ inert. Reloads retain page identity and scroll snapshots for up to 50 entries;
 `"@k2b/ssr/nav:scroll"` is reserved in sessionStorage. bfcache returns check the
 arriving entry. Dialog-only traversals remain with the dialog history owner.
 
-A swap does not fire `beforeunload`; an island with unsaved input must prevent
-in-scope link clicks itself (for example, a document capture listener calling
-`preventDefault()`, which the swap honours) or mark the links with
-`data-nav-document`.
+## Protect unsaved input
+
+Call `onBeforeLeave()` while an island renders or in `onMount` to protect
+unsaved input before an in-scope link click, `swapPage()`, or a Back/Forward
+swap leaves its page:
+
+```tsx
+import { createSignal } from "solid-js";
+import { onBeforeLeave } from "@k2b/ssr/nav";
+
+export default function Draft() {
+  const [dirty, setDirty] = createSignal(false);
+  onBeforeLeave((event) => {
+    if (dirty() && !window.confirm("Discard unsaved changes?")) {
+      event.preventDefault();
+    }
+  });
+  return <form onInput={() => setDirty(true)}><textarea aria-label="Draft" /></form>;
+}
+```
+
+The check ends with its Solid owner; the returned function also removes it.
+Only islands inside the current `data-nav-root` column are asked. Shell and
+rail islands stay mounted and are not asked. Without an owner, or with an
+owner outside an island, the check applies to every swap until disposed.
+Registration does nothing on the server.
+
+Checks run synchronously in registration order. Each gets its own event with
+an absolute `url` and, for Back/Forward, a signed `delta` (negative for Back).
+The first `preventDefault()` wins; later checks are not asked. A check that
+throws allows navigation and reports the error through `reportError()`, even
+if it prevented before throwing. Return values and promises are ignored.
+
+For your own async dialog, veto first and wait for `event.restored` before
+opening it. After confirmation, clear the dirty state and retry the navigation.
+Replace the check above with this one; `askToDiscardChanges()` is your dialog:
+
+```tsx
+import { onBeforeLeave, swapPage } from "@k2b/ssr/nav";
+
+onBeforeLeave((event) => {
+  if (!dirty()) return;
+  event.preventDefault();
+  void event.restored
+    .then(() => askToDiscardChanges())
+    .then((confirmed) => {
+      if (!confirmed) return;
+      setDirty(false);
+      // A history-backed dialog replaced the forward entries: only Back can traverse again.
+      if (event.delta !== undefined && event.delta < 0) history.go(event.delta);
+      else void swapPage(event.url.href);
+    });
+});
+```
+
+`event.restored` resolves when history is back on this page's entry: right away
+for a vetoed click or `swapPage()`, after rollback for Back/Forward; it never
+rejects and stays pending if nobody vetoes.
+
+A check must not write history itself: open history-backed dialogs after
+`event.restored`; if a check writes history during Back/Forward, nav loads the
+document.
+
+A vetoed click or `swapPage()` leaves the URL, history, column, and any older
+pending swap untouched. A vetoed Back/Forward aborts a pending swap and rolls
+history back to the shown entry. Nav absorbs the vetoed and rollback
+popstates: `listenPopState()`, raw listeners registered after nav, and
+`ssr:nav-popstate` see no navigation. Popstate and Navigation API listeners
+registered before nav, such as `@k2b/ui` dialog-core, still see both; a
+multi-step vetoed Back past an open history dialog therefore closes that
+dialog. While rollback is pending, all further popstates are absorbed without
+more checks. Nav uses an absolute
+`navigation.traverseTo()` target when the departure key is available, otherwise
+`history.go()` using marker positions.
+A failed rollback reloads, unless a newer swap committed meanwhile.
+With relative rollback, a rapid second traversal can force a reload.
+If the traversal delta is unknown or zero, nav cannot roll back and asks no
+checks.
+
+Document loads never ask: native links, `data-nav-document`, out-of-scope
+URLs, missing shells, `navigateTo()`, `documentNavigate()`, and
+`refreshCurrentPath()`. Island-owned `Link` navigation with `onNavigate`,
+`navigate()`, raw history writes, and same-page popstates are not swaps.
+bfcache `pageshow` swaps, further traversals during a pending cross-page
+traversal, and fragment claims that continue one do not ask again.
+
+Nav does not run or consult `beforeunload` handlers during a swap: there is
+no API to ask them, and a synthetic event shows no dialog. `onBeforeLeave` is
+the contract for swaps. Keep `beforeunload` for document loads, such as a
+reload, a closed tab, a link outside the scope, or a swap that fails after the
+checks allowed it and loads the document.
 
 ## Transient UI state
 

@@ -1,5 +1,5 @@
 import { fromJSON } from "seroval";
-import type { Component } from "solid-js";
+import { type Component, getOwner, type Owner } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
 
 /** Props received by a configured island error fallback component. */
@@ -35,6 +35,7 @@ type IslandRegistry = {
   components: Map<string, (element: HTMLElement) => void>;
   /** The dispose function of each mounted wrapper. */
   mounted: WeakMap<HTMLElement, () => void>;
+  roots?: WeakMap<Owner, HTMLElement>;
   /** Internal navigation listeners called after each wrapper mounted, also when it renders nothing. */
   listeners?: Set<() => void>;
 };
@@ -43,6 +44,15 @@ const registry = (): IslandRegistry => {
   const shared: typeof globalThis & { [islandsKey]?: IslandRegistry } = globalThis;
   shared[islandsKey] ??= { components: new Map(), mounted: new WeakMap() };
   return shared[islandsKey];
+};
+
+/** Find the wrapper through the registering Solid runtime's owner chain, including across bundle copies. */
+export const islandOf = (owner: Owner): HTMLElement | undefined => {
+  const roots = registry().roots;
+  for (let current: Owner | null = owner; current; current = current.owner) {
+    const element = roots?.get(current);
+    if (element) return element;
+  }
 };
 
 const mountElement = <Props extends object>(
@@ -55,29 +65,33 @@ const mountElement = <Props extends object>(
   const start = (): void => {
     try {
       element.innerHTML = "";
-      const dispose = render(
-        () =>
-          createComponent(ErrorBoundary, {
-            fallback: (error: unknown, reset: () => void) => {
-              report(element, error, reset);
-              if (!Fallback) return defaultFallback(reset);
-              return createComponent(ErrorBoundary, {
-                fallback: (fallbackError: unknown) => {
-                  globalThis.reportError(fallbackError);
-                  return defaultFallback(reset);
-                },
-                get children() {
-                  return createComponent(Fallback, { error, reset });
-                },
-              });
-            },
-            get children() {
-              // Props are data: JSON.parse and Seroval fromJSON never evaluate them.
-              return createComponent(Component, fromJSON<Props>(JSON.parse(element.dataset.props ?? "")));
-            },
-          }),
-        element,
-      );
+      const dispose = render(() => {
+        const owner = getOwner();
+        if (owner) {
+          const islands = registry();
+          islands.roots ??= new WeakMap();
+          islands.roots.set(owner, element);
+        }
+        return createComponent(ErrorBoundary, {
+          fallback: (error: unknown, reset: () => void) => {
+            report(element, error, reset);
+            if (!Fallback) return defaultFallback(reset);
+            return createComponent(ErrorBoundary, {
+              fallback: (fallbackError: unknown) => {
+                globalThis.reportError(fallbackError);
+                return defaultFallback(reset);
+              },
+              get children() {
+                return createComponent(Fallback, { error, reset });
+              },
+            });
+          },
+          get children() {
+            // Props are data: JSON.parse and Seroval fromJSON never evaluate them.
+            return createComponent(Component, fromJSON<Props>(JSON.parse(element.dataset.props ?? "")));
+          },
+        });
+      }, element);
       mounted.set(element, dispose);
     } catch (error) {
       report(element, error, start);
