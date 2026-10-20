@@ -34,7 +34,7 @@ Use these details to fix the endpoint or reduce the selected metrics.
 
 ## Read measurements with SQL
 
-Read access lets you query one base. Write access lets you save and delete queries.
+**View** access lets you query one base. **Edit** access lets you save and delete queries.
 Use `cld pulse sql --base <base> --file query.sql` to run SQL.
 Use `cld pulse queries list --base <base>` to find saved queries.
 Read `cld pulse reference sql.md` for parameters and export formats.

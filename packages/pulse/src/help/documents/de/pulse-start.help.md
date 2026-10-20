@@ -34,7 +34,7 @@ Nutze diese Angaben, um den Endpunkt zu korrigieren oder weniger Metriken auszuw
 
 ## Lies Messdaten mit SQL
 
-Lesezugriff erlaubt Abfragen in einer Base. Schreibzugriff erlaubt das Speichern und Löschen von Abfragen.
+Zugriff **Ansehen** erlaubt Abfragen in einer Base. Zugriff **Bearbeiten** erlaubt das Speichern und Löschen von Abfragen.
 Nutze `cld pulse sql --base <base> --file query.sql`, um SQL auszuführen.
 Nutze `cld pulse queries list --base <base>`, um gespeicherte Abfragen zu finden.
 Lies `cld pulse reference sql.md` für Parameter und Exportformate.

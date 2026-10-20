@@ -53,7 +53,7 @@ Use `samples`, `rollups`, `series`, `events`, `states`, and `sources`.
 - **Input:** SQL allows 16 KiB of UTF-8 text, 32 parameters, and 2 KiB per value.
 - **Results:** Each read allows 10,000 rows and 4 MiB. Reaching 10,000 rows means more rows can exist.
 - **Query quota:** The default is 600 admitted questions and SQL runs per base per clock hour.
-- **Saved queries:** Read access permits listing. Write access permits saving and deleting. Updates check the saved revision.
+- **Saved queries:** **View** access permits listing. **Edit** access permits saving and deleting. Updates check the saved revision.
 :::
 
 `increase(metric='name',from=:from,to=:to)` uses reset-safe counter increases.

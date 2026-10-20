@@ -53,7 +53,7 @@ Nutze `samples`, `rollups`, `series`, `events`, `states` und `sources`.
 - **Eingabe:** SQL erlaubt 16 KiB UTF-8-Text, 32 Parameter und 2 KiB pro Wert.
 - **Ergebnis:** Jede Abfrage erlaubt 10.000 Zeilen und 4 MiB. Bei 10.000 Zeilen kann es weitere Zeilen geben.
 - **Abfragekontingent:** Der Startwert ist 600 zugelassene Fragen und SQL-Abfragen pro Base und voller Stunde.
-- **Gespeicherte Abfragen:** Lesezugriff erlaubt das Auflisten. Schreibzugriff erlaubt Speichern und Löschen. Änderungen prüfen die gespeicherte Revision.
+- **Gespeicherte Abfragen:** Zugriff **Ansehen** erlaubt das Auflisten. Zugriff **Bearbeiten** erlaubt Speichern und Löschen. Änderungen prüfen die gespeicherte Revision.
 :::
 
 `increase(metric='name',from=:from,to=:to)` berechnet Zähleranstiege und berücksichtigt Rücksprünge.
