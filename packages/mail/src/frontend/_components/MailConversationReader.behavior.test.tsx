@@ -908,6 +908,48 @@ test.skipIf(isServer)("a new message never folds away a shown message, including
   }
 });
 
+test.skipIf(isServer)("a conversation keeps the messages a live arrival showed when the person comes back to it", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const first = { selectionKey: "Conv01", messages: [1, 2, 3, 4, 5, 6].map(message) };
+  const [selected, setSelected] = createSignal(first);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get selectionKey() {
+          return selected().selectionKey;
+        },
+        get selectedConversationId() {
+          return selected().selectionKey;
+        },
+        get messages() {
+          return selected().messages;
+        },
+      }),
+    dom.root,
+  );
+  const shown = () => [...dom.root.querySelectorAll("[data-mail-message-id]")].map((card) => card.getAttribute("data-mail-message-id"));
+  try {
+    await waitFor(() => shown().length === 3);
+    setSelected({ ...first, messages: [...first.messages, message(7)] });
+    await waitFor(() => shown().includes("Msg007"));
+    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    setSelected({ selectionKey: "Conv02", messages: [{ ...message(8), id: "Msg099" }] });
+    await waitFor(() => shown().includes("Msg099"));
+    setSelected({ ...first, messages: [...first.messages, message(7)] });
+    await waitFor(() => shown().includes("Msg007"));
+    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 test.skipIf(isServer)("the fifth message folds none of the four shown messages away", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;

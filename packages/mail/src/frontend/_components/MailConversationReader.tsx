@@ -178,8 +178,14 @@ export default function MailConversationReader(props: {
   let historyScroller: HTMLDivElement | undefined;
   let olderPinnedFor: string | null = null;
   // New messages never fold away a card that is already shown, such as one with focus or an open dialog:
-  // the fold stays below the oldest message shown so far in this conversation.
-  let foldBoundary: { selection: string | null; messageId: string } | null = null;
+  // the fold stays below the oldest message shown so far in each conversation, also after switching back to it.
+  const foldBoundaries = new Map<string | null, string>();
+  const rememberFold = (selection: string | null, messageId: string) => {
+    foldBoundaries.delete(selection);
+    foldBoundaries.set(selection, messageId);
+    // As many conversations as the reader remembers positions for.
+    if (foldBoundaries.size > 50) foldBoundaries.delete(foldBoundaries.keys().next().value!);
+  };
   const olderMessages = createMemo(() => {
     const selection = props.selectionKey;
     if (showOlder() || printing() || (selection !== null && olderPinnedFor === selection)) return null;
@@ -188,15 +194,15 @@ export default function MailConversationReader(props: {
     if (messageIndexes.length < MAIL_READER_COLLAPSE_FROM) {
       // Every message shows; a later arrival that crosses the threshold folds none of them away.
       const last = items.findLast((item) => item.kind === "message");
-      foldBoundary = last?.kind === "message" ? { selection, messageId: last.message.id } : null;
+      if (last?.kind === "message") rememberFold(selection, last.message.id);
       return null;
     }
     let cutoff = messageIndexes[MAIL_READER_NEWEST_SHOWN - 1]! + 1;
-    const boundary = foldBoundary?.selection === selection ? foldBoundary.messageId : null;
+    const boundary = foldBoundaries.get(selection) ?? null;
     const boundaryIndex = boundary ? items.findIndex((item) => item.kind === "message" && item.message.id === boundary) : -1;
     if (boundaryIndex >= cutoff) cutoff = boundaryIndex + 1;
     const lastShown = items.slice(0, cutoff).findLast((item) => item.kind === "message");
-    if (lastShown?.kind === "message") foldBoundary = { selection, messageId: lastShown.message.id };
+    if (lastShown?.kind === "message") rememberFold(selection, lastShown.message.id);
     const expanded = expandedMessages();
     if (items.slice(cutoff).some((item) => item.kind === "message" && expanded.has(item.message.id))) {
       olderPinnedFor = selection;
