@@ -173,35 +173,28 @@ const TABLE_CELL_PRINT_CSS = `
 th, td { overflow-wrap: break-word; word-break: normal; }
 `;
 
-// On the document preset's A4 page with 20 mm side margins, about 90 table
-// characters fit per row. Four columns capped at 20 plus padding still fit.
-// Ordinary words stay whole; Chromium uses these opportunities in longer URLs,
-// code, hashes or paths only when the column is narrower than the run.
-const MAX_CELL_RUN = 20;
+// Up to 20 characters covers nearly every real word, including German
+// compounds and IBAN-like values below that length. Longer URLs, code, hashes
+// or paths need a 10-character step: even nine columns fit the document
+// preset's narrowest row (about 90 table characters). A 20-character step
+// clipped six columns of long inline code that fitted before this protection.
+const MAX_WHOLE_CELL_RUN = 20;
+const CELL_RUN_BREAK_STEP = 10;
 
 const breakLongCellRuns = (html: string): string => {
   let skippedDepth = 0;
   let buffer = "";
-  // Count a character reference as one unit without splitting or decoding it.
-  // In particular, &nbsp; is not a whitespace break opportunity.
-  const units = /&[#a-zA-Z0-9]+;|[\s\S]/gu;
-  const breakText = (text: string): string => {
-    let output = "";
-    let runLength = 0;
-    for (const [unit] of text.matchAll(units)) {
-      if (/^\s$/u.test(unit)) {
-        runLength = 0;
-      } else {
-        if (runLength === MAX_CELL_RUN) {
-          output += "<wbr>";
-          runLength = 0;
-        }
-        runLength += 1;
-      }
-      output += unit;
-    }
-    return output;
-  };
+  // Count references, even without a semicolon, as one unit without decoding
+  // or splitting them; &nbsp; is not whitespace. Over-matching &foo in text
+  // only keeps it unbroken, which is harmless. A bare & remains one unit.
+  const units = /&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]*);?|[\s\S]/gu;
+  const breakText = (text: string): string =>
+    // A raw no-break space joins a run: it is no line break opportunity.
+    text.replace(/(?:\S|[\u00a0\u2007\u202f\ufeff])+/gu, (run) => {
+      const runUnits = Array.from(run.matchAll(units), ([unit]) => unit);
+      if (runUnits.length <= MAX_WHOLE_CELL_RUN) return run;
+      return runUnits.map((unit, index) => (index > 0 && index % CELL_RUN_BREAK_STEP === 0 ? `<wbr>${unit}` : unit)).join("");
+    });
 
   return new HTMLRewriter()
     .on("td svg, th svg, td math, th math, td style, th style, td script, th script", {

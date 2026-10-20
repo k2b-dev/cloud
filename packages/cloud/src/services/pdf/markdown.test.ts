@@ -69,31 +69,59 @@ describe("Markdown PDF renderer", () => {
     });
   }
 
-  test("adds cell break opportunities every 20 code points without changing short values or prose", () => {
+  test("adds cell break opportunities every 10 code points in runs over 20 without changing short values or prose", () => {
     const run = "abcdefghijklmnopqrst";
     const long = `${run}${run}z`;
+    const broken = "abcdefghij<wbr>klmnopqrst<wbr>abcdefghij<wbr>klmnopqrst<wbr>z";
     const prose = `<h2>${long}</h2>\n<p data-label='unchanged'>${long} &amp;</p><ul><li>${long}</li></ul><pre>${long}</pre>`;
     const html = buildPresetPdfHtml({
       html: `${prose}<table><tr><th>Nr.</th><th>${long}</th></tr><tr><td>100</td><td>${run} ${long}\t${run}\n${run}</td><td><code>limit</code><a href="/${long}">limit</a></td><td><code>${long}</code><a href="/${long}">${long}</a></td><td>${"😀".repeat(21)}</td></tr></table>`,
     });
     expect(html).toContain(prose);
-    expect(html).toContain(`<th>Nr.</th><th>${run}<wbr>${run}<wbr>z</th>`);
-    expect(html).toContain(`<td>100</td><td>${run} ${run}<wbr>${run}<wbr>z\t${run}\n${run}</td>`);
+    expect(html).toContain(`<th>Nr.</th><th>${broken}</th>`);
+    expect(html).toContain(`<td>100</td><td>${run} ${broken}\t${run}\n${run}</td>`);
     expect(html).toContain(`<code>limit</code><a href="/${long}">limit</a>`);
-    expect(html).toContain(`<code>${run}<wbr>${run}<wbr>z</code><a href="/${long}">${run}<wbr>${run}<wbr>z</a>`);
-    expect(html).toContain(`<td>${"😀".repeat(20)}<wbr>😀</td>`);
+    expect(html).toContain(`<code>${broken}</code><a href="/${long}">${broken}</a>`);
+    expect(html).toContain(`<td>${"😀".repeat(10)}<wbr>${"😀".repeat(10)}<wbr>😀</td>`);
   });
 
-  test("counts each character reference as one non-whitespace unit without splitting it", () => {
-    for (const entity of ["&amp;", "&#160;", "&#xA0;", "&nbsp;"]) {
-      const prefix = "a".repeat(19);
-      const html = buildPresetPdfHtml({ html: `<table><tr><td>${prefix}${entity}b ${prefix}b${entity}</td></tr></table>` });
-      expect(html).toContain(`<td>${prefix}${entity}<wbr>b ${prefix}b<wbr>${entity}</td>`);
+  test("keeps runs up to 20 units whole and never adds a break at the run end", () => {
+    for (const [length, expected] of [
+      [10, "a".repeat(10)],
+      [20, "a".repeat(20)],
+      [21, `${"a".repeat(10)}<wbr>${"a".repeat(10)}<wbr>a`],
+      [30, Array(3).fill("a".repeat(10)).join("<wbr>")],
+    ] as const) {
+      const html = buildPresetPdfHtml({ html: `<table><tr><td>${"a".repeat(length)}</td></tr></table>` });
+      expect(html).toContain(`<td>${expected}</td>`);
     }
   });
 
+  test("counts each character reference as one non-whitespace unit without splitting it", () => {
+    for (const entity of ["&amp;", "&#160;", "&#xA0;", "&nbsp;", "&#65", "&amp", "&#x41", "&#X41", "&foo"]) {
+      const prefix = "a".repeat(9);
+      const html = buildPresetPdfHtml({
+        html: `<table><tr><td>${prefix}${entity}${"!".repeat(10)} ${prefix}${entity}${"!".repeat(11)} ${prefix}b${entity}${"!".repeat(10)}</td></tr></table>`,
+      });
+      expect(html).toContain(
+        `<td>${prefix}${entity}${"!".repeat(10)} ${prefix}${entity}<wbr>${"!".repeat(10)}<wbr>! ${prefix}b<wbr>${entity}${"!".repeat(9)}<wbr>!</td>`,
+      );
+    }
+  });
+
+  test("treats a raw no-break space as part of the run", () => {
+    const html = buildPresetPdfHtml({ html: `<table><tr><td>${"a".repeat(10)}\u00a0${"b".repeat(10)}</td></tr></table>` });
+    expect(html).toContain(`<td>${"a".repeat(10)}<wbr>\u00a0${"b".repeat(9)}<wbr>b</td>`);
+  });
+
+  test("counts a bare ampersand before whitespace as one unit", () => {
+    const short = `${"a".repeat(19)}&`;
+    const html = buildPresetPdfHtml({ html: `<table><tr><td>${short} ${"b".repeat(21)}</td></tr></table>` });
+    expect(html).toContain(`<td>${short} ${"b".repeat(10)}<wbr>${"b".repeat(10)}<wbr>b</td>`);
+  });
+
   test("buffers long cell text across streaming parser chunks", () => {
-    const groups = Array.from({ length: 500 }, () => "abcdefghijklmnopqrst");
+    const groups = Array.from({ length: 1000 }, () => "abcdefghij");
     const html = buildPresetPdfHtml({ html: `<table><tr><td>${groups.join("")}z</td></tr></table>` });
     expect(html).toContain(`<td>${groups.join("<wbr>")}<wbr>z</td>`);
   });
@@ -102,8 +130,8 @@ describe("Markdown PDF renderer", () => {
     const long = "a".repeat(21);
     const skipped = `<svg><g><text>${long}</text></g><svg><text>${long}</text></svg></svg><math><mtext>${long}</mtext></math><style>p { color: ${long}; }</style><script>const x = '${long}';</script><svg/><math/>`;
     const html = buildPresetPdfHtml({ html: `<table><tr><td>${skipped}${long}</td><th>${skipped}${long}</th></tr></table>` });
-    expect(html).toContain(`<td>${skipped}${"a".repeat(20)}<wbr>a</td>`);
-    expect(html).toContain(`<th>${skipped}${"a".repeat(20)}<wbr>a</th>`);
+    expect(html).toContain(`<td>${skipped}${"a".repeat(10)}<wbr>${"a".repeat(10)}<wbr>a</td>`);
+    expect(html).toContain(`<th>${skipped}${"a".repeat(10)}<wbr>${"a".repeat(10)}<wbr>a</th>`);
   });
 
   test("builds standalone CSP-protected preset, layered, and custom documents", () => {

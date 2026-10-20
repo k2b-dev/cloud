@@ -50,6 +50,35 @@ suiteFor("gotenberg")("Markdown PDF presets in Gotenberg", () => {
     }, 60_000);
   }
 
+  test("document keeps the last of six long code and URL columns on the page", async () => {
+    const code = Array.from({ length: 6 }, (_, index) => `codevalue${index}`.repeat(12));
+    const urls = Array.from({ length: 6 }, (_, index) => `https://example.test/${index}/`.padEnd(120, String(index)));
+    const markdown = [
+      "| First | Second | Third | Fourth | Fifth | Final |",
+      "| --- | --- | --- | --- | --- | --- |",
+      `| ${code.map((value) => `\`${value}\``).join(" | ")} |`,
+      `| ${urls.join(" | ")} |`,
+    ].join("\n");
+    const { pdf } = await renderMarkdownToPdfWithConfig({ markdown, templateId: "document" }, config);
+    const text = await pdfText(pdf, { layout: true });
+
+    expect(text).toContain("Final");
+    // Layout keeps columns apart with spaces; rejoin the last column's wraps.
+    const lastColumn = text
+      .split("\n")
+      .map(
+        (line) =>
+          line
+            .trim()
+            .split(/\s{2,}/u)
+            .at(-1) ?? "",
+      )
+      .join("")
+      .replace(/[\s↗]/gu, "");
+    expect(lastColumn).toContain(code[5]!);
+    expect(lastColumn).toContain(urls[5]!);
+  }, 60_000);
+
   test("the report body forms f-ligatures that copy as plain letters", async () => {
     // The heading has no f-ligature words, so every ligature comes from the serif body.
     const body = "The office staff finally reshuffled the affine flow charts.";

@@ -117,9 +117,12 @@ const result = await renderHtmlToPdf({ html, title: note.title });
 ```
 
 It applies the same presets and `customCss` rules as `renderMarkdownToPdf()`.
-`html` becomes the document body, so sanitize it in the application
-renderer. `css` styles the application's own elements. It comes after the
-preset and before `customCss`, so a person's custom CSS can still override it.
+`html` becomes the document body as given, except for `<wbr>` break
+opportunities in long table-cell runs, so text that the application replaces
+afterwards must not rely on staying contiguous inside table cells.
+Sanitize it in the application renderer. `css` styles the application's own
+elements. It comes after the preset and before `customCss`, so a person's
+custom CSS can still override it.
 With `customCss` but no `templateId`, `css` still applies while the preset is
 left out. The print styles for info blocks come with every document, before
 `css`, so an application renderer that emits info blocks through
@@ -127,8 +130,9 @@ left out. The print styles for info blocks come with every document, before
 
 In every document (each preset, no template, or custom CSS only), table cells
 keep words whole so short values such as `Nr.` stay on one line; custom CSS
-can override the cell rule. Runs of more than 20 characters without a space,
-such as long URLs or code, get break opportunities so the table fits the page.
+can override the cell rule. Words of up to 20 characters stay whole; a longer
+run without a space, such as a long URL or code, gets a break opportunity every
+10 characters so the table fits the page.
 
 The result renders offline like any other HTML: the offline policy replaces
 the Content Security Policy that `buildPresetPdfHtml()` writes. `html` and
