@@ -400,9 +400,9 @@ the generic wording instead of showing a gap or losing its last words. A
 missing outcome sentence uses the generic state words around the approval
 sentence, such as "Rejected: Send email to jana@example.com". A `done`
 sentence takes the place of the Action's runtime `summary` in the receipt;
-leave `done` out when the summary says more about the call, as Mail does for
-sending, where the summary names the subject and whether the email was queued
-or scheduled.
+leave `done` out when the summary says more about the call. Mail uses per-call
+review forms and receipts for sending, naming the subject and whether delivery
+is queued or scheduled.
 The generic sentence takes labels from the first clause of the localized field
 descriptions, up to 40 characters, and skips identifiers, revisions, flags,
 and long text; start descriptions with a short noun phrase, such as
@@ -754,12 +754,13 @@ asks for every Action call. `approval: "rememberable"` lets a supporting client
 offer an explicit **Approve for this chat** or **Always approve** choice after
 showing the Action review. That review must return an opaque, app-owned
 `approvalScope`. A remembered choice matches the current actor, qualified
-Action, and exact scope, and a chat choice also the chat; for example, Mail
-uses one scope per mailbox. Choose the smallest stable domain in which repeated
+Action, and exact scope, and a chat choice also the chat. Mail now uses per-call
+reviews, with a mailbox scope on silent calls. Choose the smallest stable domain in which repeated
 calls have the same understandable consequence. A review may omit
 `approvalScope` for arguments whose consequence should be confirmed every time,
 for example a Files copy into another storage base or into a publicly shared
-folder, a Spaces task with assignees, or a Mail move to Trash.
+folder or a Spaces task with assignees. Mail moves to Trash use a silent shared
+policy because the conversation can be moved back.
 Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
@@ -1106,7 +1107,9 @@ same slot, sentence, and preview rules. Every receipt slot must appear in its
 text; its slots belong to the receipt itself. Receipt completeness uses the
 result's top-level links. A Query result must not contain `receipt` in its
 envelope. Query data may use `CapabilityActionCheckSchema`, returning
-`{ outcome: "done" | "not_done" | "pending", receipt? }`.
+`{ outcome: "done" | "not_done" | "pending", receipt? }`. Mail uses the dedicated
+`draft.send.check` Query to read the delivery state for an exact draft revision;
+queued or accepted delivery does not claim that the email has been sent.
 
 The five `CapabilityActionOutcome` states are `running`, `done`, `rejected`,
 `not_run`, and `unknown`. A done result uses its receipt when supplied, otherwise
