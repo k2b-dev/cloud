@@ -1055,6 +1055,8 @@ export class AiTurnExecutor {
     const approvalTargets = new Map<string, AiApprovalTarget>();
     const linkedApprovals = new Map<string, string>();
     const freshApprovalRequired = new Set<string>();
+    const capabilityActionReviews = new Map<string, CapabilityActionReviewData>();
+    const storedReviews = new Map<string, AiStoredActionReview>();
     const dynamicToolRuntimeContext = {
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
@@ -1096,6 +1098,14 @@ export class AiTurnExecutor {
         return "changed";
       },
       describeApproval: (approvalCallId: string, target: AiApprovalTarget) => approvalTargets.set(approvalCallId, target),
+      describeReview: async (approvalCallId: string, review: CapabilityActionReviewData) => {
+        capabilityActionReviews.set(approvalCallId, review);
+        const callId = customApprovalParentCallId(approvalCallId) ?? approvalCallId;
+        const stored = storedActionReview(review);
+        await recordAiToolReview({ conversationId, turnId, callId, review: stored });
+        storedReviews.set(callId, stored);
+        await pipeline.setToolReview(callId, stored);
+      },
     };
     const prepared = prepareAiTools({
       tools: activeTools,
@@ -1105,8 +1115,6 @@ export class AiTurnExecutor {
     });
     let backgroundError: string | null = null;
     const rememberableCapabilityApprovals = new Map<string, string>();
-    const capabilityActionReviews = new Map<string, CapabilityActionReviewData>();
-    const storedReviews = new Map<string, AiStoredActionReview>();
     const onCapabilityReview = async (
       callId: string,
       review: CapabilityActionReviewData,

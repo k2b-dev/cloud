@@ -67,6 +67,7 @@
     "./ai": "./src/ai/index.ts",
     "./ai/admin": "./src/ai/admin.ts",
     "./ai/browser": "./src/ai/browser.ts",
+    "./ai/question-text": "./src/ai/question-text.ts",
     "./ai/live": "./src/ai/live.ts",
     "./ai/live-events": "./src/ai/live-events.ts",
     "./ai/runtime": "./src/ai/runtime.ts",

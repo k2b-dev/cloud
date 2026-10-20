@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Integrate an authenticator website
@@ -607,16 +607,57 @@ remembers an approval.
 | Detail label (`labelChars`) | 40 |
 | Detail value (`valueChars`) | 300 |
 
+Cloud derives the device text from the same Action question card as the chat
+and approvals page. `sentence` is the plain question (up to 280 characters),
+`message` is its reason line (up to 500), and `details` contains up to eight
+preview rows. People include their addresses, such as
+`Lea Berg <lea.berg@example.com>`.
+
+The row labels follow the question's language. The main labels are:
+
+| Preview | German / English labels |
+| --- | --- |
+| Message | Von / From, An / To, Cc, Bcc, Betreff / Subject, Senden am / Send at, Warnung / Warning, Anhänge / Attachments, Text |
+| Event | Titel / Title, Wann / When, Bis / Until, Wo / Where, Mit / With, Wiederholung / Repeats, Text |
+| Task | Titel / Title, Ort / Place, Fällig / Due, Zuständig / Assignees, Status, Checkliste / Checklist, Tags, Text |
+| File | Name, Ordner / Folder, Größe / Size, Ziel / To |
+| Page | Titel / Title, Ort / Place, Text, Neu / Added, Entfernt / Removed |
+| Rule | Startet / Starts, Text, Darf / May, Hinweis / Note when the rule cannot see the chat |
+| Fields | The app's labels; previous values add `(vorher)` / `(before)` |
+
+Rows appear only when the preview supplies their value. A title or file name
+that the question already says gets no row of its own. Consequences follow the preview as Folge / Also,
+Neu / Added, or Entfernt / Removed. Rule permission changes use
+Darf (neu) / May (added) and Darf (entfernt) / May (removed).
+Legacy reviews keep their literal question and detail rows; Markdown becomes
+one Text row. Without a review, Cloud asks the first sentence line as a
+question, removes its leading registry app name, and uses later
+`Label: value` lines as rows. Its reason is `app_asks`. A legacy row without
+a label gets the label Hinweis / Note, because every device detail needs one.
+
 Cloud replaces control characters and line or paragraph separators with a
 space, removes format characters (including bidi overrides), collapses
-whitespace, and trims every text. It removes a leading registry app name
-from the first sentence line when text follows it. A valid review supplies
-its message and ordered details. Without a review, later `Label: value`
-lines become details and the other lines become the message.
-Cuts end in `…` within the field limit and set `truncated: true`.
+whitespace, and trims every text. Block rows become one line.
+Cuts end in `…` within the field limit and set `truncated: true`. Omitted
+rows, an incomplete preview, additional recipients or attachments also set it.
 If the full JSON still exceeds 8 KiB in UTF-8, Cloud drops details from the
-end, then shortens the message. Show that the request was shortened and that
-the complete request is available in Cloud.
+end, then shortens the message.
+
+A question whose review names no reason takes it from the Action's declared
+policy, as the approvals page does. Dates and times stay typed rows, an event's
+end too, so the device shows them in its own time zone. A truncated question
+is browser-only when its reason or the Action's declared policy is `sends`,
+even when the call names another reason. An incomplete question also stays in
+the browser when Cloud cannot read the declared policy, including when the
+app is not registered. A browser-only question is absent from
+the device inbox and detail endpoint and triggers no device push. It still
+counts in `moreActions`. The person decides in Cloud, where the full message
+is visible. To fill the inbox past such questions, one inbox call reads at
+most the newest 100 open requests. Other truncated questions remain available on the device; show
+that their complete content is available in Cloud.
+
+The device protocol and `cloud-action-v1` digest do not change. Existing
+authenticators need no release for this mapping.
 
 The digest is unpadded base64url of SHA-256 over UTF-8 of this exact JSON
 array, without extra whitespace:
