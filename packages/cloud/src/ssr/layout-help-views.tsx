@@ -36,6 +36,8 @@ export function HelpHead(props: {
   row: boolean;
   /** In an article, the back button takes the app tile's place. */
   back: boolean;
+  /** A provider can mount only the interactive lead. */
+  lead?: JSX.Element;
   tile: string;
   title: string;
   /** The ⋯ menu. */
@@ -54,18 +56,20 @@ export function HelpHead(props: {
         <Show when={props.row}>
           <div class="help-head-row">
             {/* The back button takes the app tile's place in an article, so nothing beside it moves. */}
-            <Show
-              when={props.back}
-              fallback={
-                <span class="help-head-tile" aria-hidden="true">
-                  <i class={props.tile} />
-                </span>
-              }
-            >
-              <IconButton class="help-head-back" label={t().backToTopics} title={t().back} onClick={props.onBack}>
-                <i class="ti ti-arrow-left" />
-              </IconButton>
-            </Show>
+            {props.lead ?? (
+              <Show
+                when={props.back}
+                fallback={
+                  <span class="help-head-tile" aria-hidden="true">
+                    <i class={props.tile} />
+                  </span>
+                }
+              >
+                <IconButton class="help-head-back" label={t().backToTopics} title={t().back} onClick={props.onBack}>
+                  <i class="ti ti-arrow-left" />
+                </IconButton>
+              </Show>
+            )}
             <h2 id="layout-help-title" class="help-head-title">
               {props.title}
             </h2>
@@ -140,6 +144,21 @@ function HelpTaskTiles(props: { items: readonly HelpTopic[]; onOpen: (id: string
   );
 }
 
+export function HelpViewSection(props: { items: readonly HelpTopic[]; onOpen: (id: string) => void }) {
+  const t = useHelpMessages();
+  return (
+    <Show when={props.items.length > 0}>
+      <section class="help-start-section" data-help-view="" aria-labelledby="help-start-view-title">
+        <h3 id="help-start-view-title" class="help-start-heading">
+          <i class="ti ti-focus-2" aria-hidden="true" />
+          {t().forThisView}
+        </h3>
+        <HelpTopicRows items={props.items} onOpen={props.onOpen} />
+      </section>
+    </Show>
+  );
+}
+
 /** The start: For this view, What to do, the kind groups, and the shortcuts last. */
 export function HelpStartView(props: {
   start: HelpStart<HelpTopic>;
@@ -156,15 +175,7 @@ export function HelpStartView(props: {
     ({ start: t().groupStart, reference: t().groupReference, troubleshoot: t().groupTroubleshoot })[kind];
   return (
     <>
-      <Show when={props.start.view.length > 0}>
-        <section class="help-start-section" data-help-view="" aria-labelledby="help-start-view-title">
-          <h3 id="help-start-view-title" class="help-start-heading">
-            <i class="ti ti-focus-2" aria-hidden="true" />
-            {t().forThisView}
-          </h3>
-          <HelpTopicRows items={props.start.view} onOpen={props.onOpen} />
-        </section>
-      </Show>
+      <HelpViewSection items={props.start.view} onOpen={props.onOpen} />
       <Show when={props.start.tiles.length > 0}>
         <section class="help-start-section" data-help-tasks="" aria-labelledby="help-start-tasks-title">
           <h3 id="help-start-tasks-title" class="help-start-heading">

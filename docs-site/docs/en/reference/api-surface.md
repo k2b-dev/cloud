@@ -448,9 +448,12 @@ for their input, access, cancellation and deployment responsibilities.
 `@k2b/cloud/ssr/islands` exports `Layout.HelpPage` / `LayoutHelpPage` for
 full-page and embedded readers, and `Layout.HelpPanel` / `LayoutHelpPanel`
 with `LayoutHelpPanelProps` for a server-prepared Help provider document.
-Core uses the latter inside `PanelLayout`; applications normally use the
-automatic Help registration. `openLayoutHelpDialog()` first opens Core's
-provider in the slot and falls back to a dialog when no slot accepts it.
+`@k2b/cloud/ssr` also exports `LayoutHelpServerPanel` with
+`LayoutHelpServerPanelProps` (the same props) for static server HTML with small
+interaction islands. Core uses this server component inside `PanelLayout`;
+applications normally use the automatic Help registration.
+`openLayoutHelpDialog()` first opens Core's provider in the slot and falls back
+to a dialog when no slot accepts it.
 See [In-product Help](/en/docs/platform/help).
 
 ### Workspace navigation

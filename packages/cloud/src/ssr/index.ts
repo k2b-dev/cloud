@@ -14,6 +14,10 @@ export {
 export { hintOpen, markHintSeen } from "./hints";
 export { default as Layout } from "./Layout";
 export {
+  LayoutHelpPanel as LayoutHelpServerPanel,
+  type LayoutHelpPanelProps as LayoutHelpServerPanelProps,
+} from "./LayoutHelpPanel.server";
+export {
   default as MinimalLayout,
   type MinimalLayoutPreferencePosition,
   type MinimalLayoutProps,

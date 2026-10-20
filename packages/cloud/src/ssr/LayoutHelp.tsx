@@ -20,8 +20,8 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
-import { getContext, onContextChange, openPanel } from "../browser/panel";
-import { onPanelShortcutsChange, panelShortcutsReceived, readPanelShortcuts } from "../browser/panel-shortcuts";
+import { onContextChange, openPanel } from "../browser/panel";
+import { onPanelShortcutsChange } from "../browser/panel-shortcuts";
 import { HELP_ACCESS_LEVELS, HELP_KINDS } from "../shared/help";
 import { appAccentStyle } from "./app-appearance";
 import type { LayoutHelpArticle } from "./help";
@@ -29,6 +29,8 @@ import { helpMessages } from "./help-messages";
 import { helpArticleParts } from "./layout-help-article";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
 import { focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
+import { readHelpPanelShortcuts } from "./layout-help-panel-shortcuts";
+import type { LayoutHelpPanelProps } from "./layout-help-panel-types";
 import { HELP_TOPICS_EVENT, type HelpTopic, registry } from "./layout-help-registry";
 import { searchHelpTopics } from "./layout-help-search";
 import { type HelpShortcutCommand, helpShortcutGroups, helpStart } from "./layout-help-start";
@@ -59,21 +61,7 @@ export type LayoutHelpPageProps = {
   pageBase?: string;
 };
 
-export type LayoutHelpPanelProps = {
-  documents: readonly HelpDocumentManifest[];
-  /** Absent when the context selected Help the reader may not see. */
-  app?: { id: string; name: string; icon?: string };
-  /** appAppearanceStyle() of the app, from the server. */
-  appearance?: string;
-  /** Server-filtered For this view ids. */
-  view?: readonly string[];
-  initialTopic?: string;
-  /** Authorized article and server-parsed parts for an identical first frame. */
-  initialArticle?: LayoutHelpArticle;
-  pageBase?: string;
-  platform: KeyboardPlatform;
-  state?: "failed" | "unavailable";
-};
+export type { LayoutHelpPanelProps } from "./layout-help-panel-types";
 
 type HelpView = "hub" | "article";
 type HelpSession = {
@@ -123,7 +111,7 @@ const StartShortcuts = (props: { appName?: string; panel?: boolean; platform?: K
     props.panel || shell ? shellShortcuts(platformMessages.resolve([locale()]).t, { panel: props.panel || !!shell?.panel }) : [];
   const read = (): HelpShortcutCommand[] => {
     // Once received, the host list is authoritative: omitted shortcuts must stay omitted.
-    if (props.panel) return panelShortcutsReceived() && getContext() !== null ? readPanelShortcuts() : seed;
+    if (props.panel) return readHelpPanelShortcuts(seed);
     const commands = contextCommandsWithShortcuts();
     return [...seed.filter((command) => !commands.some((other) => other.id === command.id)), ...commands];
   };

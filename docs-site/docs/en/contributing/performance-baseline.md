@@ -411,6 +411,25 @@ not remove cross-app document loads or the provider's own SSR, JavaScript,
 and island cost. Compare `spaces-to-mail` with the in-app rows to distinguish
 those costs when deciding whether F10 should precede Assistant and Chat.
 
+### Recorded panel results
+
+**TODO — owner records the measured navigation results under the machine lock.**
+
+| Engine | Profile | Navigation | Before median (min–max) | After median (min–max) | Limit | Verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| Chromium | Column | TODO | TODO | TODO | 400 ms lag | TODO |
+| Chromium | Drawer | TODO | TODO | TODO | 400 ms lag | TODO |
+| Chromium | Sheet | TODO | TODO | TODO | Informational | TODO |
+| WebKit | Column | TODO | TODO | TODO | 400 ms lag | TODO |
+| WebKit | Drawer | TODO | TODO | TODO | 400 ms lag | TODO |
+| WebKit | Sheet | TODO | TODO | TODO | 1,000 ms from press | TODO |
+
+The panel's 48 KiB eager Brotli bundle budget comes from the measured
+46,412 B split production closure plus 5%, rounded up to the next KiB; at the documented phone
+rate of 200,000 B/s, a quarter of the WebKit sheet's 1,000 ms limit is 50,000 B.
+`packages/core/src/pages/help/panel.bundle.test.ts` records and enforces that
+budget and keeps the reader's heavy modules in on-demand chunks.
+
 ### Mail observations and limits
 
 Once per engine, after the Mail navigation profiles, a column observation
