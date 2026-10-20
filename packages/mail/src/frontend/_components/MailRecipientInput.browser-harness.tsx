@@ -20,6 +20,12 @@ declare global {
 
 const absentDirectory: MailContactDirectory = { suggest: null, resolve: null, read: null, listWritableBooks: null, create: null };
 
+/** Fixture text for the surrounding page, which the real pages take from their own catalogs. */
+const fixtureText = {
+  en: { subject: "Quarterly review", contextGroup: "Conversation context" },
+  de: { subject: "Quarterly review", contextGroup: "Unterhaltungskontext" },
+};
+
 /** The composer's To row beside the conversation's details panel, as the compose and mailbox pages arrange them. */
 window.mountMailRecipients = (options) => {
   const host = document.getElementById("root");
@@ -44,9 +50,9 @@ window.mountMailRecipients = (options) => {
             </section>
             <aside class="w-full shrink-0 md:w-[22rem]" data-testid="details">
               <DetailPanel>
-                <DetailPanel.Header title="Quarterly review" />
+                <DetailPanel.Header title={fixtureText[options.locale].subject} />
                 <DetailPanel.Body>
-                  <DetailPanel.Group label={options.locale === "de" ? "Unterhaltungskontext" : "Conversation context"}>
+                  <DetailPanel.Group label={fixtureText[options.locale].contextGroup}>
                     <MailConversationContext mailboxId="Box001" conversationId="Conv01" requestUrl="/app/mail/Box001" active />
                   </DetailPanel.Group>
                 </DetailPanel.Body>

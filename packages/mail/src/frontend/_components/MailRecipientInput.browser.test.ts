@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { MailRecipientHarnessOptions } from "./MailRecipientInput.browser-harness";
 
 // Whether the suggestion list opens at its final size without moving the field, and whether the details panel simply
@@ -163,6 +163,7 @@ for (const [label, context] of [
     try {
       const field = page.getByRole("combobox", { name: "Recipients" });
       const control = ".mail-recipient-control";
+      await settled(page);
       const input = await layoutBox(page, '[role="combobox"]');
       const before = await layoutBox(page, control);
       await field.fill("ad");
