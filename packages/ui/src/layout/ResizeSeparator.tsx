@@ -39,6 +39,7 @@ export default function ResizeSeparator(props: ResizeSeparatorProps) {
           },
           onResize: (value) => props.onResize(value),
           onResizeEnd: (value) => props.onResizeEnd?.(value),
+          onReset: () => props.onReset?.(),
           onCollapseIntent: (armed) => props.onCollapseIntent?.(armed),
           onCollapse: () => props.onCollapse?.(),
           onDragChange: (dragging) => props.onDragChange?.(dragging),
@@ -61,6 +62,8 @@ export default function ResizeSeparator(props: ResizeSeparatorProps) {
       aria-label={props.label}
       aria-controls={props.controls}
       data-orientation={props.orientation}
+      // A separator that grows toward the start sits on the start edge of the region it resizes; the drag cue shades that region.
+      data-resize-edge={props.grow === "start" ? "start" : "end"}
     >
       <span aria-hidden="true" />
     </div>

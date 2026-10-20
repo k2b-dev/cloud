@@ -4,8 +4,10 @@ Use `ResizeSeparator` between two regions when the application owns their size.
 It renders a focusable separator with a label, orientation, current value,
 limits, and optional `controls` id. A vertical separator changes column width;
 a horizontal separator changes row height. The transparent 12 px hit area
-contains a 1 px line with a short grip that appear on hover, keyboard focus,
-and drag. Nothing moves or changes size.
+shows a short grip and a soft shadow on the region it resizes during hover,
+keyboard focus, and drag. It draws no line. The grip takes the focus color only
+on keyboard focus. These cues move no content; their transitions stop under
+reduced motion.
 
 ## Import
 
@@ -27,12 +29,18 @@ const [width, setWidth] = createSignal(240);
   grow="start"
   onResize={setWidth}
   onResizeEnd={saveWidth}
+  onReset={() => setWidth(240)}
 />
 ```
 
 `onResize` receives clamped values during a drag and for every handled key.
 `onResizeEnd` commits a released drag or keyboard step. `unit` is pixels per
 value unit (default 1); for rem sizes, pass the root font size.
+
+`onReset` runs on double-click, except during an active drag. The application
+restores its default size and clears any saved preference. With plain server
+markup, the callback also updates `aria-valuenow`. Without `onReset`, a
+double-click does nothing.
 
 ArrowLeft/ArrowRight resize a vertical separator; ArrowUp/ArrowDown resize a
 horizontal separator. `grow="start"` increases the region toward the logical
@@ -54,8 +62,8 @@ Persistence and collapse effects belong to the application.
 - The separator has `role="separator"`, `aria-orientation`, `aria-valuemin`,
   `aria-valuemax`, `aria-valuenow`, and the `label` as its accessible name.
 - Connect `controls` to the resized region's id.
-- It is a keyboard tab stop. On keyboard focus and during a drag, the line
-  shows and its grip takes the focus color.
+- It is a keyboard tab stop. Keyboard focus shows the grip and shadow and gives
+  the grip the focus color; hover and drag show the cue without that color.
 
 ## Runtime
 
@@ -63,7 +71,10 @@ The component attaches behavior on mount and disposes it on unmount. Render the
 same size and ARIA values on the server and in the first client frame. For plain
 server markup, call `attachResizeSeparator(element, options)` and dispose its
 returned function. The installer reads orientation from `aria-orientation` and
-gets the current value through `value: () => number`.
+gets the current value through `value: () => number`. Both the component and
+`attachResizeSeparator` set `data-resize-edge` from `grow` (`start` or `end`),
+so the shadow falls on the resized region. The component renders it on the
+server for the first frame.
 
 ## Example
 
@@ -88,6 +99,7 @@ const [closing, setClosing] = createSignal(false);
       grow="start"
       collapseBelow={120}
       onResize={setWidth}
+      onReset={() => setWidth(240)}
       onCollapseIntent={setClosing}
       onCollapse={() => setOpen(false)}
     />

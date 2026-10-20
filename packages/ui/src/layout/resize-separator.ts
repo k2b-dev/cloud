@@ -12,6 +12,7 @@ export type ResizeSeparatorOptions = {
   collapseBelow?: number;
   onResize: (value: number) => void;
   onResizeEnd?: (value: number) => void;
+  onReset?: () => void;
   onCollapseIntent?: (armed: boolean) => void;
   onCollapse?: () => void;
   onDragChange?: (dragging: boolean) => void;
@@ -19,6 +20,7 @@ export type ResizeSeparatorOptions = {
 
 /** Adds resizing to a server-rendered separator; orientation comes from aria-orientation. */
 export function attachResizeSeparator(element: HTMLElement, options: ResizeSeparatorOptions): () => void {
+  element.dataset.resizeEdge = options.grow;
   const clamp = (value: number) => Math.min(options.max, Math.max(options.min, value));
   const setAria = (value: number) => element.setAttribute("aria-valuenow", String(Math.round(value * 100) / 100));
   const vertical = () => element.getAttribute("aria-orientation") !== "horizontal";
@@ -77,6 +79,9 @@ export function attachResizeSeparator(element: HTMLElement, options: ResizeSepar
     if (event.pointerId === drag?.id) finish(false);
   };
   const cancel = () => finish(false);
+  const reset = () => {
+    if (!drag) options.onReset?.();
+  };
   const key = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || drag) return;
     const decrease = vertical() ? "ArrowLeft" : "ArrowUp";
@@ -99,6 +104,7 @@ export function attachResizeSeparator(element: HTMLElement, options: ResizeSepar
   window.addEventListener("pointercancel", cancelPointer);
   element.addEventListener("lostpointercapture", cancelPointer);
   element.addEventListener("keydown", key);
+  element.addEventListener("dblclick", reset);
   window.addEventListener("blur", cancel);
   return () => {
     cancel();
@@ -108,6 +114,7 @@ export function attachResizeSeparator(element: HTMLElement, options: ResizeSepar
     window.removeEventListener("pointercancel", cancelPointer);
     element.removeEventListener("lostpointercapture", cancelPointer);
     element.removeEventListener("keydown", key);
+    element.removeEventListener("dblclick", reset);
     window.removeEventListener("blur", cancel);
   };
 }

@@ -1,10 +1,12 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, mock, test } from "bun:test";
 import { attachResizeSeparator } from "../src/layout/resize-separator";
 import { createDomTestHarness } from "./dom";
 
 let cleanup = () => {};
 afterEach(() => cleanup());
-function setup(options: { orientation?: "vertical" | "horizontal"; grow?: "start" | "end"; rtl?: boolean; commit?: boolean } = {}) {
+function setup(
+  options: { orientation?: "vertical" | "horizontal"; grow?: "start" | "end"; rtl?: boolean; commit?: boolean; onReset?: () => void } = {},
+) {
   const dom = createDomTestHarness();
   const handle = document.createElement("div");
   handle.tabIndex = 0;
@@ -48,6 +50,7 @@ function setup(options: { orientation?: "vertical" | "horizontal"; grow?: "start
       collapses++;
     },
     onDragChange: (active) => dragging.push(active),
+    onReset: options.onReset,
   });
   cleanup = () => {
     dispose();
@@ -77,6 +80,36 @@ function setup(options: { orientation?: "vertical" | "horizontal"; grow?: "start
     dispose,
   };
 }
+
+for (const grow of ["start", "end"] as const)
+  test(`attaching sets the ${grow} cue edge on plain markup`, () => {
+    const h = setup({ grow });
+    expect(h.handle.dataset.resizeEdge).toBe(grow);
+  });
+
+test("double-click delegates reset, ignores an active drag and detaches on disposal", () => {
+  const onReset = mock(() => {});
+  const h = setup({ onReset });
+  const reset = () => h.handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  reset();
+  expect(onReset).toHaveBeenCalledTimes(1);
+  h.pointer("pointerdown", 100);
+  reset();
+  expect(onReset).toHaveBeenCalledTimes(1);
+  h.pointer("pointerup", 100);
+  reset();
+  expect(onReset).toHaveBeenCalledTimes(2);
+  h.dispose();
+  reset();
+  expect(onReset).toHaveBeenCalledTimes(2);
+});
+
+test("double-click without a reset callback leaves the value alone", () => {
+  const h = setup();
+  h.handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  expect(h.value()).toBe(24);
+  expect(h.commits).toEqual([]);
+});
 
 test("keys follow logical growth, clamp, commit and update rounded ARIA", () => {
   const h = setup();

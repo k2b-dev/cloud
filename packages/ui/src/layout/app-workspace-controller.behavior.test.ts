@@ -1965,6 +1965,81 @@ describe("floating detail controller", () => {
     }
   });
 
+  for (const inherited of [false, true])
+    test(`double-click clears sidebar width and collapse state (inherited=${inherited})`, () => {
+      const { root, handle, sidebar } = workspace({ collapsible: true, width: 1800 });
+      const variable = "--k2b-workspace-sidebar-width";
+      handle.dataset.workspaceDefaultSize = "208";
+      setDynamicRect(sidebar, () => ({ height: 700, width: Number.parseFloat(root.style.getPropertyValue(variable)) || 208 }));
+      const parent = document.createElement("div");
+      document.body.append(parent);
+      parent.append(root);
+      const readStyle = getComputedStyle;
+      if (inherited) {
+        parent.style.setProperty(variable, "64px");
+        // Happy DOM does not inherit custom properties in computed styles.
+        globalThis.getComputedStyle = (element) => {
+          const style = readStyle(element);
+          if (element !== root) return style;
+          const readProperty = style.getPropertyValue.bind(style);
+          style.getPropertyValue = (name) =>
+            name === variable ? root.style.getPropertyValue(name) || parent.style.getPropertyValue(name) : readProperty(name);
+          return style;
+        };
+      }
+      const written: unknown[] = [];
+      const dispose = installAppWorkspaceController({
+        root,
+        readState: () => ({ version: 2, sidebarWidth: 300, sidebarCollapsed: true, detailWidths: { other: 420 } }),
+        writeState: (state) => written.push(state),
+      });
+      try {
+        flushFrames();
+        expect(root.dataset.sidebarCollapsed).toBe("true");
+        handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+        flushFrames();
+        expect(root.style.getPropertyValue(variable)).toBe(inherited ? "208px" : "");
+        expect(root.hasAttribute("data-sidebar-collapsed")).toBe(false);
+        expect(handle.getAttribute("aria-valuenow")).toBe("208");
+        expect(written.at(-1)).toEqual({ version: 2, detailWidths: { other: 420 } });
+      } finally {
+        dispose();
+        globalThis.getComputedStyle = readStyle;
+      }
+    });
+
+  test("double-click clears only the selected drawer height", () => {
+    const { root } = workspace({ height: 1000 });
+    const drawer = document.createElement("aside");
+    drawer.id = "activity";
+    drawer.className = "k2b-app-workspace__drawer";
+    drawer.dataset.workspaceResizable = "true";
+    const variable = "--k2b-workspace-drawer-activity-height";
+    setDynamicRect(drawer, () => ({ height: Number.parseFloat(root.style.getPropertyValue(variable)) || 240, width: 1000 }));
+    root.append(drawer);
+    const handle = document.createElement("button");
+    handle.dataset.appWorkspaceResize = "drawer";
+    handle.dataset.workspacePanelId = "activity";
+    handle.dataset.workspaceDefaultSize = "240";
+    handle.setAttribute("aria-controls", "activity");
+    root.append(handle);
+    const written: unknown[] = [];
+    const dispose = installAppWorkspaceController({
+      root,
+      readState: () => ({ version: 2, drawerHeights: { activity: 320, other: 280 } }),
+      writeState: (state) => written.push(state),
+    });
+    try {
+      flushFrames();
+      handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      expect(root.style.getPropertyValue(variable)).toBe("");
+      expect(handle.getAttribute("aria-valuenow")).toBe("240");
+      expect(written.at(-1)).toMatchObject({ drawerHeights: { other: 280 } });
+    } finally {
+      dispose();
+    }
+  });
+
   test("double-click resets only the selected detail width and writes the remaining state", () => {
     const { root, handle } = detailWorkspace();
     const written: unknown[] = [];

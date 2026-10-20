@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Shared interaction behavior implemented for only some consumers | Resize handles differ in cue, keyboard behavior, or reset depending on the region. | Tests: UI `resize-cue.browser.test.ts` covers every workspace edge and standalone separator; separator, workspace controller, and Cloud panel behavior tests cover reset callbacks and saved-size removal. |
 | Rendered Markdown dropped by the email sanitizer | marked emits an element, here `hr` from `---`, that the email allowlist lacks, so the divider disappears from sent mail while help and editor show it. | Test: Mail `compose-renderer.test.ts` pins the exact set of elements email drops from a render of every Markdown construct; Cloud `email-html.test.ts` and `email-frame.test.ts` keep `hr`. |
 | Immutable asset URL names different builds | A start stamp changes stylesheet URLs after every restart and can name different Core files during a rolling deploy ([#1544](https://github.com/k2b-dev/cloud/issues/1544)). | Tests: Cloud `define-app.stylesheet-versions.test.ts` checks real restarts, shared Core URLs, changed and missing app files, and development stamps; `static-assets.test.ts` checks version matching, source hashes, missing files, in-place changes, and 304 cache policy. |
 | Concurrency bounded by count, not by memory | Background worker counts allow several large items to hold more memory together than the process can afford. | Tests: Mail `processing-memory-budget.test.ts` checks weighted FIFO admission, oversized work, cancellation and release; `processing-memory.integration.test.ts` checks peak RSS and correctness under the guard workload ([#1549](https://github.com/k2b-dev/cloud/issues/1549)). |
@@ -745,6 +746,13 @@ convention still needs a check or a test.
 - **Root cause:** Pin separation treated only pins as obstacles, and the scale bar, attribution, and info tile each had a fixed absolute place. In WebKit, the screenshot of a WebGL canvas without a preserved drawing buffer showed the frame before MapLibre's last one. MapLibre's own state held the final colour, which a probe of its internals confirmed while the captured pixel stayed stale for 12 s.
 - **Error class:** Overlays placed without each other; Canvas captured one frame late.
 - **Guard:** The dot is an obstacle in `pinOffsets` for numbered and drop pins, and stops keep their route point. The info tile and a shared scale and attribution row form one bottom stack, and selection moves a covered pin above the tile. Browser cases check each overlap with `elementFromPoint` or rects in Chromium and WebKit, and they fail on the code before the fix. The theme case renders one more frame before each sample.
+
+### Resize cues and reset behavior differed between columns
+
+- **What happened:** Mail's conversation pane showed a soft drag shadow, while its Detail column showed none; sidebar, drawer, and standalone separators lacked the same reset behavior.
+- **Root cause:** Detail omitted the shared shadow flag, standalone separators had separate cue styles, and reset handlers covered only panes and details.
+- **Error class:** Shared interaction behavior implemented for only some consumers.
+- **Guard:** `resize-cue.browser.test.ts` covers every workspace edge and standalone separator, including sequential arrow keys, cue geometry, reduced motion, and reset. Focused separator, workspace, and Cloud panel behavior tests cover callbacks and saved-size removal.
 
 ## Add a lesson
 

@@ -4,6 +4,7 @@ import {
   APP_WORKSPACE_DETAIL_DEFAULT,
   APP_WORKSPACE_DETAIL_MAX,
   APP_WORKSPACE_DETAIL_MIN,
+  APP_WORKSPACE_DRAWER_DEFAULT,
   APP_WORKSPACE_DRAWER_MAX,
   APP_WORKSPACE_DRAWER_MIN,
   APP_WORKSPACE_MAIN_MIN,
@@ -11,6 +12,7 @@ import {
   APP_WORKSPACE_PANE_MAX,
   APP_WORKSPACE_PANE_MIN,
   APP_WORKSPACE_SIDEBAR_COLLAPSED,
+  APP_WORKSPACE_SIDEBAR_DEFAULT,
   APP_WORKSPACE_SIDEBAR_MAX,
   APP_WORKSPACE_SIDEBAR_MIN,
   type AppWorkspaceLayoutState,
@@ -1488,15 +1490,23 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const handle = resizeHandle(event);
     const root = handle?.closest<HTMLElement>(ROOT_SELECTOR);
     const kind = handle ? resizeKind(handle) : null;
-    if (
-      !handle ||
-      !root ||
-      (kind !== "detail" && kind !== "pane") ||
-      !workspaceResizable(root) ||
-      !controlsResizableRegion(root, handle, kind)
-    )
+    if (!handle || !root || !kind || !workspaceResizable(root) || !controlsResizableRegion(root, handle, kind)) return;
+    if (kind === "sidebar") {
+      const { sidebarWidth: _width, sidebarCollapsed: _collapsed, ...remaining } = layoutState;
+      layoutState = remaining;
+      const variable = "--k2b-workspace-sidebar-width";
+      root.style.removeProperty(variable);
+      delete root.dataset.sidebarCollapsed;
+      // The root renders saved layout state inline; a host may also supply it.
+      if (getComputedStyle(root).getPropertyValue(variable).trim())
+        root.style.setProperty(variable, `${numberData(handle, "workspaceDefaultSize", APP_WORKSPACE_SIDEBAR_DEFAULT)}px`);
+      reconcilePanes(root, layoutState);
+      updateHandleValue(root, handle, kind, currentSize(root, handle, kind));
+      scheduleHostSync();
+      options.writeState?.(layoutState);
       return;
-    const key = kind === "pane" ? "paneWidths" : "detailWidths";
+    }
+    const key = kind === "pane" ? "paneWidths" : kind === "drawer" ? "drawerHeights" : "detailWidths";
     const widths = { ...layoutState[key] };
     delete widths[panelId(handle)];
     layoutState = { ...layoutState, [key]: widths };
@@ -1506,7 +1516,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (getComputedStyle(root).getPropertyValue(variable).trim()) {
       const spec =
         readAppWorkspaceWidth(handle.dataset.workspaceDefaultSize) ??
-        (kind === "pane" ? APP_WORKSPACE_PANE_DEFAULT : APP_WORKSPACE_DETAIL_DEFAULT);
+        (kind === "pane" ? APP_WORKSPACE_PANE_DEFAULT : kind === "drawer" ? APP_WORKSPACE_DRAWER_DEFAULT : APP_WORKSPACE_DETAIL_DEFAULT);
       // A share must resolve at the pane, where the workspace length exists.
       // `initial` clears an inherited SSR preference and restores its CSS fallback.
       root.style.setProperty(variable, typeof spec === "number" ? `${spec}px` : "initial");

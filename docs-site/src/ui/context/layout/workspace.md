@@ -1235,7 +1235,7 @@ expand, collapse, or move between parent and child, and Home and End jump to
 the first and last visible row.
 
 Resize handles are separators with orientation, limits, and the controlled
-region. Their pointer target is wider than the visible one-pixel guide. Do not
+region. Their pointer target is wider than the short visible grip. Do not
 replace them with application-specific handles.
 
 ## Activate resizing
@@ -1380,16 +1380,21 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 </AppWorkspace>
 ```
 
-From 48 rem, 12 px of space separates adjacent MainPanes. Sidebar and pane
-resize handles show only their grip on hover, keyboard focus, or drag; they
-draw no separator line. The last pane has no trailing gap.
+From 48 rem, 12 px of space separates adjacent MainPanes. The last pane has no
+trailing gap. Every resize handle (sidebar, panes, Detail, and drawer) shows the
+same short grip and soft shadow on the region it resizes during hover, keyboard
+focus, and drag. Keyboard focus gives the grip the focus color. Only the drawer
+also draws its edge line. These cues move no content, and their transitions stop
+under reduced motion. Set `resizeShadow={false}` on `Sidebar` or `MainPane` to
+turn its shadow off.
+
 A side pane keeps its size while the main region keeps 320 px and gives way
 down to its minimum; the stylesheet applies the same fit as the controller, so
 a server-rendered split arrives at its final widths. Detail is a column when
 it fits beside Main's minimum, otherwise it waits behind Details. See
 [Detail and panel](#detail-and-panel).
-Double-click a pane or detail resize handle to clear its saved width and return
-to its default size.
+Double-click any resize handle to clear its saved size and return to the
+default. Resetting the sidebar also clears its collapsed state.
 
 ### Live rows and detail previews
 

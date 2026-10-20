@@ -450,6 +450,26 @@ else {
     expect(h.slot.dataset.state).toBe("loading");
   });
 
+  test("double-click forgets a committed width and follows the responsive CSS default again", () => {
+    const h = setup();
+    h.open();
+    const separator = h.slot.querySelector<HTMLElement>(".cloud-panel__resize")!;
+    const key = () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true }));
+    key();
+    expect(separator.getAttribute("aria-valuenow")).toBe("25");
+    separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("");
+    expect(document.cookie).toContain("cloud_panel=1:fixture:");
+    expect(separator.getAttribute("aria-valuenow")).toBe("26");
+    h.resize(1194);
+    expect(separator.getAttribute("aria-valuenow")).toBe("21.5");
+    key();
+    expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("22.5rem");
+    separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("");
+    expect(separator.getAttribute("aria-valuenow")).toBe("21.5");
+  });
+
   test("without a stored width, viewport resize keeps ARIA and the next key step on the CSS default", () => {
     const h = setup(1440, false, false);
     h.open();

@@ -9,6 +9,74 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     return;
   }
 
+  for (const kind of ["sidebar", "drawer"] as const)
+    test(`double-click resets a rendered ${kind} handle and forgets its saved size`, async () => {
+      const dom = createDomTestHarness();
+      const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+      const { installAppWorkspaceController } = await import("../src/layout/app-workspace-controller");
+      const initial = { version: 2 as const, sidebarWidth: 300, sidebarCollapsed: true, drawerHeights: { activity: 320, other: 280 } };
+      const dispose = render(
+        () => (
+          <AppWorkspace controller={false} layoutState={() => initial}>
+            <AppWorkspace.Sidebar id="folders" collapsible>
+              <AppWorkspace.SidebarDesktop>Folders</AppWorkspace.SidebarDesktop>
+            </AppWorkspace.Sidebar>
+            <AppWorkspace.Content>
+              <AppWorkspace.Main>Message</AppWorkspace.Main>
+            </AppWorkspace.Content>
+            <AppWorkspace.BottomDrawer id="activity" open height="sm">
+              Activity
+            </AppWorkspace.BottomDrawer>
+          </AppWorkspace>
+        ),
+        dom.root,
+      );
+      const root = dom.root.querySelector<HTMLElement>("[data-k2b-app-workspace]")!;
+      const handle = root.querySelector<HTMLElement>(`[data-app-workspace-resize="${kind}"]`)!;
+      const sidebar = root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar")!;
+      const drawer = root.querySelector<HTMLElement>(".k2b-app-workspace__drawer")!;
+      const rect = (width: number, height: number) => ({
+        width,
+        height,
+        left: 0,
+        right: width,
+        top: 0,
+        bottom: height,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+      Object.defineProperty(root, "getBoundingClientRect", { value: () => rect(1800, 900) });
+      Object.defineProperty(sidebar, "getBoundingClientRect", {
+        value: () => rect(Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-sidebar-width")) || 208, 900),
+      });
+      Object.defineProperty(drawer, "getBoundingClientRect", {
+        value: () => rect(1800, Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")) || 192),
+      });
+      const written: unknown[] = [];
+      const stop = installAppWorkspaceController({ root, readState: () => initial, writeState: (state) => written.push(state) });
+      try {
+        handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+        if (kind === "sidebar") {
+          expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("");
+          expect(root.hasAttribute("data-sidebar-collapsed")).toBe(false);
+          expect(handle.getAttribute("aria-valuenow")).toBe("208");
+          expect(written.at(-1)).not.toHaveProperty("sidebarWidth");
+          expect(written.at(-1)).not.toHaveProperty("sidebarCollapsed");
+          expect(written.at(-1)).toHaveProperty("drawerHeights", initial.drawerHeights);
+        } else {
+          expect(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")).toBe("");
+          expect(handle.getAttribute("aria-valuenow")).toBe("192");
+          expect(written.at(-1)).toHaveProperty("drawerHeights", { other: 280 });
+          expect(written.at(-1)).toHaveProperty("sidebarWidth", 300);
+        }
+      } finally {
+        stop();
+        dispose();
+        dom.cleanup();
+      }
+    });
+
   test("fades only scrollable sidebar content and clears the hint at the end", async () => {
     const dom = createDomTestHarness();
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
