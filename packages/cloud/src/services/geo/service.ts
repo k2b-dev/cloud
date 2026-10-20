@@ -237,7 +237,7 @@ export const createGeoService = (
         categories: [...new Set(value.categories)],
         ...(along ? { along: { ...along, bufferMeters: along.bufferMeters ?? 1000 } } : {}),
       };
-      return paid(
+      return paid<z.infer<typeof GeoPlaceSearchDataSchema>>(
         "places",
         value,
         context,
