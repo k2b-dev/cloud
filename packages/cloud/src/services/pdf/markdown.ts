@@ -253,12 +253,17 @@ const breakLongCellRuns = (html: string): string => {
   let buffer = "";
   // Units of the run that the previous text node in the cell ended with.
   let carried = 0;
+  // Only complete ASCII whitespace references end a run; keep their original spelling.
+  const whitespaceReference = /&(?:#(?:0*(?:9|10|12|13|32)(?![0-9])|[xX]0*(?:9|[aAcCdD]|20)(?![0-9a-fA-F]));?|Tab;|NewLine;)/u.source;
   // A raw no-break space joins a run: it is no line break opportunity.
-  const pieces = /(?:\S|[\u00a0\u2007\u202f\ufeff])+|[^\S\u00a0\u2007\u202f\ufeff]+/gu;
+  const pieces = new RegExp(
+    String.raw`((?:${whitespaceReference}|[^\S\u00a0\u2007\u202f\ufeff])+)|(?:(?!${whitespaceReference})(?:\S|[\u00a0\u2007\u202f\ufeff]))+`,
+    "gu",
+  );
   const breakText = (text: string): string => {
     let output = "";
-    for (const [piece] of text.matchAll(pieces)) {
-      if (!/\S/u.test(piece)) {
+    for (const [piece, whitespace] of text.matchAll(pieces)) {
+      if (whitespace !== undefined) {
         carried = 0;
         output += piece;
         continue;

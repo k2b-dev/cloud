@@ -178,6 +178,45 @@ describe("Markdown PDF renderer", () => {
     expect(html).toContain(`<td>${"a".repeat(10)}<wbr>\u00a0${"b".repeat(9)}<wbr>b</td>`);
   });
 
+  test("treats ASCII whitespace references as word boundaries without changing their spelling", () => {
+    const cell = "<td>aaaaaaaa&#32;100&#x20;bbbbbbbbbb&Tab;cccccccccc&#X0D;dddd</td>";
+    expect(buildPresetPdfHtml({ html: `<table><tr>${cell}</tr></table>` })).toContain(cell);
+    for (const reference of [
+      "&#9;",
+      "&#10;",
+      "&#12;",
+      "&#13;",
+      "&#32;",
+      "&#0009",
+      "&#0010",
+      "&#0012",
+      "&#0013",
+      "&#0032",
+      "&#x9;",
+      "&#xa;",
+      "&#xc;",
+      "&#xd;",
+      "&#x20;",
+      "&#X0009",
+      "&#X000A",
+      "&#X000C",
+      "&#X000D",
+      "&#X0020",
+      "&Tab;",
+      "&NewLine;",
+    ]) {
+      const cell = `<td>aaaaaaaaaa${reference}!!!!!!!!!!!</td>`;
+      expect(buildPresetPdfHtml({ html: `<table><tr>${cell}</tr></table>` })).toContain(cell);
+    }
+  });
+
+  test("keeps non-whitespace numeric references in long runs", () => {
+    for (const reference of ["&#321;", "&#x201C;"]) {
+      const html = buildPresetPdfHtml({ html: `<table><tr><td>aaaaaaaaa${reference}bbbbbbbbbbb</td></tr></table>` });
+      expect(html).toContain(`<td>aaaaaaaaa${reference}<wbr>bbbbbbbbbb<wbr>b</td>`);
+    }
+  });
+
   test("counts a bare ampersand before whitespace as one unit", () => {
     const short = `${"a".repeat(19)}&`;
     const html = buildPresetPdfHtml({ html: `<table><tr><td>${short} ${"b".repeat(21)}</td></tr></table>` });
