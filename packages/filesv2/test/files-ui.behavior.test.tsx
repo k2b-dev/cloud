@@ -36,6 +36,7 @@ const flush = async () => {
   for (let index = 0; index < 16; index++) await Promise.resolve();
 };
 const configuration: PublicConfiguration = {
+  activityRetentionDays: 365,
   url: "http://filegate:4000",
   tokenConfigured: true,
   cloud: {
@@ -125,7 +126,13 @@ describe("Filesv2 interactions", () => {
     await flush();
     expect(requests).toHaveLength(1);
     expect(requests[0]!.input).toEqual({
-      json: { url: "http://filegate:4001", cloud: configuration.cloud, freeipa: configuration.freeipa, collabora: configuration.collabora },
+      json: {
+        activityRetentionDays: 365,
+        url: "http://filegate:4001",
+        cloud: configuration.cloud,
+        freeipa: configuration.freeipa,
+        collabora: configuration.collabora,
+      },
     });
     requests[0]!.resolve(Response.json({ code: "unavailable", message: "Filegate is unavailable." }, { status: 503 }));
     await flush();
@@ -138,6 +145,7 @@ describe("Filesv2 interactions", () => {
     expect(requests).toHaveLength(2);
     expect(requests[1]!.input).toEqual({
       json: {
+        activityRetentionDays: 365,
         url: "http://filegate:4001",
         cloud: configuration.cloud,
         freeipa: configuration.freeipa,

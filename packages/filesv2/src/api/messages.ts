@@ -101,6 +101,14 @@ const messages: Record<string, [string, string]> = {
     "Document editing is not configured for this Cloud.",
     "Die Dokumentbearbeitung ist in dieser Cloud nicht konfiguriert.",
   ],
+  activity_scope_missing: [
+    "Files could not complete this operation. Try again.",
+    "Dateien konnte diese Aktion nicht abschließen. Versuche es erneut.",
+  ],
+  activity_scope_mismatch: [
+    "Files could not complete this operation. Try again.",
+    "Dateien konnte diese Aktion nicht abschließen. Versuche es erneut.",
+  ],
   internal: [
     "Files hit an unexpected error. The server log has the details.",
     "In Files ist ein unerwarteter Fehler aufgetreten. Details stehen im Server-Log.",
