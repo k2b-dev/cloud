@@ -1864,6 +1864,21 @@ test("a replace to a new URL during a traversal fetch gives the entry to the sho
   expect(document.title).toBe("old");
 });
 
+test("a traversal stays superseded after replaces move the URL away and back", async () => {
+  install();
+  const requests = deferredFetch(true);
+  arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new");
+  window.history.replaceState({}, "", "/app/old?edited");
+  window.history.replaceState({}, "", "/app/new");
+  const result = response();
+  const read = spyOn(result, "text");
+  requests[0]!.resolve(result);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(read).not.toHaveBeenCalled();
+  expect(document.title).toBe("old");
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;

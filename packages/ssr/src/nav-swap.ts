@@ -18,8 +18,8 @@ type SwapState = {
   shown: Entry;
   stopRestore: () => void;
   scroll: Map<string, ScrollSnapshot>;
-  /** Counts history pushes through the wrapper: a newer entry supersedes a pending traversal even without markers. */
-  pushes: number;
+  /** Counts pushes and URL-changing replaces through the wrapper: either supersedes a pending traversal for good. */
+  moves: number;
   decide: (event: PopStateEvent) => "page" | "nav";
   departure?: ScrollSnapshot;
   /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
@@ -61,7 +61,7 @@ const recover = (href: string, replace: boolean): void => {
 type Entry = { page?: string; position: number; scroll?: ScrollSnapshot };
 type Marker = Entry & { page: string };
 /** `key` is the Navigation API entry key: it tells entries apart even when neither carries a marker. */
-type Traversal = { href: string; entry: Entry; key?: string; pushes: number };
+type Traversal = { href: string; entry: Entry; key?: string; moves: number };
 const historyKey = Symbol.for("@k2b/ssr/nav-history");
 type HistoryWrites = { push: History["pushState"]; replace: History["replaceState"] };
 const plain = (value: unknown): value is Record<string, unknown> =>
@@ -146,7 +146,7 @@ const patchHistory = (): HistoryWrites => {
     if (stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);
     const entry = { page: state.currentPage, position: departing.position + 1 };
     writes.push.call(history, mergeMarker(value, entry), ...args);
-    state.pushes++;
+    state.moves++;
     remember(state, shown, snapshot);
     state.currentEntry = entry;
     state.shown = entry;
@@ -167,9 +167,14 @@ const patchHistory = (): HistoryWrites => {
     // A new URL supersedes a pending traversal, which then never commits: the shown page owns the entry.
     const live = state.active !== undefined && !state.active.signal.aborted && !moves;
     const page = live ? stored?.page : state.currentPage;
-    if (page === undefined) return writes.replace.call(history, value, ...args);
+    if (page === undefined) {
+      writes.replace.call(history, value, ...args);
+      if (moves) state.moves++;
+      return;
+    }
     const entry = { ...(stored?.page === page ? stored : {}), page, position: stored?.position ?? state.currentEntry.position };
     writes.replace.call(history, mergeMarker(value, entry), ...args);
+    if (moves) state.moves++;
     state.currentEntry = entry;
     if (!live || entryKey(entry) === entryKey(state.shown)) state.shown = entry;
   };
@@ -177,7 +182,7 @@ const patchHistory = (): HistoryWrites => {
 };
 // Entry identity, not its state: a replace during the fetch, even one that drops the marker, keeps the same entry.
 const stillCurrent = (state: SwapState, traversal: Traversal): boolean =>
-  window.location.href === traversal.href && window.navigation?.currentEntry?.key === traversal.key && state.pushes === traversal.pushes;
+  window.location.href === traversal.href && window.navigation?.currentEntry?.key === traversal.key && state.moves === traversal.moves;
 const abort = (state: SwapState): void => {
   state.active?.abort();
   state.active = undefined;
@@ -282,7 +287,7 @@ export function installPageSwap(): () => void {
     shown: initial ?? { position: basePosition() },
     stopRestore,
     scroll: loadScroll(),
-    pushes: 0,
+    moves: 0,
     decide: (event) => decide(event),
     // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
     headBase: timing?.name || window.location.href,
@@ -401,7 +406,7 @@ export function installPageSwap(): () => void {
   };
   const traverse = (entry: Entry): void => {
     state.currentEntry = entry;
-    void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key, pushes: state.pushes });
+    void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key, moves: state.moves });
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
   const decide = (event: PopStateEvent): "page" | "nav" => {
