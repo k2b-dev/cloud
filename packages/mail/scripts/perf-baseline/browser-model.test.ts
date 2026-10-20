@@ -7,13 +7,14 @@ import { errorsKey, installInteractionProbe, watchKey } from "./browser";
 import {
   type BrowserSection,
   interactionIds,
-  interactions,
-  interactionTraceBreakdown,
-  interactionRequestTiming,
   interactionRequestSchema,
+  interactionRequestSizes,
+  interactionRequestTiming,
   interactionResultSchema,
   interactionSample,
   interactionSampleSchema,
+  interactions,
+  interactionTraceBreakdown,
   islandRenderMs,
   loadSampleSchema,
   rankBottlenecks,
@@ -124,6 +125,26 @@ test("interaction samples count API requests and bytes and reject incomplete ent
   const summary = summarizeInteraction([10, 40, 20, 30].map((ms) => interactionSample(ms, [request("/api/a", ms)])));
   expect(summary).toEqual({ durationMs: { median: 25, p95: 40, min: 10, max: 40 }, apiRequests: 1, apiBytes: 25 });
   expect(() => summarizeInteraction([])).toThrow();
+});
+
+test("cached request bodies with unavailable sizes do not discard an interaction or invent encoded bytes", () => {
+  for (const [sizes, expected] of [
+    [
+      { responseBodySize: 1000, responseHeadersSize: 100 },
+      { bytes: 1100, encodedBytes: 1000 },
+    ],
+    [{ responseBodySize: -1, responseHeadersSize: 100 }, { bytes: 100 }],
+    [
+      { responseBodySize: 0, responseHeadersSize: -1 },
+      { bytes: 0, encodedBytes: 0 },
+    ],
+    [null, { bytes: 0 }],
+  ] as const) {
+    const measured = { ...request("/app/mail/Bbb002", 0), type: "document", ...interactionRequestSizes(sizes) };
+    const sample = interactionSample(100, [measured], "/app/mail/Bbb002");
+    expect(sample.mainRequest).toMatchObject(expected);
+    expect(summarizeInteraction([sample]).encodedBytes).toBe("encodedBytes" in expected ? expected.encodedBytes : undefined);
+  }
 });
 
 test("main requests and timing cover document and in-place mailbox switches without counting unrelated requests", () => {

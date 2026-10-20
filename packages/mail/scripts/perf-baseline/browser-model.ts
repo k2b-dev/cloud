@@ -146,7 +146,7 @@ export const interactionRequestSchema = z.object({
   type: z.string().min(1),
   status: z.number().int().nullable(),
   encoding: z.string().nullable(),
-  /** Encoded response body plus headers, from Playwright request sizes; 0 for a failed request. */
+  /** Known encoded response body and header bytes; unavailable sizes contribute 0. */
   bytes: count,
   /** The browser's error text when the request failed, for example when a navigation cancelled it. */
   failure: z.string().nullable(),
@@ -236,6 +236,16 @@ export function mainInteractionRequest(requests: z.infer<typeof interactionReque
           (path === `${workspace}/workspace-route` || path === `${workspace}/workspace-list`)))
     );
   });
+}
+
+/** Chromium can report -1 for a cached body. Keep that measurement unavailable instead of rejecting the sample. */
+export function interactionRequestSizes(sizes: { responseBodySize: number; responseHeadersSize: number } | null) {
+  const body = sizes?.responseBodySize;
+  const headers = sizes?.responseHeadersSize;
+  return {
+    bytes: Math.max(0, body ?? 0) + Math.max(0, headers ?? 0),
+    ...(body !== undefined && body >= 0 ? { encodedBytes: body } : {}),
+  };
 }
 
 export function interactionRequestTiming(timing: { requestStart: number; responseStart: number; responseEnd: number }) {

@@ -20,10 +20,11 @@ import {
   type InteractionProfile,
   type InteractionSample,
   type InteractionTrace,
-  interactionTraceBreakdown,
+  interactionRequestSizes,
   interactionRequestTiming,
   interactionSample,
   interactions,
+  interactionTraceBreakdown,
   islandRenderMs,
   type LoadPage,
   type LoadProfile,
@@ -707,13 +708,12 @@ class MailBrowser {
                 const timing = request.timing();
                 return {
                   ...(failed === null ? interactionRequestTiming(timing) : {}),
-                  ...(sizes ? { encodedBytes: sizes.responseBodySize } : {}),
+                  ...interactionRequestSizes(sizes),
                   method: request.method(),
                   path: `${target.pathname}${target.search}`.slice(0, 300),
                   type: request.resourceType(),
                   status: response?.status() ?? null,
                   encoding: response ? (response.headers()["content-encoding"] ?? "identity") : null,
-                  bytes: sizes ? sizes.responseBodySize + sizes.responseHeadersSize : 0,
                   failure: failed,
                 };
               }),

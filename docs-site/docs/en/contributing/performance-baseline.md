@@ -652,6 +652,10 @@ fetch. Samples and the summary include its server time (`responseStart -
 requestStart` from Playwright request timing), transfer time (`responseEnd -
 responseStart`), encoded body bytes, and encoding. These times exclude
 connection setup; bytes for the other request totals still include headers.
+A browser can report an unavailable body size as a negative value for a cached
+response. That sample still counts: `encodedBytes` is omitted, and request
+totals include only the known nonnegative body and header sizes. They are a
+lower bound when a size is unavailable.
 
 Definitions with `trace: true` (`mailbox-switch` and `folder-switch`) add one
 extra traced Chromium sample per profile, excluded from timing samples.
