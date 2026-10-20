@@ -67,7 +67,8 @@ export const buildMessageDocument = (
     table { max-width: 100%; border-collapse: collapse; }
     th, td { overflow-wrap: break-word; }
     :is(th, td) :is(a, code) { overflow-wrap: anywhere; }
-    [data-mail-wrap-anywhere] :is(th, td) { overflow-wrap: anywhere; }
+    /* Important: mail sent from Cloud carries break-word inline on every cell. */
+    [data-mail-wrap-anywhere] :is(th, td) { overflow-wrap: anywhere !important; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; }
     a { color: #1677c8; }
     details.mail-quoted-history { margin-top: 12px; }

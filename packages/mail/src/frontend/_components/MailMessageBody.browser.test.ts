@@ -1042,6 +1042,30 @@ describe("HTML mail with tables", () => {
     }, 30_000);
   }
 
+  test("lets a sent table with a long plain-text token break anywhere to fit the phone reader", async () => {
+    const sent = renderComposeContent({
+      body: `| Nr. | Artikel |\n| --- | --- |\n| 100 | ${"x".repeat(120)} |\n| 110 | Garden kit |`,
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Catalog", to: ["grace@example.test"], cc: [] },
+      },
+    });
+    if (!sent.ok || !sent.data.html) throw new Error("The table message did not render");
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        expect((await expectTablesFit(page, frame)).tables[0]!.marked).toBe(true);
+        expect(errors).toEqual([]);
+      },
+      { html: sanitizeIncomingMailHtml(sent.data.html), attachments: [], viewport: { width: 360, height: 812 }, reducedMotion: "reduce" },
+    );
+  }, 30_000);
+
   const plainTokenTable = `<table width="100%"><tr><th>Nr.</th><th>Artikel</th></tr>
     <tr><td>100</td><td>${"x".repeat(120)}</td></tr><tr><td>110</td><td>Garden kit</td></tr></table>`;
 
