@@ -580,6 +580,53 @@ else {
     },
   );
 
+  const swapShellData = (panel: (current: Record<string, unknown>) => Record<string, unknown>) => {
+    const data = readShellData();
+    const script = document.getElementById("cloud-shell-data");
+    if (!data?.panel || !script) throw new Error("Expected panel shell data");
+    const root = document.createElement("div");
+    root.setAttribute("data-nav-root", "");
+    const arriving = script.cloneNode();
+    arriving.textContent = JSON.stringify({ ...data, panel: panel(data.panel) });
+    root.append(arriving);
+    script.replaceWith(root);
+    window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+  };
+  const nextContext = { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] };
+
+  test("an open consent provider reads its answer again when the swapped page carries none", async () => {
+    const read = Promise.withResolvers<Response>();
+    const fetch = spyOn(globalThis, "fetch").mockReturnValue(read.promise);
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    // Another tab closed the panel: the shared cookie is closed, so the server sent no answer.
+    swapShellData(({ consent: _consent, ...panel }) => ({ ...panel, context: nextContext }));
+    const contexts = () => post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
+    expect(contexts().some((message) => message.context?.help?.includes("next-help"))).toBe(false);
+    await tick();
+    expect(fetch.mock.calls[0]?.[0]).toBe("/api/me/panel-consent");
+    read.resolve(Response.json({ answers: { fixture: { allowed: false, revision: 2 } } }));
+    await tick();
+    expect(contexts().some((message) => message.context?.help?.includes("next-help"))).toBe(false);
+  });
+
+  test("a closed panel forgets cached consent after a swap without an answer and reads it on open", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ answers: { fixture: { allowed: false, revision: 2 } } }));
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    ready(h);
+    h.click("[data-cloud-panel-close]");
+    expect(fetch).not.toHaveBeenCalled();
+    swapShellData(({ consent: _consent, ...panel }) => ({ ...panel, context: nextContext }));
+    h.open();
+    await tick();
+    expect(fetch.mock.calls.map(([url]) => url)).toContain("/api/me/panel-consent");
+  });
+
   test("a swapped page with the same consent answer shares at once and reads nothing", () => {
     const fetch = spyOn(globalThis, "fetch");
     fetchSpy = fetch;

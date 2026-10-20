@@ -86,7 +86,7 @@ export function installPanelSlot(): () => void {
     const arriving = readShellData()?.panel;
     // The arriving page carries the server's current consent answer, as a reload would; a newer revision wins.
     const consent = arriving?.consent;
-    if (consent) {
+    if (consent && consent.provider === provider.id) {
       if (consent.revision > (revisions.get(consent.provider) ?? 0)) {
         answers.set(consent.provider, consent.allowed);
         revisions.set(consent.provider, consent.revision);
@@ -94,6 +94,13 @@ export function installPanelSlot(): () => void {
         // An older or unreadable answer (`allowed: null`) is what a reload would show: stop and read again.
         void revalidate();
       }
+    } else if (provider.consent && isOpen()) {
+      // The server sends an answer only while the shared cookie shows this provider open; without it, read again.
+      void revalidate();
+    } else if (consentPending === 0) {
+      // A reload would read these answers again when a consent provider opens; so does the next open here.
+      for (const item of panel.providers) if (item.consent) answers.delete(item.id);
+      answersRead = undefined;
     }
     base = arriving?.context ?? null;
     if (base) {

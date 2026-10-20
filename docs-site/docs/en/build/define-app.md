@@ -72,7 +72,7 @@ Set `pageSwap: true` to swap `Layout` pages within the app. The default is
 The next server page replaces the content column and its islands.
 
 `focusMode` pages and links to other apps load a document. So does a page
-whose kept shell would differ from a reload: another user, locale, page theme,
+whose kept shell would differ from a reload: another user, locale, theme,
 or build, other panel providers, navigation entries or profile, a new
 announcement, or other Help. Server route policies still authorize every
 request.

@@ -286,6 +286,8 @@ export default function Layout(props: LayoutProps) {
         theme: c.get("page").theme,
         build: swapBuild,
         shell: {
+          // The document's <html> theme and the profile menu keep this preference.
+          themePreference: theme,
           providers,
           apps: allApps,
           legalLinks,

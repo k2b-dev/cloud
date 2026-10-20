@@ -236,7 +236,7 @@ tab bar follow its rail preferences.
 
 `focusMode` pages and links outside the current app route prefix load a
 document. So does a page whose kept shell would differ from a reload: another
-user, session kind, locale, page theme, or build, other panel providers,
+user, session kind, locale, theme preference, page theme, or build, other panel providers,
 navigation entries, legal or search links, or profile, a new announcement, or
 other Help. Every swap fetch passes through the same server route policies as a
 reload.
