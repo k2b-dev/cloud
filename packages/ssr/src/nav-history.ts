@@ -11,6 +11,7 @@ type SharedSwap = typeof globalThis & {
     started: number;
     decide?: (event: PopStateEvent) => "page" | "nav";
     stopRestore?: () => void;
+    deferScrollRestore?: (event: PopStateEvent) => () => void;
     /** The departing scroll a history helper captured before the island changed the page, for the next push. */
     departure?: ScrollSnapshot;
   };
@@ -114,7 +115,12 @@ export const listenPopState = (handler: (navigation: PopStateNavigationEvent) =>
   const listener = (event: PopStateEvent) => {
     const shared: SharedSwap = globalThis;
     if (shared[swapKey]?.decide?.(event) === "nav") return;
-    handler({ event, url: new URL(window.location.href), state: event.state });
+    handler({
+      event,
+      url: new URL(window.location.href),
+      state: event.state,
+      deferScrollRestore: () => shared[swapKey]?.deferScrollRestore?.(event) ?? (() => {}),
+    });
   };
 
   window.addEventListener("popstate", listener);

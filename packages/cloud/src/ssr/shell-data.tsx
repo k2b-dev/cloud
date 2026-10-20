@@ -36,13 +36,21 @@ export type ShellData = {
 
 const ShellDataContext = createContext<() => ShellData>();
 
-export function ShellDataProvider(props: { data: ShellData; children: JSX.Element }) {
+export function ShellDataProvider(props: { data: ShellData; skipScript?: boolean; children: JSX.Element }) {
   return (
     <ShellDataContext.Provider value={() => props.data}>
-      <script id="cloud-shell-data" type="application/json" innerHTML={JSON.stringify(props.data).replace(/</g, "\\u003c")} />
+      {/* Inline, not a component: an extra component would shift the hydration keys of every page. */}
+      {!props.skipScript && <script id="cloud-shell-data" type="application/json" innerHTML={shellDataJson(props.data)} />}
       {props.children}
     </ShellDataContext.Provider>
   );
+}
+
+const shellDataJson = (data: ShellData) => JSON.stringify(data).replace(/</g, "\\u003c");
+
+/** The shell data inside a swapped column, so each page brings its own with it. */
+export function ShellDataScript(props: { data: ShellData }) {
+  return <script id="cloud-shell-data" type="application/json" innerHTML={shellDataJson(props.data)} />;
 }
 
 export function readShellData(): ShellData | undefined {

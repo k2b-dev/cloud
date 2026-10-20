@@ -65,6 +65,21 @@ global SSR asset path.
 
 See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
 
+## Keep the shell during page navigation
+
+Set `pageSwap: true` to swap `Layout` pages within the app. The default is
+`false`. The rail, phone tab bar, panel slot, and provider document stay mounted.
+The next server page replaces the content column and its islands.
+
+`focusMode` pages and links to other apps load a document. So does a page
+whose kept shell would differ from a reload: another user, locale, theme,
+or build, other panel providers, navigation entries or profile, a new
+announcement, or other Help. Server route policies still authorize every
+request.
+
+See [URL state and navigation](/en/docs/frontend/url-state-and-navigation#cloud-page-swaps)
+for the replaced content and unsaved-input guards.
+
 ## Add global navigation
 
 `nav` contributes one application entry:

@@ -195,7 +195,9 @@ declares the contract in server HTML, and nav knows nothing else about it:
 - optional `data-nav-attributes` on the shell, the attributes copied from the
   fetched shell;
 - one `data-nav-root` inside the shell, the column that is replaced;
-- `data-nav-document` on a link to keep its document navigation.
+- `data-nav-document` on a link to keep its document navigation. A rejected
+  swap response (status, type, scope) has its body cancelled before the
+  document load requests the URL again.
 
 A swap is one transaction, and its order is the contract:
 
@@ -225,6 +227,12 @@ A swap is one transaction, and its order is the contract:
    new page. Then replace the root, copy title and attributes, mount the new
    islands, restore keyed scroll regions, focus the first heading, and
    announce the title in the one live region.
+
+After every committed swap, nav dispatches `ssr:nav-swapped` on `window` with
+`detail: { root }` for the inserted column. It fires once after islands mount,
+scroll restores, focus moves, and the title is announced, for pushes, replaces,
+Back, and Forward. Failures and document loads emit nothing. Listener errors
+do not trigger document navigation.
 
 After every `await`, an aborted or replaced swap returns without a change.
 Every other failure calls `documentNavigate()` for the requested URL once;
@@ -261,9 +269,15 @@ One memoized decision per popstate runs before island handlers, through nav's
 capture listener or listenPopState's wrapper. Same-page entries reach islands;
 nav restores their window scroll first, leaving regions to islands; if the
 departing content clamped it, nav retries once in the next frame unless an
-island scrolled meanwhile. An island that renders the entry asynchronously
-restores its own scroll afterwards, as the browser's restoration would not
-wait for it either. A push through `navigate()` records the departure scroll
+island scrolled meanwhile. An island that renders the entry asynchronously can call
+`deferScrollRestore()` during its `listenPopState` handler and invoke the returned
+completion immediately after its guarded DOM commit. The shared owner keeps the
+arriving snapshot while pending, including another traversal or pagehide before
+commit, and restores it once. New navigation, user input, or uninstall invalidates
+the completion; a same-URL raw replace keeps it. The application still owns data
+cancellation. Without an installed swap the completion is inert. Existing handlers
+remain unchanged; do not introduce an application history map for this case.
+A push through `navigate()` records the departure scroll
 the helper captured before the island changed the page. Allowed cross-page
 and unmarked entries dispatch `ssr:nav-popstate` on window with the
 PopStateEvent as `detail`, so history owners that must see every traversal
@@ -282,6 +296,8 @@ position after loading. Snapshots belong to the shown entry: when no
 cross-page traversal is pending, derive it from the current entry if it belongs
 to the shown page, even if nav never saw that entry's traversal. During a
 pending traversal, keep attributing snapshots to the tracked shown entry.
+Keyed regions with `data-scroll-page` restore on Back/Forward and reload recovery,
+but push and replace swaps do not carry the departing page's position into them.
 Keep scrollRestoration manual for the whole installation and restore the
 previous value on uninstall. The setting belongs to each entry, and pushes copy
 it, so entries created while installed stay manual after uninstall; uninstall
@@ -289,6 +305,12 @@ is a teardown path, not a way to hand a running page back to the browser.
 Entries written before install keep the browser's own restoration: on a Back
 onto one, Chromium may scroll the still-shown column before the swap commits,
 so that page's last snapshot can be off. Install before islands write history.
+In a swap host, the loader imports modules used only outside the column
+first; a module with any instance in the column waits with the column, because
+importing it mounts every instance. So an installer outside the column precedes
+column islands that write history; column entry fetches start through
+modulepreload while outside imports settle. The installer island must be
+used only outside the column.
 
 Install before islands add raw popstate listeners: Chromium uses registration
 order even for capture. listenPopState is safe in any order through the shared
