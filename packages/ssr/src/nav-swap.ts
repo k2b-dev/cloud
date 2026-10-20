@@ -21,6 +21,8 @@ type SwapState = {
   scroll: Map<string, ScrollSnapshot>;
   /** Counts pushes and URL-changing replaces through the wrapper: either supersedes a pending traversal for good. */
   moves: number;
+  /** Counts every wrapper write, including same-URL replaces that must not run inside leave checks. */
+  writes: number;
   decide: (event: PopStateEvent) => "page" | "nav";
   departure?: ScrollSnapshot;
   /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
@@ -145,6 +147,7 @@ const patchHistory = (): HistoryWrites => {
   history.pushState = (value: unknown, ...args: [unused: string, url?: string | URL | null]) => {
     const state = shared[swapKey];
     if (!state || state.document !== document) return writes.push.call(history, value, ...args);
+    state.writes++;
     const departing = currentEntry(state);
     // The island may already show shorter content; a helper's earlier capture is the departing position.
     const snapshot = state.departure ?? captureScroll();
@@ -161,8 +164,7 @@ const patchHistory = (): HistoryWrites => {
   history.replaceState = (value: unknown, ...args: [unused: string, url?: string | URL | null]) => {
     const state = shared[swapKey];
     if (!state || state.document !== document) return writes.replace.call(history, value, ...args);
-    // While a swap still loads, the entry keeps its page (an unmarked one stays unmarked) so a traversal can commit.
-    // Otherwise the shown page wrote it, also over the marker of a traversal that a newer navigation cancelled.
+    state.writes++;
     const stored = marker(history.state);
     const [, url] = args;
     let moves = false;
@@ -174,7 +176,11 @@ const patchHistory = (): HistoryWrites => {
     }
     // A new URL supersedes a pending traversal, which then never commits: the shown page owns the entry.
     const live = state.active !== undefined && !state.active.signal.aborted && !moves;
-    const page = live ? stored?.page : state.currentPage;
+    // During rollback history still stands on a foreign entry: a same-URL replace must not claim it for the shown page.
+    const rolling = state.rollback?.page === state.currentPage && !moves;
+    // A loading swap also keeps the entry's page so a traversal can commit; unmarked entries stay unmarked.
+    // Otherwise the shown page wrote it, also over the marker of a traversal that a newer navigation cancelled.
+    const page = live || rolling ? stored?.page : state.currentPage;
     if (page === undefined) {
       writes.replace.call(history, value, ...args);
       if (moves) state.moves++;
@@ -183,6 +189,8 @@ const patchHistory = (): HistoryWrites => {
     const entry = { ...(stored?.page === page ? stored : {}), page, position: stored?.position ?? state.currentEntry.position };
     writes.replace.call(history, mergeMarker(value, entry), ...args);
     if (moves) state.moves++;
+    // rollback() already restored these trackers to the shown entry, while history has not reached it yet.
+    if (rolling) return;
     state.currentEntry = entry;
     if (!live || entryKey(entry) === entryKey(state.shown)) state.shown = entry;
   };
@@ -303,6 +311,7 @@ export function installPageSwap(): () => void {
     stopRestore,
     scroll: holder.scroll,
     moves: 0,
+    writes: 0,
     decide: (event) => decide(event),
     // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
     headBase: timing?.name || window.location.href,
@@ -573,11 +582,11 @@ export function installPageSwap(): () => void {
     const url = new URL(window.location.href);
     // Pending cross-page traversals were already allowed; an unknown or zero delta cannot be rolled back.
     if (!pending && delta && context && inScope(url, context.scope)) {
-      const moves = state.moves;
+      const writes = state.writes;
       const restored = allowsLeave(context.root, url, delta);
       if (restored) {
         absorb(event);
-        if (state.moves !== moves) {
+        if (state.writes !== writes) {
           state.rollback = undefined;
           console.error(
             "[@k2b/ssr/nav] A leave check wrote history during Back or Forward; wait for event.restored. Loading the document.",

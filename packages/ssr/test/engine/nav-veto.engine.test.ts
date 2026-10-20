@@ -81,6 +81,14 @@ beforeAll(async () => {
           event.preventDefault();
           history.pushState(null, "", location.href);
         }
+        if (d.replaceInCheck === "yes") {
+          event.preventDefault();
+          history.replaceState({ ...history.state, draft: 1 }, "");
+        }
+        if (d.dirty === "yes" && d.replaceAfterCheck === "yes") queueMicrotask(() => {
+          history.replaceState({ ...history.state, draft: 1 }, "");
+          d.replacedPath = location.pathname;
+        });
       });
       onMount(() => onBeforeLeave(() => count("laterChecks")));
       return <section><b data-state>{props.label}:{value()}</b><button id="edit" onClick={() => setValue(value() + 1)}>Edit</button>
@@ -444,6 +452,51 @@ test(`${browserName}: a check that writes history synchronously during Back load
     await column(page, "A");
     expect(documents).toEqual([`${origin}/app/A`]);
     expect(errors.some((message) => message.includes("A leave check wrote history"))).toBe(true);
+  });
+});
+
+test(`${browserName}: a check that replaces state at the same URL during Back loads the document`, async () => {
+  await inPage(async (page) => {
+    await page.click("#B");
+    await column(page, "B");
+    const documents = trackDocuments(page);
+    const errors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    await page.evaluate(() => {
+      document.documentElement.dataset.replaceInCheck = "yes";
+    });
+    const loaded = page.waitForEvent("load");
+    await page.evaluate(() => history.back());
+    await loaded;
+    await column(page, "A");
+    expect(documents).toEqual([`${origin}/app/A`]);
+    expect(errors.some((message) => message.includes("A leave check wrote history"))).toBe(true);
+  });
+});
+
+test(`${browserName}: a same-URL replace before rollback leaves the next Back cross-page`, async () => {
+  await inPage(async (page) => {
+    await page.click("#B");
+    await column(page, "B");
+    const before = await marker(page);
+    const documents = trackDocuments(page);
+    await dirty(page);
+    await page.evaluate(() => {
+      document.documentElement.dataset.replaceAfterCheck = "yes";
+      history.back();
+    });
+    await rollback(page, "B", before.position, 2);
+    await column(page, "B");
+    expect(await page.evaluate(() => document.documentElement.dataset.replacedPath)).toBe("/app/A");
+    expect(await marker(page)).toEqual(before);
+    await dirty(page, false);
+    await page.evaluate(() => history.back());
+    await column(page, "A");
+    expect(swaps.get("/app/A")).toBe(1);
+    expect(await page.evaluate(() => history.state.draft)).toBe(1);
+    expect(documents).toEqual([]);
   });
 });
 

@@ -359,10 +359,10 @@ a history-backed dialog pushes onto the restored entry and so removes the
 forward entries.
 
 A check must not write history itself. During a vetoed Back/Forward, compare
-`state.moves` before and after `allowsLeave`: pushes and URL-changing replaces
-through the wrapper mean the shown entry cannot be restored. Absorb the
-popstate, clear rollback, log the error directing authors to `event.restored`,
-and reload the document.
+`state.writes` before and after `allowsLeave`: every `pushState` and
+`replaceState` through the wrapper counts, including same-URL replaces.
+Absorb the popstate, clear rollback, log the error directing authors to
+`event.restored`, and reload the document.
 
 For a vetoable traversal, never mix marker positions with Navigation API
 indices: Chromium evicts old entries at the 50-entry history cap, shifting
@@ -378,6 +378,10 @@ An unknown or zero delta is not vetoable.
 
 Veto keeps the tracked entry and column, clears departure, stops immediate
 propagation, memoizes `"nav"`, and never dispatches `ssr:nav-popstate`.
+Popstate and Navigation API listeners registered before nav, such as
+`@k2b/ui` dialog-core, still see the vetoed and rollback popstates; a
+multi-step vetoed Back past an open history dialog therefore closes that
+dialog.
 Re-track the shown entry. If the absolute target key is already current,
 clear pending rollback and resolve `restored` immediately without traversing:
 `traverseTo` would emit no popstate. Otherwise store the key only when using
@@ -387,6 +391,9 @@ absorb every popstate before cancellation or restoration: no checks,
 listeners, swaps, scroll changes, or abort of newer work. When the pending
 record has a key, clear and resolve at the matching Navigation API key;
 otherwise use the shown page and position markers, even when the API exists.
+While rollback is pending for the shown page, a same-URL replace keeps the
+foreign entry's marker (or leaves it unmarked) without changing
+`state.currentEntry` or `state.shown`, which already track the shown entry.
 A rollback record keeps the page shown at the veto. If a newer swap committed
 meanwhile (a replace keeps the rollback target alive), its arrival is an
 ordinary traversal away from the newer page: clear the record and decide it

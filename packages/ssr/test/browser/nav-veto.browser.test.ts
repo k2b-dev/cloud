@@ -455,30 +455,66 @@ test("a rollback whose target is already current clears pending and resolves res
   expect(helper).toHaveBeenCalledTimes(1);
 });
 
-test.each(["push", "replace"])("a check's synchronous history %s during Back reloads without restoring", async (kind) => {
-  const { navigation, traverseTo } = navigationFixture();
-  const restored = mock(() => {});
-  register((event) => {
-    event.preventDefault();
-    void event.restored.then(restored);
-    if (kind === "push") history.pushState(null, "", location.href);
-    else history.replaceState(null, "", "/app/B?changed");
-  });
+test.each(["push", "replace", "same-URL replace"])(
+  "a check's synchronous history %s during Back reloads without restoring",
+  async (kind) => {
+    const { navigation, traverseTo } = navigationFixture();
+    const restored = mock(() => {});
+    register((event) => {
+      event.preventDefault();
+      void event.restored.then(restored);
+      if (kind === "push") history.pushState(null, "", location.href);
+      else if (kind === "same-URL replace") history.replaceState({ ...history.state, draft: 1 }, "");
+      else history.replaceState(null, "", "/app/B?changed");
+    });
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    const error = spyOn(console, "error").mockImplementation(() => {});
+    const helper = mock(() => {});
+    disposers.push(listenPopState(helper));
+    departing(navigation, "B");
+    navigation.currentEntry = { key: "B", index: 1 };
+    arrive("B", 1);
+    await Promise.resolve();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(error.mock.calls[0]?.[0]).toContain("A leave check wrote history");
+    expect(traverseTo).not.toHaveBeenCalled();
+    expect(restored).not.toHaveBeenCalled();
+    expect(helper).not.toHaveBeenCalled();
+    arrive("A", 2);
+    expect(helper).toHaveBeenCalledTimes(1);
+  },
+);
+
+test("a same-URL replace during rollback keeps the foreign entry cross-page on the next Back", async () => {
+  const { navigation, traverseTo, committed, finished } = navigationFixture();
+  const stop = register((event) => event.preventDefault());
   const reload = spyOn(window.location, "reload").mockImplementation(() => {});
-  const error = spyOn(console, "error").mockImplementation(() => {});
-  const helper = mock(() => {});
-  disposers.push(listenPopState(helper));
   departing(navigation, "B");
   navigation.currentEntry = { key: "B", index: 1 };
   arrive("B", 1);
-  await Promise.resolve();
-  expect(reload).toHaveBeenCalledTimes(1);
-  expect(error.mock.calls[0]?.[0]).toContain("A leave check wrote history");
-  expect(traverseTo).not.toHaveBeenCalled();
-  expect(restored).not.toHaveBeenCalled();
-  expect(helper).not.toHaveBeenCalled();
+  expect(traverseTo).toHaveBeenCalledWith("A");
+  history.replaceState({ ...history.state, draft: 1 }, "");
+  // Save the entry actually written by the wrapper, so the later Back exposes a corrupted marker.
+  const b = history.state;
+  navigation.currentEntry = { key: "A", index: 2 };
   arrive("A", 2);
-  expect(helper).toHaveBeenCalledTimes(1);
+  committed.resolve();
+  finished.resolve();
+  stop();
+  const pending = Promise.withResolvers<Response>();
+  const fetch = spyOn(globalThis, "fetch").mockReturnValue(pending.promise);
+  departing(navigation, "B");
+  navigation.currentEntry = { key: "B", index: 1 };
+  History.prototype.replaceState.call(history, b, "", "/app/B");
+  window.dispatchEvent(new PopStateEvent("popstate", { state: b }));
+  expect(String(fetch.mock.calls[0]?.[0])).toBe("https://example.test/app/B");
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+  expect(b).toEqual({ [markerKey]: { page: "B", position: 1 }, draft: 1 });
+  expect(reload).not.toHaveBeenCalled();
+  disposers[0]!();
+  pending.resolve(new Response("unused"));
+  await Promise.resolve();
 });
 
 test("a traversal during a pending cross-page traversal is not asked again", async () => {

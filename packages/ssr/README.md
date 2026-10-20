@@ -436,8 +436,11 @@ A vetoed click or `swapPage()` leaves the URL, history, column, and any older
 pending swap untouched. A vetoed Back/Forward aborts a pending swap and rolls
 history back to the shown entry. Nav absorbs the vetoed and rollback
 popstates: `listenPopState()`, raw listeners registered after nav, and
-`ssr:nav-popstate` see no navigation. While rollback is pending, all further
-popstates are absorbed without more checks. Nav uses an absolute
+`ssr:nav-popstate` see no navigation. Popstate and Navigation API listeners
+registered before nav, such as `@k2b/ui` dialog-core, still see both; a
+multi-step vetoed Back past an open history dialog therefore closes that
+dialog. While rollback is pending, all further popstates are absorbed without
+more checks. Nav uses an absolute
 `navigation.traverseTo()` target when the departure key is available, otherwise
 `history.go()` using marker positions.
 A failed rollback reloads, unless a newer swap committed meanwhile.
