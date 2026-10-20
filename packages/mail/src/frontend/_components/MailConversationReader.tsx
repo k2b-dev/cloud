@@ -176,24 +176,24 @@ export default function MailConversationReader(props: {
   // Printing shows every message only for the print; it never pins the fold open.
   const [printing, setPrinting] = createSignal(false);
   let historyScroller: HTMLDivElement | undefined;
-  // A new message moves the fold; the message holding focus stays mounted with the whole conversation.
-  const focusedMessageId = () => {
-    const active = historyScroller?.ownerDocument.activeElement;
-    return active && historyScroller?.contains(active)
-      ? (active.closest<HTMLElement>("[data-mail-message-id]")?.dataset.mailMessageId ?? null)
-      : null;
-  };
   let olderPinnedFor: string | null = null;
+  // New messages never fold away a card that is already shown, such as one with focus or an open dialog:
+  // the fold stays below the oldest message shown so far in this conversation.
+  let foldBoundary: { selection: string | null; messageId: string } | null = null;
   const olderMessages = createMemo(() => {
     const selection = props.selectionKey;
     if (showOlder() || printing() || (selection !== null && olderPinnedFor === selection)) return null;
     const items = timeline();
     const messageIndexes = items.flatMap((item, index) => (item.kind === "message" ? [index] : []));
     if (messageIndexes.length < MAIL_READER_COLLAPSE_FROM) return null;
-    const cutoff = messageIndexes[MAIL_READER_NEWEST_SHOWN - 1]! + 1;
+    let cutoff = messageIndexes[MAIL_READER_NEWEST_SHOWN - 1]! + 1;
+    const boundary = foldBoundary?.selection === selection ? foldBoundary.messageId : null;
+    const boundaryIndex = boundary ? items.findIndex((item) => item.kind === "message" && item.message.id === boundary) : -1;
+    if (boundaryIndex >= cutoff) cutoff = boundaryIndex + 1;
+    const lastShown = items.slice(0, cutoff).findLast((item) => item.kind === "message");
+    if (lastShown?.kind === "message") foldBoundary = { selection, messageId: lastShown.message.id };
     const expanded = expandedMessages();
-    const focused = focusedMessageId();
-    if (items.slice(cutoff).some((item) => item.kind === "message" && (expanded.has(item.message.id) || item.message.id === focused))) {
+    if (items.slice(cutoff).some((item) => item.kind === "message" && expanded.has(item.message.id))) {
       olderPinnedFor = selection;
       return null;
     }

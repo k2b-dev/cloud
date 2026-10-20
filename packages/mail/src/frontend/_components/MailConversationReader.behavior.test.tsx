@@ -865,7 +865,7 @@ test.skipIf(isServer)(
   },
 );
 
-test.skipIf(isServer)("a new message moves the fold without unmounting the message that holds focus", async () => {
+test.skipIf(isServer)("a new message never folds away a shown message, including the one that holds focus", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;
   const message = (index: number): MessageDetail => {
@@ -887,14 +887,21 @@ test.skipIf(isServer)("a new message moves the fold without unmounting the messa
   try {
     await waitFor(() => older() !== null);
     expect(older()!.textContent).toBe("3 older messages");
-    // The third visible message is the oldest one above the fold.
-    const header = dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg004"] [data-mail-message-header]')!;
-    header.focus();
-    expect(dom.document.activeElement).toBe(header);
+    // The third visible message is the oldest one above the fold. New messages keep it mounted, also an
+    // unfocused card whose dialog may be open, and the same older messages stay folded.
+    const card = dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg004"]')!;
     setMessages((current) => [...current, message(7)]);
     await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg007"]') !== null);
+    expect(card.isConnected).toBe(true);
+    expect(older()!.textContent).toBe("3 older messages");
+    const header = card.querySelector<HTMLElement>("[data-mail-message-header]")!;
+    header.focus();
+    expect(dom.document.activeElement).toBe(header);
+    setMessages((current) => [...current, message(8)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg008"]') !== null);
     expect(header.isConnected).toBe(true);
     expect(dom.document.activeElement).toBe(header);
+    expect(older()!.textContent).toBe("3 older messages");
   } finally {
     dispose();
     dom.cleanup();
