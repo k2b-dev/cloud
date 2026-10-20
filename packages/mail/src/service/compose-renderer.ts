@@ -118,6 +118,7 @@ export const DEFAULT_MAIL_CSS = `
 }
 :where(.mail-signature) { margin-top: 16px; }
 p { margin: 0 0 12px; }
+hr { border: 0; border-top: 1px solid #d4d4d8; height: 0; margin: 0 0 12px; }
 h1 { font-size: 24px; line-height: 1.25; margin: 24px 0 12px; }
 h2 { font-size: 20px; line-height: 1.3; margin: 20px 0 10px; }
 h3 { font-size: 17px; line-height: 1.35; margin: 18px 0 8px; }
@@ -479,9 +480,48 @@ export const hasUnrenderedTemplateSyntax = (body: string): boolean => {
   return false;
 };
 
+/**
+ * The Mail editor shows a dash-only line as a divider, never a heading: 3+ dashes divide, 1–2 stay text.
+ * Rewrite dash setext headings at top level and inside quotes; leave equals underlines, lists, code,
+ * HTML, tables and info blocks untouched. Unchanged sources keep their bytes.
+ */
+const withoutDashSetextHeadings = (source: string): string => {
+  const rewrite = (tokens: ReturnType<typeof markdown.marked.lexer>[number][], original: string): string => {
+    let changed = false;
+    const chunks = tokens.map((token) => {
+      let raw = token.raw;
+      if (token.type === "heading") {
+        const underline = /\n( {0,3})(-+)([ \t]*)(\n?)$/.exec(raw);
+        const dashes = underline?.[2];
+        if (underline && dashes) {
+          const index = underline.index + 1;
+          const indentation = underline[1] ?? "";
+          raw =
+            raw.slice(0, index) +
+            (dashes.length >= 3 ? "\n" : `${indentation}\\`) +
+            raw.slice(index + (dashes.length >= 3 ? 0 : indentation.length));
+        }
+      } else if (token.type === "blockquote" && token.tokens && token.tokens.map((inner) => inner.raw).join("") === token.text) {
+        const inner = rewrite(token.tokens, token.text);
+        if (inner !== token.text) {
+          raw =
+            inner
+              .split("\n")
+              .map((line) => (line ? `> ${line}` : ">"))
+              .join("\n") + (raw.match(/\n*$/)?.[0] ?? "");
+        }
+      }
+      if (raw !== token.raw) changed = true;
+      return raw;
+    });
+    return changed ? chunks.join("") : original;
+  };
+  return rewrite(markdown.marked.lexer(source), source);
+};
+
 /** Markdown as the sanitized email fragment, before the design is inlined. */
 const emailHtmlFragment = (source: string): string =>
-  sanitizeHtml(markdown.renderSync(source, { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
+  sanitizeHtml(markdown.renderSync(withoutDashSetextHeadings(source), { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
 
 /** Rewrites only block separators and quotes; every other token keeps its raw source. Null means too many spacers. */
 const withBlankLinePlaceholders = (source: string, placeholder: string, quietBefore?: number): { source: string; count: number } | null => {
@@ -834,8 +874,8 @@ const styleProperties = (style: string | undefined): Set<string> =>
  * order, or null when the order no longer matches. One HTML block keeps every element raw for Markdown.
  */
 const sanitizedElements = (elements: HtmlElement[]): HtmlElement[] | null => {
-  // `</br>` would read as a second line break.
-  const block = `<div>\n${elements.map((element) => `${openingTag(element)}${element.tag === "br" ? "" : `</${element.tag}>`}`).join("\n")}\n</div>`;
+  // Void elements have no closing tag; `</br>` would read as a second line break.
+  const block = `<div>\n${elements.map((element) => `${openingTag(element)}${element.tag === "br" || element.tag === "hr" ? "" : `</${element.tag}>`}`).join("\n")}\n</div>`;
   const kept = openingTags(sanitizeHtml(emailHtmlFragment(block), INLINED_EMAIL_SANITIZE_OPTIONS)).slice(1);
   return kept.length === elements.length && kept.every((element, index) => element.tag === elements[index]?.tag) ? kept : null;
 };

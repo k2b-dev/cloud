@@ -156,7 +156,8 @@ When `email()` is present, it returns:
 | `rawHtml` | No | HTML content |
 
 Cloud sanitizes the body and wraps it in the installation's HTML frame. The
-frame keeps quotes (`blockquote`) and preformatted blocks (`pre`); a `pre` wraps
+frame keeps quotes (`blockquote`), preformatted blocks (`pre`), and horizontal
+lines (`hr`); a `pre` wraps
 long lines unless its own inline style sets `white-space`. It
 also sends a plain-text part: sanitized `content` when supplied, otherwise text
 derived from `rawHtml`. Email goes through [Outgoing mail](/en/docs/platform/outgoing-mail)
