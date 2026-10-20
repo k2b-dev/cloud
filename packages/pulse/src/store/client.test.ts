@@ -105,3 +105,21 @@ test("a full UUID and Int64 pair chunk fits the URL budget with transport overhe
   });
   expect(new TextEncoder().encode(requests.at(-1)!.url).byteLength).toBeLessThan(CLICKHOUSE_MAX_URL_BYTES);
 });
+
+test("streaming ClickHouse failures after JSON headers retain their safe exception class", async () => {
+  const transport: QueryOptions["transport"] = async () =>
+    new Response('{"meta":[],"data":[\nCode: 396. DB::Exception: Limit for result exceeded, bytes', {
+      headers: { "X-ClickHouse-Query-Id": "fixture" },
+    });
+  await expect(clickhouseQuery({ ...options, query: "SELECT 1", transport })).rejects.toMatchObject({ kind: "clickhouse", code: 396 });
+});
+test("error-shaped text inside valid JSON is only data", async () => {
+  const transport: QueryOptions["transport"] = async () =>
+    Response.json({ data: [{ value: "\nCode: 241. DB::Exception: text" }] }, { headers: { "X-ClickHouse-Query-Id": "fixture" } });
+  expect(await clickhouseQuery({ ...options, query: "SELECT 1", transport })).toEqual([{ value: "\nCode: 241. DB::Exception: text" }]);
+});
+test("empty HTTP failure cannot bypass status validation", async () => {
+  const transport: QueryOptions["transport"] = async () =>
+    new Response("", { status: 500, headers: { "X-ClickHouse-Query-Id": "fixture" } });
+  await expect(clickhouseQuery({ ...options, query: "SELECT 1", transport })).rejects.toMatchObject({ kind: "unreachable" });
+});

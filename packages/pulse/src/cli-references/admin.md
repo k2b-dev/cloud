@@ -74,10 +74,10 @@ save runs, and `INVALID_INPUT` for a malformed address, user or password.
 
 ```sh
 cld pulse admin policy get
-cld pulse admin policy set --base-creation everyone --max-bases 200 --max-raw-retention-days 730 --default-profile normal
+cld pulse admin policy set --base-creation everyone --max-bases 200 --max-raw-retention-days 730 --default-profile normal --default-queries-per-hour 600
 cld pulse admin bases list --limit 50 --offset 0 --query operations
 cld pulse admin bases limits Base01
-cld pulse admin bases limits Base01 --profile small --values-per-minute 2000 --bytes-per-minute 5242880 --storage-bytes 5000000000 --max-series 50000 --max-event-kinds 2000 --max-state-keys 2000
+cld pulse admin bases limits Base01 --profile small --values-per-minute 2000 --bytes-per-minute 5242880 --storage-bytes 5000000000 --max-series 50000 --max-event-kinds 2000 --max-state-keys 2000 --queries-per-hour 600
 cld pulse admin bases retry Base01
 cld pulse admin bases recheck Base01
 cld pulse admin bases recreate Base01 --yes
@@ -90,7 +90,9 @@ cld pulse admin targets remove <targetId>
 
 Policy defaults use `--default-values-per-minute`, `--default-bytes-per-minute`,
 `--default-storage-bytes`, `--default-max-series`, `--default-max-event-kinds`,
-and `--default-max-state-keys`. Creation allows `everyone` (people and agents),
+`--default-max-state-keys`, and `--default-queries-per-hour` (initially 600).
+Use `admin bases limits <base> --queries-per-hour <count>` to change one base.
+The question quota resets at the next clock hour. Creation allows `everyone` (people and agents),
 `people`, or `admins`. Source-bound credentials never create bases.
 
 **Recreate discards measurements** and, like orphan deletion, needs `--yes`. It keeps sources and tokens. Retry resumes a failed operation. Recheck verifies matching backups

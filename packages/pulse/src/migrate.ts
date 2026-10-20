@@ -1,13 +1,19 @@
 import { deleteAccess } from "@k2b/cloud/server";
-import { logger } from "@k2b/cloud/services";
+import { get as settingsGet, logger } from "@k2b/cloud/services";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
-import { installBaseline } from "./schema";
+import { BaseTimezoneSchema } from "./base-settings";
+import { installBaseline, installSqlConsole } from "./schema";
 
-const MIGRATIONS = [{ version: 3, name: "clickhouse_baseline", up: installBaseline }];
+const MIGRATIONS = [
+  { version: 3, name: "clickhouse_baseline", up: installBaseline },
+  { version: 4, name: "sql_console", up: installSqlConsole },
+];
 const log = logger("pulse:migrate");
 
-export const migrate = async (): Promise<void> => {
+export const migrate = async (timezone: string | undefined = undefined): Promise<void> => {
+  // Resolve the setting outside the migration transaction to avoid waiting on a second pooled connection.
+  const baseTimezone = BaseTimezoneSchema.parse(timezone ?? (await settingsGet<string>("app.timezone")));
   const removed = await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('pulse.schema.install', 0))`;
     await ensureSchema(tx, "pulse");
@@ -45,7 +51,7 @@ export const migrate = async (): Promise<void> => {
     }
     for (const migration of MIGRATIONS) {
       if (applied.some((row) => row.version === migration.version)) continue;
-      await migration.up(tx);
+      await migration.up(tx, baseTimezone);
       await tx`INSERT INTO pulse.schema_migrations(version,name) VALUES(${migration.version},${migration.name})`;
     }
     return counts;

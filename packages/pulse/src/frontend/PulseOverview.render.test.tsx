@@ -15,6 +15,10 @@ const { default: PulseOverview } = await import("./PulseOverview.island");
 
 const base = (id: string, name: string, description: string | null): PulseBase => ({
   id,
+  shortId: id,
+  icon: "ti ti-chart-line",
+  color: "blue",
+  timezone: "UTC",
   name,
   description,
   rawRetentionDays: 30,
@@ -38,6 +42,7 @@ const base = (id: string, name: string, description: string | null): PulseBase =
     writeBlockReason: null,
     profile: "normal",
     limits: {
+      queriesPerHour: 600,
       valuesPerMinute: 2000,
       bytesPerMinute: 5_242_880,
       storageBytes: 5_000_000_000,

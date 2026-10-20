@@ -14,6 +14,7 @@ export const fixturePolicy: PulsePolicy = {
   maxRawRetentionDays: 730,
   defaultProfile: "normal",
   defaultLimits: {
+    queriesPerHour: 600,
     valuesPerMinute: 2000,
     bytesPerMinute: 5242880,
     storageBytes: 5000000000,

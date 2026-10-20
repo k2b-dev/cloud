@@ -6,6 +6,7 @@ import adminRoutes from "./routes/admin";
 import baseAdminRoutes from "./routes/base-admin";
 import basesRoutes from "./routes/bases";
 import ingestRoutes from "./routes/ingest";
+import sqlRoutes from "./routes/sql";
 import sourcesRoutes from "./routes/sources";
 
 const app = new Hono<AuthContext>()
@@ -27,7 +28,8 @@ const app = new Hono<AuthContext>()
   .route("/admin/store", adminRoutes)
   .route("/admin", baseAdminRoutes)
   .route("/", basesRoutes)
-  .route("/", sourcesRoutes);
+  .route("/", sourcesRoutes)
+  .route("/", sqlRoutes);
 
 export default app;
 export type ApiType = typeof app;

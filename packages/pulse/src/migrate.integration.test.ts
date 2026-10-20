@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { sql } from "bun";
-import { createDisposableDatabase, testInfra } from "../../../scripts/fixtures/test-infra";
-import { migrate } from "./migrate";
+import { createDisposableDatabase, suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
+import { migrate as migratePulse } from "./migrate";
+const migrate = () => migratePulse("Europe/Berlin");
 
 const enabled = testInfra.database !== undefined,
   databaseTest = enabled ? test : test.skip;
@@ -41,7 +42,7 @@ const seedOld = async (ledger: boolean) => {
     await sql`INSERT INTO pulse.schema_migrations(version,name) VALUES(1,'baseline'),(2,'base_stores')`;
   } else await sql`CREATE TABLE pulse.installation(installed_at TIMESTAMPTZ)`.simple();
 };
-describe("#9 disposable Pulse ClickHouse baseline", () => {
+suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
   databaseTest(
     "fresh installation is atomic and creates no extension",
     async () => {
@@ -57,6 +58,7 @@ describe("#9 disposable Pulse ClickHouse baseline", () => {
       await Promise.all([migrate(), migrate()]);
       expect(await sql<{ version: number; name: string }[]>`SELECT version,name FROM pulse.schema_migrations`).toEqual([
         { version: 3, name: "clickhouse_baseline" },
+        { version: 4, name: "sql_console" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
       const ddl = await readFile(`${import.meta.dir}/schema.ts`, "utf8");
@@ -75,6 +77,8 @@ describe("#9 disposable Pulse ClickHouse baseline", () => {
         "metric_hours",
         "metric_series",
         "notification_outbox",
+        "saved_queries",
+        "saved_query_operations",
         "schema_migrations",
         "source_scrapes",
         "sources",
@@ -104,6 +108,21 @@ describe("#9 disposable Pulse ClickHouse baseline", () => {
       },
       30000,
     );
+  databaseTest("migration 4 upgrades an existing baseline once under concurrent startup", async () => {
+    await sql`DELETE FROM pulse.schema_migrations WHERE version=4`;
+    await sql`DROP TABLE pulse.saved_query_operations,pulse.saved_queries`.simple();
+    await sql`ALTER TABLE pulse.bases DROP COLUMN icon,DROP COLUMN color,DROP COLUMN timezone`.simple();
+    await sql`ALTER TABLE pulse.base_stores DROP COLUMN queries_per_hour`.simple();
+    await Promise.all([migrate(), migrate(), migrate()]);
+    expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=4`).toHaveLength(1);
+    const [baseRow] = await sql`SELECT icon,color,timezone FROM pulse.bases WHERE id=${base}::uuid`;
+    expect(baseRow).toEqual({ icon: "ti ti-chart-line", color: "blue", timezone: "Europe/Berlin" });
+    const [quota] =
+      await sql`SELECT column_default FROM information_schema.columns WHERE table_schema='pulse' AND table_name='base_stores' AND column_name='queries_per_hour'`;
+    expect(quota?.column_default).toBe("600");
+    await migrate();
+    expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=4`).toHaveLength(1);
+  });
   databaseTest("refuses unknown newer versions before touching old data", async () => {
     await sql`INSERT INTO pulse.schema_migrations(version,name) VALUES(99,'future')`;
     const before = await sql`SELECT * FROM pulse.schema_migrations ORDER BY version`;

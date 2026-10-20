@@ -15,6 +15,7 @@ export const readBasePolicy = async (): Promise<PulsePolicy> => {
     maxSeries,
     maxEventKinds,
     maxStateKeys,
+    queriesPerHour,
   ] = await Promise.all([
     app.settings.get("pulse.base_creation"),
     app.settings.get("pulse.max_bases"),
@@ -26,13 +27,14 @@ export const readBasePolicy = async (): Promise<PulsePolicy> => {
     app.settings.get("pulse.default_max_series"),
     app.settings.get("pulse.default_max_event_kinds"),
     app.settings.get("pulse.default_max_state_keys"),
+    app.settings.get("pulse.default_queries_per_hour"),
   ]);
   return PulsePolicySchema.parse({
     baseCreation,
     maxBases,
     maxRawRetentionDays,
     defaultProfile,
-    defaultLimits: { valuesPerMinute, bytesPerMinute, storageBytes, maxSeries, maxEventKinds, maxStateKeys },
+    defaultLimits: { queriesPerHour, valuesPerMinute, bytesPerMinute, storageBytes, maxSeries, maxEventKinds, maxStateKeys },
   });
 };
 export const getPolicy = async (identity: StoreIdentity) => {
@@ -48,6 +50,7 @@ export const setPolicy = async (identity: StoreIdentity, input: PulsePolicyUpdat
   if (update.maxRawRetentionDays !== undefined) await app.settings.set("pulse.max_raw_retention_days", update.maxRawRetentionDays);
   if (update.defaultProfile !== undefined) await app.settings.set("pulse.default_profile", update.defaultProfile);
   const limits = update.defaultLimits;
+  if (limits?.queriesPerHour !== undefined) await app.settings.set("pulse.default_queries_per_hour", limits.queriesPerHour);
   if (limits?.valuesPerMinute !== undefined) await app.settings.set("pulse.default_values_per_minute", limits.valuesPerMinute);
   if (limits?.bytesPerMinute !== undefined) await app.settings.set("pulse.default_bytes_per_minute", limits.bytesPerMinute);
   if (limits?.storageBytes !== undefined) await app.settings.set("pulse.default_storage_bytes", limits.storageBytes);

@@ -1,17 +1,32 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import { ok } from "@k2b/stdlib";
+import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import { savedQueries } from "./service/saved-queries";
+import { adminFixtureIdentity } from "./store/admin-identity.test-fixture";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { pulseCapabilities } from "./capabilities";
 import { BaseListDataSchema, BaseReadInputSchema, SourceReadInputSchema } from "./capability-contracts";
 import { fixturePolicy } from "./store/base-store.test-fixture";
 
-test("declares only base and source readers", () => {
+test("declares SQL and saved query capabilities with base and source readers", () => {
   expect(Object.keys(pulseCapabilities.types).sort()).toEqual(["base", "source"]);
-  expect(Object.keys(pulseCapabilities.queries).sort()).toEqual(["base.list", "base.read", "base.search", "source.list", "source.read"]);
+  expect(Object.keys(pulseCapabilities.queries).sort()).toEqual([
+    "base.list",
+    "base.read",
+    "base.search",
+    "saved_query.list",
+    "source.list",
+    "source.read",
+    "sql.run",
+  ]);
   expect(pulseCapabilities.types.base.reader).toBe("base.read");
   expect(pulseCapabilities.types.source.reader).toBe("source.read");
   expect(pulseCapabilities.protocolVersion).toBe(2);
-  expect("actions" in pulseCapabilities).toBe(false);
+  expect(pulseCapabilities.actions["saved_query.save"].approval).toBe("rememberable");
+  expect(pulseCapabilities.actions["saved_query.save"].idempotency).toBe("required");
+  expect(pulseCapabilities.actions["saved_query.delete"].destructive).toBe(true);
+  expect("approval" in pulseCapabilities.actions["saved_query.delete"]).toBe(false);
   expect(pulseCapabilities.queries["base.search"].input).toBe(UniversalSearchInputSchema);
   expect(pulseCapabilities.queries["base.search"].data).toBe(UniversalSearchDataSchema);
   expect(BaseReadInputSchema.safeParse({ id: "00000000-0000-4000-8000-000000000001" }).success).toBe(false);
@@ -43,4 +58,27 @@ test("preserves the base result contract", () => {
       },
     ]).success,
   ).toBeTrue();
+});
+
+test("delete capability returns its declared receipt when the service returns no data", async () => {
+  const remove = spyOn(savedQueries, "remove").mockResolvedValue(ok());
+  const context: CapabilityExecutionContext = {
+    ...adminFixtureIdentity(),
+    user: null,
+    locale: "en",
+    requestId: "pulse-delete-receipt-test",
+    origin: "http",
+    signal: new AbortController().signal,
+    idempotencyKey: "delete-receipt-test",
+  };
+  try {
+    const action = pulseCapabilities.actions["saved_query.delete"];
+    const result = await action.run({ baseId: "Base01", queryId: "Query1" }, context);
+    expect(result).toEqual({ ok: true, data: { data: { deleted: true } } });
+    if (!result.ok) throw new Error("DELETE_FAILED");
+    expect(action.data.safeParse(result.data.data).success).toBe(true);
+    expect(remove).toHaveBeenCalledTimes(1);
+  } finally {
+    remove.mockRestore();
+  }
 });

@@ -9,8 +9,9 @@ import {
   type Result,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
-import { type ServiceAccountKind, toPgUuidArray } from "@k2b/cloud/services";
+import { get as settingsGet, type ServiceAccountKind, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { BaseAppearanceSchema, BaseTimezoneSchema } from "../base-settings";
 import type { PulseBase } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import type { BaseRetention } from "../store/admin-contracts";
@@ -33,6 +34,9 @@ import { iso, isoNullable } from "./telemetry-values";
 type BaseRow = {
   id: string;
   short_id: string;
+  icon: string;
+  color: string;
+  timezone: string;
   name: string;
   description: string | null;
   retention_days: number;
@@ -61,6 +65,9 @@ type AccessRow = {
 };
 
 type BaseUpdateInput = {
+  icon?: string;
+  color?: string;
+  timezone?: string;
   name?: string;
   description?: string | null;
   rawRetentionDays?: number;
@@ -69,6 +76,9 @@ type BaseUpdateInput = {
 };
 
 type BaseUpdateValues = {
+  icon: string;
+  color: string;
+  timezone: string;
   name: string;
   description: string | null;
   rawRetentionDays: number;
@@ -79,6 +89,10 @@ type BaseUpdateValues = {
 const mapBase = async (row: BaseRow): Promise<PulseBase> => ({
   store: await baseStoreStatus(row.id),
   id: row.id,
+  shortId: row.short_id,
+  icon: row.icon,
+  color: row.color,
+  timezone: row.timezone,
   name: row.name,
   description: row.description,
   rawRetentionDays: row.retention_days,
@@ -187,6 +201,7 @@ export const createBase = async (params: {
   const name = params.name.trim();
   if (!name) return fail(err.badInput("Base name is required"));
 
+  const timezone = BaseTimezoneSchema.parse((await settingsGet<string>("app.timezone")) || "UTC");
   const created = await withShortId("base", (shortId) =>
     sql.begin(async (tx): Promise<Result<BaseRow>> => {
       await tx`SELECT pg_advisory_xact_lock(hashtextextended('pulse.base.creation',0))`;
@@ -198,8 +213,8 @@ export const createBase = async (params: {
           message: "Base limit reached. A Cloud admin can raise the maximum under Administration -> Pulse -> Bases.",
         });
       const [base] = await tx<BaseRow[]>`
-      INSERT INTO pulse.bases (short_id, name, description, created_by,retention_days)
-      VALUES (${shortId}, ${name}, ${params.description?.trim() || null}, ${creator}::uuid,${Math.min(30, policy.maxRawRetentionDays)})
+      INSERT INTO pulse.bases (short_id, name, description, created_by,retention_days,timezone)
+      VALUES (${shortId}, ${name}, ${params.description?.trim() || null}, ${creator}::uuid,${Math.min(30, policy.maxRawRetentionDays)},${timezone})
       RETURNING *
     `;
       if (!base) return fail(err.internal("Failed to create Pulse base"));
@@ -379,7 +394,14 @@ const normalizeBaseUpdateValues = (input: BaseUpdateInput, existing: BaseRow): R
   if (!rollup.ok) return fail(rollup.error);
   const sensitive = validateSensitiveRetentionHours(input.sensitiveRetentionHours ?? existing.sensitive_retention_hours);
   if (!sensitive.ok) return fail(sensitive.error);
+  const appearance = BaseAppearanceSchema.safeParse({
+    icon: input.icon ?? existing.icon,
+    color: input.color ?? existing.color,
+    timezone: input.timezone ?? existing.timezone,
+  });
+  if (!appearance.success) return fail(err.badInput("Use a supported base icon, color and IANA timezone"));
   return ok({
+    ...appearance.data,
     name: normalizeBaseName(input, existing),
     description: normalizeBaseDescription(input, existing),
     rawRetentionDays: raw.data,
@@ -392,6 +414,7 @@ const persistBaseUpdate = async (baseId: string, values: BaseUpdateValues, db: t
   const [row] = await db<BaseRow[]>`
     UPDATE pulse.bases
     SET name = ${values.name},
+        icon = ${values.icon}, color = ${values.color}, timezone = ${values.timezone},
         description = ${values.description},
         retention_days = ${values.rawRetentionDays},
         rollup_retention_days = ${values.rollupRetentionDays},
@@ -406,6 +429,9 @@ const persistBaseUpdate = async (baseId: string, values: BaseUpdateValues, db: t
 export const updateBase = async (params: {
   baseId: string;
   user: AccessScope;
+  icon?: string;
+  color?: string;
+  timezone?: string;
   name?: string;
   description?: string | null;
   rawRetentionDays?: number;
@@ -416,7 +442,7 @@ export const updateBase = async (params: {
   clock?: () => Date;
   store?: typeof baseStore;
 }): Promise<Result<PulseBase>> => {
-  const access = await requireBaseAccess(params.baseId, params.user, "write");
+  const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return access;
   const active = await requireBaseActive(params.baseId);
   if (!active.ok) return active;
@@ -436,7 +462,7 @@ export const updateBase = async (params: {
       });
   const result = await sql.begin(async (tx): Promise<Result<BaseRow>> => {
     await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
-    const access = await requireBaseAccess(params.baseId, params.user, "write", tx);
+    const access = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!access.ok) return access;
     const active = await requireBaseActive(params.baseId, tx);
     if (!active.ok) return active;

@@ -13,6 +13,7 @@ export const settingsFixture = () => {
     "pulse.default_max_series": 50000,
     "pulse.default_max_event_kinds": 2000,
     "pulse.default_max_state_keys": 2000,
+    "pulse.default_queries_per_hour": 600,
   };
   const get = spyOn(app.settings, "get").mockImplementation(async (key) => values[key]);
   const set = spyOn(app.settings, "set").mockImplementation(async (key, value) => {

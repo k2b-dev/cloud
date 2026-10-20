@@ -1,3 +1,4 @@
+import { deniedReadQueries, deniedReadCodes } from "./read-attacks.test-fixture";
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { clickhouseAdminQuery as admin } from "../../../../scripts/fixtures/test-clickhouse";
@@ -66,53 +67,18 @@ suite("Pulse read users hold the tenant boundary over HTTP", () => {
               revoke: Number(g.is_partial_revoke),
             })),
           ).toEqual([...READ_VIEWS].sort().map((table) => ({ type: "SELECT", database: base.database, table, grant: 0, revoke: 0 })));
-          for (const view of READ_VIEWS) await run(`SELECT * FROM ${own}.${q(view)} LIMIT 1`);
+          for (const view of READ_VIEWS) {
+            const args = ["increase", "rate", "histogram_quantile"].includes(view)
+              ? `(metric='fixture',from=toDateTime64('2026-10-17 00:00:00',3),to=toDateTime64('2026-10-18 00:00:00',3)${view === "histogram_quantile" ? ",quantile=0.95" : ""})`
+              : "";
+            await run(`SELECT * FROM ${own}.${q(view)}${args} LIMIT 1`);
+          }
           const [marker] = await run(`SELECT kind FROM ${own}.events`);
           expect(marker?.kind).toBe(base.id);
           const [settings] = await run("SELECT getSetting('max_memory_usage') AS memory, getSetting('max_execution_time') AS time");
           expect(Number(settings?.memory)).toBe(READ_PROFILES[`read_${profile}`].max_memory_usage);
-          const denied = [
-            ...READ_VIEWS.map((view) => `SELECT * FROM ${other}.${q(view)}`),
-            ...["_samples", "_events", "_series", "_states_current", "_state_changes", "_rollups", "_sources", "_checkpoints"].flatMap(
-              (table) => [`SELECT * FROM ${other}.${q(table)}`, `SELECT * FROM ${own}.${q(table)}`],
-            ),
-            `INSERT INTO ${own}._events(id) VALUES(generateUUIDv4())`,
-            `ALTER TABLE ${own}._events DELETE WHERE 1`,
-            `DROP TABLE ${own}._events`,
-            `TRUNCATE TABLE ${own}._events`,
-            `OPTIMIZE TABLE ${own}._events FINAL`,
-            `CREATE USER ${q(base.readUser + "_evil")}`,
-            `GRANT SELECT ON ${own}.* TO ${q(base.readUser)}`,
-            `CREATE ROW POLICY evil ON ${own}._events FOR SELECT USING 1 TO ${q(base.readUser)}`,
-            "SELECT * FROM url('http://127.0.0.1:1/', CSV, 'x String')",
-            "SELECT * FROM remote('127.0.0.1:1',system.one)",
-            "SELECT * FROM remoteSecure('127.0.0.1:1',system.one)",
-            "SELECT * FROM s3('https://example.com/x.csv',CSV,'x String')",
-            "SELECT * FROM mysql('127.0.0.1:1','db','t','u','p')",
-            "SELECT * FROM postgresql('127.0.0.1:1','db','t','u','p')",
-            "SELECT * FROM cluster('default',system.one)",
-            "SELECT * FROM clusterAllReplicas('default',system.one)",
-            "SELECT * FROM jdbc('jdbc:fixture','SELECT 1')",
-            `SELECT * FROM view(SELECT * FROM ${other}.events)`,
-            "SELECT * FROM s3Cluster('default','https://example.com/x.csv',CSV,'x String')",
-            "SELECT * FROM azureBlobStorage('https://example.com','container','file',CSV,'x String')",
-            "SELECT * FROM iceberg('https://example.com/table')",
-            "SELECT * FROM deltaLake('https://example.com/table')",
-            "SELECT * FROM hdfs('hdfs://127.0.0.1:1/file',CSV,'x String')",
-            "SELECT * FROM mongodb('127.0.0.1:1','db','collection','u','p','x String')",
-            "SELECT * FROM redis('127.0.0.1:1','key','key String, value String')",
-            "INSERT INTO FUNCTION url('http://127.0.0.1:1/',CSV,'x UInt8') SELECT 1",
-            `CREATE NAMED COLLECTION ${q(base.database + "_collection")} AS url='http://127.0.0.1:1'`,
-            "SELECT * FROM system.named_collections",
-            `SELECT * FROM url(${q(collection)})`,
-            "SELECT * FROM system.query_cache",
-            "SYSTEM DROP QUERY CACHE",
-            ...["query_log", "processes", "parts", "users", "grants", "row_policies", "asynchronous_metrics", "dictionaries", "macros"].map(
-              (table) => `SELECT * FROM system.${table}`,
-            ),
-            `SHOW CREATE USER ${q(base.readUser)}`,
-          ];
-          for (const attack of denied) await refused(() => run(attack), [497], attack);
+          const denied = deniedReadQueries(base, bases[1 - index]!);
+          for (const attack of denied) await refused(() => run(attack), deniedReadCodes(attack), attack);
           for (const column of ["sensitive", "payload"]) {
             await refused(() => run(`SELECT ${column} FROM ${own}.events`), [47, 497]);
             await refused(() => run(`SELECT ${column} FROM ${own}._events`), [497]);

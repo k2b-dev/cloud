@@ -32,7 +32,14 @@ Ausgeschlossene Familien zählen nicht gegen die Grenzen für Messwerte oder Rei
 Die Quelle zeigt abgelehnte Histogramme, übersprungene Summary-Messwerte und kürzliche Drosselung.
 Nutze diese Angaben, um den Endpunkt zu korrigieren oder weniger Metriken auszuwählen.
 
-## Stelle Fragen, sobald SQL verfügbar ist
+## Lies Messdaten mit SQL
 
-**Dashboards und Fragen kommen zurück** erklärt, dass SQL-Fragen und neue Dashboards mit dem nächsten Update kommen.
-Wähle **Zu den Quellen**, um jetzt den Empfang zu prüfen.
+Lesezugriff erlaubt Abfragen in einer Base. Schreibzugriff erlaubt das Speichern und Löschen von Abfragen.
+Nutze `cld pulse sql --base <base> --file query.sql`, um SQL auszuführen.
+Nutze `cld pulse queries list --base <base>`, um gespeicherte Abfragen zu finden.
+Lies `cld pulse reference sql.md` für Parameter und Exportformate.
+
+Übergib Werte mit `--param name=value`. Halte SQL-Text und Werte getrennt.
+Strg-C bricht eine laufende Abfrage ab. Wenn Pulse ausgelastet ist, warte die angegebene Zeit vor dem nächsten Versuch.
+Ein Ergebnis mit 10.000 Zeilen hat die Grenze erreicht. Es kann weitere Zeilen geben.
+Verkürze den Zeitraum oder gruppiere die Daten, um eine vollständige Antwort zu erhalten.

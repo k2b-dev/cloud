@@ -42,6 +42,10 @@ export const workspaceFixture: PulseWorkspaceProps = {
   initialBases: [
     {
       id: "Lad001",
+      shortId: "Lad001",
+      icon: "ti ti-chart-line",
+      color: "blue",
+      timezone: "UTC",
       name: "Laden",
       description: null,
       rawRetentionDays: 30,
@@ -65,6 +69,7 @@ export const workspaceFixture: PulseWorkspaceProps = {
         writeBlockReason: null,
         profile: "normal",
         limits: {
+          queriesPerHour: 600,
           valuesPerMinute: 2000,
           bytesPerMinute: 5_242_880,
           storageBytes: 5_000_000_000,

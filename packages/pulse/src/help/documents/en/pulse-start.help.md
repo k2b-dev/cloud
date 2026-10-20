@@ -32,7 +32,14 @@ Excluded families do not count toward sample or series limits.
 The source shows refused histograms, skipped summary samples, and recent throttling.
 Use these details to fix the endpoint or reduce the selected metrics.
 
-## Ask questions when SQL is available
+## Read measurements with SQL
 
-**Dashboards and questions are coming back** explains that SQL questions and new dashboards arrive with the next update.
-Choose **Go to sources** to check collection now.
+Read access lets you query one base. Write access lets you save and delete queries.
+Use `cld pulse sql --base <base> --file query.sql` to run SQL.
+Use `cld pulse queries list --base <base>` to find saved queries.
+Read `cld pulse reference sql.md` for parameters and export formats.
+
+Supply values with `--param name=value`. Keep SQL text and values separate.
+Ctrl-C cancels a running query. When Pulse is busy, wait for the stated retry delay.
+A result with 10,000 rows reached the limit. More rows can exist.
+Narrow the time range or group the data to get a complete answer.

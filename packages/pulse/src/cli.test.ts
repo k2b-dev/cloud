@@ -581,3 +581,145 @@ test("the removed deployment snapshot command makes no API call", async () => {
   await expect(pulseCli.run(ctx)).rejects.toThrow("Unknown pulse command");
   expect(calls).toHaveLength(0);
 });
+
+describe("Pulse SQL CLI", () => {
+  const result = {
+    runId: "00000000-0000-4000-8000-000000000001",
+    columns: [{ name: "text", type: "String" }],
+    rows: [['a,"b']],
+    rowCount: 1,
+    truncated: false,
+    stats: { elapsedMs: 1, readRows: 1, readBytes: 4 },
+    limits: {},
+  };
+  test.each(["table", "json", "csv"])("prints %s and binds parameter values as data", async (format) => {
+    const context = createContext(["sql", "SELECT :value"], { base: baseId, param: ['value=a,\"b'], format }, [jsonResponse(result)]);
+    expect(await pulseCli.run(context.ctx)).toBe(0);
+    expect(context.calls[0]?.path).toBe(`/api/pulse/bases/${baseId}/sql`);
+    const body = JSON.parse(String(context.calls[0]?.init?.body));
+    expect(body.params).toEqual({ value: 'a,"b' });
+    expect(body.runId).toMatch(/^[a-f0-9-]{36}$/);
+    if (format === "json") expect(JSON.parse(context.lines[0]!)).toEqual(result);
+    else if (format === "csv") expect(context.lines).toEqual(["text", '"a,""b"']);
+    else expect(context.tables).toEqual([[{ 0: 'a,"b' }]]);
+  });
+  test("reads SQL from a file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pulse-sql-cli-"));
+    const path = join(directory, "query.sql");
+    await Bun.write(path, "SELECT :metric");
+    try {
+      const context = createContext(["sql"], { base: baseId, file: path, param: ["metric=cpu"] }, [jsonResponse(result)]);
+      expect(await pulseCli.run(context.ctx)).toBe(0);
+      expect(JSON.parse(String(context.calls[0]?.init?.body)).sql).toBe("SELECT :metric");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+  test("reads SQL from stdin", async () => {
+    const { spyOn } = await import("bun:test");
+    const stdin = spyOn(Bun.stdin, "text").mockResolvedValue("SELECT 1");
+    try {
+      const context = createContext(["sql", "-"], { base: baseId }, [jsonResponse(result)]);
+      expect(await pulseCli.run(context.ctx)).toBe(0);
+      expect(JSON.parse(String(context.calls[0]?.init?.body)).sql).toBe("SELECT 1");
+    } finally {
+      stdin.mockRestore();
+    }
+  });
+  test.each([
+    ["INPUT_TOO_LARGE", 2],
+    ["PARAMETER_MISSING", 2],
+    ["SQL_ERROR", 3],
+    ["TIME_LIMIT", 4],
+    ["MEMORY_LIMIT", 4],
+    ["RESULT_TOO_LARGE", 4],
+    ["BUSY", 5],
+    ["QUEUE_FULL", 5],
+    ["QUOTA", 5],
+    ["NO_READ_ACCESS", 6],
+    ["STORE_UNAVAILABLE", 7],
+  ] as const)("maps %s to exit %s", async (code, expected) => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId }, [jsonResponse({ code, message: "Query refused." }, 400)]);
+    expect(await pulseCli.run(context.ctx)).toBe(expected);
+    expect(context.lines).toEqual([`${code}: Query refused.`]);
+  });
+  test("rejects invalid input before any HTTP request", async () => {
+    const context = createContext(["sql", "SELECT :missing"], { base: baseId });
+    expect(await pulseCli.run(context.ctx)).toBe(2);
+    expect(context.calls).toHaveLength(0);
+    expect(context.lines.join()).toContain("PARAMETER_MISSING");
+  });
+  test("unknown upstream failures never print credentials or response bodies", async () => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId }, [
+      jsonResponse({ code: "REMOTE", message: "SECRET_MUST_NOT_PRINT" }, 500),
+    ]);
+    expect(await pulseCli.run(context.ctx)).toBe(7);
+    expect(context.lines.join()).not.toContain("SECRET_MUST_NOT_PRINT");
+    expect(context.lines.join()).not.toContain(context.ctx.options.token);
+  });
+  test.each([true, false])("Ctrl-C cancels visibly even if the response races the abort (transport rejects: %s)", async (rejects) => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId });
+    let sent: Record<string, unknown> | undefined;
+    context.ctx.fetch = async (path, init) => {
+      context.calls.push({ path, init });
+      if (path.endsWith("/cancel")) {
+        sent = JSON.parse(String(init?.body));
+        return jsonResponse({ cancelled: true });
+      }
+      // Emitting immediately exercises cancellation before the first response byte.
+      process.emit("SIGINT");
+      expect(init?.signal?.aborted).toBe(true);
+      if (rejects) throw new DOMException("Aborted", "AbortError");
+      return jsonResponse(result);
+    };
+    expect(await pulseCli.run(context.ctx)).toBe(130);
+    const request = JSON.parse(String(context.calls[0]?.init?.body));
+    expect(sent).toEqual({ runId: request.runId });
+    expect(context.calls[1]?.path).toBe(`/api/pulse/bases/${baseId}/sql/cancel`);
+    expect(context.lines).toContain("CANCELLED: Query cancelled.");
+  });
+  test.each(["sql", "queries list", "queries get", "queries save", "queries delete"])("help for %s sends no request", async (command) => {
+    const context = createContext([...command.split(" "), "--help"]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls).toHaveLength(0);
+    expect(context.lines.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Pulse saved query CLI", () => {
+  const query = {
+    id: "Query1",
+    baseId,
+    name: "Count",
+    sql: "SELECT 1",
+    params: {},
+    revision: 2,
+    createdBy: userId,
+    updatedBy: userId,
+    createdAt: "2026-10-20T10:00:00Z",
+    updatedAt: "2026-10-20T10:00:00Z",
+  };
+  test("lists a bounded page", async () => {
+    const context = createContext(["queries", "list"], { base: baseId, page: "2", "per-page": "5" }, [
+      jsonResponse({ items: [query], total: 6, nextOffset: null }),
+    ]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.path).toBe(`/api/pulse/bases/${baseId}/queries?limit=5&offset=5`);
+  });
+  test("saves an update with its expected revision and retry key", async () => {
+    const context = createContext(
+      ["queries", "save", "SELECT 1"],
+      { base: baseId, name: "Count", query: "Query1", "expected-revision": "1", "idempotency-key": "fixture-save" },
+      [jsonResponse(query)],
+    );
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.init?.method).toBe("PATCH");
+    expect(new Headers(context.calls[0]?.init?.headers).get("Idempotency-Key")).toBe("fixture-save");
+    expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({ name: "Count", sql: "SELECT 1", params: {}, expectedRevision: 1 });
+  });
+  test("delete needs confirmation", async () => {
+    const context = createContext(["queries", "delete", "Query1"], { base: baseId });
+    await expect(pulseCli.run(context.ctx)).rejects.toThrow("without --yes");
+    expect(context.calls).toHaveLength(0);
+  });
+});

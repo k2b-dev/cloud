@@ -3,9 +3,9 @@ title: Pulse
 navTitle: Pulse
 section: Operations
 order: 420
-description: Collect metrics, events, and states through HTTP ingest and Prometheus sources.
+description: Collect telemetry and query each base with read-only SQL.
 tags: [pulse, telemetry, metrics]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Pulse
@@ -14,9 +14,9 @@ Pulse collects metrics, events, and states in bases. Add sources, send batches
 through HTTP ingest, or let Pulse scrape Prometheus endpoints. Measurements go
 to one ClickHouse database per base; Postgres keeps control data.
 
-Dashboards and questions return with SQL in the next update. Their place in the
-base shows **Dashboards and questions are coming back**, explains the upcoming
-SQL workflow, and offers **Go to sources**. Source collection remains available.
+Use SQL through the API, CLI, or `sql.run` capability to read measurements.
+Saved queries keep SQL and parameters for reuse. The live SQL console is a
+separate interface for these same operations; dashboards follow later.
 
 ## Connect the data store
 
@@ -37,7 +37,7 @@ Cloud startup dependencies and readiness checks.
 
 ## Bases and administration
 
-Each base is a tenant with its own database, read user, and six restricted read
+Each base is a tenant with its own database, read user, and restricted read
 views. Read access excludes internal tables, sensitive fields, payloads, and
 other bases. A base administrator controls members, sources, tokens, and
 retention without needing the Cloud administrator role. Cloud administrators
@@ -70,6 +70,7 @@ checking, and offer **Retry** to check again at once.
 | Storage threshold | 5 GB |
 | Metric series | 50,000 across the base; at most 10,000 per metric |
 | Event kinds / state keys | 2,000 each |
+| Questions and SQL per clock hour | 600; Cloud administrators can change this per base |
 | Small read profile | 1 GB memory, 10 seconds |
 | Normal read profile | 2 GB memory, 10 seconds |
 | Large read profile | 4 GB memory, 30 seconds |
@@ -84,6 +85,150 @@ administrator from clearing data. Restore matching backups, then have a Cloud
 administrator choose **Check again**. **Start empty** discards measurements and
 recreates an empty base store. At startup, Pulse restores missing read users for matching databases.
 Databases with no base appear as orphans and can be deleted separately.
+
+## Query one base with SQL
+
+Read access allows SQL execution and saved-query reads. Write access allows
+saving, changing, and deleting queries. Base settings require base admin access.
+An agent with a read grant has the same query access as a person. To answer a
+question across two bases, run two queries with separate base IDs.
+
+Use `POST /api/pulse/bases/:baseId/sql` with `{sql, params?, runId?}`. Base IDs
+and short IDs work. SQL can read `samples`, `rollups`, `series`, `events`,
+`states`, and `sources`. Internal tables, `sensitive`, `payload`, credentials,
+and other bases remain inaccessible. SQL cannot select a different base.
+Only `SELECT` and `WITH` statements are accepted. A final semicolon is removed;
+multiple statements, top-level `FORMAT` or `SETTINGS`, `INTO OUTFILE`, raw
+ClickHouse parameter syntax, and unbalanced SQL are refused before admission.
+`#` comments and `$` heredoc syntax are unsupported; use `--` or `/* */`
+comments and quoted strings.
+
+The result contains column names and ClickHouse types, compact row arrays,
+`rowCount`, `truncated`, execution statistics, and limits. The wrapper applies
+`LIMIT 10000`. Exactly 10,000 returned rows sets `truncated: true`: **the
+10,000-row limit was reached; there may be more**. This flag does not prove
+that another row exists. Results over 4 MiB fail with `RESULT_TOO_LARGE`.
+
+### Bind parameters
+
+Write `:name` outside strings, identifiers, and comments. Names are
+case-sensitive and match `[A-Za-z_][A-Za-z0-9_]*`. Send values as strings in
+`params`; Pulse binds values as data, including quotes and SQL-looking text.
+Missing values return `PARAMETER_MISSING`. Unused values and reserved names
+are refused. `:base_tz` is reserved: Pulse binds the base's IANA timezone.
+New bases inherit the Cloud `app.timezone` setting. A base administrator can
+change the timezone, icon, and color. The short ID remains read-only.
+Icons use the shared `@k2b/ui` icon picker catalog. Colors use its fixed
+accent palette: `zinc`, `blue`, `emerald`, `amber`, or `red`.
+The CLI exposes `--icon`, `--color`, and `--timezone` on base updates.
+
+| Value | Binding |
+| --- | --- |
+| ISO date-time with `Z` or offset, or `2026-10-20` | `DateTime64(3, '<base timezone>')`; instants keep their offset, date-only values mean local midnight |
+| `30s`, `5m`, `1h`, `1d`, `2w` | `UInt32` seconds |
+| Finite number | `Float64` |
+| Other text | `String` |
+
+Every path permits at most 16 KiB of UTF-8 SQL, 32 parameters, and 2 KiB of
+UTF-8 per value. Percent-encoding can triple a value's bytes: 32 × 3 × 2 KiB
+uses 192 KiB of the client's 256 KiB URL budget and leaves 64 KiB for names,
+types, the database, query ID, and other URL overhead. SQL is sent in the body.
+
+### Use time buckets and metric helpers
+
+Buckets use native ClickHouse SQL. For fixed intervals, write:
+
+```sql
+SELECT toStartOfInterval(ts, toIntervalSecond(:bucket), :base_tz) AS t,
+       count() AS events
+FROM events
+WHERE ts >= :from AND ts < :to
+GROUP BY t ORDER BY t
+```
+
+For calendar days, use `toStartOfInterval(ts, INTERVAL 1 DAY, :base_tz)`.
+Calendar days follow the base timezone and can contain 23 or 25 hours.
+`bucket()` is not a global function.
+
+Three per-base parameterized views provide reset-safe counter calculations:
+
+```sql
+SELECT metric, dimensions, increase
+FROM increase(metric='http_requests_total', from=:from, to=:to)
+```
+
+`increase` and `rate` return one row per series with `series_id`, `metric`,
+`dimensions`, `source_id`, `resource_key`, `increase`, and observed `seconds`.
+`rate` adds `rate = increase / seconds`, or null when no interval was observed.
+A decrease counts the new value as the increase after a reset. The helpers
+use raw observations where retained and older hourly increases across the
+retention boundary. Windows over expired raw data must contain complete
+hours; a partial expired hour returns a SQL error rather than an estimate.
+
+```sql
+SELECT dimensions, quantile * 1000 AS p95_ms
+FROM histogram_quantile(
+  metric='traefik_entrypoint_request_duration_seconds',
+  from=:from, to=:to, quantile=0.95
+)
+```
+
+The histogram metric argument omits `_bucket`. The helper sums counter
+increases for equal upper bounds, then calculates the quantile separately for
+each source, resource, and label group without `le`. It never combines
+quantiles. A changed bucket set returns an error naming the observation time;
+for retained hourly evidence, the diagnostic names the affected hour.
+
+### Check limits and recover from errors
+
+`GET /api/pulse/bases/:baseId/sql/limits` returns the profile, memory and time
+budget, result limits, hourly usage and reset time, and queue limits.
+Three queries can run per Cloud, with one per base. Up to 20 runs can wait
+for five seconds. Input errors and admission refusals do not consume hourly
+quota. Quota is charged only when a query gets a slot and resets at the next
+clock hour. Alerts and dashboards will have separate quotas.
+
+| Code | HTTP | Action |
+| --- | --- | --- |
+| `INPUT_TOO_LARGE`, `PARAMETER_MISSING`, `SQL_ERROR` | 400 | Reduce input, supply values, or fix SQL; line and column refer to your SQL. |
+| `NO_READ_ACCESS` | 403 | Request read access to this base. |
+| `TIME_LIMIT`, `MEMORY_LIMIT`, `RESULT_TOO_LARGE` | 422 | Narrow the range, aggregate, or select fewer columns. |
+| `QUOTA` | 429 | Wait until the returned reset time; respect `Retry-After`. |
+| `BUSY`, `QUEUE_FULL` | 503 | Pulse is busy; wait for `Retry-After` and retry. |
+| `STORE_UNAVAILABLE` | 503 | Ask the operator to check ClickHouse or Valkey. |
+| `PULSE_STORE_NOT_CONFIGURED` | 503 | Ask a Cloud administrator to connect the data store. |
+| `CANCELLED` | 400 | The run was cancelled; start a new run if needed. |
+
+Send a UUID `runId` with a run to cancel before its response arrives. Send that
+same ID to `POST /api/pulse/bases/:baseId/sql/cancel`. Only the actor that
+started the run can cancel it. Closing the request also cancels the run.
+
+### Save and reuse a query
+
+Use `/api/pulse/bases/:baseId/queries` to list or create queries, and
+`/queries/:queryId` to get, update, or delete one. Lists use Cloud pagination.
+Saved queries keep a name, SQL, string-valued parameters, and revision.
+Names are unique within a base without regard to case. A `PATCH` supplies a
+complete snapshot: `name`, `sql`, optional `params`, and `expectedRevision`.
+Omitting `params` saves an empty parameter map. A stale revision returns `409`.
+An `Idempotency-Key` allows replay of the same saved-query write for 24 hours,
+even after later revisions; changing the body with that key returns `409`.
+Saving has the same SQL and parameter input checks as execution.
+
+```sh
+cld pulse sql --base Ops001 --file requests.sql --param from=2026-10-20 --param to=2026-10-21 --format table
+cld pulse queries list --base Ops001
+```
+
+Use `--format json` or `--format csv` for export, and `-` to read SQL from
+standard input. Ctrl-C sends cancellation. `cld pulse reference sql.md`
+describes options and exit codes. `sql.run` and `saved_query.list` need no
+approval. The agent result is limited to 100 rows, 500 points, and 256 KiB;
+`truncated` marks a shortened result. Points count numeric cells; whole rows
+are retained, with 240 KiB reserved for data and 16 KiB for the capability
+envelope. `saved_query.save` uses an idempotency
+key and revision checks with rememberable approval. Deletion always asks for
+approval. There is no capability for tokens or access changes.
 
 ## Send a batch with HTTP ingest
 
@@ -250,9 +395,15 @@ state remain.
 ## Check source status and credentials
 
 Open **Sources** or run `cld pulse sources list --json`. Status shows the
-newest data timestamp, recent throttling, refused histogram families, skipped
+newest data timestamp, series count, today’s count, recent throttling, refused histogram families, skipped
 summary samples, and the last error and its time. Scrape history adds success,
 counts, duration, and finish time; push requests do not create scrape history.
+
+Today starts at midnight in the base timezone. Counts use a five-minute
+cache; when the query queue is busy, today’s count is unavailable (`null`).
+Today counts retained metric samples, events, and current state rows updated
+since midnight. A state row counts once even if its value was reported
+several times; this count is not the number of state submissions.
 
 A metrics endpoint's bearer token is bound to its origin (scheme, host, and
 port). Changing that origin deletes the stored token unless you supply a

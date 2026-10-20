@@ -119,6 +119,18 @@ export const app = defineApp({
         translations: { de: { label: "Standardmaximum Ereignisarten", description: "Einstellen unter Administration -> Pulse -> Bases." } },
       },
     },
+    "pulse.default_queries_per_hour": {
+      kind: "number",
+      default: 600,
+      min: 1,
+      max: 2147483647,
+      integer: true,
+      label: "Default questions per hour",
+      description: "Questions and SQL runs per base and clock hour.",
+      presentation: {
+        translations: { de: { label: "Standardfragen pro Stunde", description: "Fragen und SQL-Abfragen je Base und voller Stunde." } },
+      },
+    },
     "pulse.default_max_state_keys": {
       kind: "number",
       default: 2000,

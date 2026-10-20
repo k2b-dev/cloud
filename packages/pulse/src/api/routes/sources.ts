@@ -86,12 +86,20 @@ const routes = new Hono<AuthContext>()
       responses: { 200: jsonResponse(z.array(SourceSchema), "Pulse sources") },
     }),
     async (c) => {
-      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
-      if (!baseId.ok) return respond(c, baseId.result);
-      return respond(
-        c,
-        projectResult(pulseService.source.list(baseId.value, requestAccessScope(c)), (items) => projectSources(items)),
-      );
+      // Counts can use the largest read profile (30 s) plus its HTTP margin.
+      setRequestTimeout(c, 40);
+      try {
+        const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+        if (!baseId.ok) return respond(c, baseId.result);
+        return respond(
+          c,
+          projectResult(pulseService.source.list(baseId.value, requestAccessScope(c), { signal: c.req.raw.signal }), (items) =>
+            projectSources(items),
+          ),
+        );
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
     },
   )
   .post(
