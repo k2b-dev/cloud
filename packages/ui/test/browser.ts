@@ -244,10 +244,14 @@ type NavigationRecord = {
 };
 
 const explainedPages = new WeakSet<Page>();
+/** Per page, the URL it showed when each of its running goto, reload, goBack, and goForward calls started. */
+const testNavigations = new WeakMap<Page, Set<{ from: string }>>();
 const explainNavigations = (page: Page): Page => {
   if (explainedPages.has(page)) return page;
   explainedPages.add(page);
   const records = new Set<NavigationRecord>();
+  const navigations = new Set<{ from: string }>();
+  testNavigations.set(page, navigations);
   // Keep listeners until the page dies: failing channel calls rewrite a shared closed error (#1367).
   page.on("request", (request) => {
     for (const record of records) record.open.set(request, `${request.method()} ${request.url()}`);
@@ -290,11 +294,14 @@ const explainNavigations = (page: Page): Page => {
       load: false,
     };
     records.add(record);
+    const navigation = { from: before };
+    navigations.add(navigation);
     try {
       try {
         return await call();
       } finally {
         records.delete(record);
+        navigations.delete(navigation);
       }
     } catch (error) {
       // Every failure carries the evidence. Bun's test timeout can kill the browser before Playwright's own timeout;
@@ -592,4 +599,44 @@ export const mostAtOnce = async (page: Page, selector: string, change: () => Pro
       }, key)
       .catch(() => {});
   }
+};
+
+// WebKit refuses a load that a page starts while its main frame waits for the next document, and logs the refusal as
+// "Fetch API cannot load <url> due to access control checks." even for a same-origin request whose promise is
+// handled. Playwright's WebKit reports that log as a pageerror and splits it at the URL's colon
+// (https://github.com/microsoft/playwright/issues/43120).
+const refusedLoad = /^(?:Fetch API|XMLHttpRequest) cannot load (\S+) due to access control checks\.$/;
+
+const originOf = (url: string): string | undefined => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Collects the page's errors as `name: message` lines, for `expect(errors).toEqual([])`.
+ * Ignores exactly one report: in WebKit, the refused load of a URL with the page's own origin while a goto, reload,
+ * goBack, or goForward that the test started is running. A real CORS failure names another origin; it is reported,
+ * as are unhandled rejections, refusals during navigations the page starts itself, and every other error.
+ * The page must come from `launchBrowser()`, whose navigation calls this tracks.
+ */
+export const pageErrors = (page: Page): string[] => {
+  const navigations = testNavigations.get(page);
+  if (!navigations) throw new Error("pageErrors: open the page with launchBrowser(), whose goto, reload, goBack, and goForward it tracks.");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => {
+    // The split leaves the scheme in the name and drops one slash of the URL; joined again, it is WebKit's text.
+    const joined = `${error.name}:/${error.message}`;
+    const url = browserName === "webkit" ? refusedLoad.exec(joined)?.[1] : undefined;
+    if (url === undefined) {
+      errors.push(`${error.name}: ${error.message}`);
+      return;
+    }
+    const origin = originOf(url);
+    if (origin !== undefined && [...navigations].some((navigation) => originOf(navigation.from) === origin)) return;
+    errors.push(joined);
+  });
+  return errors;
 };

@@ -87,6 +87,25 @@ for (const navigationApi of [true, false]) {
         }
       }
 
+      test("a page swap router that hides a traversal from the core still lets its Back settle", async () => {
+        // @k2b/ssr/nav, installed first, stops a cross-page popstate before later listeners and reports it instead.
+        window.addEventListener(
+          "popstate",
+          (event) => {
+            window.dispatchEvent(new CustomEvent("ssr:nav-popstate", { detail: event }));
+            event.stopImmediatePropagation();
+          },
+          { capture: true },
+        );
+        const core = createDialogCore();
+        const result = core.open(view("Sheet"), { history: true });
+        core.close();
+        await result;
+        await core.historySettled();
+        expect(core.isOpen()).toBe(false);
+        expect(marker()).toBeUndefined();
+      });
+
       test("listens in the capture phase when created, and moves to a window that replaced its own", async () => {
         const listen = spyOn(window, "addEventListener");
         const core = createDialogCore();

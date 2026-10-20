@@ -4,27 +4,26 @@ import { sql } from "bun";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { spacesService } from "../service";
 import api from ".";
 
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 6);
-
 databaseSuite()("spaces image upload privacy", () => {
   test("API and direct service store sanitized bytes and sizes; malformed images return 422", async () => {
     const [resource] = await sql<{ id: string; short_id: string }[]>`
-      INSERT INTO spaces.spaces (short_id, name) VALUES (${shortId()}, 'Photo privacy') RETURNING id, short_id
+      INSERT INTO spaces.spaces (short_id, name) VALUES (${testShortId()}, 'Photo privacy') RETURNING id, short_id
     `;
     const [column] = await sql<{ id: string }[]>`
       INSERT INTO spaces.columns (short_id, space_id, name, rank, is_done)
-      VALUES (${shortId()}, ${resource!.id}::uuid, 'Tasks', 1024, false) RETURNING id
+      VALUES (${testShortId()}, ${resource!.id}::uuid, 'Tasks', 1024, false) RETURNING id
     `;
     const [item] = await sql<{ id: string; short_id: string }[]>`
       INSERT INTO spaces.items (short_id, space_id, column_id, title, rank)
-      VALUES (${shortId()}, ${resource!.id}::uuid, ${column!.id}::uuid, 'Photo', 1024) RETURNING id, short_id
+      VALUES (${testShortId()}, ${resource!.id}::uuid, ${column!.id}::uuid, 'Photo', 1024) RETURNING id, short_id
     `;
     const [account] = await sql<{ id: string }[]>`
-      INSERT INTO auth.service_accounts (name, kind) VALUES (${`Photo privacy ${shortId()}`}, 'agent') RETURNING id
+      INSERT INTO auth.service_accounts (name, kind) VALUES (${`Photo privacy ${testShortId()}`}, 'agent') RETURNING id
     `;
     try {
       const [access] = await sql<{ id: string }[]>`

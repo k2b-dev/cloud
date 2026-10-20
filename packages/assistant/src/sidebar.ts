@@ -1,14 +1,19 @@
-import { type AiConversation, type AiProject, aiConversations, aiProjects } from "@k2b/cloud/ai";
+import { type AiConversation, type AiOpenQuestions, type AiProject, aiConversations, aiProjects, listAiOpenQuestions } from "@k2b/cloud/ai";
 
 export type AssistantSidebarSnapshot = {
   conversations: AiConversation[];
   projects: AiProject[];
   doneCount: number;
+  questions: AiOpenQuestions;
 };
 
-export const loadAssistantSidebarSnapshot = async (userId: string): Promise<AssistantSidebarSnapshot> => {
+export const loadAssistantSidebarSnapshot = async (
+  userId: string,
+  context: { locale: string; timeZone: string },
+): Promise<AssistantSidebarSnapshot> => {
   const subject = { type: "user" as const, userId };
-  const [projects, activeConversations, donePage] = await Promise.all([
+  const [questions, projects, activeConversations, donePage] = await Promise.all([
+    listAiOpenQuestions({ ownerUserId: userId, ...context }),
     aiProjects.list(subject),
     aiConversations.listSidebarConversations({ ownerUserId: userId }),
     aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 15 }),
@@ -19,6 +24,7 @@ export const loadAssistantSidebarSnapshot = async (userId: string): Promise<Assi
     subject,
   );
   return {
+    questions,
     doneCount: donePage.total,
     projects: projects.map((project) => ({ ...project, id: project.shortId })),
     conversations: conversations.map((conversation) => ({

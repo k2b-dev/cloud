@@ -24,7 +24,7 @@ for (const [dependency, name] of [
 }
 
 const ignoredSource = (path: string): boolean =>
-  /\.(?:test|typecheck)\.[cm]?[jt]sx?$/.test(path) || path.endsWith("styles/css-contract-test-helpers.ts");
+  /\.(?:test|typecheck)\.[cm]?[jt]sx?$/.test(path) || path.endsWith("styles/css-contract-test-helpers.ts") || path.endsWith(".d.ts");
 
 const sourceFiles = async (directory: string): Promise<string[]> => {
   const files: string[] = [];
@@ -45,6 +45,13 @@ const compileModules = async (mode: "dom" | "ssr", outputRoot: string): Promise<
     const source = await readFile(sourcePath, "utf8");
     const sourceName = relative(sourceRoot, sourcePath);
     const outputPath = resolve(outputRoot, sourceName.replace(/\.[cm]?[jt]sx?$/, ".js"));
+    // onMount never runs on the server. Keep its lazy browser engine out of the SSR module graph,
+    // including when a consumer bundles the server entry and resolves every dynamic import.
+    if (mode === "ssr" && sourceName === "content/map-view-live.ts") {
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, 'export function createMap() { throw new Error("MapView live rendering requires a browser"); }\n');
+      continue;
+    }
     const result = await transformAsync(source, {
       filename: sourcePath,
       sourceFileName: sourceName,
@@ -57,14 +64,24 @@ const compileModules = async (mode: "dom" | "ssr", outputRoot: string): Promise<
     if (!result?.code || !result.map) {
       throw new Error(`@k2b/ui ${mode} transform failed: ${sourcePath}`);
     }
+    let code = result.code;
+    // MapLibre ships its worker as .mjs, which @k2b/ssr does not serve; the browser build uses the .js copy below.
+    if (mode === "dom" && sourceName === "content/map-view-live.ts") {
+      const worker = '"maplibre-gl/dist/maplibre-gl-worker.mjs"';
+      if (!code.includes(worker)) throw new Error("@k2b/ui could not find the MapLibre worker import in map-view-live");
+      code = code.replace(worker, '"./map-view-worker.js"');
+    }
     await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, `${result.code}\n//# sourceMappingURL=${basename(outputPath)}.map\n`);
+    await writeFile(outputPath, `${code}\n//# sourceMappingURL=${basename(outputPath)}.map\n`);
     await writeFile(`${outputPath}.map`, JSON.stringify(result.map));
   }
 };
 
 await compileModules("ssr", resolve(dist, "ssr"));
 await compileModules("dom", resolve(dist, "browser"));
+
+await copyFile(resolve(root, "node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs"), resolve(dist, "browser/content/map-view-worker.js"));
+await copyFile(resolve(root, "node_modules/maplibre-gl/LICENSE.txt"), resolve(dist, "licenses/maplibre-gl.txt"));
 
 const builds = [
   {

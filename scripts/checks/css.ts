@@ -262,7 +262,9 @@ export const rule: Rule = {
       "--studio-accent-dark", // StudioCard.tsx
       "--analysis-min-width", // AnalyticsView.tsx: validated layout width
       "--mail-row-height", // MailConversationRow.tsx: measured height of a leaving row
+      "--mail-tag", // MailConversationRow.tsx: the color of each tag chip
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
+      "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
     ]);
     // Cloud imports the UI package stylesheet. Its defaults are valid owners,
     // while Cloud and application styles may override those theme tokens.

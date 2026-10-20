@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, mock, beforeEach as pinClockBeforeEach, afterEach as restoreClockAfterEach, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
@@ -76,3 +76,6 @@ test.skipIf(isServer)("a restored mailbox still opens when its health dialog can
     dom.cleanup();
   }
 });
+
+pinClockBeforeEach(() => setSystemTime(new Date("2026-10-14T10:00:00.000Z")));
+restoreClockAfterEach(() => setSystemTime());

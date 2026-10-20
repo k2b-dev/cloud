@@ -4,6 +4,7 @@ import {
   Disclosure,
   InlineGuidance,
   NoticeCard,
+  NumberInput,
   prompts,
   Select,
   SettingsPage,
@@ -26,6 +27,12 @@ import {
 import { useAdminMessages } from "./admin-messages";
 import { useFilesMessages } from "./messages";
 
+/** The form edits every stored key; a cleared number stays a draft until it is valid again. */
+type Draft = Omit<Configuration, "activityRetentionDays"> & { activityRetentionDays: number | null };
+const RETENTION = { min: 30, max: 3650 } as const;
+const validRetention = (days: number | null): days is number =>
+  days !== null && Number.isInteger(days) && days >= RETENTION.min && days <= RETENTION.max;
+
 export default function Settings(props: {
   configuration: PublicConfiguration;
   availability: Availability;
@@ -34,16 +41,18 @@ export default function Settings(props: {
 }) {
   const t = useFilesMessages();
   const a = useAdminMessages();
-  const clean = (value: PublicConfiguration): Configuration => ({
+  const clean = (value: Configuration): Draft => ({
     url: value.url,
     cloud: { ...value.cloud },
     freeipa: { ...value.freeipa },
     collabora: { ...value.collabora },
+    activityRetentionDays: value.activityRetentionDays,
   });
   const [baseline, setBaseline] = createSignal(clean(props.configuration));
   const [configuration, setConfiguration] = createStore(clean(props.configuration));
   const [token, setToken] = createSignal("");
   const [saved, setSaved] = createSignal(false);
+  const [invalid, setInvalid] = createSignal<string | null>(null);
   const dirty = createMemo(() => JSON.stringify(configuration) !== JSON.stringify(baseline()) || token().length > 0);
   let form!: HTMLFormElement;
   const save = mutation.create({
@@ -53,7 +62,7 @@ export default function Settings(props: {
         const error = ErrorSchema.safeParse(await response.json());
         throw new Error(error.success ? error.data.message : t().saveFailed);
       }
-      setBaseline({ url: json.url, cloud: { ...json.cloud }, freeipa: { ...json.freeipa }, collabora: { ...json.collabora } });
+      setBaseline(clean(json));
       setToken("");
       setSaved(true);
       // Saving and reloading are separate outcomes; the workspace owns read failures.
@@ -75,6 +84,7 @@ export default function Settings(props: {
       setBaseline(next);
       setConfiguration(reconcile(next));
       setToken("");
+      setInvalid(null);
     },
   });
   // Save and reset write the same stored value; one at a time keeps their order.
@@ -103,6 +113,7 @@ export default function Settings(props: {
     setConfiguration(reconcile(baseline()));
     setToken("");
     setSaved(false);
+    setInvalid(null);
   };
   const areas: Area[] = ["cloud", "freeipa"];
   const available = (area: Area) => (area === "cloud" ? props.availability.localLinuxEnabled : props.availability.freeipaEnabled);
@@ -110,11 +121,19 @@ export default function Settings(props: {
     event.preventDefault();
     if (busy() || !dirty()) return;
     setSaved(false);
+    const days = configuration.activityRetentionDays;
+    // Enter submits the typed text before the field could clamp it; the server refuses it too.
+    if (!validRetention(days)) {
+      setInvalid(a().historyRetentionInvalid);
+      return;
+    }
+    setInvalid(null);
     void save.mutate({
       url: configuration.url,
       cloud: { ...configuration.cloud },
       freeipa: { ...configuration.freeipa },
       collabora: { ...configuration.collabora },
+      activityRetentionDays: days,
       ...(token() ? { token: token() } : {}),
     });
   };
@@ -322,10 +341,30 @@ export default function Settings(props: {
             </SettingsSection>
           )}
         </For>
-        <Show when={save.error()}>
-          {(error) => (
+        <SettingsSection title={a().history} icon="ti ti-history">
+          <fieldset class="grid min-w-0 gap-4 md:grid-cols-2" disabled={busy()}>
+            <NumberInput
+              name="activity-retention-days"
+              label={a().historyRetention}
+              description={a().historyRetentionHint}
+              value={configuration.activityRetentionDays}
+              min={RETENTION.min}
+              max={RETENTION.max}
+              allowNegative={false}
+              suffix={a().historyRetentionDays}
+              required
+              onValueChange={(value) => {
+                setConfiguration("activityRetentionDays", value);
+                if (validRetention(value)) setInvalid(null);
+              }}
+            />
+          </fieldset>
+        </SettingsSection>
+        {/* One place for every reason a save did not happen, so a refusal never adds a second line. */}
+        <Show when={invalid() ?? save.error()?.message}>
+          {(message) => (
             <InlineGuidance tone="danger" role="alert">
-              {error().message}
+              {message()}
             </InlineGuidance>
           )}
         </Show>

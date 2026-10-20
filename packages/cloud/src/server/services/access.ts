@@ -655,12 +655,18 @@ export const listUsersWithAccess = async (params: {
 
 /**
  * Resolve display names for access entries.
- * Populates the displayName field based on principal type, and the
- * serviceAccountKind field for service-account principals.
+ * Missing principals and audiences have no displayName; render with principalLabel.
+ * Includes serviceAccountKind for existing service-account principals.
  */
 export const resolveDisplayNames = async <T extends { principal: Principal }>(
   entries: T[],
-): Promise<(T & { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind })[]> => {
+): Promise<
+  (Omit<T, "displayName" | "avatarHash" | "serviceAccountKind"> & {
+    displayName?: string;
+    avatarHash?: string | null;
+    serviceAccountKind?: ServiceAccountKind;
+  })[]
+> => {
   const userIds = entries.filter((e) => e.principal.type === "user").map((e) => (e.principal as { type: "user"; userId: string }).userId);
 
   const groupIds = entries
@@ -709,30 +715,28 @@ export const resolveDisplayNames = async <T extends { principal: Principal }>(
   }
 
   return entries.map((entry) => {
-    let displayName: string;
+    let displayName: string | undefined;
     let avatarHash: string | null | undefined;
     let serviceAccountKind: ServiceAccountKind | undefined;
     switch (entry.principal.type) {
       case "user": {
         const user = userNames.get(entry.principal.userId);
-        displayName = user?.displayName ?? "Unknown User";
+        displayName = user?.displayName;
         avatarHash = user?.avatarHash ?? null;
         break;
       }
       case "group":
-        displayName = groupNames.get(entry.principal.groupId) ?? "Unknown Group";
+        displayName = groupNames.get(entry.principal.groupId);
         break;
       case "service_account": {
         const serviceAccount = serviceAccountsById.get(entry.principal.serviceAccountId);
-        displayName = serviceAccount?.name ?? "Unknown Service Account";
+        displayName = serviceAccount?.name;
         serviceAccountKind = serviceAccount?.kind;
         break;
       }
       case "authenticated":
-        displayName = "All users (incl. guests)";
         break;
       case "public":
-        displayName = "Public";
         break;
     }
     return { ...entry, displayName, avatarHash, serviceAccountKind };

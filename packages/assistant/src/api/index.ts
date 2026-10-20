@@ -1,5 +1,5 @@
 import { isConversationResourceCursor } from "@k2b/cloud/ai";
-import { type AuthContext, auth, err, fail, getTimeZone, ok, rateLimit, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, err, fail, getLocale, getTimeZone, ok, rateLimit, respond, v } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -41,7 +41,7 @@ const app = new Hono<AuthContext>()
   .get("/workspace/sidebar", async (c) => {
     const user = actorUser(c);
     if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));
-    return respond(c, ok(await loadAssistantSidebarSnapshot(user.id)));
+    return respond(c, ok(await loadAssistantSidebarSnapshot(user.id, { locale: getLocale(c), timeZone: getTimeZone(c) })));
   })
   .get("/workspace/conversations/:conversationId/preview", async (c) => {
     const user = actorUser(c);

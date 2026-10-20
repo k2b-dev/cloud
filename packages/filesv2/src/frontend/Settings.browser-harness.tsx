@@ -8,6 +8,7 @@ if (!host) throw new Error("Missing harness root");
 const area = { enabled: false, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" };
 const configuration: PublicConfiguration = {
   url: "",
+  activityRetentionDays: 365,
   cloud: { ...area, autoCreate: false, autoArchive: true },
   freeipa: { ...area, root: "freeipa" },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },

@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Deprecations and migrations
@@ -71,6 +71,39 @@ it creates a new file with mode `0600` and prints no token in any output mode.
 Moving a metrics endpoint to another origin removes its bearer token unless a
 replacement is supplied. Collectors can use an `Idempotency-Key` from the first
 attempt for safe batch retries; see [Pulse](/en/apps/pulse#send-a-batch-with-http-ingest).
+## Unknown principals and audiences have no English display name
+
+`resolveDisplayNames()` no longer invents English names. A deleted or unknown
+person, group, or service account and the `authenticated` and `public`
+audiences now come back without `displayName`, and the return type marks
+`displayName` as optional. Before, these entries read “Unknown User”,
+“All users (incl. guests)”, or “Public” in every language.
+
+Render principals with `principalLabel(entry, locale)` from
+`@k2b/cloud/access/ui` or `@k2b/cloud/shared`. It localizes audiences and
+missing principals and never falls back to an ID. Code that reads
+`entry.displayName` directly must handle the missing value; `PermissionEditor`
+and `PrincipalPicker` already do. See
+[Resource authorization](/en/docs/identity/authorization#show-names-instead-of-ids).
+
+## The Help panel reader moved to @k2b/cloud/ssr
+
+Replace the former import of `LayoutHelpPanel` or `Layout.HelpPanel`:
+
+```ts
+import { LayoutHelpPanel } from "@k2b/cloud/ssr/islands";
+```
+
+Use the server entry point instead:
+
+```ts
+import { LayoutHelpPanel, type LayoutHelpPanelProps } from "@k2b/cloud/ssr";
+```
+
+Render it in a server page, such as inside `PanelLayout`, never inside an
+island. The panel renders server HTML and mounts small islands for interaction.
+Applications that get Help in the panel through the automatic registration
+change nothing.
 
 ## Confirm new personal access in a browser
 

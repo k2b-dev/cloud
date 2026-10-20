@@ -40,6 +40,9 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
       if (event.key.toLowerCase() === "j" && event.metaKey === apple && event.ctrlKey === !apple) {
         event.preventDefault();
         if (!event.repeat) close();
+      } else if (event.key.toLowerCase() === "k" && event.metaKey === apple && event.ctrlKey === !apple) {
+        event.preventDefault();
+        if (!event.repeat) window.parent.postMessage({ type: "cloud.panel.search", v: 1 }, location.origin);
       } else if (event.key === "Escape" && !event.metaKey && !event.ctrlKey) {
         // An open modal dialog takes Escape through its cancel event, without preventing this keydown.
         if (document.querySelector("dialog[open], [aria-modal='true']")) return;

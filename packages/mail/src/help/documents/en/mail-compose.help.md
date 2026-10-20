@@ -3,7 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-16
+updated: 2026-10-19
 order: 30
 kind: task
 ---
@@ -13,6 +13,8 @@ kind: task
 Choose **Compose** for a new message. In a conversation, choose **Reply**, **Reply all**, **Forward**, or **Quote selection**. Mail first creates a shared draft and then opens its focused composer page. Mail keeps the purpose of the draft, so the final action button says **Send**, **Reply**, **Reply all**, or **Forward**.
 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
+
+While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the contact directory first. Then it suggests addresses this mailbox wrote to or received mail from. Mailbox suggestions also work without the Contacts app. A mail icon marks them. Use the arrow keys to highlight a suggestion and Enter to add it. People who see only assigned conversations get no mailbox suggestions.
 
 The composer is separate from the mailbox workspace. **Back to mailbox** saves the latest changes, releases the editing lease, and returns to the mailbox. **Open in new window** moves the same draft to its own browser window. It never creates a second draft.
 
@@ -31,7 +33,7 @@ When the Assistant asks to send this draft, a band above the draft shows the wai
 You can ask the current browser to use Cloud Mail for standard `mailto:` links:
 
 :::steps
-1. Open **Mailbox tools → Email link setup**.
+1. Open **… → Email link setup**.
 2. When the browser asks, confirm the prompt.
 :::
 
@@ -57,13 +59,13 @@ Open **Message options** and choose the format for the current draft:
 - **Plain text** has no Preview pane. A standalone message stays in one editor. A conversation draft shows **Write** and **History**.
 :::
 
-Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
+Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Each extra blank line between paragraphs adds an empty line to the sent message, also in quotes; lists and code blocks keep their usual spacing. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
 
-Markdown can also contain simple HTML. Email keeps the elements `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` to `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email removes images written directly into the body and horizontal lines. A signature can show the mailbox logo with `{{ mailbox.logo }}`. It shows Markdown quotes with a line on the left. Code blocks keep their line breaks but not their language label. When Mail removes HTML or an image, the Preview lists it below the message. The Preview also lists values of the mailbox email design that email ignores. For a very long message, Mail uses the built-in design if the mailbox email design would make it too complex to render. The Preview says so, and the message still sends. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
+Markdown can also contain simple HTML. Email keeps the elements `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` to `h3`, `hr`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email removes images written directly into the body. A line with only `---`, `***`, or `___` becomes a divider, also directly below a line of text; Mail never turns that text into a heading. A signature can show the mailbox logo with `{{ mailbox.logo }}`. It shows Markdown quotes with a line on the left. Code blocks keep their line breaks but not their language label. When Mail removes HTML or an image, the Preview lists it below the message. The Preview also lists values of the mailbox email design that email ignores. For a very long message, Mail uses the built-in design if the mailbox email design would make it too complex to render. The Preview says so, and the message still sends. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
 
 History loads only when you open it. Mail first expands the newest message. You can expand or collapse several messages independently, and Mail loads earlier summaries page by page. Mail loads a complete message only when you expand it. Links and attachments have the same security protection as in the conversation reader.
 
-Your default format is in **Settings → Writing → Compose format**. Changing the default does not change existing drafts.
+Your default format is in **… → Settings → Writing → Compose format**. Changing the default does not change existing drafts.
 
 ## Resume an existing conversation draft {icon="pencil"}
 
@@ -116,7 +118,7 @@ Put `{{ mailbox.logo }}` in a signature to show the mailbox logo in new messages
 
 Use `{{ mailbox.logo }}` on its own, without filters. A template containing it cannot use Liquid `capture` tags, even to capture unrelated text.
 
-Open **Settings → Writing → Logo** in the mailbox to upload or replace the logo, change its display width or alt text, or remove it after confirmation. These changes require **Manage** access. With **Edit** access, you see the logo and its values read only. Changing the width or alt text stores a new version with the same image.
+Open **… → Settings → Writing → Logo** in the mailbox to upload or replace the logo, change its display width or alt text, or remove it after confirmation. These changes require **Manage** access. With **Edit** access, you see the logo and its values read only. Changing the width or alt text stores a new version with the same image.
 
 A mailbox administrator can also upload a PNG or JPEG with `cld mail compose logo set --file logo.png`. It can be at most 100 KiB and 1200×400 pixels. Display width defaults to 200 px and accepts 1–600 px with `--width`. Alt text defaults to the trimmed mailbox name; `--alt` accepts 1–200 characters without control characters.
 
@@ -156,7 +158,7 @@ To separate the addresses in `message.to` and `message.cc`, use `join`:
 
 Mail warns you before sending about placeholders that remain in the text and would be sent as written.
 
-With **Manage** access, you change templates and defaults in **Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
+With **Manage** access, you change templates and defaults in **… → Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
 
 ## Attach files {icon="paperclip"}
 
@@ -207,7 +209,7 @@ Mail never changes the original message and conversation, and nothing is sent im
 
 ## Send now, undo, or schedule delivery {icon="send"}
 
-Choose the main action button to queue delivery now. **Undo send window** in **Settings → Writing** can delay immediate delivery by 0 to 60 seconds. With a value above zero, Mail waits that many seconds and offers undo through **Scheduled**.
+Choose the main action button to queue delivery now. **Undo send window** in **… → Settings → Writing** can delay immediate delivery by 0 to 60 seconds. With a value above zero, Mail waits that many seconds and offers undo through **Scheduled**.
 
 To schedule delivery:
 

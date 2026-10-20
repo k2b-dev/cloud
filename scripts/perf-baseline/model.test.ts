@@ -25,10 +25,11 @@ describe("performance baseline contracts", () => {
   test("defaults and page selection are stable; malformed flags fail before side effects", () => {
     expect(parseArgs([])).toEqual({
       help: false,
+      panel: false,
       keep: false,
       skipBuild: false,
       runs: 3,
-      pages: ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts"],
+      pages: ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"],
     });
     expect(
       parseArgs(["--pages", "files,document", "--runs", "1", "--skip-build", "--keep", "--out", ".local/example", "--compare", "old.json"]),

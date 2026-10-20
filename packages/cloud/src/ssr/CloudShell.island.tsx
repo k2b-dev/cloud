@@ -95,7 +95,11 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
       <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
         {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger variant="rail" open={props.panelOpen} />}
         <GlobalSearchTrigger variant="rail" />
-        <LayoutHelpTrigger variant="rail" />
+        <LayoutHelpTrigger
+          variant="rail"
+          panel={data.panel?.providers.some((provider) => provider.id === "core")}
+          helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
+        />
         <ProfilePreferences
           appHref={data.profile.appHref}
           avatarSrc={data.profile.avatarSrc}
@@ -148,7 +152,11 @@ function HeaderControls(props: {
         <div class="flex items-center gap-1 lg:hidden">
           {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger variant="header" open={props.panelOpen} />}
           {props.authenticated && <GlobalSearchTrigger variant="header" />}
-          <LayoutHelpTrigger variant="header" />
+          <LayoutHelpTrigger
+            variant="header"
+            panel={data.panel?.providers.some((provider) => provider.id === "core")}
+            helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
+          />
           {props.launchpad && (
             <AppLaunchpadButton
               profile={

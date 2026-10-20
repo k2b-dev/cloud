@@ -1,10 +1,12 @@
 import {
   type CapabilitySentencePart,
   capabilityAskReasonText,
+  capabilityPersonText,
   capabilityQuestionText,
   capabilityReceiptParts,
   capabilityReviewSentence,
   capabilityReviewSentenceParts,
+  capabilitySentenceParts,
   capabilitySentenceText,
 } from "../../_internal/capability-sentences";
 import type {
@@ -55,11 +57,13 @@ export type ActionPreviewModel =
       locale: string;
       timeZone: string;
       preview?: CapabilityPreview;
-      consequences: { text: ActionText; mark?: "added" | "removed" }[];
+      /** Original slots for plain rule sentences, retaining people’s addresses. */
+      slots?: CapabilityActionCallReview["slots"];
+      consequences: { text: ActionText; plain: string; mark?: "added" | "removed" }[];
       /** The rule sentence of a `rule` preview, with its chips. */
       when?: ActionText;
       /** Each `may` line of a `rule` preview. */
-      may?: { text: ActionText; mark?: "added" | "removed" }[];
+      may?: { text: ActionText; plain: string; mark?: "added" | "removed" }[];
     }
   | { kind: "legacy"; rows: AiLegacyReviewRow[]; markdown?: string; input?: unknown };
 
@@ -96,6 +100,16 @@ export type ActionCard = {
   hasCheck: boolean;
   /** The receipt text of an old review's success summary. */
   summary?: string;
+  /**
+   * For plain text: every value a new review's slots stand for (each person with address, title, text, time, count),
+   * also in consequences and rule lines, and whether the app left people out. Plain text that does not show each value
+   * whole is incomplete.
+   */
+  slotValues?: {
+    values: string[];
+    times: { text: string; start: string; end?: string; format: "date" | "date-time" }[];
+    unlisted: boolean;
+  };
 };
 
 const REASON_LOOK: Record<CapabilityAskReason, Omit<ActionReason, "code" | "text">> = {
@@ -174,6 +188,19 @@ export const actionPlainText = (text: ActionText): string =>
     })
     .join("");
 
+/** The short template, else the action sentence, read as the card's chips without person addresses or title quotes. */
+export const reviewShortText = (review: CapabilityActionCallReview, context: ActionCardContext): string =>
+  actionPlainText(
+    partsText(
+      capabilitySentenceParts(review.sentence.short ?? review.sentence.action, review.slots, {
+        locale: review.locale,
+        timeZone: context.timeZone,
+      }),
+      review.locale,
+      context.app,
+    ),
+  );
+
 const firstLink = (links: readonly CapabilitySemanticLink[] | undefined, rels: CapabilitySemanticLink["rel"][]) =>
   rels.map((rel) => links?.find((link) => link.rel === rel)?.href).find(Boolean);
 
@@ -192,6 +219,34 @@ const firstObjectHref = (review: CapabilityActionCallReview): string | undefined
     .map((slot) => ((slot.kind === "object" || slot.kind === "place") && slot.ref ? cloudResourceHref(slot.ref) : undefined))
     .find(Boolean);
 
+const slotValues = (slots: CapabilitySlot[], context: { locale: string; timeZone: string }) => ({
+  values: slots.flatMap((slot) =>
+    slot.kind === "person"
+      ? slot.people.map(capabilityPersonText)
+      : slot.kind === "object" || slot.kind === "place"
+        ? [slot.title]
+        : slot.kind === "text"
+          ? [slot.value]
+          : slot.kind === "count"
+            ? [capabilitySentenceText("{value}", { value: slot }, context)]
+            : [],
+  ),
+  // A time is shown whole as its words, or as typed rows that hold its start and end with at least its precision.
+  times: slots.flatMap((slot) =>
+    slot.kind === "time"
+      ? [
+          {
+            text: capabilitySentenceText("{value}", { value: slot }, context),
+            start: slot.start,
+            ...(slot.end ? { end: slot.end } : {}),
+            format: slot.format,
+          },
+        ]
+      : [],
+  ),
+  unlisted: slots.some((slot) => slot.kind === "person" && (slot.total ?? slot.people.length) > slot.people.length),
+});
+
 export const reviewActionCard = (review: CapabilityActionCallReview, context: ActionCardContext): ActionCard => {
   const locale = review.locale;
   const tz = { timeZone: context.timeZone };
@@ -206,6 +261,7 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
     );
   const consequence = (entry: CapabilityConsequence) => ({
     text: sentence(entry.text, entry.slots),
+    plain: capabilitySentenceText(entry.text, entry.slots ?? review.slots, { locale, timeZone: context.timeZone }),
     ...(entry.mark ? { mark: entry.mark } : {}),
   });
   const code = review.ask ?? "app_asks";
@@ -224,6 +280,7 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
             locale,
             timeZone: context.timeZone,
             ...(preview ? { preview } : {}),
+            slots: review.slots,
             consequences: (review.consequences ?? []).map(consequence),
             ...(preview?.kind === "rule"
               ? { when: sentence(preview.when.text, preview.when.slots), may: preview.may.map(consequence) }
@@ -255,6 +312,14 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
       : plainText(context.app.name),
     short: capabilityReviewSentence(review, "short", tz),
     hasCheck: Boolean(review.check),
+    slotValues: slotValues(
+      [
+        review.slots,
+        ...(review.consequences ?? []).map((entry) => entry.slots ?? {}),
+        ...(preview?.kind === "rule" ? [preview.when.slots ?? {}, ...preview.may.map((entry) => entry.slots ?? {})] : []),
+      ].flatMap((slots) => Object.values(slots)),
+      { locale, timeZone: context.timeZone },
+    ),
   };
 };
 
@@ -340,7 +405,8 @@ const messageRows = (block: ToolBlock): AiLegacyReviewRow[] => {
   for (const line of message.split("\n").map((entry) => entry.trim())) {
     if (!line || /^Review the validated arguments below before running this action\.$/i.test(line)) continue;
     const heading = /^([^:]{1,40}):$/.exec(line);
-    const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
+    // The value starts at its first visible character, so the pattern never backtracks over the white space before it.
+    const match = /^([^:]{1,40}):\s+(\S.*)$/.exec(line);
     if (heading) {
       open = { label: heading[1]!, value: "" };
       rows.push(open);

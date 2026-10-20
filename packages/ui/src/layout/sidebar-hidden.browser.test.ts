@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Whether hidden navigation really frees its track, takes the navigation pane
 // with it and snaps away under a drag depends on real layout, so a real engine
@@ -116,7 +116,85 @@ const layout = (page: Page): Promise<Layout> =>
 const setHidden = (page: Page, hidden: boolean) =>
   page.evaluate((value) => (window as unknown as { fixture: { setHidden: (hidden: boolean) => void } }).fixture.setHidden(value), hidden);
 
+// Compare paint, not hit testing: WebKit can hit descendants outside an ancestor's rounded clip.
+const expectClearCorners = async (page: Page) => {
+  await settled(page);
+  const workspace = page.locator(".k2b-app-workspace").first();
+  const clips = await workspace.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return (
+      [
+        [style.borderTopLeftRadius, false, false],
+        [style.borderTopRightRadius, true, false],
+        [style.borderBottomLeftRadius, false, true],
+        [style.borderBottomRightRadius, true, true],
+      ] as const
+    ).map(([radius, right, bottom]) => {
+      const r = Number.parseFloat(radius);
+      // The square lies outside the curve, with a 1 px antialias margin.
+      const s = Math.floor(r - (r + 1) / Math.SQRT2);
+      return { x: right ? rect.right - s : rect.left, y: bottom ? rect.bottom - s : rect.top, width: s, height: s };
+    });
+  });
+  await workspace.evaluate((element) => element.setAttribute("data-corner-probe", ""));
+  try {
+    for (const clip of clips) {
+      expect(clip.width).toBeGreaterThanOrEqual(1);
+      const painted = await page.screenshot({ clip, animations: "disabled", scale: "css" });
+      const style = await page.addStyleTag({ content: ".k2b-app-workspace[data-corner-probe] * { visibility: hidden !important }" });
+      try {
+        await settled(page);
+        const cleared = await page.screenshot({ clip, animations: "disabled", scale: "css" });
+        expect(Buffer.compare(painted, cleared)).toBe(0);
+      } finally {
+        await style.evaluate((element) => element.parentNode?.removeChild(element));
+        await settled(page);
+      }
+    }
+  } finally {
+    await workspace.evaluate((element) => element.removeAttribute("data-corner-probe"));
+  }
+};
+
 describe("hidden workspace navigation", () => {
+  test("at 1440 px the card's corners show one surface with the navigation shown, hidden, or hidden by the host", async () => {
+    const page = await load(1440);
+    try {
+      await page.addStyleTag({
+        content: `
+          body { background: #e4e4e7 }
+          .k2b-ui .k2b-app-workspace { --k2b-workspace-radius: 14px }
+          .k2b-ui .k2b-app-workspace__main { background: var(--k2b-surface) }
+        `,
+      });
+      for (const navigation of ["shown", "hidden", "host"] as const) {
+        await setHidden(page, navigation === "hidden");
+        if (navigation === "host") {
+          // Mirror Cloud's focus mode and layout-parity.css's documented contract
+          // for a host that hides the sidebar another way and sets its space to 0.
+          await page.addStyleTag({
+            content: `
+              .k2b-ui .k2b-app-workspace > .k2b-app-workspace__sidebar,
+              [data-app-workspace-resize="sidebar"] { display: none }
+              .k2b-ui .k2b-app-workspace { --k2b-workspace-sidebar-space: 0px }
+            `,
+          });
+        }
+        await settled(page);
+        const radii = await page.locator(".k2b-app-workspace__content").evaluate((element) => {
+          const style = getComputedStyle(element);
+          return [style.borderTopLeftRadius, style.borderBottomLeftRadius];
+        });
+        const radius = navigation === "shown" ? "0px" : "13px";
+        expect(radii).toEqual([radius, radius]);
+        await expectClearCorners(page);
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("at 1440 px hides the sidebar and the navigation pane, and the editor spans the workspace", async () => {
     const page = await load(1440);
     try {

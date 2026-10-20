@@ -1,6 +1,7 @@
 import type { Tool, ToolContext } from "@k2b/nessi";
 import { defineTool as defineNessiTool } from "@k2b/nessi";
 import type { z } from "zod";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import { aiToolNeedsApproval } from "./approvals";
 import type {
@@ -64,7 +65,7 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           /** Localized short status; never include payloads or secrets. */
           reportProgress?: (message: string) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
-          requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          requestApprovalFor?: (message: string, target: AiApprovalTarget, review?: CapabilityActionCallReview) => Promise<boolean>;
           /** Relays a decision for an effect another platform component consumes and executes. */
           requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
@@ -122,6 +123,8 @@ export type AiToolPreparationContext = {
   linkApproval?: (approvalCallId: string, approvalId: string) => void;
   /** Hears what a nested approval asks for before the approval is requested. */
   describeApproval?: (approvalCallId: string, target: AiApprovalTarget) => void;
+  /** Registers the deterministic review before requesting or consuming a nested approval. */
+  describeReview?: (approvalCallId: string, review: CapabilityActionCallReview) => void | Promise<void>;
   reportWebsiteReceipts?: (callId: string, receipts: AiWebsiteReceipt[]) => Promise<void>;
 };
 
@@ -168,10 +171,11 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
     }
     // Nessi numbers the approvals of one execution in request order; count them to name each one's call ID.
     let approvals = 0;
-    const requestApproval = async (message: string, target?: AiApprovalTarget): Promise<boolean> => {
+    const requestApproval = async (message: string, target?: AiApprovalTarget, review?: CapabilityActionCallReview): Promise<boolean> => {
       while (true) {
         const approvalCallId = `${callId}-approval-${approvals++}`;
         if (target) input.describeApproval?.(approvalCallId, target);
+        if (review) await input.describeReview?.(approvalCallId, review);
         if (!(await ctx.requestApproval(message))) return false;
         const used = await use(approvalCallId);
         if (used === "approved") return true;
@@ -182,7 +186,8 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
     return {
       ...ctx,
       requestApproval,
-      requestApprovalFor: (message: string, target: AiApprovalTarget) => requestApproval(message, target),
+      requestApprovalFor: (message: string, target: AiApprovalTarget, review?: CapabilityActionCallReview) =>
+        requestApproval(message, target, review),
       requestRelayedApproval: async (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => {
         const approvalCallId = `${callId}-approval-${approvals++}`;
         if (options.approvalId) input.linkApproval?.(approvalCallId, options.approvalId);

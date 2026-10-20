@@ -161,12 +161,18 @@ suite("every successful web sign-in route remembers its browser", () => {
     test(`${path}: writes after success and leaves no rows after failed verification`, async () => {
       const user = await loadCurrentUser({ userId, groupsAdmin: [] });
       if (!user) throw new Error("Missing route fixture user");
+      const [epoch] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
       const success = { ok: true, userId, user } as const;
       const failure = { ok: false, status: 401, reason: "invalid_credentials", message: "Invalid credentials" } as const;
-      const ipa = spyOn(authFlows.ipa, "login").mockResolvedValue(success);
-      const expired = spyOn(authFlows.ipa, "changeExpiredPassword").mockResolvedValue(success);
+      const authEpoch = Number(epoch!.auth_epoch);
+      const ipa = spyOn(authFlows.ipa, "login").mockResolvedValue({ ...success, authEpoch });
+      const expired = spyOn(authFlows.ipa, "changeExpiredPassword").mockResolvedValue({
+        ...success,
+        authEpoch,
+        signOutOthersFailed: false,
+      });
       const email = spyOn(authFlows.magicLink, "verify").mockResolvedValue({ ...success, email: null, createdGuest: false });
-      const reset = spyOn(authFlows.passwordReset, "complete").mockResolvedValue(success);
+      const reset = spyOn(authFlows.passwordReset, "complete").mockResolvedValue({ ...success, authEpoch, signOutOthersFailed: false });
       const passkey = spyOn(webauthn, "finishAuthentication").mockResolvedValue({
         ok: true,
         data: {
@@ -189,10 +195,9 @@ suite("every successful web sign-in route remembers its browser", () => {
       const jwk = await crypto.subtle.exportKey("jwk", deviceKeys.publicKey);
       await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,enrolled_by)
         VALUES (${deviceId}::uuid,${issuer},${userId}::uuid,'Fixture',${JSON.stringify({ kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y })}::text::jsonb,false,${userId}::uuid)`;
-      const [epoch] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
       const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue({
         userId,
-        authEpoch: Number(epoch!.auth_epoch),
+        authEpoch,
         deviceId,
         deviceName: "Jana’s phone",
       });

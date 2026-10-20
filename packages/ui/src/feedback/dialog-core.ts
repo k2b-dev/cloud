@@ -23,6 +23,7 @@ export type OpenDialogOptions = {
    * Without it, only the synthetic Back on close is suppressed.
    * Island disposal closes every open dialog immediately and forgets its marker without traversing history.
    * The same-URL entry remains for the router to replace and counts as a page entry for later dialogs.
+   * A traversal that `@k2b/ssr/nav` hides from popstate listeners reaches this core through `ssr:nav-popstate`.
    */
   history?: boolean;
 };
@@ -137,6 +138,10 @@ const focusUnclaimed = (dialog: HTMLDialogElement): boolean => {
   return !active || active === document.body || active === dialog;
 };
 
+/** Checked by shape: a test harness or an iframe may create the event in another realm. */
+const isPopState = (value: unknown): value is PopStateEvent =>
+  typeof value === "object" && value !== null && "type" in value && value.type === "popstate" && "state" in value;
+
 type HistoryEntry = { historyId?: number };
 type HistoryHolder = HistoryEntry & { onBack: () => void };
 
@@ -208,8 +213,12 @@ export const createDialogCore = () => {
     queueMicrotask(syncHistory);
   };
 
+  /** Traversals this core already handled: a page swap router also reports the ones it hides from listeners. */
+  const handled = new WeakSet<PopStateEvent>();
   /** Back or Forward moved to another entry: close dialogs and holders opened after the one it shows. */
   const onPopState = (event: PopStateEvent) => {
+    if (handled.has(event)) return;
+    handled.add(event);
     const resolveBack = resolveReturning;
     // Without the Navigation API, only our synthetic Back has a known departure.
     const from = typeof navigation !== "undefined" ? traversalFrom : resolveBack ? syntheticFrom : undefined;
@@ -262,6 +271,11 @@ export const createDialogCore = () => {
     while (state.stack.length > 0) popTop(undefined);
   };
 
+  /** `@k2b/ssr/nav` stops a traversal to another server page before later listeners and reports it here. */
+  const onHiddenPopState = (event: Event) => {
+    const detail: unknown = "detail" in event ? event.detail : undefined;
+    if (isPopState(detail)) onPopState(detail);
+  };
   const onNavigate = (event: NavigateEvent) => {
     if (event.navigationType === "traverse") traversalFrom = { href: location.href, marker: historyMarker() };
   };
@@ -270,9 +284,11 @@ export const createDialogCore = () => {
   const listen = () => {
     if (listening?.window === window) return;
     listening?.window.removeEventListener("popstate", onPopState, { capture: true });
+    listening?.window.removeEventListener("ssr:nav-popstate", onHiddenPopState, { capture: true });
     listening?.window.removeEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
     listening?.navigation?.removeEventListener("navigate", onNavigate);
     window.addEventListener("popstate", onPopState, { capture: true });
+    window.addEventListener("ssr:nav-popstate", onHiddenPopState, { capture: true });
     // Capture opens the disposal window before target listeners can release history holders.
     window.addEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
     const current = typeof navigation !== "undefined" ? navigation : undefined;

@@ -224,8 +224,8 @@ export default function BasesOverview(props: Props) {
           <For each={props.recentTables}>
             {(table) => (
               <li>
-                <a href={`/app/grids/${table.baseId}/table/${table.id}`} class="grids-overview-table">
-                  <span class="grids-overview-table-icon" aria-hidden="true">
+                <a href={`/app/grids/${table.baseId}/table/${table.id}`} class="grids-overview-table focus-ui">
+                  <span class="grids-overview-table-icon k2b-icon-tile app-accent-text" aria-hidden="true">
                     <i class={table.icon ?? "ti ti-table"} />
                   </span>
                   <span class="grids-overview-table-copy">

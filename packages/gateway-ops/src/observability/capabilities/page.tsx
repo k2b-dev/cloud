@@ -14,8 +14,8 @@ import {
   listCapabilityExecutions,
   summarizeCapabilityExecutions,
 } from "@k2b/cloud/capabilities/store";
-import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
+import { type AuthContext, getDateConfig, getLocale, resolveDisplayNames } from "@k2b/cloud/server";
+import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber, principalLabel } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../../config";
@@ -64,6 +64,7 @@ export default ssr<AuthContext>(async (c) => {
   let executions: CapabilityExecution[] = [];
   let nextCursor: string | undefined;
   let detail: CapabilityExecution[] = [];
+  const userNames = new Map<string, string | undefined>();
   try {
     const [scopeResult, summaryResult, page, detailPage] = await Promise.all([
       // Filter options come from the whole window, so narrowing to one app does
@@ -82,10 +83,15 @@ export default ssr<AuthContext>(async (c) => {
     executions = page.items;
     nextCursor = page.nextCursor;
     detail = detailPage.items;
+    // Execution userId is the person or delegated user; the service account is actorId.
+    const userIds = [...new Set([...executions.flatMap((row) => (row.userId ? [row.userId] : [])), ...(state.user ? [state.user] : [])])];
+    const users = await resolveDisplayNames(userIds.map((userId) => ({ principal: { type: "user" as const, userId } })));
+    for (const entry of users) userNames.set(entry.principal.userId, entry.displayName);
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
   }
 
+  const userLabel = (userId: string) => principalLabel({ principal: { type: "user", userId }, displayName: userNames.get(userId) }, locale);
   const href = (updates: Partial<CapabilitiesFilterState>) => capabilitiesFilter.build(state, { ...reset, ...updates });
   const hrefFor = {
     app: Object.fromEntries([["", href({ app: "" })], ...scope.apps.map((group) => [group.id, href({ app: group.id })] as const)]),
@@ -140,7 +146,12 @@ export default ssr<AuthContext>(async (c) => {
     { id: "kind", header: t.kind, value: (row) => row.kind },
     { id: "status", header: t.status, value: (row) => row.status },
     { id: "duration", header: t.duration, value: (row) => row.durationMs, align: "right" },
-    { id: "user", header: t.user, value: (row) => row.userId ?? "", cellClass: "font-mono text-[11px] max-w-[10rem] truncate" },
+    {
+      id: "user",
+      header: t.user,
+      value: (row) => (row.userId ? userLabel(row.userId) : ""),
+      cellClass: "text-[11px] max-w-[10rem] truncate",
+    },
     { id: "details", header: t.details, value: () => null, align: "right" },
   ];
 
@@ -183,7 +194,7 @@ export default ssr<AuthContext>(async (c) => {
         {state.user ? (
           <NoticeCard
             tone="info"
-            title={`${t.user}: ${state.user}`}
+            title={`${t.user}: ${userLabel(state.user)}`}
             detail={
               <span class="flex flex-wrap gap-2">
                 <a class="font-medium hover:underline" href={aiUsageHref({ view: "runs", userId: state.user })}>
@@ -305,8 +316,8 @@ export default ssr<AuthContext>(async (c) => {
                 );
               if (col.id === "user")
                 return row.userId ? (
-                  <a class="link" href={href({ user: row.userId })} title={row.userId}>
-                    {row.userId}
+                  <a class="link" href={href({ user: row.userId })}>
+                    {userLabel(row.userId)}
                   </a>
                 ) : (
                   <span class="text-dimmed">—</span>

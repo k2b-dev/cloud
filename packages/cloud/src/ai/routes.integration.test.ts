@@ -822,6 +822,189 @@ suite("local client actions and preview", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test.each(["approval", "custom_approval"] as const)(
+    "pending %s exposes the stored review, localized owner, chat title and request expiry",
+    async (kind) => {
+      const userId = await insertUser();
+      const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Wartung" });
+      const app = spyOn(registry, "getApp").mockResolvedValue({
+        id: "demo",
+        name: "Demo",
+        description: "Fixture",
+        icon: "ti ti-mail",
+        baseUrl: "http://demo.invalid",
+        routes: ["/demo"],
+        presentation: { baseLocale: "en", translations: { de: { name: "Beispiel" } } },
+      });
+      try {
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelProfileId: "mock",
+          runConfig: { kind: "chat", input: "Send", locale: "de", timeZone: "Europe/Berlin" },
+          userMessage: { role: "user", content: ["Send"] },
+        });
+        const review = { ...reviewFixture(), locale: "de" };
+        const stored = { ...review, ask: "sends" as const };
+        const callId = kind === "custom_approval" ? "send-approval-0" : "send";
+        await aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id }).append({
+          role: "assistant",
+          content: [{ type: "tool_call", id: "send", name: "demo.send", args: {} }],
+        });
+        await recordAiToolReview({ conversationId: chat.id, turnId: turn.id, callId: "send", review: stored });
+        const requested = await approvals.request({
+          appId: "demo",
+          action: "send",
+          requester: { kind: "assistant_turn", ref: `${turn.id}/${callId}`, appId: "assistant" },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance: "standard",
+          sentence: "Old client question",
+          input: {},
+          review,
+          expiresInMs: 600_000,
+        });
+        if (!requested.ok) throw new Error("Expected an approval");
+        await aiConversations.savePendingTurnAction({
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId,
+          kind,
+          status: "pending",
+          name: "demo.send",
+          args: {},
+          message: "Old client question",
+          review,
+          approvalId: requested.id,
+          approvalScope: "demo.send",
+          allowAlways: false,
+          allowChat: false,
+          resolvedEvent: null,
+        });
+        const request = await approvals.get(requested.id);
+        // The chat's current title: the first turn may have named the chat since it was created.
+        const current = await aiConversations.getConversation({ conversationId: chat.id });
+        const response = await aiRoutes.request(`/conversations/${chat.shortId}/pending-actions/${turn.shortId}`, {
+          headers: { Authorization: `Bearer ${await createTestSession(userId)}`, "Accept-Language": "en" },
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual([
+          {
+            type: "approval_request",
+            conversationId: chat.shortId,
+            turnId: turn.shortId,
+            callId,
+            name: "demo.send",
+            args: {},
+            message: "Old client question",
+            review: stored,
+            allowAlways: false,
+            allowChat: false,
+            app: { id: "demo", name: "Beispiel" },
+            chatTitle: current?.title,
+            expiresAt: request?.expiresAt.toISOString(),
+          },
+        ]);
+      } finally {
+        app.mockRestore();
+        await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
+  test("pending custom approval falls back to the request review and declared reason without a tool review", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Wartung" });
+    const app = spyOn(registry, "getApp").mockResolvedValue({
+      id: "demo",
+      name: "Demo",
+      description: "Fixture",
+      icon: "ti ti-mail",
+      baseUrl: "http://demo.invalid",
+      routes: ["/demo"],
+      presentation: { baseLocale: "en", translations: { de: { name: "Beispiel" } } },
+    });
+    const capabilities = spyOn(registry, "listCapabilities").mockResolvedValue([
+      {
+        appId: "demo",
+        appName: "Demo",
+        appIcon: "ti ti-mail",
+        appDescription: "Fixture",
+        endpoint: "http://demo.invalid",
+        manifest: compileReviewFixture({ ask: "sends" }).manifest,
+      },
+    ]);
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig: { kind: "chat", input: "Send", locale: "de", timeZone: "Europe/Berlin" },
+        userMessage: { role: "user", content: ["Send"] },
+      });
+      const review = { ...reviewFixture(), locale: "de" };
+      const callId = "send-approval-0";
+      await aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id }).append({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "send", name: "demo.send", args: {} }],
+      });
+      const requested = await approvals.request({
+        appId: "demo",
+        action: "send",
+        requester: { kind: "assistant_turn", ref: `${turn.id}/${callId}`, appId: "assistant" },
+        subjectId: userId,
+        approverUserId: userId,
+        assurance: "standard",
+        sentence: "Old client question",
+        input: {},
+        review,
+        expiresInMs: 600_000,
+      });
+      if (!requested.ok) throw new Error("Expected an approval");
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId,
+        kind: "custom_approval",
+        status: "pending",
+        name: "demo.send",
+        args: {},
+        message: "Old client question",
+        approvalId: requested.id,
+        approvalScope: "demo.send",
+        allowAlways: false,
+        allowChat: false,
+        resolvedEvent: null,
+      });
+      const request = await approvals.get(requested.id);
+      const current = await aiConversations.getConversation({ conversationId: chat.id });
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/pending-actions/${turn.shortId}`, {
+        headers: { Authorization: `Bearer ${await createTestSession(userId)}`, "Accept-Language": "en" },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual([
+        {
+          type: "approval_request",
+          conversationId: chat.shortId,
+          turnId: turn.shortId,
+          callId,
+          name: "demo.send",
+          args: {},
+          message: "Old client question",
+          review: { ...review, ask: "sends" },
+          allowAlways: false,
+          allowChat: false,
+          app: { id: "demo", name: "Beispiel" },
+          chatTitle: current?.title,
+          expiresAt: request?.expiresAt.toISOString(),
+        },
+      ]);
+      expect(capabilities).toHaveBeenCalledTimes(1);
+    } finally {
+      capabilities.mockRestore();
+      app.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
   test("invalid local_list output returns 400 and leaves the action pending; valid output resolves it", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

@@ -855,7 +855,8 @@ The accessibility tree is limited to 4 KiB. Cancellation closes pages and remove
 copies; crashed hosts leave a durable cleanup marker for the service sweep
 and bounded, best-effort cleanup before each new check.
 
-CLI users run `cld assistant code check ID --chat CHAT`. For one-off files, omit
+CLI users run `cld assistant code check ID --chat CHAT`. CHAT is the chat ID
+shown in Assistant (the public short ID). For one-off files, omit
 ID and pass `{files}` through `--input-file` or stdin. Local Chromium runs the
 same check and saves screenshots/downloads as local files. Use `--out DIR` to
 choose the output directory; otherwise the command creates and prints a new
@@ -1081,6 +1082,8 @@ those choices in browser-local preferences, without modifying uploaded files.
 Studio resource URLs, tool inputs and references use six-character Cloud short
 IDs. UUIDs remain internal database keys and are rejected as public resource IDs.
 Existing resources receive short IDs during migration; no UUID URL alias exists.
+Assistant endpoints that take a chat also accept its short ID and check the same
+chat permissions for both forms.
 
 
 The chat's Studio section uses the canonical conversation resource index. Direct

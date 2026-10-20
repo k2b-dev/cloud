@@ -39,3 +39,51 @@ else {
     }
   });
 }
+
+// The server path never has a DOM. Compare its output with the browser's HTML parser,
+// including actual guided Help markup rather than only handcrafted fixtures.
+test("server and browser split the same lead, body, spoken sections and task steps", async () => {
+  const dom = createDomTestHarness();
+  try {
+    const { helpArticleParts } = await import("./layout-help-article");
+    const { helpArticlePartsServer } = await import("./layout-help-article.server");
+    const { renderHelpMarkdown } = await import("../shared/markdown");
+    const { defineHelp } = await import("../server/help");
+    const source = await Bun.file(new URL("../../../spaces/src/help/documents/en/spaces-sharing.help.md", import.meta.url)).text();
+    const article = defineHelp({ documents: [source] }).documents[0];
+    if (!article) throw new Error("Missing built-in Help fixture");
+    const normalize = (html: string | undefined) => {
+      if (html === undefined) return undefined;
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      return template.innerHTML;
+    };
+    for (const html of [
+      '<p>A plain <strong>lead</strong> &amp; answer.</p><h2 id="one">One</h2>',
+      '<p class="help-eyebrow"><strong>Start here</strong></p><p>Body</p>',
+      '<h2 id="first">Heading first</h2><p>Body</p>',
+      " \n<!-- skip me -->\t<p>Leading whitespace.</p>\n<p>Body</p>",
+      '<p class="">Empty class is a lead.</p><p>Body</p>',
+      '<p>Lead</p><details open><summary>Aside</summary><h2 id="hidden">Hidden</h2><div class="help-steps"><ol><li>Aside step</li></ol></div></details><h2 id="shown">Shown</h2>',
+      '<div class="other help-steps"><ol><li>One<ol><li>Nested, not a task step</li></ol></li><li>Two</li></ol></div>',
+      '<h2 id="icon"><i aria-hidden="true">Ignore <b>all</b></i>  Spoken \n <span>text &amp; more</span></h2><h2 id="empty"><span aria-hidden="true">Icon</span> </h2>',
+      renderHelpMarkdown(article.markdown, { locale: "en", platform: "apple" }),
+    ]) {
+      const server = helpArticlePartsServer(html);
+      const browser = helpArticleParts(html);
+      const rebuilt = helpArticleParts((server.lead ?? "") + server.body);
+      expect({ ...rebuilt, lead: normalize(rebuilt.lead), body: normalize(rebuilt.body) }).toEqual({
+        ...server,
+        lead: normalize(server.lead),
+        body: normalize(server.body),
+      });
+      expect({ ...server, lead: normalize(server.lead), body: normalize(server.body) }).toEqual({
+        ...browser,
+        lead: normalize(browser.lead),
+        body: normalize(browser.body),
+      });
+    }
+  } finally {
+    dom.cleanup();
+  }
+});

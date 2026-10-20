@@ -4,7 +4,9 @@ import * as platformServices from "@k2b/cloud/services";
 import { oauthTokens } from "@k2b/cloud/services";
 import { redis } from "bun";
 import { Hono } from "hono";
+import { requestContactDirectoryConfig, resolveMailContactDirectory } from "../contact-directory-settings";
 import { contactDirectory, conversationContext, publicResources } from "../service";
+import * as directoryService from "../service/contact-directory";
 import api from ".";
 
 const user = (roles: User["roles"]) =>
@@ -55,6 +57,9 @@ const headers = { authorization: "Bearer contact-directory-test" };
 afterEach(() => mock.restore());
 
 beforeEach(() => {
+  spyOn(directoryService, "requestContactDirectory").mockImplementation(async (c) =>
+    resolveMailContactDirectory(requestContactDirectoryConfig(c)),
+  );
   spyOn(platformServices, "get").mockResolvedValue(100);
   spyOn(redis, "send").mockImplementation(async (command) => {
     if (command !== "EVAL") throw new Error(`Unexpected Redis command: ${command}`);

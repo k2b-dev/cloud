@@ -130,6 +130,46 @@ else {
     expect(document.activeElement).toBe(h.opener);
   });
 
+  test("search messages run the host command only from the current frame at the same origin", async () => {
+    const h = setup();
+    h.open();
+    const action = mock(() => {});
+    registerShortcut("cloud.search", "mod+k", { action });
+    const search = { type: "cloud.panel.search", v: 1 };
+    const oldSource = h.frame().contentWindow;
+    h.open("second");
+    h.message(search, oldSource);
+    h.message(search, h.frame().contentWindow, "https://elsewhere.test");
+    h.message({ ...search, extra: true });
+    await tick();
+    expect(action).not.toHaveBeenCalled();
+    h.message(search);
+    await tick();
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  test("search messages do nothing without a registered search shortcut or when it conflicts", async () => {
+    const h = setup();
+    h.open();
+    const other = mock(() => {});
+    registerShortcut("fixture.search", "mod+k", { action: other });
+    const search = { type: "cloud.panel.search", v: 1 };
+    h.message(search);
+    await tick();
+    expect(other).not.toHaveBeenCalled();
+    const action = mock(() => {});
+    const unregister = registerShortcut("cloud.search", "mod+k", { action });
+    h.message(search);
+    await tick();
+    expect(action).not.toHaveBeenCalled();
+    unregister();
+    registerShortcut("cloud.search", "", { action });
+    h.message(search);
+    await tick();
+    expect(action).not.toHaveBeenCalled();
+    expect(other).not.toHaveBeenCalled();
+  });
+
   test("times out at 10 s, retries with a fresh iframe, ignores the old frame and accepts late ready", () => {
     jest.useFakeTimers();
     const h = setup();

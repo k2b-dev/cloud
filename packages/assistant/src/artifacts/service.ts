@@ -496,7 +496,10 @@ export const artifacts = {
       const access = await createAccess({ principal, permission: level }, db);
       if (!access.ok) throw new ArtifactError("INVALID_INPUT");
       await db`INSERT INTO assistant.artifact_access VALUES(${id}::uuid,${access.data.id}::uuid)`;
-      return getAccess({ id: access.data.id }, db);
+      const entry = await getAccess({ id: access.data.id }, db);
+      if (!entry) return null;
+      const [resolved] = await resolveDisplayNames([entry]);
+      return resolved!;
     });
   },
   async changeGrant(

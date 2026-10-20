@@ -4,7 +4,7 @@ import { HELP_SHORTCUT_TITLE_MAX_LENGTH, HELP_START_SHORTCUT_LIMIT } from "../ss
 import { getContext, onContextChange, publishPageContext } from "./panel";
 import { PAGE_CONTEXT_COLLECT, PANEL_SHORTCUTS_ELEMENT, type PageContextCollection } from "./panel-context-bridge";
 import { installPanelContextReceiver } from "./panel-context-receiver";
-import { onPanelShortcutsChange, readPanelShortcuts } from "./panel-shortcuts";
+import { onPanelShortcutsChange, panelShortcutsReceived, readPanelShortcuts } from "./panel-shortcuts";
 
 let cleanup = () => {};
 afterEach(() => cleanup());
@@ -79,6 +79,32 @@ test("without URL context the first non-null message pins document identity, eve
   h.message({ ...first, pageId: "22222222-2222-4222-8222-222222222222", seq: 1 });
   expect(getContext()).toBeNull();
 });
+
+for (const context of [{ ...first, seq: 2 }, null])
+  test(`only accepted messages mark shortcuts received, including ${context ? "an empty list" : "null context"}`, () => {
+    const h = mount({ ...first, seq: 2 });
+    const element = document.getElementById(PANEL_SHORTCUTS_ELEMENT)!;
+    const extra = context ? { shortcuts: [] } : {};
+    expect(element.hasAttribute("data-received")).toBe(false);
+    expect(panelShortcutsReceived()).toBe(false);
+    for (const [origin, source] of [
+      ["https://elsewhere.test", undefined],
+      [location.origin, null],
+    ]) {
+      h.message(context, origin!, source, extra);
+      expect(element.hasAttribute("data-received")).toBe(false);
+      expect(panelShortcutsReceived()).toBe(false);
+    }
+    h.message({ ...first, seq: 1 }, location.origin, undefined, { shortcuts: [] });
+    expect(element.hasAttribute("data-received")).toBe(false);
+    expect(panelShortcutsReceived()).toBe(false);
+    h.message(context, location.origin, undefined, extra);
+    expect(element.getAttribute("data-received")).toBe("");
+    expect(panelShortcutsReceived()).toBe(true);
+    expect(readPanelShortcuts()).toEqual([]);
+    element.remove();
+    expect(panelShortcutsReceived()).toBe(false);
+  });
 
 test("accepted shortcut lists live separately from page context, obey identity and seq, and clear with context", () => {
   const h = mount();

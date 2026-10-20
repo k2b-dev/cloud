@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { type Server, sql } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
@@ -6,11 +6,15 @@ import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { withActiveIdentitySigner } from "./identity";
 import "../../../../scripts/fixtures/authorization-preload";
+import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
+import * as registry from "../_internal/registry";
 import { migrateCloudAi } from "../ai/migrate";
 import { aiConversations } from "../ai/store";
 import { createAppApprovalRoutes } from "../api/app-approval";
 import { createDeviceActions } from "../api/app-approval-actions";
+import { assertCapabilityReview } from "../capabilities/testing";
 import {
+  APP_ACTION_LIMITS,
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
   AppActionViewSchema,
@@ -36,6 +40,7 @@ import {
   appDeviceProofMessage,
   appPairingProofMessage,
 } from "../contracts/app-approval";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import {
   type AppApprovalActor,
   type AppApprovalConfig,
@@ -46,6 +51,7 @@ import {
   readAppApprovalConfig,
 } from "./app-approval";
 import { approvals } from "./approvals";
+import { deviceOffersApproval } from "./approvals/device";
 import { createIdentityPublicRoutes } from "./identity";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { browserHash, countryHistory } from "./known-browsers";
@@ -2310,9 +2316,25 @@ suite("isolated app approval protocol", () => {
     "valkey",
   )("Cloud Login Actions", () => {
     beforeAll(migrateCloudAi, 30_000);
+    const manifest = compileReviewFixture({ ask: "app_asks" }).manifest;
+    const registeredMail = {
+      appId: "mail",
+      appName: "Mail",
+      appIcon: "ti ti-mail",
+      appDescription: "Mail",
+      endpoint: "http://mail:3000",
+      manifest: { ...manifest, appId: "mail", policies: { "draft.send": { ask: "app_asks" as const } } },
+    };
+    const restores: Array<{ mockRestore: () => void }> = [];
+    beforeEach(() => {
+      restores.push(spyOn(registry, "listCapabilities").mockResolvedValue([registeredMail]));
+    });
+    afterEach(() => {
+      for (const spy of restores.splice(0).reverse()) spy.mockRestore();
+    });
     const askAction = async (
       owner: Awaited<ReturnType<typeof account>>,
-      options: { assurance?: "standard" | "confirm"; signedInSession?: true } = {},
+      options: { assurance?: "standard" | "confirm"; signedInSession?: true; review?: CapabilityActionCallReview } = {},
     ) => {
       const chat = await aiConversations.createConversation({ ownerUserId: owner.id, title: "Send a letter" });
       const { turn } = await aiConversations.submitChatTurn({
@@ -2334,7 +2356,7 @@ suite("isolated app approval protocol", () => {
         approverUserId: owner.id,
         assurance: options.assurance ?? "confirm",
         sentence: "mail: Send draft",
-        review: { message: "Send this letter", details: [{ label: "To", value: "Ada" }] },
+        review: options.review ?? { message: "Send this letter", details: [{ label: "To", value: "Ada" }] },
         input: { revision: 1 },
         expiresInMs: 600_000,
       });
@@ -2408,6 +2430,104 @@ suite("isolated app approval protocol", () => {
           decidedVia: "cloud_login",
         });
       }
+    });
+
+    test("incomplete sends stay in Cloud, count as moreActions and cannot be viewed, decided or woken on a device", async () => {
+      const owner = await account();
+      const review: CapabilityActionCallReview = {
+        locale: "en",
+        ask: "sends",
+        sentence: { action: "Send message", running: "Sending message", done: "Sent message", confirm: "Send", decline: "Don't send" },
+        slots: {},
+        links: [{ rel: "open", href: "/mail/drafts/maintenance?revision=7" }],
+        preview: {
+          from: { name: "Team Ops", address: "ops@example.com" },
+          kind: "message",
+          to: [{ name: "Lea", address: "lea@example.com" }],
+          subject: "Maintenance",
+          body: "Full body is in Cloud",
+          format: "plain",
+          truncated: true,
+        },
+      };
+      assertCapabilityReview(review);
+      assertCapabilityReview({ ...review, ask: "app_asks" });
+      const browserOnly = await askAction(owner, { review });
+      const visible = await askAction(owner, { review: { ...review, ask: "app_asks" } });
+      const inbox = await deviceActions.inbox({ userId: owner.id, issuer: cfg.issuer });
+      expect(inbox.actions.map((item) => item.actionId)).toEqual([visible.id]);
+      expect(inbox.moreActions).toBe(1);
+      expect(await deviceActions.view({ userId: owner.id, issuer: cfg.issuer, actionId: browserOnly.id })).toBeNull();
+      expect(await deviceOffersApproval(browserOnly.id)).toBe(false);
+      expect(await deviceOffersApproval(visible.id)).toBe(true);
+      const offered = await deviceActions.view({ userId: owner.id, issuer: cfg.issuer, actionId: visible.id });
+      expect(offered?.truncated).toBe(true);
+      expect(
+        await deviceActions.decide({
+          userId: owner.id,
+          deviceId: crypto.randomUUID(),
+          issuer: cfg.issuer,
+          actionId: browserOnly.id,
+          digest: "A".repeat(43),
+          approved: true,
+        }),
+      ).toBe(false);
+      expect(await approvals.get(browserOnly.id)).toMatchObject({ status: "pending" });
+    });
+
+    test("declared sends with another review reason stays out of inbox, view, decide and device push", async () => {
+      restores.push(
+        spyOn(registry, "listCapabilities").mockResolvedValue([
+          { ...registeredMail, manifest: { ...registeredMail.manifest, policies: { "draft.send": { ask: "sends" } } } },
+        ]),
+      );
+      const owner = await account();
+      const review = reviewFixture();
+      if (review.preview?.kind !== "message") throw new Error("Expected message fixture");
+      review.ask = "involves_people";
+      review.preview.body = "x".repeat(APP_ACTION_LIMITS.valueChars + 1);
+      const waiting = await askAction(owner, { review });
+      const inbox = await deviceActions.inbox({ userId: owner.id, issuer: cfg.issuer });
+      expect(inbox.actions).toEqual([]);
+      expect(inbox.moreActions).toBe(1);
+      expect(await deviceActions.view({ userId: owner.id, issuer: cfg.issuer, actionId: waiting.id })).toBeNull();
+      expect(await deviceOffersApproval(waiting.id)).toBe(false);
+      expect(
+        await deviceActions.decide({
+          userId: owner.id,
+          deviceId: crypto.randomUUID(),
+          issuer: cfg.issuer,
+          actionId: waiting.id,
+          digest: "A".repeat(43),
+          approved: true,
+        }),
+      ).toBe(false);
+      expect(await approvals.get(waiting.id)).toMatchObject({ status: "pending" });
+    });
+
+    test("the inbox reads past a full page of browser-only questions to older ones a device may decide", async () => {
+      const owner = await account();
+      const review: CapabilityActionCallReview = {
+        locale: "en",
+        ask: "sends",
+        sentence: { action: "Send message", running: "Sending message", done: "Sent message", confirm: "Send", decline: "Don't send" },
+        slots: {},
+        links: [{ rel: "open", href: "/mail/drafts/maintenance?revision=7" }],
+        preview: {
+          from: { name: "Team Ops", address: "ops@example.com" },
+          kind: "message",
+          to: [{ name: "Lea", address: "lea@example.com" }],
+          subject: "Maintenance",
+          body: "Full body is in Cloud",
+          format: "plain",
+          truncated: true,
+        },
+      };
+      const older = await askAction(owner, { review: { ...review, ask: "app_asks" } });
+      for (let index = 0; index <= APP_APPROVAL_LIMITS.pageSize; index += 1) await askAction(owner, { review });
+      const inbox = await deviceActions.inbox({ userId: owner.id, issuer: cfg.issuer });
+      expect(inbox.actions.map((item) => item.actionId)).toEqual([older.id]);
+      expect(inbox.moreActions).toBe(APP_APPROVAL_LIMITS.pageSize + 1);
     });
 
     test("all Action commands verify signatures first, and changed, expired or resolved views cannot be decided", async () => {

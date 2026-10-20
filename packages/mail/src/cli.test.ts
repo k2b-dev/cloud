@@ -392,6 +392,38 @@ test("conversation context commands expose Contacts and deterministic related ma
   expect(requestedPaths).toContain(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/related?limit=3`);
 }, 20_000);
 
+test("conversation context distinguishes an absent contact directory from an unavailable one", async () => {
+  const server = withMailbox((request) => {
+    if (
+      request.method === "GET" &&
+      new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/context`
+    ) {
+      return api({
+        conversationId: CONVERSATION_ID,
+        participants: [{ email: "sender@example.test", displayName: "Sender" }],
+        contacts: { status: "absent", items: [], matchedEmails: [], nextCursor: null },
+        spaces: { status: "ready", items: [], truncated: false },
+      });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "conversation",
+    "context",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+  ]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stderr).toBe("");
+  expect(result.stdout).toContain("Contacts: no contact directory installed");
+  expect(result.stdout).not.toContain("Contacts: unavailable");
+});
+
 test("conversation drafts lists resumable work for one conversation", async () => {
   const drafts = [
     {

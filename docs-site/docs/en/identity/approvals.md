@@ -5,7 +5,7 @@ section: Identity and access
 order: 357
 description: How Cloud records, decides, and uses one approval for exactly the Action a person saw.
 tags: [identity, approvals, capabilities, audit]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Action approvals
@@ -139,14 +139,24 @@ notification are not notified.
 
 The title is **Approval waiting** for one request or **N approvals waiting**
 for several. The count includes all waiting requests from eligible turns.
+The body shows the newest request's plain question and reason. With several
+requests, a last line says how many more wait. The whole
+notification uses the question's language: the language of the turn that
+asked, or the app's base language when the app lacks that one. Email adds the link after those lines. Older events
+and failures to load the question keep the general approval notice.
 The notification opens `/me/approvals`. It has no decision buttons.
-Browser delivery is recommended. Users can change delivery in their
+A browser push shows only the title: the question names people and their
+addresses, so it stays off lock screens and paired devices. Browser delivery
+is recommended. Users can change delivery in their
 notification settings.
 
 Cloud also wakes paired Cloud Login phones for open requests asked outside
 Cloud's pages. Only devices that have read the Action inbox receive these
-pushes, at most once per device in 30 seconds. A push is a hint; the phone
-reads the signed request before the person decides.
+pushes, at most once per device in 30 seconds. A truncated `sends` question
+stays in the browser and sends no phone push; it still counts in the inbox's
+`moreActions`. See [Device text mapping](/en/docs/operations/app-approval#approve-an-action).
+A push is a hint; the phone reads the signed request before the person
+decides.
 
 ## Use an approval once, for what was shown
 

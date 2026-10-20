@@ -75,6 +75,8 @@ window.fetch = Object.assign(
       const ids = params.has("start")
         ? documents.filter((document) => document.title.toLocaleLowerCase().includes(query)).map((document) => document.id)
         : ["topic-0", "topic-1"];
+      // Tests wait for an answered search by this count, not for a spinner that can come and go between two polls (#1403).
+      document.documentElement.dataset.helpSearches = String(Number(document.documentElement.dataset.helpSearches ?? 0) + 1);
       return Response.json({ locale: "en", ids });
     }
     const id = path.split("/").at(-1) ?? "topic-0";

@@ -64,7 +64,7 @@ suite("chat skeleton", () => {
     expect((await request("/api/chat/admin/health")).status).toBe(401);
 
     const [account] = await sql<{ id: string }[]>`
-      INSERT INTO auth.service_accounts (name, kind) VALUES (${`Chat test ${crypto.randomUUID().slice(0, 8)}`}, 'standalone') RETURNING id`;
+      INSERT INTO auth.service_accounts (name, kind) VALUES (${`Chat test ${crypto.randomUUID()}`}, 'standalone') RETURNING id`;
     accountIds.push(account!.id);
     const created = await serviceAccountCredentials.createApiToken({
       serviceAccountId: account!.id,

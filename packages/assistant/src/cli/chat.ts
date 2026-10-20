@@ -13,9 +13,11 @@ import type {
 } from "@k2b/cloud/ai";
 import { guessAiMediaType } from "@k2b/cloud/ai/browser";
 import { arg, cloudResourceUrl, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { pendingActionQuestion } from "./action-question";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
+import { terminalSafeText } from "./terminal";
 import { type ConversationDetail, conversationPath, resolveConversation, submitAndMaybeWatch } from "./turn";
 
 type FullConversationDetail = ConversationDetail & {
@@ -253,6 +255,9 @@ export const assistantChatCommands = [
   }),
 ] as const;
 
+/** One shell word that stands for exactly `value`. */
+const shellArgument = (value: string): string => (/^[A-Za-z0-9_.:@%+=,/-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`);
+
 export const assistantManagementCommands = [
   command("messages list", {
     summary: "List messages in a chat",
@@ -467,6 +472,30 @@ export const assistantManagementCommands = [
         ctx,
         conversationPath(args.chat, `/pending-actions/${encodeURIComponent(args.turn)}`),
       );
+      if (ctx.options.output === "text" && actions.length) {
+        actions.forEach((action, index) => {
+          if (index) ctx.print("");
+          if (action.type === "approval_request") {
+            // IDs come from the server and a model's tool call; quoted, a copied command can never run anything else.
+            // The same Cloud and profile as this listing, so a copied command decides this question and no other.
+            const cloud = ["--profile", ctx.options.profile, "--server", ctx.options.server].map(shellArgument).join(" ");
+            const target = [action.conversationId, action.turnId, action.callId].map(shellArgument).join(" ");
+            for (const line of pendingActionQuestion(ctx, action, {
+              approve: `cld ${cloud} assistant actions approve -- ${target}`,
+              reject: `cld ${cloud} assistant actions reject -- ${target}`,
+            }).lines)
+              ctx.print(line);
+          } else {
+            ctx.table(
+              [{ call: action.callId, type: action.type, name: action.name, detail: action.mode }].map((row) =>
+                Object.fromEntries(Object.entries(row).map(([key, value]) => [key, terminalSafeText(value)])),
+              ),
+              [{ key: "call" }, { key: "type" }, { key: "name" }, { key: "detail" }],
+            );
+          }
+        });
+        return;
+      }
       printRows(
         ctx,
         actions,

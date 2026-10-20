@@ -193,7 +193,7 @@ export const getConversationContext = async (params: {
   const conversationIds = await publicIds("conversations", [params.conversationId]);
   const publicConversationId = requirePublicId(conversationIds, params.conversationId);
   const [contacts, linkedSpaces] = await Promise.all([
-    participantEmails.length === 0
+    params.contactDirectory.resolve === null || participantEmails.length === 0
       ? Promise.resolve({ ok: true as const, data: { items: [], matchedEmails: [], nextCursor: null } })
       : resolveContacts(
           {
@@ -210,14 +210,17 @@ export const getConversationContext = async (params: {
   return ok({
     conversationId: params.conversationId,
     participants: conversation.participants,
-    contacts: contacts.ok
-      ? {
-          status: "ready",
-          items: contacts.data.items,
-          matchedEmails: contacts.data.matchedEmails,
-          nextCursor: contacts.data.nextCursor,
-        }
-      : { status: "unavailable", items: [], matchedEmails: [], nextCursor: null },
+    contacts:
+      params.contactDirectory.resolve === null
+        ? { status: "absent", items: [], matchedEmails: [], nextCursor: null }
+        : contacts.ok
+          ? {
+              status: "ready",
+              items: contacts.data.items,
+              matchedEmails: contacts.data.matchedEmails,
+              nextCursor: contacts.data.nextCursor,
+            }
+          : { status: "unavailable", items: [], matchedEmails: [], nextCursor: null },
     spaces: linkedSpaces.ok
       ? { status: "ready", items: linkedSpaces.data.items, truncated: linkedSpaces.data.truncated }
       : { status: "unavailable", items: [], truncated: false },

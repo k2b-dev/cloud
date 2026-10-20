@@ -26,6 +26,7 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       query: "",
       search: resolveMailSearchRoute(new URL(overrides.requestUrl ?? "/app/mail/Box001?view=needs_action", "https://cloud.test")),
       title: "Needs action",
+      namedBy: "tabs",
       items: [],
       error: null,
       selectedConversationId: null,
@@ -50,7 +51,7 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       onNavigate: () => {},
       onNavigateItem: () => {},
       onToggleSelectionMode: () => {},
-      onListModeChange: () => {},
+
       onToggleSelection: () => {},
       onClearSelection: () => {},
       onAddTags: () => {},
@@ -81,44 +82,29 @@ describe("Mail conversation list", () => {
     expect(html).toContain("Needs action");
   });
 
-  test("names the tag of a structured search and never shows its ID", () => {
-    const search = JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" });
-    const requestUrl = `/app/mail/Box001?${new URLSearchParams({ search })}`;
-    const summary = (html: string) => /class="mail-search-summary__text"[^>]*>([^<]*)</.exec(html)?.[1];
-    const tag = { id: "Tag001", name: "Invoices", color: "#0f766e" } as Parameters<typeof MailConversationList>[0]["localTags"][number];
-
-    expect(summary(renderList({ requestUrl, localTags: [tag] }))).toBe("Has tag “Invoices”");
-    expect(summary(renderList({ requestUrl, localTags: [] }))).toBe("Has a deleted tag");
+  test("keeps the list heading for focus and performance, with search controls and no duplicate summary", () => {
+    const html = renderList({
+      requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" }) })}`,
+    });
+    expect(html).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
+    expect(html).toContain('aria-label="Search filters"');
+    expect(html).not.toContain("mail-search-summary");
+    expect(html).not.toContain('aria-label="Choose list view"');
   });
 
-  test.each([
-    ["?q=quick", "saved"],
-    ["?search=invalid&q=quick", "saved"],
-    [
-      `?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "text", field: "from", query: "structured", match: "exact" }, sort: "newest" }), q: "quick" })}`,
-      "structured",
-    ],
-  ])("search summary keeps structured, saved-view, quick-search precedence: %s", (query, expected) => {
-    const html = renderList({
-      requestUrl: `/app/mail/Box001${query}`,
-      activeSavedViewId: "View01",
-      savedViews: [
-        {
-          id: "View01",
-          mailboxId: "Box001",
-          scope: "private",
-          ownerUserId: "user-1",
-          name: "Saved",
-          filter: { expression: { type: "text", field: "subject", query: "saved", match: "words" }, sort: "newest" },
-          revision: 1,
-          createdAt: "2026-10-01T00:00:00.000Z",
-          updatedAt: "2026-10-01T00:00:00.000Z",
-        },
-      ],
-    });
-    const summary = /class="mail-search-summary__text"[^>]*>([^<]*)</.exec(html)?.[1];
-    expect(summary).toContain(expected);
-    expect(summary).not.toContain("quick");
+  test("names a folder in a visible heading where the sidebar is out of view, and leaves a view's name to its tab", () => {
+    const folder = renderList({ requestUrl: "/app/mail/Box001?folder=Fld001", title: "Archive", namedBy: "sidebar" });
+    // The class is visible by default; only the 64 rem container query in app.css hides it beside the sidebar.
+    expect(folder).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="mail-list-heading [^"]*"[^>]*>Archive<\/h1>/);
+    expect(renderList({ namedBy: "tabs" })).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
+  });
+
+  test("keeps a folder heading visible at every width when no sidebar row names it", () => {
+    const folder = renderList({ requestUrl: "/app/mail/Box001?folder=Quiet1", title: "Quiet", namedBy: null });
+    const headingClass = folder.match(/<h1[^>]*data-mail-list-heading[^>]*class="([^"]*)"[^>]*>Quiet<\/h1>/)?.[1];
+    expect(headingClass).toBe("truncate text-base font-semibold text-primary");
+    expect(headingClass).not.toContain("mail-list-heading");
+    expect(headingClass).not.toContain("sr-only");
   });
 
   test("explains a failed search instead of showing service text", () => {

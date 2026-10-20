@@ -158,6 +158,7 @@ class FixtureApi extends Api {
   readonly requests: { path: string; method: string; input: unknown }[] = [];
   override async request(path: string, method = "GET", input?: unknown): Promise<unknown> {
     this.requests.push({ path, method, input });
+    if (path === "/api/spaces") return { id: "space" };
     if (path === "/api/notebooks") return { id: "book" };
     if (path === "/api/notebooks/book/notes") return { id: "note" };
     if (path === "/api/ai/conversations") return { id: "chat" };
@@ -222,4 +223,23 @@ test("Mail measures a real seeded mailbox without connecting a provider or start
   expect(pages[0]).toMatchObject({ path: "/app/mail/mailbox", status: "ok", errors: [], static: null, browsers: [] });
   expect(pages[0]?.notes[0]).toContain("without a provider connection: empty message list, smaller props, same eager JS");
   expect(pages[1]).toMatchObject({ path: "/app/assistant?conversation=chat", status: "ok" });
+});
+
+test("Space fixture uses the public starter API and its resolved page path", async () => {
+  const signal = new AbortController().signal;
+  const runtime = new FixtureRuntime(4100, "runtime", signal);
+  const api = new FixtureApi(runtime.origin, signal);
+  const pages = await seed(api, runtime, ["spaces"], "admin");
+  expect(api.requests).toEqual([
+    {
+      path: "/api/spaces",
+      method: "POST",
+      input: {
+        name: "Performance baseline space",
+        description: "Deterministic production measurement fixture",
+        starter: "tasks",
+      },
+    },
+  ]);
+  expect(pages[0]).toMatchObject({ path: "/app/spaces/space", status: "ok" });
 });

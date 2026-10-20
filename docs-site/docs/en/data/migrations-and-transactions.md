@@ -5,7 +5,7 @@ section: Data
 order: 420
 description: Evolve application schemas safely and keep related writes atomic.
 tags: [data, postgres, migrations, transactions]
-updated: 2026-10-09
+updated: 2026-10-20
 ---
 
 # Migrations and transactions
@@ -29,8 +29,13 @@ export default await app.start({
 });
 ```
 
-Setup runs whenever an application instance starts. Every migration statement
-must be safe to run again.
+Setup runs whenever an application instance starts, on one instance of that
+application at a time. Other instances of the same app wait until it finishes.
+Different applications may still run setup at the same time.
+
+Every migration statement must remain safe to run again: an interrupted or
+repeated setup reruns it. During a rolling update, old and new versions run
+side by side, so schema changes must stay backward compatible.
 
 ## Create the schema
 

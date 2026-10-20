@@ -9,6 +9,7 @@ import { accounts, audit, authFlows, getFreeIpaConfig, logger, webauthn } from "
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import type { AuthNotificationSender } from "../services/auth-flows/notification-sender";
 import { legalConsent } from "../services/legal-consent";
+import { SessionEpochChangedError } from "../services/session";
 import * as categorySettings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
 
@@ -20,6 +21,7 @@ import {
   AuthResponseSchema,
   EmailLoginSchema,
   LoginSchema,
+  PasswordChangeAuthResponseSchema,
   PasswordResetCompleteSchema,
   PasswordResetRequestSchema,
   VerifyPasskeyAuthenticationSchema,
@@ -52,6 +54,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         responses: {
           200: jsonResponse(AuthResponseSchema, "Login successful"),
           401: jsonResponse(ErrorResponseSchema, "Invalid username or password"),
+          409: jsonResponse(ErrorResponseSchema, "Signed out everywhere while signing in; sign in again"),
           503: jsonResponse(ErrorResponseSchema, "FreeIPA unavailable"),
         },
       }),
@@ -76,10 +79,18 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         }
 
         // Issue through the configured migration gate (legacy opaque or JWT family).
-        const sessionToken = await auth.session.create(c, loginResult.userId, {
-          method: "password",
-          notify: notificationSender.sendNewBrowserSignIn,
-        });
+        let sessionToken: string;
+        try {
+          sessionToken = await auth.session.create(c, loginResult.userId, {
+            method: "password",
+            notify: notificationSender.sendNewBrowserSignIn,
+            authEpoch: loginResult.authEpoch,
+          });
+        } catch (error) {
+          if (error instanceof SessionEpochChangedError)
+            return c.json({ message: "You were signed out everywhere while signing in. Sign in again." }, 409);
+          throw error;
+        }
 
         log.info("Login successful", { uid: loginResult.user.uid });
         return c.json({
@@ -153,10 +164,11 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Change expired password",
         description:
-          "Change an expired or temporary password using FreeIPA's change_password endpoint. No active session required. For regular password changes of a logged-in user, use POST /api/me/password instead.",
+          "Change an expired or temporary password using FreeIPA's change_password endpoint. Ends the account's existing sign-ins before creating the new browser session. When signOutOthersFailed is true, the new browser session is issued and the client retries POST /api/me/sign-ins/sign-out-others. No active session required. For regular password changes of a logged-in user, use POST /api/me/password instead.",
         responses: {
-          200: jsonResponse(AuthResponseSchema, "Password changed and logged in"),
+          200: jsonResponse(PasswordChangeAuthResponseSchema, "Password changed and logged in"),
           400: jsonResponse(ErrorResponseSchema, "Failed to change password"),
+          409: jsonResponse(ErrorResponseSchema, "Password changed, but signed out everywhere while signing in; sign in again"),
           503: jsonResponse(ErrorResponseSchema, "FreeIPA unavailable"),
         },
       }),
@@ -183,13 +195,24 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
           return jsonError(c, changeResult.message, changeResult.status === 401 ? 401 : 400);
         }
 
-        const sessionToken = await auth.session.create(c, changeResult.userId, {
-          method: "expired_password",
-          notify: notificationSender.sendNewBrowserSignIn,
-        });
+        let sessionToken: string;
+        try {
+          sessionToken = await auth.session.create(c, changeResult.userId, {
+            method: "expired_password",
+            notify: notificationSender.sendNewBrowserSignIn,
+            authEpoch: changeResult.authEpoch,
+          });
+        } catch (error) {
+          if (error instanceof SessionEpochChangedError)
+            return c.json(
+              { message: "Your password was changed, but you were signed out everywhere while signing in. Sign in again." },
+              409,
+            );
+          throw error;
+        }
 
         log.info("Password changed via expired flow", { uid: username });
-        return c.json({ session_token: sessionToken, user: changeResult.user });
+        return c.json({ session_token: sessionToken, user: changeResult.user, signOutOthersFailed: changeResult.signOutOthersFailed });
       },
     )
     .post(
@@ -278,11 +301,13 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Complete password reset",
         description:
-          "Set a new password using a one-time reset token. Creates a normal Cloud session only after the password was changed successfully.",
+          "Use a one-time reset token to first sign the account out everywhere, including unpairing Cloud Login and mobile app phones, then set the password, sign out everywhere again and create the new browser session. If signing out everywhere fails before the change, the password stays unchanged; if it fails after the change, no session is issued. Both answer 500, and a new reset link is required. signOutOthersFailed is false whenever a session is issued.",
         responses: {
-          200: jsonResponse(AuthResponseSchema, "Password reset completed and session created"),
+          200: jsonResponse(PasswordChangeAuthResponseSchema, "Password reset completed and session created"),
           400: jsonResponse(ErrorResponseSchema, "Password reset failed"),
           401: jsonResponse(ErrorResponseSchema, "Invalid or expired reset token"),
+          409: jsonResponse(ErrorResponseSchema, "Password changed, but signed out everywhere while signing in; sign in again"),
+          500: jsonResponse(ErrorResponseSchema, "Password reset failed"),
         },
       }),
       v("json", PasswordResetCompleteSchema),
@@ -301,12 +326,23 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
           return jsonError(c, result.message, status);
         }
 
-        const sessionToken = await auth.session.create(c, result.userId, {
-          method: "password_reset",
-          notify: notificationSender.sendNewBrowserSignIn,
-        });
+        let sessionToken: string;
+        try {
+          sessionToken = await auth.session.create(c, result.userId, {
+            method: "password_reset",
+            notify: notificationSender.sendNewBrowserSignIn,
+            authEpoch: result.authEpoch,
+          });
+        } catch (error) {
+          if (error instanceof SessionEpochChangedError)
+            return c.json(
+              { message: "Your password was changed, but you were signed out everywhere while signing in. Sign in again." },
+              409,
+            );
+          throw error;
+        }
         log.info("Password reset completed", { uid: result.user.uid });
-        return c.json({ user: result.user, session_token: sessionToken });
+        return c.json({ user: result.user, session_token: sessionToken, signOutOthersFailed: result.signOutOthersFailed });
       },
     )
     .post(

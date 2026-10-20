@@ -206,6 +206,9 @@ export const MessageResponseSchema = z.object({
 });
 export type MessageResponse = z.infer<typeof MessageResponseSchema>;
 
+export const SignOutOthersResponseSchema = MessageResponseSchema.extend({ signInAgain: z.boolean() });
+export type SignOutOthersResponse = z.infer<typeof SignOutOthersResponseSchema>;
+
 export type MutationResult<T = void> = { ok: true; data: T } | { ok: false; error: string; status: 400 | 401 | 403 | 404 | 409 | 500 };
 
 export const PermissionLevelSchema = z.enum(["none", "read", "write", "admin"]);

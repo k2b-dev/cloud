@@ -170,8 +170,6 @@ export const requestContactDirectoryConfig = (c: Context): MailContactDirectoryC
   };
 };
 
-export const requestContactDirectory = (c: Context): MailContactDirectory => resolveMailContactDirectory(requestContactDirectoryConfig(c));
-
 const optionalCapabilityIdSchema = z.union([CapabilityLocalIdSchema, z.literal("")]);
 
 export const mailContactDirectoryUpdateSchema = z

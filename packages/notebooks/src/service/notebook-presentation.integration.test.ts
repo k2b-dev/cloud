@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, spyOn } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { PRESENTATION_MODES } from "../lib/presentation-mode";
 import { migrate } from "../migrate";
 import * as notebooks from "./notebooks";
@@ -9,7 +10,7 @@ import * as workspaceEvents from "./workspace-events";
 const postgresTest = testFor("database");
 const notebookId = crypto.randomUUID();
 const accessId = crypto.randomUUID();
-const shortId = Math.random().toString(36).slice(2, 8).padEnd(6, "x");
+const shortId = testShortId();
 const name = `Presentation test ${shortId}`;
 let published: ReturnType<typeof spyOn<typeof workspaceEvents, "notebookUpdated">> | undefined;
 

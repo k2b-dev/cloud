@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const pageIds = ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts"] as const;
+export const pageIds = ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"] as const;
 export type PageId = (typeof pageIds)[number];
 export const pageApps: Record<PageId, string> = {
   document: "core",
@@ -10,11 +10,22 @@ export const pageApps: Record<PageId, string> = {
   "notebooks-editor": "notebooks",
   files: "filesv2",
   accounts: "accounts",
+  spaces: "spaces",
 };
 
 export function parseArgs(args: string[]) {
-  const options: { help: boolean; keep: boolean; skipBuild: boolean; runs: number; pages: PageId[]; out?: string; compare?: string } = {
+  const options: {
+    help: boolean;
+    panel: boolean;
+    keep: boolean;
+    skipBuild: boolean;
+    runs: number;
+    pages: PageId[];
+    out?: string;
+    compare?: string;
+  } = {
     help: false,
+    panel: false,
     keep: false,
     skipBuild: false,
     runs: 3,
@@ -23,6 +34,7 @@ export function parseArgs(args: string[]) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--help") options.help = true;
+    else if (arg === "--panel") options.panel = true;
     else if (arg === "--keep") options.keep = true;
     else if (arg === "--skip-build") options.skipBuild = true;
     else if (arg === "--runs" || arg === "--pages" || arg === "--out" || arg === "--compare") {
@@ -39,6 +51,9 @@ export function parseArgs(args: string[]) {
       else options.compare = value;
     } else throw new Error(`Unknown flag: ${arg}`);
   }
+  if (options.panel && (args.includes("--pages") || options.compare))
+    throw new Error("--panel cannot be combined with --pages or --compare");
+  if (options.panel) options.pages = [];
   return options;
 }
 
@@ -104,6 +119,238 @@ export const pageResultSchema = z.object({
   browsers: z.array(browserResultSchema),
 });
 export type PageResult = z.infer<typeof pageResultSchema>;
+/** Median limits: Doherty for desktop lag, RAIL for phone opening. */
+export const desktopPanelThresholdMs = 400;
+export const phonePanelThresholdMs = 1_000;
+export const panelBorderlineShare = 0.1;
+export const panelNavigationIds = ["spaces", "mail", "notebooks", "spaces-to-mail"] as const;
+export const panelLayouts = ["column", "drawer", "sheet"] as const;
+export const panelSegments = ["hostWaitMs", "frameStartMs", "providerSsrMs", "providerClientMs"] as const;
+export type PanelSegment = (typeof panelSegments)[number];
+const panelNumber = z.number().finite().nullable();
+export const panelSampleMetricsSchema = z.object({
+  panelContentMs: panelNumber,
+  navigationGapMs: panelNumber,
+  assignToContentMs: panelNumber,
+  openToContentMs: panelNumber,
+  hostTtiMs: z.number().finite(),
+  hostLcpMs: panelNumber,
+  panelLagMs: panelNumber,
+  hostWaitMs: z.number().finite(),
+  frameStartMs: z.number().finite(),
+  providerSsrMs: z.number().finite(),
+  providerClientMs: z.number().finite(),
+  providerReadyMs: z.number().finite(),
+  providerTtfbMs: z.number().finite().nonnegative(),
+  providerDocumentBytes: z.number().int().nonnegative(),
+  providerIslandRenderMs: z.number().finite().nonnegative(),
+});
+export const panelSampleSchema = panelSampleMetricsSchema
+  .extend({ contentHeading: z.enum(["view", "start"]) })
+  .superRefine((sample, context) => {
+    const total = sample.panelContentMs ?? sample.openToContentMs;
+    if (total === null || (sample.panelContentMs !== null && sample.openToContentMs !== null))
+      context.addIssue({ code: "custom", message: "Panel sample needs exactly one main duration" });
+    else if (Math.abs(panelSegments.reduce((sum, key) => sum + sample[key], 0) - total) > 1)
+      context.addIssue({ code: "custom", message: "Panel split does not sum to the main duration" });
+  });
+export type PanelSample = z.infer<typeof panelSampleSchema>;
+export const panelAggregatesSchema = z.record(panelSampleMetricsSchema.keyof(), distributionSchema.nullable());
+export const panelProfileSchema = z.object({
+  browser: z.enum(["chromium", "webkit"]),
+  layout: z.enum(panelLayouts),
+  viewport: z.object({
+    width: z.number(),
+    height: z.number(),
+    deviceScaleFactor: z.number(),
+    isMobile: z.boolean(),
+    hasTouch: z.boolean(),
+  }),
+  cpuThrottle: z.number().nullable(),
+  network: browserResultSchema.shape.network,
+  status: z.enum(["ok", "failed", "skipped"]),
+  reason: z.string().nullable(),
+  samples: z.array(panelSampleSchema),
+  aggregates: panelAggregatesSchema.nullable(),
+  dominantSegment: z.enum(panelSegments).nullable(),
+});
+export type PanelProfile = z.infer<typeof panelProfileSchema>;
+export const panelNavigationSchema = z.object({
+  id: z.enum(panelNavigationIds),
+  from: z.string(),
+  to: z.string(),
+  crossApp: z.boolean(),
+  heading: z.enum(["view", "start"]),
+  /** The heading the from page shows; desktop waits for it before the measured navigation. */
+  fromHeading: z.enum(["view", "start"]),
+  status: z.enum(["ok", "failed"]),
+  errors: z.array(z.string()),
+  providerStatic: staticSchema.nullable(),
+  profiles: z.array(panelProfileSchema),
+});
+export type PanelNavigation = z.infer<typeof panelNavigationSchema>;
+const panelWorstSchema = z.object({
+  navigation: z.enum(panelNavigationIds),
+  browser: z.enum(["chromium", "webkit"]),
+  layout: z.enum(panelLayouts),
+  medianMs: z.number(),
+});
+export const panelVerdictSchema = z.object({
+  verdict: z.enum(["not slow", "slow", "incomplete"]),
+  borderline: z.boolean(),
+  desktopWorst: panelWorstSchema.nullable(),
+  phoneWorst: panelWorstSchema.nullable(),
+  reasons: z.array(z.string()),
+  dominantSegment: z.enum(panelSegments).nullable(),
+});
+export const panelSchema = z.object({
+  navigations: z.array(panelNavigationSchema),
+  observations: z.array(
+    z.object({
+      engine: z.enum(["chromium", "webkit"]),
+      switch: z.enum(["view", "folder"]),
+      panelReloaded: z.boolean().nullable(),
+      note: z.string(),
+    }),
+  ),
+  verdict: panelVerdictSchema,
+});
+export type PanelResult = z.infer<typeof panelSchema>;
+
+export function aggregatePanel(samples: PanelSample[]) {
+  return panelAggregatesSchema.parse(
+    Object.fromEntries(panelSampleMetricsSchema.keyof().options.map((key) => [key, aggregate(samples.map((s) => s[key]))])),
+  );
+}
+
+export function medianPanelSample(samples: PanelSample[], layout: PanelProfile["layout"]) {
+  const key = layout === "sheet" ? "openToContentMs" : "panelContentMs";
+  if (!samples.length || samples.some((sample) => sample[key] === null)) throw new Error(`Missing ${key} sample`);
+  const sample = [...samples].sort((a, b) => (a[key] ?? 0) - (b[key] ?? 0))[Math.floor((samples.length - 1) / 2)];
+  if (!sample) throw new Error("No median sample");
+  return sample;
+}
+
+/**
+ * Round boundaries, then subtract: the split always sums to the rounded total. A MutationObserver reports an
+ * inserted iframe after the inserting task, so a frame whose navigation already started is bounded by that start.
+ */
+export function panelSplit(anchor: number, iframeSeen: number, frameNavigation: number, responseStart: number, hit: number) {
+  const [a = 0, b = 0, c = 0, d = 0, e = 0] = [anchor, Math.min(iframeSeen, frameNavigation), frameNavigation, responseStart, hit].map(
+    Math.round,
+  );
+  const split = { hostWaitMs: b - a, frameStartMs: c - b, providerSsrMs: d - c, providerClientMs: e - d };
+  if (Math.abs(Object.values(split).reduce((sum, value) => sum + value, 0) - (e - a)) > 1)
+    throw new Error("Panel split does not sum to content time");
+  return split;
+}
+export function dominantPanelSegment(samples: Pick<PanelSample, PanelSegment>[]): PanelSegment | null {
+  if (!samples.length) return null;
+  const totals = panelSegments.map((key) => ({ key, total: samples.reduce((sum, sample) => sum + sample[key], 0) }));
+  return totals.sort((a, b) => b.total - a.total)[0]?.key ?? null;
+}
+
+export function panelVerdict(panel: Pick<PanelResult, "navigations">): PanelResult["verdict"] {
+  const reasons: string[] = [];
+  const missing: string[] = [];
+  let desktopWorst: z.infer<typeof panelWorstSchema> | null = null;
+  let phoneWorst: z.infer<typeof panelWorstSchema> | null = null;
+  const splits: PanelSample[] = [];
+  for (const id of panelNavigationIds) {
+    const navigation = panel.navigations.find((item) => item.id === id);
+    for (const browser of ["chromium", "webkit"] as const)
+      for (const layout of panelLayouts) {
+        if (browser === "chromium" && layout === "sheet") continue;
+        const label = `${id} / ${browser} / ${layout}`;
+        const profile = navigation?.profiles.find((row) => row.browser === browser && row.layout === layout);
+        const metric = layout === "sheet" ? "openToContentMs" : "panelLagMs";
+        const medianMs = profile?.aggregates?.[metric]?.median;
+        if (!navigation || !profile || profile.status !== "ok" || medianMs == null || !profile.samples.length) {
+          missing.push(
+            `${label}: ${profile?.reason ?? profile?.status ?? "missing"}${navigation?.errors.length ? `; ${navigation.errors.join("; ")}` : ""}`,
+          );
+          continue;
+        }
+        splits.push(medianPanelSample(profile.samples, layout));
+        const row = { navigation: id, browser, layout, medianMs };
+        if (layout === "sheet") {
+          if (!phoneWorst || medianMs > phoneWorst.medianMs) phoneWorst = row;
+        } else if (!desktopWorst || medianMs > desktopWorst.medianMs) desktopWorst = row;
+        const limit = layout === "sheet" ? phonePanelThresholdMs : desktopPanelThresholdMs;
+        if (medianMs > limit) reasons.push(`${label}: median ${metric} ${medianMs} ms > ${limit} ms`);
+      }
+  }
+  const borderline = [
+    [desktopWorst, desktopPanelThresholdMs],
+    [phoneWorst, phonePanelThresholdMs],
+  ] as const;
+  return {
+    verdict: missing.length ? "incomplete" : reasons.length ? "slow" : "not slow",
+    borderline: borderline.some(([row, limit]) => row !== null && Math.abs(row.medianMs - limit) <= panelBorderlineShare * limit),
+    desktopWorst,
+    phoneWorst,
+    reasons: [...missing, ...reasons],
+    dominantSegment: dominantPanelSegment(splits),
+  };
+}
+
+export function renderPanelSummary(panel: PanelResult) {
+  const v = panel.verdict;
+  const escape = (value: string) => value.replaceAll("|", "\\|").replaceAll("\n", " ");
+  const worst = (row: typeof v.desktopWorst) => (row ? `${row.medianMs} ms (${row.navigation} / ${row.browser} / ${row.layout})` : "—");
+  const lines = [
+    "## Panel after navigation",
+    "",
+    `Verdict: **${v.verdict}** · desktop lag ≤ ${desktopPanelThresholdMs} ms (Doherty) · WebKit sheet opening ≤ ${phonePanelThresholdMs} ms (RAIL) · borderline: ${v.borderline ? "yes" : "no"}.`,
+    `Worst desktop: ${worst(v.desktopWorst)}. Worst phone: ${worst(v.phoneWorst)}.`,
+    `Dominant segment: ${v.dominantSegment ?? "—"}. F10 removes in-app document loads only; cross-app loads and provider cost remain.`,
+    "",
+  ];
+  for (const nav of panel.navigations) {
+    lines.push(
+      `### ${nav.id}: ${nav.from} → ${nav.to}`,
+      "",
+      `Expected heading: ${nav.heading}. ${nav.crossApp ? "Cross-app navigation." : "In-app navigation."}`,
+      "",
+      "| Browser / layout | Content / opening ms | Host TTI ms | Panel lag ms | Navigation gap ms | Assign → content ms | Median-sample split ms (%) | Dominant segment | Provider TTFB ms | Provider document B | Provider eager JS br B / islands | Provider island render ms |",
+      "| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: |",
+    );
+    for (const row of nav.profiles) {
+      const metric = (key: keyof z.infer<typeof panelSampleMetricsSchema>) => {
+        const d = row.aggregates?.[key];
+        return d ? `${d.median} (${d.min}–${d.max})` : "—";
+      };
+      let split = "—";
+      if (row.status === "ok" && row.samples.length) {
+        const sample = medianPanelSample(row.samples, row.layout);
+        const total = sample.panelContentMs ?? sample.openToContentMs ?? 0;
+        split = panelSegments.map((key) => `${key}: ${sample[key]} (${total ? Math.round((100 * sample[key]) / total) : 0}%)`).join("; ");
+      }
+      lines.push(
+        `| ${row.browser} / ${row.layout}${row.status === "ok" ? "" : `: ${row.status}`} | ${metric(row.layout === "sheet" ? "openToContentMs" : "panelContentMs")} | ${metric("hostTtiMs")} | ${metric("panelLagMs")} | ${metric("navigationGapMs")} | ${metric("assignToContentMs")} | ${split} | ${row.dominantSegment ?? "—"} | ${metric("providerTtfbMs")} | ${metric("providerDocumentBytes")} | ${nav.providerStatic ? `${nav.providerStatic.js.eager.brotli} / ${nav.providerStatic.islands}` : "—"} | ${metric("providerIslandRenderMs")} |`,
+      );
+    }
+    lines.push(
+      "",
+      ...nav.errors.map((e) => `Failed: ${escape(e)}`),
+      ...nav.profiles.filter((row) => row.reason).map((row) => `${row.browser} / ${row.layout}: ${escape(row.reason ?? "")}`),
+      "",
+    );
+  }
+  lines.push(
+    "Mail observations:",
+    "",
+    ...panel.observations.map(
+      (o) =>
+        `- ${o.engine} ${o.switch}: panel ${o.panelReloaded === null ? "reload unknown" : o.panelReloaded ? "reloaded" : "preserved"}. ${escape(o.note)}`,
+    ),
+    "",
+    ...v.reasons.map(escape),
+    "",
+  );
+  return lines.join("\n");
+}
+
 export const resultSchema = z.object({
   schemaVersion: z.literal(1),
   metadata: z.object({
@@ -123,6 +370,7 @@ export const resultSchema = z.object({
     seedVersion: z.literal(1),
   }),
   pages: z.array(pageResultSchema),
+  panel: panelSchema.optional(),
   errors: z.array(z.string()),
 });
 export type Result = z.infer<typeof resultSchema>;
@@ -381,7 +629,7 @@ export function renderSummary(result: Result, old?: Result) {
     "# Production performance baseline",
     "",
     `Commit: ${m.commit}${m.dirty ? " (dirty)" : ""} · UTC: ${m.timestamp}`,
-    `Bun ${m.bunVersion} · Playwright ${m.playwrightVersion} · CPUs ${m.cpuCount} · load ${m.loadAverage.start.toFixed(1)} → ${m.loadAverage.end?.toFixed(1) ?? "—"} · ${m.runs} cold runs per profile`,
+    `Bun ${m.bunVersion} · Playwright ${m.playwrightVersion} · CPUs ${m.cpuCount} · load ${m.loadAverage.start.toFixed(1)} → ${m.loadAverage.end?.toFixed(1) ?? "—"} · ${m.runs} ${result.panel ? "warm navigation" : "cold"} runs per profile`,
     `Browsers: ${
       Object.entries(m.browserVersions)
         .map(([name, version]) => `${name} ${version}`)
@@ -434,6 +682,7 @@ export function renderSummary(result: Result, old?: Result) {
     }
     lines.push("", ...reasons, "", ...page.notes.map(escape), ...page.errors.map((error) => `Failed: ${escape(error)}`), "");
   }
+  if (result.panel) lines.push(renderPanelSummary(result.panel));
   lines.push(...result.errors.map((error) => `Failed: ${escape(error)}`), "");
   return lines.join("\n");
 }

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Deployment requirements
@@ -49,7 +49,11 @@ killed and restarted.
 
 While the only Mail replica restarts, Mail pages and API requests return
 **Bad Gateway** until it is ready again. Where availability matters, run at
-least **two Mail replicas**.
+least **two Mail replicas** from the release that contains the registry fix
+for [#1561](https://github.com/k2b-dev/cloud/issues/1561) and the Mail memory
+bound from [#1571](https://github.com/k2b-dev/cloud/pull/1571), each with the
+memory limit above. The number of replicas is your decision; see
+[Scaling and shutdown](/en/docs/operations/scaling-and-shutdown#what-scales-horizontally-what-must-stay-single-and-why).
 
 ## Prepare for browser confirmation of new access
 
@@ -89,7 +93,7 @@ release. See [Action contract migration](/en/docs/platform/capabilities#migrate-
 | Requirement | Used for | Operator responsibility |
 | --- | --- | --- |
 | Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
-| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks and runtime work through NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
+| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks, setup runs on one replica of an application at a time through a NATS lease, and runtime work uses NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
@@ -354,8 +358,10 @@ and ephemeral host credential. This is process isolation within one
 capability-free application container, not a separate VM per user; the
 residual risk of an unsandboxed renderer inside that container is accepted and
 tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
-Chromium into a dedicated sidecar. Keep one Assistant replica for now; lost
-hosts are not replayed. Studio previews continue running in the user's browser.
+Chromium into a dedicated sidecar. Keep one Assistant replica for now: Code
+Mode hosts and their approval waits live in the Assistant process, so a poll or
+an approval that reaches another replica marks the call lost. Lost hosts are not
+replayed. Studio previews continue running in the user's browser.
 
 ## Select applications and feature dependencies
 
@@ -621,6 +627,13 @@ removes measurements while preserving sources, source credentials, settings, and
 
 ## Verify readiness and upgrades
 
+During the rollout to this release, and during a rollback to the previous
+version, replicas of the previous version write no liveness key. While they
+run, a replica that stops can still delete the shared registry entry once, and
+surviving replicas restore it within 60 seconds. During a rollback, replicas of
+this release also replace the previous version's entry with their own on their
+next refresh until they stop. No configuration or rollout order is required.
+
 Check `/_cloud/ready` on each service's **private** origin, then check gateway
 registration and request an owned route through the public origin. The gateway's
 own readiness response is not aggregate readiness for all applications.
@@ -640,6 +653,19 @@ sets and preflight, [Scaling and shutdown](/en/docs/operations/scaling-and-shutd
 for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshooting)
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
+
+### Start replicas of one application together
+
+Replicas of one application can now boot together without setup races causing
+restarts. A starting replica waits while another runs setup, so its boot time
+grows by the other replica's setup time. A replica that crashes or is stopped
+during setup delays the others by at most about 60 seconds while its NATS lease
+expires.
+
+During the rollout to this release, a replica of the previous version takes no
+setup lock. Restart old and new replicas of one app one at a time until all
+run this release. Keep Core first: it creates the shared schemas other
+applications need.
 
 ### Prepare Pulse's new data store
 

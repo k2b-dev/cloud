@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, storedCookie } from "../../../ui/test/browser";
+import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-shell-focus-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -49,6 +49,48 @@ type Boxes = Record<"rail" | "workspace" | "main" | "sidebar" | "header" | "area
 const boxes = (page: Page): Promise<Boxes> => page.evaluate(measure);
 const initialBoxes = (page: Page): Promise<Boxes> => page.evaluate("window.initialBoxes");
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+
+// Compare paint, not hit testing: WebKit can hit descendants outside an ancestor's rounded clip.
+const expectClearCorners = async (page: Page) => {
+  await settled(page);
+  const workspace = page.locator(".k2b-app-workspace").first();
+  const clips = await workspace.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return (
+      [
+        [style.borderTopLeftRadius, false, false],
+        [style.borderTopRightRadius, true, false],
+        [style.borderBottomLeftRadius, false, true],
+        [style.borderBottomRightRadius, true, true],
+      ] as const
+    ).map(([radius, right, bottom]) => {
+      const r = Number.parseFloat(radius);
+      // The square lies outside the curve, with a 1 px antialias margin.
+      const s = Math.floor(r - (r + 1) / Math.SQRT2);
+      return { x: right ? rect.right - s : rect.left, y: bottom ? rect.bottom - s : rect.top, width: s, height: s };
+    });
+  });
+  await workspace.evaluate((element) => element.setAttribute("data-corner-probe", ""));
+  try {
+    for (const clip of clips) {
+      expect(clip.width).toBeGreaterThanOrEqual(1);
+      const painted = await page.screenshot({ clip, animations: "disabled", scale: "css" });
+      const style = await page.addStyleTag({ content: ".k2b-app-workspace[data-corner-probe] * { visibility: hidden !important }" });
+      try {
+        await settled(page);
+        const cleared = await page.screenshot({ clip, animations: "disabled", scale: "css" });
+        expect(Buffer.compare(painted, cleared)).toBe(0);
+      } finally {
+        await style.evaluate((element) => element.parentNode?.removeChild(element));
+        await settled(page);
+      }
+    }
+  } finally {
+    await workspace.evaluate((element) => element.removeAttribute("data-corner-probe"));
+  }
+};
+
 let browser: Browser;
 let origin: string;
 let stop: () => void;
@@ -136,6 +178,7 @@ for (const [width, height, touch, inset] of [
   [1194, 834, true, 6],
   [834, 1194, true, 8],
   [1440, 900, false, 8],
+  [1920, 1080, false, 8],
 ] as const) {
   test(`${width}x${height}: hide, parse-time reload, keyboard restore and edge gesture preserve geometry`, async () => {
     const context = await browser.newContext({
@@ -169,6 +212,7 @@ for (const [width, height, touch, inset] of [
         expect(await page.locator(".cloud-app-canvas").evaluate((element) => parseFloat(getComputedStyle(element).paddingLeft))).toBe(
           inset,
         );
+        await expectClearCorners(page);
       } else {
         expect(hidden.area.left).toBe(8);
         expect(await page.locator(".k2b-app-workspace__head-toggle").isVisible()).toBe(true);
@@ -183,6 +227,7 @@ for (const [width, height, touch, inset] of [
       await settle(page);
       expect(await initialBoxes(page)).toEqual(hidden);
       expect(await boxes(page)).toEqual(hidden);
+      if (width >= 1024) await expectClearCorners(page);
       const apple = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
       await page.keyboard.press(apple ? "Meta+Backslash" : "Control+Backslash");
       await page.waitForFunction(() => !document.querySelector(".cloud-app-canvas")?.hasAttribute("data-shell-focus"));

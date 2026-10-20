@@ -7,6 +7,7 @@ import {
   type MailStatus,
   MailStatusSchema,
 } from "@k2b/cloud/contracts";
+import { principalLabel } from "@k2b/cloud/shared";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -151,6 +152,7 @@ function RetentionDialog(props: { retention: MailRetention; close: () => void; o
 /** Exported for the layout test: one log entry must fit a phone. */
 export function MessageDialog(props: { record: AdminMailRecord; appName: string; close: () => void; onChanged: () => void }) {
   const t = messages();
+  const locale = useLocale();
   const [record, setRecord] = createSignal(props.record);
   const [batchCancelled, setBatchCancelled] = createSignal(false);
   const cancellableBatch = () => !batchCancelled() && record().batchId;
@@ -235,7 +237,14 @@ export function MessageDialog(props: { record: AdminMailRecord; appName: string;
       { term: t().created, description: <Format.DateTime value={r.createdAt} /> },
       ...(r.sentAt ? [{ term: t().sentAt, description: <Format.DateTime value={r.sentAt} /> }] : []),
       { term: t().attempts, description: <span class="tabular-nums">{r.attempts}</span> },
-      ...(r.actor ? [{ term: t().actor, description: r.actor.name }] : []),
+      ...(r.actor
+        ? [
+            {
+              term: t().actor,
+              description: principalLabel({ principal: { type: "user", userId: r.actor.id }, displayName: r.actor.name }, locale()),
+            },
+          ]
+        : []),
       ...(r.batchId ? [{ term: t().batch, description: <span class="font-mono break-all">{r.batchId}</span> }] : []),
       ...(r.ref
         ? [

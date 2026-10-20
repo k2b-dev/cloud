@@ -4,8 +4,8 @@
 data. They do not depend on Cloud storage, routes, permissions, or mutation
 APIs.
 
-Selected `FileGrid` items and `FileTree` rows use `--k2b-row-selected` without
-changing text weight or geometry.
+Selected `FileGrid` items and `FileTree` rows take the row selection fill
+without changing text weight or geometry; see [Colors and selection](/en/ui/surfaces/color).
 
 ## Use file components
 

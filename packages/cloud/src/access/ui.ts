@@ -10,6 +10,7 @@ export { isManagerEntry, type ManagerCandidate } from "./managers";
 export type { AllowedLevel, GrantableLevel } from "./PermissionEditor";
 export { default as PermissionEditor } from "./PermissionEditor";
 export { default as PrincipalPicker, principalKey } from "./PrincipalPicker";
+export { principalLabel } from "./principal-label";
 export type {
   ResourceApiKey,
   ResourceApiKeyPermissionOption,

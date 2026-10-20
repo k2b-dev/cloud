@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.19.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.18.0...npm-ssr-v0.19.0) (2026-10-20)
+
+
+### Features
+
+* **ssr:** give history one owner, so Back and Forward swap between server pages and islands keep their own entries ([#1616](https://github.com/k2b-dev/cloud/issues/1616)) ([50192a8](https://github.com/k2b-dev/cloud/commit/50192a883d417c6136659de59e86cf9f320719cf))
+* **ssr:** let islands veto a page swap, and roll Back and Forward back when they do ([#1628](https://github.com/k2b-dev/cloud/issues/1628)) ([fc6520f](https://github.com/k2b-dev/cloud/commit/fc6520fa955a3b184f3191f8434f1d9225fa899a))
+
+## [0.18.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.17.0...npm-ssr-v0.18.0) (2026-10-20)
+
+
+### Features
+
+* **ssr:** let nav swap a server-rendered page into the content column, newest navigation wins, any failure loads the document ([#1589](https://github.com/k2b-dev/cloud/issues/1589)) ([353e3fa](https://github.com/k2b-dev/cloud/commit/353e3fa069b2e16825ccd5e4a3ac8a0c7db5260a))
+* **ssr:** mount islands in inserted content, and on removal dispose them and close open dialogs ([#1570](https://github.com/k2b-dev/cloud/issues/1570)) ([1c176dd](https://github.com/k2b-dev/cloud/commit/1c176dd731b4854629e5bd39bf7737f32c04e8fe)), closes [#1560](https://github.com/k2b-dev/cloud/issues/1560)
+
 ## [0.17.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.16.0...npm-ssr-v0.17.0) (2026-10-16)
 
 

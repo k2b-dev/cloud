@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
 import { resetSearchBackend, searchAcross, searchInNotebook } from "./search";
 
 const postgresTest = testFor("database");
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 const notebookId = crypto.randomUUID();
 const accessId = crypto.randomUUID();
 const notes: { title: string; content: string; updatedAt?: Date }[] = [
@@ -38,14 +38,14 @@ beforeAll(async () => {
   await migrate();
   resetSearchBackend();
   await sql.begin(async (tx) => {
-    await tx`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${shortId()}, 'Search tests')`;
+    await tx`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${testShortId()}, 'Search tests')`;
     // A public read grant lets the cross-notebook search run without a user fixture.
     await tx`INSERT INTO auth.access (id, permission) VALUES (${accessId}::uuid, 'read')`;
     await tx`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebookId}::uuid, ${accessId}::uuid)`;
     for (const note of notes) {
       await tx`
         INSERT INTO notebooks.notes (short_id, notebook_id, title, content_md, updated_at)
-        VALUES (${shortId()}, ${notebookId}::uuid, ${note.title}, ${note.content}, COALESCE(${note.updatedAt ?? null}::timestamptz, now()))
+        VALUES (${testShortId()}, ${notebookId}::uuid, ${note.title}, ${note.content}, COALESCE(${note.updatedAt ?? null}::timestamptz, now()))
       `;
     }
   });

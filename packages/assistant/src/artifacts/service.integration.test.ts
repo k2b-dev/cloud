@@ -1748,6 +1748,21 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(execute).not.toHaveBeenCalled();
       conversation.mockResolvedValue(checkConversation(conversationId, owner.user.id));
       expect(await runtimeCapabilities.check(checkInput, owner, {})).toEqual({ data: { private: true } });
+      const byShortId = spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(
+        checkConversation(conversationId, owner.user.id),
+      );
+      try {
+        expect(await runtimeCapabilities.check({ ...checkInput, conversationId: "abc234" }, owner, {})).toEqual({
+          data: { private: true },
+        });
+      } finally {
+        byShortId.mockRestore();
+      }
+      // The call log keeps the internal chat UUID, whichever public form the client sent.
+      expect(
+        await sql<{ conversation_id: string }[]>`SELECT DISTINCT conversation_id FROM assistant.capability_calls
+          WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}) AND conversation_id IS NOT NULL`,
+      ).toEqual([{ conversation_id: conversationId }]);
       execute.mockClear();
       conversation.mockRestore();
       const read = request("consent.read");

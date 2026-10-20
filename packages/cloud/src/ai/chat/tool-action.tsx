@@ -1,11 +1,9 @@
 import { dates } from "@k2b/stdlib";
 import { Button, ButtonLink, type ChatDecisionState, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
-import { capabilityUnknownText } from "../../_internal/capability-sentences";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
-import { toolOutcome } from "../tool-wording";
 import { type ActionCard, type ActionText, actionReceiptText, toolActionCard } from "./action-card";
 import { actionMessages } from "./action-messages";
 import { type ActionLine, ActionQuestion, ActionReceipt } from "./action-question";
@@ -13,6 +11,7 @@ import { useReaderTimeZone } from "./action-sentences";
 import { useAiChatActions } from "./message-actions";
 import { capabilityErrorDescription, isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
+import { legacyOutcomeWords } from "./tool-action-words";
 import type { AiTurnActionState, AiTurnPhase } from "./turn-layout";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -43,30 +42,6 @@ export const toolErrorCode = (result: unknown): string | null => {
 
 /** The message without its code, so the detail under a line reads as a sentence. */
 const errorDetail = (result: unknown): string => capabilityErrorDescription(result).replace(/^[A-Z][A-Z0-9_]{2,}:\s*/, "");
-
-/** The application's own short summary of a result, if it fits on one line. */
-const resultSummary = (block: ToolBlock): string | undefined => {
-  const value = isRecord(block.result) ? block.result.summary : undefined;
-  return typeof value === "string" && value.trim() && value.trim().length <= 500 ? value.trim() : undefined;
-};
-
-/** The words of a call without an app sentence: Cloud's frames around its catalog sentence or title. */
-export const legacyOutcomeWords = (block: ToolBlock, locale: string, timeZone: string) => (subject: string) => {
-  const t = aiChatMessages(locale);
-  const capability = block.presentation?.kind === "capability";
-  return {
-    running: t.receiptRunning({ title: subject }),
-    // The app's done sentence, else its own summary of the call, else Cloud's frame.
-    done:
-      toolOutcome(block, "done", locale, timeZone) ??
-      resultSummary(block) ??
-      (capability ? t.receiptDone({ title: subject }) : t.receiptApproved({ title: subject })),
-    rejected: toolOutcome(block, "rejected", locale, timeZone) ?? t.receiptRejected({ title: subject }),
-    notRun: toolOutcome(block, "notRun", locale, timeZone) ?? t.receiptNotRun({ title: subject, stopped: false }),
-    unknown: capabilityUnknownText(subject, locale),
-    unknownStill: capabilityUnknownText(subject, locale, true),
-  };
-};
 
 /** The card of one tool block in the reader's locale and zone. */
 export const useToolActionCard = (block: () => ToolBlock): (() => ActionCard) => {

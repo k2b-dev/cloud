@@ -3,6 +3,7 @@ import { Button, ScrollArea, TextInput, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { createSignal, For, Show } from "solid-js";
 import { accessMessages } from "../access/messages";
+import { principalLabel } from "../access/principal-label";
 import { serviceAccountKindDisplay } from "../access/service-account-kind";
 import { groupDisplayName } from "../shared/account-display";
 import { CloudAvatar } from "./Avatar";
@@ -233,8 +234,8 @@ const EntitySearch = (props: EntitySearchProps) => {
             <Show when={props.includeAuthenticated}>
               <ResultRow
                 icon="ti-lock-open-2"
-                title="All users (incl. guests)"
-                subtitle="Anyone signed in to the cloud"
+                title={principalLabel({ principal: { type: "authenticated" } }, locale())}
+                subtitle={accessMessages.resolve([locale()]).t.signedInDescription}
                 disabled={props.disabled}
                 onSelect={() => props.onSelect({ type: "authenticated" })}
               />
@@ -242,8 +243,8 @@ const EntitySearch = (props: EntitySearchProps) => {
             <Show when={props.includePublic}>
               <ResultRow
                 icon="ti-world"
-                title="Public"
-                subtitle="Anyone with the link, even unauthenticated"
+                title={principalLabel({ principal: { type: "public" } }, locale())}
+                subtitle={accessMessages.resolve([locale()]).t.publicDescription}
                 disabled={props.disabled}
                 onSelect={() => props.onSelect({ type: "public" })}
               />

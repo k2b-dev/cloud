@@ -19,6 +19,11 @@ export function readPanelShortcuts(): HelpShortcut[] {
   }
 }
 
+export function panelShortcutsReceived(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.getElementById(PANEL_SHORTCUTS_ELEMENT)?.hasAttribute("data-received") ?? false;
+}
+
 export function onPanelShortcutsChange(cb: (shortcuts: HelpShortcut[]) => void): () => void {
   const changed = () => cb(readPanelShortcuts());
   window.addEventListener(PANEL_SHORTCUTS_CHANGED, changed);
