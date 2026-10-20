@@ -713,7 +713,7 @@ test("root scope, absent prefixes without wrappers, and the same stylesheet spel
   document.querySelector("script[data-ssr-assets]")!.remove();
   const next = html("new", "")
     .replace('data-nav-scope="/app"', 'data-nav-scope="/"')
-    .replace(/<script.*?<\/script>/, "")
+    .replace(`<script data-ssr-assets="${prefix}" data-ssr-preload="shared.js"></script>`, "")
     .replace('<link rel="stylesheet" href="/base.css">', '<link rel="stylesheet" href="https://example.test/base.css">');
   spyOn(globalThis, "fetch").mockResolvedValue(response(next, {}, "https://example.test/elsewhere"));
   await swapPage("/elsewhere");
