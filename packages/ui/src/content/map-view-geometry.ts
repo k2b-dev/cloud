@@ -145,12 +145,16 @@ const candidateOffsets = (count: number): PinOffset[] => {
 
 const pinPlaces = (sortedMarkers: MapViewMarker[], frame: MapFrame, zoomFactor: number) => {
   const scale = (frame.overlapWidth / frame.spanX) * zoomFactor;
-  // A drop pin's mark sits above its point (its tip is on the point); collisions use the middle of the mark.
   return (marker: MapViewMarker) => {
     const p = projectPoint(marker.point);
-    return { x: (p.x - frame.minX) * scale, y: (p.y - frame.minY) * scale - (marker.mark === undefined ? 14 : 0) };
+    return { x: (p.x - frame.minX) * scale, y: (p.y - frame.minY) * scale };
   };
 };
+/**
+ * A drop pin's mark sits 14 px above its point (its tip is on the point). That lift is a fixed px shift, so it belongs
+ * with the offsets, never with the geographic gap that grows with the map's width.
+ */
+const lift = (marker: MapViewMarker): number => (marker.mark === undefined ? 14 : 0);
 
 /**
  * Pin offsets in px, decided from the data alone: at the phone fit and checked for every wider fit up to the widest
@@ -167,6 +171,7 @@ export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame, zoom
   const offsets = new Map<string, PinOffset>();
   // Pins at one point search on from where the previous one found its place, so a dense cluster costs one pass.
   const searchFrom = new Map<string, number>();
+  // Offsets here are those of the visible mark; a drop pin's own offset adds its lift back below.
   const place = (marker: MapViewMarker, preferred: PinOffset, anchorId?: string) => {
     const p = position(marker);
     // Two pins whose points are further apart than their offsets plus one pin never meet at a wider fit
@@ -186,18 +191,19 @@ export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame, zoom
       offset = candidates[found] ?? candidates[candidates.length - 1]!;
       searchFrom.set(key, found < 0 ? candidates.length : found + 1);
     }
-    offsets.set(marker.id, offset);
+    offsets.set(marker.id, { dx: offset.dx, dy: offset.dy + lift(marker) });
     const pin = { id: marker.id, ...p, ...offset, reach: reachOf(offset) };
     placed.push(pin);
     return pin;
   };
   // Stops come first in mark order; a later stop that would cover an earlier one (such as "+" beside C) moves aside.
-  const stops = sortedMarkers.filter(isStop).map((stop) => place(stop, { dx: 0, dy: 0 }));
+  const stops = sortedMarkers.filter(isStop).map((stop) => place(stop, { dx: 0, dy: -lift(stop) }));
   for (const marker of sortedMarkers.filter((marker) => !isStop(marker))) {
     const p = position(marker);
-    const anchor = stops.find((stop) => Math.hypot(p.x - stop.x - stop.dx, p.y - stop.y - stop.dy) < PIN_SPACING);
     // The attachment sits top right of where the stop is drawn, wherever the hit lies around it.
-    place(marker, anchor ? { dx: anchor.x + anchor.dx + 17 - p.x, dy: anchor.y + anchor.dy - 17 - p.y } : { dx: 0, dy: 0 }, anchor?.id);
+    const own = { dx: 0, dy: -lift(marker) };
+    const anchor = stops.find((stop) => Math.hypot(p.x + own.dx - stop.x - stop.dx, p.y + own.dy - stop.y - stop.dy) < PIN_SPACING);
+    place(marker, anchor ? { dx: anchor.x + anchor.dx + 17 - p.x, dy: anchor.y + anchor.dy - 17 - p.y } : own, anchor?.id);
   }
   return offsets;
 }
@@ -213,7 +219,10 @@ export function pinHitRadii(
 ): Map<string, number> {
   const position = pinPlaces(sortedMarkers, frame, zoomFactor);
   const rMax = Math.max(1, frame.referenceWidth / frame.overlapWidth);
-  const places = sortedMarkers.map((marker) => ({ id: marker.id, ...position(marker), ...(offsets.get(marker.id) ?? { dx: 0, dy: 0 }) }));
+  const places = sortedMarkers.map((marker) => {
+    const offset = offsets.get(marker.id) ?? { dx: 0, dy: 0 };
+    return { id: marker.id, ...position(marker), dx: offset.dx, dy: offset.dy - lift(marker) };
+  });
   return new Map(
     places.map((place) => {
       let nearest = Infinity;

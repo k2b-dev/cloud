@@ -204,6 +204,7 @@ describe("MapView geometry", () => {
     };
     check([marker("a", 1, 0, 0), marker("b", 2, 0, 0.003), marker("c", 3, 0, 0.0262)]);
     check([marker("north", 1, 0.0033, 0), { ...marker("drop", undefined, 0, 0) }, marker("far", 2, 0.0262, 0)]);
+    check([marker("one", 1, 0.002, 0), marker("two", 2, 0, 0.008), marker("drop", undefined, 0.0016, -0.0002)]);
   });
   test("keeps stops apart and decides separation at phone width", () => {
     // A wide route: C and "+" are a pin apart on a wide screen but would cover each other on a 320 px phone.

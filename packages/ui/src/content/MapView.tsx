@@ -44,7 +44,15 @@ export function MapView(props: MapViewProps): JSX.Element {
   const [boxStyle, setBoxStyle] = createSignal<JSX.CSSProperties>();
   const [liveScale, setLiveScale] = createSignal<MapScale>();
   const [measuredWidth, setMeasuredWidth] = createSignal<number>();
-  const [zoomFactor, setZoomFactor] = createSignal(1);
+  // The zoom the person chose, once they zoomed; pin separation follows it relative to the current fit.
+  const [chosenZoom, setChosenZoom] = createSignal<number>();
+  const zoomFactor = createMemo(() => {
+    const zoom = chosenZoom();
+    const f = frame();
+    const width = measuredWidth();
+    if (zoom === undefined || !f || width === undefined) return 1;
+    return 2 ** (zoom - fitCamera(f, width, props.padding ?? DEFAULT_PADDING).zoom);
+  });
   const [needsReload, setNeedsReload] = createSignal(false);
   // The server picks the scale bar for the widest fit; once the width is known, the bar names a distance that fits it.
   const scale = createMemo((): MapScale | undefined => {
@@ -84,7 +92,7 @@ export function MapView(props: MapViewProps): JSX.Element {
     previous?.remove();
     setBoxStyle(undefined);
     setLiveScale(undefined);
-    setZoomFactor(1);
+    setChosenZoom(undefined);
     currentStyle = undefined;
     replacingStyle = false;
   };
@@ -191,9 +199,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       instance.on("move", syncOverlay);
       // Pin separation is decided again once a zoom ends, not on every animation frame.
       instance.on("zoomend", () => {
-        const f = frame();
-        if (!f || map !== instance) return;
-        setZoomFactor(touched ? 2 ** (instance.getZoom() - fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING).zoom) : 1);
+        if (map === instance && touched) setChosenZoom(instance.getZoom());
       });
       instance.on("resize", syncOverlay);
     } catch {
