@@ -52,6 +52,7 @@ export const pendingActionQuestion = (
     lines: actionQuestionLines(text, { ...(origin ? { origin } : {}), ...(commands ? { commands } : {}), timeZone }).map(terminalSafeText),
     // Only an app's review describes the call; without one, or when the question leaves something out and no link
     // opens it, the validated input stays the way to see everything before deciding.
-    showInput: !action.review || (text.incomplete && !text.readMore),
+    // An old review cannot say whether it shortened anything, so its input stays visible as before.
+    showInput: !action.review || !("sentence" in action.review) || (text.incomplete && !text.readMore),
   };
 };

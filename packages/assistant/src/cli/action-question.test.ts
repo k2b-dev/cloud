@@ -34,4 +34,7 @@ test("the input shows without a review, and when the question leaves something o
   expect(pendingActionQuestion(ctx, action(review({ slots: { to: { kind: "person", people: people.slice(0, 2) } } }))).showInput).toBe(
     false,
   );
+  // An old review cannot say whether it shortened anything.
+  const legacy = { message: "Create note", details: [{ label: "Text", value: "Shortened…" }] };
+  expect(pendingActionQuestion(ctx, { ...action(), review: legacy }).showInput).toBe(true);
 });

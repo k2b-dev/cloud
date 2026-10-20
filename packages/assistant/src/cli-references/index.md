@@ -312,13 +312,18 @@ the question's locale controls labels. For example:
   Subject: Maintenance
   Hello Lea, maintenance starts on Tuesday.
   Read all: https://cloud.example/mail/drafts/7?revision=2
-  Send to Lea Berg: cld assistant actions approve <chat> <turn> <call>
-  Don't send:       cld assistant actions reject <chat> <turn> <call>
+  Send to Lea Berg: cld assistant actions approve <chat> <turn> <call> --profile work --server https://cloud.example
+  Don't send:       cld assistant actions reject <chat> <turn> <call> --profile work --server https://cloud.example
 ```
 
-Long bodies show up to eight lines, followed by `…` when incomplete. Open
-**Read all** for the complete version. Interactive mode shows the same block
-before its approval prompt. JSON output retains the raw API response; JSONL
+The printed commands name the profile and server of the listing and quote
+every ID, so a copied command decides exactly this question.
+
+Long bodies show up to eight lines, followed by `…`, only when **Read all**
+opens the complete version; otherwise the whole text shows. Interactive mode
+shows the same block before its approval prompt, and the validated input under
+it when the call has no new review or the question leaves something out that no
+link opens. JSON output retains the raw API response; JSONL
 retains the existing action rows.
 
 List and revoke remembered Cloud approvals without a REPL:
