@@ -78,7 +78,13 @@ arrives; once the person zooms, the separation is decided again for the new
 scale. Separation is checked for every width from a phone up to the widest fit,
 and a dense cluster of pins at one place spreads into rings. Separating 100
 pins takes about 12 ms; MapView is meant for the tens of pins a person can
-read on one map, not for thousands of points. Filled pins pick a text colour per tone and
+read on one map, not for thousands of points.
+
+Known limits: MapView draws a flat, north-up Mercator map and turns off a
+style's globe projection and terrain. Geometry that crosses the antimeridian
+is fitted across the longitudes as given, so pins at 179° and −179° sit far
+apart. A cluster of many pins at one place on a small map can spread past the
+padding; show such places as a list instead. Filled pins pick a text colour per tone and
 theme that keeps 4.5:1 contrast.
 
 The scale bar names the distance for the fitted map: the server frame uses

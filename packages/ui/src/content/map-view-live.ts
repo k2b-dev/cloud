@@ -15,6 +15,10 @@ export function createMap(options: MapOptions): Map {
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
   // The shared overlay projects a flat, north-up Mercator plane even if a style requests a globe.
-  map.on("style.load", () => map.setProjection({ type: "mercator" }));
+  // Terrain would lift features off that plane, so a style's terrain is switched off as well.
+  map.on("style.load", () => {
+    map.setProjection({ type: "mercator" });
+    if (map.getTerrain()) map.setTerrain(null);
+  });
   return map;
 }
