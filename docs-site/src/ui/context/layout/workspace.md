@@ -444,11 +444,15 @@ in Main with `aria-pressed`, `aria-expanded`, or `aria-controls`. Give a toggle
 its drawer and leaves the application's `open` state true. This also works
 for a control inside Detail. The application's click handler does not run in
 that case. Keyboard activation focuses the Detail title; pointer activation
-keeps focus on the control. While waiting, the controller sets `aria-expanded`
-to the drawer's state. When Detail becomes a column or closes, the application's
-rendered attribute is restored. `aria-pressed` remains application-owned.
-For a column, a closed Detail, or a phone sheet below 48 rem, the application's
-handler runs as usual.
+keeps focus on the control. A click with Ctrl, Cmd, Shift, or Alt, a
+non-primary button, or an already prevented click stays with the application
+and the browser, so a link still opens in a new tab. While waiting, the
+controller sets `aria-expanded` to the drawer's state. When Detail becomes a
+column, the application's rendered attribute is restored; when it closes, a
+control that rendered `aria-expanded` reads `false`. `aria-pressed` remains
+application-owned, so a toggle that controls a Detail uses `aria-expanded`
+alone. For a column, a closed Detail, or a phone sheet below 48 rem, the
+application's handler runs as usual.
 
 Escape parks the drawer and returns focus to **Details**, without calling
 `onClose`. The button also parks it. A rightward touch swipe parks an open

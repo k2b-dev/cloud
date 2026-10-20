@@ -174,6 +174,14 @@ export default function MailConversationReader(props: {
   const [showOlder, setShowOlder] = createSignal(false);
   // Printing shows every message only for the print; it never pins the fold open.
   const [printing, setPrinting] = createSignal(false);
+  let historyScroller: HTMLDivElement | undefined;
+  // A new message moves the fold; the message holding focus stays mounted with the whole conversation.
+  const focusedMessageId = () => {
+    const active = historyScroller?.ownerDocument.activeElement;
+    return active && historyScroller?.contains(active)
+      ? (active.closest<HTMLElement>("[data-mail-message-id]")?.dataset.mailMessageId ?? null)
+      : null;
+  };
   let olderPinnedFor: string | null = null;
   const olderMessages = createMemo(() => {
     const selection = props.selectionKey;
@@ -183,7 +191,8 @@ export default function MailConversationReader(props: {
     if (messageIndexes.length < MAIL_READER_COLLAPSE_FROM) return null;
     const cutoff = messageIndexes[MAIL_READER_NEWEST_SHOWN - 1]! + 1;
     const expanded = expandedMessages();
-    if (items.slice(cutoff).some((item) => item.kind === "message" && expanded.has(item.message.id))) {
+    const focused = focusedMessageId();
+    if (items.slice(cutoff).some((item) => item.kind === "message" && (expanded.has(item.message.id) || item.message.id === focused))) {
       olderPinnedFor = selection;
       return null;
     }
@@ -250,7 +259,6 @@ export default function MailConversationReader(props: {
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
-  let historyScroller: HTMLDivElement | undefined;
   let readerScrollFrame: number | null = null;
   let followingNewest = true;
   let disposed = false;

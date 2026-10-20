@@ -862,3 +862,39 @@ test.skipIf(isServer)(
     }
   },
 );
+
+test.skipIf(isServer)("a new message moves the fold without unmounting the message that holds focus", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([1, 2, 3, 4, 5, 6].map(message));
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  const older = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-older-messages]");
+  try {
+    await waitFor(() => older() !== null);
+    expect(older()!.textContent).toBe("3 older messages");
+    // The third visible message is the oldest one above the fold.
+    const header = dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg004"] [data-mail-message-header]')!;
+    header.focus();
+    expect(dom.document.activeElement).toBe(header);
+    setMessages((current) => [...current, message(7)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg007"]') !== null);
+    expect(header.isConnected).toBe(true);
+    expect(dom.document.activeElement).toBe(header);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
