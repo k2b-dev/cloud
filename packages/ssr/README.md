@@ -331,7 +331,8 @@ In a swap host, the loader imports modules used only outside the column
 first. A module with an instance in the column loads after them, also for its
 instances outside, because importing a module mounts every instance. So an
 island outside the column can install page swaps before column islands write
-history; `listenPopState()` stays safe in either installation order.
+history. Use the installer island only outside the column.
+`listenPopState()` stays safe in either installation order.
 
 A swap fetches the page, then loads its island modules, and only then disposes
 the old islands. It pushes history, replaces the column, sets the title and

@@ -165,8 +165,8 @@ In a swap host, the loader imports modules that are used only outside the
 column first. Modules with an instance in the column load after them, also
 for their instances outside it, because importing a module mounts every
 instance. An installer outside the column therefore precedes column islands
-that write history. `listenPopState()` remains safe in either installation
-order.
+that write history. Use the installer island only outside the column.
+`listenPopState()` remains safe in either installation order.
 
 A click that an island handler prevented is never swapped. Modifier keys,
 `target`, `download`, `rel="external"`, other origins, links outside the

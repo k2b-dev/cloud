@@ -58,7 +58,7 @@ import { installPageSwap } from "@k2b/ssr/nav";
 onMount(() => onCleanup(installPageSwap()));
 ```
 
-- in a swap host, the loader imports modules used only outside the column first; a module with any instance in the column loads with the column (importing it mounts every instance), so an installer outside the column precedes column islands that write history; `listenPopState()` remains safe in either order
+- in a swap host, the loader imports modules used only outside the column first; a module with any instance in the column loads with the column (importing it mounts every instance), so an installer outside the column precedes column islands that write history; use the installer island only outside the column; `listenPopState()` remains safe in either order
 - `data-nav-shell` is an opaque signature; a fetched page with a different one loads as a document, so put app, user, locale, layout kind, and build into it
 - `data-nav-scope` is a path prefix (`/demo` takes `/demo/x`, not `/demobox`); `data-nav-root` is the replaced column; `data-nav-attributes` lists shell attributes the fetched page sets or removes
 - `data-nav-document` on a link keeps document navigation; mark in-scope links to non-HTML resources with it or `download`, otherwise the server receives the request twice (the swap fetch, then the document); prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too

@@ -303,7 +303,8 @@ In a swap host, the loader imports modules used only outside the column
 first; a module with any instance in the column waits with the column, because
 importing it mounts every instance. So an installer outside the column precedes
 column islands that write history; column entry fetches start through
-modulepreload while outside imports settle.
+modulepreload while outside imports settle. The installer island must be
+used only outside the column.
 
 Install before islands add raw popstate listeners: Chromium uses registration
 order even for capture. listenPopState is safe in any order through the shared
