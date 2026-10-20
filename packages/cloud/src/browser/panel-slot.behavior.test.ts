@@ -500,6 +500,51 @@ else {
     for (let i = 0; i < 20; i++) window.dispatchEvent(new Event(COMMANDS_CHANGED));
   };
 
+  test("a swapped column follows server context with the document pageId and increasing seq", () => {
+    const h = setupCore();
+    h.open();
+    const frame = h.frame();
+    const post = spyFrame(h);
+    ready(h);
+    const swap = (context: PanelPageContext | null) => {
+      const oldScript = document.getElementById("cloud-shell-data")!;
+      const data = JSON.parse(oldScript.textContent ?? "{}");
+      oldScript.remove();
+      const root = document.createElement("div");
+      root.setAttribute("data-nav-root", "");
+      root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ ...data, panel: { ...data.panel, context } })}</script><button data-cloud-panel-toggle>Panel</button>`;
+      const old = document.querySelector("[data-nav-root]");
+      if (old) old.replaceWith(root);
+      else h.canvas.prepend(root);
+      window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+      expect(root.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+      expect(h.frame()).toBe(frame);
+    };
+    const next: PanelPageContext = {
+      ...pageContext,
+      pageId: "22222222-2222-4222-8222-222222222222",
+      app: "files",
+      scope: { type: "files.folder", id: "folder2" },
+      help: ["files-help"],
+    };
+    swap(next);
+    const messages = () => post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
+    const first = messages().at(-1)?.context;
+    expect(first).toEqual({ ...next, pageId: pageContext.pageId, seq: 1 });
+    swap(null);
+    expect(messages().at(-1)?.context).toBeNull();
+    swap({ ...next, app: "mail", help: ["mail-help"] });
+    expect(messages().at(-1)?.context).toEqual({ ...next, app: "mail", help: ["mail-help"], pageId: pageContext.pageId, seq: 2 });
+  });
+
+  test("cross-page nav popstate closes the phone panel sheet", () => {
+    const h = setup(390);
+    h.open();
+    expect(h.canvas.dataset.panelSheet).toBe("open");
+    window.dispatchEvent(new CustomEvent("ssr:nav-popstate"));
+    expect(h.canvas.dataset.panelSheet).toBeUndefined();
+  });
+
   test("foreign providers receive no URL or live context until consent; allow delivers live without reloading", async () => {
     const fetch = spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({ answers: {} })))

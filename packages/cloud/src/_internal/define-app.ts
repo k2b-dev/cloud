@@ -2,6 +2,7 @@ import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, valid
 import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
+import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { invokeCapabilityStream } from "./capability-streams";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -137,6 +138,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   appearance?: AppAppearance;
   /** URL prefix for SSR asset isolation. Omit for the global `/_ssr/` path (core). */
   basePath?: string;
+  /** Swap Layout content within this app while keeping the rail, tab bar and panel document. Default: false; focusMode pages still load a document. */
+  pageSwap?: boolean;
   /** Base URL as seen by other containers (e.g. "http://app-notebooks:3000"). */
   baseUrl: string;
   adminHref?: string;
@@ -530,6 +533,8 @@ export const defineApp = <
   // cannot override.
   const ssr = Object.assign(
     createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
+      if (opts.pageSwap)
+        registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`);
       c.get("page").lang = getLocale(c);
       c.get("page").themePreference = readThemePreferenceFromCookieHeader(c.req.header("Cookie"));
       const user = c.get("user");

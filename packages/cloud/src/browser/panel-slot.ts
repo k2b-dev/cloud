@@ -53,7 +53,21 @@ export function installPanelSlot(): () => void {
   let provider = panel.providers.find((item) => item.id === slot.dataset.provider) ?? panel.providers[0]!;
   let frame = slot.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]");
   let disposed = false;
-  let context = panel.context ?? null;
+  let base = panel.context ?? null;
+  let context = base;
+  let pageRoot = document.querySelector("[data-nav-root]");
+  let documentPageId = context?.pageId;
+  let lastSeq = context?.seq ?? 0;
+  const followPage = () => {
+    const nextRoot = document.querySelector("[data-nav-root]");
+    if (nextRoot === pageRoot) return;
+    pageRoot = nextRoot;
+    base = readShellData()?.panel?.context ?? null;
+    if (base) {
+      documentPageId ??= base.pageId;
+      context = { ...base, pageId: documentPageId, seq: ++lastSeq };
+    } else context = null;
+  };
   let loadVersion = 0;
   const answers = new Map<string, boolean | null>();
   const revisions = new Map<string, number>();
@@ -158,15 +172,16 @@ export function installPanelSlot(): () => void {
     if (forgetUrlContext()) disclosed = false;
   };
   const collectContext = () => {
+    followPage();
     if (!context) return;
     const collection: PageContextCollection = { sources: [] };
     window.dispatchEvent(new CustomEvent(PAGE_CONTEXT_COLLECT, { detail: collection }));
     const source = collection.sources.findLast((source) => source.scope !== undefined);
     const parsed = source ? CloudResourceRefSchema.safeParse(source.scope) : undefined;
-    const scope = source ? (parsed?.success ? parsed.data : undefined) : panel.context?.scope;
+    const scope = source ? (parsed?.success ? parsed.data : undefined) : base?.scope;
     if (scope?.type === context.scope?.type && scope?.id === context.scope?.id) return;
-    const { scope: _previous, ...base } = context;
-    context = { ...base, seq: context.seq + 1, ...(scope ? { scope } : {}) };
+    const { scope: _previous, ...previous } = context;
+    context = { ...previous, seq: ++lastSeq, ...(scope ? { scope } : {}) };
     sendContext();
   };
   // Share or stop sharing after every consent step; an open question or its absence follows in update().
@@ -680,7 +695,15 @@ export function installPanelSlot(): () => void {
         })
       : () => {};
   let disposeResize = attachResize();
+  const swapped = () => {
+    followPage();
+    collectContext();
+    if (context) sendContext();
+    else stopSharing();
+    update();
+  };
   collectContext();
+  window.addEventListener("ssr:nav-swapped", swapped);
   window.addEventListener(PAGE_CONTEXT_CHANGED, collectContext);
   window.addEventListener(COMMANDS_CHANGED, commandsChanged);
   window.addEventListener("cloud.panel.consent", consentRequest);
@@ -693,6 +716,7 @@ export function installPanelSlot(): () => void {
   // Restored from the back/forward cache before this lazy module arrived: the server's answers may be outdated.
   if (document.documentElement.hasAttribute("data-cloud-page-restored")) void revalidate();
   window.addEventListener("popstate", closeSheet);
+  window.addEventListener("ssr:nav-popstate", closeSheet);
   window.navigation?.addEventListener("currententrychange", entryChange);
   window.addEventListener("resize", seedWidth);
   // An SSR iframe can have posted its one-shot ready before this lazy module
@@ -737,6 +761,7 @@ export function installPanelSlot(): () => void {
     clearTimer();
     disposeResize();
     removeFallbackFocus();
+    window.removeEventListener("ssr:nav-swapped", swapped);
     window.removeEventListener(PAGE_CONTEXT_CHANGED, collectContext);
     window.removeEventListener(COMMANDS_CHANGED, commandsChanged);
     window.removeEventListener("cloud.panel.consent", consentRequest);
@@ -747,6 +772,7 @@ export function installPanelSlot(): () => void {
     column.removeEventListener("change", modeChange);
     window.removeEventListener("pageshow", pageShow);
     window.removeEventListener("popstate", closeSheet);
+    window.removeEventListener("ssr:nav-popstate", closeSheet);
     window.navigation?.removeEventListener("currententrychange", entryChange);
     window.removeEventListener("resize", seedWidth);
     installed = undefined;

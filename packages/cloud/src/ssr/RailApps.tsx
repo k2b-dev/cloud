@@ -44,11 +44,15 @@ export default function RailApps(props: { apps: RailApp[]; settings: RailSnapsho
     const stopBadges = watchAppBadges(props.apps.flatMap((app) => (app.badge ? [app.badge] : [])));
     window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
     window.addEventListener("popstate", syncLocation);
+    window.addEventListener("ssr:nav-popstate", syncLocation);
+    window.addEventListener("ssr:nav-swapped", syncLocation);
     window.addEventListener("hashchange", syncLocation);
     onCleanup(() => {
       stopBadges();
       window.removeEventListener(RAIL_PREFERENCES_EVENT, sync);
       window.removeEventListener("popstate", syncLocation);
+      window.removeEventListener("ssr:nav-popstate", syncLocation);
+      window.removeEventListener("ssr:nav-swapped", syncLocation);
       window.removeEventListener("hashchange", syncLocation);
     });
   });

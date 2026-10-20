@@ -369,6 +369,12 @@ inert. Reloads retain page identity and scroll snapshots for up to 50 entries;
 `"@k2b/ssr/nav:scroll"` is reserved in sessionStorage. bfcache returns check the
 arriving entry. Dialog-only traversals remain with the dialog history owner.
 
+After every committed swap, nav dispatches `ssr:nav-swapped` on `window` with
+`detail: { root }` for the inserted column. It fires once after islands mount,
+scroll restores, focus moves, and the title is announced, for pushes, replaces,
+Back, and Forward. Failures and document loads emit nothing. Listener errors
+do not trigger document navigation.
+
 ### Protect unsaved input
 
 Call `onBeforeLeave()` while an island renders or in `onMount` to protect

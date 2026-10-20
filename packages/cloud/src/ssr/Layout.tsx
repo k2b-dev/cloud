@@ -10,6 +10,7 @@ import { PANEL_HELP_ID_MAX_LENGTH, PanelPageContextSchema } from "../contracts/p
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
+import { isAppSessionActor } from "../server/actor";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
 import { dates, resolveHomePath } from "../shared";
@@ -27,6 +28,7 @@ import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import PageTrailRow from "./PageTrailRow";
 import PanelSlot from "./PanelSlot";
+import { getPageSwapBuild, pageSwapSignature } from "./page-swap";
 import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
 import { sortRailApps } from "./rail-navigation";
@@ -34,7 +36,7 @@ import { requestPath } from "./request-path";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 import ShellFocusToggle from "./ShellFocusToggle";
 import ShellRuntime from "./ShellRuntime.island";
-import { type ShellData, ShellDataProvider } from "./shell-data";
+import { type ShellData, ShellDataProvider, ShellDataScript } from "./shell-data";
 
 // Types
 type Breadcrumb = LayoutBreadcrumb;
@@ -184,6 +186,21 @@ export default function Layout(props: LayoutProps) {
   const searchLinks = Object.fromEntries(
     runtime.apps.flatMap((app) => (visibleAppIds.has(app.id) && app.searchLinks?.length ? [[app.id, app.searchLinks] as const] : [])),
   );
+  const swapBuild = getPageSwapBuild(c);
+  const swap = swapBuild !== undefined && !focusMode && !!currentRoute?.prefix;
+  const signature = swap
+    ? pageSwapSignature({
+        app: currentApp?.id,
+        kind: user ? "app" : "anonymous",
+        user: user?.id ?? null,
+        appSession: isAppSessionActor(c.get("actor")),
+        locale: lang,
+        theme: c.get("page").theme,
+        providers: providers.map((provider) => provider.id),
+        apps: allApps.map((app) => app.id),
+        build: swapBuild,
+      })
+    : undefined;
   const settings = c.get("settings");
   const announcements = c.get("announcements");
   const appName = settings?.app?.name || "Cloud";
@@ -310,8 +327,11 @@ export default function Layout(props: LayoutProps) {
   return (
     <LocaleProvider locale={lang}>
       <div
-        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-dvh md:h-dvh md:overflow-hidden"}`}
+        class={`cloud-app-canvas relative flex w-full ${fullPage && !swap ? "h-dvh overflow-hidden" : "min-h-dvh md:h-dvh md:overflow-hidden"}`}
         style={canvasStyle}
+        data-nav-shell={signature}
+        data-nav-scope={swap ? currentRoute?.prefix : undefined}
+        data-nav-attributes={swap ? "data-layout-full-page data-workspace-sidebar-collapsed" : undefined}
         data-panel={panelState.open ? "open" : undefined}
         data-app-id={currentApp?.id}
         data-app-base={currentRoute?.prefix}
@@ -334,13 +354,18 @@ export default function Layout(props: LayoutProps) {
               ? { entries: announcements.announcements, latestVersion: announcements.latestAnnouncementVersion }
               : undefined
           }
-          banners={user && announcements?.banners.length ? true : undefined}
+          banners={user && (swap || announcements?.banners.length) ? true : undefined}
         />
-        <ShellDataProvider data={shellData}>
+        <ShellDataProvider data={shellData} skipScript={swap}>
           {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} />}
           {showRail && <ShellFocusToggle variant="float" />}
           {showRail && <div class="cloud-shell-reveal" data-cloud-shell-reveal="" aria-hidden="true" />}
-          <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col" data-cloud-app-area="">
+          <div
+            class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"
+            data-cloud-app-area=""
+            data-nav-root={swap ? "" : undefined}
+          >
+            {swap && <ShellDataScript data={shellData} />}
             <LayoutHeader
               panelOpen={panel ? panelState.open : undefined}
               authenticated={showRail}
@@ -353,19 +378,30 @@ export default function Layout(props: LayoutProps) {
             {user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />}
             <PageTrailProvider trail={pageTrail}>
               <PageTrailRow trail={pageTrail} />
-              <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
+              <main
+                class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}
+                data-scroll-preserve={swap ? "cloud-main" : undefined}
+              >
                 <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
               </main>
             </PageTrailProvider>
             {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
+            {swap && (
+              <div data-print-fallback="">
+                <p>{t.printFallbackTitle}</p>
+                <p>{props.printHint ?? t.printFallbackHint}</p>
+              </div>
+            )}
           </div>
           {panel && <PanelSlot panel={panel} state={panelState} platform={shellData.platform} />}
           {showRail && <LayoutTabBar currentPath={requestPath(c)} />}
         </ShellDataProvider>
-        <div data-print-fallback="">
-          <p>{t.printFallbackTitle}</p>
-          <p>{props.printHint ?? t.printFallbackHint}</p>
-        </div>
+        {!swap && (
+          <div data-print-fallback="">
+            <p>{t.printFallbackTitle}</p>
+            <p>{props.printHint ?? t.printFallbackHint}</p>
+          </div>
+        )}
       </div>
     </LocaleProvider>
   );

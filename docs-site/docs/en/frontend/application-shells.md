@@ -17,6 +17,11 @@ authorize resources, or register the app in Cloud navigation.
 Wrap the shell in the shared [Layout](/en/docs/frontend/layout-and-navigation),
 then keep domain data and actions inside the application-owned content slots.
 
+With `defineApp({ pageSwap: true, ... })`, in-app navigation replaces the
+`Layout` content column while the rail, phone tab bar, panel slot, and provider
+document stay mounted. The panel keeps drafts and pending work across swaps.
+See [Page swaps](/en/docs/frontend/url-state-and-navigation#cloud-page-swaps).
+
 ## Choose a shell
 
 | Surface | Primitive |

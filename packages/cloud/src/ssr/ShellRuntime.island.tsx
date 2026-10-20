@@ -1,4 +1,5 @@
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
+import { installPageSwap } from "@k2b/ssr/nav";
 import {
   followPageTrail,
   installAppWorkspaceController,
@@ -9,6 +10,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { isServer } from "solid-js/web";
 import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
@@ -69,6 +71,7 @@ const searchItems = () => {
 };
 
 export default function ShellRuntime(props: ShellRuntimeProps) {
+  if (!isServer && document.querySelector(".cloud-app-canvas[data-nav-shell]")) onCleanup(installPageSwap());
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   onMount(() => syncTimezoneCookie(true));
@@ -148,12 +151,18 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
     onMount(() => {
       const messages = t();
       const disposeTitles = installPageTitleController(document);
-      const disposeFollow = followPageTrail(document);
+      let disposeFollow = followPageTrail(document);
+      const swapped = () => {
+        disposeFollow();
+        disposeFollow = followPageTrail(document);
+      };
+      window.addEventListener("ssr:nav-swapped", swapped);
       const disposeRuntime = installPageTrailRuntime((page) => ({
         title: messages.pageUp({ page }),
         description: messages.pageUpDescription,
       }));
       onCleanup(() => {
+        window.removeEventListener("ssr:nav-swapped", swapped);
         disposeTitles();
         disposeFollow();
         disposeRuntime();

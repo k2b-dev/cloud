@@ -787,6 +787,7 @@ const commit = (
     return;
   }
   let committed = false;
+  let swappedRoot: Element | undefined;
   try {
     const target = new URL(finalUrl.href);
     target.hash = requested.hash;
@@ -860,8 +861,10 @@ const commit = (
     if (!focus.hasAttribute("tabindex")) focus.setAttribute("tabindex", "-1");
     focus.focus({ preventScroll: true });
     state.announcer.textContent = document.title;
+    swappedRoot = root;
   } catch (error) {
     console.error("[@k2b/ssr/nav] Page swap failed; falling back to document navigation.", error);
     recoverCommit(Boolean(options.replace) || committed);
   }
+  if (swappedRoot) window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: swappedRoot } }));
 };

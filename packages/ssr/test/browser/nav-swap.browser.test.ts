@@ -2302,3 +2302,49 @@ test("a traversal restores stored window and region scroll after mounting the ne
   expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')?.scrollTop).toBe(110);
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 240);
 });
+
+test("committed swap signal follows mount, scroll, focus and announcement for click, replace and Back", async () => {
+  install();
+  const signals: Element[] = [];
+  const swapped = (event: Event) => {
+    if (!(event instanceof CustomEvent)) throw new Error("Expected a custom event");
+    signals.push(event.detail.root);
+    expect(event.detail.root).toBe(document.querySelector("[data-nav-root]"));
+    expect(document.querySelector("solid-island b")?.textContent).toBe(document.title);
+    expect(document.activeElement).toBe(document.querySelector("h1"));
+    expect(document.querySelector("[data-nav-announcer]")?.textContent).toBe(document.title);
+    expect(window.scrollTo).toHaveBeenCalled();
+  };
+  window.addEventListener("ssr:nav-swapped", swapped);
+  const done = () => new Promise<void>((resolve) => window.addEventListener("ssr:nav-swapped", () => resolve(), { once: true }));
+  try {
+    spyOn(globalThis, "fetch").mockImplementation(Object.assign(async () => response(), { preconnect: fetch.preconnect }));
+    const clicked = done();
+    click("/app/new");
+    await clicked;
+    expect(signals).toHaveLength(1);
+    await swapPage("/app/new", { replace: true });
+    expect(signals).toHaveLength(2);
+    spyOn(globalThis, "fetch").mockResolvedValue(response(html("old"), {}, "https://example.test/app/old"));
+    const back = done();
+    window.history.back();
+    await back;
+    expect(signals).toHaveLength(3);
+  } finally {
+    window.removeEventListener("ssr:nav-swapped", swapped);
+  }
+});
+
+test("fallback emits no committed swap signal", async () => {
+  install();
+  const swapped = mock(() => {});
+  window.addEventListener("ssr:nav-swapped", swapped);
+  try {
+    spyOn(globalThis, "fetch").mockResolvedValue(response("forbidden", { status: 403 }));
+    await swapPage("/app/new");
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(swapped).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener("ssr:nav-swapped", swapped);
+  }
+});

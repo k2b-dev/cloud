@@ -204,8 +204,8 @@ contains only the place and the page's static Help article IDs:
 ```ts
 type PanelPageContext = {
   v: 1;
-  seq: number;       // Nonnegative safe integer, initially 0.
-  pageId: string;    // New UUID for each host document.
+  seq: number;       // Nonnegative safe integer, increases on place or page changes.
+  pageId: string;    // New UUID for each host document; stays across page swaps.
   app: string;       // Host application ID.
   scope?: { type: string; id: string };
   help?: string[];   // Up to three local Help IDs, filtered by Layout.help.
@@ -225,7 +225,7 @@ at most 24 entries, with length limits on each string. Providers that need
 consent never receive shortcuts, including their titles, even after approval.
 
 Only the visible provider receives context, and only from its current tab.
-`Layout context={false}` disables sharing for that document, including live
+`Layout context={false}` disables sharing for that page, including live
 publishers. An invalid scope is omitted. Without a current app or a panel
 slot, there is no page context. The slot's cookie stores no context.
 
@@ -313,7 +313,11 @@ The platform sends `{ type: "cloud.panel.context", v: 1, context }` to
 `location.origin`. The embedded receiver accepts only its parent window at
 that origin and the exact message schema. Once it knows a `pageId`, it drops
 other page IDs and lower `seq` values; equal sequence values are idempotent.
-An effective place change increments `seq`, keeping the document's `pageId`.
+An effective place change or in-app page swap increments `seq`, keeping the
+document's `pageId`. With `defineApp({ pageSwap: true, ... })`, the slot and
+provider document stay mounted. The context takes the arriving page's app,
+scope, and Help ids. A page with `context={false}` clears sharing; a later page
+continues with the same document id and a higher sequence.
 Switching, closing, or withdrawing sharing sends `context: null` before the
 old frame is removed or further sharing stops. Null clears the place while
 preserving the receiver's page ID and sequence ordering.

@@ -37,6 +37,38 @@ const mount = () => {
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  test("installs swaps during render before shell mount work, only for a declared canvas", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const ui = await import("@k2b/ui");
+    for (const enabled of [false, true]) {
+      const dom = createDomTestHarness();
+      dom.root.innerHTML = `<div class="cloud-app-canvas" ${enabled ? 'data-nav-shell="fixture"' : ""}></div>`;
+      const order: string[] = [];
+      const stop = spyOn(nav, "installPageSwap").mockImplementation(() => {
+        order.push("install");
+        return () => order.push("cleanup");
+      });
+      const input = spyOn(ui, "installInputModeController").mockImplementation(() => {
+        order.push("mount");
+        return () => {};
+      });
+      const dispose = render(() => {
+        const result = createComponent(ShellRuntime!, {});
+        order.push("rendered");
+        return result;
+      }, dom.root);
+      try {
+        expect(order).toEqual(enabled ? ["install", "rendered", "mount"] : ["rendered", "mount"]);
+        dispose();
+        expect(order.includes("cleanup")).toBe(enabled);
+      } finally {
+        dispose();
+        stop.mockRestore();
+        input.mockRestore();
+        dom.cleanup();
+      }
+    }
+  });
   test("records input mode on every shell variant and stops after disposal", () => {
     const dom = createDomTestHarness();
     const html = dom.document.documentElement;

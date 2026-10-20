@@ -226,6 +226,12 @@ A swap is one transaction, and its order is the contract:
    islands, restore keyed scroll regions, focus the first heading, and
    announce the title in the one live region.
 
+After every committed swap, nav dispatches `ssr:nav-swapped` on `window` with
+`detail: { root }` for the inserted column. It fires once after islands mount,
+scroll restores, focus moves, and the title is announced, for pushes, replaces,
+Back, and Forward. Failures and document loads emit nothing. Listener errors
+do not trigger document navigation.
+
 After every `await`, an aborted or replaced swap returns without a change.
 Every other failure calls `documentNavigate()` for the requested URL once;
 after a history commit it replaces the entry. The click listener sits on

@@ -122,7 +122,8 @@ page swap where the host installed one.
 
 A page swap keeps the document and replaces only the content column with the
 next server page. A navigation rail or an open side panel stays as it is.
-Every application can use it; it is part of `@k2b/ssr/nav`, not of Cloud.
+Every application can use the generic `@k2b/ssr/nav` contract. Cloud provides
+the opt-in integration described below.
 
 The server page declares the parts:
 
@@ -204,6 +205,33 @@ installed stay manual. The history wrappers stay installed but become
 inert. Reloads retain page identity and scroll snapshots for up to 50 entries;
 `"@k2b/ssr/nav:scroll"` is reserved in sessionStorage. bfcache returns check the
 arriving entry. Dialog-only traversals remain with the dialog history owner.
+
+After each committed swap, `window` receives `ssr:nav-swapped` with
+`detail: { root }`, where `root` is the inserted column. It fires once after
+islands mount, scroll restores, focus moves, and the title is announced.
+This includes pushes, replaces, Back, and Forward. Document loads and failed
+swaps emit no event. A listener error does not trigger a document load.
+
+## Cloud page swaps
+
+Opt in with `defineApp({ pageSwap: true, ... })`. The default is off.
+Cloud keeps the rail, phone tab bar, panel slot, and provider document.
+It replaces the header, banners, warnings, page trail, main content, footer,
+and the page's shell data and Help ids. Regular and full-page layouts can
+swap between each other.
+
+`focusMode` pages and links outside the current app route prefix load a
+document. A changed user, session kind, locale, page theme, panel provider set,
+visible navigation app set, or build also loads a document. Every swap fetch
+passes through the same server route policies as a reload.
+
+Column islands use `listenPopState()` and `navigate()` for their own URL state.
+`listenPopState()` is safe regardless of installation order and reports only
+same-page traversals. Shell code follows `ssr:nav-popstate` for cross-page
+traversals and `ssr:nav-swapped` for the committed content.
+
+Protect unsaved column state with `onBeforeLeave()` as described below.
+`beforeunload` is not consulted during swaps; keep it for document loads.
 
 ## Protect unsaved input
 
