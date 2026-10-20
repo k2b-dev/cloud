@@ -4,6 +4,7 @@ import { coreSettings } from "@k2b/cloud/services";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
 import { ButtonLink, LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../../config";
+import { isSignOutOthersRetry } from "../../sign-out-others";
 import AuthFooter from "../AuthFooter";
 import { authMessages } from "../messages";
 import NewPasswordForm from "./NewPasswordForm.island";
@@ -63,7 +64,7 @@ export default ssr(async (c) => {
                   </span>
                 </div>
 
-                <NewPasswordForm defaultUsername={user} redirectTo={redirectTo} />
+                <NewPasswordForm defaultUsername={user} redirectTo={redirectTo} signOutFailed={isSignOutOthersRetry(params)} />
 
                 <ButtonLink href={loginHref} variant="secondary" size="sm" class="mt-4 w-full justify-center">
                   <i class="ti ti-arrow-left" />

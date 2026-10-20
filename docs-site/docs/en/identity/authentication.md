@@ -190,6 +190,85 @@ Signing out of one browser ends only that session. Signing an account out
 everywhere with `auth.session.revokeAllForUser` invalidates every older session,
 ends its OAuth sign-ins and access tokens at the next request, and revokes its
 paired [sign-in devices](/en/docs/operations/app-approval#what-revocation-ends).
+It returns the account's new authentication epoch.
+
+Changing a FreeIPA password in Cloud ends the person's other sign-ins. This
+applies to profile password changes, administrator resets, reset links, and
+expired or temporary password changes at sign-in. Browser sessions, OAuth
+sign-ins (including the command line, MCP and connected apps), pending sign-in
+completions, and mobile app phones end. API keys, passkeys and background
+mandates stay valid.
+
+A password sign-in is bound to the account's authentication epoch read before
+FreeIPA checks the password. If a password change or sign-out everywhere lands
+between that read and session creation, `POST /api/auth/login` answers `409` and
+the person signs in again. An account that is synced into Cloud only after that
+read gets no session either; the next attempt signs in. Expired-password and
+reset-link flows likewise bind their new browser session to the epoch after
+their own sign-out and answer `409` if it changes before session creation. Their
+password stays changed, so the sign-in page replaces the form with a prompt to
+sign in with the new password and keeps where to go afterwards.
+
+The platform operation `auth.session.endOtherSignIns(userId, { keep, reason })`
+owns this behavior. `reason` is `password_change`, `password_reset` or
+`sign_out_others`. It advances the account's authentication
+epoch and revokes its mobile app phones, with an audit entry per phone. Cloud
+Login phones stay paired. A reset link calls `revokeAllForUser` before the
+password changes, so that flow also unpairs Cloud Login phones. If that fails,
+the password stays unchanged and the person requests a new reset link. Because
+the old password works until FreeIPA has changed it, the flow calls
+`revokeAllForUser` again after the change; that also ends a sign-in or phone
+added in the meantime. If that second call fails, the flow issues no browser
+session and answers `500`: the password changed, and the person requests a new
+reset link to finish. Every attempt uses up the reset link, so Core's reset form
+offers **Request a new reset link** next to any failure.
+If the session signer cannot be prepared or stays inactive, the operation still
+ends every sign-in and keeps no browser.
+
+`keep` is the browser sign-in that the request authenticated, `{ sid, authEpoch }`
+as returned by `auth.browserSignIn(c)`. Only a current, active web session of the
+account whose epoch is still current can be kept, so a request that a concurrent
+change already ended keeps nothing. The kept browser moves to a new session ID
+with the same sign-in time and expiry; its old family is revoked. It stays tied
+to the Cloud Login device that approved its sign-in, so removing that device can
+still end it. The epoch change also ends pending device pairing and removal
+requests. The operation returns
+`{ kept: { token, expiresAt } | null }`; the caller sets the reissued cookie with
+`auth.session.setWebCookie(c, token, expiresAt)`. `kept` is null when no browser was
+kept: no `keep`, no current active web session of the account, or signing
+failed after the change. That browser must sign in again. Old copies of its
+cookie stop working, and keeping it does not count as a recent sign-in.
+
+`POST /api/me/password` keeps the current browser session this way and returns
+`200 { message, signInAgain }`. If the browser could not be kept, `signInAgain`
+is true and the stale cookie is cleared. A password change made through OAuth
+keeps no session and returns `signInAgain: true`, so the caller signs in again.
+An administrator reset keeps none; the reset-link and expired-password flows
+issue a new browser session after ending the old sign-ins.
+
+If the password changed but ending other sign-ins failed before commit, the
+profile endpoint answers `500` with `SIGN_OUT_OTHERS_FAILED` and says that the
+password changed. The expired-password flow `POST /api/auth/change-expired-password`
+still issues the new browser session and answers `200` with
+`signOutOthersFailed: true`; on success it is `false`.
+`POST /api/auth/password-reset/complete` returns the same field, which is `false`
+whenever it issues a session. An
+administrator reset returns no temporary password when ending the sign-ins
+fails, so the administrator resets again.
+Retry with `POST /api/me/sign-ins/sign-out-others`, which uses the same operation
+and rotates the current browser cookie. It requires a web browser session:
+OAuth and API keys receive `403 BROWSER_SIGN_IN_REQUIRED`, and mobile app
+sessions receive `403 FORBIDDEN`. Core's profile dialog and both sign-in page
+forms offer this retry and keep it in the address (`signOutOthers=retry`,
+without a used reset token) until it succeeds; the profile page also drops it
+when the person closes the retry. A reload asks again. When the retry answers
+`401` or `403`, the page has no browser sign-in; the person signs in or confirms
+the terms, and the page asks again afterwards.
+Success returns `200 { message, signInAgain }`
+and records one `auth.session.sign_out_others` audit event in the person's
+account activity; if this browser could not be kept, `signInAgain` is true and
+its stale cookie is cleared. Failure before commit returns
+`500 SIGN_OUT_OTHERS_FAILED`.
 
 After credential verification, Core completes browser sign-in through
 `/auth/continue`. If the account has not accepted the terms yet, the new session
@@ -280,8 +359,9 @@ above. In services and capabilities, check `isAppSessionActor(actor)` from
 `@k2b/cloud/server`.
 
 A phone's sessions end when the person removes it in `/me/app` or signs out of
-the app, when an administrator removes it, when `revokeAllForUser` runs, when
-the account expires or is deleted, and after 150 days without use. A disabled
+the app, when an administrator removes it, when a password changes or
+`revokeAllForUser` runs, when the account expires or is deleted, and after 150
+days without use. A disabled
 account category pauses the phone until it is enabled again. Signing out of the
 web does not end the app.
 

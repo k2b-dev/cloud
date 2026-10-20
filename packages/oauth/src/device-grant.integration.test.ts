@@ -204,6 +204,41 @@ suite("OAuth device authorization grant", () => {
       expect((await oauthRoutes.request("/oauth/userinfo", { headers: { authorization: `Bearer ${accessToken}` } })).status).toBe(401);
     }));
 
+  test("password changes end OAuth sign-ins while keeping the reissued browser session", () =>
+    withFrozenTime(async () => {
+      const who = await person();
+      const oldBrowserToken = who.cookie.slice("session_token=".length);
+      const browser = await session.authenticate(oldBrowserToken);
+      if (!browser) throw new Error("Missing browser session");
+      const started = await startDevice({ scope: "openid offline_access" });
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+      const issued = await poll(started.device_code);
+      expect(issued.status).toBe(200);
+      const accessToken = String(issued.body.access_token);
+      expect((await oauthTokens.verifyAccessToken(accessToken, ["cloud", "cloud-cli"])) !== null).toBe(true);
+      const { kept } = await session.endOtherSignIns(who.userId, {
+        keep: { sid: browser.data.sid, authEpoch: browser.data.authEpoch },
+        reason: "password_change",
+      });
+      if (!kept) throw new Error("Browser family was not kept");
+      const refresh = await oauthRoutes.request(
+        "/oauth/token",
+        form({
+          grant_type: "refresh_token",
+          client_id: "cloud-cli",
+          refresh_token: String(issued.body.refresh_token),
+        }),
+      );
+      expect(refresh.status).toBe(400);
+      expect(await refresh.json()).toMatchObject({ error: "invalid_grant" });
+      expect((await oauthTokens.verifyAccessToken(accessToken, ["cloud", "cloud-cli"])) === null).toBe(true);
+      expect((await oauthRoutes.request("/oauth/userinfo", { headers: { authorization: `Bearer ${accessToken}` } })).status).toBe(401);
+      expect((await session.authenticate(oldBrowserToken)) === null).toBe(true);
+      const keptSid = String(jose.decodeJwt(kept.token).sid);
+      expect(keptSid === browser.data.sid).toBe(false);
+      expect(await session.authenticate(kept.token)).toMatchObject({ data: { sid: keptSid, userId: who.userId } });
+    }));
+
   test("approved device codes without an epoch stay unconsumed", () =>
     withFrozenTime(async () => {
       const who = await person();

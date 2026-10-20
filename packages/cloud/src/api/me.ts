@@ -7,6 +7,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -27,6 +28,7 @@ import {
   NotificationQuietSettingsSchema,
   RegisterBrowserNotificationEndpointSchema,
   ServiceAccountCredentialSchema,
+  SignOutOthersResponseSchema,
   UpdateAvatarResponseSchema,
   UpdateAvatarSchema,
   UpdateNotificationQuietSettingsSchema,
@@ -47,6 +49,7 @@ import {
   accountsAppService as accountsService,
   audit,
   browserNotifications,
+  logger,
   mandates,
   notifications,
   serviceAccountCredentials,
@@ -60,6 +63,8 @@ import { lastingAccessApiMessages } from "./lasting-access-messages";
 import { createMePanelConsentRoutes } from "./me-panel-consent";
 import { createMeRailRoutes } from "./me-rail";
 import { createMeWebVitalsRoutes } from "./me-web-vitals";
+
+const log = logger("api:me");
 
 const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
   userId: user.id,
@@ -747,25 +752,96 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Me"],
       summary: "Change current user password",
-      description: "Change the authenticated user's password. Requires the current password for verification.",
+      description:
+        "Change the authenticated user's password and end every other sign-in. Requires the current password. The current browser stays signed in with a new cookie and its original sign-in time. signInAgain is true when the caller must sign in again: this browser could not be kept, or the request did not come from a browser sign-in.",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(MessageResponseSchema, "Password changed"),
+        200: jsonResponse(SignOutOthersResponseSchema, "Password changed"),
         400: jsonResponse(ErrorResponseSchema, "Failed to change password"),
         401: jsonResponse(ErrorResponseSchema, "Current password is incorrect"),
+        500: jsonResponse(
+          ErrorResponseSchema,
+          "Password changed, but signing out other sign-ins failed (SIGN_OUT_OTHERS_FAILED). Retry POST /api/me/sign-ins/sign-out-others.",
+        ),
         403: jsonResponse(ErrorResponseSchema, "Not permitted for API keys or other credentials"),
       },
     }),
     v("json", ChangePasswordSchema),
     async (c) =>
       respond(c, async () => {
+        const keep = await auth.browserSignIn(c);
         const result = await accountsService.user.changeOwnPassword({
+          keep: keep && { sid: keep.sid, authEpoch: keep.authEpoch },
           user: c.get("user"),
           currentPassword: c.req.valid("json").currentPassword,
           newPassword: c.req.valid("json").newPassword,
         });
         if (!result.ok) return result;
-        return ok({ message: "Password changed successfully." });
+        if (result.data.kept) auth.session.setWebCookie(c, result.data.kept.token, result.data.kept.expiresAt);
+        const signInAgain = !result.data.kept;
+        if (keep && signInAgain) deleteCookie(c, "session_token", { path: "/" });
+        return ok({
+          message: signInAgain
+            ? keep
+              ? "Password changed. You are signed out everywhere, including this browser. Sign in again."
+              : "Password changed. You are signed out everywhere. Sign in again."
+            : "Password changed successfully.",
+          signInAgain,
+        });
+      }),
+  )
+
+  .post(
+    "/sign-ins/sign-out-others",
+    auth.rejectAppSession,
+    requireBrowserSignIn,
+    describeRoute({
+      tags: ["Me"],
+      summary: "Sign out every other sign-in",
+      description:
+        "End other sign-ins and rotate this browser's cookie while preserving its sign-in time and expiry; signInAgain is true if this browser could not be kept. Cloud Login phones stay paired. API keys, passkeys and mandates stay valid.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SignOutOthersResponseSchema, "Other sign-ins ended"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(
+          ErrorResponseSchema,
+          "Browser sign-in required (BROWSER_SIGN_IN_REQUIRED); mobile app sessions receive FORBIDDEN",
+        ),
+        500: jsonResponse(ErrorResponseSchema, "Signing out other sign-ins failed (SIGN_OUT_OTHERS_FAILED)"),
+      },
+    }),
+    async (c) =>
+      respond(c, async () => {
+        const signIn = await auth.browserSignIn(c);
+        if (!signIn) throw new Error("Browser sign-in gate was not applied");
+        try {
+          const { kept } = await auth.session.endOtherSignIns(c.get("user").id, {
+            keep: { sid: signIn.sid, authEpoch: signIn.authEpoch },
+            reason: "sign_out_others",
+          });
+          const user = c.get("user");
+          try {
+            await audit.record({
+              action: "auth.session.sign_out_others",
+              outcome: "allowed",
+              actor: toAccountsActor(user),
+              target: { type: "user", id: user.id, label: user.uid, provider: user.provider },
+              metadata: { keptThisBrowser: !!kept },
+            });
+          } catch {
+            log.warn("Other sign-ins ended, but recording the audit event failed", { userId: user.id });
+          }
+          if (kept) auth.session.setWebCookie(c, kept.token, kept.expiresAt);
+          const signInAgain = !kept;
+          if (signInAgain) deleteCookie(c, "session_token", { path: "/" });
+          return ok({
+            message: signInAgain ? "Other sign-ins ended. Sign in again in this browser." : "Other sign-ins ended.",
+            signInAgain,
+          });
+        } catch {
+          return fail({ code: "SIGN_OUT_OTHERS_FAILED", status: 500, message: "Signing out your other sign-ins did not work. Try again." });
+        }
       }),
   )
 
