@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -49,6 +49,7 @@ afterAll(async () => {
 // Read real screenshot pixels: WebKit can compute a TR's inset shadow without
 // painting it. Samples cover all cell tops/bottoms and both outer row edges.
 const paintedRing = async (page: Page, row: Locator) => {
+  await settled(page);
   const points = await row.evaluate((element) => {
     const r = element.getBoundingClientRect();
     return [
@@ -108,6 +109,7 @@ for (const theme of ["light", "dark"]) {
         );
         await page.addScriptTag({ content: script });
         const row = page.locator("tbody tr").first();
+        await settled(page);
         const before = await row.boundingBox();
         await page.locator(".k2b-table-wrap").focus();
         await page.keyboard.press("Tab");
@@ -117,6 +119,7 @@ for (const theme of ["light", "dark"]) {
         await paintedRing(page, row);
         await page.keyboard.press("Enter");
         expect(await row.getAttribute("data-selected")).toBe("true");
+        await settled(page);
         expect(await row.boundingBox()).toEqual(before);
         await paintedRing(page, row);
         const output = process.env.DATA_TABLE_FOCUS_SHOTS;

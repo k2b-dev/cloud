@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Frames, insets and where a heading sits are layout, which happy-dom does not
 // model, so a real engine renders the shipped stylesheet.
@@ -240,6 +240,7 @@ const open = async (viewport: { width: number; height: number }, theme: "light" 
           standalone()) +
       `</body></html>`,
   );
+  await settled(page);
   return page;
 };
 
@@ -563,6 +564,7 @@ test("plain panels reuse the workspace rhythm in an independent host", async () 
     await page.setContent(
       `<html><head><style>${css}</style></head><body class="k2b-ui"><div id="plain">${markup("plain")}</div><div id="default">${markup()}</div></body></html>`,
     );
+    await settled(page);
     const painted = await page.evaluate(() => {
       const values = (id: string) =>
         Array.from(

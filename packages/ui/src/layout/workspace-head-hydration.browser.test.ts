@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-ui-head-hydration-"));
@@ -147,8 +147,6 @@ afterAll(async () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
-const frames = (page: Page) =>
-  page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 const boxes = (page: Page) =>
   page
     .locator(
@@ -174,12 +172,12 @@ describe("workspace head hydration", () => {
     try {
       await page.goto(origin);
       await page.evaluate(() => document.fonts.ready.then(() => undefined));
-      await frames(page);
+      await settled(page);
       const before = await boxes(page);
       await page.addScriptTag({ url: `${origin}/client.js` });
       expect(errors).toEqual([]);
       await page.waitForSelector('body[data-ready="true"]');
-      await frames(page);
+      await settled(page);
       expect(await boxes(page)).toEqual(before);
       for (const [selector, count] of [
         [".k2b-view-tabs", 1],
@@ -221,7 +219,7 @@ for (const width of [390, 834, 1440]) {
     page.on("pageerror", (error) => errors.push(error.message));
     try {
       await page.goto(`${origin}?stacked=1`);
-      await frames(page);
+      await settled(page);
       const before = await boxes(page);
       const sidebar = page.locator(".k2b-app-workspace__sidebar");
       const head = page.locator(".k2b-app-workspace__head");
@@ -237,7 +235,7 @@ for (const width of [390, 834, 1440]) {
       await page.evaluate(() => Reflect.set(window, "originalHead", document.querySelector(".k2b-app-workspace__head")));
       await page.addScriptTag({ url: `${origin}/client.js` });
       await page.waitForSelector('body[data-ready="true"]');
-      await frames(page);
+      await settled(page);
       expect(await page.evaluate(() => Reflect.get(window, "originalHead") === document.querySelector(".k2b-app-workspace__head"))).toBe(
         true,
       );
@@ -245,9 +243,9 @@ for (const width of [390, 834, 1440]) {
       if (width === 390) {
         await page.getByRole("link", { name: "Project", exact: true }).focus();
         await page.keyboard.press("Tab");
-        await expect(
-          page.getByRole("button", { name: "All Navigation", exact: true }).evaluate((el) => el === document.activeElement),
-        ).resolves.toBe(true);
+        expect(
+          await page.getByRole("button", { name: "All Navigation", exact: true }).evaluate((el) => el === document.activeElement),
+        ).toBe(true);
         await page.keyboard.press("Tab");
         expect(await page.locator(".k2b-app-workspace__head").evaluate((el) => el.contains(document.activeElement))).toBe(true);
       }

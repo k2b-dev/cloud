@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { attach, installCompactShellHarness, open, phone } from "./compact-shell.browser-harness";
 
 installCompactShellHarness(launchBrowser);
@@ -10,6 +10,7 @@ describe("phone object row", () => {
       test(`${caller} ${theme}: objects precede the card in the server frame`, async () => {
         const { context, page } = await open(phone, `/app/mail/inbox?overview=1&objects=${caller}`, { theme, attached: false });
         try {
+          await settled(page);
           const nav = page.locator("#overview-navigation");
           const head = page.locator(".k2b-app-workspace__head");
           const content = page.locator(".k2b-app-workspace__content");
@@ -45,10 +46,12 @@ describe("phone object row", () => {
           // would pass the transparent-ancestor check but erase this edge.
           expect(Math.max(...paint.corner.map((value, index) => Math.abs(value - paint.card[index]!)))).toBeGreaterThan(2);
           await attach(page);
+          await settled(page);
           expect(await nav.boundingBox()).toEqual(navBox);
           expect(await (caller === "mail" || caller === "contacts" ? head : content).boundingBox()).toEqual(cardBox);
           const last = page.getByRole("button", { name: "Message 80", exact: true });
           await last.focus();
+          await settled(page);
           const lastBox = (await last.boundingBox())!;
           const barBox = (await page.locator(".cloud-tab-bar").boundingBox())!;
           expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(barBox.y);
@@ -77,7 +80,7 @@ describe("phone object row", () => {
       const original = await head.elementHandle();
       for (const width of [390, 834, 390]) {
         await page.setViewportSize({ width, height: phone.height });
-        await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+        await settled(page);
         const navBox = (await nav.boundingBox())!;
         const headBox = (await head.boundingBox())!;
         if (width === 390) expect(navBox.y + navBox.height).toBeLessThanOrEqual(headBox.y);
@@ -93,6 +96,7 @@ describe("phone object row", () => {
   test("nested stacked objects do not replace the outer Cloud card", async () => {
     const { context, page } = await open(phone, "/app/mail/inbox?overview=1&objects=nested");
     try {
+      await settled(page);
       expect(await page.locator(".layout-content-main").evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("28px");
       expect(
         await page.locator(".k2b-app-workspace").evaluateAll((els) => els.map((el) => getComputedStyle(el, "::before").content)),
@@ -110,6 +114,7 @@ describe("phone object row", () => {
     test(`${width}px retains the tablet/desktop card`, async () => {
       const { context, page } = await open({ ...phone, width }, "/app/mail/inbox?overview=1&objects=contacts");
       try {
+        await settled(page);
         expect(await page.locator(".k2b-app-workspace").evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
         if (width < 1024) {
           const head = (await page.locator(".k2b-app-workspace__head").boundingBox())!;
@@ -126,6 +131,7 @@ describe("phone object row", () => {
     for (const suffix of ["", "&objects=hidden"]) {
       const { context, page } = await open(phone, `/app/mail/inbox?overview=1${suffix}`);
       try {
+        await settled(page);
         expect(await page.locator(".layout-content-main").evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("28px");
         expect(await page.locator(".k2b-app-workspace").evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
       } finally {

@@ -6,15 +6,8 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
-import {
-  type FixtureOptions,
-  uiDirectory,
-  workspaceCss,
-  workspaceDist,
-  workspaceFrames,
-  workspaceTree,
-} from "../../test/workspace-host-fixture";
+import { launchBrowser, settled } from "../../test/browser";
+import { type FixtureOptions, uiDirectory, workspaceCss, workspaceDist, workspaceTree } from "../../test/workspace-host-fixture";
 
 declare global {
   interface Window {
@@ -118,7 +111,7 @@ const load = async (options: FixtureOptions = {}, viewport = 1440, host = viewpo
   await page.goto("http://workspace.test/");
   await page.addScriptTag({ content: client });
   if (mount) await page.evaluate(() => window.mountHead());
-  await workspaceFrames(page);
+  await settled(page);
   return page;
 };
 // A count may leave its text below a one-line clipping box instead of using display:none.
@@ -151,7 +144,7 @@ const resizeHost = async (page: Page, width: number) => {
   await page.locator("#app").evaluate((element, width) => {
     element.style.width = `${width}px`;
   }, width);
-  await workspaceFrames(page);
+  await settled(page);
 };
 
 test("workspace width wraps filters while tabs and actions keep the first row", async () => {
@@ -302,15 +295,20 @@ test("view, classic tab, and segment selection and hover never move neighbouring
     const before = await boxes(page, ".k2b-view-tabs__tab");
     expect(await boxes(other, ".k2b-view-tabs__tab")).toEqual(before);
     await page.locator(".k2b-view-tabs__tab").nth(1).hover();
+    await settled(page);
     expect(await boxes(page, ".k2b-view-tabs__tab")).toEqual(before);
     await page.evaluate(() => window.mountControls());
+    await settled(page);
     for (const selector of ['[role="tab"]', '[role="radio"]']) {
       const initial = await boxes(page, selector);
       await page.locator(selector).nth(1).hover();
+      await settled(page);
       expect(await boxes(page, selector)).toEqual(initial);
       await page.locator(selector).nth(1).click();
+      await settled(page);
       expect(await boxes(page, selector)).toEqual(initial);
       await page.locator(selector).first().click();
+      await settled(page);
       expect(await boxes(page, selector)).toEqual(initial);
     }
   } finally {
@@ -379,7 +377,7 @@ test("phone views stay at the top while Main scrolls and the primary is a named 
     await page.locator(".k2b-app-workspace__main").evaluate((element) => {
       element.scrollTop = 400;
     });
-    await workspaceFrames(page);
+    await settled(page);
     expect(await page.locator(".k2b-app-workspace__main").evaluate((element) => element.scrollTop)).toBe(400);
     expect(await rect(page, ".k2b-view-tabs")).toEqual(tabs);
     const primary = page.getByRole("link", { name: "New task", exact: true });
@@ -409,7 +407,7 @@ for (const actions of [true, false]) {
         await assertRows();
         const before = await page.evaluate(headGeometry);
         await page.evaluate(() => window.mountHead());
-        await workspaceFrames(page);
+        await settled(page);
         expect(await page.evaluate(headGeometry)).toEqual(before);
         await assertRows();
       } finally {
@@ -425,6 +423,7 @@ test("keyboard order follows views, chips, Reset, secondary, primary with unclip
     const expected = ["?view=1", "?view=2", "?view=3", "Tags: Customer", "Status", "?view=1", "Search", "?new=task"];
     for (const name of expected) {
       await page.keyboard.press("Tab");
+      await settled(page);
       const focus = await page.evaluate(() => {
         const element = document.activeElement as HTMLElement;
         const style = getComputedStyle(element);
@@ -461,7 +460,7 @@ for (const width of [1440, 1194, 834, 390])
       const before = await page.evaluate(headGeometry);
       await page.evaluate(() => window.mountHead());
       const mounted = await page.evaluate(() => window.headMountedFrame);
-      await workspaceFrames(page);
+      await settled(page);
       const after = await page.evaluate(headGeometry);
       expect(before.length).toBeGreaterThan(10);
       for (const frame of [mounted, after]) {
@@ -496,6 +495,7 @@ for (const theme of ["light", "dark"])
           createComponent(SegmentedControl, { value: "a", onValueChange: () => {}, ariaLabel: "Mode", options }),
         ]),
       );
+      await settled(page);
       const styles = await page.evaluate(() => {
         const read = (selector: string, pseudo?: string) =>
           [...document.querySelectorAll(selector)].map((element) => {

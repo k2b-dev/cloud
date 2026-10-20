@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -430,6 +430,7 @@ describe("floating workspace detail", () => {
         });
         expect(clipping).toEqual([]);
         await page.locator("#close").click();
+        await settled(page);
         const closed = await table();
         expect(closed.right).toBeCloseTo(shape.root.right - shape.border - 8, 1);
         expect(closed.width).toBeCloseTo(closed.client, 0);
@@ -608,6 +609,7 @@ describe("floating workspace detail", () => {
         expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
         await page.locator("[data-app-workspace-detail-toggle]").click();
         expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBe("open");
+        await settled(page);
         const space = await page
           .locator(".k2b-app-workspace__content")
           .evaluate((element) => Number.parseFloat(getComputedStyle(element).getPropertyValue("--k2b-detail-space")));
@@ -659,6 +661,7 @@ describe("floating workspace detail", () => {
       await page.mouse.move(x, y);
       await page.mouse.down();
       await page.mouse.move(x, y + 140, { steps: 8 });
+      // settled: inspect the active pointer gesture before release; the phone page must not move.
       expect((await geometry(page)).detail).toEqual(shape.detail);
       await page.mouse.up();
       await settlePanel(page);
@@ -720,6 +723,7 @@ describe("floating workspace detail", () => {
         await page.keyboard.press(key);
         expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
       }
+      await settled(page);
       await detail.evaluate((aside) => {
         const stops = Array.from(
           aside.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), [tabindex]"),
@@ -1201,6 +1205,7 @@ for (const theme of ["light", "dark"] as const)
         const shadow = await detail.evaluate((element) => getComputedStyle(element).boxShadow);
         expect(shadow).toContain(theme === "light" ? "-14px 0px 36px" : "-16px 0px 40px");
         await page.keyboard.press("Escape");
+        await settled(page);
         expect((await geometry(page)).main).toEqual(before.main);
       } finally {
         await page.close();
