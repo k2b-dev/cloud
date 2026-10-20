@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { launchBrowser } from "../../../ui/test/browser";
 import type { CloudRuntime } from "../contracts/app";
@@ -104,6 +104,10 @@ afterAll(async () => {
   for (const spy of spies) spy.mockRestore();
   await browser?.close();
 });
+// An article opened by a click settles one frame after its body arrives and starts at the top, so a scroll in between
+// is undone (a loaded WebKit run hit this). The settle frame was requested before the body showed; one more frame
+// runs after it.
+const articleSettled = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 const open = async (query = "", viewport = { width: 1440, height: 900 }, ready = "[data-help-search]") => {
   const page = await browser.newPage({ viewport, reducedMotion: "reduce" });
   await page.route("http://cloud.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
@@ -130,6 +134,7 @@ test("wide: a text table of contents stays in view beside the article and follow
     expect(await page.locator(".help-article-tools").isVisible()).toBe(false);
     expect(await active.textContent()).toBe("Section 0");
     expect(await page.locator(".cloud-app-canvas").getAttribute("style")).toContain("--app-accent:#16a34a");
+    await articleSettled(page);
     await page.evaluate(() => {
       document.querySelector<HTMLElement>(".layout-content-main")!.scrollTop = 2000;
     });
@@ -207,6 +212,7 @@ test("on a phone the table of contents is an On this page menu under the head th
     expect(menu!.y).toBeGreaterThan(head!.y);
     // Signed-in phones scroll the soft content card while the window stays put.
     expect(await page.locator(".layout-content-main").evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
+    await articleSettled(page);
     await page.locator(".layout-content-main").evaluate((element) => {
       element.scrollTop = 2000;
     });
@@ -238,6 +244,7 @@ test("an open article keeps following the reading position when the window cross
   try {
     await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
     await page.waitForFunction(`${active} === "Section 0"`);
+    await articleSettled(page);
     // Wide: Layout's main column scrolls instead of the document.
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForFunction(() => getComputedStyle(document.querySelector(".layout-content-main")!).overflowY !== "visible");
