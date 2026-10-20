@@ -295,9 +295,12 @@ export function installPageSwap(): () => void {
   } else if (timing && "type" in timing && ["reload", "back_forward"].includes(String(timing.type)) && snapshot) {
     restoreScroll(snapshot);
     if (islandsPending(document)) {
-      // Mounting replaces server regions and creates client-only ones; replay once, unless the person took over.
+      // Mounting replaces server regions and creates client-only ones; replay once, unless the person took over
+      // or history moved to another entry meanwhile.
       observer = new MutationObserver(() => {
-        if (!observer || islandsPending(document)) return;
+        if (!observer) return;
+        if (entryKey(currentEntry(state)) !== entryKey(initial)) return stopRestore();
+        if (islandsPending(document)) return;
         stopRestore();
         restoreScroll(snapshot);
       });

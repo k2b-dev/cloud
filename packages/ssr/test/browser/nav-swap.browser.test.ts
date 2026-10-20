@@ -1834,6 +1834,25 @@ test.each(["wheel", "touchstart", "keydown", "pointerdown"])("%s before initial 
   }
 });
 
+test("a push before the initial islands mount cancels the reload replay", async () => {
+  const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
+  const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
+  spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
+  await import(`${prefix}/${scrollId}.js`);
+  disposeIslands(document);
+  document.querySelector("main")!.innerHTML = wrapper("list", scrollId);
+  window.history.replaceState({ [markerKey]: { page: "reloaded", position: 4, scroll: snapshot } }, "");
+  install();
+  navigate("/app/old?tab=2", { viewTransition: false });
+  const calls = (window.scrollTo as ReturnType<typeof mock>).mock.calls.length;
+  mountIslands(document);
+  const region = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
+  region.scrollTop = 37;
+  await (window as unknown as Window).happyDOM.waitUntilComplete();
+  expect(region.scrollTop).toBe(37);
+  expect((window.scrollTo as ReturnType<typeof mock>).mock.calls.length).toBe(calls);
+});
+
 test("Navigation API supplies base and arriving positions and captures the departing entry before popstate", async () => {
   const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 71 } });
   Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
