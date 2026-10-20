@@ -33,7 +33,7 @@ export type PendingApprovalRow = {
 };
 
 // Start with this person's indexed pending rows; a Studio page alone cannot continue a chat.
-const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r
+export const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r
   WHERE r.approver_user_id=${approverUserId}::uuid AND r.status='pending' AND r.expires_at > now()
     AND r.approver_auth_epoch=(SELECT auth_epoch FROM auth.users WHERE id=${approverUserId}::uuid)
     AND (${id ?? null}::uuid IS NULL OR r.id=${id ?? null}::uuid)

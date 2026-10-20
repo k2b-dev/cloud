@@ -72,6 +72,7 @@
     "./ai/live-events": "./src/ai/live-events.ts",
     "./ai/runtime": "./src/ai/runtime.ts",
     "./ai/solid": "./src/ai/solid.ts",
+    "./ai/testing": "./src/ai/testing.ts",
     "./ai/tools": "./src/ai/runtime-tools.ts",
     "./ai/ui": "./src/ai/ui.tsx",
     "./account/ui": "./src/account/ui.ts",
