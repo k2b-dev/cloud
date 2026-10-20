@@ -8,7 +8,7 @@ import { allowsLeave } from "../../src/nav-veto";
 const markerKey = "@k2b/ssr/nav";
 const disposers: Array<() => void> = [];
 const root = () => document.querySelector<HTMLElement>("main")!;
-const ask = (delta?: number) => allowsLeave(root(), new URL("https://example.test/app/B"), delta);
+const ask = (delta?: number) => allowsLeave(root(), new URL("https://example.test/app/B"), delta) === undefined;
 const register = (check: (event: BeforeLeaveEvent) => void) => {
   const dispose = onBeforeLeave(check);
   disposers.push(dispose);
@@ -104,6 +104,7 @@ test("registration order, separate events, and first veto wins", () => {
   expect(ask(-1)).toBe(false);
   expect(seen).toHaveLength(2);
   expect(seen[0]).not.toBe(seen[1]);
+  expect(seen[0]?.restored).toBe(seen[1]?.restored);
   expect(seen[0]?.url.href).toBe("https://example.test/app/B");
   expect(seen[0]?.delta).toBe(-1);
   expect(last).not.toHaveBeenCalled();
@@ -157,12 +158,16 @@ test.each(["scope", "shell", "install"])("document loads do not ask checks (%s)"
   expect(assign).toHaveBeenCalledTimes(1);
 });
 
+const departing = (navigation: EventTarget, key: string) => {
+  navigation.dispatchEvent(Object.assign(new Event("navigate"), { navigationType: "traverse", destination: { key } }));
+};
 const navigationFixture = () => {
   const finished = Promise.withResolvers<void>();
   const committed = Promise.withResolvers<void>();
   const traverseTo = mock(() => ({ committed: committed.promise, finished: finished.promise }));
+  const currentEntry: { key?: string; index: number } = { key: "A", index: 2 };
   const navigation = Object.assign(new EventTarget(), {
-    currentEntry: { key: "A", index: 2 },
+    currentEntry,
     entries: () => [{ key: "older" }, { key: "B" }, { key: "A" }],
     traverseTo,
   });
@@ -185,6 +190,7 @@ test("rollback absorbs intermediate pops without checks, listeners, scroll, or a
     window.removeEventListener("ssr:nav-popstate", raw);
   });
   const scroll = spyOn(window, "scrollTo");
+  departing(navigation, "B");
   navigation.currentEntry = { key: "B", index: 1 };
   arrive("B", 1);
   expect(traverseTo).toHaveBeenCalledWith("A");
@@ -209,17 +215,48 @@ test("rollback absorbs intermediate pops without checks, listeners, scroll, or a
   await newer;
 });
 
-test.each([true, false])("failed absolute rollback reconciles the current page (same page: %s)", async (same) => {
+test.each(["none", "island push"])("a failed absolute rollback reloads (%s during the rollback)", async (write) => {
   const { navigation, finished, committed } = navigationFixture();
-  register((event) => event.preventDefault());
+  const restored = mock(() => {});
+  register((event) => {
+    event.preventDefault();
+    void event.restored.then(restored);
+  });
   const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  departing(navigation, "B");
   navigation.currentEntry = { key: "B", index: 1 };
   arrive("B", 1);
-  if (same) history.pushState(null, "", "/app/A?new");
+  // The shown page's own write lands on B's position: its column and the URL no longer match.
+  if (write === "island push") history.pushState(null, "", "/app/A?new");
   committed.reject(new Error("interrupted"));
   finished.reject(new Error("interrupted"));
   await Promise.resolve();
-  expect(reload).toHaveBeenCalledTimes(same ? 0 : 1);
+  await Promise.resolve();
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(restored).not.toHaveBeenCalled();
+});
+
+test("a failed absolute rollback keeps the entry of a newer swap that committed meanwhile", async () => {
+  const { navigation, finished, committed } = navigationFixture();
+  const check = mock((event: BeforeLeaveEvent) => event.preventDefault());
+  const stop = register(check);
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  departing(navigation, "B");
+  navigation.currentEntry = { key: "B", index: 1 };
+  arrive("B", 1);
+  stop();
+  const page =
+    '<!doctype html><html><head><title>C</title></head><body><div data-nav-shell="veto" data-nav-scope="/app"><nav></nav><main data-nav-root><h1>C</h1></main></div></body></html>';
+  spyOn(globalThis, "fetch").mockResolvedValue(new Response(page, { headers: { "content-type": "text/html" } }));
+  await swapPage("/app/C");
+  expect(root().querySelector("h1")?.textContent).toBe("C");
+  committed.reject(new Error("removed"));
+  finished.reject(new Error("removed"));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(reload).not.toHaveBeenCalled();
+  expect(location.pathname).toBe("/app/C");
+  expect(check).toHaveBeenCalledTimes(1);
 });
 
 test.each(["other", "A"])("without Navigation API rollback uses history.go and reloads a wrong arrival (%s)", (page) => {
@@ -260,6 +297,7 @@ test("pageshow and fragment claims continue a traversal without asking again", a
   const pending = Promise.withResolvers<Response>();
   const fetch = spyOn(globalThis, "fetch").mockReturnValue(pending.promise);
   History.prototype.replaceState.call(history, { [markerKey]: { page: "B", position: 1 } }, "", "/app/B");
+  departing(navigation, "B");
   navigation.currentEntry = { key: "B", index: 1 };
   window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
   navigation.dispatchEvent(
@@ -283,6 +321,7 @@ test("uninstall clears rollback and a late rejection cannot reload", async () =>
   const { navigation, committed, finished } = navigationFixture();
   register((event) => event.preventDefault());
   const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  departing(navigation, "B");
   navigation.currentEntry = { key: "B", index: 1 };
   arrive("B", 1);
   disposers[0]!();
@@ -292,15 +331,22 @@ test("uninstall clears rollback and a late rejection cannot reload", async () =>
   expect(reload).not.toHaveBeenCalled();
 });
 
-test("an absent absolute rollback target fails safe without calling traverseTo", () => {
+test.each(["missing entry", "missing from"])("marker-only rollback works with Navigation API (%s)", (kind) => {
   const { navigation, traverseTo } = navigationFixture();
-  navigation.entries = () => [];
-  register((event) => event.preventDefault());
-  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  // Marker positions have grown beyond the API's shifted indices.
+  History.prototype.replaceState.call(history, { [markerKey]: { page: "A", position: 62 } }, "", "/app/A");
+  if (kind === "missing entry") navigation.entries = () => [];
+  else navigation.currentEntry = { index: 2 };
+  departing(navigation, "B");
   navigation.currentEntry = { key: "B", index: 1 };
-  arrive("B", 1);
+  register((event) => event.preventDefault());
+  const go = spyOn(history, "go").mockImplementation(() => {});
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  arrive("B", 61);
+  expect(go).toHaveBeenCalledWith(1);
   expect(traverseTo).not.toHaveBeenCalled();
-  expect(reload).toHaveBeenCalledTimes(1);
+  arrive("A", 62);
+  expect(reload).not.toHaveBeenCalled();
 });
 
 test("a successful history.go rollback absorbs only the rollback popstate", () => {
@@ -319,4 +365,133 @@ test("a successful history.go rollback absorbs only the rollback popstate", () =
   arrive("A", 1);
   expect(helper).toHaveBeenCalledTimes(1);
   expect(check).toHaveBeenCalledTimes(1);
+});
+
+test("restored resolves right away for a vetoed swapPage", async () => {
+  disposers.push(installPageSwap());
+  const restored = mock(() => {});
+  register((event) => {
+    event.preventDefault();
+    void event.restored.then(restored);
+  });
+  await swapPage("/app/B");
+  expect(restored).toHaveBeenCalledTimes(1);
+});
+
+test.each([true, false])("restored waits for the rollback arrival (absolute: %s)", async (absolute) => {
+  const fixture = absolute ? navigationFixture() : undefined;
+  if (!absolute) disposers.push(installPageSwap());
+  const restored = mock(() => {});
+  register((event) => {
+    event.preventDefault();
+    void event.restored.then(restored);
+  });
+  spyOn(history, "go").mockImplementation(() => {});
+  if (fixture) {
+    departing(fixture.navigation, "B");
+    fixture.navigation.currentEntry = { key: "B", index: 1 };
+  }
+  arrive("B", 1);
+  await Promise.resolve();
+  expect(restored).not.toHaveBeenCalled();
+  if (fixture) fixture.navigation.currentEntry = { key: "A", index: 2 };
+  arrive("A", 2);
+  await Promise.resolve();
+  expect(restored).toHaveBeenCalledTimes(1);
+  const helper = mock(() => {});
+  disposers.push(listenPopState(helper));
+  arrive("A", 3);
+  expect(helper).toHaveBeenCalledTimes(1);
+});
+
+test("a rollback whose target is already current clears pending and resolves restored", async () => {
+  const { navigation, traverseTo } = navigationFixture();
+  const restored = mock(() => {});
+  register((event) => {
+    event.preventDefault();
+    // Simulate history reaching the target while the check runs, without a wrapper write.
+    navigation.currentEntry = { key: "A", index: 2 };
+    void event.restored.then(restored);
+  });
+  departing(navigation, "B");
+  navigation.currentEntry = { key: "B", index: 1 };
+  arrive("B", 1);
+  await Promise.resolve();
+  expect(restored).toHaveBeenCalledTimes(1);
+  expect(traverseTo).not.toHaveBeenCalled();
+  const helper = mock(() => {});
+  disposers.push(listenPopState(helper));
+  arrive("A", 2);
+  expect(helper).toHaveBeenCalledTimes(1);
+});
+
+test.each(["push", "replace"])("a check's synchronous history %s during Back reloads without restoring", async (kind) => {
+  const { navigation, traverseTo } = navigationFixture();
+  const restored = mock(() => {});
+  register((event) => {
+    event.preventDefault();
+    void event.restored.then(restored);
+    if (kind === "push") history.pushState(null, "", location.href);
+    else history.replaceState(null, "", "/app/B?changed");
+  });
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  const error = spyOn(console, "error").mockImplementation(() => {});
+  const helper = mock(() => {});
+  disposers.push(listenPopState(helper));
+  departing(navigation, "B");
+  navigation.currentEntry = { key: "B", index: 1 };
+  arrive("B", 1);
+  await Promise.resolve();
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(error.mock.calls[0]?.[0]).toContain("A leave check wrote history");
+  expect(traverseTo).not.toHaveBeenCalled();
+  expect(restored).not.toHaveBeenCalled();
+  expect(helper).not.toHaveBeenCalled();
+  arrive("A", 2);
+  expect(helper).toHaveBeenCalledTimes(1);
+});
+
+test("a traversal during a pending cross-page traversal is not asked again", async () => {
+  const { navigation } = navigationFixture();
+  const check = mock((event: BeforeLeaveEvent) => {
+    if (check.mock.calls.length > 1) event.preventDefault();
+  });
+  register(check);
+  const pending = Promise.withResolvers<Response>();
+  const fetch = spyOn(globalThis, "fetch").mockReturnValue(pending.promise);
+  departing(navigation, "B");
+  navigation.currentEntry = { key: "B", index: 1 };
+  arrive("B", 1);
+  const firstSignal = fetch.mock.calls[0]?.[1]?.signal;
+  departing(navigation, "older");
+  navigation.currentEntry = { key: "older", index: 0 };
+  arrive("older", 0);
+  expect(check).toHaveBeenCalledTimes(1);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(firstSignal?.aborted).toBe(true);
+  disposers[0]!();
+  pending.resolve(new Response("unused"));
+  await Promise.resolve();
+});
+
+test("absolute rollback uses the departure key's current index after eviction", () => {
+  const { navigation, traverseTo } = navigationFixture();
+  History.prototype.replaceState.call(history, { [markerKey]: { page: "A", position: 62 } }, "", "/app/A");
+  const check = mock((event: BeforeLeaveEvent) => event.preventDefault());
+  register(check);
+  departing(navigation, "B");
+  navigation.currentEntry = { key: "B", index: 1 };
+  arrive("B", 61);
+  expect(check.mock.calls[0]?.[0].delta).toBe(-1);
+  expect(traverseTo).toHaveBeenCalledWith("A");
+});
+
+test("restored stays pending when no check vetoes", async () => {
+  const restored = mock(() => {});
+  register((event) => {
+    void event.restored.then(restored);
+  });
+  expect(ask()).toBe(true);
+  await Promise.resolve();
+  expect(restored).not.toHaveBeenCalled();
 });

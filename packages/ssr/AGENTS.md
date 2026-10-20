@@ -331,8 +331,10 @@ the SSR-safe public export.
 before cancellation, fetch, or history writes. It also gates the cross-page or
 unmarked branch of `decide`, before claiming the traversal. Same-page island
 navigation, document loads, persisted `pageshow`, and fragment claims are not
-asked. A vetoed click or `swapPage()` does not abort older work; a vetoed
-popstate still aborts the pending swap.
+asked. A second traversal during a pending cross-page traversal was already
+allowed by the first checks and claims without asking again. A vetoed click or
+`swapPage()` does not abort older work; a vetoed popstate still aborts the
+pending swap.
 
 Registration uses Solid's `getOwner()` and ends through `onCleanup` or the
 returned disposer. Mount records each wrapper's Solid root owner in a WeakMap
@@ -344,29 +346,52 @@ Without an owner or outside an island, a check is global; on the server it is
 a no-op. Each check gets its own event with an absolute URL and an optional
 signed traversal delta. First veto wins. Throw means allow plus
 `globalThis.reportError(error)`, even after prevention; promises and return
-values are ignored. Async dialogs veto first, then clear dirty state and
-retry with `swapPage(event.url.href)` or `history.go(event.delta)`.
+values are ignored. Each `allowsLeave` call shares one deferred `restored`
+promise across its events and returns its resolver on veto, otherwise
+`undefined`. `event.restored` never rejects and stays pending if nobody
+vetoes. A click or `swapPage()` veto resolves it immediately; Back/Forward
+resolves only when rollback restores the entry. A failed rollback never
+resolves it.
+Async dialogs veto first, wait for `event.restored`, then open; after
+confirmation they clear dirty state and retry with `swapPage(event.url.href)`
+or `history.go(event.delta)`.
 
-For a vetoable traversal, arrived position is the Navigation API index or the
-validated arriving marker position; the shown position comes from the same
-departure-derived shown entry as the scroll snapshot, so a dialog-only Back that
-dialog-core hid from nav does not skew the delta or the target, and a veto
-re-tracks that entry.
-An unknown or zero delta is not vetoable. Veto keeps the tracked entry and
-column, clears departure, stops immediate propagation, memoizes `"nav"`, and
-never dispatches `ssr:nav-popstate`. Roll back to the absolute
-`navigation.entries()[shown.position].key` with `traverseTo`, after
-checking the index, or use `history.go(-delta)`. The target must be absolute:
-Chromium runs a second Back that was queued before the rollback first, so a
-relative `history.go()` would land on a cross-page entry with the old column
-(the rapid Back-Back engine test fails with it). While `state.rollback` is
-pending, absorb every popstate before cancellation or restoration: no checks,
-listeners, swaps, scroll changes, or abort of newer work. Clear it at the
-matching Navigation API key. Swallow `committed` rejection; on `finished`
-rejection clear rollback and reload unless the current marker belongs to the
-shown page. Without the API, clear on the first popstate and reload a wrong
-arrival; rapid traversals can therefore fall back to a reload. Uninstall
-clears rollback.
+A check must not write history itself. During a vetoed Back/Forward, compare
+`state.moves` before and after `allowsLeave`: pushes and URL-changing replaces
+through the wrapper mean the shown entry cannot be restored. Absorb the
+popstate, clear rollback, log the error directing authors to `event.restored`,
+and reload the document.
+
+For a vetoable traversal, never mix marker positions with Navigation API
+indices: Chromium evicts old entries at the 50-entry history cap, shifting
+indices while marker positions keep growing. At navigate time, capture the
+departing Navigation API key as `departure.from`, before history moves. For a
+matched traverse departure, find that key in `navigation.entries()`; use its
+current index and `navigation.currentEntry.index` for delta, and its key as
+the absolute `traverseTo` target. Otherwise use only validated arriving and
+shown marker positions for delta and `history.go(-delta)` for rollback. The
+shown entry is departure-derived like the scroll snapshot, so a dialog-only
+Back that dialog-core hid from nav does not skew the delta or target.
+An unknown or zero delta is not vetoable.
+
+Veto keeps the tracked entry and column, clears departure, stops immediate
+propagation, memoizes `"nav"`, and never dispatches `ssr:nav-popstate`.
+Re-track the shown entry. If the absolute target key is already current,
+clear pending rollback and resolve `restored` immediately without traversing:
+`traverseTo` would emit no popstate. Otherwise store the key only when using
+`traverseTo`. The absolute target survives Chromium running a second Back
+that was queued before the rollback. While `state.rollback` is pending,
+absorb every popstate before cancellation or restoration: no checks,
+listeners, swaps, scroll changes, or abort of newer work. When the pending
+record has a key, clear and resolve at the matching Navigation API key;
+otherwise use the shown page and position markers, even when the API exists.
+For relative rollback, clear on the first popstate and reload a wrong
+arrival; rapid traversals can therefore fall back to a reload. Swallow
+`committed` rejection; on `finished` rejection clear rollback and reload,
+unless a newer swap committed since the veto and history ended on its entry.
+A matching page id alone is not enough: a push by the vetoed page during the
+rollback carries that page's id but sits on the arriving entry's position, so
+URL and column no longer match. Uninstall clears rollback.
 
 Nav does not run or consult `beforeunload` handlers during a swap: there is
 no API to ask them, and a synthetic event shows no dialog. `onBeforeLeave` is

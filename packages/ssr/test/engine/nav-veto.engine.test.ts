@@ -75,6 +75,12 @@ beforeAll(async () => {
         d.lastUrl = event.url.href; d.lastDelta = String(event.delta);
         if (d.dirty === "yes" || d.throw === "yes") event.preventDefault();
         if (d.throw === "yes") throw new Error("broken leave check");
+        if (d.dirty === "yes" && d.prompt === "yes")
+          void event.restored.then(() => window.dialogCore.open(() => <p>Discard?</p>, { history: true, ariaLabel: "Discard" }));
+        if (d.pushInCheck === "yes") {
+          event.preventDefault();
+          history.pushState(null, "", location.href);
+        }
       });
       onMount(() => onBeforeLeave(() => count("laterChecks")));
       return <section><b data-state>{props.label}:{value()}</b><button id="edit" onClick={() => setValue(value() + 1)}>Edit</button>
@@ -388,5 +394,82 @@ test(`${browserName}: after a dialog closed with its own Back, a vetoed Back rol
     await dirty(page, false);
     await page.evaluate(() => history.back());
     await column(page, "A");
+  });
+});
+
+test(`${browserName}: a check that opens a history dialog after event.restored`, async () => {
+  await inPage(async (page) => {
+    await page.click("#B");
+    await column(page, "B");
+    const before = await marker(page);
+    const index = await page.evaluate(() => window.navigation?.currentEntry?.index);
+    const documents = trackDocuments(page);
+    await dirty(page);
+    await page.evaluate(() => {
+      document.documentElement.dataset.prompt = "yes";
+      history.back();
+    });
+    await page.locator("dialog[open]").waitFor();
+    await column(page, "B");
+    expect(await page.evaluate(() => window.navigation?.currentEntry?.index)).toBe(index === undefined ? undefined : index + 1);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(
+      (position) => !document.querySelector("dialog[open]") && history.state?.["@k2b/ssr/nav"]?.position === position,
+      before.position,
+    );
+    await column(page, "B");
+    expect(await marker(page)).toEqual(before);
+    await dirty(page, false);
+    await page.evaluate(() => history.back());
+    await column(page, "A");
+    expect(documents).toEqual([]);
+  });
+});
+
+test(`${browserName}: a check that writes history synchronously during Back loads the document`, async () => {
+  await inPage(async (page) => {
+    await page.click("#B");
+    await column(page, "B");
+    const documents = trackDocuments(page);
+    const errors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    await page.evaluate(() => {
+      document.documentElement.dataset.pushInCheck = "yes";
+    });
+    const loaded = page.waitForEvent("load");
+    await page.evaluate(() => history.back());
+    await loaded;
+    await column(page, "A");
+    expect(documents).toEqual([`${origin}/app/A`]);
+    expect(errors.some((message) => message.includes("A leave check wrote history"))).toBe(true);
+  });
+});
+
+test(`${browserName}: veto survives the 50-entry history cap`, async () => {
+  await inPage(async (page) => {
+    // Chromium keeps 50 entries; WebKit allows at most 100 history writes per 10 s, and nav writes two per push.
+    const pushes = browserName === "chromium" ? 60 : 30;
+    await page.evaluate((pushes) => {
+      for (let n = 1; n <= pushes; n++) history.pushState({}, "", "/app/A?i=" + n);
+    }, pushes);
+    await page.click("#B");
+    await column(page, "B");
+    const before = await marker(page);
+    // Eviction shifted the Navigation API index below nav's position: the two coordinate systems differ here.
+    if (browserName === "chromium") expect(await page.evaluate(() => window.navigation.currentEntry?.index)).toBeLessThan(before.position);
+    const documents = trackDocuments(page);
+    await dirty(page);
+    await page.evaluate(() => history.back());
+    await rollback(page, "B", before.position, 2);
+    await column(page, "B");
+    expect(await marker(page)).toEqual(before);
+    expect(documents).toEqual([]);
+    await dirty(page, false);
+    await page.evaluate(() => history.back());
+    await column(page, "A");
+    expect(new URL(page.url()).search).toBe(`?i=${pushes}`);
+    expect(documents).toEqual([]);
   });
 });

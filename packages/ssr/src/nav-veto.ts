@@ -6,6 +6,12 @@ export type BeforeLeaveEvent = {
   readonly url: URL;
   /** Back/Forward only: how many entries history moved, negative for Back. Undefined for a click or swapPage(). */
   readonly delta?: number;
+  /**
+   * Resolves once nav undid the vetoed navigation and history is back on this page's entry: right away for a click
+   * or swapPage(), after the rollback for Back/Forward. Open history-backed dialogs only then.
+   * Never rejects. If nobody vetoes, it never resolves.
+   */
+  readonly restored: Promise<void>;
   /** Keeps the person on this page. */
   preventDefault(): void;
 };
@@ -32,8 +38,12 @@ export function onBeforeLeave(check: (event: BeforeLeaveEvent) => void): () => v
   return dispose;
 }
 
-/** Internal swap gate: each live check gets its own synchronous decision. */
-export const allowsLeave = (root: HTMLElement, url: URL, delta?: number): boolean => {
+/** Internal swap gate: returns a veto's restoration resolver, or undefined when all checks allow leaving. */
+export const allowsLeave = (root: HTMLElement, url: URL, delta?: number): (() => void) | undefined => {
+  let restore = () => {};
+  const restored = new Promise<void>((resolve) => {
+    restore = resolve;
+  });
   const checks = shared[vetoKey];
   for (const registration of [...(checks ?? [])]) {
     const { check, element } = registration;
@@ -43,6 +53,7 @@ export const allowsLeave = (root: HTMLElement, url: URL, delta?: number): boolea
       check({
         url: new URL(url.href),
         delta,
+        restored,
         preventDefault: () => {
           prevented = true;
         },
@@ -52,7 +63,7 @@ export const allowsLeave = (root: HTMLElement, url: URL, delta?: number): boolea
       globalThis.reportError(error);
       continue;
     }
-    if (prevented) return false;
+    if (prevented) return restore;
   }
-  return true;
+  return undefined;
 };

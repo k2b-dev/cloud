@@ -80,19 +80,29 @@ import { onBeforeLeave, swapPage } from "@k2b/ssr/nav";
 onBeforeLeave((event) => {
   if (!dirty()) return;
   event.preventDefault();
-  // Async dialog: veto first, then clear dirty state and retry.
-  void askToDiscardChanges().then((confirmed) => {
-    if (!confirmed) return;
-    setDirty(false);
-    if (event.delta !== undefined) history.go(event.delta);
-    else void swapPage(event.url.href);
-  });
+  // Async dialog: veto first, wait for history, then ask and retry.
+  void event.restored
+    .then(() => askToDiscardChanges())
+    .then((confirmed) => {
+      if (!confirmed) return;
+      setDirty(false);
+      if (event.delta !== undefined) history.go(event.delta);
+      else void swapPage(event.url.href);
+    });
 });
 ```
+
+`event.restored` resolves when history is back on this page's entry: right away
+for a vetoed click or `swapPage()`, after rollback for Back/Forward; it never
+rejects and stays pending if nobody vetoes.
+
+A check must not write history itself: open history-backed dialogs after
+`event.restored`; if a check writes history during Back/Forward, nav loads the
+document.
 
 - nav asks before an in-scope link click, `swapPage()`, and a Back/Forward that swaps to another server page; only islands inside the current `data-nav-root` are asked, shell islands are not; a check without an island owner applies until its returned disposer runs
 - checks run synchronously in registration order; the first `preventDefault()` wins and later checks are not asked; a throwing check allows and is reported through `reportError()`; promises and return values are ignored (`window.confirm()` works)
 - a vetoed click or `swapPage()` changes nothing: no fetch, no history entry, an older pending swap keeps running
-- a vetoed Back/Forward aborts a pending swap and rolls history back to the shown entry with `navigation.traverseTo()` (`history.go()` without the Navigation API); listeners and `ssr:nav-popstate` see neither popstate, and traversals during a pending rollback are absorbed; a failed rollback reloads; an unknown or zero delta cannot be vetoed
-- document loads, island-owned navigation (`Link` with `onNavigate`, `navigate()`, same-page popstates), bfcache returns, and fragment entries of an allowed traversal are not asked
+- a vetoed Back/Forward aborts a pending swap and rolls history back to the shown entry with `navigation.traverseTo()` (or `history.go()` using marker positions when the departure key is unavailable); listeners and `ssr:nav-popstate` see neither popstate, and traversals during a pending rollback are absorbed; a failed rollback reloads unless a newer swap committed meanwhile; an unknown or zero delta cannot be vetoed
+- document loads, island-owned navigation (`Link` with `onNavigate`, `navigate()`, same-page popstates), bfcache returns, and further traversals or fragment entries during a pending cross-page traversal are not asked
 - nav does not consult `beforeunload` during a swap; keep `beforeunload` for document loads (reload, closed tab, out-of-scope link, a swap that fails and loads the document)

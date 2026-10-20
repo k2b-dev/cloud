@@ -402,9 +402,9 @@ The first `preventDefault()` wins; later checks are not asked. A check that
 throws allows navigation and reports the error through `reportError()`, even
 if it prevented before throwing. Return values and promises are ignored.
 
-For your own async dialog, veto first. After confirmation, clear the dirty
-state and retry the navigation. Replace the check above with this one;
-`askToDiscardChanges()` is your dialog:
+For your own async dialog, veto first and wait for `event.restored` before
+opening it. After confirmation, clear the dirty state and retry the navigation.
+Replace the check above with this one; `askToDiscardChanges()` is your dialog:
 
 ```tsx
 import { onBeforeLeave, swapPage } from "@k2b/ssr/nav";
@@ -412,14 +412,24 @@ import { onBeforeLeave, swapPage } from "@k2b/ssr/nav";
 onBeforeLeave((event) => {
   if (!dirty()) return;
   event.preventDefault();
-  void askToDiscardChanges().then((confirmed) => {
-    if (!confirmed) return;
-    setDirty(false);
-    if (event.delta !== undefined) history.go(event.delta);
-    else void swapPage(event.url.href);
-  });
+  void event.restored
+    .then(() => askToDiscardChanges())
+    .then((confirmed) => {
+      if (!confirmed) return;
+      setDirty(false);
+      if (event.delta !== undefined) history.go(event.delta);
+      else void swapPage(event.url.href);
+    });
 });
 ```
+
+`event.restored` resolves when history is back on this page's entry: right away
+for a vetoed click or `swapPage()`, after rollback for Back/Forward; it never
+rejects and stays pending if nobody vetoes.
+
+A check must not write history itself: open history-backed dialogs after
+`event.restored`; if a check writes history during Back/Forward, nav loads the
+document.
 
 A vetoed click or `swapPage()` leaves the URL, history, column, and any older
 pending swap untouched. A vetoed Back/Forward aborts a pending swap and rolls
@@ -427,9 +437,10 @@ history back to the shown entry. Nav absorbs the vetoed and rollback
 popstates: `listenPopState()`, raw listeners registered after nav, and
 `ssr:nav-popstate` see no navigation. While rollback is pending, all further
 popstates are absorbed without more checks. Nav uses an absolute
-`navigation.traverseTo()` target where available, otherwise `history.go()`.
-A failed rollback reloads if the current entry belongs to another page.
-Without the Navigation API, a rapid second traversal can force a reload.
+`navigation.traverseTo()` target when the departure key is available, otherwise
+`history.go()` using marker positions.
+A failed rollback reloads, unless a newer swap committed meanwhile.
+With relative rollback, a rapid second traversal can force a reload.
 If the traversal delta is unknown or zero, nav cannot roll back and asks no
 checks.
 
@@ -437,8 +448,8 @@ Document loads never ask: native links, `data-nav-document`, out-of-scope
 URLs, missing shells, `navigateTo()`, `documentNavigate()`, and
 `refreshCurrentPath()`. Island-owned `Link` navigation with `onNavigate`,
 `navigate()`, raw history writes, and same-page popstates are not swaps.
-bfcache `pageshow` swaps and fragment claims that continue an already-started
-traversal do not ask again.
+bfcache `pageshow` swaps, further traversals during a pending cross-page
+traversal, and fragment claims that continue one do not ask again.
 
 Nav does not run or consult `beforeunload` handlers during a swap: there is
 no API to ask them, and a synthetic event shows no dialog. `onBeforeLeave` is
