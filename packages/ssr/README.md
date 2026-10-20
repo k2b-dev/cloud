@@ -346,13 +346,17 @@ Back and Forward fetch another server page's column without a document load.
 Within the shown page, `listenPopState()` lets islands restore state from the
 URL without fetching. It never reports a traversal to another server page.
 Nav restores window scroll and keyed `data-scroll-preserve` regions from the
-arriving entry; within a page, islands still own region scroll. A traversal
-that cannot swap reloads the arriving URL.
+arriving entry once, right after its islands mount; within a page, islands
+still own region scroll. An island that loads its content later keeps its
+own position, for example in its history state, and restores it after loading. A traversal that cannot swap reloads the arriving
+URL.
 
 Before nav hides a traversal, it dispatches `ssr:nav-popstate` on `window` with
 the `PopStateEvent` as `detail`, for code that keeps its own history
-bookkeeping, such as `@k2b/ui` dialogs. Install before islands register raw
-`popstate` listeners. Prefer
+bookkeeping, such as `@k2b/ui` dialogs. Shell code outside the swapped
+column, such as a panel or a rail, misses cross-page traversals through
+`popstate` and `listenPopState()` as well; it follows them through
+`ssr:nav-popstate`. Install before islands register raw `popstate` listeners. Prefer
 `listenPopState()`, which is safe in either order. Keep history state a plain
 object or `null`: nav preserves its fields and reserves `"@k2b/ssr/nav"` for
 `{ page, position, scroll? }`. Other state values stay unchanged and unmarked;

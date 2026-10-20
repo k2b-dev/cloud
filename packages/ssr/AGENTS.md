@@ -265,14 +265,18 @@ wait for it either. A push through `navigate()` records the departure scroll
 the helper captured before the island changed the page. Cross-page
 and unmarked entries first dispatch `ssr:nav-popstate` on window with the
 PopStateEvent as `detail`, so history owners that must see every traversal
-(`@k2b/ui` dialog-core) still do when nav registered first, then
+(`@k2b/ui` dialog-core, and shell listeners outside the column such as a
+panel sheet that closes on Back) still do when nav registered first, then
 stopImmediatePropagation and fetch the arriving URL in
 the swap transaction without pushing history. Commit and reload recovery must
 still own that entry (same URL, Navigation API key, and no newer push or
 URL-changing replace), even after a replace that dropped its marker; a different final
 URL reloads, and so does a cleanup that moves history after disposal. Restore window
 and keyed regions from the entry's in-memory snapshot, then its stored scroll,
-otherwise use top/hash scrolling. Snapshots belong to the shown entry: when no
+otherwise use top/hash scrolling. This runs once, right after the synchronous
+mount: there is no signal for content an island loads later, and a retry loop
+would fight the person's own scroll, so such an island restores its own
+position after loading. Snapshots belong to the shown entry: when no
 cross-page traversal is pending, derive it from the current entry if it belongs
 to the shown page, even if nav never saw that entry's traversal. During a
 pending traversal, keep attributing snapshots to the tracked shown entry.
