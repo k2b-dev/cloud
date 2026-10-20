@@ -7,7 +7,12 @@ import {
   installAppWorkspaceController,
   parkWorkspaceDetailDrawers,
 } from "./app-workspace-controller";
-import { APP_WORKSPACE_DETAIL_DEFAULT, APP_WORKSPACE_SIDEBAR_COLLAPSED, fitAppWorkspacePaneSizes } from "./app-workspace-state";
+import {
+  APP_WORKSPACE_DETAIL_DEFAULT,
+  APP_WORKSPACE_MAIN_MIN,
+  APP_WORKSPACE_SIDEBAR_COLLAPSED,
+  fitAppWorkspacePaneSizes,
+} from "./app-workspace-state";
 
 type Frame = (time: number) => void;
 type Rect = { height: number; width: number };
@@ -220,6 +225,11 @@ describe("AppWorkspace resize controller behaviour", () => {
         flushFrames();
         expect(root.style.getPropertyValue(variable)).toBe("");
         expect(handle.getAttribute("aria-valuenow")).toBe("372");
+        // A subpixel difference at CSS's Main clamp must not store a pixel width.
+        setRect(main, { width: cssWidth + APP_WORKSPACE_MAIN_MIN - 0.25, height: 700 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(root.style.getPropertyValue(variable)).toBe("");
       } finally {
         dispose();
       }
@@ -256,6 +266,51 @@ describe("AppWorkspace resize controller behaviour", () => {
       const widths = handles.map(({ variable }) => Number.parseFloat(root.style.getPropertyValue(variable)));
       expect(widths.every((width) => width >= 240)).toBe(true);
       expect(widths[0]! + widths[1]!).toBeLessThanOrEqual(1000 - 320);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("a share default crowding Main with non-resizable siblings is fitted like a stored width", () => {
+    const { root } = workspace({ width: 1000 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    setRect(main, { width: 1000, height: 700 });
+    const fixedPanes = [200, 200].map((width) => {
+      const pane = document.createElement("section");
+      pane.className = "k2b-app-workspace__main-pane";
+      pane.dataset.workspaceResizable = "false";
+      setRect(pane, { width, height: 700 });
+      main.append(pane);
+      return pane;
+    });
+    const pane = document.createElement("section");
+    pane.id = "share-list";
+    pane.className = "k2b-app-workspace__main-pane";
+    pane.dataset.workspaceResizable = "true";
+    const variable = "--k2b-workspace-pane-list-width";
+    setDynamicRect(pane, () => ({ width: Number.parseFloat(root.style.getPropertyValue(variable)) || 400, height: 700 }));
+    const handle = document.createElement("button");
+    handle.dataset.appWorkspaceResize = "pane";
+    handle.dataset.workspacePanelId = "list";
+    handle.dataset.workspaceResizeEdge = "end";
+    handle.dataset.workspaceDefaultSize = "share:0.4,0,240,400";
+    handle.dataset.workspaceMinSize = "240";
+    handle.setAttribute("aria-controls", pane.id);
+    main.append(pane, handle);
+    root.append(main);
+    const primaryWidth = () =>
+      main.getBoundingClientRect().width -
+      fixedPanes.reduce((total, fixed) => total + fixed.getBoundingClientRect().width, 0) -
+      pane.getBoundingClientRect().width;
+    expect(primaryWidth()).toBeLessThan(APP_WORKSPACE_MAIN_MIN);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      expect(root.style.getPropertyValue(variable)).toBe("280px");
+      expect(primaryWidth()).toBe(APP_WORKSPACE_MAIN_MIN);
+      expect(handle.getAttribute("aria-valuenow")).toBe("280");
+      expect(handle.getAttribute("aria-valuemax")).toBe("280");
     } finally {
       dispose();
     }

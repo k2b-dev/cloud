@@ -391,9 +391,9 @@ const reconcilePanes = (root: HTMLElement, layoutState: AppWorkspaceLayoutState,
   if (!fits.length) return;
 
   const budget = main.getBoundingClientRect().width - fixedWidth - APP_WORKSPACE_MAIN_MIN;
-  // Each share default clamps only against Main, not its siblings. When several panes together leave Main's
-  // primary region less than its minimum, they are fitted together like stored widths.
-  if (fits.length > 1 && fits.reduce((total, fit) => total + fit.desired, 0) > budget)
+  // Each share default clamps only against Main, not its resizable or non-resizable siblings. When panes
+  // together leave Main's primary region less than its minimum, fit them like stored widths, allowing subpixels.
+  if (fits.reduce((total, fit) => total + fit.desired, 0) > budget + 0.5)
     for (const fit of fits) if (fit.cssDefault) Object.assign(fit, { cssDefault: false, desired: fit.requested, min: fit.configuredMin });
   const sizes = fitAppWorkspacePaneSizes(fits, budget);
   fits.forEach((fit, index) => {
