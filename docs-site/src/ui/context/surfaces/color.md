@@ -196,6 +196,7 @@ scope, so selected text stays readable in both themes:
 }
 
 .k2b-ui[data-theme="dark"] .teal-app,
+.k2b-ui.k2b-dark .teal-app,
 .dark .k2b-ui .teal-app {
   --k2b-app-workspace-selected: #123133;
   --k2b-app-workspace-active: #14b8a6;
