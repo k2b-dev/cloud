@@ -75,6 +75,14 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
   overscroll-behavior: none;
 }
 
+/* A full page binds the canvas to the window at every width. The attribute
+   carries it, not a class: a page swap copies the attribute and keeps the
+   canvas element, so a regular page and a full page can follow each other. */
+.cloud-app-canvas[data-layout-full-page="true"] {
+  height: 100dvh;
+  overflow: hidden;
+}
+
 .cloud-app-canvas > :is(.layout-rail, .layout-shell-content) {
   gap: var(--ui-space-shell);
 }
