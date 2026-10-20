@@ -6690,8 +6690,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 1.125rem;
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-rich-select__preview-placeholder {
@@ -6702,7 +6700,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-rich-select__preview-placeholder > span {
   height: 0.75rem;
-  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-rich-select__preview-placeholder > span:first-child {
