@@ -59,12 +59,14 @@ export function MapGeometry(
     onSelect?: (id: string) => void;
     /** Pins are buttons in MapView; the standalone frame draws them as labelled images, never focusable. */
     interactive?: boolean;
+    /** 2^(live zoom - fitted zoom), so pin separation follows the person's zoom; 1 until then. */
+    zoomFactor?: number;
   },
 ): JSX.Element {
   const messages = useMapViewMessages();
   const markers = createMemo(() => sortMarkers(props.markers ?? []));
-  const offsets = createMemo(() => pinOffsets(markers(), props.frame));
-  const hitRadii = createMemo(() => pinHitRadii(markers(), props.frame, offsets()));
+  const offsets = createMemo(() => pinOffsets(markers(), props.frame, props.zoomFactor));
+  const hitRadii = createMemo(() => pinHitRadii(markers(), props.frame, offsets(), props.zoomFactor));
   // Input order decides the fallback selection, as in MapView; sorting is only for drawing and keys.
   const selected = createMemo(() => selectedMarker(props.markers ?? [], props.selectedId));
   const keydown = (event: KeyboardEvent & { currentTarget: HTMLButtonElement }, marker: MapViewMarker) => {

@@ -110,8 +110,12 @@ export function sortMarkers(markers: MapViewMarker[]): MapViewMarker[] {
     return 0;
   });
 }
-export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame): Map<string, { dx: number; dy: number }> {
-  const scale = frame.overlapWidth / frame.spanX;
+/**
+ * `zoomFactor` is 2^(live zoom - fitted zoom): 1 for the server frame, the first client frame and the untouched live map,
+ * so all three agree; when the person zooms, the separation is decided again for the new scale.
+ */
+export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame, zoomFactor = 1): Map<string, { dx: number; dy: number }> {
+  const scale = (frame.overlapWidth / frame.spanX) * zoomFactor;
   const position = (marker: MapViewMarker) => {
     const p = projectPoint(marker.point);
     return { x: (p.x - frame.minX) * scale, y: (p.y - frame.minY) * scale };
@@ -163,8 +167,9 @@ export function pinHitRadii(
   sortedMarkers: MapViewMarker[],
   frame: MapFrame,
   offsets: Map<string, { dx: number; dy: number }>,
+  zoomFactor = 1,
 ): Map<string, number> {
-  const scale = frame.overlapWidth / frame.spanX;
+  const scale = (frame.overlapWidth / frame.spanX) * zoomFactor;
   const places = sortedMarkers.map((marker) => {
     const p = projectPoint(marker.point);
     const o = offsets.get(marker.id) ?? { dx: 0, dy: 0 };

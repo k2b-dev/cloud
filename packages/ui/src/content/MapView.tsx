@@ -24,7 +24,8 @@ type MapState = "static" | "loading" | "ready" | "error" | "no-webgl" | "empty";
 function supportsWebgl(): boolean {
   try {
     const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+    // MapLibre 6 draws with WebGL 2 only; a browser with just WebGL 1 gets the static frame and the notice.
+    const gl = canvas.getContext("webgl2");
     if (!gl) return false;
     gl.getExtension("WEBGL_lose_context")?.loseContext();
     return true;
@@ -43,6 +44,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   const [boxStyle, setBoxStyle] = createSignal<JSX.CSSProperties>();
   const [liveScale, setLiveScale] = createSignal<MapScale>();
   const [measuredWidth, setMeasuredWidth] = createSignal<number>();
+  const [zoomFactor, setZoomFactor] = createSignal(1);
   // The server picks the scale bar for the widest fit; once the width is known, the bar names a distance that fits it.
   const scale = createMemo((): MapScale | undefined => {
     const f = frame();
@@ -81,6 +83,7 @@ export function MapView(props: MapViewProps): JSX.Element {
     previous?.remove();
     setBoxStyle(undefined);
     setLiveScale(undefined);
+    setZoomFactor(1);
     currentStyle = undefined;
     replacingStyle = false;
   };
@@ -101,6 +104,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       height: `${bottom.y - top.y}px`,
       transform: "none",
     });
+    setZoomFactor(touched ? 2 ** (map.getZoom() - fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING).zoom) : 1);
     const mpp = metersPerPixel(map.getCenter().lat, map.getZoom());
     const bar = scaleBar(mpp);
     setLiveScale({ label: bar.label, width: `${bar.meters / mpp}px` });
@@ -244,7 +248,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       const f = frame();
       const lon = marker.point.lon + (f ? worldCopy(map, f) * 360 : 0);
       const p = map.project([lon, marker.point.lat]);
-      const offset = f ? pinOffsets(sortMarkers(props.markers ?? []), f).get(marker.id) : undefined;
+      const offset = f ? pinOffsets(sortMarkers(props.markers ?? []), f, zoomFactor()).get(marker.id) : undefined;
       const x = p.x + (offset?.dx ?? 0);
       const y = p.y + (offset?.dy ?? 0);
       if (x >= 16 && x <= root.clientWidth - 16 && y >= 16 && y <= root.clientHeight - 16) return;
@@ -291,7 +295,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       >
         {(value) => (
           <>
-            <MapGeometry {...props} frame={value()} boxStyle={boxStyle()} onSelect={props.onSelect} interactive />
+            <MapGeometry {...props} frame={value()} boxStyle={boxStyle()} zoomFactor={zoomFactor()} onSelect={props.onSelect} interactive />
             <MapScaleBar scale={scale() ?? referenceScale(value(), props.padding ?? DEFAULT_PADDING)} />
           </>
         )}

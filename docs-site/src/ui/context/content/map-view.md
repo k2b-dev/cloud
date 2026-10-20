@@ -74,7 +74,8 @@ order. Pins that would cover each other on a 390 px phone are kept apart at
 every width: a numbered pin at a stop sits top right of the stop's letter,
 and any other overlapping pin moves to the first free place around its point.
 The offsets come from the data alone, so they stay the same when the map image
-arrives or the camera changes. Filled pins pick a text colour per tone and
+arrives; once the person zooms, the separation is decided again for the new
+scale. Filled pins pick a text colour per tone and
 theme that keeps 4.5:1 contrast.
 
 The scale bar names the distance for the fitted map: the server frame uses
@@ -99,7 +100,7 @@ the pins stay where the server put them.
 | `loading` | The same geometry with a quiet loading chip. |
 | `ready` | Map image under the geometry; zoom and cooperative pan gestures work. |
 | `error` | Pins remain, with a message and **Try again**. Also shown when a later style, such as the dark one after a theme switch, does not load. Retry creates a fresh map and requests the style again. |
-| `no-webgl` | Pins remain with a browser capability message. |
+| `no-webgl` | The browser has no WebGL 2, which MapLibre 6 needs: pins remain with a capability message, and MapLibre is never downloaded. |
 | `empty` | The host's `empty` content; MapLibre never loads. |
 
 The root's `data-state` exposes these states. Image tile errors after the map

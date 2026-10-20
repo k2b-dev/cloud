@@ -650,6 +650,30 @@ test("a failing tile while the map loads keeps the map", async () => {
   }
 });
 
+test("without WebGL 2 the static frame stays with a notice and MapLibre never loads", async () => {
+  const page = await browser.newPage({ reducedMotion: "reduce" });
+  const requests: string[] = [];
+  page.on("request", (request) => requests.push(request.url()));
+  try {
+    // A browser with WebGL 1 only: MapLibre 6 cannot draw there.
+    await page.addInitScript(() => {
+      const original = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
+        return kind === "webgl2" ? null : Reflect.apply(original, this, [kind, ...rest]);
+      } as typeof original;
+    });
+    await page.goto(origin);
+    await page.waitForFunction(() => document.querySelector(".k2b-map-view")?.getAttribute("data-state") === "no-webgl", undefined, {
+      timeout: 10_000,
+    });
+    expect(await page.getByRole("status").textContent()).toContain("This browser cannot show the map image. The pins stay.");
+    expect(await page.locator(".k2b-map-view__pin").count()).toBe(3);
+    expect(requests.some((url) => lazyChunks.includes(basename(new URL(url).pathname)) || url.includes("map-view-worker"))).toBe(false);
+  } finally {
+    await page.close();
+  }
+});
+
 test("empty geometry never imports the live map", async () => {
   const page = await browser.newPage({ reducedMotion: "reduce" });
   const requests: string[] = [];
