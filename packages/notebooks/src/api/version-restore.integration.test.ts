@@ -3,6 +3,7 @@ import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { z } from "zod";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 
 const PublicNoteSchema = z.object({
   id: z.string(),
@@ -77,7 +78,7 @@ if (process.env.NOTEBOOKS_VERSION_RESTORE_CHILD !== "1") {
     let currentUser = writer;
     spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async () => ({ kind: "user", payload: {}, user: currentUser, scopes: [] }));
     const notebookId = crypto.randomUUID();
-    const notebookShortId = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+    const notebookShortId = testShortId();
     const headers = { authorization: "Bearer version-restore" };
     const live = new AbortController();
     const doc = new Y.Doc();

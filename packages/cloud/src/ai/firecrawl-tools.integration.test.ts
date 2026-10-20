@@ -1,6 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { AI_WEBSITE_APPROVAL_TOOL, rememberAiToolApproval } from "./approvals";
 import { createCloudAiFetchFileTool } from "./fetch-file-tool";
 import { createCloudAiWebExtractTool, createCloudAiWebSearchTool } from "./firecrawl-tools";
@@ -24,7 +25,7 @@ databaseSuite()("web_extract provenance", () => {
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const message = (seq: number, role: "user" | "tool_result", value: unknown, meta: unknown = null) =>
       sql`INSERT INTO ai.messages (short_id, conversation_id, seq, role, message, meta)
-        VALUES (${`m${seq}${crypto.randomUUID().slice(0, 6)}`}, ${chat.id}::uuid, ${seq}, ${role}, (${JSON.stringify(value)}::text)::jsonb,
+        VALUES (${testShortId()}, ${chat.id}::uuid, ${seq}, ${role}, (${JSON.stringify(value)}::text)::jsonb,
           (${meta === null ? null : JSON.stringify(meta)}::text)::jsonb)`;
     try {
       await message(1, "user", {
@@ -195,7 +196,7 @@ databaseSuite()("web_extract provenance", () => {
 
       // The chat records each receipt on the message that holds the call, so history shows it whatever the outcome.
       await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, role, message, loop_id)
-        VALUES (${`a${crypto.randomUUID().slice(0, 7)}`}, ${chat.id}::uuid, 50, 'assistant',
+        VALUES (${testShortId()}, ${chat.id}::uuid, 50, 'assistant',
           (${JSON.stringify({ role: "assistant", content: [{ type: "tool_call", id: "run-1", name: "code_run", args: {} }] })}::text)::jsonb,
           ${turn.id})`;
       const call = { conversationId: chat.id, turnId: turn.id, callId: "run-1" };

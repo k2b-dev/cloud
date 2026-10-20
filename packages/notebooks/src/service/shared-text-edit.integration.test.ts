@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 
 // Isolate the notes module's default SQL handle and process Sync binding.
 if (process.env.NOTEBOOKS_SHARED_TEXT_EDIT_CHILD !== "1") {
@@ -42,9 +43,9 @@ if (process.env.NOTEBOOKS_SHARED_TEXT_EDIT_CHILD !== "1") {
       await sync.ready();
       await migrate();
       await sql`INSERT INTO notebooks.notebooks (id, short_id, name)
-        VALUES (${notebookId}::uuid, ${notebookId.slice(0, 6)}, 'Shared text')`;
+        VALUES (${notebookId}::uuid, ${testShortId()}, 'Shared text')`;
       await sql`INSERT INTO notebooks.notes (id, short_id, notebook_id, title)
-        VALUES (${noteId}::uuid, ${noteId.slice(0, 6)}, ${notebookId}::uuid, '')`;
+        VALUES (${noteId}::uuid, ${testShortId()}, ${notebookId}::uuid, '')`;
       const result = await notes.editContent({
         noteId,
         createdBy: null,

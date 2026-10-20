@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import type { QueryBlock, QueryFilter } from "../lib/query-blocks";
 import { migrate } from "../migrate";
@@ -8,29 +9,28 @@ import { resolveNoteQuery } from "./note-query";
 
 const postgresTest = testFor("database");
 const id = () => crypto.randomUUID();
-const shortId = () => Math.random().toString(36).slice(2, 8).padEnd(6, "x");
 
 const notebookId = id();
-const notebookShortId = shortId();
+const notebookShortId = testShortId();
 const otherNotebookId = id();
-const otherNotebookShortId = shortId();
+const otherNotebookShortId = testShortId();
 const accessId = id();
 const serviceAccountId = id();
 const serviceAccessId = id();
 const rootId = id();
-const rootShortId = shortId();
+const rootShortId = testShortId();
 const alphaId = id();
-const alphaShortId = shortId();
+const alphaShortId = testShortId();
 const betaId = id();
-const betaShortId = shortId();
+const betaShortId = testShortId();
 const gammaId = id();
-const gammaShortId = shortId();
+const gammaShortId = testShortId();
 const deltaId = id();
-const deltaShortId = shortId();
+const deltaShortId = testShortId();
 const tieOneId = id();
-const tieOneShortId = shortId();
+const tieOneShortId = testShortId();
 const tieTwoId = id();
-const tieTwoShortId = shortId();
+const tieTwoShortId = testShortId();
 const foreignId = id();
 
 const baseQuery = (overrides: Partial<QueryBlock> = {}): QueryBlock => ({
@@ -93,7 +93,7 @@ beforeAll(async () => {
       (${deltaId}::uuid, ${deltaShortId}, ${notebookId}::uuid, NULL, 'Delta', '', ${{ meta: { priority: "high" } }}::jsonb, '2026-01-05T10:00:00Z', '2026-02-05T10:00:00Z'),
       (${tieOneId}::uuid, ${tieOneShortId}, ${notebookId}::uuid, NULL, 'Tie', '', ${{ meta: { status: "tie", priority: true } }}::jsonb, '2026-01-06T10:00:00Z', '2026-02-06T10:00:00Z'),
       (${tieTwoId}::uuid, ${tieTwoShortId}, ${notebookId}::uuid, NULL, 'Tie', '', ${{ meta: { status: "tie", priority: [4] } }}::jsonb, '2026-01-06T10:00:00Z', '2026-02-06T10:00:00Z'),
-      (${foreignId}::uuid, ${shortId()}, ${otherNotebookId}::uuid, ${rootId}::uuid, 'Foreign', '', ${{ meta: { status: "reviewed", priority: 99 } }}::jsonb, '2026-01-07T10:00:00Z', '2026-02-07T10:00:00Z')
+      (${foreignId}::uuid, ${testShortId()}, ${otherNotebookId}::uuid, ${rootId}::uuid, 'Foreign', '', ${{ meta: { status: "reviewed", priority: 99 } }}::jsonb, '2026-01-07T10:00:00Z', '2026-02-07T10:00:00Z')
   `;
   await sql`
     INSERT INTO notebooks.note_tags (note_id, notebook_id, tag) VALUES

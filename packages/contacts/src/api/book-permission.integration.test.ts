@@ -1,4 +1,5 @@
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import type { CapabilityExecutionContext, CloudRuntime } from "@k2b/cloud/contracts";
@@ -62,7 +63,7 @@ const grant = async (
 // Fixtures use SQL and the HTTP API, never internal Contacts service functions.
 const book = async (name: string, owner: Awaited<ReturnType<typeof person>>): Promise<Book> => {
   const id = crypto.randomUUID();
-  const shortId = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+  const shortId = testShortId();
   const entry = { id, shortId, contactId: "", suffix: crypto.randomUUID() };
   // A unique name query keeps book.list assertions independent of existing books and pagination.
   await sql`INSERT INTO contacts.books (id, short_id, name) VALUES (${id}::uuid, ${shortId}, ${`${name} ${entry.suffix}`})`;

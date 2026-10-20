@@ -2,14 +2,13 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { contactsService } from "../service";
 import contactsApi from ".";
 
 const suite = databaseSuite();
 setDefaultTimeout(30_000);
-
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 6);
 
 const insertAccount = async (name: string, bookId?: string) => {
   const [row] = bookId
@@ -47,8 +46,8 @@ const listedIds = async (response: Response) => ((await response.json()) as { da
 suite("Contacts REST access for standalone agents", () => {
   test("an agent reads and writes only inside its direct grant and within its scopes; resource-bound keys stay bound", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
-    const granted = { id: crypto.randomUUID(), shortId: shortId(), name: `Agent granted ${suffix}` };
-    const other = { id: crypto.randomUUID(), shortId: shortId(), name: `Agent other ${suffix}` };
+    const granted = { id: crypto.randomUUID(), shortId: testShortId(), name: `Agent granted ${suffix}` };
+    const other = { id: crypto.randomUUID(), shortId: testShortId(), name: `Agent other ${suffix}` };
     await sql`INSERT INTO contacts.books (id, short_id, name) VALUES
       (${granted.id}::uuid, ${granted.shortId}, ${granted.name}), (${other.id}::uuid, ${other.shortId}, ${other.name})`;
     const accountIds: string[] = [];

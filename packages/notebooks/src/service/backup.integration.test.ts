@@ -1,4 +1,5 @@
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { afterEach, expect, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
@@ -24,7 +25,7 @@ suite("Notebook snapshot target policy", () => {
       { id: string }[]
     >`INSERT INTO auth.users (uid, provider, profile) VALUES (${uid}, 'local', 'user') RETURNING id`;
     const userId = user!.id;
-    const shortId = id.replaceAll("-", "").slice(0, 6);
+    const shortId = testShortId();
     let accountId: string | undefined;
     let accessId: string | undefined;
     await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${id}::uuid, ${shortId}, 'Snapshot policy test')`;

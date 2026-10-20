@@ -4,19 +4,18 @@ import { sql } from "bun";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { notebooksService } from "../service";
 import api from ".";
 
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 6);
-
 databaseSuite()("notebooks image upload privacy", () => {
   test("API and direct service store sanitized bytes and sizes; malformed images return 422", async () => {
     const [resource] = await sql<{ id: string; short_id: string }[]>`
-      INSERT INTO notebooks.notebooks (short_id, name) VALUES (${shortId()}, 'Photo privacy') RETURNING id, short_id
+      INSERT INTO notebooks.notebooks (short_id, name) VALUES (${testShortId()}, 'Photo privacy') RETURNING id, short_id
     `;
     const [account] = await sql<{ id: string }[]>`
-      INSERT INTO auth.service_accounts (name, kind) VALUES (${`Photo privacy ${shortId()}`}, 'agent') RETURNING id
+      INSERT INTO auth.service_accounts (name, kind) VALUES (${`Photo privacy ${testShortId()}`}, 'agent') RETURNING id
     `;
     try {
       const [access] = await sql<{ id: string }[]>`
