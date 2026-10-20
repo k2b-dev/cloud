@@ -397,7 +397,9 @@ test("Alt+Up swaps to the remembered parent, restores main scroll and marks the 
       main.scrollTop = 240;
     });
     // A pointer click would scroll the link into view first and change what the tab remembers.
-    await f.page.locator("#to-B").evaluate((link) => link.click());
+    await f.page.locator("#to-B").evaluate((link) => {
+      if (link instanceof HTMLElement) link.click();
+    });
     await column(f.page, "B");
     // A page reached by a link starts at the top, as after a document load.
     expect(await f.page.locator("main.layout-content-main").evaluate((main) => main.scrollTop)).toBe(0);
