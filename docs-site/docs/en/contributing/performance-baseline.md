@@ -413,22 +413,63 @@ those costs when deciding whether F10 should precede Assistant and Chat.
 
 ### Recorded panel results
 
-**TODO — owner records the measured navigation results under the machine lock.**
+On 20 October 2026, `--panel --runs 5` measured Help before and after it moved
+from one reader island to server HTML with small islands (#1624). Before ran on
+`7fa53cd5b` with load average 18.3 → 32.5; after ran on `b16c8e403` with load
+average 14.6 → 23.3. The after run had less load, so small gains are within
+noise. Each cell gives the median before → after. Lag is `panelLagMs` for column
+and drawer and `openToContentMs` for the sheet.
 
-| Engine | Profile | Navigation | Before median (min–max) | After median (min–max) | Limit | Verdict |
-| --- | --- | --- | --- | --- | --- | --- |
-| Chromium | Column | TODO | TODO | TODO | 400 ms lag | TODO |
-| Chromium | Drawer | TODO | TODO | TODO | 400 ms lag | TODO |
-| Chromium | Sheet | TODO | TODO | TODO | Informational | TODO |
-| WebKit | Column | TODO | TODO | TODO | 400 ms lag | TODO |
-| WebKit | Drawer | TODO | TODO | TODO | 400 ms lag | TODO |
-| WebKit | Sheet | TODO | TODO | TODO | 1,000 ms from press | TODO |
+Chromium:
 
-The panel's 48 KiB eager Brotli bundle budget comes from the measured
-46,412 B split production closure plus 5%, rounded up to the next KiB; at the documented phone
-rate of 200,000 B/s, a quarter of the WebKit sheet's 1,000 ms limit is 50,000 B.
-`packages/core/src/pages/help/panel.bundle.test.ts` records and enforces that
-budget and keeps the reader's heavy modules in on-demand chunks.
+| Navigation | Layout | Lag or opening ms | Frame start ms | Provider client ms |
+| --- | --- | ---: | ---: | ---: |
+| spaces | column | -40 → failed | 0 → failed | 419 → failed |
+| spaces | drawer | -69 → -34 | 0 → 0 | 449 → 415 |
+| spaces | sheet | 2,227 → 2,174 | 0 → 0 | 1,925 → 1,794 |
+| mail | column | -10 → -16 | 0 → 0 | 379 → 365 |
+| mail | drawer | -10 → -16 | 0 → 0 | 503 → 352 |
+| mail | sheet | 2,270 → 2,106 | 0 → 0 | 1,934 → 1,690 |
+| notebooks | column | -591 → -90 | 0 → 0 | 435 → 832 |
+| notebooks | drawer | -523 → -96 | 0 → 0 | 634 → 979 |
+| notebooks | sheet | 1,966 → 1,615 | 0 → 0 | 1,629 → 1,307 |
+| spaces-to-mail | column | -37 → -29 | 0 → 0 | 564 → 398 |
+| spaces-to-mail | drawer | -63 → -93 | 0 → 0 | 540 → 418 |
+| spaces-to-mail | sheet | 2,334 → 2,029 | 0 → 0 | 1,934 → 1,729 |
+
+WebKit:
+
+| Navigation | Layout | Lag or opening ms | Frame start ms | Provider client ms |
+| --- | --- | ---: | ---: | ---: |
+| spaces | column | 314 → 298 | 715 → 669 | 1,228 → 1,140 |
+| spaces | drawer | 397 → 325 | 563 → 465 | 646 → 677 |
+| spaces | sheet | 785 → 686 | 13 → 15 | 706 → 611 |
+| mail | column | 329 → 578 | 934 → 992 | 1,297 → 1,290 |
+| mail | drawer | 307 → 384 | 803 → 714 | 937 → 933 |
+| mail | sheet | 803 → 733 | 14 → 12 | 692 → 621 |
+| notebooks | column | 464 → 656 | 1,362 → 1,084 | 2,222 → 1,902 |
+| notebooks | drawer | 631 → 671 | 785 → 910 | 2,146 → 1,970 |
+| notebooks | sheet | 609 → 467 | 13 → 13 | 479 → 348 |
+| spaces-to-mail | column | 756 → 326 | 2,000 → 781 | 1,491 → 751 |
+| spaces-to-mail | drawer | 449 → 177 | 1,122 → 748 | 1,498 → 807 |
+| spaces-to-mail | sheet | 1,248 → 606 | 13 → 12 | 1,136 → 500 |
+
+The provider's eager JavaScript went from 152,235 B Brotli in 2 islands to
+70,007 B in 7 islands; on-demand JavaScript went to 84,970 B. WebKit sheet
+openings now meet the 1,000 ms limit in every row. WebKit desktop lag still
+misses 400 ms for Notebooks and once for Mail. Those medians are dominated by
+provider client time and frame start (#1601), and provider client time barely
+moved in WebKit: the provider document still parses about 150 KB Brotli of CSS.
+That cost and frame start remain for F10. One Chromium column run failed on a
+host-side read of the provider document (#1633).
+
+`packages/core/src/pages/help/panel.bundle.test.ts` keeps a budget of 48 KiB
+eager Brotli for the panel's islands: their own split production closure
+measured 46,421 B, plus 5 %, rounded up to the next KiB. Core's real build
+serves more, because its shared chunks also carry code of other Core islands,
+such as the Markdown editor. `PanelRuntime`'s workspace controller is about
+11 KB of the served figure. A quarter of the WebKit sheet limit at the documented phone
+rate of 200,000 B/s is 50,000 B.
 
 ### Mail observations and limits
 
