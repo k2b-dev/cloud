@@ -4,7 +4,7 @@
 // prelude and host with in-memory services.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
 import { ChunkName, chunkSource } from "../runtime/chunks";
 import { buildBaseCss, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
@@ -308,6 +308,142 @@ test("the theme follows Cloud live", async () => {
     await close();
   }
 });
+
+test("the Studio scroll canvas follows Cloud, including the transparent wrapper", async () => {
+  for (const initial of ["dark", "light"] as const) {
+    const context = await browser.newContext({
+      // Use native media preferences: Playwright's emulation overrides every
+      // frame's preference and bypasses the embedding color-scheme contract.
+      colorScheme: null,
+      reducedMotion: "reduce",
+      viewport: { width: initial === "dark" ? 1200 : 390, height: 700 },
+    });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/`);
+      await page.evaluate((theme) => {
+        const style = document.createElement("style");
+        style.textContent =
+          globalThis.assets.baseCss +
+          "html,body{margin:0;padding:0;max-width:none;height:100%}.studio-app-frame{width:100%;height:100%;border:0}";
+        document.head.append(style);
+        document.documentElement.className = theme;
+        document.documentElement.dataset.theme = theme;
+        globalThis.harness.mount({
+          "index.html": '<main style="height:200vh"><h1>Scroll canvas</h1><input aria-label="Keep this input" value="preserved"></main>',
+          "app.js": "document.body.dataset.initialTheme = document.documentElement.dataset.theme;",
+        });
+      }, initial);
+      await ready(page);
+      expect(await app(page).locator("body").getAttribute("data-initial-theme")).toBe(initial);
+      await app(page).getByRole("textbox").fill("edited value");
+      const wrapper = page.frameLocator("iframe.studio-app-frame");
+      const canvasPixel = async () => {
+        const png = await page.screenshot({ clip: { x: 5, y: 0, width: 1, height: 700 } });
+        return page.evaluate(async (base64) => {
+          const image = new Image();
+          image.src = `data:image/png;base64,${base64}`;
+          await image.decode();
+          const canvas = document.createElement("canvas");
+          canvas.width = 1;
+          canvas.height = image.height;
+          const drawing = canvas.getContext("2d")!;
+          drawing.drawImage(image, 0, 0);
+          return [5, image.height - 5].map((y) => [...drawing.getImageData(0, y, 1, 1).data]);
+        }, png.toString("base64"));
+      };
+      for (const theme of [initial, initial === "dark" ? "light" : "dark", initial]) {
+        await app(page)
+          .locator("html")
+          .evaluate(() => scrollTo(0, 100));
+        await settled(page);
+        await page.evaluate((value) => {
+          document.documentElement.className = value;
+          document.documentElement.dataset.theme = value;
+        }, theme);
+        await settled(page);
+        expect(
+          await eventually(
+            () => app(page).locator("html").getAttribute("data-theme"),
+            (value) => value === theme,
+          ),
+        ).toBe(theme);
+        expect(
+          await app(page)
+            .locator("html")
+            .evaluate(() => scrollY),
+        ).toBe(100);
+        expect(await app(page).getByRole("textbox").inputValue()).toBe("edited value");
+        expect(await wrapper.locator("html").evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches)).toBe(theme === "dark");
+        const surface = await page.locator("html").evaluate((element) => getComputedStyle(element).backgroundColor);
+        expect(
+          await app(page)
+            .locator("html")
+            .evaluate((element) => getComputedStyle(element).backgroundColor),
+        ).toBe(surface);
+
+        // Expose the backing canvas deterministically. Native rubber-banding
+        // is OS-controlled and cannot be reproduced by scrollTo in headless Linux.
+        await wrapper.locator("iframe").evaluate((element) => {
+          element.style.transform = "translateY(28px)";
+          element.style.height = "calc(100% - 56px)";
+        });
+        await settled(page);
+        const expected = [...surface.matchAll(/\d+/g)].map(([value]) => Number(value));
+        expect(await canvasPixel()).toEqual([
+          [...expected, 255],
+          [...expected, 255],
+        ]);
+        if (theme === "dark" && browserName === "chromium") {
+          // The old wrapper used the default normal scheme: its transparent
+          // canvas painted white against a dark embedding document.
+          await wrapper.locator("html").evaluate((element) => {
+            element.style.colorScheme = "normal";
+          });
+          await settled(page);
+          expect(await canvasPixel()).toEqual([
+            [255, 255, 255, 255],
+            [255, 255, 255, 255],
+          ]);
+          await wrapper.locator("html").evaluate((element) => {
+            element.style.removeProperty("color-scheme");
+          });
+          await settled(page);
+          expect(await canvasPixel()).toEqual([
+            [...expected, 255],
+            [...expected, 255],
+          ]);
+        }
+        await wrapper.locator("iframe").evaluate((element) => {
+          element.style.transform = "";
+          element.style.height = "";
+        });
+        await settled(page);
+        await app(page)
+          .locator("html")
+          .evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+        await settled(page);
+        expect(
+          await app(page)
+            .locator("html")
+            .evaluate(() => scrollY),
+        ).toBeGreaterThan(0);
+        await app(page)
+          .locator("html")
+          .evaluate(() => scrollTo(0, 0));
+        await settled(page);
+        expect(
+          await app(page)
+            .locator("html")
+            .evaluate(() => scrollY),
+        ).toBe(0);
+        expect(await app(page).getByRole("textbox").inputValue()).toBe("edited value");
+      }
+    } finally {
+      await context.close();
+    }
+  }
+}, 30000);
 
 test("downloads are octet-stream files with clean names and never open app content", async () => {
   const { page, close } = await open(
