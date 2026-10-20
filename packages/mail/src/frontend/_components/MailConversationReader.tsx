@@ -185,7 +185,12 @@ export default function MailConversationReader(props: {
     if (showOlder() || printing() || (selection !== null && olderPinnedFor === selection)) return null;
     const items = timeline();
     const messageIndexes = items.flatMap((item, index) => (item.kind === "message" ? [index] : []));
-    if (messageIndexes.length < MAIL_READER_COLLAPSE_FROM) return null;
+    if (messageIndexes.length < MAIL_READER_COLLAPSE_FROM) {
+      // Every message shows; a later arrival that crosses the threshold folds none of them away.
+      const last = items.findLast((item) => item.kind === "message");
+      foldBoundary = last?.kind === "message" ? { selection, messageId: last.message.id } : null;
+      return null;
+    }
     let cutoff = messageIndexes[MAIL_READER_NEWEST_SHOWN - 1]! + 1;
     const boundary = foldBoundary?.selection === selection ? foldBoundary.messageId : null;
     const boundaryIndex = boundary ? items.findIndex((item) => item.kind === "message" && item.message.id === boundary) : -1;

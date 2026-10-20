@@ -908,6 +908,39 @@ test.skipIf(isServer)("a new message never folds away a shown message, including
   }
 });
 
+test.skipIf(isServer)("the fifth message folds none of the four shown messages away", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([1, 2, 3, 4].map(message));
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg001"]') !== null);
+    const header = dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"] [data-mail-message-header]')!;
+    header.focus();
+    setMessages((current) => [...current, message(5)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg005"]') !== null);
+    expect(header.isConnected).toBe(true);
+    expect(dom.document.activeElement).toBe(header);
+    expect(dom.root.querySelector("[data-mail-older-messages]")).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 test.skipIf(isServer)("the reply box names whom Reply writes to, also when this mailbox sent the newest message", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;
