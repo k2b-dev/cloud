@@ -39,3 +39,62 @@ test("navigation exposes sources and one stable coming-back URL", () => {
   );
   expect(buildPulseWorkspaceHref({ baseId: "", state: { view: "sources" } })).toBe("/app/pulse");
 });
+
+test("SQL routes restore unsaved SQL/values and saved UUID or short IDs", () => {
+  const state = { view: "sql" as const, sql: "SELECT :host WHERE x = 'ä & ?'", params: { host: "db/01" } };
+  const href = buildPulseWorkspaceHref({ baseId: "Base01", state });
+  expect(readWorkspacePathState(href, "Base01")).toEqual({ ...state, sourceId: "", queryId: "" });
+  for (const queryId of ["Qry001", "00000000-0000-4000-8000-000000000001"]) {
+    const href = buildPulseWorkspaceHref({ baseId: "Base01", state: { ...state, queryId } });
+    expect(href).not.toContain("sql=");
+    expect(readWorkspacePathState(href, "Base01")).toEqual({ view: "sql", sourceId: "", sql: "", queryId, params: state.params });
+  }
+  expect(readWorkspacePathState("/app/pulse/Base01/sql", "Base01")).toEqual({
+    view: "sql",
+    sourceId: "",
+    queryId: "",
+    sql: "",
+    params: {},
+  });
+});
+
+test("URL payload bounds omit whole drafts, keep saved identity/settings, and reject malformed values", () => {
+  for (const queryId of ["", "Qry001"]) {
+    const href = buildPulseWorkspaceHref({
+      baseId: "Base01",
+      state: {
+        view: "sql",
+        queryId,
+        sql: "SELECT '" + "ä".repeat(4000) + "'",
+        params: { a: "x".repeat(2048), b: "x".repeat(2048) },
+        settings: "usage",
+      },
+    });
+    expect(href).toBe(`/app/pulse/Base01/sql${queryId ? `/${queryId}` : ""}?settings=usage`);
+    expect(href.length).toBeLessThanOrEqual(4000);
+  }
+  for (const raw of ["{", "[]", "null", '{"base_tz":"UTC"}', '{"a":12}', '{"__proto__":"x"}']) {
+    const state = readWorkspacePathState(`/app/pulse/Base01/sql?params=${encodeURIComponent(raw)}`, "Base01");
+    // __proto__ is a valid SQL parameter name and remains an own data property, never a prototype write.
+    expect(state.params).toEqual(raw.includes("__proto__") ? JSON.parse(raw) : {});
+  }
+  expect(readWorkspacePathState("/app/pulse/Base01/sql?sql=" + "a".repeat(4000), "Base01").sql).toBe("");
+  expect(readWorkspacePathState("/app/pulse/Base01/sql/%ZZ", "Base01").queryId).toBe("");
+  expect(readWorkspacePathState("/app/pulse/Base01/sql/Qry001?sql=SELECT+2", "Base01").sql).toBe("");
+});
+
+test("settings tabs preserve underlying source/SQL URL state", () => {
+  for (const settings of ["general", "members", "retention", "usage", "danger"] as const) {
+    const href = buildPulseWorkspaceHref({
+      baseId: "Base01",
+      state: { view: "sql", queryId: "Qry001", params: { host: "web-01" }, settings },
+    });
+    expect(readWorkspacePathState(href, "Base01")).toMatchObject({ view: "sql", queryId: "Qry001", params: { host: "web-01" }, settings });
+  }
+  expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001?settings=general", "Base01")).toEqual({
+    view: "sources",
+    sourceId: "Src001",
+    settings: "general",
+  });
+  expect(readWorkspacePathState("/app/pulse/Base01/sources?settings=bogus", "Base01")).not.toHaveProperty("settings");
+});

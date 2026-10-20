@@ -4,8 +4,115 @@ export const pulseMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      sql: "SQL",
+      dashboards: "Dashboards",
+      sqlConsole: "Console",
+      sqlSavedQueries: "Saved",
+      sqlNewQuery: "New query",
+      sqlRun: "Run",
+      sqlCancel: "Cancel",
+      sqlSaveAs: "Save as…",
+      sqlDeleteQuery: "Delete query",
+      sqlQueryName: "Query name",
+      sqlReady: "Ready",
+      sqlEmpty: "Ready · no query yet",
+      sqlEmptyHint: "Write a query, open a saved one, or ask for help.",
+      sqlRunning: "Running",
+      sqlCancelled: "Cancelled",
+      sqlTruncated: "Truncated",
+      sqlInputTooLarge: "Pulse did not start the query. Use at most 16 KiB of SQL, 32 parameters and 2 KiB per parameter value.",
+      sqlParameterMissing: "Parameter missing",
+      sqlParameterFocus: "Enter value",
+      sqlError: "SQL error",
+      sqlTimeLimit: "Time limit reached",
+      sqlMemoryLimit: "Memory limit reached",
+      sqlResultTooLarge: "The result exceeds the size limit",
+      sqlBusy: "Pulse is busy · waited 5 s, no slot available",
+      sqlQueueFull: "Pulse is busy · 20 queries are already waiting",
+      sqlQuota: "Hourly quota reached",
+      sqlStoreUnavailable: "Pulse cannot reach the data store",
+      sqlNoReadAccess: "SQL requires read access to this base. Ask a base admin for access.",
+      sqlRequestFailed: "The request failed. Please try again.",
+      sqlRetry: "Try again",
+      sqlConflict: "This query has changed since you opened it. Your SQL is preserved. Reload the saved version or save a copy.",
+      sqlReloadSaved: "Reload saved version",
+      sqlSaveFailed: "Could not save the query. Your SQL is preserved.",
+      sqlDeleteFailed: "Could not delete the query. Please try again.",
+      sqlSaved: "Saved",
+      sqlDeleted: "Query deleted",
+      sqlSaving: "Saving…",
+      sqlDeleting: "Deleting…",
+      sqlAskAssistant: "Ask AI",
+      sqlAssistantLaunching: "Opening Assistant…",
+      sqlAssistantFailed: "Could not open Assistant · your SQL is unchanged",
+      sqlAssistantPrompt: "Help me with this Pulse query.",
+      sqlNoTimeColumn: "No chart: the result has no DateTime, DateTime64 or Date column.",
+      sqlNoNumericColumn: "No chart: the result has no numeric column.",
+      sqlNoRows: "No chart: the result has no rows.",
+      sqlChartCutHint: "At most 8 series and 480 points. Use a coarser interval for all points, or fewer numeric columns for all series.",
+      sqlSavedEmptyHint: "Saved queries belong to a base. Save a query in the console and it will appear here.",
+      sqlBackToConsole: "Go to console",
+      sqlSavedLoading: "Loading saved queries…",
+      sqlSavedLoadFailed: "Could not load saved queries. Please try again.",
+      settingsGeneral: "General",
+      settingsMembers: "Members",
+      settingsRetention: "Retention",
+      settingsUsage: "Usage and limits",
+      settingsDanger: "Clear and delete",
+      settingsLoading: "Loading settings…",
+      settingsLoadFailed: "Could not load settings. Please try again.",
+      settingsNotAdmin: "Only base admins can change these settings.",
+      sqlAssistantEmptyPrompt: ({ base }: { base: string }) => `Help me write a query for ${base}.`,
+      sqlSavedEmpty: ({ base }: { base: string }) => `No queries in ${base} yet`,
+      sqlSavedListHint: ({ base }: { base: string }) =>
+        `Only queries from ${base}. Each base has its own; members with read access can see them.`,
+      sqlErrorPosition: ({ line, column }: { line: string; column?: string }) =>
+        `Error on line ${line}${column ? `, column ${column}` : ""}`,
+      sqlMissingParameter: ({ name }: { name: string }) => `Parameter missing · :${name} has no value · nothing computed`,
+      sqlInputBytes: ({ used, max }: { used: string; max: string }) => `${used} of ${max} KiB`,
+      sqlInputParameters: ({ used, max }: { used: string; max: string }) => `${used} of ${max} parameters`,
+      sqlQuotaReset: ({ resetAt }: { resetAt: string }) => `Hourly quota reached · available again at ${resetAt}`,
+      sqlResultSummary: ({ rows, elapsed, read }: { rows: string; elapsed: string; read: string }) =>
+        `${rows} rows · ${elapsed} ms · ${read} MiB read`,
+      sqlChartCut: ({
+        seriesShown,
+        seriesTotal,
+        pointsShown,
+        pointsTotal,
+      }: {
+        seriesShown: string;
+        seriesTotal: string;
+        pointsShown: string;
+        pointsTotal: string;
+      }) => `${seriesShown} of ${seriesTotal} series · first ${pointsShown} of ${pointsTotal} points`,
+      sqlLimits: ({
+        profile,
+        memory,
+        seconds,
+        rows,
+        result,
+        used,
+        quota,
+        baseSlots,
+        cloudSlots,
+        waiting,
+        wait,
+      }: {
+        profile: string;
+        memory: string;
+        seconds: string;
+        rows: string;
+        result: string;
+        used: string;
+        quota: string;
+        baseSlots: string;
+        cloudSlots: string;
+        waiting: string;
+        wait: string;
+      }) =>
+        `Profile ${profile}: ${memory} GB, ${seconds} s · ${rows} rows or ${result} MiB · ${used} of ${quota} queries this hour · Queue ${baseSlots} per base, ${cloudSlots} per Cloud, ${waiting} waiting, ${wait} s`,
       selectBase: "Switch base",
-      dashboardsAndQuestions: "Dashboards and questions",
+      dashboardsAndQuestions: "Dashboards",
       comingBackTitle: "Dashboards and questions are coming back",
       comingBackBody:
         "With the next update you ask Pulse in SQL and build dashboards from it. Earlier dashboards and saved queries were removed with this update. Pulse keeps collecting every value from your sources.",
@@ -236,8 +343,117 @@ export const pulseMessages = i18n.define({
       editSource: "Edit source",
     },
     de: {
+      sql: "SQL",
+      dashboards: "Dashboards",
+      sqlConsole: "Konsole",
+      sqlSavedQueries: "Gespeichert",
+      sqlNewQuery: "Neue Abfrage",
+      sqlRun: "Ausführen",
+      sqlCancel: "Abbrechen",
+      sqlSaveAs: "Speichern unter …",
+      sqlDeleteQuery: "Abfrage löschen",
+      sqlQueryName: "Name der Abfrage",
+      sqlReady: "Bereit",
+      sqlEmpty: "Bereit · noch keine Abfrage",
+      sqlEmptyHint: "Schreib eine Abfrage, öffne eine gespeicherte oder lass dir helfen.",
+      sqlRunning: "Läuft",
+      sqlCancelled: "Abgebrochen",
+      sqlTruncated: "Gekürzt",
+      sqlInputTooLarge:
+        "Pulse hat die Abfrage nicht gestartet. Eine Abfrage darf höchstens 16 KiB Text, 32 Parameter und 2 KiB je Parameterwert haben.",
+      sqlParameterMissing: "Parameter fehlt",
+      sqlParameterFocus: "Wert eintragen",
+      sqlError: "SQL-Fehler",
+      sqlTimeLimit: "Zeitlimit erreicht",
+      sqlMemoryLimit: "Speichergrenze erreicht",
+      sqlResultTooLarge: "Das Ergebnis überschreitet die Größengrenze",
+      sqlBusy: "Pulse ist ausgelastet · 5 s gewartet, kein Platz frei",
+      sqlQueueFull: "Pulse ist ausgelastet · 20 Abfragen warten schon",
+      sqlQuota: "Stundenkontingent erreicht",
+      sqlStoreUnavailable: "Pulse erreicht den Datenspeicher nicht",
+      sqlNoReadAccess: "SQL braucht das Recht Lesen in dieser Base. Bitte eine Admin der Base um Zugriff.",
+      sqlRequestFailed: "Die Anfrage ist fehlgeschlagen. Bitte versuche es erneut.",
+      sqlRetry: "Erneut versuchen",
+      sqlConflict:
+        "Diese Abfrage wurde inzwischen geändert. Dein SQL bleibt erhalten. Lade die gespeicherte Fassung neu oder speichere eine Kopie.",
+      sqlReloadSaved: "Gespeicherte Fassung laden",
+      sqlSaveFailed: "Die Abfrage ließ sich nicht speichern. Dein SQL bleibt erhalten.",
+      sqlDeleteFailed: "Die Abfrage ließ sich nicht löschen. Bitte versuche es erneut.",
+      sqlSaved: "Gespeichert",
+      sqlDeleted: "Abfrage gelöscht",
+      sqlSaving: "Wird gespeichert …",
+      sqlDeleting: "Wird gelöscht …",
+      sqlAskAssistant: "Mit KI fragen",
+      sqlAssistantLaunching: "Assistant wird geöffnet …",
+      sqlAssistantFailed: "Der Assistant ließ sich nicht öffnen · dein SQL ist unverändert",
+      sqlAssistantPrompt: "Hilf mir mit dieser Pulse-Abfrage.",
+      sqlNoTimeColumn: "Kein Chart: das Ergebnis hat keine DateTime-, DateTime64- oder Date-Spalte.",
+      sqlNoNumericColumn: "Kein Chart: das Ergebnis hat keine Zahlen-Spalte.",
+      sqlNoRows: "Kein Chart: das Ergebnis hat keine Zeilen.",
+      sqlChartCutHint: "Höchstens 8 Reihen und 480 Punkte. Für alle Punkte ein gröberes Raster, für alle Reihen weniger Zahlen-Spalten.",
+      sqlSavedEmptyHint: "Gespeicherte Abfragen gehören zu einer Base. Speichere eine Abfrage in der Konsole, dann erscheint sie hier.",
+      sqlBackToConsole: "Zur Konsole",
+      sqlSavedLoading: "Gespeicherte Abfragen werden geladen …",
+      sqlSavedLoadFailed: "Gespeicherte Abfragen ließen sich nicht laden. Bitte versuche es erneut.",
+      settingsGeneral: "Allgemein",
+      settingsMembers: "Mitglieder",
+      settingsRetention: "Aufbewahrung",
+      settingsUsage: "Nutzung und Grenzen",
+      settingsDanger: "Leeren und löschen",
+      settingsLoading: "Einstellungen werden geladen …",
+      settingsLoadFailed: "Die Einstellungen ließen sich nicht laden. Bitte versuche es erneut.",
+      settingsNotAdmin: "Nur Admins der Base können diese Einstellungen ändern.",
+      sqlAssistantEmptyPrompt: ({ base }: { base: string }) => `Hilf mir, eine Abfrage für ${base} zu schreiben.`,
+      sqlSavedEmpty: ({ base }: { base: string }) => `Noch keine Abfrage in ${base}`,
+      sqlSavedListHint: ({ base }: { base: string }) =>
+        `Nur Abfragen aus ${base}. Jede Base hat ihre eigenen; Mitglieder mit Lesen sehen sie.`,
+      sqlErrorPosition: ({ line, column }: { line: string; column?: string }) =>
+        `Fehler in Zeile ${line}${column ? `, Spalte ${column}` : ""}`,
+      sqlMissingParameter: ({ name }: { name: string }) => `Parameter fehlt · :${name} ohne Wert · nichts gerechnet`,
+      sqlInputBytes: ({ used, max }: { used: string; max: string }) => `${used} von ${max} KiB`,
+      sqlInputParameters: ({ used, max }: { used: string; max: string }) => `${used} von ${max} Parametern`,
+      sqlQuotaReset: ({ resetAt }: { resetAt: string }) => `Stundenkontingent erreicht · wieder ab ${resetAt}`,
+      sqlResultSummary: ({ rows, elapsed, read }: { rows: string; elapsed: string; read: string }) =>
+        `${rows} Zeilen · ${elapsed} ms · ${read} MiB gelesen`,
+      sqlChartCut: ({
+        seriesShown,
+        seriesTotal,
+        pointsShown,
+        pointsTotal,
+      }: {
+        seriesShown: string;
+        seriesTotal: string;
+        pointsShown: string;
+        pointsTotal: string;
+      }) => `${seriesShown} von ${seriesTotal} Reihen · erste ${pointsShown} von ${pointsTotal} Punkten`,
+      sqlLimits: ({
+        profile,
+        memory,
+        seconds,
+        rows,
+        result,
+        used,
+        quota,
+        baseSlots,
+        cloudSlots,
+        waiting,
+        wait,
+      }: {
+        profile: string;
+        memory: string;
+        seconds: string;
+        rows: string;
+        result: string;
+        used: string;
+        quota: string;
+        baseSlots: string;
+        cloudSlots: string;
+        waiting: string;
+        wait: string;
+      }) =>
+        `Profil ${profile}: ${memory} GB, ${seconds} s · ${rows} Zeilen oder ${result} MiB · ${used} von ${quota} Abfragen diese Stunde · Warteschlange ${baseSlots} pro Base, ${cloudSlots} pro Cloud, ${waiting} wartend, ${wait} s`,
       selectBase: "Base wechseln",
-      dashboardsAndQuestions: "Dashboards und Fragen",
+      dashboardsAndQuestions: "Dashboards",
       comingBackTitle: "Dashboards und Fragen kommen zurück",
       comingBackBody:
         "Mit dem nächsten Update fragst du Pulse mit SQL und baust daraus Dashboards. Frühere Dashboards und gespeicherte Abfragen hat dieses Update entfernt. Pulse sammelt alle Werte deiner Quellen weiter.",

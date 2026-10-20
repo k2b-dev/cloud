@@ -5,6 +5,8 @@ import type { Context } from "hono";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
 import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
+import { savedQueries } from "../../service/saved-queries";
+import { baseSqlLimits } from "../../service/sql-service";
 import { readWorkspacePathState } from "../workspace/routes";
 import type { PulseWorkspaceProps } from "../workspace/types";
 
@@ -31,7 +33,7 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   if (!SHORT_ID_REGEX.test(publicBaseId)) return { kind: "error", status: 404 };
   const baseId = await resolvePublicId("bases", publicBaseId);
   if (!baseId) return { kind: "error", status: 404 };
-  const route = readWorkspacePathState(url.pathname, publicBaseId);
+  const route = readWorkspacePathState(`${url.pathname}${url.search}`, publicBaseId);
   const [base, bases, sources, appUrl] = await Promise.all([
     pulseService.base.get(baseId, user),
     pulseService.base.list(user),
@@ -52,6 +54,19 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     initialNow: new Date().toISOString(),
     initialOrigin: publicOrigin(appUrl, url.origin),
   };
+  if (route.view === "sql") {
+    const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };
+    const [limits, query] = await Promise.all([
+      baseSqlLimits(identity),
+      route.queryId ? savedQueries.get({ ...identity, queryId: route.queryId }) : Promise.resolve(null),
+    ]);
+    if (query && !query.ok) return { kind: "error", status: query.error.status };
+    props.initialSql = {
+      limits: limits.ok ? limits.data : null,
+      query: query?.ok ? query.data : null,
+      error: limits.ok ? null : { code: limits.error.code, details: { ...limits.error } },
+    };
+  }
   if (route.sourceId) {
     const sourceId = await resolveBasePublicId("sources", baseId, route.sourceId);
     const source = sources.data.find((source) => source.id === sourceId);

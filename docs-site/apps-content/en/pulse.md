@@ -109,6 +109,31 @@ The result contains column names and ClickHouse types, compact row arrays,
 10,000-row limit was reached; there may be more**. This flag does not prove
 that another row exists. Results over 4 MiB fail with `RESULT_TOO_LARGE`.
 
+### Console URLs and Assistant drafts
+
+The console route is `/app/pulse/:baseId/sql`; a saved query adds its ID or
+short ID as the final path segment. An unsaved console keeps SQL and parameter
+values in the URL. A saved console keeps its query ID and parameter values;
+reload restores the saved SQL. Unsaved edits to a saved query's SQL are not
+included in its URL.
+
+Console links have a 4,000-character budget, including percent-encoding. If
+SQL and parameters exceed it, the entire console payload is omitted. The
+saved query ID and settings tab remain. Save a long query before relying on
+reload or sharing its link. Result rows are never stored in URLs.
+
+The chart adapter uses the first Date, DateTime, or DateTime64 column as X and
+numeric columns as series, including Nullable numeric columns. It takes at
+most eight series and the first 480 returned rows, without reordering them.
+The cut counts refer to the returned result, not rows beyond the server's
+result limit. Missing dates, numbers, or rows have separate no-chart reasons.
+
+**Ask AI** opens an unsent Assistant draft containing the current SQL,
+parameter values, and base reference. It loads the `cloud-pulse` Skill and
+`sql.run`, `base.read`, and `source.list` tools. Launch failure leaves the SQL
+unchanged and can be retried. The hourly SQL quota blocks execution until its
+reset time; saving remains available.
+
 ### Bind parameters
 
 Write `:name` outside strings, identifiers, and comments. Names are

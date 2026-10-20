@@ -6,6 +6,8 @@ import { pulseNotSetUpGate } from "./not-set-up";
 import page from "./page";
 
 const workspacePages = new Hono<AuthContext>()
+  .get("/sql", auth.requireRole("user", ssr.access), ...basePage)
+  .get("/sql/:queryId", auth.requireRole("user", ssr.access), ...basePage)
   .get("/dashboards", auth.requireRole("user", ssr.access), ...basePage)
   .get("/events", auth.requireRole("user", ssr.access), ...basePage)
   .get("/metrics", auth.requireRole("user", ssr.access), ...basePage)
