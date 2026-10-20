@@ -23,6 +23,12 @@ type SnapshotRegistry<T> = {
 
 type MembershipRegistry = HeartbeatRegistry<AppInstanceRecord> & SnapshotRegistry<AppInstanceRecord>;
 
+type SharedEntry = {
+  write: () => Promise<unknown>;
+  remove: () => Promise<unknown>;
+  prepare: (() => Promise<void>) | undefined;
+};
+
 const entryDigest = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("base64url");
 
 type MembershipLock = {
@@ -57,7 +63,14 @@ export const createRegistryMembership = (
   const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;
   if (!Number.isFinite(writeTimeoutMs) || writeTimeoutMs <= 0) throw new RangeError("Membership write timeout must be positive and finite");
   let left = false;
-  const sharedEntries = new Map<string, { write: () => Promise<unknown>; remove: () => Promise<unknown> }>();
+  const sharedEntries = new Map<string, SharedEntry>();
+
+  // Prepare idempotent dependent data outside the lock to preserve its bounded lease.
+  const prepareShared = async (sharedKey: string): Promise<void> => {
+    for (const [key, { prepare }] of sharedEntries) {
+      if (key !== sharedKey) await prepare?.();
+    }
+  };
 
   const locked = async (write: (lock: { expiresAt: Date }) => Promise<void>): Promise<void> => {
     const result = await options
@@ -80,16 +93,18 @@ export const createRegistryMembership = (
   };
 
   return {
-    join: async (sharedKey: string, sharedValue: unknown, write: () => Promise<unknown>, remove: () => Promise<unknown>): Promise<void> => {
+    join: async (sharedKey: string, sharedValue: unknown, entry: SharedEntry): Promise<void> => {
       left = false;
+      await prepareShared(sharedKey);
       await locked(async () => {
         value.entries[sharedKey] = entryDigest(sharedValue);
-        sharedEntries.set(sharedKey, { write, remove });
+        sharedEntries.set(sharedKey, entry);
         await publishShared();
       });
     },
-    publish: async (): Promise<void> => {
+    publish: async (sharedKey: string): Promise<void> => {
       if (left) return;
+      await prepareShared(sharedKey);
       await locked(async () => {
         if (left) return;
         await publishShared();
@@ -107,6 +122,7 @@ export const createRegistryMembership = (
         return !snapshot.entries.some(({ value }) => value.entries[sharedKey] === digest);
       };
       if (!(await orphaned())) return;
+      await prepareShared(sharedKey);
       await locked(async (lock) => {
         if (left) return;
         const stillOrphaned = await orphaned();
@@ -193,7 +209,12 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
 
   const register = async (): Promise<void> => {
     await options.beforeWrite?.();
-    if (options.membership) await options.membership.join(key, entry, upsert, () => registry.delete({ key }));
+    if (options.membership)
+      await options.membership.join(key, entry, {
+        write: upsert,
+        remove: () => registry.delete({ key }),
+        prepare: options.beforeWrite,
+      });
     else await upsert();
     noteSuccess();
   };
@@ -207,7 +228,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
     await options.membership?.renew();
     const touched = await registry.touch({ key });
     if (!touched) {
-      if (options.membership) await options.membership.publish();
+      if (options.membership) await options.membership.publish(key);
       else await upsert();
     } else if (options.membership) {
       const registry = options.registry;

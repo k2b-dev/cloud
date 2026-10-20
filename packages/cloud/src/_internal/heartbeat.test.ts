@@ -546,6 +546,7 @@ describe("replica membership", () => {
       writeTimeoutMs = 500,
       intervalMs: number | { app: number; capability: number } = 3_600_000,
       appId = "test",
+      hooks: { beforeWrite?: () => Promise<void>; onCapabilityError?: (error: unknown) => void } = {},
     ) => {
       const membership = createRegistryMembership(appId, {
         registry: () => instances,
@@ -563,6 +564,7 @@ describe("replica membership", () => {
           ...options,
           intervalMs: typeof intervalMs === "number" ? intervalMs : intervalMs.app,
           registry: apps,
+          beforeWrite: hooks.beforeWrite,
         },
       );
       const capability = createHeartbeat(
@@ -573,6 +575,7 @@ describe("replica membership", () => {
           intervalMs: typeof intervalMs === "number" ? intervalMs : intervalMs.capability,
           registry: capabilities,
           key: `capabilities/${appId}`,
+          onError: hooks.onCapabilityError,
         },
       );
       const stop = async () => {
@@ -598,6 +601,89 @@ describe("replica membership", () => {
     ];
     return { apps, capabilities, instances, lock, contended, process, keys, values };
   };
+
+  test("capability repair gates both shared entries on app publication after registry recreation", async () => {
+    const f = fixture();
+    let fail = false;
+    const errors: unknown[] = [];
+    const a = f.process("a", 500, { app: 3_600_000, capability: 2 }, "test", {
+      beforeWrite: async () => {
+        if (fail) throw new Error("publication unavailable");
+      },
+      onCapabilityError: (error) => errors.push(error),
+    });
+    await a.start();
+    const writes: string[] = [];
+    for (const registry of [f.apps, f.capabilities]) {
+      const upsert = registry.upsert;
+      registry.upsert = async (input) => {
+        writes.push(input.key);
+        return upsert(input);
+      };
+      for (const key of await f.keys(registry)) await registry.delete({ key });
+    }
+    fail = true;
+    await waitUntil(() => errors.length > 0 || writes.length > 0);
+    expect(writes).toEqual([]);
+    expect(errors[0]).toEqual(new Error("publication unavailable"));
+    expect(await f.values()).toEqual([undefined, undefined]);
+
+    fail = false;
+    await waitUntil(() => writes.length >= 2);
+    expect(writes).toEqual(["capabilities/test", "apps/test"]);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "a" }, { instanceId: "a" }]);
+  });
+
+  test("capability adoption prepares the app before locking and publishing both entries", async () => {
+    const f = fixture();
+    const events: string[] = [];
+    const a = f.process("a", 500, { app: 3_600_000, capability: 2 }, "test", {
+      beforeWrite: async () => void events.push("prepare"),
+    });
+    const b = f.process("b");
+    await a.start();
+    events.length = 0;
+    let touches = 0;
+    const touch = f.capabilities.touch;
+    f.capabilities.touch = async (input) => {
+      touches++;
+      return touch(input);
+    };
+    await waitUntil(() => touches >= 2);
+    expect(events).toEqual([]);
+    await b.start();
+    await b.stop();
+    const withLock = f.lock.withLock;
+    f.lock.withLock = async (input, fn) => {
+      events.push("lock");
+      return withLock(input, fn);
+    };
+    for (const registry of [f.apps, f.capabilities]) {
+      const upsert = registry.upsert;
+      registry.upsert = async (input) => {
+        events.push(input.key);
+        return upsert(input);
+      };
+    }
+    await waitUntil(() => events.includes("apps/test"));
+    expect(events).toEqual(["prepare", "lock", "capabilities/test", "apps/test"]);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "a" }, { instanceId: "a" }]);
+  });
+
+  test("join runs the triggering heartbeat's own beforeWrite only once", async () => {
+    const f = fixture();
+    let prepares = 0;
+    const a = f.process("a", 500, 3_600_000, "test", {
+      beforeWrite: async () => void prepares++,
+    });
+    await a.app.start();
+    expect(prepares).toBe(1);
+    await a.capability.start();
+    expect(prepares).toBe(2);
+    await a.app.stop();
+    await a.app.start();
+    expect(prepares).toBe(3);
+  });
 
   test("an older replica adopts both differing manifests after the newer publisher stops", async () => {
     const f = fixture();
@@ -954,7 +1040,7 @@ describe("replica membership", () => {
       expect(await f.keys(f.capabilities)).toEqual(expectedCapabilities);
       expect(appWrites).toBe(0);
       if (survivor) {
-        await survivor.membership.publish();
+        await survivor.membership.publish("apps/test");
         expect(await f.values()).toEqual([{ ...entry, instanceId: "sibling" }, { instanceId: "sibling" }]);
       }
     });
@@ -1099,7 +1185,7 @@ describe("replica membership", () => {
     expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}a`]);
     await a.stop();
     await a.membership.renew();
-    await a.membership.publish();
+    await a.membership.publish("apps/test");
     expect(await f.keys()).toEqual([]);
   });
 });
