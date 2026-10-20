@@ -105,7 +105,8 @@ describe("plain question blocks", () => {
       "? Nachricht senden?",
       "  Ich frage, weil das Cloud verlässt.",
       "  Titel:        Retro",
-      "  Wann:         21. Okt. 2026, 18:00 – 21. Okt. 2026, 20:00",
+      "  Wann:         21. Okt. 2026, 18:00",
+      "  Bis:          21. Okt. 2026, 20:00",
       "  Wo:           Team Ops · Raum 2",
       "  Mit:          Lea Berg <lea.berg@example.com>",
       "  Wiederholung: weekly",
@@ -117,7 +118,9 @@ describe("plain question blocks", () => {
       "? Send message?",
       "  I'm asking because this leaves Cloud.",
       "  Title:   Retro",
-      "  When:    Oct 21, 2026, 18:00 – Oct 21, 2026, 20:00",
+      // Both ends stay typed, so a reader in New York reads its own times.
+      "  When:    Oct 21, 2026, 12:00",
+      "  Until:   Oct 21, 2026, 14:00",
       "  Where:   Team Ops · Raum 2",
       "  With:    Lea Berg <lea.berg@example.com>",
       "  Repeats: weekly",
@@ -271,12 +274,15 @@ test("single dates stay typed and calendar dates stay on their day west of UTC",
     { label: "When", value: "2026-10-21", format: "date" },
   ]);
   expect(actionQuestionLines(date, { timeZone: "America/Los_Angeles" })).toContain("  When:  Oct 21, 2026");
-  const when = (text: ReturnType<typeof textFor>) => text.rows.filter((row) => row.label === "When");
+  const when = (text: ReturnType<typeof textFor>) => text.rows.filter((row) => row.label === "When" || row.label === "Until");
   expect(
     when(
       textFor("en", { kind: "event", title: "Day", allDay: true, start: "2026-10-21T00:00:00+14:00", end: "2026-10-22T00:00:00+14:00" }),
     ),
-  ).toEqual([{ label: "When", value: "Oct 20, 2026 – Oct 21, 2026" }]);
+  ).toEqual([
+    { label: "When", value: "2026-10-20", format: "date" },
+    { label: "Until", value: "2026-10-21", format: "date" },
+  ]);
   expect(when(textFor("en", { kind: "event", title: "Meeting", start: "2026-10-21T16:00:00Z" }))).toEqual([
     { label: "When", value: "2026-10-21T16:00:00Z", format: "date-time" },
   ]);
@@ -334,4 +340,18 @@ test("people the question names only as 'more' leave the text incomplete unless 
   });
   expect(text(listed).incomplete).toBe(false);
   expect(text(review({ slots: { to: { kind: "person", people: people.slice(0, 2), total: 3 } } })).incomplete).toBe(true);
+});
+
+test("people named in a consequence count for completeness too", () => {
+  const lea = { name: "Lea", address: "lea@example.com" };
+  const review: CapabilityActionCallReview = {
+    locale: "en",
+    ask: "sends",
+    sentence: { action: "Send update", running: "Sending update", done: "Sent update", confirm: "Send", decline: "Don't send" },
+    slots: {},
+    consequences: [{ text: "Notifies {people}", slots: { people: { kind: "person", people: [lea], total: 4 } } }],
+  };
+  const text = actionCardText(reviewActionCard(review, { locale: "en", timeZone: "UTC", app: { name: "Mail", icon: "ti ti-mail" } }));
+  expect(text.rows).toEqual([{ label: "Also", value: "Notifies Lea <lea@example.com> and 3 more" }]);
+  expect(text.incomplete).toBe(true);
 });

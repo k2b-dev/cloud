@@ -7,11 +7,9 @@ import {
   chatTaskName,
   chatTaskReasonSentence,
 } from "@k2b/cloud/ai";
-import { approvalCard } from "@k2b/cloud/ai/question-text";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
-import { CapabilityActionReviewDataSchema } from "@k2b/cloud/contracts/capabilities";
 import { coreSettings, getFreeIpaConfig, logger, notifications, trace } from "@k2b/cloud/services";
-import { listPending } from "@k2b/cloud/services/approvals";
+import { listPending, loadApprovalActionPolicies, pendingApprovalCard } from "@k2b/cloud/services/approvals";
 import { toPgTextArray } from "@k2b/cloud/services/postgres";
 import { resolveAppIdentityPresentation } from "@k2b/cloud/shared";
 import { i18n } from "@k2b/stdlib";
@@ -376,13 +374,16 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
             const run = row.runConfig?.kind === "compact" ? null : row.runConfig;
             recipientLocale = run?.locale ?? locale;
             const apps = await listApps();
-            const owner = apps.find((entry) => entry.id === row.appId);
-            const appName = owner ? resolveAppIdentityPresentation(owner, recipientLocale).name : row.appId;
-            const parsed = row.storedReview ?? CapabilityActionReviewDataSchema.safeParse(row.details).data ?? null;
-            const card = approvalCard(
-              { sentence: row.sentence, action: row.action, appName, appIcon: owner?.icon ?? null, review: parsed },
-              recipientLocale,
-              run?.timeZone ?? "UTC",
+            // The same card as the approvals page and Cloud Login, with the Action's declared reason when the review has none.
+            const policy = (await loadApprovalActionPolicies([row]))(row);
+            const card = pendingApprovalCard(
+              row,
+              (id, language) => {
+                const app = apps.find((entry) => entry.id === id);
+                return app ? resolveAppIdentityPresentation(app, language).name : id;
+              },
+              policy ?? undefined,
+              locale || undefined,
             );
             question = card.questionText.slice(0, 400);
             reason = card.reason.text.slice(0, 500);

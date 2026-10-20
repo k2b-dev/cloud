@@ -618,7 +618,7 @@ The row labels follow the question's language. The main labels are:
 | Preview | German / English labels |
 | --- | --- |
 | Message | Von / From, An / To, Cc, Bcc, Betreff / Subject, Senden am / Send at, Warnung / Warning, Anhänge / Attachments, Text |
-| Event | Titel / Title, Wann / When, Wo / Where, Mit / With, Wiederholung / Repeats, Text |
+| Event | Titel / Title, Wann / When, Bis / Until, Wo / Where, Mit / With, Wiederholung / Repeats, Text |
 | Task | Titel / Title, Ort / Place, Fällig / Due, Zuständig / Assignees, Status, Checkliste / Checklist, Tags, Text |
 | File | Name, Ordner / Folder, Größe / Size, Ziel / To |
 | Page | Titel / Title, Ort / Place, Text, Neu / Added, Entfernt / Removed |
@@ -644,8 +644,10 @@ If the full JSON still exceeds 8 KiB in UTF-8, Cloud drops details from the
 end, then shortens the message.
 
 A question whose review names no reason takes it from the Action's declared
-policy, as the approvals page does; if Cloud cannot read that policy, a
-truncated question counts as a `sends` question. A truncated question with
+policy, as the approvals page does; if Cloud cannot read that policy, or the
+app is not registered at that moment, a truncated question counts as a
+`sends` question. Dates and times stay typed rows, an event's end too, so the
+device shows them in its own time zone. A truncated question with
 reason `sends` is browser-only: it is absent from
 the device inbox and detail endpoint and triggers no device push. It still
 counts in `moreActions`. The person decides in Cloud, where the full message

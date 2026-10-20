@@ -1,8 +1,6 @@
-import { listApps, listCapabilities } from "../../_internal/registry";
-import { storedActionReview } from "../../ai/action-review";
+import { listApps } from "../../_internal/registry";
 import type { ActionCard } from "../../ai/chat/action-card";
 import { type ActionQuestionText, actionCardText, actionNoteLabel } from "../../ai/chat/action-text";
-import { approvalCard } from "../../approvals/approval-card";
 import {
   APP_APPROVAL_LIMITS,
   type AppActionSummary,
@@ -10,17 +8,12 @@ import {
   appActionDigest,
   APP_ACTION_LIMITS as limits,
 } from "../../contracts/app-approval";
-import {
-  CapabilityActionCallReviewSchema,
-  type CapabilityActionPolicy,
-  CapabilityActionReviewDataSchema,
-  capabilityActionPolicy,
-} from "../../contracts/capabilities";
 import { DEFAULT_LOCALE } from "../../server/locale";
 import { resolveAppIdentityPresentation } from "../../shared/app-presentation";
 import { get } from ".";
 import type { PendingApprovalRow } from "./list";
 import { listPending } from "./list";
+import { type ApprovalActionPolicy, loadApprovalActionPolicies, pendingApprovalCard } from "./question";
 
 const plain = (value: string): string =>
   value
@@ -34,60 +27,21 @@ const cut = (value: string, limit: number): string => {
   return points.length > limit ? `${points.slice(0, limit - 1).join("")}…` : value;
 };
 
+export { pendingApprovalCard };
+
 export const appApprovalText = (value: string, limit: number): string => cut(plain(value), limit);
-
-/**
- * The declared policy of a row's Action, needed when neither a stored review nor the app's review names why it asks:
- * `undefined` when none is needed or declared, `null` when the registry could not say.
- */
-export type DeviceActionPolicy = CapabilityActionPolicy | null | undefined;
-const needsPolicy = (row: PendingApprovalRow): boolean => {
-  if (row.storedReview && "sentence" in row.storedReview) return false;
-  const review = CapabilityActionCallReviewSchema.safeParse(row.details);
-  return review.success && !review.data.ask;
-};
-/** Reads the registry once for the rows that need their Action's declared policy, as the approvals page does. */
-export const loadDeviceActionPolicies = async (
-  rows: readonly PendingApprovalRow[],
-): Promise<(row: PendingApprovalRow) => DeviceActionPolicy> => {
-  if (!rows.some(needsPolicy)) return () => undefined;
-  const capabilities = await listCapabilities().catch(() => null);
-  return (row) => {
-    if (!needsPolicy(row)) return undefined;
-    if (capabilities === null) return null;
-    const manifest = capabilities.find((entry) => entry.appId === row.appId)?.manifest;
-    return manifest ? capabilityActionPolicy(manifest, row.action) : undefined;
-  };
-};
-
-/** Resolve the recorded question in the language and time zone of its originating turn. */
-export const pendingApprovalCard = (
-  row: PendingApprovalRow,
-  appName: (appId: string, locale: string) => string,
-  policy?: DeviceActionPolicy,
-): ActionCard => {
-  const locale = row.runConfig?.kind === "compact" ? DEFAULT_LOCALE : (row.runConfig?.locale ?? DEFAULT_LOCALE);
-  const timeZone = row.runConfig?.kind === "compact" ? "UTC" : (row.runConfig?.timeZone ?? "UTC");
-  const parsed = CapabilityActionReviewDataSchema.safeParse(row.details);
-  const review = row.storedReview ?? (parsed.success ? storedActionReview(parsed.data, policy ?? undefined) : null);
-  return approvalCard(
-    { sentence: row.sentence, action: row.action, appName: appName(row.appId, locale), appIcon: null, review },
-    locale,
-    timeZone,
-  );
-};
 
 /**
  * Incomplete sends must be decided with the complete review in the browser. Without the declared policy Cloud cannot
  * rule out `sends`, so an incomplete question then stays in the browser too.
  */
-export const appActionOffered = (view: AppActionView, question: ActionCard | ActionQuestionText, policy?: DeviceActionPolicy): boolean =>
+export const appActionOffered = (view: AppActionView, question: ActionCard | ActionQuestionText, policy?: ApprovalActionPolicy): boolean =>
   !(view.truncated && (policy === null || ("reasonCode" in question ? question.reasonCode : question.reason.code) === "sends"));
 
 /** A deterministic, plain-text snapshot; the digest binds the device's choice to everything it shows. */
 export const appActionView = async (
   row: PendingApprovalRow,
-  options: { issuer: string; appName: (appId: string, locale: string) => string; policy?: DeviceActionPolicy },
+  options: { issuer: string; appName: (appId: string, locale: string) => string; policy?: ApprovalActionPolicy },
 ): Promise<AppActionView> => {
   let truncated = false;
   const text = (value: string, limit: number) => {
@@ -166,7 +120,7 @@ export const deviceOffersApproval = async (approvalId: string): Promise<boolean>
     const app = apps.find((entry) => entry.id === id);
     return app ? resolveAppIdentityPresentation(app, locale).name : id;
   };
-  const policy = (await loadDeviceActionPolicies([row]))(row);
+  const policy = (await loadApprovalActionPolicies([row]))(row);
   // Offering does not sign a decision; the issuer has no effect on truncation or eligibility.
   const view = await appActionView(row, { issuer: "", appName, policy });
   return appActionOffered(view, pendingApprovalCard(row, appName, policy), policy);

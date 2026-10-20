@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import * as registry from "../../_internal/registry";
 import { actionCardText } from "../../ai/chat/action-text";
 import { assertCapabilityReview } from "../../capabilities/testing";
 import {
@@ -12,6 +13,7 @@ import type { CapabilityActionCallReview } from "../../contracts/capabilities";
 import { appNameIn } from "../../ssr/runtime";
 import { appActionOffered, appActionSummary, appActionView, pendingApprovalCard } from "./device";
 import type { PendingApprovalRow } from "./list";
+import { loadApprovalActionPolicies } from "./question";
 
 const row: PendingApprovalRow = {
   id: "ab811792-7476-4a8c-b676-2c6007bb9b5b",
@@ -272,4 +274,22 @@ test("a relayed review without its own reason takes the declared policy, and an 
   expect(appActionOffered(unknown, pendingApprovalCard(relayed, options.appName, null), null)).toBe(false);
   const other = await appActionView(relayed, { ...options, policy: { ask: "app_asks" } });
   expect(appActionOffered(other, pendingApprovalCard(relayed, options.appName, { ask: "app_asks" }), { ask: "app_asks" })).toBe(true);
+});
+
+test("the declared policy is unknown while the registry fails or lacks the app, and not needed when the review says why", async () => {
+  const { ask: _ask, ...withoutAsk } = mailReview();
+  const relayed = { ...row, details: withoutAsk, storedReview: null };
+  const reasoned = { ...row, details: mailReview(), storedReview: null };
+  const capabilities = spyOn(registry, "listCapabilities").mockResolvedValue([]);
+  try {
+    expect((await loadApprovalActionPolicies([relayed, reasoned]))(relayed)).toBeNull();
+    expect((await loadApprovalActionPolicies([relayed, reasoned]))(reasoned)).toBeUndefined();
+    capabilities.mockRejectedValue(new Error("registry down"));
+    expect((await loadApprovalActionPolicies([relayed]))(relayed)).toBeNull();
+    capabilities.mockClear();
+    expect((await loadApprovalActionPolicies([reasoned]))(reasoned)).toBeUndefined();
+    expect(capabilities).not.toHaveBeenCalled();
+  } finally {
+    capabilities.mockRestore();
+  }
 });

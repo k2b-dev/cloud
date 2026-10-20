@@ -32,6 +32,7 @@ const messages = i18n.define({
       attachments: "Attachments",
       text: "Text",
       when: "When",
+      until: "Until",
       where: "Where",
       with: "With",
       repeats: "Repeats",
@@ -69,6 +70,7 @@ const messages = i18n.define({
       attachments: "Anhänge",
       text: "Text",
       when: "Wann",
+      until: "Bis",
       where: "Wo",
       with: "Mit",
       repeats: "Wiederholung",
@@ -152,18 +154,19 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
         break;
       case "event": {
         named(t.title, preview.title);
-        const format = preview.allDay || /^\d{4}-\d{2}-\d{2}$/.test(preview.start) ? "date" : "date-time";
-        const { start, end } = preview;
-        if (end && format === "date" && (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end))) {
-          // All-day instants follow the card's zone, just as a single date row and the card renderer do.
-          const date = (value: string) =>
-            dates.formatDate(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00.000Z` : value, {
-              ...context,
-              ...(/^\d{4}-\d{2}-\d{2}$/.test(value) ? { timeZone: "UTC" } : {}),
-            });
-          row(t.when, `${date(start)} – ${date(end)}`);
-        } else if (end) row(t.when, capabilitySentenceText("{time}", { time: { kind: "time", start, end, format } }, context));
-        else row(t.when, preview.start, { format });
+        const dateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+        const allDay = preview.allDay === true || dateOnly(preview.start);
+        // Both ends stay typed, so a device shows them in its own zone. An all-day instant becomes its calendar day
+        // in the card's zone first, so no reader's zone moves it to another day.
+        const day = (value: string) =>
+          dateOnly(value)
+            ? value
+            : new Intl.DateTimeFormat("en-CA", { timeZone: model.timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+                new Date(value),
+              );
+        const format = allDay ? "date" : "date-time";
+        row(t.when, allDay ? day(preview.start) : preview.start, { format });
+        if (preview.end) row(t.until, allDay ? day(preview.end) : preview.end, { format });
         row(t.where, [preview.place, preview.location].filter(Boolean).join(" · "));
         row(t.with, people(preview.attendees));
         row(t.repeats, preview.recurrence);
@@ -213,8 +216,7 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
   }
   // The question names at most three people of a slot, then "N more". Those people count as shown only when a row
   // lists each of them; people the app left out entirely are never shown.
-  for (const slot of Object.values(card.slots ?? {})) {
-    if (slot.kind !== "person") continue;
+  for (const slot of card.personSlots ?? []) {
     const total = slot.total ?? slot.people.length;
     if (total > slot.people.length) incomplete = true;
     else if (total > 3 && !slot.people.every((person) => rows.some((entry) => entry.value.includes(capabilityPersonText(person)))))

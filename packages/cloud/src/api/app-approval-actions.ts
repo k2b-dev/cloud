@@ -3,14 +3,8 @@ import { aiConversations } from "../ai/store";
 import { APP_ACTION_LIMITS, type AppActionSummary } from "../contracts/app-approval";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import type { AppDeviceActions } from "../services/app-approval";
-import { listPending } from "../services/approvals";
-import {
-  appActionOffered,
-  appActionSummary,
-  appActionView,
-  loadDeviceActionPolicies,
-  pendingApprovalCard,
-} from "../services/approvals/device";
+import { listPending, loadApprovalActionPolicies, pendingApprovalCard } from "../services/approvals";
+import { appActionOffered, appActionSummary, appActionView } from "../services/approvals/device";
 
 /** Pages of open requests one inbox poll reads at most while it skips browser-only questions. */
 const INBOX_PAGES = 5;
@@ -20,7 +14,7 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
     const { items } = await listPending({ approverUserId: userId, id: actionId, limit: 1 });
     const row = items[0];
     if (!row) return null;
-    const policy = (await loadDeviceActionPolicies([row]))(row);
+    const policy = (await loadApprovalActionPolicies([row]))(row);
     const mapped = await appActionView(row, { issuer, appName, policy });
     return appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy) ? mapped : null;
   };
@@ -34,7 +28,7 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
       for (let page = 0; page < INBOX_PAGES && actions.length < APP_ACTION_LIMITS.inboxActions; page += 1) {
         const result = await listPending({ approverUserId: userId, limit: APPROVALS_PAGE_SIZE, ...(cursor ? { cursor } : {}) });
         count = result.count;
-        const policyOf = await loadDeviceActionPolicies(result.items);
+        const policyOf = await loadApprovalActionPolicies(result.items);
         for (const row of result.items) {
           const policy = policyOf(row);
           const mapped = await appActionView(row, { issuer, appName, policy });
