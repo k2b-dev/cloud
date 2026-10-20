@@ -74,6 +74,97 @@ else {
     }
   });
 
+  test.each([
+    ["Sort", "Recently updated", "sort", "updated"],
+    ["Contact info", "Has email", "email", "yes"],
+  ])("%s keeps a blurred search that has not debounced", (label, option, key, value) => {
+    const dom = createDomTestHarness();
+    delegateEvents(["click", "input", "focusin", "focusout"], dom.document);
+    const state = {
+      source: "/app/contacts?search=Grace",
+      requestedSource: "/app/contacts?search=Grace",
+      busy: false,
+      total: 1,
+      filtered: true,
+      selectionMode: false,
+    };
+    const change = mock((_change: { href: string; resetSearch?: boolean }) => {});
+    const stop = subscribeToContactsHeadChanges(
+      change,
+      () => {},
+      () => publishContactsHeadState(state),
+    );
+    const dispose = render(
+      () => <Filters initialHref={state.source} initialTotal={1} searchPlaceholder="Search" tags={[]} bookNames={{}} />,
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+      input.focus();
+      input.value = "Ada";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.blur();
+      expect(change).not.toHaveBeenCalled();
+      dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click();
+      const choice = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((item) =>
+        item.textContent?.includes(option),
+      );
+      expect(choice).toBeDefined();
+      choice!.click();
+      expect(change).toHaveBeenCalledTimes(1);
+      const url = new URL(change.mock.calls[0]![0].href, "http://localhost");
+      expect(url.searchParams.get("search")).toBe("Ada");
+      expect(url.searchParams.get(key)).toBe(value);
+    } finally {
+      dispose();
+      stop();
+      dom.cleanup();
+    }
+  });
+
+  test.each(["search=Ada", "tag_id=vip", "email=yes", "phone=yes"])(
+    "filtered Favorites adjusts its count independently of results (%s)",
+    (filter) => {
+      const dom = createDomTestHarness();
+      const href = `/app/contacts/team?favorites=true&${filter}`;
+      const dispose = render(() => <Tabs initialHref={href} bookId="team" allCount={8} favoritesCount={2} />, dom.root);
+      const state = { source: href, requestedSource: href, busy: false, total: 1, filtered: true, selectionMode: false };
+      const count = () => dom.root.querySelectorAll("a")[1]!.textContent;
+      const favorite = (value: boolean) =>
+        window.dispatchEvent(
+          new CustomEvent("contacts:favorite-changed", {
+            detail: { bookId: "team", contactId: "ada", favorite: value },
+          }),
+        );
+      try {
+        publishContactsHeadState(state);
+        expect(count()).toContain("2");
+        favorite(false);
+        expect(count()).toContain("1");
+        publishContactsHeadState({ ...state, total: 0 });
+        expect(count()).toContain("1");
+        favorite(false);
+        favorite(false);
+        expect(count()).toContain("0");
+        favorite(true);
+        expect(count()).toContain("1");
+        // The bridge decides whether its total is filtered, even before the new source commits.
+        publishContactsHeadState({ ...state, source: "/app/contacts/team?favorites=true", busy: true });
+        favorite(true);
+        expect(count()).toContain("2");
+        publishContactsHeadState({ ...state, source: "/app/contacts/team?favorites=true", filtered: false, total: 4 });
+        expect(count()).toContain("4");
+        favorite(false);
+        expect(count()).toContain("4");
+        publishContactsHeadState({ ...state, source: "/app/contacts/team?favorites=true", filtered: false, total: 3 });
+        expect(count()).toContain("3");
+      } finally {
+        dispose();
+        dom.cleanup();
+      }
+    },
+  );
+
   test("tabs follow committed filters and current unfiltered totals; favorites changes stay in scope", () => {
     const dom = createDomTestHarness();
     const dispose = render(() => <Tabs initialHref="/app/contacts/team" bookId="team" allCount={8} favoritesCount={2} />, dom.root);

@@ -101,9 +101,10 @@ export default function ContactsHeadFilters(props: {
     request(href, reset);
   };
   const patchOptions = (patch: Parameters<typeof buildContactsQueryHref>[1]) => {
+    const href = buildContactsQueryHref(buildContactsSearchHref(requestedHref(), query()), patch);
     debounce.cancel();
     setPending(false);
-    request(buildContactsQueryHref(buildContactsSearchHref(requestedHref(), query()), patch));
+    request(href);
   };
   return (
     <div class="contacts-head-filters" data-contacts-head-filters>

@@ -87,6 +87,7 @@ test("selection merges history fields and Back uses only a selection pushed in t
         href = url;
       },
       back: () => calls.push("back"),
+      go: (delta: number) => calls.push(`go:${delta}`),
     },
   });
   try {
@@ -98,10 +99,41 @@ test("selection merges history fields and Back uses only a selection pushed in t
     expect(state["@k2b/ssr/nav"]).toEqual(initialState["@k2b/ssr/nav"]);
     expect(initialState).not.toHaveProperty("contacts.selection");
     backFromContactDetail();
-    expect(calls.at(-1)).toBe("back");
+    expect(calls.at(-1)).toBe("go:-1");
+    const firstMarker = state["contacts.selection"];
+    expect(firstMarker).toEqual({ doc: expect.any(String), depth: 1 });
+    if (!firstMarker || typeof firstMarker !== "object" || !("doc" in firstMarker)) throw new Error("Missing selection marker");
+    setSelectedContactInUrl({ contactId: "grace", bookId: "team" });
+    expect(state["contacts.selection"]).toEqual({ ...firstMarker, depth: 2 });
+    backFromContactDetail();
+    expect(calls.at(-1)).toBe("go:-2");
+    setSelectedContactInUrl({ contactId: "katherine", bookId: "team", history: "replace" });
+    expect(state["contacts.selection"]).toEqual({ ...firstMarker, depth: 2 });
+    backFromContactDetail();
+    expect(calls.at(-1)).toBe("go:-2");
     clearSelectedContactInUrl("replace");
     expect(state).not.toHaveProperty("contacts.selection");
     expect(state.foreign).toBe("preserve");
+    for (const marker of [
+      undefined,
+      "legacy-document-id",
+      { doc: "another-document", depth: 2 },
+      ...[undefined, 0, -1, 1.5, NaN, Infinity, "2"].map((depth) => ({ ...firstMarker, depth })),
+    ]) {
+      href = "http://localhost/app/contacts/team?search=Ada&contact=direct&contactBook=team";
+      state = { ...initialState, "contacts.selection": marker };
+      backFromContactDetail();
+      expect(calls.at(-1)).toBe("replace");
+      expect(href).toBe("http://localhost/app/contacts/team?search=Ada");
+      expect(state).not.toHaveProperty("contacts.selection");
+      expect(state.foreign).toBe("preserve");
+    }
+    // Opening a related contact from a direct link cannot prove a list entry exists.
+    href = "http://localhost/app/contacts/team?contact=direct&contactBook=team";
+    setSelectedContactInUrl({ contactId: "related", bookId: "team" });
+    expect(state).not.toHaveProperty("contacts.selection");
+    backFromContactDetail();
+    expect(calls.at(-1)).toBe("replace");
   } finally {
     globalThis.window = previousWindow;
     globalThis.document = previousDocument;

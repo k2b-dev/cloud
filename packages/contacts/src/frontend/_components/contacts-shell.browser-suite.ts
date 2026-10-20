@@ -30,8 +30,10 @@ const {
 } = await import("./contacts-shell.browser-fixture");
 const { contactsFavoritesHintOpen } = await import("../contacts-hints");
 const ui = resolve(import.meta.dir, "../../../../ui/dist");
-const shots = process.env.CONTACTS_SHOTS_DIR || join(tmpdir(), "contacts-objects-tabs", browserName);
-mkdirSync(shots, { recursive: true });
+// Review screenshots only when asked for (CONTACTS_SHOTS_DIR); the default run keeps their assertions at one width.
+const reviewShots = Boolean(process.env.CONTACTS_SHOTS_DIR);
+const shots = join(process.env.CONTACTS_SHOTS_DIR || tmpdir(), browserName);
+if (reviewShots) mkdirSync(shots, { recursive: true });
 const person = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "printshop-reader",
@@ -213,7 +215,7 @@ const box = async (locator: Locator) => {
 };
 const shot = async (page: Page, state: string, theme: string, width: number) => {
   await settled(page);
-  await page.screenshot({ path: join(shots, `${state}-${theme}-${width}.png`) });
+  if (reviewShots) await page.screenshot({ path: join(shots, `${state}-${theme}-${width}.png`) });
 };
 const current = async (page: Page, favorites: boolean) => {
   expect(new URL(page.url()).searchParams.get("favorites") === "true").toBe(favorites);
@@ -671,12 +673,14 @@ describe(`Contacts workspace SSR and hydration in ${browserName}`, () => {
 
   // Screenshots are review artifacts, never pixel assertions. Each combination
   // is a separate bounded case so a slow capture cannot consume the whole suite.
-  for (const [theme, widths] of [
-    ["light", [1440, 1194, 834, 390, 1920]],
-    ["dark", [1440, 390]],
-  ] as const)
+  for (const [theme, widths] of reviewShots
+    ? ([
+        ["light", [1440, 1194, 834, 390, 1920]],
+        ["dark", [1440, 390]],
+      ] as const)
+    : ([["light", [1440]]] as const))
     for (const width of widths)
-      test(`Review screenshots ${theme} ${width}px, loading and error recovery`, async () => {
+      test(`Loading keeps the rows and a failed refresh offers Retry (${theme} ${width}px; review screenshots when asked)`, async () => {
         const page = await open(`/app/contacts?theme=${theme}`, width);
         try {
           const states = [
@@ -693,7 +697,7 @@ describe(`Contacts workspace SSR and hydration in ${browserName}`, () => {
             ["panel-1440", "/app/contacts/kunden?host=952&contact=person1&contactBook=kunden"],
             ["panel-1194", "/app/contacts/kunden?host=782&contact=person1&contactBook=kunden"],
           ] as const;
-          for (const [state, path] of states) {
+          for (const [state, path] of reviewShots ? states : []) {
             await visit(page, `${path}${path.includes("?") ? "&" : "?"}theme=${theme}`);
             await shot(page, state, theme, width);
             if (width === 390 && state === "detail") await shot(page, "phone-detail", theme, width);

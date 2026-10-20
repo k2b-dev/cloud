@@ -1,7 +1,7 @@
 import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { ViewTabs, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
-import { contactsViewHref, readContactsQueryOptions } from "../contacts-query";
+import { contactsFiltered, contactsViewHref, readContactsQueryOptions } from "../contacts-query";
 import { CONTACTS_FAVORITES_HINT_ID } from "./contacts-hint-id";
 import { connectContactsHead, plainContactsClick } from "./contacts-head-events";
 import { listenForContactFavoriteChanges } from "./contacts-favorites";
@@ -11,6 +11,7 @@ export default function ContactsViewTabs(props: { initialHref: string; bookId?: 
   const locale = useLocale();
   const t = () => resultsMessages.resolve([locale()]).t;
   const [href, setHref] = createSignal(props.initialHref);
+  const [filtered, setFiltered] = createSignal(contactsFiltered(props.initialHref));
   const [allCount, setAllCount] = createSignal(props.allCount);
   const [favoritesCount, setFavoritesCount] = createSignal(props.favoritesCount);
   const favorites = () => readContactsQueryOptions(href()).favorites;
@@ -18,6 +19,7 @@ export default function ContactsViewTabs(props: { initialHref: string; bookId?: 
   onMount(() => {
     const bridge = connectContactsHead((state) => {
       setHref(state.source);
+      setFiltered(state.filtered);
       if (!state.filtered && !state.busy) {
         if (readContactsQueryOptions(state.source).favorites) setFavoritesCount(state.total);
         else setAllCount(state.total);
@@ -26,7 +28,7 @@ export default function ContactsViewTabs(props: { initialHref: string; bookId?: 
     onCleanup(bridge.dispose);
     onCleanup(
       listenForContactFavoriteChanges((change) => {
-        if (!favorites() && (!props.bookId || change.bookId === props.bookId))
+        if ((!favorites() || filtered()) && (!props.bookId || change.bookId === props.bookId))
           setFavoritesCount((count) => Math.max(0, count + (change.favorite ? 1 : -1)));
       }),
     );

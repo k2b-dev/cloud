@@ -47,6 +47,10 @@
 .contacts-list-skeleton__lines > span:last-child { width: min(8rem, 40%); }
 
 /* The detail is its own page on a phone: Back to the list replaces the close button there. */
+/* Loading, failure and the empty state keep the way back on the phone page too. */
+.contacts-detail-back-bar { display: none; }
+@media not all and (min-width: 48rem) { .contacts-detail-back-bar { display: flex; flex: none; padding: 0.5rem 0.5rem 0; } }
+
 /* The doubled class outweighs the button's own display rule, which the shell stylesheet loads after this one. */
 .k2b-ui .contacts-detail-back.contacts-detail-back { display: none; }
 @media not all and (min-width: 48rem) {
