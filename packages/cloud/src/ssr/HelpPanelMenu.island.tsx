@@ -4,6 +4,7 @@ import { helpMessages } from "./help-messages";
 import { HelpPanelMenuTrigger } from "./layout-help-panel-controls";
 import { capturePanelFocus, panelElement, restorePanelFocus } from "./layout-help-panel-lifecycle";
 import type { MenuActivation } from "./layout-help-panel-menu";
+import { helpPanelModules } from "./layout-help-panel-modules";
 import { type HelpPanelState, helpPanelState } from "./layout-help-panel-state";
 import { panelIdle } from "./panel-idle";
 
@@ -21,7 +22,8 @@ export default function HelpPanelMenu() {
   let pressed = false;
   let queued: { key: string; trigger: HTMLButtonElement; pointer: boolean } | undefined;
   const load = () =>
-    (pending ??= import("./layout-help-panel-menu")
+    (pending ??= helpPanelModules
+      .menu()
       .then((module) => {
         loaded = module;
         return module;
@@ -38,10 +40,17 @@ export default function HelpPanelMenu() {
       queued = { key, trigger, pointer };
       return;
     }
-    activation = { key, focus: document.activeElement === trigger, pointer };
+    // Safari keeps focus where it was when a button is clicked; only a focus move after the activation cancels it.
+    const start = document.activeElement;
+    const swap = (module: typeof import("./layout-help-panel-menu")) => {
+      const focused = document.activeElement;
+      if (focused !== start && focused !== trigger && focused !== document.body) return;
+      activation = { key, focus: focused === trigger, pointer };
+      setMenu(module);
+    };
     setError(false);
     if (loaded) {
-      setMenu(loaded);
+      swap(loaded);
       return;
     }
     void load()
@@ -51,7 +60,7 @@ export default function HelpPanelMenu() {
           queued = { key, trigger, pointer };
           return;
         }
-        setMenu(module);
+        swap(module);
       })
       .catch(() => {
         if (!disposed) setError(true);
@@ -107,8 +116,8 @@ export default function HelpPanelMenu() {
           />
           <Show when={error()}>
             <NoticeCard class="absolute z-50" tone="danger" title={t().loadFailed} detail={t().loadFallback}>
-              <Button size="sm" variant="secondary" onClick={(event) => activate("ArrowDown", event.currentTarget)}>
-                {t().tryAgain}
+              <Button size="sm" variant="secondary" onClick={() => location.reload()}>
+                {t().reload}
               </Button>
             </NoticeCard>
           </Show>

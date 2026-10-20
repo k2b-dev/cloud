@@ -287,6 +287,228 @@ else {
     }
   });
 
+  test("a failed menu chunk offers Reload and reloads the page", async () => {
+    const fixture = await setup();
+    const { root, mount, Menu } = fixture;
+    const { helpPanelModules } = await import("./layout-help-panel-modules");
+    const load = spyOn(helpPanelModules, "menu").mockRejectedValue(new Error("Menu chunk unavailable"));
+    const reload = spyOn(location, "reload").mockImplementation(() => {});
+    const wrapper = document.createElement("solid-island");
+    wrapper.dataset.part = "menu";
+    root.querySelector("header")!.append(wrapper);
+    try {
+      mount("menu", () => createComponent(Menu, {}));
+      root.querySelector<HTMLButtonElement>("[data-help-menu]")!.click();
+      await until(() => wrapper.textContent!.includes("Could not load this topic"));
+      const recovery = [...wrapper.querySelectorAll("button")].find((button) => button.textContent === "Reload");
+      expect(recovery).toBeDefined();
+      recovery!.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      load.mockRestore();
+      reload.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
+  test("a failed article document fetch offers Try again and refetches", async () => {
+    const fixture = await setup();
+    const { root, mount, Article, fetcher } = fixture;
+    fetcher.mockRejectedValueOnce(new Error("Document network unavailable"));
+    try {
+      mount("article", () => createComponent(Article, {}));
+      root.querySelector<HTMLButtonElement>('[data-help-topic="roles"]')!.click();
+      await until(() => !!root.querySelector(".help-article")?.textContent?.includes("Document network unavailable"));
+      const recovery = [...root.querySelectorAll<HTMLButtonElement>(".help-article button")].find(
+        (button) => button.textContent === "Try again",
+      );
+      expect(recovery).toBeDefined();
+      expect(root.querySelector(".help-article")!.textContent).not.toContain("Reload");
+      recovery!.click();
+      await until(() => !!root.querySelector(".help-document a"));
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test("a failed search warm-up stays silent until typing, then offers Reload", async () => {
+    const fixture = await setup();
+    const { root, mount, Search } = fixture;
+    const { helpPanelModules } = await import("./layout-help-panel-modules");
+    const load = spyOn(helpPanelModules, "search").mockRejectedValue(new Error("Search chunk unavailable"));
+    const reload = spyOn(location, "reload").mockImplementation(() => {});
+    try {
+      mount("search", () => createComponent(Search, {}));
+      const field = root.querySelector<HTMLInputElement>("[data-help-search]")!;
+      field.focus();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(root.textContent).not.toContain("Could not load this topic");
+      field.value = "Roles";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      await until(() => root.textContent!.includes("Could not load this topic"));
+      const recovery = [...root.querySelectorAll("button")].find((button) => button.textContent === "Reload");
+      expect(recovery).toBeDefined();
+      recovery!.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      load.mockRestore();
+      reload.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
+  test.each(["reader", "document"] as const)("a failed article %s chunk offers Reload", async (chunk) => {
+    const fixture = await setup();
+    const { root, mount, Article } = fixture;
+    const { helpPanelModules } = await import("./layout-help-panel-modules");
+    const load = spyOn(helpPanelModules, chunk).mockRejectedValue(new Error("Article chunk unavailable"));
+    const reload = spyOn(location, "reload").mockImplementation(() => {});
+    try {
+      mount("article", () => createComponent(Article, {}));
+      root.querySelector<HTMLButtonElement>('[data-help-topic="roles"]')!.click();
+      await until(() => !!root.querySelector(".help-article")?.textContent?.includes("Article chunk unavailable"));
+      const recovery = [...root.querySelectorAll<HTMLButtonElement>(".help-article button")].find(
+        (button) => button.textContent === "Reload",
+      );
+      expect(recovery).toBeDefined();
+      recovery!.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      load.mockRestore();
+      reload.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
+  test("a failed section-menu warm-up stays silent until activation, then offers Reload", async () => {
+    const fixture = await setup(true);
+    const { root, mount, Article } = fixture;
+    const { helpPanelModules } = await import("./layout-help-panel-modules");
+    const load = spyOn(helpPanelModules, "reader").mockRejectedValue(new Error("Section chunk unavailable"));
+    const reload = spyOn(location, "reload").mockImplementation(() => {});
+    const tools = document.createElement("div");
+    tools.innerHTML = "<button data-help-sections>On this page</button>";
+    root.querySelector("[data-help-server-article]")!.append(tools);
+    const trigger = tools.querySelector("button")!;
+    try {
+      mount("article", () => createComponent(Article, {}));
+      trigger.focus();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(root.textContent).not.toContain("Section chunk unavailable");
+      trigger.click();
+      await until(() => root.textContent!.includes("Section chunk unavailable"));
+      const recovery = [...root.querySelectorAll("button")].find((button) => button.textContent === "Reload");
+      expect(recovery).toBeDefined();
+      recovery!.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      load.mockRestore();
+      reload.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
+  test("a delayed menu activation preserves focus moved to the search field and leaves the menu closed", async () => {
+    const fixture = await setup();
+    const { root, mount, Menu } = fixture;
+    const menu = await import("./layout-help-panel-menu");
+    const { helpPanelModules } = await import("./layout-help-panel-modules");
+    let release: (() => void) | undefined;
+    const load = spyOn(helpPanelModules, "menu").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(menu);
+        }),
+    );
+    const wrapper = document.createElement("solid-island");
+    wrapper.dataset.part = "menu";
+    root.querySelector("header")!.append(wrapper);
+    try {
+      mount("menu", () => createComponent(Menu, {}));
+      const trigger = root.querySelector<HTMLButtonElement>("[data-help-menu]")!;
+      trigger.focus();
+      trigger.click();
+      const field = root.querySelector<HTMLInputElement>("[data-help-search]")!;
+      field.focus();
+      await until(() => !!release);
+      release!();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(document.activeElement).toBe(field);
+      expect(root.querySelector('[role="menu"]')).toBeNull();
+      expect(root.querySelector("[data-help-menu]")).toBe(trigger);
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      load.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
+  test("a click on the light menu trigger opens the menu while focus stays in the search field, as in Safari", async () => {
+    const fixture = await setup();
+    const { root, mount, Menu } = fixture;
+    const menu = await import("./layout-help-panel-menu");
+    const { helpPanelModules } = await import("./layout-help-panel-modules");
+    let release: (() => void) | undefined;
+    const load = spyOn(helpPanelModules, "menu").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(menu);
+        }),
+    );
+    const wrapper = document.createElement("solid-island");
+    wrapper.dataset.part = "menu";
+    root.querySelector("header")!.append(wrapper);
+    try {
+      mount("menu", () => createComponent(Menu, {}));
+      const field = root.querySelector<HTMLInputElement>("[data-help-search]")!;
+      field.focus();
+      // Safari does not focus a clicked button, so focus stays in the field.
+      root.querySelector<HTMLButtonElement>("[data-help-menu]")!.click();
+      await until(() => !!release);
+      release!();
+      // The real Dropdown replaced the light trigger; the DOM test has no popover top layer to read focus or "open" from.
+      await until(() => !!root.querySelector('[role="menu"] [role="menuitem"]'));
+    } finally {
+      load.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
+  test("a delayed section-menu activation preserves focus moved to the search field and leaves the menu closed", async () => {
+    const fixture = await setup(true);
+    const { root, mount, Article } = fixture;
+    const reader = await import("./layout-help-panel-reader");
+    const { helpPanelModules } = await import("./layout-help-panel-modules");
+    let release: (() => void) | undefined;
+    const load = spyOn(helpPanelModules, "reader").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(reader);
+        }),
+    );
+    const tools = document.createElement("div");
+    tools.innerHTML = "<button data-help-sections>On this page</button>";
+    root.querySelector("[data-help-server-article]")!.append(tools);
+    const trigger = tools.querySelector("button")!;
+    try {
+      mount("article", () => createComponent(Article, {}));
+      trigger.focus();
+      trigger.click();
+      const field = root.querySelector<HTMLInputElement>("[data-help-search]")!;
+      field.focus();
+      await until(() => !!release);
+      release!();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(document.activeElement).toBe(field);
+      expect(root.querySelector('[role="menu"]')).toBeNull();
+      expect(tools.querySelector("button")).toBe(trigger);
+    } finally {
+      load.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
   test("the server article survives Back and reopening, and menu copy writes synchronously from its shared payload", async () => {
     const fixture = await setup(true);
     const { root, mount, Article, Back, Menu, state, fetcher } = fixture;

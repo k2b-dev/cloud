@@ -3,6 +3,7 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { HelpDocumentPayload } from "../shared/help";
 import { helpMessages } from "./help-messages";
 import { panelElement } from "./layout-help-panel-lifecycle";
+import { helpPanelModules } from "./layout-help-panel-modules";
 import { type HelpPanelState, helpPanelState } from "./layout-help-panel-state";
 import type { HelpTopic } from "./layout-help-registry";
 import { helpLinkTarget } from "./layout-help-url";
@@ -16,15 +17,16 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
   const [reader, setReader] = createSignal<typeof import("./layout-help-panel-reader")>();
   const [payload, setPayload] = createSignal<HelpDocumentPayload | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [reloadRequired, setReloadRequired] = createSignal(false);
   const [attempt, setAttempt] = createSignal(0);
   let pending: Promise<typeof import("./layout-help-panel-reader")> | undefined;
   let disposed = false;
-  let retrySections: (() => void) | undefined;
   let sectionPressed = false;
   let queuedSection: { trigger: HTMLButtonElement; key: string } | undefined;
   const sections = new Map<Element, () => void>();
   const load = () =>
-    (pending ??= import("./layout-help-panel-reader")
+    (pending ??= helpPanelModules
+      .reader()
       .then((module) => {
         if (!disposed) setReader(module);
         return module;
@@ -56,7 +58,8 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
     const current = helpPanelState(panelElement());
     setState(current);
     const upgrade = (trigger: HTMLButtonElement, key: string) => {
-      retrySections = () => upgrade(trigger, key);
+      // Safari keeps focus where it was when a button is clicked; only a focus move after the activation cancels it.
+      const start = document.activeElement;
       void load()
         .then((module) => {
           if (disposed || !trigger.isConnected) return;
@@ -67,8 +70,9 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
           }
           const container = trigger.parentElement;
           if (!container || sections.has(container)) return;
-          setError(null);
           const focused = document.activeElement === trigger;
+          if (!focused && document.activeElement !== start && document.activeElement !== document.body) return;
+          setError(null);
           sections.set(
             container,
             module.mountPanelSections(container, { locale: locale(), state: current, key, focused, onSection: scrollToHash }),
@@ -76,8 +80,9 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
         })
         .catch((reason: unknown) => {
           if (!disposed) {
+            setReloadRequired(true);
             setError(reason instanceof Error ? reason.message : t().loadFallback);
-            trigger.title = t().loadFailed + ": " + t().tryAgain;
+            trigger.title = t().loadFailed + ": " + t().reload;
           }
         });
     };
@@ -174,12 +179,20 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
     attempt();
     setPayload(null);
     setError(null);
+    setReloadRequired(false);
     if (!current || !active || !clientVisible()) return;
     const controller = new AbortController();
     let cancelled = false;
+    const chunkFailed = (reason: unknown): never => {
+      if (!cancelled) setReloadRequired(true);
+      throw reason;
+    };
     void Promise.all([
-      load(),
-      import("./layout-help-panel-document").then((module) => module.loadPanelDocument(current, active, controller.signal, t())),
+      load().catch(chunkFailed),
+      helpPanelModules
+        .document()
+        .catch(chunkFailed)
+        .then((module) => module.loadPanelDocument(current, active, controller.signal, t())),
     ])
       .then(([, document]) => {
         if (!cancelled) setPayload(document);
@@ -244,8 +257,12 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
                     <Show when={error()}>
                       {(message) => (
                         <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
-                          <Button size="sm" variant="secondary" onClick={() => setAttempt((value) => value + 1)}>
-                            {t().tryAgain}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => (reloadRequired() ? location.reload() : setAttempt((value) => value + 1))}
+                          >
+                            {reloadRequired() ? t().reload : t().tryAgain}
                           </Button>
                         </NoticeCard>
                       )}
@@ -277,8 +294,8 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
       <Show when={state()?.activeId() === state()?.data.article?.id && error()}>
         {(message) => (
           <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
-            <Button size="sm" variant="secondary" onClick={() => retrySections?.()}>
-              {t().tryAgain}
+            <Button size="sm" variant="secondary" onClick={() => location.reload()}>
+              {t().reload}
             </Button>
           </NoticeCard>
         )}

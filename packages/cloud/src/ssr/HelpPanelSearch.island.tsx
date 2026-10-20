@@ -2,6 +2,7 @@ import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { helpMessages } from "./help-messages";
 import { panelElement } from "./layout-help-panel-lifecycle";
+import { helpPanelModules } from "./layout-help-panel-modules";
 import { type HelpPanelState, helpPanelState } from "./layout-help-panel-state";
 import { panelIdle } from "./panel-idle";
 
@@ -27,7 +28,8 @@ export default function HelpPanelSearch() {
     if (input && (engine() || failed() || !input.value.trim())) state()?.changeQuery(input.value);
   };
   const load = () =>
-    (pending ??= import("./layout-help-panel-search")
+    (pending ??= helpPanelModules
+      .search()
       .then((module) => {
         if (disposed) return;
         setFailed(false);
@@ -109,8 +111,8 @@ export default function HelpPanelSearch() {
       </Show>
       <Show when={failed()}>
         <NoticeCard tone="danger" title={t().loadFailed} detail={t().loadFallback}>
-          <Button size="sm" variant="secondary" onClick={intent}>
-            {t().tryAgain}
+          <Button size="sm" variant="secondary" onClick={() => location.reload()}>
+            {t().reload}
           </Button>
         </NoticeCard>
       </Show>
