@@ -107,7 +107,8 @@ describe("MapView geometry", () => {
     const f = mapFrame({ markers: pins }, 352, 48)!;
     const offsets = pinOffsets(pins, f);
     expect(offsets.get("stop")).toEqual({ dx: 0, dy: 0 });
-    expect(offsets.get("first")).toEqual({ dx: 17, dy: -17 });
+    expect(offsets.get("first")?.dx).toBeCloseTo(17, 9);
+    expect(offsets.get("first")?.dy).toBeCloseTo(-17, 9);
     expect(offsets.get("next")?.dx).toBeCloseTo(28 / Math.sqrt(2));
     expect(offsets.get("next")?.dy).toBeCloseTo(28 / Math.sqrt(2));
     expect(pinOffsets(pins, f)).toEqual(offsets);
@@ -118,6 +119,19 @@ describe("MapView geometry", () => {
       fitCamera(f, width, 48);
       expect(pinOffsets(pins, f)).toEqual(offsets);
     }
+  });
+  test("a hit beside a stop is drawn top right of the stop, wherever it lies around it", () => {
+    const pins = sortMarkers([marker("stop", "A", 48.4, 10), marker("hit", 1, 48.39996, 9.99994), marker("far", 2, 48.41, 10.02)]);
+    const f = mapFrame({ markers: pins }, 360, 48)!;
+    const offsets = pinOffsets(pins, f);
+    const scale = f.overlapWidth / f.spanX;
+    const drawn = (id: string) => {
+      const p = projectPoint(pins.find((pin) => pin.id === id)!.point);
+      const o = offsets.get(id)!;
+      return { x: (p.x - f.minX) * scale + o.dx, y: (p.y - f.minY) * scale + o.dy };
+    };
+    expect(drawn("hit").x - drawn("stop").x).toBeCloseTo(17, 9);
+    expect(drawn("hit").y - drawn("stop").y).toBeCloseTo(-17, 9);
   });
   test("keeps stops apart and decides separation at phone width", () => {
     // A wide route: C and "+" are a pin apart on a wide screen but would cover each other on a phone.

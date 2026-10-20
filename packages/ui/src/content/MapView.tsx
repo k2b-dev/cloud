@@ -160,7 +160,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       instance.on("error", (event) => {
         // Tile and source errors name their source and leave the map usable; a style that does not load does not.
         const styleFailed = !("sourceId" in event) && !("tile" in event);
-        if (state() === "loading" || (replacingStyle && styleFailed)) fail();
+        if (styleFailed && (state() === "loading" || replacingStyle)) fail();
       });
       instance.on("style.load", () => {
         replacingStyle = false;

@@ -207,6 +207,7 @@ const style = (dark: boolean): MapViewStyle => ({
 });
 let failedStyleRequests = 0;
 let failedDarkRequests = 0;
+let failedTileRequests = 0;
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -218,11 +219,23 @@ const server = Bun.serve({
     if (url.pathname === "/dark.json" && url.searchParams.has("fail") && ++failedDarkRequests === 1)
       return new Response("Style unavailable", { status: 500 });
     if (["/light.json", "/dark.json", "/flaky.json"].includes(url.pathname)) return Response.json(style(url.pathname === "/dark.json"));
+    if (url.pathname === "/tiles.json") {
+      const base = style(false) as { sources: Record<string, unknown>; layers: unknown[] };
+      return Response.json({
+        ...base,
+        sources: { ...base.sources, broken: { type: "raster", tiles: [`${url.origin}/tile/{z}/{x}/{y}.png`], tileSize: 256 } },
+        layers: [...base.layers, { id: "broken", type: "raster", source: "broken" }],
+      });
+    }
+    if (url.pathname.startsWith("/tile/")) {
+      failedTileRequests++;
+      return new Response("Tile unavailable", { status: 500 });
+    }
     const asset = assets.get(url.pathname.slice(1));
     if (asset) return new Response(asset, { headers: { "Content-Type": "text/javascript" } });
     if (url.pathname !== "/") return new Response("Missing", { status: 404 });
     const options: FixtureOptions = {
-      stylePath: url.searchParams.has("flaky") ? "/flaky.json" : "/light.json",
+      stylePath: url.searchParams.has("flaky") ? "/flaky.json" : url.searchParams.has("tilefail") ? "/tiles.json" : "/light.json",
       darkPath: url.searchParams.has("darkfail") ? "/dark.json?fail" : "/dark.json",
       empty: url.searchParams.has("empty"),
       polar: url.searchParams.has("polar"),
@@ -618,6 +631,20 @@ test("a theme style that fails after the map is ready shows the error and retry 
     await page.getByRole("button", { name: "Try again" }).click();
     await ready(page);
     expect(failedDarkRequests).toBe(2);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a failing tile while the map loads keeps the map", async () => {
+  failedTileRequests = 0;
+  const page = await browser.newPage({ reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?tilefail`);
+    await ready(page);
+    expect(failedTileRequests).toBeGreaterThan(0);
+    expect(await page.locator(".k2b-map-view").getAttribute("data-state")).toBe("ready");
+    expect(await page.getByRole("button", { name: "Zoom in" }).isEnabled()).toBe(true);
   } finally {
     await page.close();
   }

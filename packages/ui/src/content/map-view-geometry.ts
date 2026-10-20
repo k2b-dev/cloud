@@ -141,7 +141,9 @@ export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame): Map
       const s = stopPosition.get(stop.id)!;
       return Math.hypot(p.x - s.x, p.y - s.y) < 28;
     });
-    let offset = anchor ? { dx: 17, dy: -17 } : { dx: 0, dy: 0 };
+    // The attachment sits top right of where the stop is drawn, wherever the hit lies around it.
+    const at = anchor ? stopPosition.get(anchor.id)! : undefined;
+    let offset = at ? { dx: at.x + 17 - p.x, dy: at.y - 17 - p.y } : { dx: 0, dy: 0 };
     // The intentional top-right attachment may overlap its own stop's halo.
     const free = (candidate: typeof offset) =>
       placed.every(
