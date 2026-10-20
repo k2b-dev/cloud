@@ -235,9 +235,11 @@ The panel follows the arriving page's consent answer, and the rail and phone
 tab bar follow its rail preferences.
 
 `focusMode` pages and links outside the current app route prefix load a
-document. A changed user, session kind, locale, page theme, panel provider set,
-visible navigation app set, or build also loads a document. Every swap fetch
-passes through the same server route policies as a reload.
+document. So does a page whose kept shell would differ from a reload: another
+user, session kind, locale, page theme, or build, other panel providers,
+navigation entries, legal or search links, or profile, a new announcement, or
+other Help. Every swap fetch passes through the same server route policies as a
+reload.
 
 Column islands use `listenPopState()` and `navigate()` for their own URL state.
 The loader mounts the shell islands outside the column first, so Cloud installs

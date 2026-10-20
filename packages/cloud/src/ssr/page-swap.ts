@@ -15,26 +15,14 @@ export type PageSwapParts = {
   appSession: boolean;
   locale: string;
   theme: "light" | "dark" | undefined;
-  providers: readonly string[];
-  apps: readonly string[];
   build: string;
+  /** The request-scoped inputs of the shell that stays: navigation catalogs, profile, panel providers, announcements and Help. */
+  shell: unknown;
 };
 
 /** Opaque identity of the document that stays around the replaced content column. */
 export const pageSwapSignature = (parts: PageSwapParts): string =>
   createHash("sha256")
-    .update(
-      JSON.stringify([
-        parts.app,
-        parts.kind,
-        parts.user,
-        parts.appSession,
-        parts.locale,
-        parts.theme,
-        parts.providers,
-        parts.apps,
-        parts.build,
-      ]),
-    )
+    .update(JSON.stringify([parts.app, parts.kind, parts.user, parts.appSession, parts.locale, parts.theme, parts.build, parts.shell]))
     .digest("hex")
     .slice(0, 32);

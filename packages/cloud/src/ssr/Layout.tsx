@@ -188,19 +188,6 @@ export default function Layout(props: LayoutProps) {
   );
   const swapBuild = getPageSwapBuild(c);
   const swap = swapBuild !== undefined && !focusMode && !!currentRoute?.prefix;
-  const signature = swap
-    ? pageSwapSignature({
-        app: currentApp?.id,
-        kind: user ? "app" : "anonymous",
-        user: user?.id ?? null,
-        appSession: isAppSessionActor(c.get("actor")),
-        locale: lang,
-        theme: c.get("page").theme,
-        providers: providers.map((provider) => provider.id),
-        apps: allApps.map((app) => app.id),
-        build: swapBuild,
-      })
-    : undefined;
   const settings = c.get("settings");
   const announcements = c.get("announcements");
   const appName = settings?.app?.name || "Cloud";
@@ -288,6 +275,28 @@ export default function Layout(props: LayoutProps) {
     searchLinks,
     appId: currentApp?.id,
   };
+  // What the kept shell shows outside the column: when any of it differs, the next page loads as a document.
+  const signature = swap
+    ? pageSwapSignature({
+        app: currentApp?.id,
+        kind: user ? "app" : "anonymous",
+        user: user?.id ?? null,
+        appSession: isAppSessionActor(c.get("actor")),
+        locale: lang,
+        theme: c.get("page").theme,
+        build: swapBuild,
+        shell: {
+          providers,
+          apps: allApps,
+          legalLinks,
+          searchLinks,
+          home: shellData.home,
+          profile: shellData.profile,
+          announcements: user ? (announcements?.latestAnnouncementVersion ?? null) : null,
+          help: registeredHelp?.manifestHash ?? (layoutHelpFailed(c) ? "failed" : null),
+        },
+      })
+    : undefined;
   if (focusMode) {
     return (
       <LocaleProvider locale={lang}>
