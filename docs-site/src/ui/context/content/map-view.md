@@ -7,7 +7,11 @@ enters the viewport; places remain usable if it fails.
 ## Import
 
 ```tsx
-import { Button, MapView, MapViewFrame, type MapViewMarker, type MapViewStyleSource } from "@k2b/ui";
+import {
+  Button, MapAttribution, MapView, MapViewFrame, mapAttribution, mapPalette, mapStyle,
+  type MapPaletteColors, type MapStyleOptions, type MapTheme,
+  type MapViewMarker, type MapViewStyleSource,
+} from "@k2b/ui";
 import { createSignal, For } from "solid-js";
 ```
 
@@ -15,6 +19,114 @@ import { createSignal, For } from "solid-js";
 
 The host owns selection, map styles, and attribution. Supply a style object or
 a path served by your application.
+
+## Style
+
+`mapStyle({ theme, locale, tiles, glyphs, maxzoom })` builds a flat light or
+dark style for OpenMapTiles-schema vector tiles. Pass both as `{ light, dark }`
+to `style`:
+
+```tsx
+const templates = {
+  tiles: "/_geo/tiles/{z}/{x}/{y}.pbf",
+  glyphs: "/_geo/glyphs/{fontstack}/{range}.pbf",
+  locale: "de",
+};
+
+<MapView height={360} markers={markers}
+  style={{
+    light: mapStyle({ ...templates, theme: "light" }),
+    dark: mapStyle({ ...templates, theme: "dark" }),
+  }}
+  attribution={<MapAttribution />} />
+```
+
+The host passes tile and glyph URL templates as root-relative paths or absolute
+URLs. `@k2b/ui` contains no provider endpoint, API key, or network default.
+The style has no sprite; pins are DOM markers.
+
+### Palette
+
+The accent belongs to the host's pins and lines. The map image has no
+extrusion, relief, or decorative tints: woods, grass, and city green are
+tinted, large protected areas are not.
+
+| `mapPalette` key | Light | Dark | CSS token |
+| --- | --- | --- | --- |
+| `land` | `#f1efe9` | `#1a1f26` | `--k2b-map-land` |
+| `green` | `#e3ecd9` | `#1c2a22` | `--k2b-map-green` |
+| `water` | `#cfe3f3` | `#14283a` | `--k2b-map-water` |
+| `building` | `#e8e5dd` | `#20262e` | `--k2b-map-building` |
+| `road` | `#ffffff` | `#2c333d` | `--k2b-map-road` |
+| `roadCasing` | `#dcd8ce` | `#222830` | `--k2b-map-road-casing` |
+| `motorway` | `#f6c76b` | `#5d6470` | `--k2b-map-motorway` |
+| `motorwayCasing` | `#d9a443` | `#444a54` | `--k2b-map-motorway-casing` |
+| `rail` | `#c4bfb4` | `#39404a` | `--k2b-map-rail` |
+| `boundary` | `#aea89c` | `#4f5763` | `--k2b-map-boundary` |
+| `label` | `#52525b` | `#a1a1aa` | `--k2b-map-label` |
+| `labelStrong` | `#27272a` | `#e4e4e7` | `--k2b-map-label-strong` |
+| `waterLabel` | `#3a6383` | `#8fb5d3` | `--k2b-map-water-label` |
+
+MapLibre cannot read CSS, so the style uses `mapPalette`. The CSS tokens
+mirror it for map art drawn by the host, and a test keeps them equal.
+Overriding the tokens does not recolour the map image.
+
+### Labels and glyphs
+
+Labels prefer `name:<language>`, then `name:latin`, then `name`.
+For example, `de-DE` uses `name:de`. Empty or unrecognised language codes
+use `name:latin`, then `name`. Every label uses one fontstack:
+`IBM Plex Sans Medium`.
+
+Serve the files from
+`@k2b/ui/map-glyphs/IBM Plex Sans Medium/<range>.pbf` at your glyph template.
+The `{fontstack}` segment arrives URL-encoded, for example
+`IBM%20Plex%20Sans%20Medium`. Answer unknown ranges with **404**: MapLibre
+6.14 then draws those characters locally with the browser font. CJK and other
+scripts outside the shipped ranges are drawn locally by MapLibre.
+
+The glyphs cover the Latin, Latin Extended, Vietnamese, Greek, and Cyrillic
+characters that IBM Plex Sans draws: 9 range files and `OFL.txt`,
+**343.7 KiB raw** and **183.3 KiB gzip** at level 6, licence included. A German
+or English map usually loads only `0-255` (about 75 KiB raw) and a few small
+ranges.
+
+MapLibre draws a character locally only when its whole range is missing. A
+shipped range that lacks a character drops it from the label. So ranges where
+Plex draws only a character or two (`1280-1535` with Armenian and Hebrew,
+`65024-65279`, `65280-65535` with fullwidth forms) are left out and drawn
+locally. Shipped ranges still have gaps: Latin Extended Additional
+`U+1E00`–`U+1E7F` (for example `ḥ`, `ṣ`, `ḍ`) is not drawn by Plex, and those
+letters are dropped.
+
+Regenerate them from the repository root:
+
+```bash
+bun packages/ui/scripts/generate-map-glyphs.ts
+```
+
+IBM Plex Sans uses the **SIL Open Font License 1.1**. Its licence ships at
+`@k2b/ui/map-glyphs/OFL.txt`; serve or keep it with the glyphs.
+
+### Tiles
+
+The vector source has `maxzoom: 14` by default. MapLibre scales level 14 up
+for closer zoom levels, which saves tile requests. Pass `maxzoom` when the
+tiles carry more detail.
+
+### Attribution
+
+`mapAttribution` and `<MapAttribution />` provide
+“© OpenStreetMap · © OpenMapTiles · Geoapify”, each part a link:
+
+| Credit | Link | Duty |
+| --- | --- | --- |
+| © OpenStreetMap | https://www.openstreetmap.org/copyright | Always required for these maps. |
+| © OpenMapTiles | https://openmaptiles.org/ | Required for maps built from its schema under the CC-BY 4.0 design licence. |
+| Geoapify | https://www.geoapify.com/ | Kept on paid plans too, so no switch is needed. |
+
+Place the line in MapView's `attribution` slot at the bottom right. On printed
+maps, put it next to the image with the URLs written out.
 
 ## Example
 

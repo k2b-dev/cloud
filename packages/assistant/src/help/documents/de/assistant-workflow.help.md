@@ -3,7 +3,7 @@ id: assistant-workflow
 title: Chats und Aktionen
 icon: ti ti-messages
 description: Chats finden, Metadaten verwalten, Anfragen wiederholen, in neuen Chats fortsetzen, Kontext kürzen, Antworten beenden und Aktionen bearbeiten.
-updated: 2026-10-11
+updated: 2026-10-19
 order: 110
 ---
 
@@ -12,7 +12,7 @@ Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Cha
 ## Zwischen Chats wechseln {icon="layout-list"}
 
 :::reference
-- **Chatzeilen:** Jede Zeile zeigt den Titel des Chats. Ein Symbol am Zeilenende zeigt, dass ein Chat läuft, auf dich wartet, fehlgeschlagen ist, eine neue Antwort hat oder einen aktiven Zeitplan; der Tooltip nennt den Zustand.
+- **Chatzeilen:** Jede Zeile zeigt den Titel des Chats. Ein Symbol am Zeilenende zeigt, dass ein Chat läuft, auf dich wartet, fehlgeschlagen ist, eine neue Antwort hat oder einen aktiven Zeitplan; der Tooltip nennt den Zustand. Wartet ein Chat auf dich, etwa mit einer offenen Frage, ist dieses Zeichen ein Punkt.
 - **Projekte:** Erstelle über die Plus-Schaltfläche im Fenster **Projekte** ein Projekt mit einem Namen und optionalen Anweisungen.
 - **Neuer Chat:** Öffnet einen leeren Chat. Ist der geöffnete Chat noch leer, bleibt der Assistent in diesem Chat, statt einen weiteren anzulegen. Das gilt nicht, wenn er zu einem Projekt gehört, von einer anderen App geöffnet wurde, einen von dir vergebenen Namen oder eine Beschreibung hat oder angeheftet, fertig oder archiviert ist.
 - **Leerer Chat:** Wähle unter dem mittig angeordneten Eingabefeld optional ein Projekt aus, bevor du die erste Nachricht sendest. Vorschlagskarten füllen eine bearbeitbare Anfrage aus, senden sie aber nicht automatisch.
@@ -56,6 +56,16 @@ die Rückfrage und eine Vorschau der Änderung. Zwei Schaltflächen nennen die
 Handlung und ihr Ziel: eine stimmt zu, die andere lehnt ab. Die Freigabe gilt
 einmal für das, was die Karte zeigt. Ändert sich das vor der Ausführung, fragt
 der Assistent erneut. Nach dem Neuladen bleiben Satz und Vorschau erhalten.
+
+Solange Fragen offen sind, listet **Wartet auf dich** über dem Eingabefeld jede
+in ihrer Kurzform, auch die aus deinen anderen Chats mit dem Namen des Chats.
+Wähle eine aus, um zu ihrer Frage zu springen: Der Assistent öffnet bei Bedarf
+den Chat und setzt den Fokus auf den Satz der Frage. Nach dem Neuladen bist du
+wieder bei dieser Frage. Warten mehr Fragen, als die Leiste zeigt, öffnet ihr
+letzter Eintrag **Freigaben**. Bei einer einzigen Frage im offenen Chat
+erscheint die Leiste nur, solange deren Schaltflächen nicht zu sehen sind.
+Mehrere Fragen auf einmal freizugeben geht nicht: Du beantwortest jede in ihrer
+eigenen Karte.
 
 Wo angeboten, merkt sich der dezente Link **Ja, und in diesem Chat nicht mehr
 fragen** diese Freigabe bis zum Löschen des Chats. **Immer freigeben** wird

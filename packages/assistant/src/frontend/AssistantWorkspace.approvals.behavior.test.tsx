@@ -65,6 +65,7 @@ test("New chat and the chat row leave the approvals view opened over an empty ch
         initialLiveCursor="s6t.cloud-live-core.0"
         initialConversations={[blank]}
         initialDoneCount={0}
+        initialQuestions={{ items: [], count: 0 }}
         initialConversationId="blank1"
         initialArtifactPath={null}
         initialDetail={{ conversation: blank, messages: [], hasMoreMessages: false, activeTurn: null, timeline: [] }}

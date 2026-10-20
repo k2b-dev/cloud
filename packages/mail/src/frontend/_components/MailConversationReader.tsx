@@ -6,6 +6,7 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   announce,
+  appWorkspaceDetailElementId,
   Button,
   CheckboxCard,
   Dropdown,
@@ -19,11 +20,12 @@ import {
   prompts,
   ScrollArea,
   Select,
+  Toolbar,
   Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type {
@@ -34,6 +36,7 @@ import type {
   MailDraftSeed,
   SenderIdentity,
 } from "../../contracts";
+import { deriveReplyAddressObjects } from "../../reply-recipients";
 import type { MailActivityEvent } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
@@ -73,6 +76,13 @@ type DraftLookup = {
   conversationId: string;
   request: MailConversationComposerRequest;
 };
+
+/** The conversation details Detail in the mailbox workspace. */
+export const MAIL_CONTEXT_DETAIL_ID = "mail-context";
+
+/** From this many messages on, the reader shows the newest few and folds the rest behind one button. */
+const MAIL_READER_COLLAPSE_FROM = 5;
+const MAIL_READER_NEWEST_SHOWN = 3;
 
 type DirectToolbarAction = {
   id: MailConversationToolbarActionId;
@@ -159,6 +169,66 @@ export default function MailConversationReader(props: {
   const timelineItems = createMemo(() => new Map(timeline().map((item) => [item.id, item])));
   const latestMessage = createMemo(() => orderedMessages()[0] ?? null);
   const [expandedMessages, setExpandedMessages] = createSignal(new Set(initialMessageId ? [initialMessageId] : []));
+  // A long conversation shows its newest messages; the older ones wait behind one "n older messages" button.
+  // An expanded older message, such as the one a link selected, shows the whole conversation, and it stays shown
+  // for that conversation when the message is collapsed again, so the header just used never unmounts.
+  const [showOlder, setShowOlder] = createSignal(false);
+  // Printing shows every message only for the print; it never pins the fold open.
+  const [printing, setPrinting] = createSignal(false);
+  let historyScroller: HTMLDivElement | undefined;
+  let olderPinnedFor: string | null = null;
+  // New messages never fold away a card that is already shown, such as one with focus or an open dialog:
+  // the fold stays below the oldest message shown so far in each conversation, also after switching back to it.
+  const foldBoundaries = new Map<string | null, string>();
+  const rememberFold = (selection: string | null, messageId: string) => {
+    foldBoundaries.delete(selection);
+    foldBoundaries.set(selection, messageId);
+    // As many conversations as the reader remembers positions for.
+    if (foldBoundaries.size > 50) foldBoundaries.delete(foldBoundaries.keys().next().value!);
+  };
+  const olderMessages = createMemo(() => {
+    const selection = props.selectionKey;
+    if (showOlder() || printing() || (selection !== null && olderPinnedFor === selection)) return null;
+    const items = timeline();
+    const messageIndexes = items.flatMap((item, index) => (item.kind === "message" ? [index] : []));
+    if (messageIndexes.length < MAIL_READER_COLLAPSE_FROM) {
+      // Every message shows; a later arrival that crosses the threshold folds none of them away.
+      const last = items.findLast((item) => item.kind === "message");
+      if (last?.kind === "message") rememberFold(selection, last.message.id);
+      return null;
+    }
+    let cutoff = messageIndexes[MAIL_READER_NEWEST_SHOWN - 1]! + 1;
+    const boundary = foldBoundaries.get(selection) ?? null;
+    const boundaryIndex = boundary ? items.findIndex((item) => item.kind === "message" && item.message.id === boundary) : -1;
+    if (boundaryIndex >= cutoff) cutoff = boundaryIndex + 1;
+    const lastShown = items.slice(0, cutoff).findLast((item) => item.kind === "message");
+    if (lastShown?.kind === "message") rememberFold(selection, lastShown.message.id);
+    const expanded = expandedMessages();
+    if (items.slice(cutoff).some((item) => item.kind === "message" && expanded.has(item.message.id))) {
+      olderPinnedFor = selection;
+      return null;
+    }
+    const count = items.slice(cutoff).filter((item) => item.kind === "message").length;
+    return count > 0 ? { cutoff, count } : null;
+  });
+  const visibleTimelineIds = createMemo(() => {
+    const older = olderMessages();
+    return older ? timelineIds().slice(0, older.cutoff) : timelineIds();
+  });
+  const revealOlderMessages = (cutoff: number) => {
+    // An activity row may sit at the fold; focus goes to the first message after it.
+    const firstHidden = timeline()
+      .slice(cutoff)
+      .find((item) => item.kind === "message");
+    setShowOlder(true);
+    // The button leaves; focus goes to the first message it showed.
+    if (firstHidden?.kind === "message")
+      queueMicrotask(() =>
+        historyScroller
+          ?.querySelector<HTMLElement>(`[data-mail-message-id="${CSS.escape(firstHidden.message.id)}"] [data-mail-message-header]`)
+          ?.focus(),
+      );
+  };
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
   const [pendingNewMessages, setPendingNewMessages] = createSignal(0);
   type SummaryEdit = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; summary: string };
@@ -201,24 +271,27 @@ export default function MailConversationReader(props: {
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
-  const [printing, setPrinting] = createSignal(false);
-  let historyScroller: HTMLDivElement | undefined;
   let readerScrollFrame: number | null = null;
   let followingNewest = true;
   let disposed = false;
   const scrollPositions = new Map<string, number>();
   const expandedBySelection = new Map<string, Set<string>>();
+  // Conversations whose older messages the person revealed; going back keeps them shown with the scroll position.
+  const olderShownBySelection = new Set<string>();
 
   const rememberReaderState = (selectionKey: string, scrollTop: number, expanded: Set<string>) => {
     scrollPositions.delete(selectionKey);
     scrollPositions.set(selectionKey, scrollTop);
     expandedBySelection.delete(selectionKey);
     expandedBySelection.set(selectionKey, new Set(expanded));
+    if (showOlder() || olderPinnedFor === selectionKey) olderShownBySelection.add(selectionKey);
+    else olderShownBySelection.delete(selectionKey);
     if (scrollPositions.size <= 50) return;
     const oldest = scrollPositions.keys().next().value;
     if (!oldest) return;
     scrollPositions.delete(oldest);
     expandedBySelection.delete(oldest);
+    olderShownBySelection.delete(oldest);
   };
 
   const scheduleReaderScroll = (options: {
@@ -233,6 +306,9 @@ export default function MailConversationReader(props: {
       if (disposed || props.selectionKey !== options.selectionKey || !historyScroller) return;
       if (options.scrollTop !== undefined) {
         historyScroller.scrollTop = options.scrollTop;
+      } else if (options.messageId && options.messageId === props.messages.at(-1)?.id) {
+        // The newest message comes first, right below the subject and the reply box, so the start shows all three.
+        historyScroller.scrollTo({ top: 0, behavior: options.behavior ?? "auto" });
       } else if (options.messageId) {
         const message = historyScroller.querySelector<HTMLElement>(`[data-mail-message-id="${CSS.escape(options.messageId)}"]`);
         if (message) {
@@ -635,6 +711,7 @@ export default function MailConversationReader(props: {
     );
     setMessageSelections({});
     setPendingNewMessages(0);
+    setShowOlder(Boolean(nextSelection && olderShownBySelection.has(nextSelection)));
     followingNewest = true;
     const savedScrollTop = nextSelection ? scrollPositions.get(nextSelection) : undefined;
     scheduleReaderScroll({
@@ -712,17 +789,22 @@ export default function MailConversationReader(props: {
     const cleanup = () => {
       if (!active) return;
       active = false;
-      setPrinting(false);
+      // One update, so the fold never sees every message expanded without the print.
+      batch(() => {
+        setPrinting(false);
+        if (props.selectionKey === printSelection) setExpandedMessages(expandedBeforePrint);
+      });
       root.classList.remove("mail-printing-conversation");
-      if (props.selectionKey === printSelection) setExpandedMessages(expandedBeforePrint);
       window.removeEventListener("afterprint", cleanup);
       if (timeout) clearTimeout(timeout);
       if (frame !== null) cancelAnimationFrame(frame);
       if (cleanupPrint === cleanup) cleanupPrint = null;
     };
     cleanupPrint = cleanup;
-    setPrinting(true);
-    setExpandedMessages(new Set(props.messages.map((message) => message.id)));
+    batch(() => {
+      setPrinting(true);
+      setExpandedMessages(new Set(props.messages.map((message) => message.id)));
+    });
     root.classList.add("mail-printing-conversation");
     window.addEventListener("afterprint", cleanup, { once: true });
     timeout = setTimeout(cleanup, 60_000);
@@ -914,6 +996,26 @@ export default function MailConversationReader(props: {
       .filter((section) => section.actions.length > 0),
   );
 
+  const respondToolbarActions = createMemo(() =>
+    (["reply", "reply_all", "forward"] as const).flatMap((id) => {
+      if (!props.toolbarActions.includes(id)) return [];
+      const action = directToolbarAction(id);
+      return action ? [action] : [];
+    }),
+  );
+  const otherToolbarActions = createMemo(() =>
+    directToolbarSections()
+      .filter((section) => section.id !== "respond")
+      .flatMap((section, index) =>
+        section.actions.map((action, position) => ({ action, section: section.id, first: index > 0 && position === 0 })),
+      ),
+  );
+  // The reply box names whom Reply writes to: Reply-To, or the original recipients of a message this mailbox sent.
+  const latestReplyNames = () => {
+    const message = latestMessage();
+    const to = message ? deriveReplyAddressObjects(message, "reply", props.identities).to : [];
+    return to.length ? to.map((item) => item.name || item.address).join(", ") : t().unknownSender;
+  };
   const customizeToolbar = async () => {
     const next = await openMailConversationToolbarDialog(props.toolbarActions);
     if (next) props.onToolbarActionsChange(next);
@@ -1070,7 +1172,7 @@ export default function MailConversationReader(props: {
 
   return (
     <div
-      class="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-surface-raised)]"
+      class="mail-reader flex h-full min-h-0 flex-col overflow-hidden"
       data-mail-print-root
       data-print-region={printing() ? "" : undefined}
     >
@@ -1105,249 +1207,287 @@ export default function MailConversationReader(props: {
           </div>
         }
       >
-        <header class="flex shrink-0 flex-col gap-2 px-4 py-3">
-          <div class="flex min-w-0 items-start gap-2">
-            <IconButtonLink
-              href={closeHref()}
-              class="@min-[64rem]/k2b-app-area:hidden"
-              label={t().backToList}
-              navigation="enhanced"
-              onNavigate={props.onClose}
-              scroll="preserve"
-            >
-              <i class="ti ti-arrow-left" aria-hidden="true" />
-            </IconButtonLink>
-            <Show when={props.listCollapsed}>
-              <Tooltip.Anchor content={t().showList}>
-                <IconButton
+        <div class="mail-reader-toolbar" data-mail-reader-toolbar>
+          <IconButtonLink
+            href={closeHref()}
+            class="mail-reader-back"
+            label={t().backToList}
+            navigation="enhanced"
+            onNavigate={props.onClose}
+            scroll="preserve"
+          >
+            <i class="ti ti-arrow-left" aria-hidden="true" />
+          </IconButtonLink>
+          <Show when={props.listCollapsed}>
+            <Tooltip.Anchor content={t().showList}>
+              <IconButton type="button" class="mail-reader-show-list" label={t().showList} onClick={props.onRestoreList}>
+                <i class="ti ti-layout-sidebar-left-expand" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          </Show>
+          {/* Reply, Reply all and Forward carry their labels while the reader has room; below 720 px Reply all and
+              Forward keep only their icons, and narrower still they leave the bar. "…" always lists them. */}
+          <For each={respondToolbarActions()}>
+            {(action) => (
+              <>
+                <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
+                  <span class="mail-reader-draft-label" data-mail-draft-label>
+                    {t().draftAvailable}
+                  </span>
+                </Show>
+                <Button
                   type="button"
-                  class="hidden @min-[64rem]/k2b-app-area:inline-flex"
-                  label={t().showList}
-                  onClick={props.onRestoreList}
+                  size="sm"
+                  variant={action.id === "reply" ? "subtle" : "ghost"}
+                  class="mail-reader-respond"
+                  data-mail-toolbar-action={action.id}
+                  aria-label={action.label}
+                  tooltip={action.label}
+                  disabled={action.disabled}
+                  onClick={action.action}
                 >
-                  <i class="ti ti-layout-sidebar-left-expand" aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
-            </Show>
-            <div class="min-w-0 flex-1">
-              <div class="flex min-w-0 items-center gap-2">
-                <h1 class="truncate text-lg font-semibold text-primary" data-mail-reader-heading tabIndex={-1}>
-                  {props.subject || t().noSubject}
-                </h1>
-                <Show when={props.flagged}>
-                  <Tooltip.Anchor content={t().flaggedConversation}>
-                    <span
-                      class="flex h-7 w-7 shrink-0 items-center justify-center text-orange-600 dark:text-orange-400"
-                      role="img"
-                      aria-label={t().flaggedConversation}
-                    >
-                      <i class={getMailAction("flag").icon} aria-hidden="true" />
-                    </span>
-                  </Tooltip.Anchor>
-                </Show>
-                <Show when={keptLabel()}>
-                  {(label) => (
-                    <Tooltip.Anchor content={label()}>
-                      <span
-                        class="flex h-7 w-7 shrink-0 items-center justify-center text-secondary"
-                        role="img"
-                        aria-label={`${t().keptConversation}. ${label()}`}
-                        data-mail-kept-indicator
-                      >
-                        <i class="ti ti-lock" aria-hidden="true" />
-                      </span>
-                    </Tooltip.Anchor>
-                  )}
-                </Show>
-                <Show when={props.reference}>
-                  <button
+                  <i class={action.icon} aria-hidden="true" />
+                  <span class="mail-reader-respond-label" aria-hidden="true">
+                    {action.id === "reply" ? t().reply : action.label}
+                  </span>
+                  <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
+                    <span class="mail-reader-draft-dot" data-mail-draft-indicator aria-hidden="true" />
+                  </Show>
+                </Button>
+              </>
+            )}
+          </For>
+          <span class="mail-reader-toolbar-space" />
+          {/* The person's other toolbar actions, as icons. When the reader gets narrow, the last ones leave the bar first;
+              "…" always lists every action, so each one stays reachable by keyboard. */}
+          <div class="mail-reader-toolbar-actions">
+            <For each={otherToolbarActions()}>
+              {(entry) => (
+                <Tooltip.Anchor content={entry.action.label}>
+                  <IconButton
                     type="button"
-                    class="chip shrink-0 font-mono text-xs"
-                    title={t().copyReference}
-                    onClick={() => {
-                      const reference = props.reference;
-                      if (!reference) return;
-                      void navigator.clipboard.writeText(reference).then(
-                        () => toast.success(t().referenceCopied),
-                        () => toast.error(t().referenceCopyFailed),
-                      );
-                    }}
+                    class="mail-reader-toolbar-action"
+                    label={entry.action.label}
+                    data-mail-toolbar-action={entry.action.id}
+                    data-mail-toolbar-section={entry.section}
+                    data-section-start={entry.first ? "" : undefined}
+                    disabled={entry.action.disabled}
+                    onClick={entry.action.action}
                   >
-                    <i class="ti ti-hash" aria-hidden="true" />
-                    {props.reference}
-                  </button>
-                </Show>
-              </div>
-              <p class="mt-0.5 text-xs text-dimmed">{t().messageCount({ count: props.messages.length })}</p>
-            </div>
-            <div class="flex shrink-0 items-center gap-1">
-              <div class="hidden max-w-[min(40vw,28rem)] items-center gap-2 overflow-x-auto sm:flex">
-                <For each={directToolbarSections()}>
-                  {(section) => (
-                    <div class="flex shrink-0 items-center gap-1" data-mail-toolbar-section={section.id}>
-                      <For each={section.actions}>
-                        {(action) => (
-                          <>
-                            <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
-                              <span class="hidden whitespace-nowrap text-xs text-dimmed sm:inline" data-mail-draft-label>
-                                {t().draftAvailable}
-                              </span>
-                            </Show>
-                            <Tooltip.Anchor content={action.label}>
-                              <IconButton
-                                type="button"
-                                class="relative shrink-0"
-                                label={action.label}
-                                data-mail-toolbar-action={action.id}
-                                disabled={action.disabled}
-                                onClick={action.action}
-                              >
-                                <i class={action.icon} aria-hidden="true" />
-                                <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
-                                  <span
-                                    class="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[var(--ui-accent)] sm:hidden"
-                                    data-mail-draft-indicator
-                                    aria-hidden="true"
-                                  />
-                                </Show>
-                              </IconButton>
-                            </Tooltip.Anchor>
-                          </>
-                        )}
-                      </For>
-                    </div>
-                  )}
-                </For>
-              </div>
-              <Dropdown.Root position="bottom-left" width="14rem" items={overflowActions()}>
-                <Dropdown.Trigger iconOnly type="button" variant="ghost" label={t().moreConversationActions}>
-                  <i class="ti ti-dots" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-              <Tooltip.Anchor content={t().conversationDetails}>
-                <IconButton
-                  type="button"
-                  classList={{ "bg-[var(--ui-selected)]": props.detailsOpen }}
-                  label={t().toggleDetails}
-                  aria-pressed={props.detailsOpen}
-                  data-mail-details-trigger
-                  onClick={props.onToggleDetails}
-                >
-                  <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
-            </div>
+                    <i class={entry.action.icon} aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              )}
+            </For>
           </div>
-        </header>
+          <Dropdown.Root position="bottom-left" width="14rem" items={overflowActions()}>
+            <Dropdown.Trigger iconOnly type="button" variant="ghost" label={t().moreConversationActions}>
+              <i class="ti ti-dots" aria-hidden="true" />
+            </Dropdown.Trigger>
+          </Dropdown.Root>
+          <Tooltip.Anchor content={t().conversationDetails}>
+            {/* While the details wait behind the head's Details, this button opens and parks their drawer with one
+                click (#1467); AppWorkspace keeps aria-expanded in step. */}
+            <IconButton
+              type="button"
+              class="mail-reader-details"
+              label={t().toggleDetails}
+              aria-expanded={props.detailsOpen}
+              aria-controls={appWorkspaceDetailElementId(MAIL_CONTEXT_DETAIL_ID)}
+              data-mail-details-trigger
+              onClick={props.onToggleDetails}
+            >
+              <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+            </IconButton>
+          </Tooltip.Anchor>
+        </div>
 
         <div class="relative min-h-0 flex-1 overflow-hidden">
           <ScrollArea
             ref={historyScroller}
-            class="absolute inset-0 px-3 py-2 sm:px-5"
+            class="mail-reader-scroll absolute inset-0 px-3 py-2 sm:px-5"
             scrollPreserveKey={`mail-reader-${props.selectionKey}`}
             onScroll={handleReaderScroll}
           >
-            <Show when={props.conversationSummary?.summary}>
-              {(summary) => (
-                <MailConversationSummaryCard
-                  summary={summary()}
-                  canEdit={props.canWrite}
-                  editDisabled={summarySaving()}
-                  onEdit={() => void editConversationSummary()}
-                />
-              )}
-            </Show>
-            <div class="mx-auto flex w-full max-w-4xl flex-col gap-2" data-mail-conversation-messages>
-              <For each={timelineIds()}>
-                {(id) => {
-                  const item = () => timelineItems().get(id);
-                  const activityItem = () => {
-                    const current = item();
-                    return current?.kind === "activity" ? current.activity : undefined;
-                  };
-                  const messageItem = () => {
-                    const current = item();
-                    return current?.kind === "message" ? current.message : undefined;
-                  };
-                  return (
-                    <>
-                      <Show when={activityItem()}>
-                        {(activity) => (
-                          <div
-                            class="flex min-w-0 items-center gap-2 px-2 py-0.5 text-xs leading-5 text-dimmed"
-                            data-mail-conversation-activity
-                          >
-                            <i
-                              class={`ti ${activity().icon} w-4 shrink-0 text-center ${activity().outcome === "failed" ? "text-red-500" : "text-dimmed"}`}
-                              aria-hidden="true"
-                            />
-                            <span class="min-w-0 flex-1">
-                              <span class="font-medium text-secondary">{activity().actorLabel}</span> {activity().label}
-                              <Show when={activity().count > 1}> ({activity().count})</Show>
-                            </span>
-                            <time
-                              class="shrink-0 text-dimmed"
-                              dateTime={activity().createdAt}
-                              title={dates.formatDateTime(activity().createdAt, props.dateConfig)}
+            <div class="mail-reading-column" data-mail-reading-column>
+              <header class="mail-reader-subject">
+                <div class="flex min-w-0 items-center gap-2">
+                  <h1 class="mail-reader-title" data-mail-reader-heading tabIndex={-1}>
+                    {props.subject || t().noSubject}
+                  </h1>
+                  <Show when={props.flagged}>
+                    <Tooltip.Anchor content={t().flaggedConversation}>
+                      <span
+                        class="flex h-7 w-7 shrink-0 items-center justify-center text-orange-600 dark:text-orange-400"
+                        role="img"
+                        aria-label={t().flaggedConversation}
+                      >
+                        <i class={getMailAction("flag").icon} aria-hidden="true" />
+                      </span>
+                    </Tooltip.Anchor>
+                  </Show>
+                  <Show when={keptLabel()}>
+                    {(label) => (
+                      <Tooltip.Anchor content={label()}>
+                        <span
+                          class="flex h-7 w-7 shrink-0 items-center justify-center text-secondary"
+                          role="img"
+                          aria-label={`${t().keptConversation}. ${label()}`}
+                          data-mail-kept-indicator
+                        >
+                          <i class="ti ti-lock" aria-hidden="true" />
+                        </span>
+                      </Tooltip.Anchor>
+                    )}
+                  </Show>
+                  <Show when={props.reference}>
+                    <button
+                      type="button"
+                      class="chip shrink-0 font-mono text-xs"
+                      title={t().copyReference}
+                      onClick={() => {
+                        const reference = props.reference;
+                        if (!reference) return;
+                        void navigator.clipboard.writeText(reference).then(
+                          () => toast.success(t().referenceCopied),
+                          () => toast.error(t().referenceCopyFailed),
+                        );
+                      }}
+                    >
+                      <i class="ti ti-hash" aria-hidden="true" />
+                      {props.reference}
+                    </button>
+                  </Show>
+                </div>
+                <p class="mt-0.5 text-xs text-dimmed">{t().messageCount({ count: props.messages.length })}</p>
+              </header>
+              <Show when={props.conversationSummary?.summary}>
+                {(summary) => (
+                  <MailConversationSummaryCard
+                    summary={summary()}
+                    canEdit={props.canWrite}
+                    editDisabled={summarySaving()}
+                    onEdit={() => void editConversationSummary()}
+                  />
+                )}
+              </Show>
+              <Show when={canRespondToLatest()}>
+                <button
+                  type="button"
+                  class="mail-reader-reply-box"
+                  data-mail-reply-box
+                  disabled={composerBusy()}
+                  onClick={() => respondToLatest("reply")}
+                >
+                  <i class="ti ti-arrow-back-up" aria-hidden="true" />
+                  <span class="min-w-0 truncate">{t().replyTo({ name: latestReplyNames() })}</span>
+                </button>
+              </Show>
+              <div class="flex w-full flex-col gap-2" data-mail-conversation-messages>
+                <For each={visibleTimelineIds()}>
+                  {(id) => {
+                    const item = () => timelineItems().get(id);
+                    const activityItem = () => {
+                      const current = item();
+                      return current?.kind === "activity" ? current.activity : undefined;
+                    };
+                    const messageItem = () => {
+                      const current = item();
+                      return current?.kind === "message" ? current.message : undefined;
+                    };
+                    return (
+                      <>
+                        <Show when={activityItem()}>
+                          {(activity) => (
+                            <div
+                              class="flex min-w-0 items-center gap-2 px-2 py-0.5 text-xs leading-5 text-dimmed"
+                              data-mail-conversation-activity
                             >
-                              {dates.formatDateTimeRelative(activity().createdAt, props.dateConfig)}
-                            </time>
-                          </div>
-                        )}
-                      </Show>
-                      <Show when={messageItem()}>
-                        {(message) => (
-                          <MailMessageCard
-                            message={message()}
-                            expanded={expandedMessages().has(message().id)}
-                            isLatest={props.messages.at(-1)?.id === message().id}
-                            selectionAvailable={Boolean(messageSelections()[message().id])}
-                            context={{
-                              mailboxId: props.mailboxId,
-                              requestUrl: props.requestUrl,
-                              canWrite: props.canWrite,
-                              canAdmin: props.canAdmin,
-                              mailboxWide: props.mailboxWide,
-                              selectionKey: props.selectionKey,
-                              selectedConversationId: props.selectedConversationId,
-                              totalMessageCount: props.totalMessageCount,
-                              identities: props.identities,
-                              dateConfig: props.dateConfig,
-                              readingFormat: props.readingFormat,
-                              theme: printing() ? "light" : props.theme,
-                              calendarIntegrationAvailable: props.calendarIntegrationAvailable,
-                              composerBusy: composerBusy(),
-                            }}
-                            actions={{
-                              toggle: toggleMessage,
-                              selectionChange: (messageId, value) =>
-                                setMessageSelections((current) => {
-                                  if (value)
-                                    return current[messageId] === value && Object.keys(current).length === 1
-                                      ? current
-                                      : { [messageId]: value };
-                                  if (!(messageId in current)) return current;
-                                  const next = { ...current };
-                                  delete next[messageId];
-                                  return next;
-                                }),
-                              compose: startComposer,
-                              quoteReply: startQuoteReply,
-                              derive: (kind, selectedMessage) => {
-                                void deriveMessage(kind, selectedMessage);
-                              },
-                              reconcile: props.onReconcileAfterWrite,
-                              refresh: props.onReconcile,
-                              reassign: props.onReassignMessage,
-                              split: props.onSplitMessage,
-                            }}
-                          />
-                        )}
-                      </Show>
-                    </>
-                  );
-                }}
-              </For>
+                              <i
+                                class={`ti ${activity().icon} w-4 shrink-0 text-center ${activity().outcome === "failed" ? "text-red-500" : "text-dimmed"}`}
+                                aria-hidden="true"
+                              />
+                              <span class="min-w-0 flex-1">
+                                <span class="font-medium text-secondary">{activity().actorLabel}</span> {activity().label}
+                                <Show when={activity().count > 1}> ({activity().count})</Show>
+                              </span>
+                              <time
+                                class="shrink-0 text-dimmed"
+                                dateTime={activity().createdAt}
+                                title={dates.formatDateTime(activity().createdAt, props.dateConfig)}
+                              >
+                                {dates.formatDateTimeRelative(activity().createdAt, props.dateConfig)}
+                              </time>
+                            </div>
+                          )}
+                        </Show>
+                        <Show when={messageItem()}>
+                          {(message) => (
+                            <MailMessageCard
+                              message={message()}
+                              expanded={expandedMessages().has(message().id)}
+                              isLatest={props.messages.at(-1)?.id === message().id}
+                              selectionAvailable={Boolean(messageSelections()[message().id])}
+                              context={{
+                                mailboxId: props.mailboxId,
+                                requestUrl: props.requestUrl,
+                                canWrite: props.canWrite,
+                                canAdmin: props.canAdmin,
+                                mailboxWide: props.mailboxWide,
+                                selectionKey: props.selectionKey,
+                                selectedConversationId: props.selectedConversationId,
+                                totalMessageCount: props.totalMessageCount,
+                                identities: props.identities,
+                                dateConfig: props.dateConfig,
+                                readingFormat: props.readingFormat,
+                                theme: printing() ? "light" : props.theme,
+                                calendarIntegrationAvailable: props.calendarIntegrationAvailable,
+                                composerBusy: composerBusy(),
+                              }}
+                              actions={{
+                                toggle: toggleMessage,
+                                selectionChange: (messageId, value) =>
+                                  setMessageSelections((current) => {
+                                    if (value)
+                                      return current[messageId] === value && Object.keys(current).length === 1
+                                        ? current
+                                        : { [messageId]: value };
+                                    if (!(messageId in current)) return current;
+                                    const next = { ...current };
+                                    delete next[messageId];
+                                    return next;
+                                  }),
+                                compose: startComposer,
+                                quoteReply: startQuoteReply,
+                                derive: (kind, selectedMessage) => {
+                                  void deriveMessage(kind, selectedMessage);
+                                },
+                                reconcile: props.onReconcileAfterWrite,
+                                refresh: props.onReconcile,
+                                reassign: props.onReassignMessage,
+                                split: props.onSplitMessage,
+                              }}
+                            />
+                          )}
+                        </Show>
+                      </>
+                    );
+                  }}
+                </For>
+                <Show when={olderMessages()}>
+                  {(older) => (
+                    <button
+                      type="button"
+                      class="mail-reader-older"
+                      data-mail-older-messages
+                      onClick={() => revealOlderMessages(older().cutoff)}
+                    >
+                      <i class="ti ti-dots" aria-hidden="true" />
+                      {t().olderMessages({ count: older().count })}
+                    </button>
+                  )}
+                </Show>
+              </div>
             </div>
           </ScrollArea>
           <Show when={pendingNewMessages()}>
@@ -1365,6 +1505,45 @@ export default function MailConversationReader(props: {
             )}
           </Show>
         </div>
+        {/* Phones: Reply, Reply all, Forward and Archive wait at the bottom, within thumb reach. As the reader's last
+            row the bar takes its own height, so it never covers the last line or a focused control. */}
+        <Show when={canRespondToLatest() || props.canWrite}>
+          <div class="mail-reader-phone-bar" data-mail-phone-actions>
+            <Toolbar label={t().conversationActions} variant="floating">
+              <Show when={canRespondToLatest()}>
+                <Button type="button" class="mail-reader-phone-reply" disabled={composerBusy()} onClick={() => respondToLatest("reply")}>
+                  <i class="ti ti-arrow-back-up" aria-hidden="true" />
+                  {t().reply}
+                </Button>
+                <Show when={canReplyAllToLatest()}>
+                  <Toolbar.Action
+                    label={t().replyAll}
+                    icon="ti ti-arrow-back-up-double"
+                    priority={2}
+                    disabled={composerBusy()}
+                    onClick={() => respondToLatest("reply_all")}
+                  />
+                </Show>
+                <Toolbar.Action
+                  label={t().forward}
+                  icon="ti ti-arrow-forward-up"
+                  priority={2}
+                  disabled={composerBusy()}
+                  onClick={() => respondToLatest("forward")}
+                />
+              </Show>
+              <Show when={props.canWrite}>
+                <Toolbar.Action
+                  label={localizedActionLabel("archive")}
+                  icon={getMailAction("archive").icon}
+                  priority={1}
+                  disabled={props.actionPending}
+                  onClick={() => void props.onAction("archive")}
+                />
+              </Show>
+            </Toolbar>
+          </div>
+        </Show>
       </Show>
     </div>
   );

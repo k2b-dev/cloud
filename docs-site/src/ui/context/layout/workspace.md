@@ -300,9 +300,10 @@ Resize earlier levels by dragging their separators or using Left/Right (8 px),
 Shift+Left/Right (32 px), Home (minimum), and End (maximum). Double-click a
 separator to reset that pane to its default size. On a touch screen a separator
 is a 44 px gap of its own between two levels, so a tap on the edge of a row
-never starts a resize. `defaultSize`, `minSize`, and `maxSize` use pixels; the
-default limits are 240–640 px. Available space may reduce the maximum, because
-the last level keeps 320 px.
+never starts a resize. `minSize` and `maxSize` use pixels; the default limits
+are 240–640 px. `defaultSize` accepts pixels or a workspace width share
+(see [Detail and panel](#detail-and-panel)). Available space may reduce the
+maximum, because the last level keeps 320 px.
 
 A resize starts from the widths on screen. When the window is too narrow for
 the stored widths, the shown levels give way; the first step on a separator
@@ -355,14 +356,49 @@ From a 48 rem viewport, Detail and a host panel follow six rules:
    the Detail column automatically if it fits.
 6. The host panel never closes by itself.
 
-Set `AppWorkspace.Main minWidth` in pixels when the work needs more than the
-320 px default. Values at or below 320 and non-finite values keep the default.
+Set `AppWorkspace.Main minWidth` in pixels or as `AppWorkspaceWidthShare`
+when the work needs more than the 320 px default. Numeric values at or below
+320 and non-finite values keep the default.
 The minimum reserves Main's space beside the sidebar and Detail. CSS uses it
 from the first server frame, before any island mounts. Sidebar resizing keeps
 that minimum too; it cannot drag the sidebar into its overlay form. The
 minimum is bounded by the host's width (see [Host width](#host-width)): a
 workspace narrower than the window needs a named `k2b-app-area` host, as for
 the sidebar decision.
+
+A width share is `{ share, offset?, min, max }`, all widths in pixels. It
+computes `clamp(min, share × workspace width + offset, max)`. `share` must be
+between 0 and 1, excluding both. `offset` defaults to 0. The offset and limits
+must be finite, with `min <= max`. An invalid share keeps the default.
+Workspace width means the workspace root's border-box width, including its
+1 px border on each side. It follows the app card, even inside a narrower host.
+CSS resolves the share in the first server frame. Phones keep their existing
+layout.
+
+For a list that grows with the workspace, derive Main's minimum from the same
+share plus the space its reader needs:
+
+```tsx
+<AppWorkspace.Main minWidth={{ share: 0.25, offset: 428, min: 772, max: 892 }}>
+  <AppWorkspace.MainPane
+    id="list"
+    label="Items"
+    defaultSize={{ share: 0.25, offset: -12, min: 332, max: 452 }}
+  >
+    <ItemList />
+  </AppWorkspace.MainPane>
+  <ItemReader />
+</AppWorkspace.Main>
+```
+
+The list grows from 332 to 452 px, including its 12 px region gap. Main keeps
+that width plus 440 px for the reader before Detail can become a column.
+`MainPane.defaultSize` uses the share while there is no stored or live width.
+Its own `minSize` and `maxSize` still apply, and it gives way while Main's
+primary region keeps 320 px. Resetting its handle restores the share.
+CSS fits each share default against Main alone. Beside other panes, keep the
+defaults' sum within Main's room: the controller fits crowding panes only
+after it attaches, which moves them once after the server frame.
 
 Waiting depends on the width of the content region beside the sidebar at
 every host width and with every input device. Column fit requires Main's
@@ -405,7 +441,21 @@ or one opened without a fresh Main choice, keeps waiting. The drawer is not moda
 
 Set `openOnChoice={false}` when Main shows the chosen item, as in Mail's reader
 beside a list. The waiting drawer then opens only from **Details** or a toggle
-in Main with `aria-pressed`, `aria-expanded`, or `aria-controls`.
+in Main with `aria-pressed`, `aria-expanded`, or `aria-controls`. Give a toggle
+`aria-controls={appWorkspaceDetailElementId(id)}` to target its Detail. From a
+48 rem viewport, when that Detail is open and waiting, a click opens or parks
+its drawer and leaves the application's `open` state true. This also works
+for a control inside Detail. The application's click handler does not run in
+that case. Keyboard activation focuses the Detail title; pointer activation
+keeps focus on the control. A click with Ctrl, Cmd, Shift, or Alt, a
+non-primary button, or an already prevented click stays with the application
+and the browser, so a link still opens in a new tab. While waiting, the
+controller sets `aria-expanded` to the drawer's state. When Detail becomes a
+column, the application's rendered attribute is restored; when it closes, a
+control that rendered `aria-expanded` reads `false`. `aria-pressed` remains
+application-owned, so a toggle that controls a Detail uses `aria-expanded`
+alone. For a column, a closed Detail, or a phone sheet below 48 rem, the
+application's handler runs as usual.
 
 Escape parks the drawer and returns focus to **Details**, without calling
 `onClose`. The button also parks it. A rightward touch swipe parks an open
@@ -964,8 +1014,10 @@ type AppWorkspaceLayoutStateProviderProps = {
 
 type AppWorkspaceContentProps = { children: JSX.Element; class?: string };
 
+type AppWorkspaceWidthShare = { share: number; offset?: number; min: number; max: number };
+
 type AppWorkspaceMainProps = {
-  children: JSX.Element; class?: string; width?: "full" | "content"; minWidth?: number; mobilePane?: string; scroll?: boolean; scrollFade?: boolean;
+  children: JSX.Element; class?: string; width?: "full" | "content"; minWidth?: number | AppWorkspaceWidthShare; mobilePane?: string; scroll?: boolean; scrollFade?: boolean;
   scrollPreserveKey?: string | false;
   level?: string; onLevelNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   "aria-busy"?: boolean | "true" | "false";
@@ -973,7 +1025,7 @@ type AppWorkspaceMainProps = {
 
 type AppWorkspaceMainPaneProps = {
   id: string; label: string; surface?: "default" | "navigation"; open?: boolean; resizable?: boolean;
-  resizeShadow?: boolean; defaultSize?: number; minSize?: number; maxSize?: number; class?: string;
+  resizeShadow?: boolean; defaultSize?: number | AppWorkspaceWidthShare; minSize?: number; maxSize?: number; class?: string;
   scroll?: boolean; scrollFade?: boolean; children: JSX.Element;
   href?: string; description?: JSX.Element; actions?: JSX.Element;
 };
@@ -1148,7 +1200,7 @@ The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWork
 | Detail | 416 | 320 | 640 |
 | BottomDrawer | 240 | 160 | 560 |
 
-The main area reserves 320px width (raised with `Main minWidth`) / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/416/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
+The main area reserves 320px width (raised with `Main minWidth`, in pixels or a workspace width share) / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/416/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). `MainPane.defaultSize` also accepts a workspace width share. Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
 
 `LinkNavigateEvent` and `NavigationScrollMode` use [navigation conventions](/en/ui/getting-started#icons-tones-and-navigation). `navigation` defaults to `"document"`. Event callbacks do not load data automatically.
 
@@ -1158,6 +1210,7 @@ declare function parseAppWorkspaceLayoutState(value: string | null | undefined):
 declare function serializeAppWorkspaceLayoutState(state: AppWorkspaceLayoutState): string;
 declare function appWorkspaceLayoutStyle(state: AppWorkspaceLayoutState | null | undefined): string | undefined;
 declare function installAppWorkspaceController(options?: AppWorkspaceControllerOptions): () => void;
+declare function appWorkspaceDetailElementId(id: string): string;
 declare function watchAppHostWidth(element: Element, minRem: number, update: (matches: boolean) => void): () => void;
 declare function safeAppWorkspacePanelId(panelId: string): string;
 declare function appWorkspacePanelVariable(kind: "pane" | "detail" | "drawer", panelId: string): string;
@@ -1167,6 +1220,9 @@ declare function resolveAppWorkspaceSidebarWidth(width: number, maxWidth: number
 ```
 
 Parse/serialize use a URI-encoded JSON string; normalize accepts a decoded object. The installer returns cleanup. Most consumers use the automatic controller and only persist `onLayoutChange` results.
+
+`appWorkspaceDetailElementId` returns the Detail region's DOM id for
+`aria-controls`. Pass the same stable `id` as `AppWorkspace.Detail`.
 
 ## Accessibility
 

@@ -360,6 +360,8 @@ export const Toolbar = Object.assign(
       // More, or to the toolbar's tab stop when nothing is left in More. Inside an effect the menu rows update after
       // this function returns, so the check waits for that flush; a microtask still runs before the next paint.
       queueMicrotask(() => {
+        // A toolbar unmounted meanwhile, as its view closes, owns no focus any more.
+        if (!mounted) return;
         const lost =
           next.some((action) => action.element === focused) ||
           (focused instanceof HTMLElement && !focused.isConnected) ||

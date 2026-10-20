@@ -10148,7 +10148,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: var(--k2b-focus-offset);
 }
 
-/* A question opened again by the person's own click briefly lights up. */
+/* A question the focus moves to from elsewhere, such as a reopen or a jump to it, briefly lights up. */
 .k2b-ui .k2b-chat-decision__sentence[data-arrive="true"] {
   animation: k2b-chat-decision-arrive var(--k2b-fresh-fade) var(--k2b-ease-out);
 }

@@ -5,7 +5,7 @@ import type { createComponent, createSignal } from "solid-js";
 import type { Dynamic } from "solid-js/web";
 import type { FilterChip, IconButton, PageTrailProvider, ViewTabs } from "../src/index";
 import type AppWorkspace from "../src/layout/AppWorkspace";
-import type { AppWorkspaceDetailWidth } from "../src/layout/AppWorkspace";
+import type { AppWorkspaceDetailWidth, AppWorkspaceWidthShare } from "../src/layout/AppWorkspace";
 import type { AppWorkspaceLayoutState } from "../src/layout/app-workspace-state";
 
 export const uiDirectory = resolve(import.meta.dir, "..");
@@ -26,7 +26,8 @@ export type FixtureOptions = {
   scenario?: string;
   selectionDelay?: boolean;
   detailWidth?: AppWorkspaceDetailWidth;
-  mainMin?: number;
+  mainMin?: number | AppWorkspaceWidthShare;
+  paneSize?: number | AppWorkspaceWidthShare;
   sidebar?: boolean;
   sidebarActive?: boolean;
   head?: {
@@ -179,6 +180,7 @@ export function workspaceTree(
                             id: "navigation",
                             label: "Navigation",
                             surface: "navigation",
+                            defaultSize: props.paneSize,
                             children: "Message groups",
                           }),
                           createComponent(Dynamic, { component: "button", children: "Selected message", onClick: () => setOpen(true) }),

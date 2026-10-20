@@ -19,7 +19,10 @@ export default ssr<AuthContext>(async (c) => {
     const app = await artifacts.get(id.data, identity);
     if (app.permission !== "admin" && !c.req.path.endsWith("/edit") && !c.req.path.endsWith("/database"))
       return c.redirect(`/app/assistant/apps/${app.id}/run`);
-    const [sidebar, approvals] = await Promise.all([loadAssistantSidebarSnapshot(user.id), loadPendingApprovals(c, { app: "assistant" })]);
+    const [sidebar, approvals] = await Promise.all([
+      loadAssistantSidebarSnapshot(user.id, { locale: getLocale(c), timeZone: getTimeZone(c) }),
+      loadPendingApprovals(c, { app: "assistant" }),
+    ]);
     const view = c.req.path.endsWith("/edit") ? "edit" : c.req.path.endsWith("/database") ? "database" : "app";
     if (view !== "app" && app?.permission !== "admin") return ssr.error(c, 403);
     const databaseStatus = view === "database" && app ? await artifactDatabase.status(app.id, identity, c.req.raw.signal) : undefined;

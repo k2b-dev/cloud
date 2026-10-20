@@ -85,3 +85,17 @@ test("message deep links accept positive sequences and do not leak into another 
   expect(assistantConversationHref(current, "Chat02")).toBe("/app/assistant?conversation=Chat02");
   expect(assistantProjectHref(current, "Proj01")).toBe("/app/assistant?project=Proj01");
 });
+
+test("question locations replace a message, survive in their chat and do not leak into another chat or project", async () => {
+  const { assistantMessageHref, assistantQuestionAnchorFromHref, assistantQuestionHref } = await import("./assistant-navigation");
+  const atMessage = "/app/assistant?conversation=Chat01&message=17&artifact=report.md";
+  const atQuestion = assistantQuestionHref(atMessage, "Chat01", "tool-call-1");
+  expect(atQuestion).toBe("/app/assistant?conversation=Chat01&artifact=report.md&question=tool-call-1");
+  expect(assistantQuestionHref(atMessage, "Chat02", "tool-call-2")).toBe("/app/assistant?conversation=Chat02&question=tool-call-2");
+  expect(assistantQuestionAnchorFromHref(atQuestion)).toBe("tool-call-1");
+  for (const value of ["", "call-1", `tool-${"x".repeat(260)}`])
+    expect(assistantQuestionAnchorFromHref(`/app/assistant?question=${value}`)).toBeNull();
+  expect(assistantMessageHref(atQuestion, 3)).toBe("/app/assistant?conversation=Chat01&artifact=report.md&message=3");
+  expect(assistantConversationHref(atQuestion, "Chat02")).toBe("/app/assistant?conversation=Chat02");
+  expect(assistantProjectHref(atQuestion, "Proj01")).toBe("/app/assistant?project=Proj01");
+});
