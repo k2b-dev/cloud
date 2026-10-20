@@ -74,21 +74,30 @@ describe("RichSelect desktop behavior", () => {
     const { RichSelect } = await import("../src/inputs/RichSelect");
     const [value, setValue] = createSignal<string | null>(null);
     const commits: Array<string | null> = [];
+    let submissions = 0;
     const dispose = render(
-      () =>
-        createComponent(
-          RichSelect,
-          mergeProps(
-            {
-              label: "Move card",
-              value,
-              onValueChange: setValue,
-              onValueCommit: (next: string | null) => commits.push(next),
-              items,
-            },
-            props,
-          ),
-        ),
+      () => (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submissions++;
+          }}
+        >
+          {createComponent(
+            RichSelect,
+            mergeProps(
+              {
+                label: "Move card",
+                value,
+                onValueChange: setValue,
+                onValueCommit: (next: string | null) => commits.push(next),
+                items,
+              },
+              props,
+            ),
+          )}
+        </form>
+      ),
       dom.root,
     );
     cleanup = () => {
@@ -106,7 +115,7 @@ describe("RichSelect desktop behavior", () => {
       trigger.click();
       await Promise.resolve();
     };
-    return { dom, trigger, value, commits, rows, activeLabel, open };
+    return { dom, trigger, value, commits, rows, activeLabel, open, submissions: () => submissions };
   };
 
   test("arrows wrap through disabled rows; disabled Enter does nothing; Home/End and Escape preserve focus", async () => {
@@ -181,6 +190,55 @@ describe("RichSelect desktop behavior", () => {
     expect(picker.trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
+  test("custom visuals keep independent nodes in the trigger, list and preview", async () => {
+    const picker = await mount({
+      value: "review",
+      items: [{ value: "review", label: "Review", visual: () => <span data-custom-visual>Avatar</span> }],
+      renderPreview: () => "Preview facts",
+    });
+    await picker.open();
+    expect(picker.dom.root.querySelectorAll("[data-custom-visual]")).toHaveLength(3);
+    expect(picker.trigger.querySelector("[data-custom-visual]")?.textContent).toBe("Avatar");
+    expect(picker.rows()[0]?.querySelector("[data-custom-visual]")?.textContent).toBe("Avatar");
+    key(picker.trigger, "Escape");
+    await picker.open();
+    expect(picker.dom.root.querySelectorAll("[data-custom-visual]")).toHaveLength(3);
+  });
+
+  test("IME Enter confirms composition without selecting or closing", async () => {
+    const picker = await mount({ items: searchableItems });
+    await picker.open();
+    const search = picker.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const composing = new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true, cancelable: true });
+    search.dispatchEvent(composing);
+    expect(composing.defaultPrevented).toBe(false);
+    expect(picker.commits).toEqual([]);
+    expect(picker.trigger.getAttribute("aria-expanded")).toBe("true");
+    key(search, "Enter");
+    expect(picker.commits).toEqual(["review"]);
+  });
+
+  test("removing a focused Retry restores keyboard selection through loading and ready", async () => {
+    const [status, setStatus] = createSignal<"error" | "loading" | "ready">("error");
+    const picker = await mount({
+      get status() {
+        return status();
+      },
+      onRetry: () => setStatus("loading"),
+    });
+    await picker.open();
+    const retry = picker.dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
+    retry.focus();
+    retry.click();
+    await Promise.resolve();
+    expect(picker.dom.document.activeElement).toBe(picker.trigger);
+    setStatus("ready");
+    key(picker.trigger, "ArrowDown");
+    key(picker.trigger, "ArrowDown");
+    key(picker.trigger, "Enter");
+    expect(picker.commits).toEqual(["archive"]);
+  });
+
   test("footer action closes before running the consumer callback", async () => {
     const calls: string[] = [];
     const picker = await mount({
@@ -223,13 +281,13 @@ describe("RichSelect desktop behavior", () => {
     await Promise.resolve();
     input = picker.dom.root.querySelector<HTMLInputElement>(".k2b-rich-select__create-input")!;
     type(input, "   ");
-    expect(picker.dom.root.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+    expect(picker.dom.root.querySelector<HTMLButtonElement>(".k2b-rich-select__create button")!.disabled).toBe(true);
     type(input, "  New campaign  ");
-    // happy-dom does not perform the browser's implicit form submission for Enter.
     key(input, "Enter");
-    input.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     expect(calls).toEqual(["New campaign"]);
     expect(picker.value()).toBeNull();
+    expect(picker.submissions()).toBe(0);
+    expect(picker.dom.root.querySelector("form form")).toBeNull();
   });
 
   test("error Retry calls onRetry and empty ready lists render consumer content", async () => {
@@ -252,5 +310,64 @@ describe("RichSelect desktop behavior", () => {
     expect(retries).toBe(1);
     expect(picker.dom.root.querySelector('[role="status"]')?.textContent).toBe("No targets are set up for this space.");
     expect(picker.trigger.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  test("an empty list keeps its create action available", async () => {
+    let created = false;
+    const picker = await mount({
+      items: [],
+      footer: {
+        label: "New project",
+        onActivate: () => {
+          created = true;
+        },
+      },
+    });
+    await picker.open();
+    const action = picker.dom.root.querySelector<HTMLButtonElement>(".k2b-rich-select__footer-action");
+    expect(action).not.toBeNull();
+    action!.click();
+    expect(created).toBe(true);
+  });
+
+  test("Enter on Retry retains the button's native activation", async () => {
+    const picker = await mount({ status: "error", onRetry: () => {} });
+    await picker.open();
+    const retry = picker.dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
+    retry.focus();
+    expect(key(retry, "Enter")).toBe(true);
+    expect(picker.commits).toEqual([]);
+  });
+
+  test("a list arriving after loading starts keyboard navigation at its first option", async () => {
+    const [status, setStatus] = createSignal<"loading" | "ready">("loading");
+    const picker = await mount({
+      get status() {
+        return status();
+      },
+      get items() {
+        return status() === "loading" ? [] : items;
+      },
+    });
+    await picker.open();
+    expect(picker.activeLabel()).toBeUndefined();
+    setStatus("ready");
+    expect(picker.activeLabel()).toBe("Review");
+    key(picker.trigger, "Enter");
+    expect(picker.value()).toBe("review");
+  });
+
+  test("disabling an open picker closes it and prevents stale selection", async () => {
+    const [disabled, setDisabled] = createSignal(false);
+    const picker = await mount({
+      get disabled() {
+        return disabled();
+      },
+    });
+    await picker.open();
+    setDisabled(true);
+    expect(picker.trigger.getAttribute("aria-expanded")).toBe("false");
+    picker.rows()[0]!.click();
+    expect(picker.commits).toEqual([]);
   });
 });

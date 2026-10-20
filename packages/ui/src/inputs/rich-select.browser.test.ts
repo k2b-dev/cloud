@@ -1,11 +1,19 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type axeCore from "axe-core";
 import type { Browser, BrowserContextOptions, Locator } from "playwright";
 import { launchBrowser } from "../../test/browser";
 
+declare global {
+  interface Window {
+    axe?: typeof axeCore;
+  }
+}
+
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
+const axeSource = readFileSync(Bun.resolveSync("axe-core/axe.min.js", import.meta.dir), "utf8");
 const entry = resolve(import.meta.dir, "rich-select.fixture.ts");
 const fixture = `
 import { createComponent, createSignal } from "solid-js";
@@ -24,11 +32,35 @@ const facts = {
   support: ["Ask a Support manager for write access before moving this card."],
 };
 const [value, setValue] = createSignal(null);
+const [targets, setTargets] = createSignal(items);
+const [status, setStatus] = createSignal("ready");
+const [disabled, setDisabled] = createSignal(false);
+document.addEventListener("fixture:state", (event) => {
+  const next = event.detail;
+  if (next === "revoke") setTargets(items.map(item => item.value === "review" ? { ...item, disabledReason: "No write access" } : item));
+  if (next === "remove") setTargets(items.filter(item => item.value !== "review"));
+  if (next === "empty") { setTargets([]); setStatus("ready"); }
+  if (next === "error" || next === "loading") setStatus(next);
+  if (next === "disable") setDisabled(true);
+  if (next === "revoke-on-choose") {
+    const revoke = (event) => {
+      if (!event.target.closest(".k2b-rich-select__choose")) return;
+      document.removeEventListener("click", revoke, true);
+      queueMicrotask(() => setTargets(items.map(item => ({ ...item, disabledReason: "No write access" }))));
+    };
+    document.addEventListener("click", revoke, true);
+  }
+});
+const form = document.createElement("form");
+form.addEventListener("submit", (event) => { event.preventDefault(); form.dataset.submitted = "true"; });
+document.getElementById("app").append(form);
 render(() => createComponent(RichSelect, {
   label: "Move card", title: "Move card", placeholder: "Move to …", value,
-  onValueChange: setValue, items,
+  onValueChange: setValue, get items() { return targets(); }, get status() { return status(); }, get disabled() { return disabled(); },
+  onRetry: () => setStatus("ready"),
+  footer: { label: "New target", create: { placeholder: "Target name", onCreate: (name) => { form.dataset.created = name; } } },
   renderPreview: (item) => createComponent(RichSelectFacts, { facts: facts[item.value].map(text => ({ icon: "ti ti-info-circle", text })) }),
-}), document.getElementById("app"));
+}), form);
 const many = Array.from({ length: 10 }, (_, index) => ({
   value: "target-" + index,
   label: "Target " + index + (index % 3 === 0 ? " · a destination name long enough to wrap onto a second line" : ""),
@@ -55,7 +87,7 @@ beforeAll(async () => {
     port: 0,
     fetch: () =>
       new Response(
-        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><main id="app" style="padding:32px"></main></body></html>`,
+        `<!doctype html><html lang="en"><head><title>Rich selection fixture</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><main id="app" style="padding:32px"></main></body></html>`,
         { headers: { "content-type": "text/html" } },
       ),
   });
@@ -83,6 +115,30 @@ const box = async (locator: Locator) => {
 };
 
 describe("RichSelect shipped browser contract", () => {
+  for (const width of [1440, 1024, 390]) {
+    for (const theme of ["light", "dark"]) {
+      test(`ready, loading, error and empty states remain accessible (${width}px, ${theme})`, async () => {
+        const { page, close } = await open({ viewport: { width, height: 900 }, isMobile: width === 390, hasTouch: width === 390 });
+        try {
+          await page.locator("body").evaluate((element, value) => element.setAttribute("data-theme", value), theme);
+          await page.addScriptTag({ content: axeSource });
+          await page.getByRole("combobox", { name: "Move card" }).click();
+          for (const state of ["ready", "loading", "error", "empty"]) {
+            if (state !== "ready")
+              await page.evaluate((value) => document.dispatchEvent(new CustomEvent("fixture:state", { detail: value })), state);
+            const violations = await page.evaluate(async () => {
+              const result = await window.axe!.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] } });
+              return result.violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target) }));
+            });
+            expect(violations, state).toEqual([]);
+          }
+        } finally {
+          await close();
+        }
+      }, 20_000);
+    }
+  }
+
   test("desktop preview, list, popover and trigger never move while keys and hover change the active row", async () => {
     const { page, close } = await open({ viewport: { width: 1440, height: 900 } });
     try {
@@ -158,7 +214,8 @@ describe("RichSelect shipped browser contract", () => {
       expect(await sheet.locator(`[id="${description}"]`).innerText()).toBe("No write access");
       const info = sheet.getByRole("button", { name: "Details: Support · Backlog", exact: true });
       await info.tap();
-      expect(await sheet.getByRole("heading", { name: "Support · Backlog", exact: true }).count()).toBe(2);
+      expect(await sheet.getByRole("heading", { name: "Support · Backlog", exact: true }).count()).toBe(1);
+      expect(await page.getByRole("dialog", { name: "Support · Backlog", exact: true }).count()).toBe(1);
       expect(await sheet.locator(".k2b-rich-select__facts").innerText()).toContain("Ask a Support manager for write access");
       expect(await sheet.getByRole("button", { name: "Choose", exact: true }).isDisabled()).toBe(true);
       await sheet.getByRole("button", { name: "Back", exact: true }).tap();
@@ -174,6 +231,79 @@ describe("RichSelect shipped browser contract", () => {
       await page.waitForFunction(() => document.querySelector('[role="combobox"]')?.getAttribute("aria-expanded") === "false");
       expect(await trigger.innerText()).toContain("Marketing · Review");
       expect(await trigger.evaluate((element) => element === document.activeElement)).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
+  test("phone details follow current access and removal instead of committing an old snapshot", async () => {
+    const { page, close } = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    try {
+      const trigger = page.getByRole("combobox", { name: "Move card" });
+      await trigger.tap();
+      const sheet = page.getByRole("dialog");
+      expect(await trigger.getAttribute("aria-haspopup")).toBe("dialog");
+      expect(await trigger.getAttribute("aria-controls")).toBe(await sheet.getAttribute("id"));
+      await sheet.getByRole("button", { name: "Details: Marketing · Review", exact: true }).tap();
+      const choose = sheet.getByRole("button", { name: "Choose", exact: true });
+      expect(await choose.isEnabled()).toBe(true);
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "revoke" })));
+      expect(await choose.isDisabled()).toBe(true);
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "remove" })));
+      await sheet.getByRole("list").waitFor({ state: "visible" });
+      expect(await sheet.getByRole("button", { name: "Marketing · Review", exact: true }).count()).toBe(0);
+      expect(await sheet.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+      expect(
+        await sheet
+          .locator(".k2b-rich-select__sheet-row > button")
+          .first()
+          .evaluate((element) => element === document.activeElement),
+      ).toBe(true);
+      expect(await trigger.innerText()).toContain("Move to");
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "disable" })));
+      await sheet.waitFor({ state: "hidden" });
+      expect(await trigger.isDisabled()).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
+  test("phone selection rechecks access after returning through dialog history", async () => {
+    const { page, close } = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    try {
+      const trigger = page.getByRole("combobox", { name: "Move card" });
+      await trigger.tap();
+      const sheet = page.getByRole("dialog");
+      await sheet.getByRole("button", { name: "Details: Marketing · Review", exact: true }).tap();
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "revoke-on-choose" })));
+      await sheet.getByRole("button", { name: "Choose", exact: true }).tap();
+      await page.waitForFunction(() => document.querySelector('[role="combobox"]')?.getAttribute("aria-expanded") === "false");
+      expect(await trigger.innerText()).toContain("Move to");
+    } finally {
+      await close();
+    }
+  });
+
+  test("Retry supports Enter and Create from an empty list never submits the surrounding form", async () => {
+    const { page, close } = await open({ viewport: { width: 1024, height: 900 } });
+    try {
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "error" })));
+      await page.getByRole("combobox", { name: "Move card" }).click();
+      const retry = page.getByRole("button", { name: "Retry", exact: true });
+      await retry.focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("listbox").waitFor({ state: "visible" });
+      const trigger = page.getByRole("combobox", { name: "Move card" });
+      expect(await trigger.evaluate((element) => element === document.activeElement)).toBe(true);
+      await page.keyboard.press("Enter");
+      expect(await trigger.innerText()).toContain("Marketing · Review");
+      await trigger.click();
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "empty" })));
+      await page.getByRole("button", { name: "New target", exact: true }).click();
+      await page.getByRole("textbox", { name: "New target", exact: true }).fill("  New campaign  ");
+      await page.keyboard.press("Enter");
+      expect(await page.locator("form").getAttribute("data-created")).toBe("New campaign");
+      expect(await page.locator("form").getAttribute("data-submitted")).toBeNull();
     } finally {
       await close();
     }

@@ -36,7 +36,7 @@ describe("RichSelect server contract", () => {
           { value: "review", label: "Review", description: "Two tags are dropped", color: "#8b5cf6" },
           { value: "archive", label: "Archive", description: "Nothing is dropped", icon: "ti ti-archive" },
           { value: "support", label: "Support", description: "This must disappear", disabledReason: "No write access" },
-          { value: "custom", label: "Custom", visual: "Custom visual", color: "#000", icon: "ti ti-star" },
+          { value: "custom", label: "Custom", visual: () => "Custom visual", color: "#000", icon: "ti ti-star" },
         ],
       }),
     );

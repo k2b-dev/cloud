@@ -26,6 +26,8 @@ so a preview helps. A sharing level needs one line per level; omit the preview.
 - An unavailable option uses `disabledReason` in place of `description`.
   Keep the reason specific, such as **No write access**.
 - Use one visual: `visual` takes precedence over `color`, which replaces `icon`.
+  Supply a render function, for example `visual: () => <Avatar name="Anna" />`,
+  so the trigger, list and preview each receive their own DOM element.
   Names must make sense without the visual.
 - Search and section headings appear only from eight options. Search matches
   label, description, value, and `keywords`, ignoring case. Keep items from
@@ -63,8 +65,9 @@ the UI locale (English or German); the application owns item and preview text.
 A footer with `onActivate` closes the picker before running the action.
 A footer with `create` turns into an input and **Create** button, prefilled
 with the search query. Enter submits a trimmed, nonempty name to `onCreate`
-after closing. Escape returns to the footer button. The footer appears only
-in the ready list; an entirely empty list shows its empty content instead.
+after closing. Escape returns to the footer button. The footer remains available
+in a ready list with no items, so a person can create the first item.
+Creating an item does not submit a surrounding form.
 
 ## Keyboard
 
@@ -86,6 +89,8 @@ With a preview, each row also has a `Details: <label>` info button, including
 unavailable rows. It opens a second level with the item name, preview, Back,
 and a full-width **Choose** button. Choose is disabled for an unavailable item.
 Back or Escape returns to the list and focuses that row's info button.
+The detail follows the current items: a new unavailable reason disables Choose;
+removing the item returns to the list.
 
 Choosing an enabled item closes the sheet before reporting its value. The
 sheet participates in dialog history, so browser Back also dismisses it.
@@ -106,7 +111,7 @@ type RichSelectItem = {
   description?: string;
   icon?: string;
   color?: string;
-  visual?: JSX.Element;
+  visual?: () => JSX.Element;
   disabledReason?: string;
   section?: string;
   keywords?: readonly string[];
@@ -193,6 +198,7 @@ The trigger and selected value render in server HTML. Opening, positioning,
 search, keyboard navigation, the preview interaction, and the phone sheet need
 hydrated Solid client code. The parent owns the selected value and all data;
 `RichSelect` has no dependency on Cloud services or domain models.
+Setting `disabled` while the picker is open closes it and prevents selection.
 
 ## Not included
 

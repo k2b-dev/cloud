@@ -1,4 +1,17 @@
-import { createMemo, createSignal, createUniqueId, For, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 import { Button } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
@@ -21,8 +34,8 @@ export type RichSelectItem = {
   icon?: string;
   /** Color dot shown before the name, such as a space color. Replaces `icon`. */
   color?: string;
-  /** Custom visual shown before the name. Replaces `icon` and `color`. */
-  visual?: JSX.Element;
+  /** Creates a fresh visual for each render location. Replaces `icon` and `color`. */
+  visual?: () => JSX.Element;
   /** Makes the row unavailable. The reason replaces `description`; the arrow keys still reach the row. */
   disabledReason?: string;
   /** Section id. Headings show only from eight options; keep each section's items together. */
@@ -89,7 +102,7 @@ const isPhone = () => typeof matchMedia === "function" && matchMedia(PHONE_QUERY
 function RichSelectVisual(props: { item: RichSelectItem }): JSX.Element {
   return (
     <Switch>
-      <Match when={props.item.visual}>{(visual) => <span class="k2b-rich-select__visual">{visual()}</span>}</Match>
+      <Match when={props.item.visual}>{(visual) => <span class="k2b-rich-select__visual">{visual()()}</span>}</Match>
       <Match when={props.item.color}>
         {(color) => (
           <span class="k2b-rich-select__visual" aria-hidden="true">
@@ -151,7 +164,12 @@ function RichSelectState(props: {
   messages: RichSelectMessages;
   empty?: JSX.Element;
   onRetry?: () => void;
+  restoreFocus?: () => void;
 }): JSX.Element {
+  let retryButton: HTMLButtonElement | undefined;
+  onCleanup(() => {
+    if (retryButton && document.activeElement === retryButton) queueMicrotask(() => props.restoreFocus?.());
+  });
   return (
     <div class="k2b-rich-select__state" data-status={props.status} role={props.status === "error" ? "alert" : "status"}>
       <span class="k2b-rich-select__state-icon" aria-hidden="true">
@@ -164,7 +182,7 @@ function RichSelectState(props: {
         <div class="k2b-rich-select__state-text">{props.messages.couldNotLoad}</div>
         <Show when={props.onRetry}>
           {(retry) => (
-            <Button variant="secondary" size="sm" onClick={() => retry()()}>
+            <Button ref={retryButton} variant="secondary" size="sm" onClick={() => retry()()}>
               <i class="ti ti-refresh" aria-hidden="true" />
               {props.messages.retry}
             </Button>
@@ -175,13 +193,20 @@ function RichSelectState(props: {
   );
 }
 
-function RichSelectPreview(props: { item: RichSelectItem; render: (item: RichSelectItem) => JSX.Element; id?: string }): JSX.Element {
+function RichSelectPreview(props: {
+  item: RichSelectItem;
+  render: (item: RichSelectItem) => JSX.Element;
+  id?: string;
+  showTitle?: boolean;
+}): JSX.Element {
   return (
     <div id={props.id}>
-      <h3 class="k2b-rich-select__preview-title">
-        <RichSelectVisual item={props.item} />
-        <span>{props.item.label}</span>
-      </h3>
+      <Show when={props.showTitle !== false}>
+        <h3 class="k2b-rich-select__preview-title">
+          <RichSelectVisual item={props.item} />
+          <span>{props.item.label}</span>
+        </h3>
+      </Show>
       {props.render(props.item)}
     </div>
   );
@@ -245,13 +270,7 @@ function RichSelectFooterControl(props: {
         }
       >
         {(create_) => (
-          <form
-            class="k2b-rich-select__create"
-            onSubmit={(event) => {
-              event.preventDefault();
-              create();
-            }}
-          >
+          <div class="k2b-rich-select__create">
             <input
               ref={input}
               class="k2b-rich-select__create-input"
@@ -266,13 +285,16 @@ function RichSelectFooterControl(props: {
                   event.preventDefault();
                   setCreating(false);
                   queueMicrotask(() => start?.focus());
+                } else if (event.key === "Enter" && !event.isComposing) {
+                  event.preventDefault();
+                  create();
                 }
               }}
             />
-            <Button type="submit" variant="primary" size="sm" disabled={!name().trim()}>
+            <Button type="button" variant="primary" size="sm" disabled={!name().trim()} onClick={create}>
               {props.messages.create}
             </Button>
-          </form>
+          </div>
         )}
       </Show>
     </div>
@@ -295,6 +317,15 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
   const [active, setActive] = createSignal(-1);
   const [height, setHeight] = createSignal<string>();
   const [sheetOpen, setSheetOpen] = createSignal(false);
+  const [phone, setPhone] = createSignal(false);
+  const [sheetId, setSheetId] = createSignal<string>();
+  onMount(() => {
+    const media = window.matchMedia(PHONE_QUERY);
+    setPhone(media.matches);
+    const update = () => setPhone(media.matches);
+    media.addEventListener("change", update);
+    onCleanup(() => media.removeEventListener("change", update));
+  });
   let searchRef: HTMLInputElement | undefined;
   let closeSheet: (() => void) | undefined;
   const value = () => resolveMaybeAccessor(props.value) ?? null;
@@ -332,6 +363,19 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
   );
   const expanded = () => popover.open() || sheetOpen();
 
+  createEffect(() => {
+    if (props.disabled) {
+      popover.hide();
+      closeSheet?.();
+    }
+  });
+  createEffect(() => {
+    const count = visible().length;
+    if (!popover.open() || status() !== "ready") return;
+    const current = untrack(active);
+    if (current < 0 || current >= count) setActive(startIndex());
+  });
+
   const scrollToActive = () => {
     const element = document.getElementById(optionId(active()));
     element?.scrollIntoView({ block: "nearest" });
@@ -359,7 +403,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
     queueMicrotask(scrollToActive);
   };
   const open = () => {
-    if (props.disabled) return;
+    if (props.disabled || expanded()) return;
     if (isPhone()) openSheet();
     else openPopover();
   };
@@ -369,7 +413,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
     setActive(-1);
   };
   const choose = (item: RichSelectItem | undefined) => {
-    if (!item || item.disabledReason) return;
+    if (props.disabled || status() !== "ready" || !item || item.disabledReason) return;
     // Hide first: the old list must never stay visible with the next value.
     close(true);
     commitFieldValue(props, item.value);
@@ -380,7 +424,16 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" && (event.target as HTMLElement | null)?.closest?.(".k2b-rich-select__footer")) return;
+    if (event.isComposing) return;
+    const target = event.target;
+    if (
+      event.key !== "Escape" &&
+      target instanceof Element &&
+      target !== popover.trigger() &&
+      target !== searchRef &&
+      target.closest("input, button, textarea, a, [contenteditable]")
+    )
+      return;
     const isOpen = popover.open();
     const count = visible().length;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -435,6 +488,8 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
       .open<void>(
         (closeDialog, context) => {
           closeSheet = () => closeDialog();
+          context.dialog.id ||= `${meta.controlId}-sheet`;
+          setSheetId(context.dialog.id);
           return (
             <LocaleProvider locale={current}>
               <BottomSheet onDismiss={context.requestDismiss}>
@@ -455,7 +510,6 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
         },
         {
           ...bottomSheetOptions,
-          ariaLabel: title(),
           history: true,
           // A phone keyboard must not cover the list as it opens: focus starts on the sheet.
           initialFocus: (dialog) => {
@@ -496,9 +550,15 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
           type="button"
           class="k2b-choice-trigger k2b-rich-select__trigger"
           role="combobox"
-          aria-haspopup="listbox"
+          aria-haspopup={sheetOpen() || (!popover.open() && phone()) ? "dialog" : "listbox"}
           aria-expanded={expanded()}
-          aria-controls={listboxId}
+          aria-controls={
+            sheetOpen()
+              ? sheetId()
+              : popover.open() && (status() === "loading" || (status() === "ready" && props.items.length > 0))
+                ? listboxId
+                : undefined
+          }
           aria-activedescendant={popover.open() && activeItem() ? optionId(active()) : undefined}
           data-tone={props.tone === "warning" ? "warning" : undefined}
           {...fieldControlAria(meta, {
@@ -555,10 +615,20 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
           </Show>
           <Switch>
             <Match when={status() === "error"}>
-              <RichSelectState status="error" messages={messages()} onRetry={props.onRetry} />
+              <RichSelectState
+                status="error"
+                messages={messages()}
+                onRetry={props.onRetry}
+                restoreFocus={() => {
+                  if (popover.open()) (searchable() ? searchRef : popover.trigger())?.focus();
+                }}
+              />
             </Match>
             <Match when={status() === "ready" && props.items.length === 0}>
               <RichSelectState status="empty" messages={messages()} empty={props.empty} />
+              <Show when={props.footer}>
+                {(footer) => <RichSelectFooterControl footer={footer()} initialName={query} messages={messages()} done={runFooter} />}
+              </Show>
             </Match>
             <Match when>
               <div class="k2b-rich-select__body">
@@ -569,6 +639,9 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
                       <input
                         ref={searchRef}
                         type="search"
+                        role="combobox"
+                        aria-expanded={popover.open()}
+                        aria-autocomplete="list"
                         value={query()}
                         placeholder={props.searchPlaceholder ?? messages().search}
                         aria-label={props.searchPlaceholder ?? messages().search}
@@ -687,9 +760,12 @@ function RichSelectSheet(sheet: {
   const props = sheet.props;
   const uid = createUniqueId();
   const [query, setQuery] = createSignal("");
-  const [detail, setDetail] = createSignal<RichSelectItem>();
+  const [detailValue, setDetailValue] = createSignal<string>();
+  // Resolve from the current snapshot: access and availability can change while
+  // the detail level is open.
+  const detail = createMemo(() => props.items.find((item) => item.value === detailValue()));
   let back: HTMLButtonElement | undefined;
-  let returnTo: string | undefined;
+  let returnValue: string | undefined;
   const status = () => props.status ?? "ready";
   const searchable = () => status() === "ready" && props.items.length >= RICH_SELECT_SEARCH_FROM;
   const visible = createMemo(() => (searchable() ? filterChoiceOptions(props.items, query()) : props.items));
@@ -702,23 +778,34 @@ function RichSelectSheet(sheet: {
     return list.find((candidate) => candidate.id === item.section)?.label;
   };
   const choose = (item: RichSelectItem) => {
-    if (item.disabledReason) return;
-    sheet.done(() => commitFieldValue(props, item.value));
+    if (props.disabled || status() !== "ready" || item.disabledReason) return;
+    sheet.done(() => {
+      const current = props.items.find((candidate) => candidate.value === item.value);
+      if (!props.disabled && status() === "ready" && current && !current.disabledReason) commitFieldValue(props, current.value);
+    });
   };
   const rowId = (index: number) => `k2b-rich-select-sheet-${uid}-${index}`;
-  const showDetail = (item: RichSelectItem, index: number) => {
-    returnTo = `${rowId(index)}-info`;
+  const showDetail = (item: RichSelectItem) => {
+    returnValue = item.value;
     // The second level keeps the sheet's height, so Back and Choose stay where they are.
     sheet.dialog.style.minHeight = `${sheet.dialog.getBoundingClientRect().height}px`;
-    setDetail(item);
+    setDetailValue(item.value);
     queueMicrotask(() => back?.focus());
   };
   const leaveDetail = () => {
     sheet.dialog.style.minHeight = "";
-    setDetail(undefined);
-    const target = returnTo;
-    queueMicrotask(() => (target ? document.getElementById(target)?.focus() : undefined));
+    setDetailValue(undefined);
+    const value = returnValue;
+    queueMicrotask(() => {
+      const index = visible().findIndex((item) => item.value === value);
+      const original = index >= 0 ? document.getElementById(`${rowId(index)}-info`) : undefined;
+      const fallback = sheet.dialog.querySelector<HTMLButtonElement>(".k2b-rich-select__sheet-row > button");
+      (original ?? fallback ?? sheet.dialog).focus();
+    });
   };
+  createEffect(() => {
+    if (detailValue() !== undefined && (!detail() || status() !== "ready")) leaveDetail();
+  });
   // Escape on the second level goes back to the list instead of closing the sheet.
   const onEscape = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || !detail()) return;
@@ -762,10 +849,20 @@ function RichSelectSheet(sheet: {
           <BottomSheet.Body>
             <Switch>
               <Match when={status() === "error"}>
-                <RichSelectState status="error" messages={messages()} onRetry={props.onRetry} />
+                <RichSelectState
+                  status="error"
+                  messages={messages()}
+                  onRetry={props.onRetry}
+                  restoreFocus={() => {
+                    if (sheet.dialog.open) sheet.dialog.focus();
+                  }}
+                />
               </Match>
               <Match when={status() === "ready" && props.items.length === 0}>
                 <RichSelectState status="empty" messages={messages()} empty={props.empty} />
+                <Show when={props.footer}>
+                  {(footer) => <RichSelectFooterControl footer={footer()} initialName={query} messages={messages()} done={sheet.done} />}
+                </Show>
               </Match>
               <Match when>
                 <Show when={searchable()}>
@@ -822,7 +919,7 @@ function RichSelectSheet(sheet: {
                                 type="button"
                                 class="k2b-rich-select__info"
                                 aria-label={messages().detailsFor({ name: item.label })}
-                                onClick={() => showDetail(item, index())}
+                                onClick={() => showDetail(item)}
                               >
                                 <i class="ti ti-info-circle" aria-hidden="true" />
                               </button>
@@ -845,7 +942,7 @@ function RichSelectSheet(sheet: {
           <>
             <BottomSheet.Body>
               <div class="k2b-rich-select__preview" data-level="detail">
-                <RichSelectPreview item={item()} render={props.renderPreview!} />
+                <RichSelectPreview item={item()} render={props.renderPreview!} showTitle={false} />
               </div>
             </BottomSheet.Body>
             <BottomSheet.Footer>
