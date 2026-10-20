@@ -284,7 +284,7 @@ describe("RichSelect desktop behavior", () => {
     }
   });
 
-  test("a failed refresh while creating returns focus from the removed footer input", async () => {
+  test.each(["input", "button"])("a failed refresh while creating returns focus from the removed footer %s", async (control) => {
     const [status, setStatus] = createSignal<"ready" | "error">("ready");
     const picker = await mount({
       get status() {
@@ -296,6 +296,11 @@ describe("RichSelect desktop behavior", () => {
     picker.dom.root.querySelector<HTMLButtonElement>(".k2b-rich-select__footer-action")!.click();
     await Promise.resolve();
     expect(picker.dom.document.activeElement?.classList.contains("k2b-rich-select__create-input")).toBe(true);
+    if (control === "button") {
+      type(picker.dom.root.querySelector<HTMLInputElement>(".k2b-rich-select__create-input")!, "New campaign");
+      picker.dom.root.querySelector<HTMLButtonElement>(".k2b-rich-select__create button")!.focus();
+      expect(picker.dom.document.activeElement?.tagName).toBe("BUTTON");
+    }
     setStatus("error");
     await Promise.resolve();
     expect(picker.dom.document.activeElement === picker.trigger).toBe(true);

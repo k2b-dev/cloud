@@ -239,8 +239,9 @@ function RichSelectFooterControl(props: {
   const [name, setName] = createSignal("");
   let input: HTMLInputElement | undefined;
   let start: HTMLButtonElement | undefined;
+  let controls: HTMLDivElement | undefined;
   onCleanup(() => {
-    if (document.activeElement === input || document.activeElement === start) queueMicrotask(props.restoreFocus);
+    if (controls?.contains(document.activeElement)) queueMicrotask(props.restoreFocus);
   });
   const create = () => {
     const footer = props.footer;
@@ -249,7 +250,7 @@ function RichSelectFooterControl(props: {
     props.done(() => footer.create.onCreate(value));
   };
   return (
-    <div class="k2b-rich-select__footer">
+    <div ref={controls} class="k2b-rich-select__footer">
       <Show
         when={creating() && "create" in props.footer ? props.footer.create : undefined}
         fallback={

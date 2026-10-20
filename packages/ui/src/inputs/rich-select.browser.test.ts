@@ -43,11 +43,15 @@ document.addEventListener("fixture:state", (event) => {
   if (next === "error" || next === "loading") setStatus(next);
   if (next === "disable") setDisabled(true);
   if (next === "many") setTargets([...items, ...Array.from({ length: 5 }, (_, index) => ({ value: "extra-" + index, label: "Extra " + index }))]);
-  if (next === "revoke-on-choose") {
+  if (next === "revoke-on-choose" || next === "disable-on-choose" || next === "unmount-on-choose") {
     const revoke = (event) => {
       if (!event.target.closest(".k2b-rich-select__choose")) return;
       document.removeEventListener("click", revoke, true);
-      queueMicrotask(() => setTargets(items.map(item => ({ ...item, disabledReason: "No write access" }))));
+      queueMicrotask(() => {
+        if (next === "disable-on-choose") setDisabled(true);
+        else if (next === "unmount-on-choose") dispose();
+        else setTargets(items.map(item => ({ ...item, disabledReason: "No write access" })));
+      });
     };
     document.addEventListener("click", revoke, true);
   }
@@ -55,9 +59,9 @@ document.addEventListener("fixture:state", (event) => {
 const form = document.createElement("form");
 form.addEventListener("submit", (event) => { event.preventDefault(); form.dataset.submitted = "true"; });
 document.getElementById("app").append(form);
-render(() => createComponent(RichSelect, {
+const dispose = render(() => createComponent(RichSelect, {
   label: "Move card", title: "Move card", placeholder: "Move to …", value,
-  onValueChange: setValue, get items() { return targets(); }, get status() { return status(); }, get disabled() { return disabled(); },
+  onValueChange: (next) => { form.dataset.committed = next; setValue(next); }, get items() { return targets(); }, get status() { return status(); }, get disabled() { return disabled(); },
   onRetry: () => setStatus("ready"),
   footer: { label: "New target", create: { placeholder: "Target name", onCreate: (name) => { form.dataset.created = name; } } },
   renderPreview: (item) => createComponent(RichSelectFacts, { facts: (facts[item.value] ?? []).map(text => ({ icon: "ti ti-info-circle", text })) }),
@@ -285,7 +289,48 @@ describe("RichSelect shipped browser contract", () => {
     }
   });
 
+  for (const interruption of ["disable", "unmount"]) {
+    test(`phone selection is cancelled on ${interruption} during the history return`, async () => {
+      const { page, close } = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+      try {
+        await page.getByRole("combobox", { name: "Move card" }).tap();
+        const sheet = page.getByRole("dialog");
+        await sheet.getByRole("button", { name: "Details: Marketing · Review", exact: true }).tap();
+        await page.evaluate(
+          (value) => document.dispatchEvent(new CustomEvent("fixture:state", { detail: value })),
+          `${interruption}-on-choose`,
+        );
+        await sheet.getByRole("button", { name: "Choose", exact: true }).tap();
+        // The field promise settles after dialogCore's synthetic Back has arrived.
+        await page.waitForFunction(() => !history.state?.k2bDialog);
+        await sheet.waitFor({ state: "hidden" });
+        expect(await page.locator("form").getAttribute("data-committed")).toBeNull();
+        if (interruption === "disable") expect(await page.getByRole("combobox", { name: "Move card" }).isDisabled()).toBe(true);
+        else expect(await page.getByRole("combobox", { name: "Move card" }).count()).toBe(0);
+      } finally {
+        await close();
+      }
+    });
+  }
+
   for (const width of [1024, 390]) {
+    test(`a refresh returns focus from the removed Create button (${width}px)`, async () => {
+      const { page, close } = await open({ viewport: { width, height: 900 }, isMobile: width === 390, hasTouch: width === 390 });
+      try {
+        const trigger = page.getByRole("combobox", { name: "Move card" });
+        await trigger.click();
+        await page.getByRole("button", { name: "New target", exact: true }).click();
+        await page.getByRole("textbox", { name: "New target", exact: true }).fill("New campaign");
+        await page.getByRole("button", { name: "Create", exact: true }).focus();
+        await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "loading" })));
+        const focus = width === 390 ? page.getByRole("dialog") : trigger;
+        expect(await focus.evaluate((element) => element === document.activeElement)).toBe(true);
+        expect(await page.locator("form").getAttribute("data-created")).toBeNull();
+      } finally {
+        await close();
+      }
+    });
+
     test(`a refresh returns focus from removed search and Retry controls (${width}px)`, async () => {
       const { page, close } = await open({ viewport: { width, height: 900 }, isMobile: width === 390, hasTouch: width === 390 });
       try {
