@@ -197,7 +197,7 @@ async function waitSize(page: Page, spec: Edge, requested: number) {
 
 async function away(page: Page) {
   await page.locator("#park").click();
-  await workspaceFrames(page);
+  await settled(page);
 }
 
 async function exercise(page: Page, spec: Edge) {
@@ -324,6 +324,7 @@ test("sidebar keeps paired arrow keys while the page does frame work (#1525)", a
     await away(page);
     await page.keyboard.press("Tab");
     await page.locator(spec.selector).focus();
+    await settled(page);
     const initial = await size(page, spec);
     await page.evaluate(() => {
       // Bound the competing frame work and the test itself; no background worker survives the page.

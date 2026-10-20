@@ -28,7 +28,7 @@ packages/cloud/src/ssr/compact-shell.browser.test.ts | 15
 packages/cloud/src/ssr/dialog-app-colors.browser.test.ts | 3
 packages/cloud/src/ssr/layout-viewport.browser.test.ts | 2
 packages/cloud/src/ssr/page-trail.browser.test.ts | 24
-packages/cloud/src/ssr/panel-slot.browser.test.ts | 9
+packages/cloud/src/ssr/panel-slot.browser.test.ts | 8
 packages/cloud/src/ssr/print.browser.test.ts | 11
 packages/cloud/src/ssr/shell-focus.browser.test.ts | 8
 packages/cloud/src/ssr/soft-shell-frames.browser.test.ts | 5
