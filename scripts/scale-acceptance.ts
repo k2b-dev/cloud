@@ -356,6 +356,8 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
   };
   const evidence = new Map<App, ReplicaEvidence>();
   const retired = new Set<string>();
+  // Replicas that replace retired ones; the final guard checks that they still run.
+  const replacements: Replica[] = [];
   const stillRunning = async (targets: Replica[], killed?: string, retired: ReadonlySet<string> = new Set()) => {
     const states = await inspect([...new Set(targets.map((replica) => replica.id).filter((id) => !retired.has(id)))]);
     for (const state of states) check(state.State.Running || state.Id === killed, `Target container stopped: ${state.Id}`);
@@ -1562,7 +1564,8 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         // As at startup: a surge replica that failed setup and restarted must not pass.
         for (const container of await inspect(surge.map((replica) => replica.id)))
           check(container.RestartCount === 0, `${container.Name}: expected RestartCount 0 after surge, got ${container.RestartCount}`);
-        phase("chat-replica-stop-surge", { original: b.id, replacements: surge.filter((replica) => replica.id !== b.id) });
+        replacements.push(...surge.filter((replica) => replica.id !== b.id));
+        phase("chat-replica-stop-surge", { original: b.id, replacements });
         await retire(b, "surge-stop");
         await stillRunning(surge, undefined, retired);
       } finally {
@@ -1655,6 +1658,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       const running = await stillRunning([current.a, current.b], killedCore, retired);
       assertBothReplicasServed(devServiceName(app), current, running, killedCore, retired);
     }
+    await stillRunning(replacements);
     check(errors.length === 0, errors.join("\n"));
     phase("passed", { project, bothReplicasServed: Object.fromEntries([...evidence].map(([app, value]) => [app, [...value.served]])) });
   } catch (error) {
