@@ -254,7 +254,7 @@ export default ssr<AuthContext>(async (c) => {
               if (col.id === "base") {
                 return (
                   <div class="flex min-w-52 items-center gap-2">
-                    <span class="app-accent-text inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[var(--ui-selected)] text-[10px]">
+                    <span class="k2b-icon-tile app-accent-text h-5 w-5 text-[10px]">
                       <i class="ti ti-database" />
                     </span>
                     <span class="truncate font-medium text-primary">{base.name}</span>

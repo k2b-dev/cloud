@@ -261,7 +261,7 @@ export default function MailComposeIntentPage(props: {
         aria-labelledby="mail-compose-intent-title"
       >
         <div class="flex items-start gap-3">
-          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)] text-accent">
+          <span class="k2b-icon-tile app-accent-text h-10 w-10">
             <i class="ti ti-pencil" aria-hidden="true" />
           </span>
           <div class="min-w-0">
