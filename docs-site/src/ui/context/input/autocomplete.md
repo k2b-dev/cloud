@@ -79,6 +79,7 @@ type Completion = {
 
 type AutocompleteEditorProps = ValueFieldProps<string> & {
   onSubmit?: () => void; completions?: readonly Completion[]; restoreExpansionOnBackspace?: boolean;
+  lineNumbers?: boolean; markedLine?: number;
   highlight?: (text: string) => string; singleLine?: boolean; lines?: number; fill?: boolean;
   placeholder?: string; spellcheck?: boolean; name?: string; maxLength?: number;
   textareaRef?: (element: HTMLTextAreaElement) => void; variant?: "default" | "paper";
@@ -135,3 +136,9 @@ const mentions: Completion = {
   completions={[mentions]}
 />;
 ```
+
+## Numbered code lines
+
+Set `lineNumbers` for a logical line gutter and horizontal scrolling instead of soft wrapping. `markedLine` marks one one-based line in the gutter; accompany it with a visible error message. Both input and highlighted overlay keep the same font and scroll position.
+
+For SQL, import `highlightSql` from `@k2b/ui` and pass `highlight={highlightSql}`. It escapes all source text and tolerates incomplete strings and nested comments while typing. It is presentation, not SQL validation. `CodeDisplay` also accepts `language="sql"`.

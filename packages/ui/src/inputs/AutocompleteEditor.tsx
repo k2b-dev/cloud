@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { isServer } from "solid-js/web";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import {
@@ -31,6 +32,10 @@ export type AutocompleteEditorProps = ValueFieldProps<string> & {
   maxLength?: number;
   textareaRef?: (element: HTMLTextAreaElement) => void;
   variant?: "default" | "paper";
+  /** Number logical lines; disables soft wrapping to keep the gutter aligned. */
+  lineNumbers?: boolean;
+  /** One-based line to mark in the gutter, for example a parser error. */
+  markedLine?: number;
 };
 
 type CompletionState = {
@@ -45,6 +50,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
   const meta = createFieldMeta(props.id);
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
+  let gutter: HTMLDivElement | undefined;
   let dropdown: HTMLDivElement | undefined;
   let currentAbort: AbortController | null = null;
   let currentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -432,6 +438,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
     >
       <div
         class="k2b-autocomplete"
+        data-line-numbers={props.lineNumbers ? "true" : undefined}
         data-overlay={useOverlay() ? "true" : undefined}
         data-single-line={props.singleLine ? "true" : undefined}
         data-fill={props.fill && !props.singleLine ? "true" : undefined}
@@ -441,12 +448,24 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
         style={surfaceStyle()}
       >
         <div class="k2b-autocomplete__surface">
+          <Show when={props.lineNumbers}>
+            <div ref={gutter} class="k2b-autocomplete__gutter" aria-hidden="true">
+              <For each={localValue().split("\n")}>
+                {(_, index) => <div data-marked={props.markedLine === index() + 1 ? "true" : undefined}>{index() + 1}</div>}
+              </For>
+            </div>
+          </Show>
           <Show when={!localValue() && props.placeholder}>
             <div class="k2b-autocomplete__placeholder" aria-hidden="true">
               {props.placeholder}
             </div>
           </Show>
-          <div ref={preview} class="k2b-autocomplete__preview" aria-hidden="true" />
+          <div
+            ref={preview}
+            class="k2b-autocomplete__preview"
+            aria-hidden="true"
+            innerHTML={isServer ? renderWithOverlay(localValue(), props.highlight ?? plainTextHighlight, {}) : undefined}
+          />
           <textarea
             ref={(element) => {
               textarea = element;
@@ -459,6 +478,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
             onChange={(event) => props.onValueCommit?.(event.currentTarget.value)}
             onKeyDown={onKeyDown}
             onScroll={(event) => {
+              if (gutter) gutter.scrollTop = event.currentTarget.scrollTop;
               if (preview) {
                 preview.scrollTop = event.currentTarget.scrollTop;
                 preview.scrollLeft = event.currentTarget.scrollLeft;
@@ -477,13 +497,17 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
             required={props.required}
             spellcheck={props.spellcheck ?? false}
             maxLength={props.maxLength}
+            wrap={props.lineNumbers ? "off" : "soft"}
             rows={props.singleLine ? 1 : (props.lines ?? 3)}
             {...fieldControlAria(meta, props)}
             aria-haspopup="listbox"
             aria-autocomplete="list"
             aria-controls={dropdownOpen() ? listboxId : undefined}
             aria-activedescendant={dropdownOpen() && state() ? optionId(state()!.selectedIndex) : undefined}
-          />
+          >
+            {/* HTML consumes one leading newline in textarea content. */}
+            {isServer ? `\n${localValue()}` : undefined}
+          </textarea>
         </div>
         <Show when={state() || loading() || completionError()}>
           <div

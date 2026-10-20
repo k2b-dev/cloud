@@ -317,3 +317,15 @@ describe("@k2b/ui complete advanced input migrations", () => {
     expect(normalizeImageCropRotation(-90)).toBe(270);
   });
 });
+
+test("autocomplete editor SSR includes initial textarea text and escaped highlighted preview", () => {
+  const html = renderToString(() =>
+    createComponent(AutocompleteEditor, {
+      value: "SELECT '<tag>'\nFROM events",
+      lineNumbers: true,
+    }),
+  );
+  expect(html).toMatch(/<textarea[^>]*>\nSELECT '&lt;tag>'\nFROM events<\/textarea>/);
+  expect(html).toContain('class="k2b-autocomplete__preview" aria-hidden="true">SELECT');
+  expect(html).not.toContain("<tag>");
+});

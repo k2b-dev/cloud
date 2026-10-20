@@ -20,6 +20,7 @@ import {
   FileDropTarget,
   FileDropzone,
   fileDropTarget,
+  highlightSql,
   IconInput,
   ImageCropper,
   type ImageCropState,
@@ -370,6 +371,14 @@ const AutocompleteDemo = () => {
         value={value()}
         onValueChange={setValue}
         completions={[mentionCompletion, emojiCompletion]}
+        lines={5}
+      />
+      <AutocompleteEditor
+        label="SQL with a marked line"
+        value={"SELECT :host, count()\nFROM events\nGROUP BY host"}
+        highlight={highlightSql}
+        lineNumbers
+        markedLine={2}
         lines={5}
       />
     </DemoCard>

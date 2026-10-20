@@ -653,3 +653,31 @@
   :where(:focus-visible) {
   outline-offset: var(--k2b-focus-offset);
 }
+
+/* Logical code lines have one geometry in the input, overlay and gutter. */
+.k2b-ui .k2b-autocomplete[data-line-numbers="true"] :is(.k2b-autocomplete__input, .k2b-autocomplete__preview, .k2b-autocomplete__placeholder) {
+  padding-left: 3.75rem !important;
+  white-space: pre !important;
+  overflow-wrap: normal !important;
+  overflow-x: auto !important;
+}
+.k2b-ui .k2b-autocomplete__gutter {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3rem;
+  z-index: 3;
+  padding: 0.625rem 0.5rem;
+  overflow: hidden;
+  pointer-events: none;
+  text-align: right;
+  font-family: var(--k2b-font-mono);
+  font-size: 0.875rem;
+  line-height: 1.35625rem;
+  color: var(--k2b-text-dimmed);
+  background: var(--k2b-surface);
+  font-variant-numeric: tabular-nums;
+}
+.k2b-ui .k2b-autocomplete__gutter [data-marked="true"] {
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
+}
