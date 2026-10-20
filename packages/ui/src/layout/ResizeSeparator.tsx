@@ -39,7 +39,9 @@ export default function ResizeSeparator(props: ResizeSeparatorProps) {
           },
           onResize: (value) => props.onResize(value),
           onResizeEnd: (value) => props.onResizeEnd?.(value),
-          onReset: () => props.onReset?.(),
+          get onReset() {
+            return props.onReset;
+          },
           onCollapseIntent: (armed) => props.onCollapseIntent?.(armed),
           onCollapse: () => props.onCollapse?.(),
           onDragChange: (dragging) => props.onDragChange?.(dragging),

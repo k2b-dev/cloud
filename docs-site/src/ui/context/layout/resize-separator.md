@@ -37,14 +37,16 @@ const [width, setWidth] = createSignal(240);
 `onResizeEnd` commits a released drag or keyboard step. `unit` is pixels per
 value unit (default 1); for rem sizes, pass the root font size.
 
-`onReset` runs on double-click, except during an active drag. The application
+`onReset` runs on double-click or Enter while the separator is focused, except
+during an active drag. The application
 restores its default size and clears any saved preference. With plain server
 markup, the callback also updates `aria-valuenow`. Without `onReset`, a
 double-click does nothing.
 
 ArrowLeft/ArrowRight resize a vertical separator; ArrowUp/ArrowDown resize a
 horizontal separator. `grow="start"` increases the region toward the logical
-start; `grow="end"` increases it toward the end. Vertical separators respect RTL.
+start; `grow="end"` increases it toward the end. Vertical separators respect RTL
+for both resizing and the shadow's position.
 `step` defaults to 1, Shift uses `largeStep` (default four steps), Home selects
 the minimum, and End selects the maximum. Keys never collapse a region.
 

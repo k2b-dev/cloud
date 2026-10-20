@@ -60,6 +60,7 @@ type Edge = {
   edge: "start" | "end";
   active: "data-workspace-resize-active" | "data-active";
   drawer?: boolean;
+  rtl?: boolean;
 };
 const workspaceEdges: Edge[] = [
   { selector: '[data-app-workspace-resize="sidebar"]', axis: "width", edge: "end", active: "data-workspace-resize-active" },
@@ -96,9 +97,10 @@ function separators() {
     .join("");
 }
 
-async function load(group: "workspace" | "separators") {
-  const html =
+async function load(group: "workspace" | "separators", direction: "ltr" | "rtl" | "css-rtl" | "plain-rtl" = "ltr") {
+  let html =
     group === "workspace" ? renderToString(() => workspaceTree({ AppWorkspace, createComponent, createSignal, Dynamic })) : separators();
+  if (direction === "plain-rtl") html = html.replaceAll(/ data-orientation="[^"]*"/g, "");
   const page = await browser.newPage({ viewport: { width: 2000, height: 1000 }, reducedMotion: "reduce" });
   const errors = pageErrors(page);
   try {
@@ -106,7 +108,7 @@ async function load(group: "workspace" | "separators") {
       route.fulfill({
         contentType: "text/html",
         body: `<!doctype html><html><head><style>${css}</style></head>
-      <body class="k2b-ui" style="margin:0"><button id="park" style="position:fixed;right:0;top:0;z-index:100">Away</button>
+      <body dir="${direction === "rtl" || direction === "plain-rtl" ? "rtl" : "ltr"}" class="k2b-ui" style="margin:0;${direction === "css-rtl" ? "direction:rtl" : ""}"><button id="park" style="position:fixed;right:0;top:0;z-index:100">Away</button>
       <span id="focus-swatch" style="position:fixed;background:var(--k2b-focus-ring);pointer-events:none"></span>
       <div style="container:k2b-app-area / inline-size"><div id="app" style="height:900px">${html}</div></div></body></html>`,
       }),
@@ -200,6 +202,7 @@ async function away(page: Page) {
 
 async function exercise(page: Page, spec: Edge) {
   const handle = page.locator(spec.selector);
+  const edge = spec.rtl && spec.axis === "width" ? (spec.edge === "start" ? "end" : "start") : spec.edge;
   await away(page);
   const initial = await size(page, spec);
   expect(Math.abs(initial.aria - initial.rendered)).toBeLessThanOrEqual(0.5);
@@ -233,7 +236,7 @@ async function exercise(page: Page, spec: Edge) {
   const box = await handle.boundingBox();
   if (!box) throw new Error(`Missing ${spec.selector}`);
   await page.mouse.down();
-  const delta = spec.edge === "start" ? -8 : 8;
+  const delta = edge === "start" ? -8 : 8;
   await page.mouse.move(
     box.x + box.width / 2 + (spec.axis === "width" ? delta : 0),
     box.y + box.height / 2 + (spec.axis === "height" ? delta : 0),
@@ -247,10 +250,10 @@ async function exercise(page: Page, spec: Edge) {
   expect(dragging.grip).toBe("1");
   expect(dragging.line).toBe(spec.drawer === true);
   if (spec.axis === "width") {
-    expect(spec.edge === "start" ? dragging.left : dragging.right).toBeCloseTo(dragging.width / 2, 1);
+    expect(edge === "start" ? dragging.left : dragging.right).toBeCloseTo(dragging.width / 2, 1);
     expect(dragging.shadowWidth).toBeGreaterThan(0);
   } else {
-    expect(spec.edge === "start" ? dragging.top : dragging.bottom).toBeCloseTo(dragging.height / 2, 1);
+    expect(edge === "start" ? dragging.top : dragging.bottom).toBeCloseTo(dragging.height / 2, 1);
     expect(dragging.shadowHeight).toBeGreaterThan(0);
   }
   await page.mouse.up();
@@ -270,10 +273,8 @@ async function exercise(page: Page, spec: Edge) {
   expect(focused.grip).toBe("1");
   expect(focused.opacity).toBe("1");
   expect(focused.background).toBe(focused.focusColor);
-  const increase =
-    spec.axis === "width" ? (spec.edge === "start" ? "ArrowLeft" : "ArrowRight") : spec.edge === "start" ? "ArrowUp" : "ArrowDown";
-  const decrease =
-    spec.axis === "width" ? (spec.edge === "start" ? "ArrowRight" : "ArrowLeft") : spec.edge === "start" ? "ArrowDown" : "ArrowUp";
+  const increase = spec.axis === "width" ? (edge === "start" ? "ArrowLeft" : "ArrowRight") : edge === "start" ? "ArrowUp" : "ArrowDown";
+  const decrease = spec.axis === "width" ? (edge === "start" ? "ArrowRight" : "ArrowLeft") : edge === "start" ? "ArrowDown" : "ArrowUp";
   await page.keyboard.press(increase);
   await waitSize(page, spec, initial.rendered + 8);
   // Same page, same handle: #1525 lost this second arrow in WebKit.
@@ -281,7 +282,7 @@ async function exercise(page: Page, spec: Edge) {
   await waitSize(page, spec, initial.rendered);
   await page.keyboard.press(increase);
   await waitSize(page, spec, initial.rendered + 8);
-  await handle.dblclick();
+  await page.keyboard.press("Enter");
   await waitSize(page, spec, initial.rendered);
   await away(page);
 }
@@ -304,3 +305,44 @@ for (const group of ["workspace", "separators"] as const)
       await page.close();
     }
   });
+
+for (const direction of ["rtl", "css-rtl", "plain-rtl"] as const)
+  test(`${direction}: separators shade and resize the logical region`, async () => {
+    const { page, errors } = await load("separators", direction);
+    try {
+      for (const spec of separatorEdges) await exercise(page, { ...spec, rtl: true });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+test("sidebar keeps paired arrow keys while the page does frame work (#1525)", async () => {
+  const { page, errors } = await load("workspace");
+  const spec = workspaceEdges[0]!;
+  try {
+    await away(page);
+    await page.keyboard.press("Tab");
+    await page.locator(spec.selector).focus();
+    const initial = await size(page, spec);
+    await page.evaluate(() => {
+      // Bound the competing frame work and the test itself; no background worker survives the page.
+      const until = performance.now() + 15_000;
+      const work = () => {
+        const started = performance.now();
+        while (performance.now() - started < 8) document.body.getBoundingClientRect();
+        if (performance.now() < until) requestAnimationFrame(work);
+      };
+      requestAnimationFrame(work);
+    });
+    for (let pair = 0; pair < 24; pair++) {
+      await page.keyboard.press("ArrowRight");
+      await waitSize(page, spec, initial.rendered + 8);
+      await page.keyboard.press("ArrowLeft");
+      await waitSize(page, spec, initial.rendered);
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});

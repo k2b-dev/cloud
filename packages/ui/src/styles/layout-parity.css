@@ -1118,6 +1118,21 @@ html {
   background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
 }
 
+/* Standalone separators grow in logical inline directions. */
+.k2b-ui .k2b-resize-separator[data-orientation="vertical"][data-resize-edge="start"]:dir(rtl):not([data-resize-physical-edge])::after,
+.k2b-ui .k2b-resize-separator[data-orientation="vertical"][data-resize-physical-edge="end"]::after {
+  right: 50%;
+  left: auto;
+  background: linear-gradient(to left, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
+}
+
+.k2b-ui .k2b-resize-separator[data-orientation="vertical"][data-resize-edge="end"]:dir(rtl):not([data-resize-physical-edge])::after,
+.k2b-ui .k2b-resize-separator[data-orientation="vertical"][data-resize-physical-edge="start"]::after {
+  right: auto;
+  left: 50%;
+  background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
+}
+
 .k2b-ui
   :is(
     .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"],

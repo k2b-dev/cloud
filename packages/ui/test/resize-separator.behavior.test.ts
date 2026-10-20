@@ -85,6 +85,8 @@ for (const grow of ["start", "end"] as const)
   test(`attaching sets the ${grow} cue edge on plain markup`, () => {
     const h = setup({ grow });
     expect(h.handle.dataset.resizeEdge).toBe(grow);
+    expect(h.handle.dataset.orientation).toBe("vertical");
+    expect(h.handle.dataset.resizePhysicalEdge).toBe(grow);
   });
 
 test("double-click delegates reset, ignores an active drag and detaches on disposal", () => {
@@ -102,6 +104,20 @@ test("double-click delegates reset, ignores an active drag and detaches on dispo
   h.dispose();
   reset();
   expect(onReset).toHaveBeenCalledTimes(2);
+});
+
+test("Enter resets the preference, ignores a drag and removes the handler on disposal", () => {
+  const onReset = mock(() => {});
+  const h = setup({ onReset });
+  h.key("Enter");
+  expect(onReset).toHaveBeenCalledTimes(1);
+  h.pointer("pointerdown", 100);
+  h.key("Enter");
+  expect(onReset).toHaveBeenCalledTimes(1);
+  h.pointer("pointerup", 100);
+  h.dispose();
+  h.key("Enter");
+  expect(onReset).toHaveBeenCalledTimes(1);
 });
 
 test("double-click without a reset callback leaves the value alone", () => {

@@ -162,6 +162,38 @@ afterEach(() => {
 });
 
 describe("AppWorkspace resize controller behaviour", () => {
+  test("saving another workspace never sizes a workspace that disables resizing", () => {
+    const locked = workspace({ resizable: false });
+    const enabled = workspace();
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    main.dataset.workspaceLevels = "";
+    setRect(main, { width: 1000, height: 700 });
+    const pane = document.createElement("section");
+    pane.id = "locked-pane";
+    pane.className = "k2b-app-workspace__main-pane";
+    pane.dataset.workspaceResizable = "true";
+    setRect(pane, { width: 300, height: 700 });
+    const handle = document.createElement("button");
+    handle.dataset.appWorkspaceResize = "pane";
+    handle.dataset.workspacePanelId = "list";
+    handle.setAttribute("aria-controls", pane.id);
+    main.append(pane, handle);
+    locked.root.append(main);
+    const variable = "--k2b-workspace-pane-list-width";
+    locked.root.style.setProperty(variable, "300px");
+    const dispose = installAppWorkspaceController({ readState: () => ({ version: 2, paneWidths: { list: 440 } }) });
+    try {
+      flushFrames();
+      expect(locked.root.style.getPropertyValue(variable)).toBe("300px");
+      dispatchKey(enabled.handle, "ArrowRight");
+      expect(enabled.root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("184px");
+      expect(locked.root.style.getPropertyValue(variable)).toBe("300px");
+    } finally {
+      dispose();
+    }
+  });
+
   test("Main's share resolves against the root border box for interactive sidebar limits", () => {
     const { root, handle } = workspace({ width: 1462 });
     const main = document.createElement("main");
@@ -1869,6 +1901,49 @@ describe("floating detail controller", () => {
     }
   });
 
+  test("a numeric level default recovers after reset in a narrow Main", () => {
+    const { root } = workspace({ width: 1000 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    main.dataset.workspaceLevels = "";
+    let mainWidth = 600;
+    setDynamicRect(main, () => ({ width: mainWidth, height: 700 }));
+    const pane = document.createElement("section");
+    pane.id = "numeric-list";
+    pane.className = "k2b-app-workspace__main-pane";
+    pane.dataset.workspaceResizable = "true";
+    pane.dataset.workspaceLevel = "1";
+    pane.dataset.workspaceLevelLast = "";
+    const variable = "--k2b-workspace-pane-list-width";
+    // Emulate the level's CSS fit without replacing the configured preference.
+    setDynamicRect(pane, () => ({
+      width: Math.min(Number.parseFloat(root.style.getPropertyValue(variable)) || 640, mainWidth - 320),
+      height: 700,
+    }));
+    const handle = document.createElement("button");
+    handle.dataset.appWorkspaceResize = "pane";
+    handle.dataset.workspacePanelId = "list";
+    handle.dataset.workspaceDefaultSize = "640";
+    handle.setAttribute("aria-controls", pane.id);
+    main.append(pane, handle);
+    root.append(main);
+    const dispose = installAppWorkspaceController({ root, readState: () => ({ version: 2, paneWidths: { list: 400 } }) });
+    try {
+      flushFrames();
+      handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      expect(pane.getBoundingClientRect().width).toBe(280);
+      expect(root.style.getPropertyValue(variable)).toBe("640px");
+      mainWidth = 1000;
+      setRect(root, { width: 1400, height: 700 });
+      resizeObservers.forEach((observer) => observer.trigger());
+      flushFrames();
+      expect(pane.getBoundingClientRect().width).toBe(640);
+      expect(handle.getAttribute("aria-valuenow")).toBe("640");
+    } finally {
+      dispose();
+    }
+  });
+
   test("double-click resets a pane and preserves other pane preferences", () => {
     const { root } = workspace({ width: 1500 });
     const main = document.createElement("div");
@@ -1965,6 +2040,53 @@ describe("floating detail controller", () => {
     }
   });
 
+  for (const bounds of [
+    { width: 480, min: 176, max: 320, expected: 176, narrow: 176 },
+    { width: 1800, min: 176, max: 200, expected: 200, narrow: 176 },
+    { width: 1800, min: 240, max: 320, expected: 240, narrow: 240 },
+  ])
+    test(`sidebar reset respects space and configured bounds (${bounds.width}/${bounds.min}/${bounds.max})`, () => {
+      const { root, handle, sidebar } = workspace({ width: bounds.width });
+      const variable = "--k2b-workspace-sidebar-width";
+      handle.dataset.workspaceDefaultSize = "208";
+      handle.dataset.workspaceMinSize = String(bounds.min);
+      handle.dataset.workspaceMaxSize = String(bounds.max);
+      setDynamicRect(sidebar, () => ({ height: 700, width: Number.parseFloat(root.style.getPropertyValue(variable)) || 208 }));
+      const written: unknown[] = [];
+      const dispose = installAppWorkspaceController({
+        root,
+        readState: () => ({ version: 2, sidebarWidth: 184 }),
+        writeState: (state) => written.push(state),
+      });
+      try {
+        flushFrames();
+        dispatchKey(handle, "Enter");
+        expect(sidebar.getBoundingClientRect().width).toBe(bounds.expected);
+        expect(handle.getAttribute("aria-valuenow")).toBe(String(bounds.expected));
+        expect(written.at(-1)).not.toHaveProperty("sidebarWidth");
+        handle.remove();
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(sidebar.getBoundingClientRect().width).toBe(bounds.expected);
+        setRect(root, { height: 700, width: 1800 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        const restored = Math.min(bounds.max, Math.max(bounds.min, 208));
+        expect(sidebar.getBoundingClientRect().width).toBe(restored);
+        setRect(root, { height: 700, width: 480 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(sidebar.getBoundingClientRect().width).toBe(bounds.narrow);
+        root.append(handle);
+        setRect(root, { height: 700, width: 1800 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(handle.getAttribute("aria-valuenow")).toBe(String(restored));
+      } finally {
+        dispose();
+      }
+    });
+
   for (const inherited of [false, true])
     test(`double-click clears sidebar width and collapse state (inherited=${inherited})`, () => {
       const { root, handle, sidebar } = workspace({ collapsible: true, width: 1800 });
@@ -1998,13 +2120,69 @@ describe("floating detail controller", () => {
         expect(root.dataset.sidebarCollapsed).toBe("true");
         handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
         flushFrames();
-        expect(root.style.getPropertyValue(variable)).toBe(inherited ? "208px" : "");
+        expect(root.style.getPropertyValue(variable)).toBe("208px");
         expect(root.hasAttribute("data-sidebar-collapsed")).toBe(false);
         expect(handle.getAttribute("aria-valuenow")).toBe("208");
         expect(written.at(-1)).toEqual({ version: 2, detailWidths: { other: 420 } });
       } finally {
         dispose();
         globalThis.getComputedStyle = readStyle;
+      }
+    });
+
+  for (const bounds of [
+    { height: 480, min: 160, max: 560, expected: 240, narrow: 240 },
+    { height: 1000, min: 160, max: 240, expected: 240, narrow: 240 },
+    { height: 1000, min: 360, max: 560, expected: 360, narrow: 360 },
+  ])
+    test(`drawer reset respects space and configured bounds (${bounds.height}/${bounds.min}/${bounds.max})`, () => {
+      const { root } = workspace({ height: bounds.height });
+      const drawer = document.createElement("aside");
+      drawer.id = "activity";
+      drawer.className = "k2b-app-workspace__drawer";
+      drawer.dataset.workspaceResizable = "true";
+      const variable = "--k2b-workspace-drawer-activity-height";
+      setDynamicRect(drawer, () => ({ height: Number.parseFloat(root.style.getPropertyValue(variable)) || 320, width: 1000 }));
+      const handle = document.createElement("button");
+      handle.dataset.appWorkspaceResize = "drawer";
+      handle.dataset.workspacePanelId = "activity";
+      handle.dataset.workspaceDefaultSize = "320";
+      handle.dataset.workspaceMinSize = String(bounds.min);
+      handle.dataset.workspaceMaxSize = String(bounds.max);
+      handle.setAttribute("aria-controls", drawer.id);
+      root.append(drawer, handle);
+      const written: unknown[] = [];
+      const dispose = installAppWorkspaceController({
+        root,
+        readState: () => ({ version: 2, drawerHeights: { activity: 200 } }),
+        writeState: (state) => written.push(state),
+      });
+      try {
+        flushFrames();
+        dispatchKey(handle, "Enter");
+        expect(drawer.getBoundingClientRect().height).toBe(bounds.expected);
+        expect(handle.getAttribute("aria-valuenow")).toBe(String(bounds.expected));
+        expect(written.at(-1)).toMatchObject({ drawerHeights: {} });
+        handle.remove();
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(drawer.getBoundingClientRect().height).toBe(bounds.expected);
+        setRect(root, { height: 1000, width: 1000 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        const restored = Math.min(bounds.max, Math.max(bounds.min, 320));
+        expect(drawer.getBoundingClientRect().height).toBe(restored);
+        setRect(root, { height: 480, width: 1000 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(drawer.getBoundingClientRect().height).toBe(bounds.narrow);
+        root.append(handle);
+        setRect(root, { height: 1000, width: 1000 });
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(handle.getAttribute("aria-valuenow")).toBe(String(restored));
+      } finally {
+        dispose();
       }
     });
 
@@ -2032,7 +2210,7 @@ describe("floating detail controller", () => {
     try {
       flushFrames();
       handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-      expect(root.style.getPropertyValue(variable)).toBe("");
+      expect(root.style.getPropertyValue(variable)).toBe("240px");
       expect(handle.getAttribute("aria-valuenow")).toBe("240");
       expect(written.at(-1)).toMatchObject({ drawerHeights: { other: 280 } });
     } finally {
@@ -2051,7 +2229,7 @@ describe("floating detail controller", () => {
     flushFrames();
     expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("500px");
     handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("");
+    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("416px");
     expect(handle.getAttribute("aria-valuenow")).toBe("416");
     expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
     dispose();

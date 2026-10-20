@@ -146,8 +146,9 @@ that, **Show navigation** still opens its overlay. See
 
 The column defaults to 26 rem, or 21.5 rem below a 1280 px viewport. Its
 separator resizes between 20 and 36 rem. Arrow keys change width by 1 rem,
-Shift+Arrow by 4 rem; Home and End select the bounds. A double-click on the
-separator returns the column to its default width and forgets the stored width.
+Shift+Arrow by 4 rem; Home and End select the bounds. Double-click the separator,
+or focus it and press Enter, to return the column to its default width and forget
+the stored width.
 Dragging below a raw 16 rem width shows **Release to close the panel**, while
 the visible width stays at least 20 rem. Release closes it and keeps the width committed before
 that drag. Moving back above the threshold cancels the close intent.

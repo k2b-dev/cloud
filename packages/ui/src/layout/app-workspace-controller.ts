@@ -1491,44 +1491,86 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const root = handle?.closest<HTMLElement>(ROOT_SELECTOR);
     const kind = handle ? resizeKind(handle) : null;
     if (!handle || !root || !kind || !workspaceResizable(root) || !controlsResizableRegion(root, handle, kind)) return;
+    if (active) return;
     if (kind === "sidebar") {
       const { sidebarWidth: _width, sidebarCollapsed: _collapsed, ...remaining } = layoutState;
       layoutState = remaining;
-      const variable = "--k2b-workspace-sidebar-width";
-      root.style.removeProperty(variable);
-      delete root.dataset.sidebarCollapsed;
-      // The root renders saved layout state inline; a host may also supply it.
-      if (getComputedStyle(root).getPropertyValue(variable).trim())
-        root.style.setProperty(variable, `${numberData(handle, "workspaceDefaultSize", APP_WORKSPACE_SIDEBAR_DEFAULT)}px`);
-      reconcilePanes(root, layoutState);
-      updateHandleValue(root, handle, kind, currentSize(root, handle, kind));
-      scheduleHostSync();
-      options.writeState?.(layoutState);
-      return;
+    } else {
+      const key = kind === "pane" ? "paneWidths" : kind === "drawer" ? "drawerHeights" : "detailWidths";
+      const widths = { ...layoutState[key] };
+      delete widths[panelId(handle)];
+      layoutState = { ...layoutState, [key]: widths };
     }
-    const key = kind === "pane" ? "paneWidths" : kind === "drawer" ? "drawerHeights" : "detailWidths";
-    const widths = { ...layoutState[key] };
-    delete widths[panelId(handle)];
-    layoutState = { ...layoutState, [key]: widths };
-    const variable = appWorkspacePanelVariable(kind, panelId(handle));
-    root.style.removeProperty(variable);
-    // An SSR ancestor may still supply the old preference until the next request.
-    if (getComputedStyle(root).getPropertyValue(variable).trim()) {
-      const spec =
-        readAppWorkspaceWidth(handle.dataset.workspaceDefaultSize) ??
-        (kind === "pane" ? APP_WORKSPACE_PANE_DEFAULT : kind === "drawer" ? APP_WORKSPACE_DRAWER_DEFAULT : APP_WORKSPACE_DETAIL_DEFAULT);
-      // A share must resolve at the pane, where the workspace length exists.
-      // `initial` clears an inherited SSR preference and restores its CSS fallback.
-      root.style.setProperty(variable, typeof spec === "number" ? `${spec}px` : "initial");
-    }
-    // The siblings fit again around the default width, also in a Main without levels.
-    if (kind === "pane") reconcilePanes(root, layoutState);
+    const regions = resetRegions.get(root) ?? new Map<string, ResetRegion>();
+    regions.set(resizeVariable(handle, kind), {
+      kind,
+      id: panelId(handle),
+      configuration: handle,
+    });
+    resetRegions.set(root, regions);
+    writeState();
+    if (kind === "sidebar" || kind === "pane") reconcilePanes(root, layoutState);
     updateHandleValue(root, handle, kind, currentSize(root, handle, kind));
-    options.writeState?.(layoutState);
   };
 
   const stopScrollFades = installScrollFades(eventRoot);
   let layoutState = normalizeAppWorkspaceLayoutState(options.readState?.()) ?? { version: 2 as const };
+  type ResetRegion = {
+    kind: AppWorkspaceResizeKind;
+    id: string;
+    configuration: HTMLElement;
+  };
+  const resetRegions = new WeakMap<HTMLElement, Map<string, ResetRegion>>();
+  const resizeVariable = (handle: HTMLElement, kind: AppWorkspaceResizeKind) =>
+    kind === "sidebar" ? "--k2b-workspace-sidebar-width" : appWorkspacePanelVariable(kind, panelId(handle));
+  const defaultSize = (handle: HTMLElement, kind: AppWorkspaceResizeKind) =>
+    readAppWorkspaceWidth(handle.dataset.workspaceDefaultSize) ??
+    (kind === "sidebar"
+      ? APP_WORKSPACE_SIDEBAR_DEFAULT
+      : kind === "pane"
+        ? APP_WORKSPACE_PANE_DEFAULT
+        : kind === "drawer"
+          ? APP_WORKSPACE_DRAWER_DEFAULT
+          : APP_WORKSPACE_DETAIL_DEFAULT);
+  const restoreResetDefaults = (root: HTMLElement) => {
+    for (const [variable, region] of resetRegions.get(root) ?? []) {
+      const { kind, id } = region;
+      const persisted =
+        kind === "sidebar"
+          ? layoutState.sidebarWidth
+          : layoutState[kind === "pane" ? "paneWidths" : kind === "drawer" ? "drawerHeights" : "detailWidths"]?.[id];
+      if (persisted !== undefined || (kind === "sidebar" && layoutState.sidebarCollapsed)) continue;
+      const handle = rootElements(root, HANDLE_SELECTOR).find((handle) => resizeKind(handle) === kind && panelId(handle) === id);
+      // Keep the latest handle's configuration across unmounts. Limits still
+      // measure today's workspace, so a missing handle cannot freeze its fit.
+      if (handle) region.configuration = handle;
+      const spec = defaultSize(region.configuration, kind);
+      // Store the configured default, not a temporary fit. CSS/relayout owns
+      // the available space, so a numeric level can grow back when room returns.
+      if (typeof spec === "number") {
+        // Sidebar and drawer have no CSS fit. Keep their configured default
+        // in the map, but render within today's bounds and recover it later.
+        if (kind === "sidebar" || kind === "drawer") {
+          const { min, max } = sizeLimits(root, region.configuration, kind);
+          root.style.setProperty(variable, `${clamp(spec, min, max)}px`);
+        } else root.style.setProperty(variable, `${spec}px`);
+      } else {
+        root.style.removeProperty(variable);
+        if (getComputedStyle(root).getPropertyValue(variable).trim()) root.style.setProperty(variable, "initial");
+      }
+      if (kind === "sidebar") delete root.dataset.sidebarCollapsed;
+    }
+  };
+  const writeState = () => {
+    options.writeState?.(layoutState);
+    // Keep reset defaults through reactive writes and temporary handle unmounts,
+    // without saving a width that would mask a changed application default.
+    for (const root of roots()) {
+      if (!workspaceResizable(root)) continue;
+      restoreResetDefaults(root);
+      reconcilePanes(root, layoutState);
+    }
+  };
   let active: ActiveResize | null = null;
   let resizeFrame: number | null = null;
   let pendingClient: number | null = null;
@@ -1545,7 +1587,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       const key = kind === "pane" ? "paneWidths" : kind === "detail" ? "detailWidths" : "drawerHeights";
       layoutState = { ...layoutState, [key]: { ...layoutState[key], [panelId(handle)]: size } };
     }
-    options.writeState?.(layoutState);
+    const root = workspaceRoot(handle);
+    if (root) resetRegions.get(root)?.delete(resizeVariable(handle, kind));
+    writeState();
   };
 
   // A level resize starts from what is on screen. When the stored widths do
@@ -1678,6 +1722,19 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const kind = handle ? resizeKind(handle) : null;
     const root = handle ? workspaceRoot(handle) : null;
     if (!handle || !kind || !root || !workspaceResizable(root) || !controlsResizableRegion(root, handle, kind)) return;
+    if (
+      event.key === "Enter" &&
+      !event.defaultPrevented &&
+      !event.isComposing &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !active
+    ) {
+      event.preventDefault();
+      onPanelDoubleClick(event);
+      return;
+    }
     const current = currentSize(root, handle, kind);
     const { min, max } = sizeLimits(root, handle, kind);
     const step = event.shiftKey ? 32 : 8;
@@ -1763,6 +1820,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       // resizing; without this the same workspace still had persisted sizes
       // forced onto it on load and on every window resize.
       if (!workspaceResizable(root)) return;
+      restoreResetDefaults(root);
       const handles = rootElements(root, HANDLE_SELECTOR);
       // Chrome establishes the space available to the work area. Auxiliary
       // panes are then fitted together into what remains, so DOM order cannot

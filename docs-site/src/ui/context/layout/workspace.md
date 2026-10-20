@@ -1393,8 +1393,10 @@ down to its minimum; the stylesheet applies the same fit as the controller, so
 a server-rendered split arrives at its final widths. Detail is a column when
 it fits beside Main's minimum, otherwise it waits behind Details. See
 [Detail and panel](#detail-and-panel).
-Double-click any resize handle to clear its saved size and return to the
-default. Resetting the sidebar also clears its collapsed state.
+Double-click any resize handle, or focus it and press Enter, to clear its saved
+size and return to the application default. Resetting the sidebar also clears its collapsed state and
+uses its configured `defaultSize`, including when `onLayoutChange` updates a
+reactive `layoutState`.
 
 ### Live rows and detail previews
 
