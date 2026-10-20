@@ -3,17 +3,17 @@ import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
 import type { MailRequestContext } from "../service";
-import { focus, mailboxes, mailboxPreferences, publicResources } from "../service";
+import { focus, mailboxPreferences } from "../service";
 import { requestContactDirectory } from "../service/contact-directory";
 import { localizeMailError } from "../service/error-messages";
 import { loadMailboxConversationDetail } from "../service/workspace";
 import { mailWorkspaceCookie, readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import MailOverview from "./MailOverview.island";
+import { loadSidebarMailboxes, loadSidebarPreferences } from "./mail-sidebar-data";
 import { mailPageMessages } from "./pages-messages";
 import {
   projectMailConversationDetail,
   projectSsrFocusOverview,
-  projectSsrMailboxList,
   resolveSsrMailboxId,
   resolveSsrMailboxResourceId,
 } from "./ssr-public-boundary";
@@ -37,15 +37,7 @@ export default ssr<AuthContext>(async (c) => {
     mailboxSelection.success && conversationSelection.success
       ? { mailboxId: mailboxSelection.data, conversationId: conversationSelection.data }
       : null;
-  const publicMailboxesPromise = (async () => {
-    const result = await mailboxes.listMailboxes(context, 200);
-    const list = result.ok
-      ? result.data.filter(
-          (mailbox): mailbox is typeof mailbox & { permission: "read" | "write" | "admin" } => mailbox.permission !== "none",
-        )
-      : [];
-    return projectSsrMailboxList(list);
-  })();
+  const publicMailboxesPromise = loadSidebarMailboxes(context);
   if (c.req.query("recent") === "true") {
     const publicMailboxes = await publicMailboxesPromise;
     const lastMailboxId = workspacePreferences.lastMailboxId;
@@ -62,15 +54,8 @@ export default ssr<AuthContext>(async (c) => {
         append: true,
       });
     }
-    // Only readable mailboxes, at most as many as Focus excludes in one request.
-    const stored = await mailboxPreferences.listMailboxPreferences(context);
-    const shortIds = await publicResources.publicIds("mailboxes", [...stored.pinnedMailboxIds, ...stored.hiddenMailboxIds]);
-    const toPublic = (ids: string[]) => ids.flatMap((id) => shortIds.get(id) ?? []);
-    return {
-      hiddenMailboxIds: stored.hiddenMailboxIds,
-      publicPinnedMailboxIds: toPublic(stored.pinnedMailboxIds),
-      publicHiddenMailboxIds: toPublic(stored.hiddenMailboxIds),
-    };
+    // The same pins and hidden mailboxes the mailbox page's sidebar reads.
+    return loadSidebarPreferences(context);
   })();
   const [initialDetail, publicMailboxes, preferences, focusResult] = await Promise.all([
     (async () => {

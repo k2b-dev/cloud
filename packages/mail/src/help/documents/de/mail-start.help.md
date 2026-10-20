@@ -67,7 +67,7 @@ Im Kopfbereich findest du:
 - Ansichten als Tabs: **Alle**, **Handlungsbedarf**, **Mir zugewiesen**, **Wartet auf Antwort** und **Nicht zugewiesen**. Unter **Mehr** stehen **Später**, **Erledigt**, **Letzte Aktivität**, **Aufbewahrt** und gespeicherte Ansichten. Ordner, Geplant und Versandprobleme haben keine Ansichts-Tabs.
 - Den Chip **Tag**, wenn Tags existieren, den Chip **Suche** für eine aktive strukturierte Suche und **Zurücksetzen** zum Entfernen der Filter. Entferne den Suche-Chip, um die Suche zu beenden. **Suchfilter** im Listenkopf öffnet den Filterdialog.
 - **Listenansicht auswählen** für Unterhaltungen oder einzelne Nachrichten.
-- **…** für Postfachdetails, Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und **Einstellungen**. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**. Wer nur zugewiesene Unterhaltungen sieht, hat kein Postfachmenü.
+- **…** für Postfachdetails, Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und **Einstellungen**. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**. Wer nur zugewiesene Unterhaltungen sieht, hat im Kopfbereich kein **…**; das **…** des geöffneten Postfachs in der Seitenleiste bietet dann nur Anheften und Ausblenden.
 - **Verfassen** als Hauptaktion, wenn du senden kannst.
 
 Auf dem Smartphone öffnest du über den Postfachtitel Fokus, andere Postfächer und die Ordner des geöffneten Postfachs. Ansichten, Filter, Verfassen und **…** findest du im Kopfbereich.

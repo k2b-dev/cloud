@@ -68,7 +68,7 @@ The head contains:
 - View tabs: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, and **Unassigned**. **More** contains **Later**, **Done**, **Recent activity**, **Kept**, and saved views. Folders, Scheduled, and Send problems have no view tabs.
 - A **Tag** chip when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. **Search filters** in the list head opens the filter builder.
 - **Choose list view** for conversations or individual messages.
-- **…** for mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations have no mailbox menu.
+- **…** for mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations have no **…** in the head; the open mailbox's **…** in the sidebar offers them only pin and hide.
 - **Compose** as the primary action when you can send.
 
 On a phone, open the mailbox title to reach Focus, other mailboxes, and the open mailbox's folders. Use the head for views, filters, Compose, and **…**.
