@@ -6,7 +6,7 @@ description: Transport, Absenderidentitäten, Ordner, Zugriff, Automatisierung u
 order: 50
 ---
 
-Mit Zugriff **Verwalten** auf ein Postfach steuerst du die Verbindung zum Anbieter und die Cloud-Regeln dazu. Öffne **Einstellungen** in der Navigation des Postfachs.
+Mit Zugriff **Verwalten** auf ein Postfach steuerst du die Verbindung zum Anbieter und die Cloud-Regeln dazu. Öffne **… → Einstellungen** im Kopfbereich des Postfachs.
 
 ## Persönliche und gemeinsame Einstellungen unterscheiden {icon="settings"}
 
@@ -18,15 +18,15 @@ Die Einstellungen sind nach Zweck gruppiert:
 - **Allgemein** ist der erste Bereich, der Zugriff **Verwalten** braucht. Er legt die gemeinsame Identität und die Schutzregeln für den Versand fest.
 - **Allgemein**, **Konten und Identitäten**, **Kalendereinladungen**, **Ordner**, **Zugriff** und **Gefahrenbereich** brauchen Zugriff **Verwalten**.
 
-Wähle unter **Einstellungen → Kalendereinladungen** einen Space, in dem du Zugriff **Bearbeiten** hast, als vorgeschlagenes Ziel für importierte Einladungen. Mail speichert diese Einstellung für das ganze Postfach. Spaces bietet jeder Person nur Ziele an, in denen sie Zugriff **Bearbeiten** hat.
+Wähle unter **… → Einstellungen → Kalendereinladungen** einen Space, in dem du Zugriff **Bearbeiten** hast, als vorgeschlagenes Ziel für importierte Einladungen. Mail speichert diese Einstellung für das ganze Postfach. Spaces bietet jeder Person nur Ziele an, in denen sie Zugriff **Bearbeiten** hat.
 
 Die Einstellung importiert keine Einladungen automatisch. Jede Einladung kann in einen anderen Space gehen, in dem du Zugriff **Bearbeiten** hast. Du kannst die Auswahl gefahrlos leeren. Löscht jemand den Space oder endet dein Zugriff, behandelt Mail den Standard als nicht gesetzt.
 
-Betriebsstatus und öffentliche Links zu Anhängen sind von den Einstellungen getrennt. Öffne sie über **Postfachwerkzeuge** in der Navigation des Postfachs.
+Betriebsstatus und öffentliche Links zu Anhängen sind von den Einstellungen getrennt. Öffne sie über das Menü **…** im Kopfbereich des Postfachs.
 
 ## Verbindung überwachen und pausieren {icon="route"}
 
-**Postfachwerkzeuge → Postfachstatus** zeigt den Zustand des Transports, das verbundene Konto, die Ordnerermittlung, die Synchronisierung und den Stand des Suchindex.
+**… → Postfachstatus** zeigt den Zustand des Transports, das verbundene Konto, die Ordnerermittlung, die Synchronisierung und den Stand des Suchindex.
 
 - **Jetzt synchronisieren** reiht eine Synchronisierung des Postfachs ein. **Letzte erfolgreiche Synchronisierung** zeigt, wann die letzte abgeschlossen wurde. **Jetzt synchronisieren** ist nicht verfügbar, solange das Postfach pausiert ist oder sein Konto zuerst verbunden, neu verbunden oder geprüft werden muss.
 - **Ordner neu ermitteln** aktualisiert die Ordner und die Angaben zum Namensraum beim Anbieter.
@@ -38,7 +38,7 @@ Pausieren stoppt Vorgänge. Es blendet nichts aus. Vorhandene gespiegelte E-Mail
 
 ### Projektionen und fehlgeschlagene Vorgänge reparieren
 
-Mit Zugriff **Verwalten** startest du unter **Postfachwerkzeuge → Postfachstatus → Erweiterte Diagnose und Reparatur** Reparaturen im Hintergrund. Erneutes Laden von Inhalten, Neuaufbau der Suche, Reparatur der Unterhaltungen, Neuaufbau von Ordnern, Neuermittlung und Synchronisierung sind dauerhafte Befehle. Das Schließen des Dialogs stoppt sie nicht. Bevor ein Befehl läuft, prüft Mail erneut, ob du noch Zugriff **Verwalten** hast.
+Mit Zugriff **Verwalten** startest du unter **… → Postfachstatus → Erweiterte Diagnose und Reparatur** Reparaturen im Hintergrund. Erneutes Laden von Inhalten, Neuaufbau der Suche, Reparatur der Unterhaltungen, Neuaufbau von Ordnern, Neuermittlung und Synchronisierung sind dauerhafte Befehle. Das Schließen des Dialogs stoppt sie nicht. Bevor ein Befehl läuft, prüft Mail erneut, ob du noch Zugriff **Verwalten** hast.
 
 Die Aktionsschaltflächen zeigen, was gerade möglich ist. Eine ausgeschaltete Aktion nennt den Grund, etwa eine pausierte Synchronisierung, einen inaktiven Ordner oder dieselbe Arbeit, die schon aussteht.
 
@@ -51,7 +51,7 @@ Die Cloud-Administration sieht dieselbe geschwärzte Zusammenfassung unter **Adm
 
 ## Die Verbindung zum Anbieter verwalten {icon="user-cog"}
 
-**Einstellungen → Konten und Identitäten → Verbundenes Konto** enthält die aktuellen Zugangsdaten für ein- und ausgehende E-Mails. Mail prüft beide Protokolle, bevor es neue oder ersetzte Zugangsdaten speichert.
+**… → Einstellungen → Konten und Identitäten → Verbundenes Konto** enthält die aktuellen Zugangsdaten für ein- und ausgehende E-Mails. Mail prüft beide Protokolle, bevor es neue oder ersetzte Zugangsdaten speichert.
 
 :::steps
 1. Wähle zuerst **Einstellungen suchen**.
@@ -71,7 +71,7 @@ Entfernst du die Verbindung, stoppt der Transport. E-Mails beim Anbieter und die
 
 ## Absenderidentitäten verwalten {icon="send"}
 
-**Einstellungen → Konten und Identitäten → Absenderidentitäten** steuert die Versandkontexte, die andere im Team nutzen können. Nutze getrennte Absenderidentitäten, wenn dieselbe Adresse für Rollen wie private E-Mails, Arbeit an der Universität oder ein Unternehmen andere Standards braucht.
+**… → Einstellungen → Konten und Identitäten → Absenderidentitäten** steuert die Versandkontexte, die andere im Team nutzen können. Nutze getrennte Absenderidentitäten, wenn dieselbe Adresse für Rollen wie private E-Mails, Arbeit an der Universität oder ein Unternehmen andere Standards braucht.
 
 Die **Bezeichnung der Absenderidentität** ist nur im Postfach sichtbar. Empfänger sehen den **Anzeigename** und die **Absenderadresse**. Jede Absenderidentität kann auch festlegen:
 
@@ -96,7 +96,7 @@ Mail fügt die Standard-Empfänger für Cc und Bcc hinzu, wenn jemand mit dieser
 
 Neue Nachrichten, Antworten und Weiterleitungen beginnen mit der Standardsignatur der Absenderidentität, getrennt vom Text. Ein persönlicher Standard hat Vorrang vor dem Standard des Postfachs. Wechselst du die Absenderidentität im Editor, wechselt die Signatur zu deren Standard.
 
-Unter **Einstellungen → Allgemein** trägst du vertrauenswürdige interne E-Mail-Domains ein und legst fest, ab wann Mail vor vielen Empfängern warnt. Vor externen Empfängern warnt Mail nur, wenn mindestens eine interne Domain eingetragen ist. Diese Einstellungen leiten die letzte Prüfung vor dem Versand. Sie blockieren keine legitime Zustellung und ändern keine Empfänger automatisch.
+Unter **… → Einstellungen → Allgemein** trägst du vertrauenswürdige interne E-Mail-Domains ein und legst fest, ab wann Mail vor vielen Empfängern warnt. Vor externen Empfängern warnt Mail nur, wenn mindestens eine interne Domain eingetragen ist. Diese Einstellungen leiten die letzte Prüfung vor dem Versand. Sie blockieren keine legitime Zustellung und ändern keine Empfänger automatisch.
 
 Priorität und Bestätigungsanfragen sind Vorschläge an andere E-Mail-Systeme:
 
@@ -169,7 +169,7 @@ Zeigt das IMAP-Konto geteilte Ordner oder Ordner anderer Nutzer, kann **Ordner n
 - gleichnamige Ordner aus mehreren Konten zusammenführen;
 - die Zugangsdaten einer anderen Person nutzen, wenn diese Verbindung den Zugriff verliert.
 
-Änderungen beim Anbieter an Namensräumen, Abonnements oder Zugriff können einen Ordner nicht verfügbar oder unklar machen. Prüfe **Postfachwerkzeuge → Postfachstatus**, korrigiere bei Bedarf den Zustand beim Anbieter und führe dann **Ordner neu ermitteln** aus.
+Änderungen beim Anbieter an Namensräumen, Abonnements oder Zugriff können einen Ordner nicht verfügbar oder unklar machen. Prüfe **… → Postfachstatus**, korrigiere bei Bedarf den Zustand beim Anbieter und führe dann **Ordner neu ermitteln** aus.
 
 Ist ein nicht verfügbarer Ordner endgültig weg, wähle in seinem Menü **Aus Mail entfernen**. Nach der Bestätigung entfernt Mail den nicht verfügbaren Ordner und seine nicht verfügbaren Unterordner aus seiner Ordnerliste. Beim Anbieter wird nichts gelöscht, und gespiegelte Nachrichten und Verlauf bleiben. Zeigt der Anbieter den Ordner wieder, stellt ihn die nächste Neuermittlung automatisch wieder her.
 
@@ -201,7 +201,7 @@ Du brauchst Zugriff **Verwalten** auf das Postfach, um einen öffentlichen Link 
 Die öffentliche URL erscheint nur einmal, direkt nach dem Erstellen. Mail speichert nur einen Hash ihres geheimen Tokens und kann dieselbe URL nicht noch einmal zeigen.
 :::
 
-**Postfachwerkzeuge → Freigabelinks** listet alle Links seitenweise, auch ältere aktive Links. Dort widerrufst du den Zugriff, ohne die ursprüngliche Nachricht oder den Anhang des Entwurfs zu löschen.
+**… → Freigabelinks** listet alle Links seitenweise, auch ältere aktive Links. Dort widerrufst du den Zugriff, ohne die ursprüngliche Nachricht oder den Anhang des Entwurfs zu löschen.
 
 Ein Link kann ein optionales Passwort, einen Ablaufzeitpunkt und eine Höchstzahl an Download-Sitzungen haben. Passwörter unterscheiden Groß- und Kleinschreibung und können Leerzeichen enthalten. Bereichsanfragen, die einen erlaubten Download fortsetzen, zählen nicht als weitere Downloads. Widerrufene, abgelaufene, aufgebrauchte, ungültige und mit falschem Passwort aufgerufene Links schlagen fehl, ohne Metadaten des Anhangs zu verraten.
 
@@ -250,13 +250,13 @@ Jede Liste bietet nur Capabilities an, die zum Vertrag für Kontaktverzeichnisse
 
 ## Signaturen und E-Mail-Design einrichten {icon="pencil"}
 
-Erstelle unter **Einstellungen → Schreiben** private Signaturen und Textbausteine oder solche für das Postfach. Lege die Standardsignatur des Postfachs unter **Konten und Identitäten → Absenderidentitäten** fest. Ein persönlicher Standard einer Person unter **Schreiben** hat Vorrang.
+Erstelle unter **… → Einstellungen → Schreiben** private Signaturen und Textbausteine oder solche für das Postfach. Lege die Standardsignatur des Postfachs unter **Konten und Identitäten → Absenderidentitäten** fest. Ein persönlicher Standard einer Person unter **Schreiben** hat Vorrang.
 
 Markdown-Nachrichten bekommen immer das eingebaute lesbare E-Mail-Design. **E-Mail-Design** ergänzt geprüftes CSS des Postfachs für das Firmendesign. Es ersetzt nicht das sichere Grunddesign. Prüfe das Ergebnis in der **Vorschau** des Editors, bevor du dich auf eine CSS-Änderung verlässt. Das eingebaute Design gibt Zitaten eine graue Linie links und Codeblöcken einen hellen Hintergrund; mit `blockquote { … }` oder `pre { … }` änderst du sie. Eine Regel für `p { … }` gilt auch für zitierte Absätze; diese gestaltest du mit `blockquote p { … }`.
 
 Das CSS des Postfachs folgt auf das eingebaute Design. Jede seiner Regeln setzt sich für die Elemente, die sie auswählt, gegen das eingebaute Design durch. So ändert etwa `a { color: #262626; }` die Farbe aller Links. Für die ganze Nachricht nutzt du `.mail-content`, zum Beispiel `.mail-content { font-size: 16px; }`. Für die Signatur nutzt du `.mail-signature`, zum Beispiel `.mail-signature { color: #52525b; }`. Selektoren können die Elemente nutzen, die die E-Mail behält, und die Klassen `.mail-content` und `.mail-signature`. Andere Klassen, IDs, Pseudoklassen wie `:hover`, `@`-Regeln und `!important` werden nicht angenommen. Werte können keine Bilder laden, etwa mit `url()` oder `image-set()`, und weder Backslash-Escapes noch `&` enthalten. Ein Wert in Anführungszeichen, etwa ein Schriftname, muss in derselben Zeile enden und darf die jeweils andere Art von Anführungszeichen nicht enthalten.
 
-Mail prüft das CSS beim Speichern. Enthält ein gespeichertes Design einen Wert, den eine spätere Cloud-Version nicht mehr zulässt, sendet das Postfach weiter. Mail lässt nur diese Werte weg und behält den Rest des Designs. Kann Mail das gespeicherte Design gar nicht lesen, verwendet Mail das eingebaute Design, bis das Design korrigiert ist. **Einstellungen → Schreiben** zeigt, welche Werte wegfallen. Die **Vorschau** im Editor listet sie unter der Nachricht auf. Entferne oder ersetze sie im Design. Zum Speichern muss das CSS weiterhin die Prüfung bestehen. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau** im Editor.
+Mail prüft das CSS beim Speichern. Enthält ein gespeichertes Design einen Wert, den eine spätere Cloud-Version nicht mehr zulässt, sendet das Postfach weiter. Mail lässt nur diese Werte weg und behält den Rest des Designs. Kann Mail das gespeicherte Design gar nicht lesen, verwendet Mail das eingebaute Design, bis das Design korrigiert ist. **… → Einstellungen → Schreiben** zeigt, welche Werte wegfallen. Die **Vorschau** im Editor listet sie unter der Nachricht auf. Entferne oder ersetze sie im Design. Zum Speichern muss das CSS weiterhin die Prüfung bestehen. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau** im Editor.
 
 Öffne in den Einstellungen des Postfachs **Schreiben → Logo**, um das Logo hochzuladen oder zu ersetzen, seine Anzeigebreite oder seinen Alternativtext zu ändern oder es nach Bestätigung zu entfernen. Dafür brauchst du Zugriff **Verwalten**. Mit Zugriff **Bearbeiten** siehst du das Logo und seine Werte, kannst sie aber nicht ändern. Eine Änderung der Breite oder des Alternativtexts speichert eine neue Version mit demselben Bild.
 
@@ -264,7 +264,7 @@ Postfachadmins können ein Signaturlogo auch über die CLI verwalten: mit `cld m
 
 ## Automatische Antworten und Referenzen einrichten {icon="settings"}
 
-Öffne **Postfachwerkzeuge → Automatisierungen**:
+Öffne **… → Automatisierungen**:
 
 :::steps
 1. **Übersicht** zeigt, was aktiv ist, und öffnet genau die passende Einrichtung.
@@ -311,4 +311,4 @@ Alle unterstützten Eingaben, Auslöser, Aktionen, Bedingungen, Ausdrücke, Stan
 
 **Gefahrenbereich → In „Kürzlich gelöscht“ verschieben** setzt das Postfach in einen gelöschten Zustand, den du wiederherstellen kannst. Mail löscht E-Mails beim Anbieter und aufbewahrte Cloud-Daten nicht endgültig.
 
-Gelöschte Postfächer erscheinen in der Mail-Übersicht unter **Kürzlich gelöscht** für Personen, die sie wiederherstellen können. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **Postfachwerkzeuge → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.
+Gelöschte Postfächer erscheinen in der Mail-Übersicht unter **Kürzlich gelöscht** für Personen, die sie wiederherstellen können. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **… → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.

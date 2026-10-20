@@ -7,7 +7,7 @@ order: 60
 kind: task
 ---
 
-Open **Mailbox tools → Automations**. The full-width overview shows what is active and opens the exact setup that you choose. **Automatic replies** and **Incoming mail** cover common tasks. With **Manage** access, you also see **Activity** and **Workflows** under Advanced.
+Open **… → Automations**. The full-width overview shows what is active and opens the exact setup that you choose. **Automatic replies** and **Incoming mail** cover common tasks. With **Manage** access, you also see **Activity** and **Workflows** under Advanced.
 
 ## Choose the right automation tool {icon="route"}
 
@@ -137,7 +137,7 @@ Mail leaves messages in Sent, Drafts, Trash, and Junk where they are and does no
 ## Configure an automatic reply {icon="send"}
 
 :::steps
-1. Ask someone with **Manage** access to verify an identity and turn on **Automatic replies** for it. They do this in **Settings → Accounts & identities → Sending identities**.
+1. Ask someone with **Manage** access to verify an identity and turn on **Automatic replies** for it. They do this in **… → Settings → Accounts & identities → Sending identities**.
 2. Open **Automations → Automatic replies**.
 3. Choose **Add automatic reply**.
 4. Choose **Out of office**, **Office-hours acknowledgement**, **Reference acknowledgement**, or **Custom automatic reply**.
@@ -150,7 +150,7 @@ Mail leaves messages in Sent, Drafts, Trash, and Junk where they are and does no
 
 Subjects and messages are Liquid templates. Use the variables that you can copy in the editor, for example `{{ inputs.message.subject }}`. After a reference is assigned, `{{ reference.value }}` is also available. Mail rejects invalid syntax and unavailable variables before it saves the reply.
 
-Only one automatic reply can be on for a mailbox at a time. Turn off the active configuration before you turn on another one. By default, only people with **Manage** access can change automatic replies. They can allow people with **Edit** access in **Settings → Access → Automatic reply management access**.
+Only one automatic reply can be on for a mailbox at a time. Turn off the active configuration before you turn on another one. By default, only people with **Manage** access can change automatic replies. They can allow people with **Edit** access in **… → Settings → Access → Automatic reply management access**.
 
 Mail does not reply to messages that are unsafe for automatic responses. These include mailing-list mail, bulk mail, delivery status notifications, messages from the mailbox itself, and messages that explicitly suppress automatic replies. A suppressed reply stays part of the activity and run history. Mail does not silently turn it into a normal draft.
 

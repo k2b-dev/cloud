@@ -32,7 +32,7 @@ Wenn der Assistent diesen Entwurf senden möchte, zeigt eine Leiste über dem En
 Du kannst den aktuellen Browser bitten, Cloud Mail für normale `mailto:`-Links zu verwenden:
 
 :::steps
-1. Öffne **Postfachwerkzeuge → E-Mail-Links einrichten**.
+1. Öffne **… → E-Mail-Links einrichten**.
 2. Bestätige die Abfrage, wenn der Browser fragt.
 :::
 
@@ -64,7 +64,7 @@ Markdown kann auch einfaches HTML enthalten. Die E-Mail behält die Elemente `a`
 
 Der Verlauf lädt erst, wenn du ihn öffnest. Mail klappt zuerst die neueste Nachricht auf. Du kannst mehrere Nachrichten unabhängig auf- und zuklappen, und Mail lädt frühere Zusammenfassungen seitenweise. Eine vollständige Nachricht lädt Mail erst, wenn du sie aufklappst. Links und Anhänge haben denselben Sicherheitsschutz wie in der Leseansicht.
 
-Dein Standardformat steht unter **Einstellungen → Schreiben → Format beim Verfassen**. Eine Änderung des Standards ändert keine vorhandenen Entwürfe.
+Dein Standardformat steht unter **… → Einstellungen → Schreiben → Format beim Verfassen**. Eine Änderung des Standards ändert keine vorhandenen Entwürfe.
 
 ## Einen vorhandenen Entwurf einer Unterhaltung fortsetzen {icon="pencil"}
 
@@ -157,7 +157,7 @@ Trenne die Adressen in `message.to` und `message.cc` mit `join`:
 
 Mail warnt dich vor dem Senden vor Platzhaltern, die im Text stehen bleiben und unverändert versendet würden.
 
-Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
+Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **… → Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
 
 ## Dateien anhängen {icon="paperclip"}
 
@@ -208,7 +208,7 @@ Mail ändert die ursprüngliche Nachricht und Unterhaltung nie, und es wird nich
 
 ## Jetzt senden, rückgängig machen oder planen {icon="send"}
 
-Wähle die Hauptaktion, um die Zustellung jetzt einzureihen. **Versand rückgängig machen** unter **Einstellungen → Schreiben** kann die sofortige Zustellung um 0 bis 60 Sekunden verzögern. Bei einem Wert über null wartet Mail so viele Sekunden und bietet das Rückgängigmachen über **Geplant** an.
+Wähle die Hauptaktion, um die Zustellung jetzt einzureihen. **Versand rückgängig machen** unter **… → Einstellungen → Schreiben** kann die sofortige Zustellung um 0 bis 60 Sekunden verzögern. Bei einem Wert über null wartet Mail so viele Sekunden und bietet das Rückgängigmachen über **Geplant** an.
 
 So planst du die Zustellung:
 

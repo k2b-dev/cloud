@@ -16,11 +16,7 @@ export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
 export const MAIL_CONVERSATION_BATCH_LIMIT = 50;
 /** Maximum number of assignees on one conversation. */
 export const MAIL_CONVERSATION_ASSIGNEE_LIMIT = 20;
-/**
- * Pinned and, separately, hidden mailboxes one principal keeps. The overview lists at most 200
- * mailboxes, and Focus leaves out at most as many as the browser sends in one request.
- */
-export const MAX_MAILBOX_PREFERENCES = 200;
+export { MAX_MAILBOX_PREFERENCES } from "./mailbox-preference-limits";
 
 export const ResourceShortIdSchema = z.string().regex(RESOURCE_SHORT_ID_PATTERN).describe("Stable 6-character resource ID");
 

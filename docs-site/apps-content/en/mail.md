@@ -14,10 +14,22 @@ Mail connects email accounts and turns their messages into a shared workspace.
 It keeps portable mail state synchronized with the provider while adding team
 context such as assignments, comments, local tags, reminders, and follow-up state.
 
-Open the mailbox name in the sidebar or phone menu to switch mailboxes. The
-current mailbox and the list show the receiving address. Signed-in users can
-choose **New mailbox**; after creation, its delivery settings open before you
-enter the mailbox. If settings cannot load, the mailbox opens directly.
+The sidebar lists **Focus** and your mailboxes, with pinned mailboxes first.
+The open mailbox expands to Inbox, Drafts, Scheduled, Send problems, Sent,
+Archive/Trash/Junk under **More**, and custom folders. On a phone, open the
+mailbox title to reach these places.
+
+The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
+**Waiting for reply**, **Unassigned**, and **More** for the remaining and saved
+views), a **Tag** chip, and a **Search** chip for an active structured search.
+Remove that chip or use **Reset** to clear filters. Folders, Scheduled, and
+Send problems have no view tabs. **Choose list view**, the **…** mailbox menu,
+and **Compose** are also in the head. The mailbox menu contains details,
+tools, and Settings according to your access.
+
+Signed-in users can choose **New mailbox**; after creation, its delivery
+settings open before you enter the mailbox. If settings cannot load, the
+mailbox opens directly.
 
 ## Use Mail
 
@@ -248,12 +260,15 @@ for the storage this takes.
 ## Delete and restore a mailbox
 
 The Mail overview lists your mailboxes in a sidebar with their unread and
-needs-action counts; opening one enters its workspace. The page itself is the
+needs-action counts; opening one enters its workspace. Inside a mailbox the
+same sidebar names the other mailboxes without counts, so opening a mailbox
+never waits for the cross-mailbox counts; the open mailbox shows its folders
+with live counts, and its pin and hide sit under **…** on its row. The page itself is the
 cross-mailbox focus queue (for me, unassigned, waiting, all active) with
 **Compose** as its primary action.
 
 People can pin a mailbox to the top of that sidebar or hide one they rarely
-need. A hidden mailbox moves to a collapsed **Hidden** section, and its
+need. A hidden mailbox moves to a collapsed **Hidden mailboxes** section, and its
 conversations leave the focus queue and its view counts; it stays connected and
 opens directly. Mail stores pins and hidden mailboxes per principal, so they
 apply on every device and never change what others see. A service account or

@@ -10,16 +10,19 @@ import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { resolveMailSearchRoute } from "../search-state";
+import { focus, mailboxes, mailboxPreferences } from "../service";
 import * as integrations from "../service/app-integrations";
 import * as publicResources from "../service/public-resources";
 import type { MailboxPageData } from "../service/workspace";
 import * as workspace from "../service/workspace";
+import * as sidebarData from "./mail-sidebar-data";
 
 const root = mkdtempSync(join(tmpdir(), "mailbox-page-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./[mailboxId]/page");
+const { default: focusHandler } = await import("./page");
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -48,12 +51,19 @@ afterEach(() => {
 });
 beforeEach(() => {
   spies.push(stubRailSnapshot());
+  spies.push(
+    spyOn(sidebarData, "loadMailSidebarData").mockResolvedValue({
+      mailboxes: [],
+      pinnedMailboxIds: [],
+      hiddenMailboxIds: [],
+    }),
+  );
   spies.push(spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null));
   spies.push(spyOn(services.coreSettings, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
 });
 
-const request = (query = "") => {
+const request = (query = "", focusPage = false) => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -73,8 +83,9 @@ const request = (query = "") => {
     });
     await next();
   });
+  app.get("/app/mail", ...focusHandler);
   app.get("/app/mail/:mailboxId", ...handler);
-  return app.request(`https://cloud.example.test/app/mail/${mailboxShortId}${query}`);
+  return app.request(`https://cloud.example.test/app/mail${focusPage ? "" : `/${mailboxShortId}`}${query}`);
 };
 
 test("missing or deleted active mailbox renders shared HTML 404 before loading workspace data", async () => {
@@ -164,7 +175,7 @@ test.each([
   );
 });
 
-test("mailbox SSR reports its public mailbox ID in the first panel context", async () => {
+test("mailbox scope uses the public ID and Focus has no mailbox scope (#1471)", async () => {
   const snapshot: MailboxPageData = {
     receivingAddress: null,
     mailbox: {
@@ -254,4 +265,26 @@ test("mailbox SSR reports its public mailbox ID in the first panel context", asy
   const shell = JSON.parse(html.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!);
   expect(shell.panel.context.scope).toEqual({ type: "mail.mailbox", id: mailboxShortId });
   expect(shell.panel.context.scope.id).not.toBe(mailboxId);
+  spies.push(
+    spyOn(mailboxes, "listMailboxes").mockResolvedValue({ ok: true, data: [] }),
+    spyOn(mailboxPreferences, "listMailboxPreferences").mockResolvedValue({ pinnedMailboxIds: [], hiddenMailboxIds: [] }),
+    spyOn(focus, "listFocusOverview").mockResolvedValue({
+      ok: true,
+      data: {
+        pages: {
+          mine: { items: [], nextCursor: null },
+          unassigned: { items: [], nextCursor: null },
+          waiting: { items: [], nextCursor: null },
+          all: { items: [], nextCursor: null },
+        },
+        counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 },
+        mailboxCounts: [],
+      },
+    }),
+  );
+  const focusResponse = await request("", true);
+  expect(focusResponse.status).toBe(200);
+  const focusHtml = await focusResponse.text();
+  const focusShell = JSON.parse(focusHtml.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!);
+  expect(focusShell.panel.context?.scope).toBeUndefined();
 });
