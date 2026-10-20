@@ -26,7 +26,11 @@ type SwapState = {
   headBase: string;
   fragment?: { event: MouseEvent; href: string };
 };
-const shared: typeof globalThis & { [swapKey]?: SwapState } = globalThis;
+const documentKey = Symbol.for("@k2b/ssr/nav-document");
+const shared: typeof globalThis & {
+  [swapKey]?: SwapState;
+  [documentKey]?: WeakMap<Document, { scroll: Map<string, ScrollSnapshot> }>;
+} = globalThis;
 const markerKey = "@k2b/ssr/nav";
 const scrollKey = "@k2b/ssr/nav:scroll";
 // Chromium and Firefox keep at most 50 session history entries.
@@ -248,6 +252,13 @@ export function installPageSwap(): () => void {
   if (typeof window === "undefined") return () => {};
   if (shared[swapKey]?.document === document) return shared[swapKey].uninstall;
   shared[swapKey]?.uninstall();
+  shared[documentKey] ??= new WeakMap();
+  let holder = shared[documentKey].get(document);
+  const firstInstall = !holder;
+  if (!holder) {
+    holder = { scroll: loadScroll() };
+    shared[documentKey].set(document, holder);
+  }
   const announcer = document.createElement("div");
   announcer.setAttribute("data-nav-announcer", "");
   announcer.setAttribute("role", "status");
@@ -287,7 +298,7 @@ export function installPageSwap(): () => void {
     currentEntry: initial ?? { position: basePosition() },
     shown: initial ?? { position: basePosition() },
     stopRestore,
-    scroll: loadScroll(),
+    scroll: holder.scroll,
     moves: 0,
     decide: (event) => decide(event),
     // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
@@ -316,7 +327,7 @@ export function installPageSwap(): () => void {
     state.shown = entry;
     if (window.history.state == null || plain(window.history.state))
       writes.replace.call(window.history, mergeMarker(window.history.state, entry), "");
-  } else if (timing && "type" in timing && ["reload", "back_forward"].includes(String(timing.type)) && snapshot) {
+  } else if (firstInstall && timing && "type" in timing && ["reload", "back_forward"].includes(String(timing.type)) && snapshot) {
     restoreScroll(snapshot);
     if (islandsPending(document)) {
       // Mounting replaces server regions and creates client-only ones; replay once, unless the person took over
@@ -400,9 +411,12 @@ export function installPageSwap(): () => void {
   const onNavigate = (event: NavigateEvent): void => {
     const kind =
       event.navigationType === "traverse" || (event.hashChange && event.navigationType !== "reload") ? event.navigationType : undefined;
+    const value: unknown = window.history.state;
+    // Non-plain island state cannot carry a marker; the wrapper still tracks its shown-page entry.
+    const entry = marker(value) ?? (value != null && !plain(value) ? state.currentEntry : { position: basePosition() });
     departure =
       kind === "traverse" || kind === "push" || kind === "replace"
-        ? { kind, key: event.destination.key, entry: marker(window.history.state) ?? { position: basePosition() }, scroll: captureScroll() }
+        ? { kind, key: event.destination.key, entry, scroll: captureScroll() }
         : undefined;
   };
   const traverse = (entry: Entry): void => {

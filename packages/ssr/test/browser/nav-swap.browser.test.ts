@@ -8,6 +8,7 @@ import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
 import { disposeIslands, mount, mountIslands } from "../../src/mount";
 import { documentNavigate, installPageSwap, Link, listenPopState, navigate, navigateTo, refreshCurrentPath, swapPage } from "../../src/nav";
+import { cancelPageSwap } from "../../src/nav-history";
 import { makeTempRoot } from "../temp-root";
 
 let root: string;
@@ -138,6 +139,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   previousScrollY = Object.getOwnPropertyDescriptor(window, "scrollY");
+  newDocument();
   window.sessionStorage.removeItem(scrollKey);
   const settings = (window as unknown as Window).happyDOM.settings;
   previousLoadingSettings = {
@@ -204,6 +206,11 @@ test("install preserves island state while marking the entry", () => {
 
 const markerKey = "@k2b/ssr/nav";
 const scrollKey = "@k2b/ssr/nav:scroll";
+const documentKey = Symbol.for("@k2b/ssr/nav-document");
+const newDocument = () => {
+  const shared: typeof globalThis & { [documentKey]?: WeakMap<Document, unknown> } = globalThis;
+  shared[documentKey]?.delete(document);
+};
 const arrive = (state: unknown, url = "/app/old") => {
   History.prototype.replaceState.call(window.history, state, "", url);
   window.dispatchEvent(new PopStateEvent("popstate", { state }));
@@ -1360,6 +1367,22 @@ test("scroll restoration is manual for the whole install and restores the previo
   window.history.scrollRestoration = "auto";
 });
 
+test("history helpers tolerate a swap installed by an older copy", () => {
+  const swapKey = Symbol.for("@k2b/ssr/nav-swap");
+  const shared: typeof globalThis & { [swapKey]?: { started: number } } = globalThis;
+  shared[swapKey] = { started: 0 };
+  const handler = mock();
+  const stop = listenPopState(handler);
+  try {
+    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(() => cancelPageSwap()).not.toThrow();
+  } finally {
+    stop();
+    delete shared[swapKey];
+  }
+});
+
 test("listenPopState installed before nav handles same-page entries and hides cross-page entries", async () => {
   const handler = mock(() => {});
   const stop = listenPopState(handler);
@@ -1474,6 +1497,7 @@ test("pagehide persists scroll; reload restores window and keyed regions", () =>
   expect(window.history.state[markerKey].scroll).toEqual(snapshot);
   const page = window.history.state[markerKey].page;
   uninstall();
+  newDocument();
   region.scrollTop = 0;
   const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
   spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
@@ -1481,6 +1505,30 @@ test("pagehide persists scroll; reload restores window and keyed regions", () =>
   expect(window.history.state[markerKey].page).toBe(page);
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 220);
   expect(region.scrollTop).toBe(80);
+});
+
+test("reinstall skips reload restoration and keeps in-memory departure scroll", () => {
+  const stale = { window: { x: 0, y: 20 }, regions: [] };
+  window.history.replaceState({ [markerKey]: { page: "remount", position: 4, scroll: stale } }, "");
+  window.sessionStorage.setItem(scrollKey, JSON.stringify([["remount:4", stale]]));
+  let y = 460;
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+  install();
+  const entry = window.history.state;
+  window.history.pushState(null, "", "/app/old?tab=2");
+  // Both persisted sources predate this document's departure snapshot.
+  History.prototype.replaceState.call(window.history, { [markerKey]: { ...window.history.state[markerKey], scroll: stale } }, "");
+  uninstall();
+  y = 0;
+  const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
+  spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
+  const scroll = spyOn(window, "scrollTo");
+  scroll.mockClear();
+  install();
+  const replays = scroll.mock.calls.length;
+  arrive(entry);
+  expect(scroll).toHaveBeenLastCalledWith(0, 460);
+  expect(replays).toBe(0);
 });
 
 test.each(["swap", "push", "pagehide", "traversal"])("%s saves the shown entry after a dialog-only Back hidden from nav", async (mode) => {
@@ -1553,6 +1601,7 @@ test("departure snapshots survive pagehide and a reload before Forward", async (
   y = 130;
   window.dispatchEvent(new Event("pagehide"));
   uninstall();
+  newDocument();
   y = 0;
   document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop = 0;
   const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
@@ -1638,6 +1687,35 @@ test("overlapping Back traversals keep A1's scroll for Forward", async () => {
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 400);
   expect(document.title).toBe("old");
   expect(requests).toHaveLength(2);
+});
+
+test("a fragment after non-plain island state stays native with the Navigation API", () => {
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 0 } });
+  Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+  const handler = mock();
+  const stop = listenPopState(handler);
+  try {
+    install();
+    const root = document.querySelector("[data-nav-root]");
+    const requests = deferredFetch();
+    window.history.pushState("tab-2", "", "/app/old?tab=2");
+    expect(window.history.state).toBe("tab-2");
+    navigation.currentEntry = { key: "tab", index: 1 };
+    navigation.dispatchEvent(
+      Object.assign(new Event("navigate"), { navigationType: "push", destination: { key: "fragment" }, hashChange: true }),
+    );
+    navigation.currentEntry = { key: "fragment", index: 2 };
+    History.prototype.pushState.call(window.history, null, "", "/app/old?tab=2#notes");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    expect(requests).toHaveLength(0);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(document.querySelector("[data-nav-root]")).toBe(root);
+    expect(document.title).toBe("old");
+  } finally {
+    stop();
+    uninstall();
+    Reflect.deleteProperty(window, "navigation");
+  }
 });
 
 test("a fragment navigation during a pending traversal belongs to the arriving page and swaps it", async () => {
@@ -2028,6 +2106,7 @@ test.each(["wheel", "touchstart", "keydown", "pointerdown"])("%s before initial 
   await import(`${prefix}/${scrollId}.js`);
   // The control proves that cancelling input, rather than a missing replay, preserves the person's scroll.
   for (const cancel of [false, true]) {
+    newDocument();
     disposeIslands(document);
     document.querySelector("main")!.innerHTML = wrapper("list", scrollId);
     window.history.replaceState({ [markerKey]: { page: "reloaded", position: 4, scroll: snapshot } }, "");

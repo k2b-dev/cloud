@@ -9,8 +9,8 @@ type SharedSwap = typeof globalThis & {
   [swapKey]?: {
     active?: AbortController;
     started: number;
-    decide: (event: PopStateEvent) => "page" | "nav";
-    stopRestore: () => void;
+    decide?: (event: PopStateEvent) => "page" | "nav";
+    stopRestore?: () => void;
     /** The departing scroll a history helper captured before the island changed the page, for the next push. */
     departure?: ScrollSnapshot;
   };
@@ -19,7 +19,7 @@ type SharedSwap = typeof globalThis & {
 /** Any newer navigation wins over a pending page swap and a pending reload scroll replay. Without an installed swap this does nothing. */
 export const cancelPageSwap = (): void => {
   const shared: SharedSwap = globalThis;
-  shared[swapKey]?.stopRestore();
+  shared[swapKey]?.stopRestore?.();
   shared[swapKey]?.active?.abort();
 };
 
@@ -113,7 +113,7 @@ export const restoreScroll = (snapshot: ScrollSnapshot, options: { window?: bool
 export const listenPopState = (handler: (navigation: PopStateNavigationEvent) => void): (() => void) => {
   const listener = (event: PopStateEvent) => {
     const shared: SharedSwap = globalThis;
-    if (shared[swapKey]?.decide(event) === "nav") return;
+    if (shared[swapKey]?.decide?.(event) === "nav") return;
     handler({ event, url: new URL(window.location.href), state: event.state });
   };
 
