@@ -103,6 +103,8 @@ It orders hits by `atMeters`, the position on the full route, and returns
 Positions, distance windows, and corridor distances follow the shortest
 great-circle arc between consecutive route points, including near the poles
 and across the date line.
+Exactly antipodal segment endpoints do not define a unique arc and are
+unsupported; include an intermediate route point to choose the path.
 The result includes `simplificationToleranceMeters`.
 
 ## Handle budgets and errors

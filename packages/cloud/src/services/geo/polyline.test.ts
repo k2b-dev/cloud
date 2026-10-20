@@ -55,6 +55,32 @@ test("route projection follows the great circle at high latitudes and across the
     expect(located.atMeters).toBeCloseTo(length / 2, 3);
   }
 });
+test("nearly antipodal route segments preserve the distance window; exact antipodes are ambiguous", () => {
+  for (const route of [
+    decodePolyline6("???}niivI"),
+    [
+      { lat: 0, lon: 0 },
+      { lat: 0, lon: -179.999999 },
+    ],
+    [
+      { lat: 35, lon: 10 },
+      { lat: -35, lon: -169.999999 },
+    ],
+  ]) {
+    const cut = cutGeoWindow(route, 0, 100000);
+    expect(geoDistance(cut[0]!, cut[1]!)).toBeCloseTo(100000, 3);
+  }
+  expect(() =>
+    cutGeoWindow(
+      [
+        { lat: 0, lon: 0 },
+        { lat: 0, lon: 180 },
+      ],
+      0,
+      100000,
+    ),
+  ).toThrow("GEO_UNSUPPORTED_OPTION");
+});
 test("route projection clamps to the closest endpoint and handles repeated points", () => {
   const line = [
     { lat: 0, lon: 0 },

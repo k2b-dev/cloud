@@ -5,10 +5,14 @@ const R = 6_371_008.8;
 const rad = Math.PI / 180;
 const longitudeDelta = (delta: number) => ((delta + 540) % 360) - 180;
 export const geoDistance = (a: GeoPoint, b: GeoPoint) => {
-  const h =
-    Math.sin(((b.lat - a.lat) * rad) / 2) ** 2 +
-    Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin((longitudeDelta(b.lon - a.lon) * rad) / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(Math.min(1, h)));
+  const sinA = Math.sin(a.lat * rad),
+    cosA = Math.cos(a.lat * rad);
+  const sinB = Math.sin(b.lat * rad),
+    cosB = Math.cos(b.lat * rad);
+  const delta = longitudeDelta(b.lon - a.lon) * rad,
+    cosDelta = Math.cos(delta);
+  // atan2 retains the angular distance when haversine would round nearly opposite points to exactly π.
+  return R * Math.atan2(Math.hypot(cosB * Math.sin(delta), cosA * sinB - sinA * cosB * cosDelta), sinA * sinB + cosA * cosB * cosDelta);
 };
 export const decodePolyline6 = (encoded: string): GeoPoint[] => {
   if (encoded.length > GEO_MAX_POLYLINE_CHARS) limitExceeded("along.polyline6", GEO_MAX_POLYLINE_CHARS, encoded.length);
@@ -39,16 +43,29 @@ export const decodePolyline6 = (encoded: string): GeoPoint[] => {
   return points;
 };
 const interpolate = (a: GeoPoint, b: GeoPoint, t: number): GeoPoint => {
-  if (t === 0) return a;
+  const vector = (p: GeoPoint) => ({
+    x: Math.cos(p.lat * rad) * Math.cos(p.lon * rad),
+    y: Math.cos(p.lat * rad) * Math.sin(p.lon * rad),
+    z: Math.sin(p.lat * rad),
+  });
+  const from = vector(a),
+    to = vector(b);
+  const nx = from.y * to.z - from.z * to.y,
+    ny = from.z * to.x - from.x * to.z,
+    nz = from.x * to.y - from.y * to.x;
+  const normal = Math.hypot(nx, ny, nz),
+    dot = from.x * to.x + from.y * to.y + from.z * to.z;
+  // Exactly opposite endpoints do not define a unique arc; the route must include an intermediate point.
+  if (dot < 0 && normal <= 8 * Number.EPSILON) throw new GeoError("GEO_UNSUPPORTED_OPTION");
+  if (t === 0 || !normal) return a;
   if (t === 1) return b;
-  const angle = geoDistance(a, b) / R;
-  if (!angle) return a;
-  // Spherical linear interpolation uses the same great-circle distance as the window.
-  const from = Math.sin((1 - t) * angle) / Math.sin(angle),
-    to = Math.sin(t * angle) / Math.sin(angle);
-  const x = from * Math.cos(a.lat * rad) * Math.cos(a.lon * rad) + to * Math.cos(b.lat * rad) * Math.cos(b.lon * rad),
-    y = from * Math.cos(a.lat * rad) * Math.sin(a.lon * rad) + to * Math.cos(b.lat * rad) * Math.sin(b.lon * rad),
-    z = from * Math.sin(a.lat * rad) + to * Math.sin(b.lat * rad);
+  const angle = Math.atan2(normal, dot) * t,
+    cos = Math.cos(angle),
+    sin = Math.sin(angle);
+  // Rotate from the first endpoint in its tangent direction, without subtracting opposing endpoint weights.
+  const x = from.x * cos + ((ny * from.z - nz * from.y) / normal) * sin,
+    y = from.y * cos + ((nz * from.x - nx * from.z) / normal) * sin,
+    z = from.z * cos + ((nx * from.y - ny * from.x) / normal) * sin;
   return { lat: Math.atan2(z, Math.hypot(x, y)) / rad, lon: Math.atan2(y, x) / rad };
 };
 export const cutGeoWindow = (points: readonly GeoPoint[], fromMeters: number, toMeters: number): GeoPoint[] => {

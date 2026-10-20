@@ -148,6 +148,22 @@ test("unsupported combinations refuse without side effects", async () => {
       geoTestContext,
     ),
   ).rejects.toMatchObject({ code: "GEO_UNSUPPORTED_OPTION" });
+  await expect(
+    f.service.searchPlaces(
+      {
+        categories: ["museum"],
+        along: {
+          polyline6: encodeGeoTestLine([
+            { lat: 0, lon: 0 },
+            { lat: 0, lon: 180 },
+          ]),
+          fromKm: 0,
+          toKm: 100,
+        },
+      },
+      geoTestContext,
+    ),
+  ).rejects.toMatchObject({ code: "GEO_UNSUPPORTED_OPTION" });
   expect(f.fetch).not.toHaveBeenCalled();
   expect(f.cacheGet).not.toHaveBeenCalled();
 });
