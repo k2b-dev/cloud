@@ -100,6 +100,36 @@ describe("Markdown dividers", () => {
     expect(markdown.renderSync("a\n---\nb")).toContain("<h2");
   });
 
+  test.each(["", "\n"])("keeps block boundaries after escaped short underlines with trailing %j", (ending) => {
+    const paragraph = /<p[^>]*>foo<br \/>--<\/p>/;
+    const divided = content(`foo\n--\n---\nbar${ending}`).html;
+    expect(divided).toMatch(/<p[^>]*>foo<br \/>--<\/p>\s*<hr[^>]*\/>\s*<p[^>]*>bar<\/p>/);
+    expect(divided).not.toContain("<h2");
+    const heading = content(`foo\n--\nbar\n===${ending}`).html;
+    expect(heading).toMatch(paragraph);
+    expect(heading).toMatch(/<h1[^>]*>bar<\/h1>/);
+    const code = content(`foo\n--\n    code${ending}`).html;
+    expect(code).toMatch(paragraph);
+    expect(code).toMatch(/<pre[^>]*>code\n?<\/pre>/);
+    const quote = content(`> foo\n> --\n> ---${ending}`).html;
+    expect(quote).toMatch(/<blockquote[^>]*>\s*<p[^>]*>foo<br \/>--<\/p>\s*<hr[^>]*\/>\s*<\/blockquote>/);
+    expect(quote).not.toContain("<h2");
+  });
+
+  test("keeps dash-line rendering stable across neighboring blocks", () => {
+    const bodies = ["foo\n--\nbar\n===", "foo\n--\n\nbar\n===", "foo\n--\n\n---", "foo\n--\n---\n\n----"];
+    let runs = ["foo"];
+    for (let length = 1; length <= 3; length += 1) {
+      runs = runs.flatMap((body) => [1, 2, 3, 4].map((dashes) => `${body}\n${"-".repeat(dashes)}`));
+      bodies.push(...runs);
+    }
+    for (const body of bodies) {
+      const html = content(body).html;
+      expect(html).not.toContain("<h2");
+      expect(html.match(/<hr\b/g) ?? []).toHaveLength((body.match(/^-{3,}$/gm) ?? []).length);
+    }
+  });
+
   test.each(["> a\n> ---\n> b", "> > a\n> > ---\n> > b"])("rewrites dash underlines inside quotes: %j", (body) => {
     const html = content(body).html;
     expect(html).toMatch(/<blockquote[^>]*>[\s\S]*<p[^>]*>a<\/p>\s*<hr[^>]*\/>\s*<p[^>]*>b<\/p>[\s\S]*<\/blockquote>/);
