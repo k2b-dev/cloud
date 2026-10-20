@@ -159,7 +159,7 @@ Measured with MapLibre 6.15.0, Bun 1.4.2, minified production builds:
 
 | Part | Raw | gzip | Loaded |
 | --- | --- | --- | --- |
-| MapView in the island (static imports) | 20.6 KB | 7.9 KB | with the island |
+| MapView in the island (static imports) | 22.9 KB | 8.9 KB | with the island |
 | MapLibre chunk | 1,049 KB | 285 KB | when the map becomes visible |
 | MapLibre worker (`map-view-worker-<hash>.js`) | 519 KB | 147 KB | when the map becomes visible |
 | MapLibre CSS | 0 | 0 | not loaded; `@k2b/ui` styles the few MapLibre elements itself |
