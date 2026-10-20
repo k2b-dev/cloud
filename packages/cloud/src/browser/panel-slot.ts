@@ -58,10 +58,13 @@ export function installPanelSlot(): () => void {
   let pageRoot = document.querySelector("[data-nav-root]");
   let documentPageId = context?.pageId;
   let lastSeq = context?.seq ?? 0;
+  // Set when a swapped page's context has not been delivered yet; cleared by the next delivery.
+  let pageUnsent = false;
   const followPage = () => {
     const nextRoot = document.querySelector("[data-nav-root]");
     if (nextRoot === pageRoot) return;
     pageRoot = nextRoot;
+    pageUnsent = true;
     base = readShellData()?.panel?.context ?? null;
     if (base) {
       documentPageId ??= base.pageId;
@@ -120,6 +123,7 @@ export function installPanelSlot(): () => void {
   let lastShortcutsJson: string | undefined;
   const canSend = () => isOpen() && allowed() && !!context && slot.dataset.state === "ready" && !!frame?.contentWindow && showsProvider();
   const sendContext = () => {
+    pageUnsent = false;
     if (!canSend()) return;
     const list = !panelProviderNeedsConsent(provider.id) ? shortcuts() : undefined;
     frame?.contentWindow?.postMessage(
@@ -695,11 +699,14 @@ export function installPanelSlot(): () => void {
         })
       : () => {};
   let disposeResize = attachResize();
+  // A column island may already have published its place while it mounted; each page's context goes out once.
   const swapped = () => {
-    followPage();
     collectContext();
-    if (context) sendContext();
-    else stopSharing();
+    if (pageUnsent) {
+      pageUnsent = false;
+      if (context) sendContext();
+      else stopSharing();
+    }
     update();
   };
   collectContext();
