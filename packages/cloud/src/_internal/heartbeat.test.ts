@@ -513,9 +513,11 @@ describe("replica membership", () => {
     const contended = Promise.withResolvers<void>();
     const lock = {
       withLock: async <T>(
-        { ttlMs = 10_000, signal }: { resource: string; ttlMs?: number; signal?: AbortSignal },
+        { resource, ttlMs = 10_000, signal }: { resource: string; ttlMs?: number; signal?: AbortSignal },
         fn: (lock: { expiresAt: Date }) => Promise<T>,
       ): Promise<T | null> => {
+        // Sync applies the same 96-byte limit to mutex resources as to ephemeral keys.
+        assertName(resource);
         const previous = tail;
         const gate = Promise.withResolvers<void>();
         tail = previous.then(() => gate.promise);
@@ -541,6 +543,8 @@ describe("replica membership", () => {
         }
       },
     };
+    // Processes start in creation order, so a later process is the newer replica.
+    let started = 0;
     const process = (
       instanceId: string,
       writeTimeoutMs = 500,
@@ -553,7 +557,7 @@ describe("replica membership", () => {
         lock: () => lock,
         instanceId,
         hostname: "same-host",
-        startedAt: epoch,
+        startedAt: epoch + started++,
         writeTimeoutMs,
       });
       const options = { membership, writeTimeoutMs };
@@ -878,6 +882,32 @@ describe("replica membership", () => {
     expect(reads.length).toBeGreaterThanOrEqual(16);
     for (const value of reads) expect(value).toHaveProperty("instanceId", "vB");
     expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
+  });
+
+  test("a newer live replica takes back a pair that an older replica repaired, and both then keep it", async () => {
+    const f = fixture();
+    const old = f.process("old"),
+      next = f.process("new");
+    await old.start();
+    await next.start();
+    // A delayed delete removes the app entry, and the older replica's refresh repairs it first.
+    await f.apps.delete({ key: "apps/test" });
+    await old.membership.publish("apps/test");
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "old" }, { instanceId: "old" }]);
+
+    await next.membership.adopt("apps/test");
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "new" }, { instanceId: "new" }]);
+    let writes = 0;
+    for (const registry of [f.apps, f.capabilities]) {
+      const upsert = registry.upsert;
+      registry.upsert = async (input) => {
+        writes++;
+        return upsert(input);
+      };
+    }
+    for (const replica of [old, next, old, next]) for (const key of ["apps/test", "capabilities/test"]) await replica.membership.adopt(key);
+    expect(writes).toBe(0);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "new" }, { instanceId: "new" }]);
   });
 
   test("an older capability replica preserves a newer app-only replica across repeated refreshes", async () => {
@@ -1292,6 +1322,53 @@ describe("replica membership", () => {
       });
     }
   }
+
+  test("cleans a late liveness write after stop when the rest of its refresh fails", async () => {
+    const f = fixture();
+    const late = f.process("late", 10, { app: 2, capability: 3_600_000 });
+    await late.start();
+    const instanceKey = `${appInstancePrefix("test")}late`;
+    // A missing liveness key makes the next refresh write it again under the lock.
+    await f.instances.delete({ key: instanceKey });
+    const upsert = f.instances.upsert;
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    let pause = true;
+    f.instances.upsert = async (input) => {
+      if (pause) {
+        pause = false;
+        entered.resolve();
+        await release.promise;
+      }
+      return upsert(input);
+    };
+    let deletes = 0;
+    const removeInstance = f.instances.delete;
+    f.instances.delete = async (input) => {
+      deletes++;
+      return removeInstance(input);
+    };
+    await entered.promise;
+    let stoppedDeletes = 0;
+    try {
+      // The refresh fails after its liveness write lands, so it never fulfils.
+      f.apps.touch = async () => {
+        throw new Error("NATS touch failed");
+      };
+      await late.stop();
+      expect(await f.keys()).toEqual([]);
+      stoppedDeletes = deletes;
+    } finally {
+      release.resolve();
+    }
+    await waitUntil(() => deletes > stoppedDeletes);
+    const deadline = performance.now() + 250;
+    while ((await f.keys()).length > 0) {
+      if (performance.now() >= deadline) throw new Error("Late liveness write was not cleaned up");
+      await Bun.sleep(1);
+    }
+    expect(await f.keys(f.capabilities)).toEqual([]);
+  });
 
   test("an unavailable stop lock deletes only its own instance and rejects", async () => {
     const f = fixture();

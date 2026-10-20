@@ -113,8 +113,11 @@ export const createRegistryMembership = (
     },
     adopt: async (sharedKey: string): Promise<void> => {
       if (left) return;
-      // A live process covers stored state when all read keys it declares match.
+      // A live process started after this one covers stored state when all read keys it declares match.
       // Ignore keys it never registered, but heal split pairs when both keys are declared.
+      // Start order is total (instance id breaks ties), so two live replicas never take turns.
+      const startedLater = (other: AppInstanceRecord): boolean =>
+        other.startedAt > value.startedAt || (other.startedAt === value.startedAt && other.instanceId > value.instanceId);
       const needsRepublish = async (): Promise<boolean> => {
         const stored = await Promise.all(
           [...sharedEntries].map(async ([key, { read }]) => {
@@ -127,6 +130,7 @@ export const createRegistryMembership = (
         const snapshot = await options.registry().snapshot({ prefix });
         return !snapshot.entries.some(
           ({ value }) =>
+            startedLater(value) &&
             stored.some(({ key }) => key in value.entries) &&
             stored.every(({ key, digest }) => !(key in value.entries) || value.entries[key] === digest),
         );
@@ -256,12 +260,12 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
   const writeWithTimeout = async (write: Promise<void>): Promise<void> => {
     let timer: Timer | null = null;
     let timedOut = false;
-    void write
-      .then(async () => {
-        // A write that completed after its timeout must not resurrect a stopped app.
-        if (timedOut && !running) await remove().catch(() => false);
-      })
-      .catch(() => undefined);
+    // A write that settled after its timeout must not resurrect a stopped app. A failed
+    // operation may still have landed earlier steps, such as the liveness key.
+    const removeLateWrite = async () => {
+      if (timedOut && !running) await remove().catch(() => false);
+    };
+    void write.then(removeLateWrite, removeLateWrite).catch(() => undefined);
     try {
       await Promise.race([
         write,

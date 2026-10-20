@@ -43,6 +43,9 @@ application ID. Use the same stable `baseUrl` for every replica.
 
 Each process also keeps a small liveness key for its instance. A running
 replica renews its keys every 60 seconds. All keys have the same 180-second TTL.
+Liveness keys share the application registry under `instances/`, so read
+application entries with the `apps/` prefix (`APP_REGISTRY_PREFIX`), as
+`listApps()` and the gateway do.
 
 A clean stop removes only its own liveness key. It removes the shared entries
 only when no other live instance remains. Stopping one replica keeps the app
@@ -54,14 +57,22 @@ TTL ends, and the gateway answers the app's routes with 502 upstream errors.
 Shared entries also expire after 180 seconds if no replica renews them.
 
 During a rollout, the most recently started live instance's entry wins.
-Starting writes the entry; refresh only renews it. Repair writes it only when it
-is missing. When the instance that wrote the current entry stops while others
-run, a remaining replica replaces the entry with its own on its next refresh,
-within 60 seconds. After a crash, this happens once the crashed instance's
-liveness key has aged out. Until then, the departed instance's routes and
-capability manifest stay published. A replica always writes its application
-entry and capability manifest together. If a delayed write still leaves the two
-from different replicas, the next refresh restores a matching pair.
+Starting writes the entry. Refresh renews it and writes it again only when it
+is missing, when the instance that wrote it has stopped, or when that instance
+started earlier. So a newer replica takes the entry back within 60 seconds
+after an older one repaired it. When the instance that wrote the current entry
+stops while others run, a remaining replica replaces the entry with its own on
+its next refresh, within 60 seconds. After a crash, this happens once the
+crashed instance's liveness key has aged out. Until then, the departed
+instance's routes and capability manifest stay published. A replica always
+writes its application entry and capability manifest together. If a delayed
+write still leaves the two from different replicas, the next refresh restores a
+matching pair. Start order uses each host's clock, so keep host clocks
+synchronized.
+
+The registry has no conditional delete. If NATS applies a stopping replica's
+delete only after its lock lease ended, the delete can remove an entry that a
+new replica has just written. That replica writes it again within 60 seconds.
 
 The gateway rebuilds its route table when registry entries change. It renews
 its own operations snapshot every five seconds, including when the registry is
