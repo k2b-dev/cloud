@@ -34,7 +34,8 @@ export const fixtureDocument: HelpDocumentPayload = {
   // A lead, the facts chips, and a section: everything the article head reads from the article.
   html: '<p>Share a Space so other people can see and edit its tasks.</p><h2 id="share">Share</h2><div class="help-steps"><ol><li>Open Space settings.</li><li>Add a person.</li></ol></div>',
 };
-const initialArticle = { payload: fixtureDocument, parts: helpArticlePartsServer(fixtureDocument.html) };
+const { html, ...payload } = fixtureDocument;
+const initialArticle = { payload, parts: helpArticlePartsServer(html) };
 const appearance: AppAppearance = { accent: "#16a34a", background: { from: "#16a34a", to: "#0284c7" } };
 const apps: CloudRuntime["apps"] = [
   {

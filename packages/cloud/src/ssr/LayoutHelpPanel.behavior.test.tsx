@@ -11,6 +11,8 @@ import {
   type PanelState,
 } from "../browser/panel-context-bridge";
 import type { HelpDocumentManifest } from "../shared/help";
+import { helpArticlePartsServer } from "./layout-help-article.server";
+import { formatHelpDocumentMarkdown } from "./layout-help-markdown";
 
 const documents: HelpDocumentManifest[] = ["first", "second"].map((id) => ({
   id,
@@ -135,6 +137,79 @@ else {
       fixture.cleanup();
     }
   });
+
+  for (const surface of ["panel", "page"] as const)
+    test(`a seeded ${surface} article copies Markdown and reopens from cache without fetching`, async () => {
+      const fixture = await setup();
+      const { dom, help } = fixture;
+      const payload = {
+        id: "first",
+        title: "Article first",
+        locale: "en",
+        kind: "task" as const,
+        needs: "edit" as const,
+        markdown: "Seeded **Markdown**.\n\n## Steps\n\n1. Open sharing.",
+        related: [],
+      };
+      const html =
+        '<p>Seeded <strong>lead</strong>.</p><h2 id="steps">Steps</h2><div class="help-steps"><ol><li>Open sharing.</li></ol></div>';
+      const initialArticle = { payload, parts: helpArticlePartsServer(html) };
+      const fetch = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Seeded articles must not fetch"));
+      const write = spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+      const seededProps = { documents, initialTopic: "first", initialArticle };
+      const dispose = render(
+        () =>
+          surface === "panel" ? (
+            <help.LayoutHelpPanel {...seededProps} app={{ id: "spaces", name: "Spaces" }} platform="other" pageBase="/help/apps/spaces" />
+          ) : (
+            <help.LayoutHelpPage {...seededProps} />
+          ),
+        dom.root,
+      );
+      const articleFrame = () => {
+        const head = document.createElement("header");
+        head.innerHTML = dom.root.querySelector(".help-article-head")!.innerHTML;
+        // Reopening remounts controls with new dropdown/tooltip IDs; compare the article head content.
+        head.querySelector(".help-article-tools")?.remove();
+        return {
+          documents: [...dom.root.querySelectorAll(".help-document")].map((element) => element.innerHTML),
+          head: head.innerHTML,
+        };
+      };
+      const articleSettled = () => !!dom.root.querySelector('[role="menuitemradio"][aria-checked="true"]');
+      try {
+        // The selected section proves the settle effect ran with the rebuilt payload HTML.
+        await until(articleSettled);
+        expect(dom.root.querySelector(".help-article-lead")?.textContent).toBe("Seeded lead.");
+        if (surface === "panel") {
+          // The panel's Copy Markdown action lives in its head menu.
+          dom.root.querySelector<HTMLButtonElement>("[data-help-menu]")!.click();
+          await until(() => !!dom.document.querySelector('[role="menuitem"] .ti-markdown'));
+          dom.document.querySelector('[role="menuitem"] .ti-markdown')!.closest<HTMLElement>('[role="menuitem"]')!.click();
+        } else {
+          const copy = dom.root.querySelector(".help-article-head .ti-markdown")!.closest("button")!;
+          copy.click();
+        }
+        // Clipboard writes must begin in the click's user activation, without awaiting a fetch.
+        expect(write).toHaveBeenCalledWith(formatHelpDocumentMarkdown(payload));
+        expect(fetch).not.toHaveBeenCalled();
+        await until(() => dom.root.querySelector("[data-help-menu]")?.getAttribute("aria-expanded") !== "true");
+        const before = articleFrame();
+        dom.root.querySelector<HTMLButtonElement>(".help-head-back")!.click();
+        await until(() => !!dom.root.querySelector('[data-help-topic="first"]'));
+        expect(dom.root.querySelector(".help-article-head")).toBeNull();
+        dom.root.querySelector<HTMLButtonElement>('[data-help-topic="first"]')!.click();
+        // The selected section proves the settle effect ran with the rebuilt payload HTML.
+        await until(articleSettled);
+        expect(articleFrame()).toEqual(before);
+        expect(fetch).not.toHaveBeenCalled();
+      } finally {
+        dispose();
+        write.mockRestore();
+        fetch.mockRestore();
+        fixture.cleanup();
+      }
+    });
 
   test("panel articles stay in Help without history writes; cross-app links keep native navigation", async () => {
     const fixture = await setup();
