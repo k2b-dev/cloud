@@ -206,6 +206,12 @@ const portableSections = [
     pages: [
       page("utilities", "Theme and styles", "ti ti-palette", "Scoped styles plus configurable font and semantic color tokens."),
       page(
+        "color",
+        "Colors and selection",
+        "ti ti-color-swatch",
+        "Color style guidelines: when color carries meaning, the app color of a selected row, view, or filter, and what stays blue or neutral.",
+      ),
+      page(
         "base-stylesheet",
         "Base stylesheet",
         "ti ti-file-type-css",

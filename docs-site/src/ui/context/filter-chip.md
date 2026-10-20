@@ -79,8 +79,8 @@ The menu shows up to 32rem (and at most 80 % of the viewport height) before it s
 
 ## Active values and surface
 
-The chip is a soft surface without a border. An active chip is tinted in the
-app's selection color.
+The chip is a soft surface without a border. An active chip takes the
+selection fill, as described in [Colors and selection](/en/ui/surfaces/color).
 
 With `showValue`, an active chip names its first selected option in section
 order instead of a count: **Tags: Customer**, and with three selected values
@@ -149,7 +149,7 @@ const sections: FilterChipSection[] = [
 
 Use `FilterToggle` for one on/off filter, such as **Service accounts** or
 **Only mine**. The parent owns `active` and updates the URL or filter state.
-It has the same look and app selection tint as an active `FilterChip`.
+It looks like a `FilterChip`, and an active toggle has the same selection fill.
 Selection changes only color and background, so neighboring chips stay in place.
 
 Pass `href` to render a native link that works without JavaScript. The active

@@ -117,7 +117,8 @@ before the strip scrolls and fades out at its end with the shared
 [fade utility](/en/ui/layout/navigation#label-overflow).
 
 Both tab controls have a soft appearance: no tray, baseline, selection ring,
-or underline. The selected view uses the app tint. Font weight never changes
+or underline. The selected tab or view takes the selection fill; see
+[Colors and selection](/en/ui/surfaces/color). Font weight never changes
 with selection or hover, so neighbouring controls keep their positions.
 Keyboard focus retains its visible focus ring.
 
