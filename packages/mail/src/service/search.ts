@@ -402,6 +402,13 @@ const compileTextTerm = (term: Extract<MailSearchExpression, { type: "text" }>, 
   ]);
 };
 
+/** A scoped flag must not borrow state from a placement excluded from this search. */
+const includedSearchPlacement = (folderId: SqlFragment, excludedFolderIds: readonly string[]) => sql`
+  NOT (${folderId} IN (
+    SELECT value::uuid FROM jsonb_array_elements_text(${excludedFolderIds}::jsonb)
+  ))
+`;
+
 /**
  * Compiles a search expression. `lapsedAssignees` holds the mailbox's assignees without write
  * access; an unassigned condition matches their conversations too, like the Unassigned view.
@@ -411,19 +418,36 @@ export const compileSearchExpression = (
   currentUserId: string | null = null,
   conversationId: SqlFragment = sql`cm.conversation_id`,
   lapsedAssignees: readonly LapsedAssignee[] = [],
+  excludedFolderIds: readonly string[] = [],
 ): SqlFragment => {
   if (expression.type === "and") {
-    const parts = expression.expressions.map((child) => compileSearchExpression(child, currentUserId, conversationId, lapsedAssignees));
+    const parts = expression.expressions.map((child) =>
+      compileSearchExpression(child, currentUserId, conversationId, lapsedAssignees, excludedFolderIds),
+    );
     return parts.slice(1).reduce((combined, part) => sql`(${combined} AND ${part})`, parts[0]!);
   }
   if (expression.type === "or") {
-    const parts = expression.expressions.map((child) => compileSearchExpression(child, currentUserId, conversationId, lapsedAssignees));
+    const parts = expression.expressions.map((child) =>
+      compileSearchExpression(child, currentUserId, conversationId, lapsedAssignees, excludedFolderIds),
+    );
     return parts.slice(1).reduce((combined, part) => sql`(${combined} OR ${part})`, parts[0]!);
   }
   if (expression.type === "not") {
-    return sql`NOT (${compileSearchExpression(expression.expression, currentUserId, conversationId, lapsedAssignees)})`;
+    return sql`NOT (${compileSearchExpression(expression.expression, currentUserId, conversationId, lapsedAssignees, excludedFolderIds)})`;
   }
   if (expression.type === "all") return sql`true`;
+  if (expression.type === "unread" || expression.type === "flagged") {
+    const flag =
+      expression.type === "unread" ? sql`NOT (${"\\Seen"} = ANY(flag_placement.flags))` : sql`${"\\Flagged"} = ANY(flag_placement.flags)`;
+    return sql`EXISTS (
+      SELECT 1 FROM mail.message_placements flag_placement
+      WHERE flag_placement.message_id = mc.id
+        AND flag_placement.deleted_at IS NULL
+        AND ${includedSearchPlacement(sql`flag_placement.folder_id`, excludedFolderIds)}
+        AND ${expression.folderId ? sql`flag_placement.folder_id = ${expression.folderId}::uuid` : sql`true`}
+        AND ${flag}
+    )`;
+  }
   if (expression.type === "folder_id") {
     return sql`EXISTS (
       SELECT 1
@@ -925,7 +949,13 @@ const runSearch = async (params: {
   sendProblems: boolean;
   denseWords: ReadonlySet<string>;
 }): Promise<DbSearchHit[]> => {
-  const predicate = compileSearchExpression(params.expression, params.currentUserId, sql`cm.conversation_id`, params.lapsedAssignees);
+  const predicate = compileSearchExpression(
+    params.expression,
+    params.currentUserId,
+    sql`cm.conversation_id`,
+    params.lapsedAssignees,
+    params.excludedFolderIds,
+  );
   const foundSeed = findIndexedSeed(params.expression);
   // Without a seed, the candidates are the mailbox's messages from the newest on, and the window stops the walk.
   const indexedSeed = withoutDenseWords(foundSeed, params.denseWords);
@@ -934,11 +964,7 @@ const runSearch = async (params: {
     params.groupByConversation && !params.sendProblems && !foundSeed && isConversationOnlyExpression(params.expression);
   const cursor = params.cursor;
   const limit = params.limit + 1;
-  const includedPlacement = (folderId: SqlFragment) => sql`
-    NOT (${folderId} IN (
-      SELECT value::uuid FROM jsonb_array_elements_text(${params.excludedFolderIds}::jsonb)
-    ))
-  `;
+  const includedPlacement = (folderId: SqlFragment) => includedSearchPlacement(folderId, params.excludedFolderIds);
   const aggregatedScope = (conversationId: SqlFragment) =>
     params.aggregatedScope ? staysInAggregatedViews(conversationId, params.aggregatedScope) : sql`true`;
   // A walk that falls short reads its candidates through the whole seed after all.
@@ -952,7 +978,7 @@ const runSearch = async (params: {
           FROM mail.conversations seed_conversation
           WHERE seed_conversation.mailbox_id = ${params.mailboxId}::uuid
             AND ${conversationVisibleTo(params.access, sql`seed_conversation.id`)}
-            AND (${compileSearchExpression(params.expression, params.currentUserId, sql`seed_conversation.id`, params.lapsedAssignees)})
+            AND (${compileSearchExpression(params.expression, params.currentUserId, sql`seed_conversation.id`, params.lapsedAssignees, params.excludedFolderIds)})
             -- Only conversations the list can show take a place on the page; one without a visible
             -- message would otherwise end the page early.
             AND ${aggregatedScope(sql`seed_conversation.id`)}
@@ -1324,7 +1350,13 @@ const runSearch = async (params: {
           ELSE conversation_active_state.folder_ids
         END AS active_folder_ids,
         CASE
-          WHEN NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL THEN '\\Flagged' = ANY(deduplicated.flags)
+          WHEN NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL THEN EXISTS (
+            SELECT 1 FROM mail.message_placements flagged_placement
+            WHERE flagged_placement.message_id = deduplicated.id
+              AND flagged_placement.deleted_at IS NULL
+              AND ${includedPlacement(sql`flagged_placement.folder_id`)}
+              AND ${"\\Flagged"} = ANY(flagged_placement.flags)
+          )
           ELSE EXISTS (
             SELECT 1
             FROM mail.conversation_messages flagged_cm

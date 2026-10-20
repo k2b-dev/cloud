@@ -28,6 +28,14 @@ The filter dialog can search:
 - Conversation reference
 - Folder
 - Local tag
+- Unread
+- Flagged
+
+For **Unread** or **Flagged**, choose a folder to check the message's state
+there. **Any included folder** matches a message with that state in any folder
+included in the search. A separate **Folder** condition does not restrict this
+choice: set the folder on the Unread or Flagged condition too. You can exclude
+either condition to find messages without that state in the chosen scope.
 
 Choose **Any condition** to match at least one filled field. Choose **All conditions** to require every filled field. Search filters stay in the page URL, so a reload or a shared URL keeps the current result.
 

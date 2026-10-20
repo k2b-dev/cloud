@@ -27,6 +27,15 @@ Der Filterdialog kann diese Felder durchsuchen:
 - Unterhaltungsreferenz
 - Ordner
 - Lokaler Tag
+- Ungelesen
+- Markiert
+
+Bei **Ungelesen** oder **Markiert** wählst du einen Ordner, um den Zustand der
+Nachricht dort zu prüfen. **Beliebiger einbezogener Ordner** findet Nachrichten,
+die diesen Zustand in einem der durchsuchten Ordner haben. Eine zusätzliche
+Bedingung **Ordner** grenzt diese Auswahl nicht ein: Wähle den Ordner auch bei
+Ungelesen oder Markiert. Du kannst die Bedingung ausschließen, um Nachrichten
+ohne diesen Zustand im gewählten Bereich zu finden.
 
 Wähle **Mindestens eine Bedingung**, damit mindestens ein ausgefülltes Feld passen muss. Wähle **Alle Bedingungen**, damit jedes ausgefüllte Feld passen muss. Suchfilter bleiben in der Seiten-URL. Ein Neuladen oder eine geteilte URL behält deshalb das aktuelle Ergebnis.
 

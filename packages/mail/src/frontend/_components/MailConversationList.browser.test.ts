@@ -1620,3 +1620,100 @@ for (const viewport of [
     }
   }, 30_000);
 }
+
+describe("scoped flag search builder", () => {
+  for (const type of ["unread", "flagged"] as const) {
+    test(`keeps ${type} folder scope through editing, negation, saving and reopening`, async () => {
+      const initial = { expression: { type, folderId: "Fold01" }, sort: "newest" };
+      const page = await load({ requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify(initial) })}` });
+      try {
+        await page.clock.resume();
+        await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+          route.fulfill({
+            json: [
+              { id: "Fold01", name: "Inbox", parentId: null, selectable: true, role: "inbox" },
+              { id: "Fold02", name: "Archive", parentId: null, selectable: true, role: "archive" },
+            ],
+          }),
+        );
+        let saved: unknown;
+        await page.route("**/api/mail/mailboxes/Box001/saved-views", async (route) => {
+          saved = route.request().postDataJSON();
+          await route.fulfill({ json: { ...route.request().postDataJSON(), id: "View01", revision: 1 } });
+        });
+        const openBuilder = async () => {
+          await page.getByRole("button", { name: "Search filters", exact: true }).click();
+          await page.getByRole("dialog").waitFor({ state: "visible" });
+        };
+        const state = () => JSON.parse(new URL(page.url()).searchParams.get("search")!);
+        await openBuilder();
+        const folder = page.getByRole("combobox", { name: "Folder", exact: true });
+        await folder.click();
+        await page.getByRole("option", { name: "Archive", exact: true }).click();
+        await page.getByRole("button", { name: "Exclude this condition", exact: true }).click();
+        await page.getByRole("button", { name: "Search", exact: true }).click();
+        await page.getByRole("dialog").waitFor({ state: "hidden" });
+        expect(state()).toEqual({
+          expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: "Fold02" } }] },
+          sort: "newest",
+        });
+        await openBuilder();
+        await folder.filter({ hasText: "Archive" }).waitFor({ state: "visible" });
+        expect(await folder.textContent()).toContain("Archive");
+        await page.getByRole("button", { name: "Clear selection", exact: true }).click();
+        await page.getByRole("button", { name: "Search", exact: true }).click();
+        await page.getByRole("dialog").waitFor({ state: "hidden" });
+        expect(state()).toEqual({
+          expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: null } }] },
+          sort: "newest",
+        });
+        await openBuilder();
+        await folder.waitFor({ state: "visible" });
+        expect(await folder.textContent()).toContain("Any included folder");
+        await folder.click();
+        await page.getByRole("option", { name: "Inbox", exact: true }).click();
+        await page.getByRole("button", { name: "Save as view", exact: true }).click();
+        await page.getByRole("textbox", { name: "Name", exact: true }).fill("Flagged in folder");
+        await page.getByRole("button", { name: "Save view", exact: true }).click();
+        await page.waitForURL((url) => url.searchParams.get("savedView") === "View01");
+        expect(saved).toMatchObject({
+          filter: { expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: "Fold01" } }] }, sort: "newest" },
+        });
+        expect(page.errors).toEqual([]);
+      } finally {
+        await close(page);
+      }
+    });
+  }
+});
+
+test("scoped flag folder lookup recovers without losing the filter", async () => {
+  const initial = { expression: { type: "unread", folderId: "Fold01" }, sort: "newest" };
+  const page = await load({ requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify(initial) })}` });
+  try {
+    await page.clock.resume();
+    let fail = true;
+    await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+      fail
+        ? route.fulfill({ status: 503, json: { error: "Folder lookup temporarily unavailable" } })
+        : route.fulfill({ json: [{ id: "Fold01", name: "Inbox", parentId: null, selectable: true, role: "inbox" }] }),
+    );
+    await page.getByRole("button", { name: "Search filters", exact: true }).click();
+    await page.getByRole("alert").waitFor({ state: "visible" });
+    expect(await page.getByRole("combobox", { name: "Folder", exact: true }).isDisabled()).toBe(true);
+    fail = false;
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    const folder = page.getByRole("combobox", { name: "Folder", exact: true });
+    await folder.filter({ hasText: "Inbox" }).waitFor({ state: "visible" });
+    expect(await folder.isEnabled()).toBe(true);
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    expect(JSON.parse(new URL(page.url()).searchParams.get("search")!)).toEqual({
+      expression: { type: "and", expressions: [initial.expression] },
+      sort: "newest",
+    });
+    expect(page.errors).toEqual([]);
+  } finally {
+    await close(page);
+  }
+});

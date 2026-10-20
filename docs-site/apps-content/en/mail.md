@@ -761,6 +761,27 @@ command needs read access to the whole mailbox. See
 `cld mail reference operations.md` for the states and how to tell retries from
 a lasting problem.
 
+## Search by read state or flag
+
+**Search filters** includes **Unread** and **Flagged**. Each condition can name
+a folder or use **Any included folder**. A message can be read in one folder
+and unread in another; choosing a folder checks its state there. A separate
+**Folder** condition does not change the scope of an Unread or Flagged condition.
+
+Structured search accepts `{ "type": "unread", "folderId": "<folder-id>" }`
+and `{ "type": "flagged", "folderId": "<folder-id>" }` in the API, CLI
+expressions, capabilities, saved views, and search URLs. `folderId` is an
+optional public folder ID; omitted or `null` checks any included active copy
+of the message. Deleted copies and folders excluded by the containing view
+cannot supply a matching flag. Ordinary mailbox searches include Trash and Junk.
+
+Use an `and` group with both `folder_id` and a flag condition carrying the same
+`folderId` to search unread or flagged mail in that folder. Conditions apply
+to the same message before results are grouped into conversations and paged.
+`or` and `not` keep their usual meaning. A saved filter whose folder is deleted
+keeps a condition that matches nothing, including inside a negated group;
+it never becomes an unscoped flag condition.
+
 ## Search in large mailboxes
 
 Search reads a bounded amount of mail in each mailbox, so a word that appears

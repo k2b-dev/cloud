@@ -20,6 +20,8 @@ import {
   mailSearchAssigneeSchema,
   mailSearchDateSchema,
   mailSearchFolderIdSchema,
+  mailSearchUnreadSchema,
+  mailSearchFlaggedSchema,
   mailSearchKeptSchema,
   mailSearchSizeSchema,
   mailSearchSnoozedSchema,
@@ -69,6 +71,8 @@ const CapabilityMailSearchLeafSchema = z.discriminatedUnion("type", [
   mailSearchAllSchema,
   mailSearchKeptSchema,
   mailSearchFolderIdSchema,
+  mailSearchUnreadSchema,
+  mailSearchFlaggedSchema,
   mailSearchAssignedToMeSchema,
 ]);
 const CapabilityMailSearchExpressionSchema: z.ZodType<MailSearchExpression> = z.union([
@@ -81,6 +85,8 @@ const CapabilityMailSearchExpressionSchema: z.ZodType<MailSearchExpression> = z.
   mailSearchAllSchema,
   mailSearchKeptSchema,
   mailSearchFolderIdSchema,
+  mailSearchUnreadSchema,
+  mailSearchFlaggedSchema,
   mailSearchAssignedToMeSchema,
   z
     .object({

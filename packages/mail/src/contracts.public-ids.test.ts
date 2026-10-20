@@ -6,6 +6,8 @@ import {
   draftContentInputSchema,
   draftSeedOriginSchema,
   mailSearchFolderIdSchema,
+  mailSearchExpressionSchema,
+  internalMailSearchStateSchema,
   mailSearchLocalTagIdSchema,
   mergeConversationsInputSchema,
   ResourceShortIdSchema,
@@ -72,4 +74,18 @@ describe("Mail public resource IDs", () => {
     expect(draftSeedOriginSchema.safeParse(origin).success).toBe(true);
     expect(draftSeedOriginSchema.safeParse({ ...origin, messageId: uuid }).success).toBe(false);
   });
+});
+
+describe("Mail placement flag conditions", () => {
+  for (const type of ["unread", "flagged"] as const)
+    test(`${type} preserves explicit public scope and rejects internal IDs at transport`, () => {
+      for (const folderId of [undefined, null, shortId]) {
+        const expression = folderId === undefined ? { type } : { type, folderId };
+        expect(mailSearchExpressionSchema.parse(expression)).toEqual(expression);
+      }
+      expect(mailSearchExpressionSchema.safeParse({ type, folderId: uuid }).success).toBe(false);
+      expect(mailSearchExpressionSchema.safeParse({ type, folderId: "" }).success).toBe(false);
+      expect(internalMailSearchStateSchema.parse({ expression: { type, folderId: uuid } }).expression).toEqual({ type, folderId: uuid });
+      expect(internalMailSearchStateSchema.safeParse({ expression: { type, folderId: shortId } }).success).toBe(false);
+    });
 });

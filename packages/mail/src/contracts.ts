@@ -879,6 +879,18 @@ export const mailSearchAllSchema = z.object({ type: z.literal("all").describe("M
 // Requests carry public folder and tag IDs. After the transport boundary resolves them, services and
 // stored saved views carry internal UUIDs, so each form of the expression has its own schema.
 const mailSearchReferenceSchemas = (referenceId: z.ZodString) => ({
+  unread: z
+    .object({
+      type: z.literal("unread").describe("Match an unread active, included message placement."),
+      folderId: referenceId.nullish().describe("Limit the flag condition to this folder; omitted or null checks any included folder."),
+    })
+    .strict(),
+  flagged: z
+    .object({
+      type: z.literal("flagged").describe("Match a flagged active, included message placement."),
+      folderId: referenceId.nullish().describe("Limit the flag condition to this folder; omitted or null checks any included folder."),
+    })
+    .strict(),
   folder: z
     .object({
       type: z.literal("folder_id").describe("Folder search expression."),
@@ -894,6 +906,8 @@ const mailSearchReferenceSchemas = (referenceId: z.ZodString) => ({
 });
 const publicMailSearchReferences = mailSearchReferenceSchemas(ResourceShortIdSchema);
 export const mailSearchFolderIdSchema = publicMailSearchReferences.folder;
+export const mailSearchUnreadSchema = publicMailSearchReferences.unread;
+export const mailSearchFlaggedSchema = publicMailSearchReferences.flagged;
 export const mailSearchLocalTagIdSchema = publicMailSearchReferences.tag;
 export const mailSearchAssignedToMeSchema = z
   .object({ type: z.literal("assigned_to_me").describe("Match conversations assigned to the current user.") })
@@ -948,6 +962,8 @@ export type MailSearchExpression =
   | z.infer<typeof mailSearchSnoozedSchema>
   | z.infer<typeof mailSearchKeptSchema>
   | z.infer<typeof mailSearchAllSchema>
+  | z.infer<typeof mailSearchUnreadSchema>
+  | z.infer<typeof mailSearchFlaggedSchema>
   | z.infer<typeof mailSearchFolderIdSchema>
   | z.infer<typeof mailSearchLocalTagIdSchema>
   | z.infer<typeof mailSearchAssignedToMeSchema>
@@ -967,6 +983,8 @@ const mailSearchExpressionSchemaFor = (references: ReturnType<typeof mailSearchR
       mailSearchAllSchema,
       mailSearchKeptSchema,
       references.folder,
+      references.unread,
+      references.flagged,
       references.tag,
       mailSearchAssignedToMeSchema,
       z
@@ -1007,6 +1025,32 @@ const mailSearchExpressionSchemaFor = (references: ReturnType<typeof mailSearchR
 const mailSearchExpressionOpenApi = {
   $dynamicAnchor: "MailSearchExpression",
   oneOf: [
+    {
+      type: "object",
+      properties: {
+        type: { const: "unread" },
+        folderId: {
+          type: ["string", "null"],
+          pattern: "^[0-9A-Za-z]{6}$",
+          description: "Only active, included placements in this folder; omitted or null means any included folder.",
+        },
+      },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        type: { const: "flagged" },
+        folderId: {
+          type: ["string", "null"],
+          pattern: "^[0-9A-Za-z]{6}$",
+          description: "Only active, included placements in this folder; omitted or null means any included folder.",
+        },
+      },
+      required: ["type"],
+      additionalProperties: false,
+    },
     {
       type: "object",
       properties: { type: { const: "kept", description: "Match kept conversations." } },

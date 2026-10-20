@@ -14,6 +14,8 @@ export type MailSearchFieldKey =
   | "assignee"
   | "snoozed"
   | "all"
+  | "unread"
+  | "flagged"
   | "folder_id"
   | "local_tag_id"
   | "assigned_to_me"
@@ -53,6 +55,8 @@ export const MAIL_SEARCH_FIELD_OPTIONS: MailSearchFieldOption[] = [
   { id: "work_status", icon: "ti ti-progress-check", groups: ["recommended", "mailbox"] },
   { id: "assignee", icon: "ti ti-user-check", groups: ["recommended", "people", "mailbox"] },
   { id: "snoozed", icon: "ti ti-alarm-snooze", groups: ["mailbox"] },
+  { id: "unread", icon: "ti ti-mail", groups: ["recommended", "mailbox"] },
+  { id: "flagged", icon: "ti ti-flag", groups: ["recommended", "mailbox"] },
   { id: "folder_id", icon: "ti ti-folder-check", groups: ["recommended", "mailbox"] },
   { id: "local_tag_id", icon: "ti ti-tag", groups: ["recommended", "mailbox"] },
   { id: "assigned_to_me", icon: "ti ti-user-pin", groups: ["people", "mailbox"] },
@@ -139,6 +143,7 @@ export const createMailSearchCondition = (
   }
   if (field === "work_status") return { type: "work_status", value: "needs_action" };
   if (field === "assignee") return { type: "assignee", userId: null };
+  if (field === "unread" || field === "flagged") return { type: field };
   if (field === "folder_id") return { type: "folder_id", folderId: "" };
   if (field === "local_tag_id") return { type: "local_tag_id", tagId: "" };
   if (field === "assigned_to_me") return { type: "assigned_to_me" };
@@ -253,6 +258,13 @@ export const summarizeMailSearchExpression = (
     }
     if (node.type === "assignee") return node.userId ? messages.assignedTo({ id: node.userId }) : messages.unassigned;
     if (node.type === "snoozed") return node.value ? messages.isSnoozed : messages.isNotSnoozed;
+    if (node.type === "unread" || node.type === "flagged") {
+      const label = messages.searchField({ field: node.type });
+      if (!node.folderId) return `${label}: ${messages.anyIncludedFolder}`;
+      if (!folderPaths) return `${label}: ${messages.inSpecificFolder}`;
+      const path = folderPaths.get(node.folderId);
+      return `${label}: ${path ? messages.inFolder({ name: path }) : messages.inDeletedFolder}`;
+    }
     if (node.type === "folder_id") {
       if (!folderPaths) return messages.inSpecificFolder;
       const path = folderPaths.get(node.folderId);

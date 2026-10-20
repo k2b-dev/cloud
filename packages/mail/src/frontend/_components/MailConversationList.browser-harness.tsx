@@ -4,6 +4,7 @@ import { batch, createSignal, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import type { Mailbox, MailConversationPreview } from "../../contracts";
+import { resolveMailSearchRoute } from "../../search-state";
 import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
 import MailConversationQuickLook from "./MailConversationQuickLook";
@@ -209,7 +210,7 @@ window.mountMailList = (options) => {
                   mailboxId="Box001"
                   requestUrl={requestUrl()}
                   query={options.requestUrl ? (new URL(requestUrl(), location.origin).searchParams.get("q") ?? "") : ""}
-                  search={{ query: "", expression: null, sort: "relevance", error: null }}
+                  search={resolveMailSearchRoute(new URL(requestUrl(), location.origin))}
                   title="Inbox"
                   namedBy="tabs"
                   items={list.items}

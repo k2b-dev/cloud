@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { MailSearchExpression } from "../../contracts";
 import {
   appendMailSearchExpression,
+  createMailSearchCondition,
   countMailSearchNodes,
   ensureMailSearchRootGroup,
   MAIL_SEARCH_FIELD_GROUPS,
@@ -206,4 +207,30 @@ describe("Mail search builder model", () => {
     );
     expect(summarizeMailSearchExpression(expression, "de")).toBe("(In einem bestimmten Ordner) und (Mit einem bestimmten Tag)");
   });
+});
+
+test("flag conditions keep their own folder when siblings or negation change", () => {
+  const expression: MailSearchExpression = {
+    type: "and",
+    expressions: [
+      { type: "folder_id", folderId: "Fold01" },
+      { type: "unread", folderId: "Fold01" },
+    ],
+  };
+  const updated = updateMailSearchExpression(expression, [0], () => ({ type: "folder_id", folderId: "Fold02" }));
+  expect(toggleMailSearchNegation(updated, [1])).toEqual({
+    type: "and",
+    expressions: [
+      { type: "folder_id", folderId: "Fold02" },
+      { type: "not", expression: { type: "unread", folderId: "Fold01" } },
+    ],
+  });
+  expect(normalizeMailSearchExpression(updated)).toEqual(updated);
+  expect(createMailSearchCondition("unread")).toEqual({ type: "unread" });
+  expect(createMailSearchCondition("flagged")).toEqual({ type: "flagged" });
+  const folders = [{ id: "Fold01", parentId: null, name: "Inbox" }];
+  expect(summarizeMailSearchExpression({ type: "unread", folderId: "Fold01" }, "en", { folders })).toBe("Unread: In folder “Inbox”");
+  expect(summarizeMailSearchExpression({ type: "flagged", folderId: "Fold01" }, "de", { folders })).toBe("Markiert: Im Ordner „Inbox“");
+  expect(summarizeMailSearchExpression({ type: "unread" })).toBe("Unread: Any included folder");
+  expect(summarizeMailSearchExpression({ type: "flagged", folderId: "Gone01" }, "en", { folders })).toBe("Flagged: In a deleted folder");
 });
