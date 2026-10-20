@@ -129,7 +129,7 @@ beforeAll(async () => {
   const built = await Bun.build({
     entrypoints: [entry],
     files: {
-      [entry]: `import {installAppWorkspaceController} from ${JSON.stringify(join(ui, "browser/index.js"))};import {openCloudMobileMenu} from "@k2b/cloud/ssr/MobileNavigation";installAppWorkspaceController();document.getElementById("mailbox-navigation-test")?.addEventListener("click",()=>void openCloudMobileMenu({apps:[],legalLinks:[]}));`,
+      [entry]: `import {installAppWorkspaceController} from ${JSON.stringify(join(ui, "browser/index.js"))};import {openCloudMobileMenu} from "@k2b/cloud/ssr/MobileNavigation";import {installPageSwap} from "@k2b/ssr/nav";if(new URL(location.href).searchParams.has("history"))sessionStorage.setItem("mail-shell-history","1");if(sessionStorage.getItem("mail-shell-history")==="1")installPageSwap();installAppWorkspaceController();document.getElementById("mailbox-navigation-test")?.addEventListener("click",()=>void openCloudMobileMenu({apps:[],legalLinks:[]}));`,
     },
     target: "browser",
     format: "iife",
@@ -230,7 +230,7 @@ const sizes = [
   [834, 1194],
   [390, 844],
 ] as const;
-const open = async (path: string, width = 1440, height = sizes.find(([w]) => w === width)?.[1] ?? 900) => {
+const open = async (path: string, width = 1440, height: number = sizes.find(([w]) => w === width)?.[1] ?? 900) => {
   const context = await browser.newContext({
     viewport: { width, height },
     isMobile: width === 390,
@@ -405,6 +405,94 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "B reload hydrated");
         assertFrame(serverFrame, await geometry(page), "B reload settled");
       } finally {
+        await close(page);
+      }
+    });
+
+    test("mailbox history restores nonzero list scroll after async content commits, reversal and reload", async () => {
+      // Install the same shared history owner as Cloud before mounting the island. The two mailboxes use
+      // distinct scroll keys, and switching reconstructs their list elements after the traversal arrives.
+      const source = `${boxPath}?history=1`;
+      const destination = "/app/mail/Box002";
+      const page = await open(source, 1440, 600);
+      const releaseBack = Promise.withResolvers<void>();
+      const list = (id: string) => page.locator(`[data-scroll-preserve="mail-list-${id}"]`);
+      const position = (id: string) => list(id).evaluate((element) => element.scrollTop);
+      const setPosition = async (id: string, y: number) => {
+        await list(id).evaluate((element, y) => {
+          element.scrollTop = y;
+        }, y);
+        await settled(page);
+        expect(await position(id), `${id} fixture must really scroll`).toBe(y);
+      };
+      try {
+        await setPosition("Box001", 240);
+        await sidebar(page).locator(`a[href="${destination}"]`).first().click();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await list("Box002").waitFor();
+        await ready(page);
+        expect(await position("Box002"), "a newly opened mailbox starts at its list's top").toBe(0);
+        await setPosition("Box002", 400);
+        await page.goBack();
+        await page.waitForURL(new URL(source, server.url).href);
+        await list("Box001").waitFor();
+        await ready(page);
+        expect(await position("Box001"), "Back restores A after the asynchronous list replacement").toBe(240);
+        await page.goForward();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await list("Box002").waitFor();
+        await ready(page);
+        expect(await position("Box002"), "Forward restores B's own list position").toBe(400);
+
+        // Reverse a traversal while B is still shown. Its DOM must not become A's saved scroll snapshot.
+        const backRequested = Promise.withResolvers<void>();
+        const backReleased = Promise.withResolvers<void>();
+        const backRoute = "**/api/mail/mailboxes/Box001/workspace-route?*";
+        await page.route(backRoute, async (route) => {
+          try {
+            const response = await route.fetch();
+            backRequested.resolve();
+            await releaseBack.promise;
+            // Forward aborts this client's old fetch; releasing its response must not commit A late.
+            await route.fulfill({ response }).catch(() => undefined);
+          } catch (error) {
+            backRequested.reject(error);
+          } finally {
+            backReleased.resolve();
+          }
+        });
+        await page.goBack();
+        await backRequested.promise;
+        expect(new URL(page.url()).pathname).toBe(boxPath);
+        expect(await position("Box002"), "pending Back still shows the scrolled B list").toBe(400);
+        await page.goForward();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await ready(page);
+        releaseBack.resolve();
+        await backReleased.promise;
+        await page.unroute(backRoute);
+        await ready(page);
+        expect(await position("Box002"), "Forward supersedes the pending A response").toBe(400);
+        await page.goBack();
+        await page.waitForURL(new URL(source, server.url).href);
+        await list("Box001").waitFor();
+        await ready(page);
+        expect(await position("Box001"), "the pending reversal preserved A's own snapshot").toBe(240);
+        await page.goForward();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await list("Box002").waitFor();
+        await ready(page);
+        expect(await position("Box002"), "B keeps its own snapshot after the reversal").toBe(400);
+        const beforeReload = await geometry(page);
+        await page.reload();
+        await ready(page);
+        expect(await position("Box002"), "reload keeps the shown entry's list position").toBe(400);
+        const serverFrame = await recordedFrame(page, "server");
+        assertFrame(beforeReload, serverFrame, "scrolled B reload server");
+        assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "scrolled B reload hydrated");
+        assertFrame(serverFrame, await geometry(page), "scrolled B reload settled");
+      } finally {
+        releaseBack.resolve();
         await close(page);
       }
     });

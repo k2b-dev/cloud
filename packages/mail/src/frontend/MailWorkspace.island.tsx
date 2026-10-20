@@ -196,7 +196,7 @@ function MailboxWorkspace(
     switching: Accessor<boolean>;
     onReady: (controls: MailboxSessionControls) => void;
     onNavigationStart: () => void;
-    onOpenMailboxHistory: (url: URL) => void;
+    onOpenMailboxHistory: (url: URL, completeScrollRestore: () => void) => void;
   },
 ) {
   const locale = useLocale();
@@ -1104,9 +1104,11 @@ function MailboxWorkspace(
         },
       },
     );
-    const stopPopState = listenPopState(({ url }) => {
+    const stopPopState = listenPopState(({ url, deferScrollRestore }) => {
+      // The shared history owner keeps the destination snapshot until this navigation commits its list DOM.
+      const completeScrollRestore = deferScrollRestore();
       if (!isMailWorkspaceUrl(url, mailboxId, window.location.origin)) {
-        props.onOpenMailboxHistory(url);
+        props.onOpenMailboxHistory(url, completeScrollRestore);
         return;
       }
       const href = `${url.pathname}${url.search}`;
@@ -1121,6 +1123,7 @@ function MailboxWorkspace(
           const result = conversationId
             ? await openConversationInList(href, conversationId, row?.sourceFolderId ?? data.folderId, row?.subject ?? "")
             : closeConversationInList(href);
+          if (!disposed && result === "applied") completeScrollRestore();
           if (!disposed && result === "failed") {
             navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
             toast.error(t().restoreViewFailed);
@@ -1133,7 +1136,8 @@ function MailboxWorkspace(
           const snapshot = searchScrollSnapshot(href);
           const source = routeSource();
           if (snapshot) restoreScroll(snapshot.scroll);
-          void restoreSearchScroll(snapshot, source);
+          await restoreSearchScroll(snapshot, source);
+          completeScrollRestore();
         }
         if (!disposed && result === "failed") {
           navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
@@ -2863,7 +2867,7 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
   };
   onCleanup(cancelSwitch);
 
-  const switchMailbox = async (url: URL, nav?: LinkNavigateEvent) => {
+  const switchMailbox = async (url: URL, nav?: LinkNavigateEvent, completeScrollRestore?: () => void) => {
     const shown = controls();
     if (nav && shown && isMailWorkspaceUrl(url, session().data.mailbox.id, window.location.origin)) {
       // Clicking the shown mailbox is a newer intent even when its default URL is already current.
@@ -2909,6 +2913,7 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
         ],
       });
       announce(data.mailbox.name);
+      completeScrollRestore?.();
     } catch {
       if (!request.signal.aborted && generation === switchGeneration) fallback();
     } finally {
@@ -2933,8 +2938,8 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
                   switching={switching}
                   onReady={setControls}
                   onNavigationStart={cancelSwitch}
-                  onOpenMailboxHistory={(url) => {
-                    void switchMailbox(url);
+                  onOpenMailboxHistory={(url, completeScrollRestore) => {
+                    void switchMailbox(url, undefined, completeScrollRestore);
                   }}
                 />
               )}
