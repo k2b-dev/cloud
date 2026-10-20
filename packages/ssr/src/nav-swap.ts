@@ -1,5 +1,5 @@
 import type { ScrollSnapshot } from "./nav";
-import { disposeIslands, mountIslands } from "./mount";
+import { disposeIslands, islandsPending, mountIslands } from "./mount";
 import { captureScroll, documentNavigate, restoreScroll, swapKey } from "./nav-history";
 
 type SwapState = {
@@ -14,6 +14,9 @@ type SwapState = {
   started: number;
   currentPage: string;
   currentEntry: Entry;
+  /** Traversal moves history before the DOM, so its scroll still belongs to the shown entry. */
+  shown: Entry;
+  stopRestore: () => void;
   scroll: Map<string, ScrollSnapshot>;
   decide: (event: PopStateEvent) => "page" | "nav";
   /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
@@ -106,11 +109,12 @@ const patchHistory = (): HistoryWrites => {
     const departing = currentEntry(state);
     const snapshot = captureScroll();
     const stored = marker(history.state);
-    if (stored) persistScroll(writes, stored, snapshot);
+    if (stored && entryKey(stored) === entryKey(state.shown)) persistScroll(writes, stored, snapshot);
     const entry = { page: state.currentPage, position: departing.position + 1 };
     writes.push.call(history, mergeMarker(value, entry), ...args);
-    remember(state, departing, snapshot);
+    remember(state, state.shown, snapshot);
     state.currentEntry = entry;
+    state.shown = entry;
   };
   history.replaceState = (value: unknown, ...args: [unused: string, url?: string | URL | null]) => {
     const state = shared[swapKey];
@@ -118,6 +122,7 @@ const patchHistory = (): HistoryWrites => {
     const entry = marker(history.state) ?? { page: state.currentPage, position: state.currentEntry.position };
     writes.replace.call(history, mergeMarker(value, entry), ...args);
     state.currentEntry = entry;
+    if (entryKey(entry) === entryKey(state.shown)) state.shown = entry;
   };
   return writes;
 };
@@ -208,6 +213,14 @@ export function installPageSwap(): () => void {
   const initial = marker(window.history.state);
   const scrollRestoration = window.history.scrollRestoration;
   window.history.scrollRestoration = "manual";
+  let observer: MutationObserver | undefined;
+  const inputs = ["wheel", "touchstart", "keydown", "pointerdown"];
+  const stopRestore = (): void => {
+    if (!observer) return;
+    observer.disconnect();
+    observer = undefined;
+    for (const input of inputs) window.removeEventListener(input, stopRestore, true);
+  };
   const state: SwapState = {
     document,
     announcer,
@@ -218,12 +231,15 @@ export function installPageSwap(): () => void {
     // A reload keeps the entry's marker; that document then also shares history with other server pages.
     currentPage: initial?.page ?? "",
     currentEntry: initial ?? { position: basePosition() },
+    shown: initial ?? { position: basePosition() },
+    stopRestore,
     scroll: new Map(),
     decide: (event) => decide(event),
     // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
     headBase: timing?.name || window.location.href,
     uninstall: () => {
       if (shared[swapKey] !== state) return;
+      stopRestore();
       window.removeEventListener("click", captureClick, true);
       window.removeEventListener("click", click);
       window.removeEventListener("submit", submit, true);
@@ -241,10 +257,22 @@ export function installPageSwap(): () => void {
     const entry = { page: newPage(state), position: basePosition() };
     state.currentPage = entry.page;
     state.currentEntry = entry;
+    state.shown = entry;
     if (window.history.state == null || plain(window.history.state))
       writes.replace.call(window.history, mergeMarker(window.history.state, entry), "");
   } else if (timing && "type" in timing && ["reload", "back_forward"].includes(String(timing.type)) && initial.scroll) {
-    restoreScroll(initial.scroll);
+    const snapshot = initial.scroll;
+    restoreScroll(snapshot);
+    if (islandsPending(document)) {
+      // Mounting replaces server regions and creates client-only ones; replay once, unless the person took over.
+      observer = new MutationObserver(() => {
+        if (!observer || islandsPending(document)) return;
+        stopRestore();
+        restoreScroll(snapshot);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      for (const input of inputs) window.addEventListener(input, stopRestore, { capture: true, passive: true });
+    }
   }
   const captureClick = (event: MouseEvent): void => {
     const link = sameTabAnchor(event);
@@ -327,6 +355,7 @@ export function installPageSwap(): () => void {
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
   const decide = (event: PopStateEvent): "page" | "nav" => {
+    stopRestore();
     const known = decisions.get(event);
     if (known) {
       if (known === "nav") event.stopImmediatePropagation();
@@ -336,7 +365,7 @@ export function installPageSwap(): () => void {
     const from =
       departure && departure.key === navigation?.currentEntry?.key ? departure : { entry: state.currentEntry, scroll: captureScroll() };
     departure = undefined;
-    remember(state, from.entry, from.scroll);
+    remember(state, state.shown, from.scroll);
     const fragmentMode = navigation
       ? fragment
       : event.state === null &&
@@ -351,12 +380,14 @@ export function installPageSwap(): () => void {
       const entry = { page: state.currentPage, position: from.entry.position + (fragmentMode === "push" ? 1 : 0) };
       writes.replace.call(window.history, mergeMarker(window.history.state, entry), "");
       state.currentEntry = entry;
+      state.shown = entry;
       decisions.set(event, "page");
       return "page";
     }
     const entry = marker(event.state);
     if (entry?.page === state.currentPage) {
       state.currentEntry = entry;
+      state.shown = entry;
       const snapshot = savedScroll(state, entry);
       if (snapshot) window.scrollTo(snapshot.window.x, snapshot.window.y);
       decisions.set(event, "page");
@@ -379,7 +410,7 @@ export function installPageSwap(): () => void {
   };
   const pagehide = (): void => {
     const entry = marker(window.history.state);
-    if (entry) persistScroll(writes, entry, captureScroll());
+    if (entry && entryKey(entry) === entryKey(state.shown)) persistScroll(writes, entry, captureScroll());
   };
   shared[swapKey] = state;
   window.addEventListener("popstate", popstate, { capture: true });
@@ -402,6 +433,7 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
   if (typeof window === "undefined") return;
   const state = shared[swapKey];
   if (state) {
+    state.stopRestore();
     abort(state);
     state.started++;
   }
@@ -557,9 +589,9 @@ const commit = (
       }
     } else {
       const departing = currentEntry(state);
-      remember(state, departing, snapshot);
+      remember(state, state.shown, snapshot);
       const stored = marker(window.history.state);
-      if (!options.replace && stored) persistScroll(writes, stored, snapshot);
+      if (!options.replace && stored && entryKey(stored) === entryKey(state.shown)) persistScroll(writes, stored, snapshot);
       entry = { page: newPage(state), position: departing.position + (options.replace ? 0 : 1) };
       // History first: inserted resources with relative URLs resolve against the new page's URL.
       const write = options.replace ? writes.replace : writes.push;
@@ -568,6 +600,7 @@ const commit = (
     committed = true;
     state.currentPage = entry.page;
     state.currentEntry = entry;
+    state.shown = entry;
     const root = document.adoptNode(next.root);
     context.root.replaceWith(root);
     document.title = fetched.title;

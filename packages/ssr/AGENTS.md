@@ -234,7 +234,8 @@ History has one owner while the swap is installed. The reserved state key
 `"@k2b/ssr/nav"` holds `{ page: string, position: number, scroll?: ScrollSnapshot }`.
 Validate it on read; missing, malformed, and old string markers mean another
 page. Reload and back_forward document loads keep a valid page id and restore
-its saved window and region scroll.
+its saved window and region scroll, then restore it again once the initial
+islands mounted, unless the person scrolled first.
 
 Install patches this History object's pushState and replaceState once, with a
 Symbol.for flag. The wrappers remain after uninstall but call the originals

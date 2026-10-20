@@ -111,6 +111,12 @@ export const mountIslands = (root: ParentNode): void => {
   }
 };
 
+/** Initial scroll restoration must wait for regions that only exist after mounting. */
+export const islandsPending = (root: ParentNode): boolean => {
+  const { mounted } = registry();
+  return wrappers(root).some((element) => !mounted.has(element));
+};
+
 /**
  * Internal navigation API: notify then dispose mounted wrappers in document order, including root itself.
  * Call while wrappers are still in the document so ssr:island-dispose reaches window listeners before Solid cleanups.

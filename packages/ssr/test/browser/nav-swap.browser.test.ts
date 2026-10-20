@@ -6,7 +6,7 @@ import { toJSON } from "seroval";
 import { render } from "solid-js/web";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
-import { disposeIslands } from "../../src/mount";
+import { disposeIslands, mountIslands } from "../../src/mount";
 import { documentNavigate, installPageSwap, Link, listenPopState, navigate, navigateTo, refreshCurrentPath, swapPage } from "../../src/nav";
 import { makeTempRoot } from "../temp-root";
 
@@ -1479,6 +1479,87 @@ test("pagehide persists scroll; reload restores window and keyed regions", () =>
   expect(window.history.state[markerKey].page).toBe(page);
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 220);
   expect(region.scrollTop).toBe(80);
+});
+
+test("overlapping Back traversals keep A1's scroll for Forward", async () => {
+  install();
+  const a0 = window.history.state;
+  window.history.pushState(null, "", "/app/old?tab=1");
+  let y = 400;
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+  const a1 = window.history.state;
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("B"), {}, "https://example.test/app/B"));
+  await swapPage("/app/B");
+  y = 900;
+  const requests = deferredFetch(true);
+  arrive(a1, "/app/old?tab=1");
+  arrive(a0);
+  expect(requests[0]!.aborted).toBe(true);
+  const done = swapped("old");
+  requests[1]!.resolve(response(html("old"), {}, "https://example.test/app/old"));
+  await done;
+  requests[0]!.resolve(response(html("old"), {}, "https://example.test/app/old?tab=1"));
+  await Promise.resolve();
+  y = 0;
+  arrive(a1, "/app/old?tab=1");
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 400);
+  expect(document.title).toBe("old");
+  expect(requests).toHaveLength(2);
+});
+
+test("pagehide during traversal leaves the arriving entry's saved scroll intact", async () => {
+  install();
+  const requests = deferredFetch(true);
+  const entry = { page: "other", position: 4, scroll: { window: { x: 0, y: 400 }, regions: [] } };
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => 900 });
+  arrive({ [markerKey]: entry }, "/app/new");
+  window.dispatchEvent(new Event("pagehide"));
+  const saved = window.history.state[markerKey];
+  const done = swapped("new");
+  requests[0]!.resolve(response());
+  await done;
+  expect(saved).toEqual(entry);
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 400);
+});
+
+test.each(["reload", "back_forward"])("%s restores saved region scroll again after all initial islands mount", async (type) => {
+  disposeIslands(document);
+  document.querySelector("main")!.insertAdjacentHTML("beforeend", wrapper("list", scrollId));
+  const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
+  window.history.replaceState({ [markerKey]: { page: "reloaded", position: 4, scroll: snapshot } }, "");
+  const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type, toJSON: () => ({}) };
+  spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
+  install();
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 240);
+  mountIslands(document.querySelector("solid-island")!);
+  await (window as unknown as Window).happyDOM.waitUntilComplete();
+  expect(window.scrollTo).toHaveBeenCalledTimes(1);
+  await import(`${prefix}/${scrollId}.js`);
+  mountIslands(document);
+  await (window as unknown as Window).happyDOM.waitUntilComplete();
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')?.scrollTop).toBe(110);
+  expect(window.scrollTo).toHaveBeenCalledTimes(2);
+});
+
+test.each(["wheel", "touchstart", "keydown", "pointerdown"])("%s before initial islands mount cancels the reload replay", async (input) => {
+  const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
+  const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
+  spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
+  await import(`${prefix}/${scrollId}.js`);
+  // The control proves that cancelling input, rather than a missing replay, preserves the person's scroll.
+  for (const cancel of [false, true]) {
+    disposeIslands(document);
+    document.querySelector("main")!.innerHTML = wrapper("list", scrollId);
+    window.history.replaceState({ [markerKey]: { page: "reloaded", position: 4, scroll: snapshot } }, "");
+    install();
+    if (cancel) window.dispatchEvent(new Event(input));
+    mountIslands(document);
+    const region = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
+    region.scrollTop = 37;
+    await (window as unknown as Window).happyDOM.waitUntilComplete();
+    expect(region.scrollTop).toBe(cancel ? 37 : 110);
+    uninstall();
+  }
 });
 
 test("Navigation API supplies base and arriving positions and captures the departing entry before popstate", async () => {
