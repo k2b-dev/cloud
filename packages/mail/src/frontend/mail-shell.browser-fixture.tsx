@@ -166,7 +166,10 @@ export function mailboxData(url: URL): MailboxPageData {
   const permission = variant === "assigned-only" ? "write" : variant;
   const search = resolveMailSearchRoute(url);
   const searching = Boolean(search.query || search.expression);
-  const folderId = searching ? null : url.searchParams.get("folder");
+  const folderId =
+    Object.hasOwn(viewCounts, url.searchParams.get("view") ?? "") || url.searchParams.has("savedView")
+      ? null
+      : url.searchParams.get("folder");
   const scheduledMode = !searching && url.searchParams.get("scheduled") === "1";
   const draftsMode = folderId === "Drafts1";
   const savedViewId = searching || folderId || scheduledMode ? null : url.searchParams.get("savedView");

@@ -117,6 +117,8 @@ To empty the Inbox in other mail clients too, also choose **Archive**. Archive d
   Each person works from **Assigned to me**. The owner's confirmed reply sets **Waiting for reply**; the owner marks **Done**.
   Use **Only in the folder** for team folders that must stay outside shared lists, as described above.
 
+In a folder, use **Unread**, **Flagged**, **With attachment**, or **Date range** in the head to narrow that folder. Sent offers attachment and date filters. A **Tag** keeps the folder restriction and selects **All** in the tabs. **Reset** returns to the place and selection where filtering began. Date presets keep their chosen time range on reload; **Custom date range…** opens the search editor with your current filters. Typing a text search still searches the whole mailbox.
+
 ## Take a quick look before opening {icon="eye"}
 
 With a mouse, rest the pointer on a conversation row for a moment. A quick look opens next to the list. It shows:

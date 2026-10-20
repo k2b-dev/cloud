@@ -7,7 +7,9 @@ import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
+import { resolveMailSearchRoute } from "../search-state";
 import { mailTagSearch } from "../search-url";
+import { readMailHeadFilters } from "./_components/mail-head-filters";
 
 setDefaultTimeout(20_000);
 
@@ -328,6 +330,222 @@ const clickTab = async (page: Page, href: string) => {
 /** The shell tests. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`compact folder filters ${theme} ${width}: scoped toggles, dates and tags`, async () => {
+          const captureStarted = performance.now();
+          const captureStep = (step: string) => {
+            if (screenshots)
+              console.info(`Mail chips ${browserName} ${theme} ${width} ${step}: ${Math.round(performance.now() - captureStarted)}ms`);
+          };
+          const page = await open(`${boxPath}?folder=Filed1&theme=${theme}&history=1`, width);
+          captureStep("ready");
+          const head = page.locator(".k2b-app-workspace__head-filters");
+          const filters = () => {
+            const url = new URL(page.url());
+            return readMailHeadFilters(url, resolveMailSearchRoute(url), mailboxData(url).folderId);
+          };
+          const activate = async (control: Locator) => {
+            const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await control.click();
+            await response;
+            await ready(page);
+          };
+          try {
+            // The same public controls exist in the SSR frame and after hydration.
+            expect(await head.getByRole("button", { name: /Unread/ }).getAttribute("aria-pressed")).toBe("false");
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              captureStep("before initial screenshot");
+              await page.screenshot({ path: join(screenshots, browserName, `folder-filters-${theme}-${width}.png`) });
+              captureStep("after initial screenshot");
+            }
+            await head.getByRole("button", { name: /Unread/ }).focus();
+            const unreadResponse = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await page.keyboard.press("Enter");
+            await unreadResponse;
+            await ready(page);
+            expect(filters()?.folderId).toBe("Filed1");
+            expect(filters()?.unread).toBe(true);
+            await activate(head.getByRole("button", { name: "Flagged", exact: true }));
+            await activate(head.getByRole("button", { name: "With attachment", exact: true }));
+            expect(filters()?.flagged).toBe(true);
+            expect(filters()?.attachment).toBe(true);
+            await head.getByRole("button", { name: "Date range", exact: true }).click();
+            await activate(page.getByRole("menuitemradio", { name: "Last 7 days", exact: true }));
+            expect(filters()?.dates.length).toBe(2);
+            await head.getByRole("button", { name: "Tag", exact: true }).click();
+            await activate(page.getByRole("menuitemradio", { name: "Priority", exact: true }));
+            // FilterChip intentionally stays open; close it before testing the next route.
+            await page.keyboard.press("Escape");
+            const taggedUrl = page.url();
+            expect(filters()?.tagId).toBe("Tag001");
+            expect(filters()?.folderId).toBe("Filed1");
+            expect(filters()?.unread).toBe(true);
+            expect(new URL(taggedUrl).searchParams.has("folder")).toBe(false);
+            expect(await currentHref(page)).toBe(boxPath);
+            expect(await head.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
+            if (screenshots) {
+              captureStep("before tag screenshot");
+              await page.screenshot({ path: join(screenshots, browserName, `folder-tag-${theme}-${width}.png`) });
+              captureStep("after tag screenshot");
+            }
+            await activate(head.locator(".k2b-app-workspace__head-reset"));
+            expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+            expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+            captureStep("assertions complete");
+          } finally {
+            captureStep("before close");
+            await page.context().close();
+            captureStep("after close");
+          }
+        });
+
+    test("compact folder filters: reload and traversal preserve the same scoped search", async () => {
+      const expression = {
+        type: "and",
+        expressions: [
+          { type: "folder_id", folderId: "Filed1" },
+          { type: "unread", folderId: "Filed1" },
+          { type: "local_tag_id", tagId: "Tag001" },
+          { type: "date", field: "internal_date", operator: "on_or_after", value: "2026-10-07T10:00:00.000Z" },
+          { type: "date", field: "internal_date", operator: "before", value: MAIL_SHELL_NOW },
+        ],
+      };
+      const route = `${boxPath}?${new URLSearchParams({ history: "1", searchFrom: "folder=Filed1", search: JSON.stringify({ expression, sort: "newest" }) })}`;
+      const page = await open(route);
+      const assertSearch = async () => {
+        const url = new URL(page.url());
+        expect(resolveMailSearchRoute(url).expression).toEqual(expression);
+        expect(await currentHref(page)).toBe(boxPath);
+        expect(await page.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
+      };
+      try {
+        await assertSearch();
+        const initial = page.url();
+        await page.reload();
+        await ready(page);
+        await assertSearch();
+        const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await page.locator(".k2b-app-workspace__head-reset").click();
+        await response;
+        await ready(page);
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+        await page.goBack();
+        await ready(page);
+        expect(page.url()).toBe(initial);
+        await assertSearch();
+        await page.goForward();
+        await ready(page);
+        expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test("compact folder filters: custom range uses the existing editor and Sent keeps its subset", async () => {
+      const page = await open(`${boxPath}?folder=Filed1`);
+      const head = page.locator(".k2b-app-workspace__head-filters");
+      try {
+        await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+          route.fulfill({ json: { folders: mailboxData(new URL(page.url())).folders } }),
+        );
+        await head.getByRole("button", { name: "Date range", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Custom date range…", exact: true }).click();
+        const dialog = page.getByRole("dialog");
+        await dialog.waitFor({ state: "visible" });
+        expect(await dialog.getByText(/on or after/i, { exact: true }).count()).toBeGreaterThan(0);
+        await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+        await dialog.waitFor({ state: "hidden" });
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+        // Sent retains the approved attachment/date/tag subset, without unread or flagged buttons.
+        await page.goto(new URL(`${boxPath}?folder=Sent1`, server.url).href);
+        await ready(page);
+        expect(await head.getByRole("button", { name: /Unread|Flagged/ }).count()).toBe(0);
+        expect(await head.getByRole("button", { name: "With attachment", exact: true }).isVisible()).toBe(true);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test("compact folder filters: custom Apply on a direct link keeps a clean return target", async () => {
+      const expression = {
+        type: "and",
+        expressions: [
+          { type: "folder_id", folderId: "Filed1" },
+          { type: "unread", folderId: "Filed1" },
+        ],
+      };
+      const direct = `${boxPath}?${new URLSearchParams({ folder: "Filed1", search: JSON.stringify({ expression, sort: "newest" }) })}`;
+      const page = await open(direct);
+      const head = page.locator(".k2b-app-workspace__head-filters");
+      try {
+        await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+          route.fulfill({ json: { folders: mailboxData(new URL(page.url())).folders } }),
+        );
+        await head.getByRole("button", { name: "Date range", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Custom date range…", exact: true }).click();
+        const dialog = page.getByRole("dialog");
+        await dialog.waitFor({ state: "visible" });
+        const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await dialog.getByRole("button", { name: "Search", exact: true }).click();
+        await response;
+        await ready(page);
+        const url = new URL(page.url());
+        const starting = new URLSearchParams(url.searchParams.get("searchFrom") ?? "");
+        expect(starting.has("search")).toBe(false);
+        expect(starting.get("folder")).toBe("Filed1");
+        expect(await head.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
+        await head.getByRole("button", { name: "Last 7 days", exact: true }).click();
+        const clearDate = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await page.getByRole("menuitem", { name: "Clear date range", exact: true }).click();
+        await clearDate;
+        await ready(page);
+        const clearUnread = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await head.getByRole("button", { name: /Unread/ }).click();
+        await clearUnread;
+        await ready(page);
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+        expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test("compact folder filters: direct links clear sequentially and mixed routes keep the service precedence", async () => {
+      const expression = {
+        type: "and",
+        expressions: [
+          { type: "folder_id", folderId: "Filed1" },
+          { type: "unread", folderId: "Filed1" },
+          { type: "flagged", folderId: "Filed1" },
+        ],
+      };
+      const direct = `${boxPath}?${new URLSearchParams({ folder: "Filed1", search: JSON.stringify({ expression, sort: "newest" }) })}`;
+      const page = await open(direct);
+      const head = page.locator(".k2b-app-workspace__head-filters");
+      try {
+        for (const name of ["Flagged", /Unread/]) {
+          const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+          await head.getByRole("button", { name }).click();
+          await response;
+          await ready(page);
+        }
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+        expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+        await page.goto(new URL(`${boxPath}?view=mine&folder=Filed1`, server.url).href);
+        await ready(page);
+        expect(await currentHref(page)).toBe(`${boxPath}?view=mine`);
+        expect(await head.getByRole("button", { name: /Unread/ }).count()).toBe(0);
+        await page.goto(new URL(`${boxPath}?view=unknown&folder=Filed1`, server.url).href);
+        await ready(page);
+        expect(await head.getByRole("button", { name: /Unread/ }).isVisible()).toBe(true);
+      } finally {
+        await page.context().close();
+      }
+    });
+
     for (const theme of ["light", "dark"] as const)
       for (const width of [1440, 390])
         test(`mailbox context contrast ${theme} ${width}: folder selection and keyboard switch stay independent`, async () => {

@@ -761,6 +761,19 @@ command needs read access to the whole mailbox. See
 `cld mail reference operations.md` for the states and how to tell retries from
 a lasting problem.
 
+## Narrow a folder from the head
+
+In a folder, **Unread**, **Flagged**, **With attachment**, and **Date range**
+narrow the list within that folder. Sent offers attachment and date filters.
+These filters combine with a **Tag**; choosing a tag keeps **All** selected in
+the view tabs while preserving the folder restriction, named beside the filters. **Reset** returns to
+the view and selection where filtering began.
+
+The seven- and thirty-day presets record the time range when chosen, so Back,
+reload, and a saved URL keep the same bounds. **Custom date range…** opens the
+existing search editor with the folder and current conditions already filled
+in. Text search still searches the whole mailbox.
+
 ## Search by read state or flag
 
 **Search filters** includes **Unread** and **Flagged**. Each condition can name

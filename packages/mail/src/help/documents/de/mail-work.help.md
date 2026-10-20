@@ -117,6 +117,8 @@ Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätz
   Jede Person arbeitet aus **Mir zugewiesen**. Ihre bestätigte Antwort setzt **Wartet auf Antwort**; sie markiert die Unterhaltung als **Erledigt**.
   Nutze **Nur im Ordner** für Teamordner, die außerhalb gemeinsamer Listen bleiben sollen, wie oben beschrieben.
 
+Im Ordner grenzen **Ungelesen**, **Markiert**, **Mit Anhang** und **Zeitraum** im Kopfbereich die Liste auf diesen Ordner ein. Gesendet bietet Anhang und Zeitraum. Ein **Tag** behält die Ordnergrenze bei und wählt **Alle** in den Ansichten. **Zurücksetzen** bringt dich zum Ausgangsort und zur vorherigen Auswahl zurück. Zeitvorgaben behalten beim Neuladen ihren gewählten Zeitraum. **Eigener Zeitraum…** öffnet den Sucheditor mit den aktuellen Filtern. Eine Textsuche durchsucht weiterhin das ganze Postfach.
+
 ## Kurz hineinschauen, ohne zu öffnen {icon="eye"}
 
 Lass den Mauszeiger kurz auf einer Zeile der Unterhaltungsliste ruhen. Neben der Liste öffnet sich eine Kurzansicht. Sie zeigt:

@@ -29,7 +29,7 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCle
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
-import type { MailDraftSeed } from "../contracts";
+import type { MailDraftSeed, MailSearchState } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
@@ -703,7 +703,7 @@ function MailboxWorkspace(
   });
 
   // A later head or link navigation wins over pending search text.
-  let searchControls: { cancelPending: () => void } | undefined;
+  let searchControls: { cancelPending: () => void; edit: (state: MailSearchState, source: URL) => void } | undefined;
   const navigationStart = (href: string) => {
     // An explicit link to the current view is still newer than a mailbox switch; background reads bypass this helper.
     if (resolveMailWorkspaceUrl(href, mailboxId, window.location.origin)) props.onNavigationStart();
@@ -2569,8 +2569,13 @@ function MailboxWorkspace(
             <MailboxHeadFilters
               requestUrl={requestPath()}
               search={data.search}
+              folderId={data.folderId}
               folders={data.folders}
               localTags={data.localTags}
+              onEditSearch={(state, source) => {
+                searchControls?.cancelPending();
+                searchControls?.edit(state, source);
+              }}
               onOpenHref={(href) => {
                 searchControls?.cancelPending();
                 void openWorkspaceHref(href);

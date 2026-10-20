@@ -18,7 +18,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { Mailbox } from "../../contracts";
+import type { Mailbox, MailSearchState } from "../../contracts";
 import {
   DEFAULT_MAIL_QUICK_SEARCH_FIELDS,
   MAIL_QUICK_SEARCH_FIELDS,
@@ -116,7 +116,7 @@ export default function MailConversationList(props: {
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   /** A new search intent can supersede a pending mailbox switch before its debounce fires. */
   onNavigationStart?: () => void;
-  onSearchControls?: (controls: { cancelPending: () => void }) => void;
+  onSearchControls?: (controls: { cancelPending: () => void; edit: (state: MailSearchState, source: URL) => void }) => void;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
 }) {
@@ -261,6 +261,7 @@ export default function MailConversationList(props: {
     300,
   );
   props.onSearchControls?.({
+    edit: (state, source) => void openAdvancedSearch(state, source),
     cancelPending: () => {
       quickSearch.cancel();
       quickSearchPending = false;
@@ -308,7 +309,7 @@ export default function MailConversationList(props: {
       .join(", ");
 
   const [searchBuilderLoading, setSearchBuilderLoading] = createSignal(false);
-  const openAdvancedSearch = async () => {
+  const openAdvancedSearch = async (initialState?: MailSearchState, source?: URL) => {
     // The builder loads on first use; until its modal opens, a second activation must not open another one.
     if (searchBuilderLoading()) return;
     setSearchBuilderLoading(true);
@@ -317,13 +318,13 @@ export default function MailConversationList(props: {
     if (!builder) return;
     const result = await builder.openMailSearchBuilder({
       mailboxId: props.mailboxId,
-      initialState: currentSearchState(),
+      initialState: initialState ?? currentSearchState(),
       initialQuery: props.query,
       initialSavedView: activeSavedView(),
       canWrite: props.canWrite,
     });
     if (!result) return;
-    const currentUrl = requestUrl();
+    const currentUrl = source ?? requestUrl();
     const href =
       result.action === "apply"
         ? buildMailSearchHref(currentUrl, { search: result.serialized })
@@ -428,7 +429,7 @@ export default function MailConversationList(props: {
                   label={messages().searchFilters}
                   aria-pressed={Boolean(structuredSummary())}
                   aria-busy={searchBuilderLoading() ? "true" : undefined}
-                  onClick={openAdvancedSearch}
+                  onClick={() => void openAdvancedSearch()}
                 >
                   <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-search"} aria-hidden="true" />
                 </IconButton>
