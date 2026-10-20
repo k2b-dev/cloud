@@ -22,6 +22,7 @@ import {
   withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import { principalLabel } from "@k2b/cloud/shared";
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
@@ -2139,7 +2140,9 @@ const everydayCommands = (t: Translate) => {
         const missing = result.results.filter((item) => item.status !== "ok");
         if (!printStructured(ctx, result)) {
           const count = result.results.length - missing.length;
-          const names = result.assignees.map((user) => `${user.displayName} (${user.uid})`).join(", ") || assigneeUserIds.join(", ");
+          const names =
+            result.assignees.map((user) => `${user.displayName} (${user.uid})`).join(", ") ||
+            assigneeUserIds.map((userId) => principalLabel({ principal: { type: "user", userId } }, ctx.options.locale)).join(", ");
           ctx.print(
             names
               ? t({

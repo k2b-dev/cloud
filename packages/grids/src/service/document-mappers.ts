@@ -114,6 +114,7 @@ export const mapRecordSnapshotSummary = (row: DocumentDbRow): RecordSnapshotSumm
   tableId: row.table_id as string,
   recordId: row.record_id as string,
   createdBy: (row.created_by as string | null) ?? null,
+  createdByName: typeof row.created_by_name === "string" ? row.created_by_name : undefined,
   createdAt: (row.created_at as Date).toISOString(),
 });
 

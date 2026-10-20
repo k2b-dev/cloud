@@ -11,6 +11,7 @@ import {
   formatDurationMs,
   formatNumber,
   formatPercent,
+  principalLabel,
 } from "@k2b/cloud/shared";
 import { navigateTo } from "@k2b/ssr/nav";
 import {
@@ -102,7 +103,13 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         field === "userId"
           ? q()[field] === "unassigned"
             ? t().unassigned
-            : (report().users.items.find((row) => row.id === q()[field])?.label ?? undefined)
+            : principalLabel(
+                {
+                  principal: { type: "user", userId: q()[field] ?? "" },
+                  displayName: report().users.items.find((row) => row.id === q()[field])?.label,
+                },
+                locale(),
+              )
           : q()[field]
       }
       onValueChange={(value) => change(field, value ?? undefined)}
@@ -115,7 +122,13 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         const data = await response.json();
         return [
           ...(field === "userId" && !search ? [{ value: "unassigned", label: t().unassigned }] : []),
-          ...data.items.map((item) => ({ value: item.id, label: item.label })),
+          ...data.items.map((item) => ({
+            value: item.id,
+            label:
+              field === "userId"
+                ? principalLabel({ principal: { type: "user", userId: item.id }, displayName: item.label }, locale())
+                : (item.label ?? item.id),
+          })),
         ];
       }}
     />
@@ -174,7 +187,12 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       { label: t().errorCode, value: row.errorCode },
       { label: t().status, value: status(row.status) },
       { label: t().received, value: date(row.createdAt) },
-      { label: t().user, value: row.userLabel ?? row.userId ?? t().unassigned },
+      {
+        label: t().user,
+        value: row.userId
+          ? principalLabel({ principal: { type: "user", userId: row.userId }, displayName: row.userLabel }, locale())
+          : t().unassigned,
+      },
       { label: t().model, value: row.modelProfileId },
       { label: t().providerModel, value: row.providerModel },
       { label: t().application, value: row.appId },
@@ -203,7 +221,12 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         value: row.reasons.map((reason) => Object.entries(reasons()).find(([key]) => key === reason)?.[1] ?? reason).join(", "),
       },
       { label: t().comment, value: row.comment },
-      { label: t().user, value: row.userLabel ?? row.userId ?? t().unassigned },
+      {
+        label: t().user,
+        value: row.userId
+          ? principalLabel({ principal: { type: "user", userId: row.userId }, displayName: row.userLabel }, locale())
+          : t().unassigned,
+      },
       { label: t().model, value: row.modelProfileId },
       { label: t().providerModel, value: row.providerModel },
       { label: t().message, value: row.conversationTitle },
@@ -233,8 +256,14 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
     </StatGrid>
   );
   const groupTable = (dimension: "users" | "models" | "tasks" | "apps" | "workflows", title: string) => {
+    const groupLabel = (row: AiUsageGroup) =>
+      dimension === "users"
+        ? row.id
+          ? principalLabel({ principal: { type: "user", userId: row.id }, displayName: row.label }, locale())
+          : t().unassigned
+        : (row.label ?? row.id ?? t().unassigned);
     const columns: DataTableColumn<AiUsageGroup>[] = [
-      { id: "name", header: title, value: (row) => row.label ?? row.id ?? t().unassigned },
+      { id: "name", header: title, value: groupLabel },
       { id: "runs", header: t().runs, sortable: true, value: (row) => row.runs, align: "right" },
       { id: "tokens", header: t().tokens, sortable: true, value: (row) => row.tokens, align: "right" },
       { id: "cost", header: t().cost, sortable: true, value: (row) => row.cost, align: "right" },
@@ -268,7 +297,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
             if (col.id === "name")
               return (
                 <div>
-                  <Show when={linkable(row)} fallback={row.label ?? row.id ?? t().unassigned}>
+                  <Show when={linkable(row)} fallback={groupLabel(row)}>
                     <ButtonLink
                       variant="text"
                       size="sm"
@@ -278,7 +307,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
                           : href(patch(row))
                       }
                     >
-                      {row.label ?? row.id ?? t().unassigned}
+                      {groupLabel(row)}
                     </ButtonLink>
                   </Show>
                   <Show when={dimension === "workflows" && row.appId}>
@@ -562,7 +591,9 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               if (col.id === "user")
                 return (
                   <ButtonLink size="sm" variant="text" href={href({ userId: row.userId ?? "unassigned" })}>
-                    {row.userLabel ?? t().unassigned}
+                    {row.userId
+                      ? principalLabel({ principal: { type: "user", userId: row.userId }, displayName: row.userLabel }, locale())
+                      : t().unassigned}
                   </ButtonLink>
                 );
               if (col.id === "model")
@@ -625,7 +656,10 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
                     <div class="text-xs text-dimmed">{row.providerModel}</div>
                   </div>
                 );
-              if (col.id === "user") return row.userLabel ?? row.userId ?? t().unassigned;
+              if (col.id === "user")
+                return row.userId
+                  ? principalLabel({ principal: { type: "user", userId: row.userId }, displayName: row.userLabel }, locale())
+                  : t().unassigned;
               if (col.id === "when") return <span class="whitespace-nowrap text-xs">{date(row.createdAt)}</span>;
               if (col.id === "details")
                 return (

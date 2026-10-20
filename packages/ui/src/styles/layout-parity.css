@@ -2304,10 +2304,18 @@ html {
   /* The workspace does not clip from here, so the detail panel's shadow shows
      on every edge, also beyond a framed workspace. The parts that paint at the
      workspace's corners round themselves instead. Narrower, the workspace
-     clips: the overlay sidebar slides in from its edge. */
+     clips: the overlay sidebar slides in from its edge. The work area's start
+     corners are the workspace's corners exactly when no sidebar column lies
+     before it, so the sidebar space alone decides them: no sidebar, a hidden
+     one, or a host that hides it another way and sets the space to 0, such as
+     Cloud's focus mode. */
   .k2b-ui .k2b-app-workspace {
     --k2b-workspace-inner-radius: max(0px, var(--k2b-workspace-radius) - 1px);
-    --k2b-workspace-start-radius: var(--k2b-workspace-inner-radius);
+    --k2b-workspace-start-radius: clamp(
+      0px,
+      var(--k2b-workspace-inner-radius) - var(--k2b-workspace-sidebar-space) * 1000,
+      var(--k2b-workspace-inner-radius)
+    );
     overflow: visible;
   }
 
@@ -2316,14 +2324,6 @@ html {
      stay. */
   .k2b-ui .k2b-app-workspace[data-workspace-detail-sliding] {
     clip-path: inset(-4rem 0 -4rem -4rem);
-  }
-
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    ) {
-    --k2b-workspace-start-radius: 0px;
   }
 
   .k2b-ui .k2b-app-workspace__head {

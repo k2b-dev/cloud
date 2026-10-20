@@ -19,6 +19,7 @@ import {
   withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import { principalLabel } from "@k2b/cloud/shared";
 import { dates, type Paginated } from "@k2b/stdlib";
 import type {
   CalendarItem,
@@ -1099,7 +1100,7 @@ function spacesCommands(locale?: string) {
             { ...page, items: page.items.map((comment) => withCloudResourcePermalink(ctx, "spaces.comment", comment)) },
             page.items.map((comment) => ({
               id: comment.id,
-              author: comment.userName ?? comment.userId ?? "",
+              author: principalLabel({ principal: { type: "user", userId: comment.userId ?? "" }, displayName: comment.userName }, locale),
               content: comment.content.replace(/\s+/g, " ").slice(0, 80),
               createdAt: comment.createdAt,
             })),
