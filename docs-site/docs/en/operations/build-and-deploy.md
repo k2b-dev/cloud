@@ -327,17 +327,24 @@ such as Grids, Mail, Contacts, Spaces, and Weather. See
 
 ## Enable panel providers
 
-Registry entries now accept optional `panel` metadata, and signed-in pages show
-a panel slot when a running application declares one. Nothing changes for
-readers until an application does. During a mixed rollout, pages served by an
-application built against an older `@k2b/cloud` show no slot; they ignore the
+Core now declares Help as a panel provider. Every signed-in reader has the
+slot on Layout pages unless the page sets `panel={false}`. Other applications
+can declare their own providers through optional `panel` registry metadata.
+During a mixed rollout, pages served by an application built against an older `@k2b/cloud` show no slot; they ignore the
 new field.
 
 Keep same-origin iframes allowed on provider routes. An operator's reverse
 proxy or security headers must not set `X-Frame-Options: DENY` or a
 `frame-ancestors` policy that blocks `'self'`. The provider remains responsible
 for authorization: panel visibility grants no route or resource access.
+Blocked framing prevents Help from becoming ready; the slot shows **The panel
+did not load** with **Try again**.
 See [Offer a panel](/en/docs/platform/panels).
+
+`defineApp()` now rejects a `panel.href` at or below the application's
+`<basePath>/help` path, because the framework's Help redirects would shadow
+it. An application with such a provider route must move it before it upgrades,
+or it fails at startup.
 
 ### Panel context consent after the upgrade
 

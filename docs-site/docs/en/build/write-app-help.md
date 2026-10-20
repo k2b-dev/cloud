@@ -63,7 +63,9 @@ started**, **Look up**, and **Solve problems**; empty groups are absent.
 
 Name two or three articles that fit each main page with Layout's
 `help={["inventory-start", "inventory-access"]}` prop. They appear first under
-**For this view**, in the declared order, and remain in their usual groups.
+**For this view** in the Help panel, in the declared order, and remain in their
+usual groups. Layout sends the IDs through the panel context so the server
+can render them before the browser runtime starts.
 Keep these IDs beside the app's Help declaration and test that every ID exists
 in each language you ship. See [In-product Help](/en/docs/platform/help#use-the-automatically-derived-surfaces)
 for the Layout example and filtering rules.

@@ -5,7 +5,7 @@ section: Platform services
 order: 588
 description: Offer an authorized application page beside the current Cloud app.
 tags: [panels, applications, layout, ssr]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Offer a panel
@@ -15,6 +15,10 @@ open it beside the app they are using. Cloud owns the slot, sizing, provider
 tabs, loading feedback, and focus return. The application owns the page, its
 routes, data, and authorization. Built-in and third-party applications use the
 same contract.
+
+Core's Help is the first provider: every signed-in reader has Help in this
+slot. It uses the same `panel`, `PanelLayout`, and context APIs as any other
+application.
 
 ## Declare and serve the page
 
@@ -41,7 +45,9 @@ export const app = defineApp({
 
 `href` must be a same-origin path below an application-owned route. External
 URLs, protocol-relative URLs, and paths that escape the route are rejected at
-startup. `label` and `icon` must be nonempty strings. Translate the label with
+startup. `defineApp()` also rejects `panel.href` at or below the app's Help path
+`<basePath>/help`, because the framework answers those paths with Help redirects.
+`label` and `icon` must be nonempty strings. Translate the label with
 `presentation.translations[locale].panelLabel`; the label defaults to the
 application's base locale. Cloud sorts visible providers by localized label,
 then application ID. No provider gets priority.
@@ -115,6 +121,8 @@ provider. A provider's menu, dialog, or search field can keep Escape by calling
 `preventDefault()`; the provider runtime checks after event dispatch finishes.
 While a modal dialog is open in the provider page, Escape belongs to that
 dialog and never closes the panel.
+Ctrl+K, or Cmd+K on Apple devices, inside a provider opens the host page's global
+search when that page offers it.
 The close button also closes it. `closePanel()` works both in the host app and
 inside the provider page. Focus returns to the opener, or to the app's main area
 if the opener is gone or hidden. Opening a workspace Detail does not close the
@@ -262,6 +270,12 @@ place, for example to render **For this view** without a second frame:
 import { readPanelContext } from "@k2b/cloud/ssr";
 
 const context = readPanelContext(c); // PanelPageContext | null
+// Core's Help selects context?.app ?? "core", checks the app's visibility,
+// then reads its authorized manifest before selecting any document IDs.
+const ids = new Set(manifest.documents.map((document) => document.id));
+const view = context?.app === app.id
+  ? [...new Set(context.help ?? [])].filter((id) => ids.has(id)).slice(0, 3)
+  : [];
 ```
 
 The helper never throws. It rejects oversized parameters before parsing JSON,

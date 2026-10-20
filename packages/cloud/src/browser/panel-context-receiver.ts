@@ -43,6 +43,8 @@ export function installPanelContextReceiver(): () => void {
     const shortcuts = JSON.stringify(context ? (event.data.shortcuts ?? []) : []);
     const shortcutsChanged = shortcutsElement.textContent !== shortcuts;
     shortcutsElement.textContent = shortcuts;
+    // Remember accepted snapshots, including empty ones, across Help remounts.
+    shortcutsElement.setAttribute("data-received", "");
     if (shortcutsChanged) window.dispatchEvent(new Event(PANEL_SHORTCUTS_CHANGED));
     if (contextChanged || !shortcutsChanged) window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
   };

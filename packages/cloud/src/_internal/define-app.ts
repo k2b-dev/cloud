@@ -379,12 +379,19 @@ const validateAppNavBadge = (opts: Pick<AppOptions, "id" | "routes" | "nav">): v
   }
 };
 
-const validateAppPanel = (opts: Pick<AppOptions, "id" | "routes" | "panel">): AppMeta["panel"] => {
+const validateAppPanel = (opts: Pick<AppOptions, "id" | "routes" | "basePath" | "panel">): AppMeta["panel"] => {
   const panel = opts.panel;
   if (panel === undefined) return undefined;
   if (!panel || typeof panel !== "object" || Array.isArray(panel)) throw new Error(`App "${opts.id}" declares panel; it must be an object`);
   if (typeof panel.href !== "string" || !isOwnAppPath(panel.href, opts.routes)) {
     throw new Error(`App "${opts.id}" declares panel.href "${panel.href}"; it must be a same-origin path below one of its routes`);
+  }
+  const pageBase = `${opts.basePath?.replace(/\/$/, "") ?? ""}/help`;
+  const path = new URL(panel.href, "https://cloud.invalid").pathname;
+  if (path === pageBase || path.startsWith(`${pageBase}/`)) {
+    throw new Error(
+      `App "${opts.id}" declares panel.href "${panel.href}"; it must not be at or below its Help path "${pageBase}", which the framework uses for Help`,
+    );
   }
   for (const field of ["label", "icon"] as const) {
     if (typeof panel[field] !== "string" || !panel[field].trim())

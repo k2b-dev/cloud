@@ -18,7 +18,8 @@ import {
   type PanelState,
 } from "./panel-context-bridge";
 import PanelMenu from "./panel-menu";
-import { isPanelCloseMessage, isPanelReadyMessage } from "./panel-messages";
+import { isPanelCloseMessage, isPanelReadyMessage, isPanelSearchMessage } from "./panel-messages";
+import { importOnDemand } from "./reload";
 
 export const PANEL_READY_TIMEOUT_MS = 10_000;
 let installed: { dispose: () => void; request: (request: PanelRequest) => void } | undefined;
@@ -550,6 +551,10 @@ export function installPanelSlot(): () => void {
     if (!frame || event.source !== frame.contentWindow || event.origin !== location.origin) return;
     if (isPanelReadyMessage(event.data, provider.id)) markReady();
     else if (isPanelCloseMessage(event.data)) close();
+    else if (isPanelSearchMessage(event.data)) {
+      const command = contextCommandsWithShortcuts().find((command) => command.id === "cloud.search" && command.shortcut);
+      if (command) void importOnDemand(() => import("./commands")).then((commands) => commands?.runContextAwareCommand(command));
+    }
   };
   const click = (event: MouseEvent) => {
     if (!(event.target instanceof Element)) return;

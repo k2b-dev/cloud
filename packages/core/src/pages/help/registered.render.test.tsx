@@ -53,6 +53,7 @@ const apps: CloudRuntime["apps"] = [
 const server = new Hono<{ Variables: AuthContext["Variables"] & { runtime: CloudRuntime } }>()
   .use(async (c, next) => {
     c.set("user", person);
+    c.set("actor", { kind: "user", user: person });
     c.set("runtime", { apps });
     await next();
   })
@@ -60,6 +61,7 @@ const server = new Hono<{ Variables: AuthContext["Variables"] & { runtime: Cloud
   .get("/help/apps/:appId/:topic", ...page);
 
 test("registered Help keeps the owning app's rail, canvas and localized way up", async () => {
+  const articleReads: string[] = [];
   const spies = [
     spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
@@ -79,7 +81,23 @@ test("registered Help keeps the owning app's rail, canvas and localized way up",
       },
       list: async () => [],
       search: async () => [],
-      read: async () => null,
+      read: async ({ appId, documentId }) => {
+        articleReads.push(`${appId}/${documentId}`);
+        return {
+          appId,
+          documentId,
+          appName: appId,
+          title: `${appId} fixture article`,
+          locale,
+          manifestHash: appId,
+          order: 1,
+          kind: "task",
+          needs: "edit",
+          related: [],
+          links: {},
+          markdown: 'Server fixture lead.\n\n## Open sharing {icon="share"}\n\n:::steps\n1. Server fixture body.\n2. Confirm sharing.\n:::',
+        };
+      },
     })),
   ];
   try {
@@ -99,11 +117,26 @@ test("registered Help keeps the owning app's rail, canvas and localized way up",
         expect(titleRow).toContain(`href="/app/${id}"`);
         expect(titleRow).toContain(locale === "de" ? "Hilfe" : "Help");
         expect(html).toContain(`${id}-start`);
+        if (topic) {
+          expect(html).toContain('class="help-article-facts"');
+          expect(html).toContain("Server fixture lead.");
+          expect(html).toContain("Server fixture body.");
+          if (locale === "en") expect(html).toContain("2 steps");
+          expect(html).not.toContain('data-state="loading"');
+        } else expect(html).not.toContain("Server fixture lead.");
         for (const other of ["spaces", "timetrack", "restricted"].filter((other) => other !== id))
           expect(html).not.toContain(`${other}-start`);
       }
     }
-    for (const id of ["restricted", "missing", "core"]) expect((await server.request(`/help/apps/${id}`)).status).toBe(404);
+
+    for (const topic of ["unknown-id", "UpperCase"]) {
+      const html = await (await server.request(`/help/apps/spaces/${topic}`)).text();
+      expect(html).not.toContain("data-help-article-head");
+      expect(html).not.toContain("Server fixture lead.");
+    }
+    for (const id of ["restricted", "missing", "core"])
+      for (const suffix of ["", `/${id}-start`]) expect((await server.request(`/help/apps/${id}${suffix}`)).status).toBe(404);
+    expect(articleReads).toEqual(["timetrack/timetrack-start", "timetrack/timetrack-start"]);
   } finally {
     for (const spy of spies) spy.mockRestore();
   }
