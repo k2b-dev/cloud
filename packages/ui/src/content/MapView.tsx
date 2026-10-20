@@ -44,6 +44,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   let visible = false;
   let mounted = false;
   let touched = false;
+  let replacingStyle = false;
   let generation = 0;
   let intersection: IntersectionObserver | undefined;
   let resize: ResizeObserver | undefined;
@@ -57,6 +58,7 @@ export function MapView(props: MapViewProps): JSX.Element {
     setBoxStyle(undefined);
     setLiveScale(undefined);
     currentStyle = undefined;
+    replacingStyle = false;
   };
   const syncOverlay = () => {
     const f = frame();
@@ -119,7 +121,9 @@ export function MapView(props: MapViewProps): JSX.Element {
         pitch: 0,
         keyboard: true,
         trackResize: false,
-        renderWorldCopies: false,
+        // MapLibre's own gestures (keyboard and double-click zoom, inertia) follow the same choice as our buttons.
+        // The value is read when the map starts; MapLibre keeps one setting for all maps on the page.
+        reduceMotion: prefersReducedMotion(),
         locale: {
           "Map.Title": t.canvasTitle,
           "CooperativeGesturesHandler.WindowsHelpText": t.gestureWindows,
@@ -128,8 +132,13 @@ export function MapView(props: MapViewProps): JSX.Element {
         },
       });
       map = instance;
-      instance.on("error", () => {
-        if (state() === "loading") fail();
+      instance.on("error", (event) => {
+        // Tile and source errors name their source and leave the map usable; a style that does not load does not.
+        const styleFailed = !("sourceId" in event) && !("tile" in event);
+        if (state() === "loading" || (replacingStyle && styleFailed)) fail();
+      });
+      instance.on("style.load", () => {
+        replacingStyle = false;
       });
       instance.on("load", () => {
         if (disposed || attempt !== generation) return;
@@ -196,6 +205,7 @@ export function MapView(props: MapViewProps): JSX.Element {
     const style = resolvedStyle();
     if (state() === "ready" && map && style !== currentStyle) {
       currentStyle = style;
+      replacingStyle = true;
       map.setStyle(style);
     }
   });

@@ -17,7 +17,7 @@ Bun.plugin(plugin());
 const { MapView } = await import("./MapView");
 const { Button } = await import("../actions/Button");
 const dist = resolve(import.meta.dir, "../../dist");
-type FixtureOptions = { stylePath: string; empty?: boolean };
+type FixtureOptions = { stylePath: string; darkPath?: string; empty?: boolean };
 // Shared data and tree, without compiled JSX closures: SSR and the browser create the very same fixture.
 function fixtureTree(
   components: {
@@ -43,7 +43,7 @@ function fixtureTree(
   return [
     createComponent(MapView, {
       height: 400,
-      style: { light: options.stylePath, dark: "/dark.json" },
+      style: { light: options.stylePath, dark: options.darkPath ?? "/dark.json" },
       markers,
       get selectedId() {
         return selectedId();
@@ -193,6 +193,7 @@ const style = (dark: boolean): MapViewStyle => ({
   ],
 });
 let failedStyleRequests = 0;
+let failedDarkRequests = 0;
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -201,12 +202,15 @@ const server = Bun.serve({
     if (url.pathname === "/styles.css")
       return new Response(readFileSync(resolve(dist, "styles.css")), { headers: { "Content-Type": "text/css" } });
     if (url.pathname === "/flaky.json" && ++failedStyleRequests === 1) return new Response("Style unavailable", { status: 500 });
+    if (url.pathname === "/dark.json" && url.searchParams.has("fail") && ++failedDarkRequests === 1)
+      return new Response("Style unavailable", { status: 500 });
     if (["/light.json", "/dark.json", "/flaky.json"].includes(url.pathname)) return Response.json(style(url.pathname === "/dark.json"));
     const asset = assets.get(url.pathname.slice(1));
     if (asset) return new Response(asset, { headers: { "Content-Type": "text/javascript" } });
     if (url.pathname !== "/") return new Response("Missing", { status: 404 });
     const options: FixtureOptions = {
       stylePath: url.searchParams.has("flaky") ? "/flaky.json" : "/light.json",
+      darkPath: url.searchParams.has("darkfail") ? "/dark.json?fail" : "/dark.json",
       empty: url.searchParams.has("empty"),
     };
     const html = renderToString(() => fixtureTree({ MapView, Button, createComponent, createSignal }, options));
@@ -417,6 +421,27 @@ for (const method of ["system", "attribute"]) {
       const initial = samples[0]!;
       expect(samples.at(-1)!).toBeCloseTo(initial * 2, 1);
       expect(samples.every((value) => Math.abs(value - initial) < 1 || Math.abs(value - initial * 2) < 1)).toBe(true);
+      // MapLibre's own keyboard zoom on the canvas follows the same choice.
+      await page.locator(".maplibregl-canvas").focus();
+      // settled: the changing camera frames are the subject; deliberately sample throughout the zoom.
+      await page.evaluate(() => {
+        const fit = document.querySelector(".k2b-map-view__fit")!;
+        const widths = [fit.getBoundingClientRect().width];
+        const state = window as Window & { mapKeyZoom?: Promise<number[]> };
+        state.mapKeyZoom = (async () => {
+          const started = performance.now();
+          while (performance.now() - started < 600) {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            widths.push(fit.getBoundingClientRect().width);
+          }
+          return widths;
+        })();
+      });
+      await page.keyboard.press("=");
+      const keySamples = await page.evaluate(() => (window as Window & { mapKeyZoom?: Promise<number[]> }).mapKeyZoom!);
+      const before = keySamples[0]!;
+      expect(keySamples.at(-1)!).toBeCloseTo(before * 2, 1);
+      expect(keySamples.every((value) => Math.abs(value - before) < 1 || Math.abs(value - before * 2) < 1)).toBe(true);
     } finally {
       await page.close();
     }
@@ -478,6 +503,25 @@ test("a failed style leaves usable pins and retry fetches it a second time", asy
     await page.getByRole("button", { name: "Try again" }).click();
     await ready(page);
     expect(failedStyleRequests).toBe(2);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a theme style that fails after the map is ready shows the error and retry loads it", async () => {
+  failedDarkRequests = 0;
+  const page = await browser.newPage({ reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?darkfail`);
+    await ready(page);
+    await page.evaluate(() => document.documentElement.classList.add("dark"));
+    await page.waitForFunction(() => document.querySelector(".k2b-map-view")?.getAttribute("data-state") === "error", undefined, {
+      timeout: 20_000,
+    });
+    expect(await page.locator(".k2b-map-view__pin").count()).toBe(3);
+    await page.getByRole("button", { name: "Try again" }).click();
+    await ready(page);
+    expect(failedDarkRequests).toBe(2);
   } finally {
     await page.close();
   }

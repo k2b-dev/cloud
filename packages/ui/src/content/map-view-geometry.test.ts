@@ -119,6 +119,18 @@ describe("MapView geometry", () => {
       expect(pinOffsets(pins, f)).toEqual(offsets);
     }
   });
+  test("never fits further out than MapLibre allows: the world stays at least as tall as the map", () => {
+    // Pins across the whole world on a phone: the narrow width would ask for a zoom below the one where the world fills 400 px.
+    const markers = [marker("west", 1, 0, -170), marker("east", 2, 0, 170)];
+    const f = mapFrame({ markers }, 400, 48)!;
+    const camera = fitCamera(f, 390, 48);
+    expect(512 * 2 ** camera.zoom).toBeCloseTo(400, 6);
+    expect(f.minWidth).toBeCloseTo(f.spanX * 400, 12);
+    // A city keeps its ordinary fit.
+    const city = mapFrame({ markers: [marker("a", 1, 48.39, 9.98), marker("b", 2, 48.41, 10)] }, 400, 48)!;
+    expect(city.minWidth).toBeLessThan(Math.min(390 - 96, city.referenceWidth));
+    expect(fitCamera(city, 390, 48).zoom).toBeCloseTo(Math.log2(Math.min(390 - 96, city.referenceWidth) / (city.spanX * 512)), 9);
+  });
   test("uses nice scale values in metres and kilometres", () => {
     expect(metersPerPixel(60, 5)).toBeCloseTo(metersPerPixel(0, 5) / 2, 8);
     expect(scaleBar(3)).toEqual({ meters: 200, label: "200 m" });

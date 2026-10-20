@@ -21,11 +21,15 @@ export const mapNumber = (value: number): string => String(Number(value.toFixed(
 export const selectedMarker = (markers: MapViewMarker[], selectedId?: string): MapViewMarker | undefined =>
   selectedId !== undefined ? markers.find((marker) => marker.id === selectedId) : markers.find((marker) => marker.selected);
 
+/** The CSS form of fitCamera's width rule, so the server lays out exactly what MapLibre shows. */
+const fittedWidth = (frame: MapFrame, padding: number): string =>
+  `max(min(100% - ${2 * padding}px, ${frame.referenceWidth}px), ${frame.minWidth}px)`;
+
 export function frameStyle(frame: MapFrame, padding: number): JSX.CSSProperties {
   return {
     left: "50%",
     top: "50%",
-    width: `min(100% - ${2 * padding}px, ${frame.referenceWidth}px)`,
+    width: fittedWidth(frame, padding),
     "aspect-ratio": `${frame.spanX} / ${frame.spanY}`,
     transform: "translate(-50%, -50%)",
   };
@@ -147,7 +151,7 @@ export function MapGeometry(
       <div class="k2b-map-view__pins" role="group" aria-label={messages().pins}>
         <For each={markers()}>
           {(marker) => {
-            const name = marker.mark === undefined ? marker.label : `${marker.mark} ${marker.label}`;
+            const name = () => (marker.mark === undefined ? marker.label : `${marker.mark} ${marker.label}`);
             const style = () => ({
               ...positionStyle(marker.point, props.frame),
               "--k2b-map-pin-dx": `${mapNumber(offsets().get(marker.id)?.dx ?? 0)}px`,
@@ -164,7 +168,7 @@ export function MapGeometry(
                   data-selected={selected()?.id === marker.id || undefined}
                   style={style()}
                   role="img"
-                  aria-label={name}
+                  aria-label={name()}
                 >
                   <span aria-hidden="true">{marker.mark}</span>
                 </span>
@@ -178,7 +182,7 @@ export function MapGeometry(
                 data-stop={isStop(marker) || undefined}
                 data-drop={marker.mark === undefined || undefined}
                 style={style()}
-                aria-label={name}
+                aria-label={name()}
                 aria-pressed={selected()?.id === marker.id}
                 tabIndex={(selected() ?? markers()[0])?.id === marker.id ? 0 : -1}
                 onKeyDown={(event) => keydown(event, marker)}
@@ -198,7 +202,7 @@ export function referenceScale(frame: MapFrame, padding: number): MapScale {
   const center = unprojectPoint(frame.minX + frame.spanX / 2, frame.minY + frame.spanY / 2);
   const spanMeters = frame.spanX * EARTH_CIRCUMFERENCE * Math.cos((center.lat * Math.PI) / 180);
   const bar = scaleBar(spanMeters / frame.referenceWidth);
-  return { label: bar.label, width: `calc(min(100% - ${padding * 2}px, ${frame.referenceWidth}px) * ${bar.meters / spanMeters})` };
+  return { label: bar.label, width: `calc(${fittedWidth(frame, padding)} * ${bar.meters / spanMeters})` };
 }
 export function MapScaleBar(props: { scale: MapScale }): JSX.Element {
   return (

@@ -2,7 +2,19 @@ import type { MapViewFrameProps, MapViewLine, MapViewMarker, MapViewPoint } from
 
 export const MIN_SPAN = 256 / (512 * 2 ** 16);
 export const EARTH_CIRCUMFERENCE = 40075016.686;
-export type MapFrame = { minX: number; minY: number; spanX: number; spanY: number; aspect: number; referenceWidth: number };
+/**
+ * `referenceWidth` is the fitted width when the container is wide enough; `minWidth` keeps the whole world at least as
+ * tall as the map, the smallest zoom MapLibre allows, so a world-scale fit lands where MapLibre puts it.
+ */
+export type MapFrame = {
+  minX: number;
+  minY: number;
+  spanX: number;
+  spanY: number;
+  aspect: number;
+  referenceWidth: number;
+  minWidth: number;
+};
 
 export function decodePolyline6(encoded: string): MapViewPoint[] {
   let index = 0;
@@ -66,10 +78,11 @@ export function mapFrame(
   minX -= (spanX - (maxX - minX)) / 2;
   minY -= (spanY - (maxY - minY)) / 2;
   const aspect = spanX / spanY;
-  return { minX, minY, spanX, spanY, aspect, referenceWidth: (height - 2 * padding) * aspect };
+  const minWidth = spanX * height;
+  return { minX, minY, spanX, spanY, aspect, referenceWidth: Math.max((height - 2 * padding) * aspect, minWidth), minWidth };
 }
 export function fitCamera(frame: MapFrame, width: number, padding = 48): { center: [number, number]; zoom: number } {
-  const w = Math.max(Number.EPSILON, Math.min(width - 2 * padding, frame.referenceWidth));
+  const w = Math.max(Number.EPSILON, frame.minWidth, Math.min(width - 2 * padding, frame.referenceWidth));
   const center = unprojectPoint(frame.minX + frame.spanX / 2, frame.minY + frame.spanY / 2);
   return { center: [center.lon, center.lat], zoom: Math.log2(w / (frame.spanX * 512)) };
 }

@@ -75,8 +75,12 @@ the map image arrives or the camera changes.
 
 Until someone moves or zooms the camera, geometry changes and resizing fit
 again without animation. A selected pin outside the view is brought into view.
-Zoom and selection respect both the operating system's reduced motion setting
-and `data-k2b-motion="reduced"` on `html`.
+Zoom buttons, selection, and MapLibre's own keyboard, double-click, and drag
+gestures respect both the operating system's reduced motion setting and
+`data-k2b-motion="reduced"` on `html`: the camera jumps instead of flying or
+easing. MapLibre reads the setting when the map starts. Geometry that spans
+most of the world never fits further out than the zoom at which the world is
+as tall as the map, which is as far as MapLibre goes.
 
 ## States in the same space
 
@@ -85,7 +89,7 @@ and `data-k2b-motion="reduced"` on `html`.
 | `static` | Server geometry and pins; also the first client frame. Zoom is disabled. |
 | `loading` | The same geometry with a quiet loading chip. |
 | `ready` | Map image under the geometry; zoom and cooperative pan gestures work. |
-| `error` | Pins remain, with a message and **Try again**. Retry creates a fresh map and requests the style again. |
+| `error` | Pins remain, with a message and **Try again**. Also shown when a later style, such as the dark one after a theme switch, does not load. Retry creates a fresh map and requests the style again. |
 | `no-webgl` | Pins remain with a browser capability message. |
 | `empty` | The host's `empty` content; MapLibre never loads. |
 
