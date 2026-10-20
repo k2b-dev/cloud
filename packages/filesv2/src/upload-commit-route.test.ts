@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import * as cloudServer from "@k2b/cloud/server";
-import type { MiddlewareHandler } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
+import { testActor, testCall } from "../test/files-call";
 import { FilesError } from "./service/errors";
 
 const pass: MiddlewareHandler = async (_c, next) => next();
@@ -31,7 +32,15 @@ mock.module("./service", () => ({
   },
 }));
 
-const { default: api } = await import("./api");
+const { default: routes } = await import("./api");
+const api = new Hono<cloudServer.AuthContext>()
+  .use("*", async (c, next) => {
+    c.set("actor", testActor);
+    c.set("accessSubject", testCall(testActor).accessSubject);
+    c.set("credentialKind", "session");
+    await next();
+  })
+  .route("/", routes);
 const { publicApi } = await import("./public");
 
 for (const [app, path] of [

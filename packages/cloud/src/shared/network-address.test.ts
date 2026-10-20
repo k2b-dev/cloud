@@ -124,7 +124,6 @@ describe("operator network allowlist", () => {
     "",
     "*.example",
     "http://example.com",
-    "example.com:80",
     "example.com/path",
     "u@example.com",
     " example.com",
@@ -204,4 +203,42 @@ test("env allowlist parsing retains the policy and names invalid configuration",
   expect(() => parseNetworkAllowlistEnv("APP_ALLOWED_TARGETS", ["0.0.0.0/0"])).toThrow(
     "APP_ALLOWED_TARGETS: Invalid network allowlist entry",
   );
+});
+
+test("port entries preserve legacy lists and validate exact port syntax", () => {
+  const legacy = ["storage.test", "10.20.0.0/16", "127.0.0.1", "fd00::/64"];
+  expect(parseNetworkAllowlist(legacy)).toEqual({
+    hosts: new Set(["storage.test"]),
+    networks: [
+      { address: "10.20.0.0", family: 4, bits: 16 },
+      { address: "127.0.0.1", family: 4, bits: 32 },
+      { address: "fd00::", family: 6, bits: 64 },
+    ],
+  });
+  const list = parseNetworkAllowlist(["WEB.local.:9100", "10.0.0.1:8123", "[fd00::1]:443"]);
+  expect(list.hostPorts).toEqual(
+    new Map([
+      ["web.local", new Set([9100])],
+      ["10.0.0.1", new Set([8123])],
+      ["fd00::1", new Set([443])],
+    ]),
+  );
+  expect(list.hosts.size).toBe(0);
+  expect(list.networks).toEqual([]);
+  for (const entry of [
+    "web:0",
+    "web:01",
+    "web:65536",
+    "web:-1",
+    "web:+1",
+    "web:1.5",
+    "web:",
+    "[::1]:0",
+    "10.0.0.0/8:80",
+    "10.0.0.0:80/8",
+    "[fd00::/64]:80",
+    "0.0.0.0/0",
+    "::/0",
+  ])
+    expect(() => parseNetworkAllowlist([entry])).toThrow();
 });

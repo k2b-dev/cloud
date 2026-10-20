@@ -17,13 +17,13 @@ let origin: string;
 let railId: string;
 let columnId: string;
 const swaps = new Map<string, number>();
-const wrapper = (id: string, props: { label?: string; tab?: string } = {}) =>
+const wrapper = (id: string, props: { label?: string; tab?: string; async?: boolean } = {}) =>
   `<solid-island data-id="${id}" data-props='${JSON.stringify(toJSON(props))}'></solid-island>`;
 const html = (url: URL) => {
   const label = url.pathname.endsWith("/B") ? "B" : "A";
   return `<!doctype html><html><head><title>${label}</title><link rel="stylesheet" href="/base.css"></head><body class="k2b-ui">
     <div data-nav-shell="history" data-nav-scope="/app">${wrapper(railId)}
-    <main data-nav-root><h1>${label}</h1>${wrapper(columnId, { label, tab: url.searchParams.get("tab") ?? "0" })}</main></div>
+    <main data-nav-root><h1>${label}</h1>${wrapper(columnId, { label, tab: url.searchParams.get("tab") ?? "0", async: url.searchParams.has("async") })}</main></div>
     <script type="module" data-ssr-assets="/_ssr/v1">
       await import('/_ssr/v1/${railId}.js');
       await import('/_ssr/v1/${columnId}.js');
@@ -46,27 +46,50 @@ beforeAll(async () => {
   );
   writeFileSync(
     column,
-    `import { createSignal, onMount, onCleanup } from "solid-js";
+    `import { createSignal, Show, onMount, onCleanup } from "solid-js";
     import { listenPopState } from ${nav};
     import { dialogCore } from ${dialog};
     export default function Column(props) {
       const [tab, setTab] = createSignal(props.tab);
+      const [pending, setPending] = createSignal(false);
+      let generation = 0;
+      const commits = [];
+      const restores = [];
       const showUrl = () => setTab(new URL(location.href).searchParams.get("tab") ?? "0");
       const count = key => { document.documentElement.dataset[key] = String(Number(document.documentElement.dataset[key] ?? 0) + 1); };
-      const push = value => { history.pushState(null, "", '/app/' + props.label + '?tab=' + value); showUrl(); };
+      const push = value => { ++generation; history.pushState(null, "", '/app/' + props.label + (props.async ? '?async=1&tab=' : '?tab=') + value); showUrl(); setPending(false); };
       onMount(() => {
-        onCleanup(listenPopState(() => { count("helperPops"); showUrl(); }));
+        onCleanup(listenPopState(navigation => {
+          count("helperPops");
+          if (!props.async) { showUrl(); return; }
+          const restore = navigation.deferScrollRestore();
+          const token = ++generation;
+          const next = navigation.url.searchParams.get("tab") ?? "0";
+          restores.push(restore);
+          commits.push(() => { if (token !== generation) return; setTab(next); setPending(false); restore(); });
+          setPending(true);
+        }));
+        const commit = event => commits[event.detail]?.();
+        const stale = event => restores[event.detail]?.();
+        window.addEventListener("async-list-commit", commit);
+        window.addEventListener("async-list-stale", stale);
+        onCleanup(() => { ++generation; window.removeEventListener("async-list-commit", commit); window.removeEventListener("async-list-stale", stale); });
         const raw = () => count("rawPops");
         window.addEventListener("popstate", raw);
         onCleanup(() => window.removeEventListener("popstate", raw));
       });
       return <section>
         <b data-state>{props.label}:{tab()}</b>
+        <Show when={props.async}>
+          <span data-async-pending>{String(pending())}</span>
+          <Show when={tab()} keyed>{value => <div data-scroll-preserve={"async-" + value} style="height:100px;overflow:auto"><div style="height:1400px">List {value}</div></div>}</Show>
+        </Show>
         <button id="tab1" onClick={() => push('1')}>Tab 1</button>
         <button id="tab2" onClick={() => push('2')}>Tab 2</button>
         <button id="replace" onClick={() => { history.replaceState({}, "", '/app/' + props.label + '?tab=3'); showUrl(); }}>Replace</button>
         <button id="dialog" onClick={() => void dialogCore.open(() => <p>Transient dialog</p>, { history: true, ariaLabel: "History dialog" })}>Dialog</button>
         <div data-scroll-preserve="column" style="height:100px;overflow:auto"><div style="height:1400px">{props.label} region</div></div>
+        <div data-scroll-preserve="page" data-scroll-page style="height:100px;overflow:auto"><div style="height:1400px">{props.label} page</div></div>
       </section>;
     }`,
   );
@@ -353,25 +376,35 @@ test(`${browserName}: Back and Forward restore each entry's window and keyed col
     await page.evaluate(() => {
       window.scrollTo(0, 620);
       document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')!.scrollTop = 180;
+      document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')!.scrollTop = 240;
     });
     await page.waitForFunction(() => scrollY === 620);
     // A programmatic link activation keeps the departure scroll untouched by Playwright's scroll-into-view.
     await page.locator("#B").evaluate((element) => element instanceof HTMLElement && element.click());
     await column(page, "B");
+    expect(await page.locator('[data-scroll-preserve="page"]').evaluate((element) => element.scrollTop)).toBe(0);
+    expect(await page.locator('[data-scroll-preserve="column"]').evaluate((element) => element.scrollTop)).toBe(180);
     await page.evaluate(() => {
       window.scrollTo(0, 930);
       document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')!.scrollTop = 410;
+      document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')!.scrollTop = 360;
     });
     await page.waitForFunction(() => scrollY === 930);
     await page.goBack();
     await column(page, "A");
     await page.waitForFunction(
-      () => scrollY === 620 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 180,
+      () =>
+        scrollY === 620 &&
+        document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 180 &&
+        document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')?.scrollTop === 240,
     );
     await page.goForward();
     await column(page, "B");
     await page.waitForFunction(
-      () => scrollY === 930 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 410,
+      () =>
+        scrollY === 930 &&
+        document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 410 &&
+        document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')?.scrollTop === 360,
     );
     expect([...swaps]).toEqual([
       ["/app/B", 2],
@@ -426,6 +459,83 @@ test(`${browserName}: a reload keeps the departed page's window and keyed column
       ["/app/A", 1],
     ]);
     expect(documents).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+const commitAsyncList = (page: Page, index: number, stale = false) =>
+  page.evaluate(
+    ({ index, stale }) => {
+      window.dispatchEvent(new CustomEvent(stale ? "async-list-stale" : "async-list-commit", { detail: index }));
+    },
+    { index, stale },
+  );
+const asyncPosition = (page: Page, tab: string) => page.locator(`[data-scroll-preserve="async-${tab}"]`).evaluate((el) => el.scrollTop);
+const setAsyncPosition = async (page: Page, tab: string, y: number) => {
+  await page.locator(`[data-scroll-preserve="async-${tab}"]`).evaluate((el, y) => {
+    el.scrollTop = y;
+  }, y);
+  expect(await asyncPosition(page, tab)).toBe(y);
+};
+
+test(`${browserName}: deferred traversal scroll restores nonzero async lists on Back, Forward and reload`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/app/A?async=1`);
+    await column(page, "A");
+    await page.click("#tab1");
+    await setAsyncPosition(page, "1", 240);
+    await page.click("#tab2");
+    await setAsyncPosition(page, "2", 400);
+    const documents = trackDocuments(page);
+    await page.goBack();
+    await page.waitForFunction(() => document.querySelector("[data-async-pending]")?.textContent === "true");
+    expect(await asyncPosition(page, "2")).toBe(400); // the old list is still mounted
+    await commitAsyncList(page, 0);
+    await column(page, "A", "1");
+    expect(await asyncPosition(page, "1")).toBe(240);
+    await page.goForward();
+    await page.waitForFunction(() => document.querySelector("[data-async-pending]")?.textContent === "true");
+    await commitAsyncList(page, 1);
+    await column(page, "A", "2");
+    expect(await asyncPosition(page, "2")).toBe(400);
+    expect(documents).toEqual([]);
+    await page.reload();
+    await column(page, "A", "2");
+    expect(await asyncPosition(page, "2")).toBe(400);
+  } finally {
+    await context.close();
+  }
+});
+
+test(`${browserName}: deferred traversal scroll preserves an uncommitted target and ignores a stale completion`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/app/A?async=1`);
+    await column(page, "A");
+    await setAsyncPosition(page, "0", 150);
+    await page.click("#tab1");
+    await setAsyncPosition(page, "1", 240);
+    await page.click("#tab2");
+    await setAsyncPosition(page, "2", 400);
+    await page.goBack();
+    await page.waitForFunction(() => document.documentElement.dataset.helperPops === "1");
+    await page.goBack();
+    await page.waitForFunction(() => document.documentElement.dataset.helperPops === "2");
+    await commitAsyncList(page, 1);
+    await column(page, "A");
+    expect(await asyncPosition(page, "0")).toBe(150);
+    await setAsyncPosition(page, "0", 70);
+    await commitAsyncList(page, 0, true);
+    expect(await asyncPosition(page, "0")).toBe(70);
+    await page.goForward();
+    await page.waitForFunction(() => document.documentElement.dataset.helperPops === "3");
+    await commitAsyncList(page, 2);
+    await column(page, "A", "1");
+    expect(await asyncPosition(page, "1")).toBe(240);
   } finally {
     await context.close();
   }

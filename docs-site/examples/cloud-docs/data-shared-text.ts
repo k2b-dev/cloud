@@ -1,4 +1,5 @@
-import { type SharedTextActor, sharedText } from "@k2b/cloud/shared-text";
+import { lazySync } from "@k2b/cloud";
+import { type SharedTextActor, type SharedTextSnapshotStore, sharedText, sharedTextSnapshotJobConfig } from "@k2b/cloud/shared-text";
 import { sql } from "bun";
 
 export const log = sharedText.define({
@@ -42,3 +43,16 @@ export const currentDraftText = async (draftId: string): Promise<string | null> 
   const current = await draftText.read(draftId);
   return current?.text ?? null;
 };
+
+const snapshotConfig = sharedTextSnapshotJobConfig({
+  id: "drafts.text.snapshots",
+  // Jobs carry a document ID and a cursor; a small budget is enough.
+  retention: { maxAgeMs: 7 * 24 * 60 * 60 * 1000, maxBytes: 64 * 1024 * 1024 },
+});
+
+export const draftSnapshots = (store: SharedTextSnapshotStore) =>
+  sharedText.snapshots({
+    log,
+    job: lazySync((sync) => sync.job(snapshotConfig)),
+    store,
+  });

@@ -17,42 +17,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/pulse" }, { title: data.baseName }]}>
-      <PulseWorkspace
-        initialBases={workspaceProps.initialBases}
-        initialCapabilities={workspaceProps.initialCapabilities}
-        initialQueryCoverage={workspaceProps.initialQueryCoverage}
-        initialBaseId={workspaceProps.initialBaseId}
-        initialPath={workspaceProps.initialPath}
-        initialSearch={workspaceProps.initialSearch}
-        initialRouteState={workspaceProps.initialRouteState}
-        initialActivityQuery={workspaceProps.initialActivityQuery}
-        initialResourceQuery={workspaceProps.initialResourceQuery}
-        initialSources={workspaceProps.initialSources}
-        initialSourceScrapes={workspaceProps.initialSourceScrapes}
-        initialSourceApiKeys={workspaceProps.initialSourceApiKeys}
-        initialMetrics={workspaceProps.initialMetrics}
-        initialInventory={workspaceProps.initialInventory}
-        initialActivityMetrics={workspaceProps.initialActivityMetrics}
-        initialSeries={workspaceProps.initialSeries}
-        initialRecentEvents={workspaceProps.initialRecentEvents}
-        initialCurrentStates={workspaceProps.initialCurrentStates}
-        initialFocusedMetricSeries={workspaceProps.initialFocusedMetricSeries}
-        initialFocusedEvents={workspaceProps.initialFocusedEvents}
-        initialFocusedStates={workspaceProps.initialFocusedStates}
-        initialFocusedHasMore={workspaceProps.initialFocusedHasMore}
-        initialDashboards={workspaceProps.initialDashboards}
-        initialDashboardControlValues={workspaceProps.initialDashboardControlValues}
-        initialSavedQueries={workspaceProps.initialSavedQueries}
-        initialMetricWidgetPoints={workspaceProps.initialMetricWidgetPoints}
-        initialDashboardEvents={workspaceProps.initialDashboardEvents}
-        initialDashboardStates={workspaceProps.initialDashboardStates}
-        initialDashboardMaps={workspaceProps.initialDashboardMaps}
-        initialExplorerPanesLayout={workspaceProps.initialExplorerPanesLayout}
-        initialDashboardEditorPanesLayout={workspaceProps.initialDashboardEditorPanesLayout}
-        initialDateConfig={workspaceProps.initialDateConfig}
-        initialNow={workspaceProps.initialNow}
-        initialOrigin={workspaceProps.initialOrigin}
-      />
+      <PulseWorkspace {...workspaceProps} />
     </Layout>
   );
 });

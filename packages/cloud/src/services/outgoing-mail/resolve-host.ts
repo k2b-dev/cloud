@@ -5,7 +5,7 @@ import { NetworkTargetBlockedError, resolveAllowedNetworkAddresses } from "../ne
 export const outgoingMailAllowlist = () => parseNetworkAllowlistEnv("OUTGOING_MAIL_ALLOWED_TARGETS", env.OUTGOING_MAIL_ALLOWED_TARGETS);
 
 /** One bounded lookup shared by SMTP and bounce IMAP; clients use only the checked addresses. */
-export const resolveMailHost = async (host: string, signal?: AbortSignal, resolve = resolveAllowedNetworkAddresses) => {
+export const resolveMailHost = async (host: string, signal?: AbortSignal, resolve = resolveAllowedNetworkAddresses, port?: number) => {
   const hostname = normalizeNetworkHostname(host);
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(new Error("Outgoing mail DNS lookup timed out.")), 5000);
@@ -14,7 +14,7 @@ export const resolveMailHost = async (host: string, signal?: AbortSignal, resolv
   try {
     cancellation.throwIfAborted();
     const addresses = await Promise.race([
-      resolve(hostname, outgoingMailAllowlist()),
+      resolve(hostname, outgoingMailAllowlist(), undefined, port),
       new Promise<never>((_, reject) => {
         abort = () => reject(cancellation.reason);
         cancellation.addEventListener("abort", abort, { once: true });

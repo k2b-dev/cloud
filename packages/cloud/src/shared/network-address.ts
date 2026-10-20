@@ -111,16 +111,34 @@ export const isUnsafeNetworkHostname = (rawHostname: string): boolean => {
 export type NetworkAllowlist = {
   readonly hosts: ReadonlySet<string>;
   readonly networks: ReadonlyArray<Readonly<{ address: string; family: 4 | 6; bits: number }>>;
+  /** Exact hosts/IPs restricted to a port. Optional for existing callers constructing lists. */
+  readonly hostPorts?: ReadonlyMap<string, ReadonlySet<number>>;
 };
 
 export const EMPTY_NETWORK_ALLOWLIST: NetworkAllowlist = { hosts: new Set(), networks: [] };
 
 export const parseNetworkAllowlist = (entries: readonly string[]): NetworkAllowlist => {
   const hosts = new Set<string>();
+  const hostPorts = new Map<string, Set<number>>();
   const networks: Array<{ address: string; family: 4 | 6; bits: number }> = [];
   for (const entry of entries) {
     const invalid = (reason = "expected an exact host name, IP address or CIDR") =>
       new Error(`Invalid network allowlist entry "${entry}": ${reason}`);
+    const portMatch = entry.match(/^(?:\[([^\]]+)\]|([^:/\[\]]+)):([^:]*)$/);
+    if (portMatch) {
+      const rawHost = portMatch[1] ?? portMatch[2]!;
+      const rawPort = portMatch[3]!;
+      if (!/^[1-9]\d{0,4}$/.test(rawPort) || Number(rawPort) > 65535)
+        throw invalid("expected a port from 1 to 65535 without leading zeros");
+      if (portMatch[1] && parseNetworkAddress(rawHost)?.family !== 6) throw invalid();
+      const parsed = parseNetworkAllowlist([rawHost]);
+      const host = [...parsed.hosts][0] ?? parsed.networks[0]?.address;
+      if (!host) throw invalid();
+      const ports = hostPorts.get(host) ?? new Set<number>();
+      ports.add(Number(rawPort));
+      hostPorts.set(host, ports);
+      continue;
+    }
     const parts = entry.split("/");
     const raw = parts[0] ?? "";
     const literal = parseNetworkAddress(raw);
@@ -160,7 +178,7 @@ export const parseNetworkAllowlist = (entries: readonly string[]): NetworkAllowl
       throw invalid();
     hosts.add(hostname);
   }
-  return { hosts, networks };
+  return hostPorts.size ? { hosts, networks, hostPorts } : { hosts, networks };
 };
 
 /** Parse operator configuration with the variable name in startup errors. */
@@ -172,15 +190,16 @@ export const parseNetworkAllowlistEnv = (variable: string, entries: readonly str
   }
 };
 
-export const isAllowlistedNetworkAddress = (allowlist: NetworkAllowlist, rawAddress: string): boolean => {
+export const isAllowlistedNetworkAddress = (allowlist: NetworkAllowlist, rawAddress: string, port?: number): boolean => {
   const literal = parseNetworkAddress(rawAddress);
   if (!literal) return false;
+  if (port !== undefined && allowlist.hostPorts?.get(literal.address)?.has(port)) return true;
   if (literal.family === 6) {
     const value = ipv6ToBigInt(literal.address);
     // Only IPv4-mapped IPv6 reaches the embedded IPv4 host directly.
     if (value >> 32n === 0xffffn) {
       const ipv4 = [24n, 16n, 8n, 0n].map((shift) => Number((value >> shift) & 255n)).join(".");
-      if (isAllowlistedNetworkAddress(allowlist, ipv4)) return true;
+      if (isAllowlistedNetworkAddress(allowlist, ipv4, port)) return true;
     }
     return allowlist.networks.some((network) => network.family === 6 && ipv6InRange(value, ipv6ToBigInt(network.address), network.bits));
   }

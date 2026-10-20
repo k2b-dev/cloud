@@ -134,7 +134,12 @@ export const uploadSnapshotObjects = async (
   const presign = deps.presign ?? presignSnapshotObject;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const target = presign(config, objects[0]!.path);
-  const addresses = await resolveAllowedNetworkAddresses(target.hostname, deps.allowlist ?? EMPTY_NETWORK_ALLOWLIST, deps.lookup);
+  const addresses = await resolveAllowedNetworkAddresses(
+    target.hostname,
+    deps.allowlist ?? EMPTY_NETWORK_ALLOWLIST,
+    deps.lookup,
+    Number(target.port || (target.protocol === "https:" ? 443 : 80)),
+  );
   const uploaded: NotebookBackupUploadResult[] = [];
   for (const object of objects) {
     for (let attempt = 0; attempt <= SNAPSHOT_UPLOAD_RETRIES; attempt++) {

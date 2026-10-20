@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { relativePath, userPath, validateConfiguration } from "./paths";
 
 const configuration = {
+  activityRetentionDays: 365,
   url: "http://filegate:4000",
   cloud: {
     autoCreate: false,

@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import type { RequestActor } from "@k2b/cloud/server";
 import { AccountIdentityError, accountIdentities } from "@k2b/cloud/services";
+import { testCall } from "../../test/files-call";
 import { bindings } from "../data/bases";
 import { createFilesService } from "./index";
 
@@ -29,6 +30,7 @@ const actor: RequestActor = {
 function fixture(admin = true) {
   const area = { enabled: false, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" };
   const input = {
+    activityRetentionDays: 365,
     url: "http://filegate.test",
     cloud: { ...area, autoCreate: false, autoArchive: true },
     freeipa: { ...area, root: "freeipa" },
@@ -73,7 +75,7 @@ function fixture(admin = true) {
 }
 test("saving unreadable configuration without a token fails before connection tests or writes", async () => {
   const { service, input, write, connect } = fixture();
-  await expect(service.saveConfiguration(actor, { ...input, cloud: { ...input.cloud, enabled: true } })).rejects.toMatchObject({
+  await expect(service.saveConfiguration(testCall(actor), { ...input, cloud: { ...input.cloud, enabled: true } })).rejects.toMatchObject({
     code: "configuration_unreadable",
     status: 409,
   });
@@ -82,12 +84,12 @@ test("saving unreadable configuration without a token fails before connection te
 });
 test("a new token allows the explicit full replacement", async () => {
   const { service, input, write } = fixture();
-  await service.saveConfiguration(actor, { ...input, token: "new-token" });
+  await service.saveConfiguration(testCall(actor), { ...input, token: "new-token" });
   expect(write).toHaveBeenCalledWith({ ...input, token: "new-token" });
 });
 test("administration reports unreadable before area disabled and does not connect", async () => {
   const { service, connect } = fixture();
-  const result = await service.admin(actor, { area: "cloud", kind: "users" });
+  const result = await service.admin(testCall(actor), { area: "cloud", kind: "users" });
   expect(result.issue).toBe("configuration_unreadable");
   expect(result.configuration.unreadable).toBe(true);
   expect(result.configuration).not.toHaveProperty("token");
@@ -95,16 +97,16 @@ test("administration reports unreadable before area disabled and does not connec
 });
 test("reset requires the canonical admin permission", async () => {
   const allowed = fixture();
-  await allowed.service.resetConfiguration(actor);
+  await allowed.service.resetConfiguration(testCall(actor));
   expect(allowed.reset).toHaveBeenCalledTimes(1);
   const denied = fixture(false);
-  await expect(denied.service.resetConfiguration(actor)).rejects.toMatchObject({ status: 403 });
+  await expect(denied.service.resetConfiguration(testCall(actor))).rejects.toMatchObject({ status: 403 });
   expect(denied.reset).not.toHaveBeenCalled();
 });
 test("user bases report unreadable and lifecycle refuses it before Filegate access", async () => {
   const { service, connect } = fixture();
-  const result = await service.bases(actor);
+  const result = await service.bases(testCall(actor));
   expect(result.issues).toContainEqual(expect.objectContaining({ code: "configuration_unreadable" }));
-  await expect(service.refreshRoot(actor, "cloud")).rejects.toMatchObject({ code: "configuration_unreadable" });
+  await expect(service.refreshRoot(testCall(actor), "cloud")).rejects.toMatchObject({ code: "configuration_unreadable" });
   expect(connect).not.toHaveBeenCalled();
 });

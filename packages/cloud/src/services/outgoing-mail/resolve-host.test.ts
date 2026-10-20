@@ -29,6 +29,13 @@ test("allows explicit IP and CIDR entries and omits IP TLS servername", async ()
     });
   }
 });
+test("a port release applies only to the selected SMTP or IMAP port", async () => {
+  process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1:465";
+  expect((await resolveMailHost("127.0.0.1", undefined, undefined, 465)).host).toBe("127.0.0.1");
+  for (const port of [undefined, 993]) {
+    await expect(resolveMailHost("127.0.0.1", undefined, undefined, port)).rejects.toBeInstanceOf(Error);
+  }
+});
 test("returns every checked answer, IPv4 first with stable family order, and preserves TLS identity", async () => {
   process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "smtp.example.org";
   const lookup = mock(async () => [

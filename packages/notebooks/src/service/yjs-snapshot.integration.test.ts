@@ -369,7 +369,14 @@ if (!databaseName) {
       // A blank note is anchored too: its cursor now addresses the shared log.
       const blankState = await notes.getYjsStateWithCursor({ noteId: blankId });
       expect(createYjsTopic().cursorSequence(blankState!.streamCursor!)).toBeGreaterThan(0);
-      expect(blankState?.yjsState).toBeNull();
+      if (!blankState?.yjsState) throw new Error("Blank note has no binary base");
+      const blankDoc = new Y.Doc();
+      try {
+        Y.applyUpdate(blankDoc, blankState.yjsState);
+        expect(blankDoc.getText("codemirror").toString()).toBe("");
+      } finally {
+        blankDoc.destroy();
+      }
       expect(await reconcilingWorker.reconcile()).toMatchObject({ checked: 7, queued: 0 });
 
       // Even marker-only recovery invalidates connected readers through the

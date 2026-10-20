@@ -17,6 +17,7 @@ import {
 import { FilegateError } from "@k2b/filegate";
 import { errorMessage } from "./api/messages";
 import type { DirectoryResult, FileEntry } from "./contracts";
+import { capabilityCall } from "./files-call";
 import { entryRefId } from "./resource-ref";
 
 const base = {
@@ -502,7 +503,7 @@ for (const query of ["entry.list", "entry.search-in-base"] as const) {
       if (!download.ok) throw new Error("expected download");
       expect(download.data.data).toEqual(lease);
       await assertEntryRef(download.data, base.id, currentEntry(row.path));
-      expect(downloads.at(-1)).toEqual({ actor: context.actor, input: { baseId: base.id, path: row.path } });
+      expect(downloads.at(-1)).toEqual({ actor: capabilityCall(context), input: { baseId: base.id, path: row.path } });
     }
   });
 }

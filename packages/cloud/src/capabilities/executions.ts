@@ -1,5 +1,7 @@
 import { sql } from "bun";
+import { createCapabilityDeadline } from "../_internal/capability-timeout";
 import type { CapabilityOrigin } from "../contracts/capabilities";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { pruneApprovalRequests } from "../services/approvals";
 import { logger } from "../services/logging";
 import { CAPABILITY_CLAIM_RETENTION_HOURS, pruneCapabilityIdempotencyClaims } from "./claims";
@@ -101,7 +103,17 @@ export type CapabilityExecution = {
 /** Insert one execution record. Called only by the capability dispatcher and the surfaces that deny before it. */
 export const recordCapabilityExecution = async (input: CapabilityExecutionInput): Promise<string> => {
   const durationMs = Math.max(0, Math.round(input.completedAt.getTime() - input.startedAt.getTime()));
-  const [row] = await sql<{ id: string }[]>`
+  // An observational write has its own transport-headroom budget, even when
+  // the invocation already expired. Do not hold its caller on a dead database.
+  const deadline = createCapabilityDeadline(REQUEST_IDLE_TIMEOUT_SECONDS * 1000, new AbortController().signal);
+  try {
+    return await deadline.wait(() =>
+      sql.begin(async (db) => {
+        // A connection obtained after the deadline must never start the insert.
+        deadline.check();
+        await db`SELECT set_config('statement_timeout', ${`${deadline.remainingMs()}ms`}, true)`;
+        deadline.check();
+        const [row] = await db<{ id: string }[]>`
     INSERT INTO capabilities.executions (
       request_id, origin, app_id, capability, kind, destructive,
       actor_kind, actor_id, user_id, access_subject_type, access_subject_id,
@@ -117,8 +129,15 @@ export const recordCapabilityExecution = async (input: CapabilityExecutionInput)
       ${input.idempotencyKey ?? null}, ${input.replayed ?? false}, ${input.startedAt}, ${input.completedAt}, ${durationMs}
     )
     RETURNING id::text AS id
-  `;
-  return row!.id;
+        `;
+        // Roll back a late result rather than commit an abandoned transaction.
+        deadline.check();
+        return row!.id;
+      }),
+    );
+  } finally {
+    deadline.clear();
+  }
 };
 
 export type CapabilityExecutionFilter = {

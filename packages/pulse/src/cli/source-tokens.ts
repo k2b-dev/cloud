@@ -1,3 +1,5 @@
+import { open, unlink } from "node:fs/promises";
+import { resolve } from "node:path";
 import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { requireRestArg, resolveBaseFromCommand, resolveSource } from "./context";
 import { baseFlag } from "./flags";
@@ -33,19 +35,30 @@ export const sourceTokenCommands = [
       ...baseFlag,
       name: flag.string({ required: true, description: "Token label" }),
       expiresAt: flag.string({ name: "expires-at", description: "ISO expiry timestamp" }),
+      outputFile: flag.string({ name: "output-file", required: true, description: "Write the token to a new file (mode 0600)" }),
     },
     args: { args: arg.rest({ valueLabel: "base source", required: true }) },
     async run({ ctx, args, flags }) {
       const { base, rest } = await resolveBaseFromCommand(ctx, args.args, 1);
       const source = await resolveSource(ctx, base.id, requireRestArg(rest, 0, "source"));
-      const result = await readApi<SourceApiKeyCreateResult>(
-        ctx,
-        `/bases/${encodeURIComponent(base.id)}/sources/${encodeURIComponent(source.id)}/api-keys`,
-        jsonRequest("POST", { name: flags.name, permission: "write", expiresAt: flags.expiresAt ?? null }),
-      );
-      if (!printStructured(ctx, result)) {
-        ctx.print(`Created token ${result.credential.name} (${result.credential.id}).`);
-        ctx.print(result.token);
+      if (!flags.outputFile) throw new Error("--output-file is required");
+      const path = resolve(flags.outputFile);
+      // Reserve the exact path before minting a credential. Never truncate an existing file.
+      const file = await open(path, "wx", 0o600);
+      let complete = false;
+      try {
+        const result = await readApi<SourceApiKeyCreateResult>(
+          ctx,
+          `/bases/${encodeURIComponent(base.id)}/sources/${encodeURIComponent(source.id)}/api-keys`,
+          jsonRequest("POST", { name: flags.name, permission: "write", expiresAt: flags.expiresAt ?? null }),
+        );
+        await file.writeFile(result.token, "utf8");
+        complete = true;
+        const metadata = { id: result.credential.id, name: result.credential.name, path };
+        if (!printStructured(ctx, metadata)) ctx.print(`Created token ${metadata.name} (${metadata.id}). Saved to ${path}.`);
+      } finally {
+        await file.close();
+        if (!complete) await unlink(path);
       }
     },
   }),

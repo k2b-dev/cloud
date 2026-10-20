@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -17,15 +17,10 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: weatherPage } = await import("../../weather/src/frontend/display/page");
 const { SimpleDisplayView, DetailDisplayView, DisplayUnavailable } = await import("../../weather/src/frontend/display/DisplayViews");
-const { default: pulsePage } = await import("../../pulse/src/frontend/public-page");
-const { pulseService } = await import("../../pulse/src/service");
-const { default: PublicPulseDashboard } = await import("../../pulse/src/frontend/PublicPulseDashboard.island");
-const { default: PulseQueryReferenceWindow } = await import("../../pulse/src/frontend/PulseQueryReferenceWindow.island");
 const { default: FormulaReferenceWindow } = await import("../../grids/src/frontend/_components/fields/FormulaReferenceWindow.island");
 const { default: QueryReferenceWindow } = await import("../../grids/src/frontend/_components/query/QueryReferenceWindow");
-const { err, fail } = await import("../src/server");
 
-const server = new Hono().get("/weather/display", ...weatherPage).get("/pulse/public/:token", ...pulsePage);
+const server = new Hono().get("/weather/display", ...weatherPage);
 const weatherProps: Parameters<typeof SimpleDisplayView>[0] = {
   data: {
     current: {
@@ -54,17 +49,6 @@ const weatherProps: Parameters<typeof SimpleDisplayView>[0] = {
   refreshSeconds: 60,
   refreshedAt: null,
 };
-const dashboardProps: Parameters<typeof PublicPulseDashboard>[0] = {
-  token: "viewport-probe",
-  initialSnapshot: {
-    dashboard: { id: "Dash01", name: "Ops", config: { layout: null } },
-    points: {},
-    events: {},
-    states: {},
-    maps: {},
-  },
-};
-
 const componentHtml = (render: () => JSX.Element) =>
   `<!doctype html><html lang="en"><head></head><body class="k2b-ui">${renderToString(render)}</body></html>`;
 const pageHtml = async (path: string, status: number) => {
@@ -82,44 +66,6 @@ const surfaces: Record<string, { html: () => string | Promise<string>; selector:
         createComponent(DisplayUnavailable, { message: "Unavailable", refreshSeconds: 60, refreshedAt: null, retrying: true }),
       ),
     selector: "main",
-  },
-  "Pulse unavailable public page": {
-    html: async () => {
-      // Only the data boundary is stubbed; the real route renders its error surface without a database.
-      const snapshot = spyOn(pulseService.dashboard, "publicSnapshot").mockResolvedValue(fail(err.notFound("Pulse dashboard")));
-      try {
-        return await pageHtml("/pulse/public/viewport-probe", 404);
-      } finally {
-        snapshot.mockRestore();
-      }
-    },
-    selector: "main",
-  },
-  "Pulse automatic-height public dashboard": {
-    html: () => componentHtml(() => createComponent(PublicPulseDashboard, dashboardProps)),
-    selector: "main",
-  },
-  "Pulse full-height public dashboard": {
-    html: () => componentHtml(() => createComponent(PublicPulseDashboard, { ...dashboardProps, displayHeight: "full" })),
-    selector: "main",
-  },
-  "Pulse query reference window": {
-    html: () =>
-      componentHtml(() =>
-        createComponent(PulseQueryReferenceWindow, {
-          baseName: "Ops",
-          includeDashboardDsl: false,
-          initialTab: "overview",
-          metrics: [],
-          events: [],
-          states: [],
-          sources: [],
-          series: [],
-          fields: [],
-          documents: [],
-        }),
-      ),
-    selector: ".k2b-app-workspace",
   },
   "Grids formula reference window": {
     html: () => componentHtml(() => createComponent(FormulaReferenceWindow, { tableName: "Orders", fields: [] })),

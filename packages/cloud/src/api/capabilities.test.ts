@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, jest, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateKeyPair } from "jose";
@@ -6,6 +6,7 @@ import { z } from "zod";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
+import { CAPABILITY_DISCOVERY_TIMEOUT_MS, capabilityTimeoutMs } from "../_internal/capability-timeout";
 import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
 import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
@@ -25,9 +26,10 @@ Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only"
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
 const executionStore = await import("../capabilities/executions");
+let recordExecution: () => Promise<string> = async () => crypto.randomUUID();
 mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, () => ({
   ...executionStore,
-  recordCapabilityExecution: async () => crypto.randomUUID(),
+  recordCapabilityExecution: () => recordExecution(),
   claimCapabilityIdempotency: async () => ({ state: "claimed" as const }),
   completeCapabilityClaim: async () => undefined,
   releaseCapabilityClaim: async () => undefined,
@@ -1401,4 +1403,291 @@ describe("policy review and receipt validation", () => {
     expect(result.status).toBe(502);
     expect(await result.json()).toMatchObject({ code: "ACTION_OUTCOME_UNKNOWN" });
   });
+});
+
+// Keep elapsed dispatch time independent of wall-clock time and timer delivery.
+const dispatchClock = () => {
+  jest.useFakeTimers();
+  let elapsed = 0;
+  const now = spyOn(performance, "now").mockImplementation(() => elapsed);
+  return {
+    advance(ms: number, deliverTimers = true) {
+      elapsed += ms;
+      if (deliverTimers) jest.advanceTimersByTime(ms);
+    },
+    restore() {
+      now.mockRestore();
+      jest.useRealTimers();
+    },
+  };
+};
+const queryDispatch = (dependencies: CapabilityRouteDependencies, signal?: AbortSignal) =>
+  dispatchCapability({
+    request: new Request("http://cloud.test/capabilities", { signal }),
+    kind: "queries",
+    origin: "http",
+    appId: "demo",
+    capabilityId: "get",
+    input: { id: "one" },
+    dependencies,
+  });
+
+describe("complete capability dispatch deadline", () => {
+  test("queries survive 15 seconds; reviews, actions and discovery keep their budgets", async () => {
+    const clock = dispatchClock();
+    const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+    try {
+      expect(capabilityTimeoutMs("query")).toBe(45_000);
+      expect(capabilityTimeoutMs("review", { queryTimeoutMs: 45_000 })).toBe(15_000);
+      expect(capabilityTimeoutMs("action")).toBe(30_000);
+      expect(CAPABILITY_DISCOVERY_TIMEOUT_MS).toBe(15_000);
+      const getCapability = async () => {
+        clock.advance(16_000);
+        return entry();
+      };
+      expect((await queryDispatch({ getCapability, fetch })).status).toBe(200);
+      const review = await dispatchCapability({
+        request: new Request("http://cloud.test/capabilities"),
+        kind: "actions",
+        review: true,
+        origin: "http",
+        appId: "demo",
+        capabilityId: "rename",
+        input: { id: "one", name: "Two" },
+        dependencies: { getCapability, fetch },
+      });
+      expect(review.status).toBe(504);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.restore();
+    }
+  });
+
+  test("expires a stalled registry read and never dispatches its late result", async () => {
+    const clock = dispatchClock();
+    const registry = Promise.withResolvers<CapabilityRegistryEntry | null>();
+    const entered = Promise.withResolvers<void>();
+    const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+    const signInvocation = mock(async () => {
+      throw new Error("Unexpected signing");
+    });
+    try {
+      const pending = queryDispatch({
+        getCapability: () => {
+          entered.resolve();
+          return registry.promise;
+        },
+        fetch,
+        signInvocation,
+      });
+      await entered.promise;
+      clock.advance(45_000);
+      const response = await pending;
+      expect(response.status).toBe(504);
+      expect(await response.json()).toMatchObject({ code: "DEADLINE_EXCEEDED", details: { retrySafe: true } });
+      registry.resolve(entry());
+      await registry.promise;
+      await Promise.resolve();
+      expect(signInvocation).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      registry.resolve(null);
+      clock.restore();
+    }
+  });
+
+  test("checks monotonic elapsed time before starting auth when a timer was delayed", async () => {
+    const clock = dispatchClock();
+    const signInvocation = mock(async () => {
+      throw new Error("Unexpected signing");
+    });
+    const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+    try {
+      const response = await queryDispatch({
+        getCapability: async () => {
+          clock.advance(45_001, false);
+          return entry();
+        },
+        signInvocation,
+        fetch,
+      });
+      expect(response.status).toBe(504);
+      expect(signInvocation).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      clock.restore();
+    }
+  });
+
+  test("auth gets only the remaining budget and cannot sign or fetch after a stall", async () => {
+    const clock = dispatchClock();
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let late: Promise<unknown> | undefined;
+    const signInvocation = mock(async () => {
+      throw new Error("Unexpected signing");
+    });
+    const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+    const stalledSigner: typeof withActiveSigner = (purpose, callback, options) => {
+      expect(options?.timeoutMs).toBe(39_000);
+      entered.resolve();
+      const result = resume.promise.then(() => withActiveSigner(purpose, callback, options));
+      late = result.catch(() => undefined);
+      return result;
+    };
+    try {
+      const pending = queryDispatch({
+        getCapability: async () => {
+          clock.advance(6_000);
+          return entry();
+        },
+        withActiveSigner: stalledSigner,
+        signInvocation,
+        fetch,
+      });
+      await entered.promise;
+      clock.advance(39_000);
+      expect((await pending).status).toBe(504);
+      resume.resolve();
+      await late;
+      expect(signInvocation).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      resume.resolve();
+      clock.restore();
+    }
+  });
+
+  for (const cancel of [false, true]) {
+    test(`stalled response body is cancelled on ${cancel ? "caller cancel (499)" : "deadline (504)"}`, async () => {
+      const clock = dispatchClock();
+      const controller = new AbortController();
+      const reading = Promise.withResolvers<void>();
+      const cancelled = mock(() => {});
+      let upstreamSignal: AbortSignal | null | undefined;
+      try {
+        const pending = queryDispatch(
+          {
+            getCapability: async () => entry(),
+            fetch: async (_url, init) => {
+              upstreamSignal = init?.signal;
+              return new Response(
+                new ReadableStream<Uint8Array>(
+                  {
+                    pull() {
+                      reading.resolve();
+                    },
+                    cancel: cancelled,
+                  },
+                  { highWaterMark: 0 },
+                ),
+              );
+            },
+          },
+          controller.signal,
+        );
+        await reading.promise;
+        // Allow the bounded reader to acquire the body before aborting.
+        await Promise.resolve();
+        if (cancel) controller.abort();
+        else clock.advance(45_000);
+        const response = await pending;
+        expect(response.status).toBe(cancel ? 499 : 504);
+        expect(await response.json()).toMatchObject({ code: cancel ? "REQUEST_CANCELLED" : "DEADLINE_EXCEEDED" });
+        expect(upstreamSignal?.aborted).toBe(true);
+        expect(cancelled).toHaveBeenCalledTimes(1);
+      } finally {
+        clock.restore();
+      }
+    });
+  }
+
+  test("an already-cancelled caller does no registry or upstream work", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const getCapability = mock(async () => entry());
+    const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+    expect((await queryDispatch({ getCapability, fetch }, controller.signal)).status).toBe(499);
+    expect(getCapability).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  for (const [path, seconds] of [
+    ["queries/demo/get", 55],
+    ["actions/demo/rename", 40],
+    ["actions/demo/rename/review", 25],
+  ] as const) {
+    test(`HTTP owner raises and restores its timeout for ${path}`, async () => {
+      const calls: number[] = [];
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const routes = createCapabilityRoutes({
+        authenticate,
+        getCapability: async () => entry(),
+        fetch: async () => {
+          entered.resolve();
+          await release.promise;
+          return path.endsWith("review")
+            ? Response.json({ message: "Rename?" })
+            : Response.json({ data: { id: "one", ...(path.startsWith("actions") ? { name: "Two" } : {}) } });
+        },
+      });
+      const pending = routes.request(
+        `/capabilities/v1/${path}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ input: path.startsWith("actions") ? { id: "one", name: "Two" } : { id: "one" } }),
+        },
+        { timeout: (_request: Request, value: number) => calls.push(value) },
+      );
+      try {
+        await entered.promise;
+        expect(calls).toEqual([seconds]);
+      } finally {
+        release.resolve();
+      }
+      expect((await pending).status).toBe(200);
+      expect(calls).toEqual([seconds, 10]);
+    });
+  }
+  test("HTTP owner restores the normal timeout on a dispatch failure", async () => {
+    const calls: number[] = [];
+    const routes = createCapabilityRoutes({
+      authenticate,
+      getCapability: async () => {
+        throw new Error("registry unavailable");
+      },
+    });
+    const response = await routes.request(
+      "/capabilities/v1/queries/demo/get",
+      {
+        method: "POST",
+        body: JSON.stringify({ input: { id: "one" } }),
+      },
+      { timeout: (_request: Request, value: number) => calls.push(value) },
+    );
+    expect(response.status).toBe(503);
+    expect(calls).toEqual([55, 10]);
+  });
+});
+
+test("a stalled execution-history write cannot hold a Query response beyond its budget", async () => {
+  const clock = dispatchClock();
+  const entered = Promise.withResolvers<void>();
+  const record = Promise.withResolvers<string>();
+  const previous = recordExecution;
+  recordExecution = () => {
+    entered.resolve();
+    return record.promise;
+  };
+  try {
+    const pending = queryDispatch({ getCapability: async () => entry(), fetch: async () => Response.json({ data: { id: "one" } }) });
+    await entered.promise;
+    clock.advance(45_000);
+    expect((await pending).status).toBe(200);
+  } finally {
+    record.resolve("recorded");
+    recordExecution = previous;
+    clock.restore();
+  }
 });
