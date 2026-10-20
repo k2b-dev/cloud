@@ -239,6 +239,70 @@ describe("RichSelect desktop behavior", () => {
     expect(picker.commits).toEqual(["archive"]);
   });
 
+  test("loading, errors and fewer items return focus from the removed search to the trigger", async () => {
+    const [status, setStatus] = createSignal<"ready" | "loading" | "error">("ready");
+    const [targets, setTargets] = createSignal(searchableItems);
+    const picker = await mount({
+      get status() {
+        return status();
+      },
+      get items() {
+        return targets();
+      },
+    });
+    for (const next of ["loading", "error", "fewer"] as const) {
+      setStatus("ready");
+      setTargets(searchableItems);
+      await picker.open();
+      const search = picker.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+      search.focus();
+      if (next === "fewer") setTargets(items);
+      else setStatus(next);
+      await Promise.resolve();
+      expect(picker.dom.document.activeElement).toBe(picker.trigger);
+      const controlled = picker.trigger.getAttribute("aria-controls");
+      expect(picker.dom.document.getElementById(controlled!)?.getAttribute("role")).toBe("listbox");
+      key(picker.trigger, "Escape");
+      expect(picker.trigger.getAttribute("aria-expanded")).toBe("false");
+    }
+  });
+
+  test("the open error and empty pickers control an existing empty listbox", async () => {
+    const [status, setStatus] = createSignal<"error" | "ready">("error");
+    const picker = await mount({
+      items: [],
+      get status() {
+        return status();
+      },
+    });
+    await picker.open();
+    for (const state of ["error", "ready"] as const) {
+      setStatus(state);
+      const list = picker.dom.document.getElementById(picker.trigger.getAttribute("aria-controls")!);
+      expect(list?.getAttribute("role")).toBe("listbox");
+      expect(list?.children).toHaveLength(0);
+    }
+  });
+
+  test("a failed refresh while creating returns focus from the removed footer input", async () => {
+    const [status, setStatus] = createSignal<"ready" | "error">("ready");
+    const picker = await mount({
+      get status() {
+        return status();
+      },
+      footer: { label: "New target", create: { placeholder: "Name", onCreate: () => {} } },
+    });
+    await picker.open();
+    picker.dom.root.querySelector<HTMLButtonElement>(".k2b-rich-select__footer-action")!.click();
+    await Promise.resolve();
+    expect(picker.dom.document.activeElement?.classList.contains("k2b-rich-select__create-input")).toBe(true);
+    setStatus("error");
+    await Promise.resolve();
+    expect(picker.dom.document.activeElement === picker.trigger).toBe(true);
+    key(picker.trigger, "Escape");
+    expect(picker.trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
   test("footer action closes before running the consumer callback", async () => {
     const calls: string[] = [];
     const picker = await mount({

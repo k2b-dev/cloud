@@ -233,11 +233,15 @@ function RichSelectFooterControl(props: {
   initialName: () => string;
   messages: RichSelectMessages;
   done: (run: () => void) => void;
+  restoreFocus: () => void;
 }): JSX.Element {
   const [creating, setCreating] = createSignal(false);
   const [name, setName] = createSignal("");
   let input: HTMLInputElement | undefined;
   let start: HTMLButtonElement | undefined;
+  onCleanup(() => {
+    if (document.activeElement === input || document.activeElement === start) queueMicrotask(props.restoreFocus);
+  });
   const create = () => {
     const footer = props.footer;
     const value = name().trim();
@@ -362,6 +366,9 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
     () => ({ width: "own", side: props.placement === "top-start" ? "above" : "below" }),
   );
   const expanded = () => popover.open() || sheetOpen();
+  const restorePopoverFocus = () => {
+    if (popover.open()) (searchable() ? searchRef : popover.trigger())?.focus();
+  };
 
   createEffect(() => {
     if (props.disabled) {
@@ -552,13 +559,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
           role="combobox"
           aria-haspopup={sheetOpen() || (!popover.open() && phone()) ? "dialog" : "listbox"}
           aria-expanded={expanded()}
-          aria-controls={
-            sheetOpen()
-              ? sheetId()
-              : popover.open() && (status() === "loading" || (status() === "ready" && props.items.length > 0))
-                ? listboxId
-                : undefined
-          }
+          aria-controls={sheetOpen() ? sheetId() : popover.open() ? listboxId : undefined}
           aria-activedescendant={popover.open() && activeItem() ? optionId(active()) : undefined}
           data-tone={props.tone === "warning" ? "warning" : undefined}
           {...fieldControlAria(meta, {
@@ -615,45 +616,58 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
           </Show>
           <Switch>
             <Match when={status() === "error"}>
-              <RichSelectState
-                status="error"
-                messages={messages()}
-                onRetry={props.onRetry}
-                restoreFocus={() => {
-                  if (popover.open()) (searchable() ? searchRef : popover.trigger())?.focus();
-                }}
-              />
+              <div id={listboxId} role="listbox" aria-label={title()} />
+              <RichSelectState status="error" messages={messages()} onRetry={props.onRetry} restoreFocus={restorePopoverFocus} />
             </Match>
             <Match when={status() === "ready" && props.items.length === 0}>
+              <div id={listboxId} role="listbox" aria-label={title()} />
               <RichSelectState status="empty" messages={messages()} empty={props.empty} />
               <Show when={props.footer}>
-                {(footer) => <RichSelectFooterControl footer={footer()} initialName={query} messages={messages()} done={runFooter} />}
+                {(footer) => (
+                  <RichSelectFooterControl
+                    footer={footer()}
+                    initialName={query}
+                    messages={messages()}
+                    done={runFooter}
+                    restoreFocus={restorePopoverFocus}
+                  />
+                )}
               </Show>
             </Match>
             <Match when>
               <div class="k2b-rich-select__body">
                 <div class="k2b-rich-select__column">
                   <Show when={searchable()}>
-                    <div class="k2b-choice-search k2b-rich-select__search">
-                      <i class="ti ti-search" aria-hidden="true" />
-                      <input
-                        ref={searchRef}
-                        type="search"
-                        role="combobox"
-                        aria-expanded={popover.open()}
-                        aria-autocomplete="list"
-                        value={query()}
-                        placeholder={props.searchPlaceholder ?? messages().search}
-                        aria-label={props.searchPlaceholder ?? messages().search}
-                        aria-controls={listboxId}
-                        aria-activedescendant={activeItem() ? optionId(active()) : undefined}
-                        autocomplete="off"
-                        onInput={(event) => {
-                          setQuery(event.currentTarget.value);
-                          setActive(visible().length > 0 ? 0 : -1);
-                        }}
-                      />
-                    </div>
+                    {() => {
+                      onCleanup(() => {
+                        if (document.activeElement === searchRef)
+                          queueMicrotask(() => {
+                            if (popover.open()) popover.trigger()?.focus();
+                          });
+                      });
+                      return (
+                        <div class="k2b-choice-search k2b-rich-select__search">
+                          <i class="ti ti-search" aria-hidden="true" />
+                          <input
+                            ref={searchRef}
+                            type="search"
+                            role="combobox"
+                            aria-expanded={popover.open()}
+                            aria-autocomplete="list"
+                            value={query()}
+                            placeholder={props.searchPlaceholder ?? messages().search}
+                            aria-label={props.searchPlaceholder ?? messages().search}
+                            aria-controls={listboxId}
+                            aria-activedescendant={activeItem() ? optionId(active()) : undefined}
+                            autocomplete="off"
+                            onInput={(event) => {
+                              setQuery(event.currentTarget.value);
+                              setActive(visible().length > 0 ? 0 : -1);
+                            }}
+                          />
+                        </div>
+                      );
+                    }}
                   </Show>
                   <div
                     id={listboxId}
@@ -716,7 +730,13 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
                     </Show>
                   </div>
                   <Show when={props.footer && status() === "ready"}>
-                    <RichSelectFooterControl footer={props.footer!} initialName={query} messages={messages()} done={runFooter} />
+                    <RichSelectFooterControl
+                      footer={props.footer!}
+                      initialName={query}
+                      messages={messages()}
+                      done={runFooter}
+                      restoreFocus={restorePopoverFocus}
+                    />
                   </Show>
                 </div>
                 <Show when={props.renderPreview}>
@@ -771,6 +791,9 @@ function RichSelectSheet(sheet: {
   const visible = createMemo(() => (searchable() ? filterChoiceOptions(props.items, query()) : props.items));
   const anyVisual = createMemo(() => props.items.some(hasVisual));
   const headings = () => (props.items.length >= RICH_SELECT_SEARCH_FROM && props.sections ? props.sections : undefined);
+  const restoreSheetFocus = () => {
+    if (sheet.dialog.open) sheet.dialog.focus();
+  };
   const headingBefore = (index: number) => {
     const item = visible()[index];
     const list = headings();
@@ -849,19 +872,20 @@ function RichSelectSheet(sheet: {
           <BottomSheet.Body>
             <Switch>
               <Match when={status() === "error"}>
-                <RichSelectState
-                  status="error"
-                  messages={messages()}
-                  onRetry={props.onRetry}
-                  restoreFocus={() => {
-                    if (sheet.dialog.open) sheet.dialog.focus();
-                  }}
-                />
+                <RichSelectState status="error" messages={messages()} onRetry={props.onRetry} restoreFocus={restoreSheetFocus} />
               </Match>
               <Match when={status() === "ready" && props.items.length === 0}>
                 <RichSelectState status="empty" messages={messages()} empty={props.empty} />
                 <Show when={props.footer}>
-                  {(footer) => <RichSelectFooterControl footer={footer()} initialName={query} messages={messages()} done={sheet.done} />}
+                  {(footer) => (
+                    <RichSelectFooterControl
+                      footer={footer()}
+                      initialName={query}
+                      messages={messages()}
+                      done={sheet.done}
+                      restoreFocus={restoreSheetFocus}
+                    />
+                  )}
                 </Show>
               </Match>
               <Match when>
@@ -869,6 +893,11 @@ function RichSelectSheet(sheet: {
                   <div class="k2b-choice-search k2b-rich-select__search">
                     <i class="ti ti-search" aria-hidden="true" />
                     <input
+                      ref={(input) => {
+                        onCleanup(() => {
+                          if (document.activeElement === input) queueMicrotask(restoreSheetFocus);
+                        });
+                      }}
                       type="search"
                       value={query()}
                       placeholder={props.searchPlaceholder ?? messages().search}
@@ -931,7 +960,13 @@ function RichSelectSheet(sheet: {
                   </Show>
                 </div>
                 <Show when={props.footer && status() === "ready"}>
-                  <RichSelectFooterControl footer={props.footer!} initialName={query} messages={messages()} done={sheet.done} />
+                  <RichSelectFooterControl
+                    footer={props.footer!}
+                    initialName={query}
+                    messages={messages()}
+                    done={sheet.done}
+                    restoreFocus={restoreSheetFocus}
+                  />
                 </Show>
               </Match>
             </Switch>

@@ -42,6 +42,7 @@ document.addEventListener("fixture:state", (event) => {
   if (next === "empty") { setTargets([]); setStatus("ready"); }
   if (next === "error" || next === "loading") setStatus(next);
   if (next === "disable") setDisabled(true);
+  if (next === "many") setTargets([...items, ...Array.from({ length: 5 }, (_, index) => ({ value: "extra-" + index, label: "Extra " + index }))]);
   if (next === "revoke-on-choose") {
     const revoke = (event) => {
       if (!event.target.closest(".k2b-rich-select__choose")) return;
@@ -59,7 +60,7 @@ render(() => createComponent(RichSelect, {
   onValueChange: setValue, get items() { return targets(); }, get status() { return status(); }, get disabled() { return disabled(); },
   onRetry: () => setStatus("ready"),
   footer: { label: "New target", create: { placeholder: "Target name", onCreate: (name) => { form.dataset.created = name; } } },
-  renderPreview: (item) => createComponent(RichSelectFacts, { facts: facts[item.value].map(text => ({ icon: "ti ti-info-circle", text })) }),
+  renderPreview: (item) => createComponent(RichSelectFacts, { facts: (facts[item.value] ?? []).map(text => ({ icon: "ti ti-info-circle", text })) }),
 }), form);
 const many = Array.from({ length: 10 }, (_, index) => ({
   value: "target-" + index,
@@ -283,6 +284,29 @@ describe("RichSelect shipped browser contract", () => {
       await close();
     }
   });
+
+  for (const width of [1024, 390]) {
+    test(`a refresh returns focus from removed search and Retry controls (${width}px)`, async () => {
+      const { page, close } = await open({ viewport: { width, height: 900 }, isMobile: width === 390, hasTouch: width === 390 });
+      try {
+        await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "many" })));
+        const trigger = page.getByRole("combobox", { name: "Move card" });
+        await trigger.click();
+        const search = page.getByRole(width === 390 ? "searchbox" : "combobox", { name: "Search", exact: true });
+        await search.focus();
+        await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "error" })));
+        const focus = width === 390 ? page.getByRole("dialog") : trigger;
+        expect(await focus.evaluate((element) => element === document.activeElement)).toBe(true);
+        const retry = page.getByRole("button", { name: "Retry", exact: true });
+        await retry.focus();
+        await page.keyboard.press("Enter");
+        await search.waitFor({ state: "visible" });
+        expect(await (width === 390 ? focus : search).evaluate((element) => element === document.activeElement)).toBe(true);
+      } finally {
+        await close();
+      }
+    });
+  }
 
   test("Retry supports Enter and Create from an empty list never submits the surrounding form", async () => {
     const { page, close } = await open({ viewport: { width: 1024, height: 900 } });

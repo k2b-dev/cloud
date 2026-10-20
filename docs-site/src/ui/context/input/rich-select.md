@@ -57,6 +57,8 @@ import {
 preview placeholder when applicable, and a busy list. `"error"` shows
 **Could not be loaded.** and a **Retry** button when `onRetry` is supplied.
 Retry calls the consumer; the consumer owns loading, errors, and the items.
+If an update removes the focused search, Retry, or footer control, focus returns
+to the trigger on desktop or the sheet on a phone.
 
 A ready list with no items shows `empty`, or **No options available** by default.
 A search with no matches shows **No results found**. Built-in messages inherit
