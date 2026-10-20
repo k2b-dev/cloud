@@ -2547,7 +2547,13 @@ function MailboxWorkspace(
     <>
       <AppWorkspace.Head
         views={
-          currentTab() !== null ? (
+          data.draftsMode || data.scheduledMode ? (
+            <span class="mail-queue-count text-xs text-muted" data-mail-queue-count>
+              {data.draftsMode
+                ? conversationText().draftCount({ count: data.draftsPage?.total ?? 0 })
+                : conversationText().waitingForDelivery({ count: data.scheduledPage?.total ?? data.scheduledCount })}
+            </span>
+          ) : currentTab() !== null ? (
             <MailboxViewTabs
               items={viewTabs()}
               current={currentTab()!}

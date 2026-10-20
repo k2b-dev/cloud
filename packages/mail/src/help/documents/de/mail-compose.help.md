@@ -3,7 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-10-19
+updated: 2026-10-20
 order: 30
 ---
 
@@ -86,7 +86,7 @@ Ein vorübergehendes Verbindungsproblem zeigt Mail getrennt an und fordert dich 
 
 Entwürfe liegen in Cloud als gemeinsame Entwürfe.
 
-- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen.
+- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen. Die Zahl steht im Kopf des Arbeitsbereichs. Jede Zeile beginnt mit dem Betreff und zeigt Empfänger, eine Vorschau, Bearbeitungszeit und erstellende Person.
 - **Hinweis bei Antworten:** Eine Unterhaltung mit Entwürfen zeigt einen Hinweis an der Antwortaktion.
 - **CLI:** `cld mail draft list` listet diese Entwürfe, zusammen mit geplanten Entwürfen und Entwürfen, die gerade gesendet werden.
 - **Kopie beim Anbieter:** Erlaubt es der Anbieter, legt Mail von jedem Entwurf eine Kopie im Entwürfe-Ordner des Anbieters ab, sodass andere E-Mail-Programme ihn zeigen. Entwürfe, die ein anderes E-Mail-Programm dort speichert, erscheinen in Mail als gemeinsame Entwürfe.

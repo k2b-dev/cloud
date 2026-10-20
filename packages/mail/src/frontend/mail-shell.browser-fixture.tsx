@@ -190,7 +190,27 @@ export function mailboxData(url: URL): MailboxPageData {
     scheduledPage: scheduledMode ? { items: [], nextCursor: null, total: 0 } : null,
     scheduledError: null,
     draftsMode,
-    draftsPage: draftsMode ? { items: [], nextCursor: null, total: 0 } : null,
+    draftsPage: draftsMode
+      ? {
+          items: url.searchParams.has("drafts-fixture")
+            ? ["Quarterly figures", "Workshop follow-up"].map((subject, index) => ({
+                id: `Draft${index + 1}`,
+                conversationId: null,
+                intent: "new" as const,
+                subject,
+                to: [{ name: "Ada Example", address: "ada@example.test" }],
+                cc: [],
+                bcc: [],
+                bodyPreview: "Invented draft text for the compact mailbox view.",
+                createdByDisplayName: "Example writer",
+                // Keep relative wording stable while the browser clock advances through hydration.
+                updatedAt: "2026-10-13T04:00:00.000Z",
+              }))
+            : [],
+          nextCursor: url.searchParams.has("drafts-cursor") ? "next" : null,
+          total: url.searchParams.has("drafts-fixture") ? 2 : 0,
+        }
+      : null,
     draftsError: null,
     activeView,
     savedViewId,

@@ -3,7 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-19
+updated: 2026-10-20
 order: 30
 kind: task
 ---
@@ -87,7 +87,7 @@ Mail shows a temporary connection problem separately and does not ask you to tak
 
 Drafts live in Cloud as shared drafts.
 
-- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer.
+- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count is in the workspace head. Each row starts with the subject and shows recipients, a preview, the edit time, and who started the draft.
 - **Reply indicator:** A conversation with drafts shows an indicator on Reply.
 - **CLI:** `cld mail draft list` lists these drafts, together with drafts that are scheduled or being sent.
 - **Provider copy:** When the provider allows it, Mail keeps a copy of each draft in the provider's Drafts folder, so other mail programs show it. Drafts that another mail program saves there appear in Mail as shared drafts.

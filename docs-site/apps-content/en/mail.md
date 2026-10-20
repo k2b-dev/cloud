@@ -27,6 +27,11 @@ Send problems have no view tabs. **Choose list view**, the **…** mailbox menu,
 and **Compose** are also in the head. The mailbox menu contains details,
 tools, and Settings according to your access.
 
+Drafts and Scheduled show their count in the workspace head. Draft rows lead
+with the subject, followed by recipients and a preview, with the edit time and
+person who started the draft. Members with write access can open a draft to
+continue it; readers can view the list.
+
 On wide screens the conversation list grows with the window from 320 to
 440 px, and the subject and messages stay in a centered reading column of at
 most 760 px. **Conversation details** stand beside the reader while the reader

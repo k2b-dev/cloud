@@ -46,6 +46,9 @@ const measurements = [
   ".mail-sidebar-mailbox",
   ".mail-focus-row",
   ".mail-list-entry",
+  ".mail-draft-row",
+  ".mail-draft-row__subject",
+  "[data-mail-queue-count]",
   ".k2b-app-workspace__main-pane",
   ".k2b-app-workspace__main-primary",
   ".mail-reader-toolbar",
@@ -661,6 +664,77 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
     }
+
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`compact draft queue ${theme} ${width}: count stays in the head and draft links retain context`, async () => {
+          const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&theme=${theme}`, width);
+          try {
+            const serverFrame = await recordedFrame(page, "server");
+            assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "draft queue hydrated");
+            assertFrame(serverFrame, await geometry(page), "draft queue settled");
+            expect(await page.locator(".k2b-app-workspace__head [data-mail-queue-count]").textContent()).toBe("2 drafts");
+            expect(await page.locator(".mail-drafts-list header").count()).toBe(0);
+            expect(await page.locator(".mail-draft-row").count()).toBe(2);
+            const draft = page.locator("a.mail-draft-row").first();
+            const subject = await draft.locator(".mail-draft-row__subject").boundingBox();
+            const recipients = await draft.locator(".mail-draft-row__recipients").boundingBox();
+            expect(subject).not.toBeNull();
+            expect(recipients!.y).toBeGreaterThanOrEqual(subject!.y + subject!.height);
+            expect(await draft.getAttribute("href")).toContain("/compose/Draft1?return=");
+            expect(await draft.getAttribute("href")).toContain("folder%3DDrafts1");
+            const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+            expect(overflow).toBe(false);
+            if (screenshots) {
+              mkdirSync(screenshots, { recursive: true });
+              await page.screenshot({ path: join(screenshots, `compact-drafts-${theme}-${width}.png`) });
+            }
+            await draft.focus();
+            expect(await draft.evaluate((element) => document.activeElement === element)).toBe(true);
+            if (screenshots && width === 390 && theme === "light")
+              await page.screenshot({ path: join(screenshots, `compact-drafts-focus-${theme}-${width}.png`) });
+            await page.reload();
+            await ready(page);
+            expect(await page.locator("[data-mail-queue-count]").textContent()).toBe("2 drafts");
+            expect(await page.locator(".mail-draft-row").count()).toBe(2);
+          } finally {
+            await close(page);
+          }
+          const readOnly = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&permission=read&theme=${theme}`, width);
+          try {
+            expect(await readOnly.locator("article.mail-draft-row").count()).toBe(2);
+            expect(await readOnly.locator("a.mail-draft-row").count()).toBe(0);
+          } finally {
+            await close(readOnly);
+          }
+          const scheduled = await open(`${boxPath}?scheduled=1&theme=${theme}`, width);
+          try {
+            expect(await scheduled.locator(".k2b-app-workspace__head [data-mail-queue-count]").count()).toBe(1);
+            expect(await scheduled.locator(".k2b-app-workspace__main h1.sr-only").textContent()).toBe("Scheduled");
+          } finally {
+            await close(scheduled);
+          }
+        });
+
+    test("compact draft pagination stays centered and retains the folder", async () => {
+      for (const width of [1440, 390]) {
+        const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&drafts-cursor=1`, width);
+        try {
+          const list = page.locator(".mail-drafts-list");
+          const next = list.getByRole("link", { name: "Load more", exact: true });
+          const bounds = await list.boundingBox();
+          const button = await next.boundingBox();
+          expect(bounds).not.toBeNull();
+          expect(button).not.toBeNull();
+          expect(Math.abs(button!.x + button!.width / 2 - bounds!.x - bounds!.width / 2)).toBeLessThanOrEqual(0.5);
+          const href = new URL((await next.getAttribute("href"))!, page.url());
+          expect(href.searchParams.get("folder")).toBe("Drafts1");
+          expect(href.searchParams.get("cursor")).toBe("next");
+        } finally {
+          await close(page);
+        }
+      }
+    });
 
     const tag = mailTagSearch("Tag001");
     if (!tag.ok) throw new Error("Invalid synthetic tag ID");
