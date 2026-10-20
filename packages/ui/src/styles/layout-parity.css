@@ -1993,7 +1993,8 @@ html {
   position: static;
   display: flex;
   width: auto;
-  height: auto;
+  /* WebKit must recompute every wrapped line instead of reusing the grid item's stretched height while the host narrows. */
+  height: max-content;
   min-height: 3.5rem;
   container: k2b-head / inline-size;
   flex-wrap: wrap;
@@ -2060,8 +2061,10 @@ html {
 }
 
 /* An application may wrap the view strip in an island or a hint host. Its
-   automatic minimum must not let the strip paint beyond the lead. */
-.k2b-ui .k2b-app-workspace__head-views > * {
+   automatic minimum must not let the strip paint beyond the lead. Transparent
+   island elements leave that minimum on their first rendered child. */
+.k2b-ui .k2b-app-workspace__head-views > *,
+.k2b-ui .k2b-app-workspace__head-views > :is(solid-island, solid-client) > * {
   min-width: 0;
   max-width: 100%;
 }
@@ -2203,7 +2206,7 @@ html {
     flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem 0.5rem;
-    padding: 0.5rem 1rem 0.25rem;
+    padding: 0.5rem var(--k2b-workspace-head-end, 1rem) 0.25rem 1rem;
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
@@ -4501,4 +4504,29 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 }
 .k2b-ui .k2b-resize-separator:is(:focus-visible, [data-active="true"]) > span {
   background: var(--k2b-focus-ring);
+}
+
+/* An app with separate visibility keeps one shared way to reopen its current
+   object, including a closed column and a phone sheet. Selection-only panels
+   keep their existing waiting-only control. */
+.k2b-ui .k2b-app-workspace__detail-toggle[data-workspace-detail-reopen="true"] {
+  display: inline-flex;
+}
+.k2b-ui
+  .k2b-app-workspace:has(
+    > .k2b-app-workspace__content > .k2b-app-workspace__detail-toggle[data-workspace-detail-reopen="true"],
+    > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail-toggle[data-workspace-detail-reopen="true"]
+  )
+  > .k2b-app-workspace__head.k2b-app-workspace__head:is([data-trail], :not([data-trail])) {
+  position: static;
+  display: flex;
+  width: auto;
+  height: max-content;
+  min-height: 2.875rem;
+  margin: 0;
+  --k2b-workspace-head-end: 7rem;
+  padding: 0.25rem 7rem 0.25rem 0.5rem;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
 }

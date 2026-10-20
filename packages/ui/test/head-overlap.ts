@@ -41,15 +41,21 @@ export function headOverlaps(root: ParentNode = document, tolerance = 0.5) {
     // Visually hidden parts (a 1 px status line) are no controls a person sees.
     if (rect.width <= 1 || rect.height <= 1) return null;
     const box = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+    const position = getComputedStyle(element).position;
+    // Overflow between an out-of-flow control and its containing block does
+    // not clip it. Details is positioned in the workspace grid, above Content.
+    let overflowCanClip = position !== "absolute" && position !== "fixed";
+    const containingBlock = element.offsetParent;
     for (let ancestor = element.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+      if (ancestor === containingBlock) overflowCanClip = true;
       const style = getComputedStyle(ancestor);
       const clip = ancestor.getBoundingClientRect();
       const clipped = style.clipPath !== "none" && style.clipPath !== "";
-      if (style.overflowX !== "visible" || clipped) {
+      if ((overflowCanClip && style.overflowX !== "visible") || clipped) {
         box.left = Math.max(box.left, clip.left);
         box.right = Math.min(box.right, clip.right);
       }
-      if (style.overflowY !== "visible" || clipped) {
+      if ((overflowCanClip && style.overflowY !== "visible") || clipped) {
         box.top = Math.max(box.top, clip.top);
         box.bottom = Math.min(box.bottom, clip.bottom);
       }
@@ -88,7 +94,9 @@ export function headOverlaps(root: ParentNode = document, tolerance = 0.5) {
       box.top < headBox.top - tolerance ||
       box.bottom > headBox.bottom + tolerance
     )
-      problems.push(`${name} leaves the head (${round(box.left)}..${round(box.right)} of ${round(headBox.left)}..${round(headBox.right)})`);
+      problems.push(
+        `${name} leaves the head (x ${round(box.left)}..${round(box.right)} of ${round(headBox.left)}..${round(headBox.right)}; y ${round(box.top)}..${round(box.bottom)} of ${round(headBox.top)}..${round(headBox.bottom)})`,
+      );
   for (const [index, a] of controls.entries())
     for (const b of controls.slice(index + 1)) {
       const width = Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left);

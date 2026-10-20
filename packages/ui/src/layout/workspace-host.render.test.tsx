@@ -125,3 +125,22 @@ test("MainPane emits a workspace share fallback inside its own limits and a nume
   expect(html).toContain('data-workspace-default-size="share:0.25,-12,332,452"');
   expect(html).toContain('aria-valuenow="332"');
 });
+
+for (const available of [true, false]) {
+  test(`reopenable Detail exposes its closed trigger before hydration (${available})`, () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace.Detail, {
+        id: "reader",
+        open: false,
+        available,
+        onOpen: () => {},
+        children: "Context",
+      }),
+    );
+    const button = html.match(/<button[^>]*data-app-workspace-detail-toggle[^>]*>/)?.[0];
+    expect(button).toContain('data-workspace-detail-reopen="true"');
+    expect(button).toContain('aria-expanded="false"');
+    expect(Boolean(button?.match(/\sdisabled(?:[= >])/))).toBe(!available);
+    expect(html).toMatch(/<aside[^>]*hidden/);
+  });
+}

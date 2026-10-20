@@ -357,7 +357,12 @@ export function mailboxList(url: URL): MailboxListView {
   };
 }
 
-export default function MailShellFixture(props: { source: string; locale?: "en" | "de"; theme: "light" | "dark" }) {
+export default function MailShellFixture(props: {
+  source: string;
+  locale?: "en" | "de";
+  theme: "light" | "dark";
+  workspaceCookieHeader?: string | null;
+}) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "en";
   const data = mailboxData(url);
@@ -392,7 +397,9 @@ export default function MailShellFixture(props: { source: string; locale?: "en" 
           dateConfig={{ locale, timeZone: "UTC" }}
           initialPreferences={{
             ...readMailWorkspacePreferences(""),
-            detailsOpen: url.searchParams.get("details") === "1",
+            detailsOpen: url.searchParams.has("persist-details")
+              ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
+              : url.searchParams.get("details") === "1",
             listCollapsed: url.searchParams.get("list") === "hidden",
             // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
             ...(url.searchParams.has("toolbar")

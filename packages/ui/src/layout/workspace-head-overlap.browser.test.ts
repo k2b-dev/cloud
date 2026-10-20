@@ -36,6 +36,7 @@ type Shape = {
   count?: string;
   /** An open detail of this width that waits behind Details where it does not fit. */
   detail?: "sm" | "md" | "lg";
+  reopen?: boolean;
 };
 const shapes: Shape[] = [
   {
@@ -201,7 +202,8 @@ const tree = (shape: Shape): JSX.Element =>
                         ? createComponent(AppWorkspace.Detail, {
                             id: "detail",
                             width: shape.detail,
-                            open: true,
+                            open: !shape.reopen,
+                            onOpen: shape.reopen ? () => {} : undefined,
                             onClose: () => {},
                             children: "Detail",
                           })
@@ -243,15 +245,14 @@ declare global {
     headOverlaps: typeof headOverlaps;
   }
 }
-/** Narrows the host step by step inside the page, two frames per step, and lists every problem by width. */
+/** Layout reads flush each width change, including its container queries, before measuring the controls. */
 const sweepHost = (page: Page, steps: number[], label: string) =>
   page.evaluate(
-    async ({ steps, label }) => {
+    ({ steps, label }) => {
       const host = document.getElementById("app")!;
       const problems: string[] = [];
       for (const width of steps) {
         host.style.width = `${width}px`;
-        await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
         const result = window.headOverlaps();
         if (!result.head) problems.push(`${label} ${width}: no head`);
         for (const problem of result.problems) problems.push(`${label} ${width}: ${problem}`);
@@ -279,6 +280,61 @@ for (const shape of shapes) {
     expect(problems.slice(0, 40)).toEqual([]);
   });
 }
+
+test(`${browserName}: reopenable head controls stay apart on phones and across widths`, async () => {
+  const page = await load({ ...shapes[1]!, reopen: true }, 390);
+  try {
+    for (const width of [390, 320, 600, 767, 768, 834, 1024, 1440, 1920, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.locator("#app").evaluate((host, width) => {
+        host.style.width = `${width}px`;
+      }, width);
+      await workspaceFrames(page);
+      const result = await page.evaluate(headOverlaps);
+      expect(result.controls).toContain("details");
+      expect(result.problems).toEqual([]);
+    }
+  } finally {
+    await page.close();
+  }
+});
+
+// A grid item's stretched auto height can stay cached when a nested flex line
+// wraps in WebKit. Keep real rendering frames around the exact transition too.
+test(`${browserName}: wrapped lines grow the head during successive resizes`, async () => {
+  const page = await load(shapes[0]!, 1920);
+  try {
+    for (const width of [1424, 1416, 1408]) {
+      await page.locator("#app").evaluate((host, width) => {
+        host.style.width = `${width}px`;
+      }, width);
+      await workspaceFrames(page);
+      expect((await page.evaluate(headOverlaps)).problems).toEqual([]);
+    }
+  } finally {
+    await page.close();
+  }
+});
+
+test(`${browserName}: the guard keeps Details outside Content's overflow clip`, async () => {
+  const page = await load(shapes[1]!, 780);
+  try {
+    const result = await page.evaluate(headOverlaps);
+    expect(result.controls).toContain("details");
+    expect(result.problems).toEqual([]);
+    // Moving its containing block inside Content makes this a real clip.
+    await page.locator(".k2b-app-workspace__content").evaluate((content) => {
+      content.style.position = "relative";
+    });
+    await page.locator("[data-app-workspace-detail-toggle]").evaluate((toggle) => {
+      toggle.style.top = "-40px";
+      toggle.style.transform = "none";
+    });
+    expect((await page.evaluate(headOverlaps)).problems).toContain("details is clipped");
+  } finally {
+    await page.close();
+  }
+});
 
 test(`${browserName}: the overlap guard rejects partially and fully clipped actions`, async () => {
   const page = await load(shapes[0]!, 1440);

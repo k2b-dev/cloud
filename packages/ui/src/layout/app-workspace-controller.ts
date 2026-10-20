@@ -130,6 +130,8 @@ const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.wor
  * stays application state, so the controller only requests the change.
  */
 export const APP_WORKSPACE_SIDEBAR_HIDE_EVENT = "k2b-app-workspace-sidebar-hide";
+/** Asks the owning Detail to reopen its current available object. */
+export const APP_WORKSPACE_DETAIL_OPEN_EVENT = "k2b-app-workspace-detail-open";
 /** Asks the owning `AppWorkspace.Detail` to close; its `onClose` decides. */
 export const APP_WORKSPACE_DETAIL_CLOSE_EVENT = "k2b-app-workspace-detail-close";
 /**
@@ -500,9 +502,20 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (detailButton) {
       const root = workspaceRoot(detailButton);
       const aside = root ? controlledPanel(root, detailButton) : null;
-      if (!aside || aside.hidden || !detailWaiting(aside) || claimedToggleClicks.has(event)) return;
+      if (!aside || detailButton.matches(":disabled") || claimedToggleClicks.has(event)) return;
+      const reopenable = aside.dataset.workspaceDetailReopen === "true";
+      if (!reopenable && (aside.hidden || !detailWaiting(aside))) return;
       claimedToggleClicks.add(event);
-      if (detailDrawer(aside)) parkDetailDrawer(aside);
+      if (aside.hidden) {
+        aside.dispatchEvent(new CustomEvent(APP_WORKSPACE_DETAIL_OPEN_EVENT));
+        // The app may reject opening (for example while navigating). Never
+        // override hidden ourselves or reveal retained, unavailable contents.
+        if (aside.hidden) return;
+        if (wide?.matches && detailWaiting(aside)) openDetailDrawer(aside);
+        if (event.detail === 0 || phone?.matches) requestTitle(aside);
+        else detailButton.focus({ preventScroll: true });
+      } else if (reopenable && (!wide?.matches || !detailWaiting(aside))) requestClose(aside);
+      else if (detailDrawer(aside)) parkDetailDrawer(aside);
       else {
         openDetailDrawer(aside);
         if (event.detail === 0) requestTitle(aside);
@@ -610,6 +623,15 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     return rootElements(root, detailSelector).find((aside) => !aside.hidden && ids?.includes(aside.id) && detailWaiting(aside)) ?? null;
   };
   const syncDetailRequestControls = () => {
+    for (const root of allRoots()) {
+      for (const aside of rootElements(root, detailSelector)) {
+        const toggle = detailToggle(aside);
+        if (toggle?.dataset.workspaceDetailReopen !== "true") continue;
+        const expanded = !aside.hidden && (!wide?.matches || !detailWaiting(aside) || detailDrawer(aside));
+        const value = String(expanded);
+        if (toggle.getAttribute("aria-expanded") !== value) toggle.setAttribute("aria-expanded", value);
+      }
+    }
     const waitingControls = new Map<HTMLElement, HTMLElement>();
     for (const root of allRoots()) {
       const waitingDetails = wide?.matches
@@ -700,10 +722,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         const before = detailWasWaiting.get(aside);
         detailWasWaiting.set(aside, waiting);
         if (!waiting) {
-          // The Details button hides with the waiting; its focus moves to the returning column's title.
-          const toggleFocused = detailToggle(aside)?.contains(ownerDocument.activeElement) ?? false;
+          // Rescue focus only when the legacy waiting-only button disappears.
+          // A persistent head control stays a valid focus target after resizing.
+          const toggle = detailToggle(aside);
+          const toggleFocused = toggle?.contains(ownerDocument.activeElement) ?? false;
           parkDetailDrawer(aside);
-          if (toggleFocused) focusTitle(aside);
+          if (toggle && toggleFocused && !isVisible(toggle)) focusTitle(aside);
         } else if (detailDrawer(aside)) syncDetailDrawerSpace(aside);
         else if (before !== true && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
       }
@@ -1171,7 +1195,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         pendingAnchors.set(root, cancel);
       } else anchorItem(root, aside, snapshot);
       const focused = ownerDocument.activeElement;
+      const toggle = detailToggle(aside);
       if (
+        toggle?.dataset.workspaceDetailReopen === "true" &&
+        isVisible(toggle) &&
+        (aside.contains(focused) || (focused === ownerDocument.body && aside.contains(lastFocus.get(root) ?? null)))
+      ) {
+        toggle.focus({ preventScroll: true });
+      } else if (
         snapshot?.item.isConnected &&
         (aside.contains(lastFocus.get(root) ?? null) || aside.contains(focused) || focused === ownerDocument.body)
       )

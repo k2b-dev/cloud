@@ -2366,15 +2366,17 @@ function MailWorkspaceView(props: {
     void runAction("mark_read", { silent: true, targets: [target] });
   });
 
-  const setDetailsVisible = (open: boolean) => {
+  const setDetailsVisible = (open: boolean, moveFocus = true) => {
     setDetailsOpen(open);
     persistPreferences({ detailsOpen: open });
+    // The shared head control owns its pointer/keyboard focus behavior.
+    if (!moveFocus) return;
     const frame = requestAnimationFrame(() => {
       focusFrames.delete(frame);
       if (disposed) return;
       const target = open
         ? document.querySelector<HTMLElement>("[data-mail-details-heading]")
-        : document.querySelector<HTMLElement>("[data-mail-details-trigger]");
+        : document.querySelector<HTMLElement>(".mail-workspace [data-app-workspace-detail-toggle]");
       target?.focus({ preventScroll: true });
     });
     focusFrames.add(frame);
@@ -2726,6 +2728,8 @@ function MailWorkspaceView(props: {
           id={MAIL_CONTEXT_DETAIL_ID}
           openOnChoice={false}
           open={detailsOpen() && canShowDetails()}
+          available={canShowDetails()}
+          onOpen={() => setDetailsVisible(true, false)}
           onClose={() => setDetailsVisible(false)}
           width="lg"
           maxWidth={520}

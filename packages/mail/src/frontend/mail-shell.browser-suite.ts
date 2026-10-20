@@ -86,10 +86,19 @@ const shell = (url: URL, html: string) => {
   const inset = "round(clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem), 1px)";
   return `${stored}<div style="display:flex;box-sizing:border-box;height:100dvh;padding:${inset} ${inset} ${inset} 0"><div style="flex:none;width:3.5rem"></div><div data-fixture-app-area style="display:flex;flex:1;min-width:0;flex-direction:column;${panel ? "container:k2b-app-area / inline-size" : ""}"><main style="display:flex;flex:1;min-height:0;flex-direction:column">${html}</main></div>${panel ? `<aside data-fixture-panel style="flex:none;width:${panel}px;margin-inline-start:${inset}"></aside>` : ""}</div>`;
 };
-const pageHtml = (url: URL) => {
+const pageHtml = (url: URL, cookieHeader: string | null = null) => {
   const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
   const locale = url.searchParams.get("locale") === "de" ? "de" : "en";
-  const html = renderToString(() => createComponent(Fixture, { source: `${url.pathname}${url.search}`, locale, theme }));
+  const html = renderToString(() =>
+    createComponent(Fixture, {
+      source: `${url.pathname}${url.search}`,
+      locale,
+      theme,
+      // This opt-in exercises the same request-cookie reader as Mail's SSR page
+      // without putting an artificial preference into its navigation URL.
+      workspaceCookieHeader: url.searchParams.has("persist-details") ? cookieHeader : undefined,
+    }),
+  );
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
   return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}<script>${controller}</script><script type="module">
     const geometry=${geometrySource};
@@ -150,7 +159,7 @@ beforeAll(async () => {
       if (url.pathname.endsWith("/preference") && request.method === "PATCH") return Response.json(await request.json());
       if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
       if (url.pathname.startsWith("/api/")) return Response.json({ error: "Outside synthetic fixture" }, { status: 404 });
-      return new Response(pageHtml(url), { headers: { "content-type": "text/html; charset=utf-8" } });
+      return new Response(pageHtml(url, request.headers.get("cookie")), { headers: { "content-type": "text/html; charset=utf-8" } });
     },
     websocket: {
       message(socket, message) {
@@ -874,7 +883,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
               expect(Math.abs(frame.list - row.list), `${label}: list ${frame.list}`).toBeLessThanOrEqual(4);
               expect(Math.abs(frame.reader!.width - row.reader), `${label}: reader ${frame.reader!.width}`).toBeLessThanOrEqual(4);
               expect(frame.detail, `${label}: Detail`).toBe(row.detail);
-              expect(frame.headDetails, `${label}: head Details`).toBe(row.detail === "waiting");
+              expect(frame.headDetails, `${label}: head Details`).toBe(true);
               if (row.detail === "column") expect(Math.abs(frame.detailWidth - 480), `${label}: Detail width`).toBeLessThanOrEqual(0.5);
               // At most 760 px, centred in the reader; the toolbar stays as wide as the reader.
               expect(frame.column!.width, `${label}: reading column`).toBeLessThanOrEqual(760.5);
@@ -1066,6 +1075,121 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           await page.getByRole("button", { name: "More conversation actions" }).click();
           for (const name of ["Forward", "Move to folder", "Tags"])
             expect(await page.getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBeGreaterThan(0);
+        } finally {
+          await close(page);
+        }
+      });
+
+      for (const width of [1920, 1440, 834, 390]) {
+        test(`persistent Details: default, close, resize and reload at ${width}`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&shell=1&persist-details=1`, width, 900);
+          try {
+            const button = page.locator("[data-app-workspace-detail-toggle]");
+            const aside = page.locator(".k2b-app-workspace__detail");
+            expect(await button.isVisible()).toBe(true);
+            expect(await aside.getAttribute("hidden")).not.toBeNull();
+            await button.focus();
+            await page.keyboard.press("Enter");
+            await settled(page);
+            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+            expect(await button.getAttribute("aria-expanded")).toBe("true");
+            if (width === 1920) {
+              // Pointer focus stays on a persistent control even when a resize
+              // leaves the Detail in its column instead of hiding that control.
+              await button.click();
+              await button.click();
+              await page.setViewportSize({ width: 1900, height: 900 });
+              await settled(page);
+              expect(await button.getAttribute("aria-expanded")).toBe("true");
+              expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
+            }
+            // Wide Mail deliberately puts its X in the reader; Escape closes its column.
+            if (width >= 1024) await page.keyboard.press("Escape");
+            else await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
+            await settled(page);
+            expect(await button.isVisible()).toBe(true);
+            expect(await button.getAttribute("aria-expanded")).toBe("false");
+            expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
+            await page.setViewportSize({ width: width === 1920 ? 834 : 1920, height: 900 });
+            await settled(page);
+            expect(await button.isVisible()).toBe(true);
+            // Parking retained the available app detail; widening restores its column.
+            if (width === 1440) {
+              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+              await button.click();
+              await settled(page);
+              expect(await aside.getAttribute("hidden")).not.toBeNull();
+            }
+            await button.click();
+            await settled(page);
+            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+            expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
+            // Persist application visibility closed, then reload the same conversation.
+            if (width === 1920) await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
+            else await page.keyboard.press("Escape");
+            await page.waitForFunction(() => {
+              const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
+              return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === false;
+            });
+            await page.reload();
+            await page.locator("html[data-mail-shell-ready=true]").waitFor();
+            expect(await button.isVisible()).toBe(true);
+            expect(await button.isEnabled()).toBe(true);
+            expect(await aside.getAttribute("hidden")).not.toBeNull();
+            await button.click();
+            await settled(page);
+            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+            await page.waitForFunction(() => {
+              const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
+              return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === true;
+            });
+            await page.reload();
+            await ready(page);
+            // An initially open waiting drawer parks; the app preference still
+            // restores true, while responsive presentation remains separate.
+            expect(await aside.getAttribute("hidden")).toBeNull();
+            if (width === 1920) {
+              expect(await button.getAttribute("aria-expanded")).toBe("false");
+              await button.click();
+              await settled(page);
+            }
+            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+          } finally {
+            await close(page);
+          }
+        });
+      }
+      test("persistent Details: conversation Back keeps the same closed preference", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&shell=1&persist-details=1`, 834, 900);
+        try {
+          const button = page.locator("[data-app-workspace-detail-toggle]");
+          const aside = page.locator(".k2b-app-workspace__detail");
+          await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
+          await settled(page);
+          expect(await button.isVisible()).toBe(true);
+          expect(await aside.getAttribute("hidden")).not.toBeNull();
+          await page.goBack();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+          await settled(page);
+          expect(await button.isVisible()).toBe(true);
+          expect(await button.isEnabled()).toBe(true);
+          expect(await aside.getAttribute("hidden")).not.toBeNull();
+          await button.click();
+          await settled(page);
+          expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("persistent Details: no selection keeps the head control disabled", async () => {
+        const page = await open(`${boxPath}?shell=1`, 834, 900);
+        try {
+          const button = page.locator("[data-app-workspace-detail-toggle]");
+          expect(await button.isVisible()).toBe(true);
+          expect(await button.isDisabled()).toBe(true);
+          expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
         } finally {
           await close(page);
         }
