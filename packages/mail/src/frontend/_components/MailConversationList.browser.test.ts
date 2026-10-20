@@ -723,6 +723,7 @@ describe("Mail quick look", () => {
   test("an explicit keyboard reopening retries a syncing preview while the pointer stays on the row", async () => {
     const page = await load();
     try {
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
       await pointAt(page, row("Cv0007"));
       await page.clock.runFor(201);
       await settle(page);
@@ -744,6 +745,7 @@ describe("Mail quick look", () => {
   test("returning from the still-open card starts one new attempt for a syncing preview", async () => {
     const page = await load();
     try {
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
       await pointAt(page, row("Cv0007"));
       await page.clock.runFor(201);
       await settle(page);
@@ -775,6 +777,7 @@ describe("Mail quick look", () => {
           : route.fulfill({ json: previewFor("Cv0007") });
       });
       const denied = page.waitForResponse((response) => response.url().endsWith(previewPath("Cv0007")));
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
       await pointAt(page, row("Cv0007"));
       await page.clock.runFor(81);
       await (await denied).finished();
