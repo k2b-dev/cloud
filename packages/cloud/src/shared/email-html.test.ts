@@ -12,6 +12,12 @@ describe("email HTML sanitizer", () => {
     }
   });
 
+  test("keeps a divider with only its style attribute", () => {
+    expect(sanitizeEmailHtml('<p>a</p><hr style="border-top:1px solid #d4d4d8" class="x" onclick="alert(1)" id="y"><p>b</p>')).toBe(
+      '<p>a</p><hr style="border-top:1px solid #d4d4d8" /><p>b</p>',
+    );
+  });
+
   test("keeps phone links like web and mail links", () => {
     for (const href of ["tel:+49731000000", "tel:+49 731 000000", "tel:+49-731-000000;ext=12", "tel:(0731)%20000.000", "TEL:110"]) {
       expect(sanitizeEmailHtml(`<a href="${href}">Call</a>`)).toBe(`<a href="${href}">Call</a>`);

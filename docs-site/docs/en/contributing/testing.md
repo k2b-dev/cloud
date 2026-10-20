@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Testing
@@ -23,8 +23,8 @@ bun run test
 
 `bun run check` verifies dependencies, import boundaries, package cycles,
 service API contracts, localization, capability presentation, CSS
-architecture, formatting, the application set, the CI gate's job list, and
-every package typecheck. A package typecheck covers its
+architecture, formatting, fixture short IDs, the application set, the CI gate's
+job list, and every package typecheck. A package typecheck covers its
 `scripts/` as well as `src/`, so a package's build, smoke, and verification
 scripts break the gate when they drift from the code they drive. The only
 exceptions are scripts a package excludes by name in its `tsconfig.json` and
@@ -418,6 +418,23 @@ check enforces this rule. Await promises directly and assert on their values;
 for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
+
+Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
+and assert `expect(errors).toEqual([])`; new tests do not register a
+`pageerror` listener of their own. While a page waits for its next document,
+WebKit refuses every load that the page starts, such as a stream that opens
+again after the navigation cancelled it. It logs the refusal as
+`Fetch API cannot load <url> due to access control checks.`, also for a
+same-origin request whose promise is handled
+([playwright#43120](https://github.com/microsoft/playwright/issues/43120)).
+Playwright reports that log as a page error, so a test that navigates fails at
+random. `pageErrors()` ignores only that report, only in WebKit, only for a URL
+with the origin of the page, and only while a `goto`, `reload`, `goBack`, or
+`goForward` of the test runs. It reports everything else: a real CORS failure,
+which names another origin, an unhandled rejection, a refusal during a
+navigation that the page starts itself, such as after a click, and every other
+error. `packages/ui/test/browser.browser.test.ts` guards these cases in
+Chromium and WebKit.
 
 ### Run WebKit locally
 
@@ -894,6 +911,18 @@ Give each caller its own address, for example from `uniqueCallerAddress()` in
 range `2001:db8::/32`. Reuse one address only when the test exercises the
 limit itself.
 
+### Fixture short IDs
+
+Raw fixture inserts bypass the service's collision retry. Take short IDs from
+`testShortId()` in `scripts/fixtures/test-short-id`, passing the column's
+length when it differs from the default six characters. Its counter is
+deterministic per process; the `o` mark never appears in `readableId()` output,
+so fixture IDs stay apart from service-generated IDs.
+
+Never cut a random UUID or `Math.random()` to short-ID length: the small space
+repeats and fails a unique index at random. `bun run check` flags this with the
+`test-short-ids` rule.
+
 ## Request cache checks
 
 The request-cache suites modify global settings and cache keys, so they run
@@ -1014,6 +1043,62 @@ locally. To move to another Poppler version, bump the image in
 described under [Where CI images come from](#where-ci-images-come-from). The
 image's publisher deletes its date tags after about eight months, so move the
 pin to a newer tag before that.
+
+### Scale acceptance
+
+The nightly `scale-acceptance` job runs `scripts/scale-acceptance.ts`. It boots
+one gateway and two replicas each of Core, Mail, Chat, and Notebooks from
+`compose.prod.yml` and the test overlay `compose.scale-test.yml`, in its own
+Compose project with its own PostgreSQL, NATS, Valkey, and SMTP sink. It never
+uses the development stack or `.env`, and it removes every container, volume,
+and built image tag when it ends, also after a failure or a signal.
+
+The gateway and all Core replicas start together. Once Core is ready, all
+replicas of Mail, Chat, and Notebooks start together. After readiness, the
+harness inspects every application container and requires `RestartCount` to
+be zero, reporting the container name and count on failure.
+
+Steps pin requests to one replica through its own published port, except the
+Mail and Chat steps that explicitly use the gateway:
+
+- a Chat message posted on replica A reaches a live socket on replica B;
+- a Notebooks Yjs update sent through replica A reaches a client on replica B;
+- one durable outgoing mail is delivered once while two Core replicas run;
+- Mail compose opens through the gateway; acquiring again on B with the same editor returns A's lease;
+- six Mail autosaves alternate between A and B without lost revisions or recovery copies;
+- Mail heartbeats on B keep the lease while eight concurrent saves run on A;
+- reloading Mail compose releases on one pod and acquires on the other;
+- a Mail takeover on B reaches the old editor live on A and rejects its old token;
+- a Mail attachment upload starts on A, resumes and finishes on B, and downloads intact on A;
+- sending a Mail draft on B removes its editing lease everywhere;
+- Mail A restarts gracefully while editing continues through B and the gateway;
+  every routing gap fails the run, with request samples kept as evidence;
+- Chat A stops gracefully and is removed, then a surge adds replacements, which
+  must be ready with `RestartCount` 0, before the last original Chat replica
+  stops. Gateway requests continue for at least
+  70 seconds after each stop. Registry gaps fail the run. Upstream-unavailable
+  502s and network errors during a stop and its next five seconds are counted
+  separately as `p4InFlight` (RISK P4); every other failure fails the run;
+- Core is killed with SIGKILL while it sends a mail, and the other Core
+  replica delivers it exactly once after recovery, which takes about five
+  minutes.
+
+At the end, the run fails unless both replicas of every app are different
+running containers and each served at least one step, except for the explicitly
+killed Core and retired Chat containers. Retirement never excuses an unserved
+replica. The Chat stop and surge scenario adds at least 140 seconds. The suite
+runs nightly, not on pull requests, because it builds five images. Run it
+locally with Docker:
+
+```bash
+bun run --cwd packages/ui build
+bun --no-env-file scripts/scale-acceptance.ts
+```
+
+The script takes a heavy slot itself. Add `--image-tag <tag>` to use published
+images instead of building them. `--replicas 1` is the negative control: every
+step reaches the only container of each app, and the final check fails because
+replica B is replica A.
 
 ### Where CI images come from
 

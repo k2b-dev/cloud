@@ -272,6 +272,7 @@ export const mailComposerMessages = i18n.define({
       editRecipient: ({ recipient }: { recipient: string }) => `Edit ${recipient}`,
       editRecipientHint: ({ recipient }: { recipient: string }) => `${recipient}: click or press Enter to edit`,
       removeRecipient: ({ recipient }: { recipient: string }) => `Remove ${recipient}`,
+      fromThisMailbox: "From this mailbox",
       addAnotherRecipient: "Add recipient",
     },
     de: {
@@ -546,6 +547,7 @@ export const mailComposerMessages = i18n.define({
       editRecipient: ({ recipient }) => `${recipient} bearbeiten`,
       editRecipientHint: ({ recipient }) => `${recipient} bearbeiten: klicken oder Eingabetaste drücken`,
       removeRecipient: ({ recipient }) => `${recipient} entfernen`,
+      fromThisMailbox: "Aus diesem Postfach",
       addAnotherRecipient: "Empfänger hinzufügen",
     },
   },

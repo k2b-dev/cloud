@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, PanelDialog, prompts, useLocale } from "@k2b/ui";
+import { Button, InlineGuidance, PanelDialog, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef } from "../../service";
@@ -29,6 +29,8 @@ export default function AddMemberDialog(props: Props) {
   const t = () => detailMessages.resolve([locale()]).t;
   const [mode, setMode] = createSignal<"pick" | "create">("pick");
 
+  const [linkError, setLinkError] = createSignal<string | null>(null);
+
   const parentRef: ContactRef = {
     id: props.parent.id,
     label: props.parent.label,
@@ -51,7 +53,7 @@ export default function AddMemberDialog(props: Props) {
       return await res.json();
     },
     onSuccess: (linked) => props.close(linked),
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => setLinkError(error.message),
   });
 
   onCleanup(() => linkMutation.abort());
@@ -88,9 +90,19 @@ export default function AddMemberDialog(props: Props) {
                 placeholder={t().searchContactsInBook}
                 onSelect={(contact) => {
                   if (linkMutation.loading()) return;
-                  linkMutation.mutate({ bookId: contact.bookId, contactId: contact.id, parentContactId: props.parent.id });
+                  setLinkError(null);
+                  void linkMutation.mutate({ bookId: contact.bookId, contactId: contact.id, parentContactId: props.parent.id });
                 }}
               />
+              <div class="h-16 shrink-0 overflow-y-auto" tabindex={linkError() ? 0 : undefined}>
+                <Show when={linkError()}>
+                  {(error) => (
+                    <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                      {error()}
+                    </InlineGuidance>
+                  )}
+                </Show>
+              </div>
             </PanelDialog.Section>
           </PanelDialog.Body>
           <PanelDialog.Footer>

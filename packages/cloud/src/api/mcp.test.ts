@@ -228,6 +228,7 @@ const createMcpRoutes = (dependencies: McpTestDependencies = {}) =>
   createMcpRoutesBase({
     listApps: async () => [summary(app)],
     getOperatorLocale: async () => "en",
+    getOperatorTimeZone: async () => "UTC",
     getAppUrl: async () => "cloud.example",
     authenticate: authenticated,
     withActiveSigner,
@@ -1173,6 +1174,68 @@ describe("capability MCP projection", () => {
     expect(forwarded?.get("idempotency-key")).toBeNull();
   });
 
+  test("puts an Action receipt with addresses before JSON, leaving Queries and errors unchanged", async () => {
+    const receipt = {
+      text: "Sent to {person}.",
+      slots: { person: { kind: "person", people: [{ name: "Lea Berg", address: "lea.berg@example.com" }] } },
+    };
+    const body = { data: { id: "created" }, receipt };
+    let failed = false;
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      fetch: async (input) =>
+        failed
+          ? Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 })
+          : Response.json(String(input).includes("/queries/") ? { data: body.data } : body),
+    });
+    const call = async (name: string) =>
+      (
+        await (
+          await rpc(routes, {
+            jsonrpc: "2.0",
+            id: 84,
+            method: "tools/call",
+            params: { name, arguments: { id: "one" } },
+          })
+        ).json()
+      ).result;
+    const action = await call("demo__action__update");
+    expect(action.content).toEqual([
+      { type: "text", text: "Sent to Lea Berg <lea.berg@example.com>." },
+      { type: "text", text: JSON.stringify(body) },
+    ]);
+    expect(action.structuredContent).toEqual(body);
+    const query = await call("demo__query__get");
+    expect(query.content).toEqual([{ type: "text", text: JSON.stringify({ data: body.data }) }]);
+    failed = true;
+    const error = await call("demo__action__update");
+    expect(error).toEqual({
+      isError: true,
+      structuredContent: { code: "FORBIDDEN", message: "No access" },
+      content: [{ type: "text", text: JSON.stringify({ code: "FORBIDDEN", message: "No access" }) }],
+    });
+  });
+
+  test("drops optional receipt text when only the original Action result fits", async () => {
+    const body = { data: { id: "" }, receipt: { text: "Result delivered." } };
+    const bytes = () =>
+      new TextEncoder().encode(JSON.stringify({ structuredContent: body, content: [{ type: "text", text: JSON.stringify(body) }] }))
+        .byteLength;
+    body.data.id = "x".repeat(Math.floor((CAPABILITY_MAX_RESULT_BYTES - bytes() - 4) / 2));
+    expect(bytes()).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+    const routes = createMcpRoutes({ getCapability: async () => app, fetch: async () => Response.json(body) });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 85,
+      method: "tools/call",
+      params: { name: "demo__action__update", arguments: { id: "one" } },
+    });
+    const result = (await response.json()).result;
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual([{ type: "text", text: JSON.stringify(body) }]);
+    expect(result.structuredContent).toEqual(body);
+  });
+
   test("returns an actionable protocol error when a live tool disappears", async () => {
     const routes = createMcpRoutes({
       getCapability: async () => null,
@@ -1212,4 +1275,50 @@ describe("capability MCP projection", () => {
       message: "No access to this item",
     });
   });
+});
+
+test("MCP keeps its JSON socket raised until a tool response or error and resets it", async () => {
+  for (const fail of [false, true]) {
+    const calls: number[] = [];
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      fetch: async () => {
+        entered.resolve();
+        await release.promise;
+        if (fail) throw new Error("upstream unavailable");
+        return Response.json({ data: { id: "one" } });
+      },
+    });
+    const pending = routes.request(
+      "/mcp/v1",
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json, text/event-stream",
+          "content-type": "application/json",
+          "mcp-protocol-version": "2025-06-18",
+          authorization: "Bearer caller",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "demo__query__get", arguments: { id: "one" } },
+        }),
+      },
+      { timeout: (_request: Request, seconds: number) => calls.push(seconds) },
+    );
+    try {
+      await entered.promise;
+      expect(calls).toEqual([55]);
+    } finally {
+      release.resolve();
+    }
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect((await response.json()).result.isError ?? false).toBe(fail);
+    expect(calls).toEqual([55, 10]);
+  }
 });

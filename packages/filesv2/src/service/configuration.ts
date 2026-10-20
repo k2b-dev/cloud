@@ -7,6 +7,7 @@ import { validateConfiguration } from "./paths";
 
 const StoredSchema = ConfigurationSchema.extend({ token: z.string().max(4096) });
 const defaults = {
+  activityRetentionDays: 365,
   url: "",
   token: "",
   cloud: {

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { minimalTextDiff } from "./minimal-text-diff";
+import { minimalTextDiff } from "./text-diff";
 
 test.each([
   ["", "", { index: 0, deleteCount: 0, insert: "" }],

@@ -2,14 +2,15 @@ import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import { requestContactDirectory } from "../../contact-directory-settings";
 import { mailPageHelp } from "../../help";
 import type { MailRequestContext } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
+import { requestContactDirectory } from "../../service/contact-directory";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/workspace";
 import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "../_components/mail-workspace-preferences";
 import MailWorkspace from "../MailWorkspace.island";
+import { loadMailSidebarData } from "../mail-sidebar-data";
 import { mailPageMessages } from "../pages-messages";
 import { projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
@@ -33,14 +34,17 @@ export default ssr<AuthContext>(async (c) => {
   const workspacePreferences = readMailWorkspacePreferences(cookieHeader);
   const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
   const themePreference = readThemePreferenceFromCookieHeader(cookieHeader);
-  const [internalData, spacesIntegration] = await Promise.all([
+  // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
+  const [internalData, spacesIntegration, sidebar] = await Promise.all([
     loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
     getSpacesMailIntegrationAvailability(),
+    loadMailSidebarData(context),
   ]);
   if (!internalData.ok) return ssr.error(c, internalData.error.status);
   const data = await projectMailboxPageData(internalData.data);
   const dateConfig = getDateConfig(c);
 
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
@@ -56,12 +60,13 @@ export default ssr<AuthContext>(async (c) => {
         requestPath={requestPath(c)}
         currentUserId={user.id}
         currentUserEmail={user.mail}
-        contactDirectory={requestContactDirectory(c)}
+        contactDirectory={directory}
         dateConfig={dateConfig}
         initialPreferences={workspacePreferences}
         initialUserPreferences={userPreferences}
         initialTheme={themePreference === "system" ? null : themePreference}
         calendarIntegrationAvailable={spacesIntegration.invitations}
+        sidebar={sidebar}
       />
     </Layout>
   );

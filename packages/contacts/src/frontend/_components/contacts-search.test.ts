@@ -50,4 +50,16 @@ describe("Contacts search route state", () => {
     expect(href).toBe("/app/contacts/book-1?sort=created&email=yes&favorites=true");
     expect(readContactsQueryOptions(href)).toEqual({ sort: "created", email: "yes", phone: "all", favorites: true });
   });
+  test("never carries a completed mutation outcome into reusable navigation", () => {
+    const href = "/app/contacts/book-1?contact=one&contactBook=book-1&contactOutcome=created";
+    for (const result of [
+      contactsResultHref(href),
+      buildContactsSearchHref(href, "Ada"),
+      buildContactsPageHref(href, 2),
+      buildContactsPaginationBaseHref(href),
+      buildContactsQueryHref(href, { sort: "created" }),
+      buildContactDetailHref(href, "other", "book-1"),
+    ])
+      expect(result).not.toContain("contactOutcome");
+  });
 });

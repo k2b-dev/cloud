@@ -93,7 +93,7 @@ Declare Sync handles with `lazySync()`, use them after `app.start()`, start
 workers in lifecycle startup, and drain them before releasing dependencies.
 Shared resources need one owner and identical settings. Never declare one per
 entity: JetStream reserves each stream's bytes, so per-entity logs share one
-topic keyed by `tenantId` with watermark cursors (Topics and live events).
+topic keyed by `tenantId` with watermark cursors (Topics and live events); collaborative text uses `@k2b/cloud/shared-text` (Shared text documents).
 
 Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.
@@ -130,11 +130,11 @@ SolidJS library remains independent of Cloud and application domains.
   and widgets, not message keys. Setting presentation inherits the application's base locale; notification
   senders pass locale metadata so `render` and `email` produce final text from the same canonical locale
   without adding locale to the domain payload. Keep product text calm and precise; localizations preserve
-  meaning, while code, identifiers, paths, and external labels stay verbatim. Show group names via
-  `groupDisplayName()` (`@k2b/cloud/shared`). `Layout`, `AdminLayout`, and `MinimalLayout` install the SSR
-  locale provider. Use `MinimalLayout` for an app-styled standalone page with persisted locale and theme, no
-  Cloud header or navigation, and a shared legal and preferences footer. A custom root using none of these
-  layouts must install one provider around its returned tree.
+  meaning, while code, identifiers, paths, and external labels stay verbatim. Name groups with `groupDisplayName()`
+  and principals with `principalLabel()` (`@k2b/cloud/shared`), never IDs. `Layout`, `AdminLayout`, and
+  `MinimalLayout` install the SSR locale provider. Use `MinimalLayout` for an app-styled standalone page with
+  persisted locale and theme, no Cloud header or navigation, and a shared legal and preferences footer. A custom
+  root using none of these layouts must install one provider around its returned tree.
 - Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
   Build no back buttons for it; an app with its own header places `PageTrail` there.
 

@@ -1,5 +1,26 @@
 import { expect, test } from "bun:test";
-import { isPanelCloseMessage, isPanelReadyMessage } from "./panel-messages";
+import { isPanelCloseMessage, isPanelReadyMessage, isPanelSearchMessage } from "./panel-messages";
+
+test("search requires exactly its type and version 1", () => {
+  const search = { type: "cloud.panel.search", v: 1 };
+  expect(isPanelSearchMessage(search)).toBe(true);
+  for (const value of [
+    null,
+    [],
+    "cloud.panel.search",
+    {},
+    { type: search.type },
+    { v: 1 },
+    { ...search, type: "cloud.panel.close" },
+    { ...search, v: 2 },
+    { ...search, v: "1" },
+    { ...search, extra: true },
+    { ...search, [Symbol("extra")]: true },
+    Object.create(search),
+  ]) {
+    expect(isPanelSearchMessage(value)).toBe(false);
+  }
+});
 
 test("accepts only the exact ready shape and expected provider", () => {
   const ready = { type: "cloud.panel.ready", v: 1, provider: "fixture" };

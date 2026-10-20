@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
@@ -46,6 +46,124 @@ if (isServer) test.skip("requires browser conditions", () => {});
 else {
   const { rememberPage, upDestination, goUp, installPageTrailRuntime } = modules!.runtime;
   const labels = (page: string) => ({ title: `Up to ${page}`, description: "Up" });
+
+  test("a history traversal remembers the departing page's current main scroll and stops after disposal", () => {
+    const tab = open();
+    const navigation = new tab.dom.window.EventTarget();
+    Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+    const main = document.createElement("main");
+    main.className = "layout-content-main";
+    document.body.append(main);
+    tab.visit("/app/things?q=red");
+    main.scrollTop = 40;
+    rememberPage();
+    const stop = installPageTrailRuntime(labels);
+    const navigate = (navigationType: string) => {
+      const event = new tab.dom.window.Event("navigate");
+      Object.defineProperty(event, "navigationType", { value: navigationType });
+      navigation.dispatchEvent(event);
+    };
+    const memory = () => JSON.parse(sessionStorage.getItem("cloud:page-trail") ?? "null");
+    try {
+      main.scrollTop = 240;
+      navigate("push");
+      expect(memory().visits).toEqual([{ url: "/app/things?q=red", regions: [{ key: "@main", top: 40, left: 0 }], up: [] }]);
+      navigate("traverse");
+      expect(memory().visits).toEqual([{ url: "/app/things?q=red", regions: [{ key: "@main", top: 240, left: 0 }], up: [] }]);
+      stop();
+      main.scrollTop = 360;
+      navigate("traverse");
+      expect(memory().visits[0].regions).toEqual([{ key: "@main", top: 240, left: 0 }]);
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  test("the way up swaps in scope and loads destinations outside the scope", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const swap = spyOn(nav, "swapPage").mockResolvedValue(undefined);
+    const tab = open();
+    const canvas = document.createElement("div");
+    canvas.className = "cloud-app-canvas";
+    canvas.dataset.navShell = "fixture";
+    canvas.dataset.navScope = "/app/things";
+    document.body.append(canvas);
+    try {
+      tab.visit("/app/things/42", ["/app/things"]);
+      goUp("/app/things");
+      expect(swap).toHaveBeenCalledWith("http://localhost/app/things");
+      expect(tab.loads).toEqual([]);
+      goUp("/app/things-other");
+      expect(tab.loads).toEqual(["http://localhost/app/things-other"]);
+    } finally {
+      swap.mockRestore();
+      tab.close();
+    }
+  });
+
+  test("a swapped arriving page restores the per-tab return and its row", async () => {
+    const tab = open();
+    const stop = installPageTrailRuntime(labels);
+    try {
+      tab.visit("/app/things/42", ["/app/things"]);
+      sessionStorage.setItem(
+        "cloud:page-trail",
+        JSON.stringify({
+          visits: [{ url: "/app/things", regions: [{ key: "@main", top: 120, left: 0 }] }],
+          returning: { url: "/app/things", from: "/app/things/42" },
+        }),
+      );
+      const main = document.createElement("main");
+      main.className = "layout-content-main";
+      main.innerHTML = '<a href="/app/things/42">42</a>';
+      document.body.append(main);
+      tab.visit("/app/things");
+      window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: main } }));
+      await frames();
+      expect(main.scrollTop).toBe(120);
+      expect(main.querySelector("[data-page-trail-recent]")?.textContent).toBe("42");
+      expect(JSON.parse(sessionStorage.getItem("cloud:page-trail") ?? "null").returning).toBeUndefined();
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  test("a later swap ends the return restore of the page it replaced", async () => {
+    const tab = open();
+    const stop = installPageTrailRuntime(labels);
+    try {
+      tab.visit("/app/things/42", ["/app/things"]);
+      sessionStorage.setItem(
+        "cloud:page-trail",
+        JSON.stringify({
+          visits: [{ url: "/app/things", regions: [{ key: "@main", top: 120, left: 0 }] }],
+          returning: { url: "/app/things", from: "/app/things/42" },
+        }),
+      );
+      const column = (link: string) => {
+        const root = document.createElement("div");
+        root.setAttribute("data-nav-root", "");
+        // The returning page renders its rows late, so the restore keeps retrying.
+        root.innerHTML = `<main class="layout-content-main">${link}</main>`;
+        return root;
+      };
+      const returned = column("");
+      document.body.append(returned);
+      tab.visit("/app/things");
+      window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: returned } }));
+      const next = column('<a href="/app/things/42">42</a>');
+      returned.replaceWith(next);
+      tab.visit("/app/other");
+      await frames();
+      expect(next.querySelector("main")?.scrollTop).toBe(0);
+      expect(next.querySelector("[data-page-trail-recent]")).toBeNull();
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
 
   test("going up from a page never leads back to it or to another page below the parent", () => {
     const tab = open();

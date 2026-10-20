@@ -4,6 +4,7 @@ import { isAccountCategoryAllowed } from "../account-category-policy";
 import { accounts } from "../accounts";
 import { logger } from "../logging";
 import { providers } from "../providers";
+import { session } from "../session";
 
 type IpaLoginFailure =
   | { ok: false; status: 403; reason: "category_disabled"; message: string }
@@ -19,6 +20,8 @@ type IpaLoginSuccess = {
   ok: true;
   userId: string;
   user: User;
+  /** Read before the password check; session issuance refuses a newer one. */
+  authEpoch: number;
 };
 
 export type IpaLoginFlowResult = IpaLoginSuccess | IpaLoginFailure;
@@ -96,6 +99,13 @@ export const login = async (params: { username: string; password: string }): Pro
     return failInvalidCredentials({ identifier: params.username, password: params.password });
   }
 
+  // Read before the password check so a concurrent password change or sign-out ends this sign-in too.
+  const [account] = await sql<Array<{ auth_epoch: string | number | bigint }>>`
+    SELECT auth_epoch FROM auth.users WHERE provider = 'ipa' AND uid = ${uid}
+  `;
+  const authEpoch = account ? Number(account.auth_epoch) : null;
+  if (authEpoch !== null && (!Number.isSafeInteger(authEpoch) || authEpoch < 0)) throw new Error("User auth_epoch is invalid");
+
   const loginResult = await providers.ipa.auth.login(uid, params.password).catch((error) => {
     log.error("FreeIPA login transport failed", {
       uid,
@@ -168,11 +178,21 @@ export const login = async (params: { username: string; password: string }): Pro
 
   const userResult = await loadSyncedIpaUser(uid);
   if (!userResult.ok) return userResult;
+  // An account synced in only after the read has no epoch this sign-in is bound to; the next attempt has one.
+  if (authEpoch === null) {
+    return {
+      ok: false,
+      status: 400,
+      reason: "user_not_synced",
+      message: "Your account is not yet available. Please try again in a few minutes.",
+    };
+  }
 
   return {
     ok: true,
     userId: userResult.userId,
     user: userResult.user,
+    authEpoch,
   };
 };
 
@@ -180,7 +200,11 @@ export const changeExpiredPassword = async (params: {
   username: string;
   currentPassword: string;
   newPassword: string;
-}): Promise<IpaLoginFlowResult | { ok: false; status: number; reason: "change_failed"; message: string }> => {
+}): Promise<
+  | (IpaLoginSuccess & { signOutOthersFailed: boolean })
+  | IpaLoginFailure
+  | { ok: false; status: number; reason: "change_failed"; message: string }
+> => {
   if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" })))
     return { ok: false, status: 403, reason: "category_disabled", message: "FreeIPA accounts are disabled. Contact an administrator." };
   const changeResult = await providers.ipa.auth.changeExpiredPassword(params);
@@ -193,5 +217,18 @@ export const changeExpiredPassword = async (params: {
     };
   }
 
-  return login({ username: params.username, password: params.newPassword });
+  // Resolve the local account here, before the caller issues its new browser session, even if login later fails.
+  const uid = await resolveIpaLoginUid(params.username);
+  const [user] = uid ? await sql<Array<{ id: string }>>`SELECT id FROM auth.users WHERE provider = 'ipa' AND uid = ${uid}` : [];
+  let signOutOthersFailed = false;
+  if (user) {
+    try {
+      await session.endOtherSignIns(user.id, { reason: "password_change" });
+    } catch {
+      log.warn("Password changed, but ending other sign-ins failed", { userId: user.id });
+      signOutOthersFailed = true;
+    }
+  }
+  const loginResult = await login({ username: params.username, password: params.newPassword });
+  return loginResult.ok ? { ...loginResult, signOutOthersFailed } : loginResult;
 };

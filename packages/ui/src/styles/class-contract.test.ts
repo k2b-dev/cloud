@@ -49,10 +49,16 @@ const sources = walk(resolve(packageRoot, "src"));
  * Class families the package renders but does not own the names of.
  * `ti`/`ti-*` come from the optional Tabler preset; `cd-*` are emitted by the
  * package's own code highlighter; `md-*` and `stdlib-chart-*` are emitted by
- * `@k2b/stdlib` and cannot be renamed without forking it.
+ * `@k2b/stdlib` and cannot be renamed without forking it. `maplibregl-*` is the DOM
+ * MapLibre builds inside MapView, styled by the package instead of MapLibre's stylesheet.
  */
 const isForeignContract = (token: string) =>
-  token === "ti" || token.startsWith("ti-") || token.startsWith("cd-") || token.startsWith("md-") || token.startsWith("stdlib-");
+  token === "ti" ||
+  token.startsWith("ti-") ||
+  token.startsWith("cd-") ||
+  token.startsWith("md-") ||
+  token.startsWith("stdlib-") ||
+  token.startsWith("maplibregl-");
 
 /** Marker classes: CopyButton uses its base styles; Navigation styles its lists and rows. */
 const HOOK_CLASSES = new Set(["k2b-copy-button", "k2b-navigation"]);

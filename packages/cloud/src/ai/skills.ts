@@ -337,8 +337,7 @@ const listSkillAccess = async (skillId: string, db: SQL = sql): Promise<AiSkillA
   const rows = await db<SkillAccessRow[]>`
     SELECT skill_access.short_id, access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
            access.permission, access.created_at,
-           COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name, service_accounts.name,
-             CASE WHEN access.authenticated_only THEN 'All authenticated users' ELSE 'Public' END) AS display_name,
+           COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name, service_accounts.name) AS display_name,
            users.avatar_hash, service_accounts.kind AS service_account_kind
     FROM ai.skill_access skill_access
     JOIN auth.access access ON access.id = skill_access.access_id

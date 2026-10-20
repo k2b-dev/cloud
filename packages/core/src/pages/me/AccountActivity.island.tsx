@@ -27,6 +27,7 @@ const activityLabel = (entry: AccountActivityEntry, t: AccountMessages): string 
     "webauthn_credential.authenticate": t.activityPasskeyUsed,
     "auth.pwa.device.enroll": t.activityAppPaired,
     "auth.pwa.device.revoke": t.activityAppRemoved,
+    "auth.session.sign_out_others": t.activitySignedOutElsewhere,
   })[entry.action] ?? entry.label;
 
 const outcomeClass = (outcome: AccountActivityEntry["outcome"]): string => {

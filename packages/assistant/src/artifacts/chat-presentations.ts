@@ -1,6 +1,5 @@
-import { aiConversations, aiProjects } from "@k2b/cloud/ai";
 import { sql } from "bun";
-import { z } from "zod";
+import { requireToolChat } from "./chat-access";
 import { ChatPresentation, ChatPresentationInput } from "./chat-presentation-contracts";
 import { LIMITS } from "./contracts";
 import { databaseConfigLock } from "./database-lock";
@@ -8,15 +7,7 @@ import { appChecks } from "./html/check-service";
 import { ArtifactError, type ArtifactIdentity, readArtifactRevision, requireArtifact } from "./service";
 
 async function conversation(id: string, identity: ArtifactIdentity) {
-  if (identity.actor.kind !== "user") throw new ArtifactError("ACCESS_DENIED");
-  const input = { ownerUserId: identity.actor.user.id };
-  const chat = z.uuid().safeParse(id).success
-    ? await aiConversations.getConversation({ ...input, conversationId: id })
-    : await aiConversations.getConversationByShortId({ ...input, shortId: id });
-  if (!chat || chat.archivedAt || (chat.allowedTools && !chat.allowedTools.includes("code_present")))
-    throw new ArtifactError("ACCESS_DENIED");
-  if (chat.projectId && !(await aiProjects.get(chat.projectId, identity.accessSubject, "read"))) throw new ArtifactError("ACCESS_DENIED");
-  return chat;
+  return requireToolChat(id, identity, "code_present");
 }
 export const chatPresentations = {
   async save(raw: unknown, identity: ArtifactIdentity) {

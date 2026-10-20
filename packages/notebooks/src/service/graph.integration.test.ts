@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
 import { buildNotebookGraph, reindexLinks } from "./links";
 import { create, getTree, type Note } from "./notes";
@@ -20,7 +21,7 @@ afterAll(async () => {
 
 const notebook = async () => {
   const id = crypto.randomUUID();
-  const shortId = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+  const shortId = testShortId();
   await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${id}::uuid, ${shortId}, 'Graph test')`;
   notebookIds.push(id);
   return id;

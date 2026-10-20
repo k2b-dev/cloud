@@ -5,7 +5,7 @@ section: Platform services
 order: 590
 description: Render documents from application data with shared template and PDF services.
 tags: [pdf, templates, gotenberg]
-updated: 2026-10-17
+updated: 2026-10-20
 ---
 
 # PDF and templates
@@ -117,13 +117,24 @@ const result = await renderHtmlToPdf({ html, title: note.title });
 ```
 
 It applies the same presets and `customCss` rules as `renderMarkdownToPdf()`.
-`html` becomes the document body as given, so sanitize it in the application
-renderer. `css` styles the application's own elements. It comes after the
-preset and before `customCss`, so a person's custom CSS can still override it.
+`html` becomes the document body as given, except for `<wbr>` break
+opportunities in long table-cell runs, so text that the application replaces
+afterwards must not rely on staying contiguous inside table cells.
+Sanitize it in the application renderer. `css` styles the application's own
+elements. It comes after the preset and before `customCss`, so a person's
+custom CSS can still override it.
 With `customCss` but no `templateId`, `css` still applies while the preset is
 left out. The print styles for info blocks come with every document, before
 `css`, so an application renderer that emits info blocks through
 `renderMarkdownInfoBlock()` from `@k2b/ui` prints them like Markdown PDFs.
+
+In every document (each preset, no template, or custom CSS only), table cells
+keep words whole so short values such as `Nr.` stay on one line; custom CSS
+can override the cell rule. Words of up to 20 characters stay whole; a longer
+run without a space, such as a long URL or code, gets a break opportunity every
+10 characters so the table fits the page. Because words stay whole, a table
+with many columns of long words can still be wider than the page; split it or
+let custom CSS break cells anywhere.
 
 The result renders offline like any other HTML: the offline policy replaces
 the Content Security Policy that `buildPresetPdfHtml()` writes. `html` and

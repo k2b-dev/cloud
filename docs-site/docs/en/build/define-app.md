@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Define an application
@@ -64,6 +64,21 @@ Cloud then mounts generated SSR assets below
 global SSR asset path.
 
 See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
+
+## Keep the shell during page navigation
+
+Set `pageSwap: true` to swap `Layout` pages within the app. The default is
+`false`. The rail, phone tab bar, panel slot, and provider document stay mounted.
+The next server page replaces the content column and its islands.
+
+`focusMode` pages and links to other apps load a document. So does a page
+whose kept shell would differ from a reload: another user, locale, theme,
+or build, other panel providers, navigation entries or profile, a new
+announcement, or other Help. Server route policies still authorize every
+request.
+
+See [URL state and navigation](/en/docs/frontend/url-state-and-navigation#cloud-page-swaps)
+for the replaced content and unsaved-input guards.
 
 ## Add global navigation
 
@@ -200,6 +215,11 @@ when their containing object is present.
 derives readable text with at least 4.5:1 contrast (WCAG AA) and soft selection
 fills for light and dark mode. Any six-digit hex accent is accepted. A light
 accent such as yellow is darkened only as far as needed.
+The accent colors the app ink, selected navigation and content rows, selected
+tabs, view tabs and segments, active filter chips, and the app's icon tiles.
+It never colors buttons, inputs, checkboxes, switches, focus rings, or status;
+link text stays body ink, and only its underline takes the app ink. See
+[Colors and selection](/en/ui/surfaces/color).
 The accent also reaches dialogs and sheets opened from the app's pages,
 with no application code.
 

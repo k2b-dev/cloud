@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { lazySync } from "@k2b/cloud";
-import { toPgUuidArray } from "@k2b/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { messageFixtures } from "../api/messages.test-fixture";
 import { ConversationSchema, CreateOutcomeSchema, MessagePageSchema } from "./contracts";
 import { maintenanceLifecycle, reconcile } from "./maintenance";
@@ -204,11 +205,11 @@ suite("chat membership maintenance", () => {
 
   test("aborting after a conversation leaves later conversations untouched", async () => {
     const owner = await f.person();
-    const prefix = crypto.randomUUID().replaceAll("-", "").slice(0, 3);
+    const shortIds = Array.from({ length: 101 }, () => testShortId());
     const rows = await sql<
       { id: string; short_id: string }[]
     >`INSERT INTO chat.conversations (short_id, created_by_type, created_by_id, member_count)
-      SELECT ${prefix} || lpad(i::text, 3, '0'), 'user', ${owner.id}::uuid, 1 FROM generate_series(1, 101) i RETURNING id, short_id`;
+      SELECT short_id, 'user', ${owner.id}::uuid, 1 FROM unnest(${toPgTextArray(shortIds)}::text[]) AS fixture(short_id) RETURNING id, short_id`;
     for (const row of rows) f.trackChat(row.short_id);
     const [first] = await sql<{ id: string }[]>`SELECT id FROM chat.conversations ORDER BY id LIMIT 1`;
     const controller = new AbortController();

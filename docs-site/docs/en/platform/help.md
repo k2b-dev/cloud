@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # In-product Help
@@ -31,6 +31,29 @@ permission-sensitive data in an authorized Query or application route.
 | Stable article IDs and useful metadata | Layout Help and full-page Help |
 | Whether the content is safe for everyone who sees the app | Who can read Help, search, reads, and agent discovery |
 | Specialized embedded presentation, when needed | Publication lifecycle and derived routes |
+
+## Open Help beside the app
+
+On signed-in Layout pages, **Help**, `?` (Shift+/), and the `cloud.help`
+command open Core's Help provider in the shared [panel slot](/en/docs/platform/panels).
+Ctrl+J, or Cmd+J on Apple devices, toggles the slot. The rail and phone header
+Help buttons toggle Help: they close it when it is already open, or switch
+from another provider. The Help command opens or focuses it without closing it.
+
+Without a matching slot, Help opens as a dialog. This includes anonymous
+pages, `Layout panel={false}`, and pages from an application built against an
+older `@k2b/cloud`. On a phone, below 48 rem, that dialog is the shared bottom
+sheet at full height.
+
+Inside Help, `/` focuses search unless the reader is editing another field.
+Escape in a nonempty search field clears it first. Otherwise Escape closes the
+panel and returns focus to the opener. Articles of the current app open inside
+Help. **Open as page** opens the current article or start in the app window.
+Panel article navigation leaves the iframe address unchanged. Cross-app Help
+links also open in the app window.
+
+Without page context, Help shows Core's own start. An unknown or inaccessible
+app shows a neutral unavailable note without its name or article titles.
 
 ## Keep Help in one module
 
@@ -385,7 +408,7 @@ not repeat that path in their Help declaration. Core owns search and article
 transport and the shared reader; the derived application routes forward to
 that reader while the application remains the content owner.
 
-The Help start opens with the app tile and **Help for &lt;App&gt;**. Search stays in
+The panel Help head shows the app tile and app name. Search stays in
 place when an article opens. The **⋯** menu offers **Copy as Markdown** and
 **Open as page**.
 
@@ -401,9 +424,10 @@ The start lists guidance in this order:
 4. **Keyboard shortcuts:** **Everywhere**, **In &lt;App&gt;**, and **With a
    selection**. Commands without a shortcut and empty groups are absent.
 
-The shell's Search and Help shortcuts appear on the server under
-**Everywhere**, in that order. Commands scoped to a selection go under **With
-a selection**; other `cloud.*` commands go under **Everywhere**, and other
+The shell's Search, Help, and panel shortcuts appear on the server under
+**Everywhere**, in that order. The panel then follows the host page's live
+shortcuts; it does not use its own provider document's command registry.
+Commands scoped to a selection go under **With a selection**; other `cloud.*` commands go under **Everywhere**, and other
 commands go under **In &lt;App&gt;**. Key caps follow the reader's keyboard platform.
 
 Name two or three relevant articles on each main page with Layout's `help`
@@ -414,6 +438,11 @@ prop:
   <InventoryOverview />
 </Layout>
 ```
+
+Layout sends these IDs through the panel context, including the first iframe
+URL, so **For this view** is present in the server frame. Core treats the
+context as a selector and filters it again against the reader's manifest.
+Live context changes update that section; another app or null clears it.
 
 These are IDs from the current app's Help declaration. Cloud keeps their
 declared order, removes duplicates, ignores IDs outside the reader's authorized
@@ -437,17 +466,22 @@ Returning to the Help start keeps the typed search, and an address with an
 unknown article shows the Help start. The phone menu or a dialog that closes does not move the
 open article. Other links navigate normally.
 
-An article starts with its app path, title, and first paragraph as a short
-answer. One chip row shows “You need <level>” and the step count. A text table
-of contents stays at the side in a wide reader and becomes an “On this page”
+An article starts with its head: the app path, title, and first paragraph as a
+short answer on the app's own canvas gradient (the same colours as the app
+background, without a border or shadow), and the article's icon in the flat
+shared icon tile. A narrow reader puts the tile before the title. One chip row
+shows “You need <level>” and the step count. A text table of contents stays at
+the side in a wide reader and becomes an “On this page”
 menu in a narrow reader. The article ends with one large “Next” tile and
 related articles in their app colour. Authors choose `next`; article order
 sorts the task tiles, remaining tasks, and kind groups on the Help start.
 
 SSR loads the current application's localized article metadata from Postgres.
-The browser receives this manifest and loads article bodies on demand. An
-agent uses bounded search and read operations; Cloud does not create one
-permanently loaded tool for every article.
+The browser receives this manifest. When the address names an article, on a
+full page or through the panel's `?topic=`, the server renders that article in
+the first frame; other articles load on demand. An agent uses bounded search
+and read operations; Cloud does not create one permanently loaded tool for
+every article.
 
 Every automatic surface uses the same request locale. Article responses and
 AI/MCP matches report each article's actual content locale. Browser article
@@ -580,6 +614,22 @@ manifest.
 Use the automatic Layout and full-page surfaces for ordinary application Help.
 Add a specialized consumer only when its surrounding workflow needs a distinct
 presentation.
+
+Core's provider document uses `LayoutHelpPanel` with `LayoutHelpPanelProps`
+from `@k2b/cloud/ssr`. Render it in a server page, such as inside `PanelLayout`,
+never inside an island. It renders the start and initial article as server HTML
+and mounts small islands for interaction. Search, menus, Markdown copy, and
+the client article reader load on demand.
+It receives the authorized documents, app identity and appearance, filtered
+view IDs, keyboard platform, and optional topic from the server. It reads no
+host shell data and follows context and shortcuts through the panel API.
+Application authors normally use the automatic registration above.
+
+Pass the result of `preloadLayoutHelpArticle(c, appId, documentId)` from
+`@k2b/cloud/ssr/help` as `initialArticle` alongside a manifest-validated
+`initialTopic` to `Layout.HelpPage` or `LayoutHelpPanel`. This renders the
+article in the first frame. If the helper returns `null`, omit the prop to load
+on demand.
 
 `Layout.HelpPage` with `embedded` renders no Help head: the host's own window
 names the reader and chooses its article. Its start keeps only the search.

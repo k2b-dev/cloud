@@ -167,6 +167,74 @@ const WorkspaceHeadRowDemo = () => {
   );
 };
 
+const longViews = [
+  { id: "focus", label: "Focus", count: 12 },
+  { id: "needs-action", label: "Needs action", count: 12 },
+  { id: "assigned", label: "Assigned to me", count: 5 },
+  { id: "waiting", label: "Waiting for a reply", count: 2 },
+  { id: "unassigned", label: "Not assigned", count: 4 },
+  { id: "done", label: "Done" },
+].map((view) => ({ ...view, href: `?view=${view.id}` }));
+
+const WorkspaceHeadLongViewsDemo = () => (
+  <DemoCard
+    id="workspace-head-long-views"
+    chip={[
+      { kind: "component", name: "AppWorkspace.Head", from: "@k2b/ui" },
+      { kind: "component", name: "ViewTabs", from: "@k2b/ui" },
+    ]}
+    description="Long view names in a narrow head keep their full label and count. The strip scrolls sideways, starts with the current view in view, and fades the edges where more views wait. Widen the host to compare."
+    code={`<AppWorkspace.Head
+  views={<ViewTabs label="Views" current="waiting" items={[
+    { id: "focus", label: "Focus", count: 12, href: "?view=focus" },
+    { id: "needs-action", label: "Needs action", count: 12, href: "?view=needs-action" },
+    { id: "assigned", label: "Assigned to me", count: 5, href: "?view=assigned" },
+    { id: "waiting", label: "Waiting for a reply", count: 2, href: "?view=waiting" },
+    { id: "unassigned", label: "Not assigned", count: 4, href: "?view=unassigned" },
+    { id: "done", label: "Done", href: "?view=done" },
+  ]} />}
+  actions={<>{listType}{more}</>}
+/>`}
+  >
+    <div
+      style={{
+        width: "24rem",
+        height: "12rem",
+        container: "k2b-app-area / inline-size",
+        resize: "horizontal",
+        overflow: "auto",
+        "max-width": "100%",
+        "min-width": "20rem",
+      }}
+    >
+      <PageTrailProvider trail={{ title: "Support", ancestors: [] }}>
+        <AppWorkspace>
+          <AppWorkspace.Head
+            views={<ViewTabs label="Views" current="waiting" items={longViews} />}
+            actions={
+              <>
+                <IconButton label="List type" variant="ghost" size="sm">
+                  <i class="ti ti-layout-list" aria-hidden="true" />
+                </IconButton>
+                <IconButton label="More actions" variant="ghost" size="sm">
+                  <i class="ti ti-dots" aria-hidden="true" />
+                </IconButton>
+              </>
+            }
+          />
+          <AppWorkspace.Content>
+            <AppWorkspace.Main>
+              <div class="p-4">
+                <p>Waiting for a reply</p>
+              </div>
+            </AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </PageTrailProvider>
+    </div>
+  </DemoCard>
+);
+
 const workspaceLevelsFrameHeight = 560;
 const workspaceLevelsCode = `const level = new URL(request.url).searchParams.get("level") ?? "areas";
 
@@ -2113,6 +2181,7 @@ const items = [
   workspace: () => (
     <DemoGrid columns="one">
       <WorkspaceHeadRowDemo />
+      <WorkspaceHeadLongViewsDemo />
       <NavigationDemo />
       <LiveWorkspaceDemo />
       <WorkspaceLevelsDemo />

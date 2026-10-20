@@ -224,7 +224,6 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
   let dom: DomTestHarness;
   let navigation: ReturnType<typeof navigationSpies>;
   let dispose = () => {};
-  let disposeMenu = () => {};
   let requests: Array<{ path: string; method: string; body: unknown }>;
   let identities: SenderIdentity[];
   let responseGate: ReturnType<typeof Promise.withResolvers<Response>> | undefined;
@@ -244,7 +243,6 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     responseGate = undefined;
     failure = null;
     dispose = () => {};
-    disposeMenu = () => {};
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
@@ -268,7 +266,6 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
   afterEach(async () => {
     responseGate?.resolve(Response.json(seed));
     m.ui.dialogCore.close();
-    disposeMenu();
     dispose();
     m.ui.toast.dismissAll();
     // Finish queued DOM work before restoring the document and network boundary.
@@ -301,11 +298,16 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
           initialUserPreferences: m.userPreferences.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: m.shared.readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+          },
         }),
       dom.root,
     );
   };
-  const composeLink = () => dom.root.querySelector<HTMLAnchorElement>(".mail-compose-action")!;
+  const composeLink = () => dom.root.querySelector<HTMLAnchorElement>("[data-workspace-primary]")!;
   const posts = () => requests.filter((request) => request.method === "POST");
   const runComposeCommand = () => {
     const command = m.commands.contextCommandsWithShortcuts().find((command) => command.id === "mail.compose");
@@ -340,38 +342,24 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     expect(composeLink().hasAttribute("aria-busy")).toBe(false);
   };
 
-  test("a1 desktop Compose creates one seed and navigates directly to its composer", async () => {
+  test("a1 desktop head Compose creates one seed and navigates directly to its composer", async () => {
     mount();
     expect(composeLink().getAttribute("href")).toBe(intentHref);
     composeLink().click();
     await expectDirectCompose();
   });
 
-  test("a2 phone menu Compose shows progress while preparing and opens one document", async () => {
+  test("a2 phone head Compose shows progress while preparing and opens one document", async () => {
     dom.window.innerWidth = 375;
     dom.window.innerHeight = 740;
     mount();
-    await waitFor(() => Boolean(window.__cloudWorkspaceNavigation));
-    const workspace = window.__cloudWorkspaceNavigation!;
-    const menu = document.createElement("div");
-    dom.root.append(menu);
-    disposeMenu = render(
-      () =>
-        createComponent(m.ui.Navigation, {
-          navigation: workspace.navigation,
-          label: workspace.label,
-        }),
-      menu,
-    );
-    const link = menu.querySelector<HTMLAnchorElement>(`a[href="${intentHref}"]`)!;
-    expect(link).not.toBeNull();
+    const link = composeLink();
+    expect(link.getAttribute("href")).toBe(intentHref);
     responseGate = Promise.withResolvers<Response>();
     link.click();
     await waitFor(() => posts().length === 1);
-    await waitFor(() => dom.document.querySelector("[data-k2b-toast-container]")?.textContent?.includes("Preparing message...") === true);
-    expect(dom.document.querySelector("[data-k2b-toast-container] progress")?.hasAttribute("value")).toBe(false);
+    expect(link.querySelector(".ti-loader-2")).not.toBeNull();
     expect(navigation.document).not.toHaveBeenCalled();
-    expect(link.getAttribute("aria-disabled")).toBe("true");
     responseGate.resolve(Response.json(seed));
     await expectDirectCompose();
   });
@@ -382,7 +370,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     await expectDirectCompose();
   });
 
-  for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }]) {
+  for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
     test(`b1 modified desktop click stays native: ${JSON.stringify(modifiers)}`, () => {
       mount();
       const event = new MouseEvent("click", { bubbles: true, cancelable: true, ...modifiers });
@@ -491,7 +479,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     });
   }
 
-  test("b6 pending swaps only the icon and aria-busy on the same Compose element", async () => {
+  test("b6 pending swaps only the icon on the same Compose element and announces it", async () => {
     mount();
     const link = composeLink();
     const before = { classes: link.className, text: link.textContent, children: link.childElementCount };
@@ -500,7 +488,8 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     link.click();
     await waitFor(() => posts().length === 1);
     expect(composeLink()).toBe(link);
-    expect(link.getAttribute("aria-busy")).toBe("true");
+    // The head's primary action has no busy state of its own; the live region says that the message is being prepared.
+    await waitFor(() => dom.document.querySelector("[data-k2b-live]")?.textContent?.includes("Preparing message...") ?? false);
     expect(link.querySelector(".ti-loader-2")).not.toBeNull();
     expect(link.querySelector(".ti-pencil")).toBeNull();
     expect({ classes: link.className, text: link.textContent, children: link.childElementCount }).toEqual(before);

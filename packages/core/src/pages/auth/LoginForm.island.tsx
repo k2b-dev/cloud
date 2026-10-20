@@ -18,6 +18,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
       const res = await apiClient.auth.login.$post({
         json: { username: username(), password: password() },
       });
+      if (res.status === 409) throw new Error(t().signedOutWhileSigningIn);
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as {
           message?: string;

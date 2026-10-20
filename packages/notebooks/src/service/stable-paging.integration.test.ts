@@ -2,13 +2,13 @@ import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
 import { searchPaginated } from "./attachments";
 import { listPaged, listVersions } from "./notes";
 import { listNotesForTag } from "./tags";
 
 const postgresTest = testFor("database");
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 
 /** Enough tied rows that a page size of three crosses several boundaries inside the tie. */
 const ROWS = 12;
@@ -23,21 +23,21 @@ beforeAll(async () => {
   await migrate();
   // One transaction shares one now(): every note, version, and attachment ties on its timestamp.
   await sql.begin(async (tx) => {
-    await tx`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${shortId()}, 'Stable paging')`;
+    await tx`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${testShortId()}, 'Stable paging')`;
     noteIds = [];
     versionIds = [];
     attachmentIds = [];
     for (let index = 0; index < ROWS; index++) {
       const [note] = await tx<{ id: string }[]>`
         INSERT INTO notebooks.notes (short_id, notebook_id, title, content_md)
-        VALUES (${shortId()}, ${notebookId}::uuid, ${`Tied ${index}`}, '#tied')
+        VALUES (${testShortId()}, ${notebookId}::uuid, ${`Tied ${index}`}, '#tied')
         RETURNING id
       `;
       noteIds.push(note!.id);
       await tx`INSERT INTO notebooks.note_tags (note_id, notebook_id, tag) VALUES (${note!.id}::uuid, ${notebookId}::uuid, 'tied')`;
       const [attachment] = await tx<{ id: string }[]>`
         INSERT INTO notebooks.attachments (short_id, notebook_id, filename, mime_type, size_bytes, kind, content)
-        VALUES (${shortId()}, ${notebookId}::uuid, ${`tied-${index}.txt`}, 'text/plain', 1, 'file', ${new Uint8Array([1])})
+        VALUES (${testShortId()}, ${notebookId}::uuid, ${`tied-${index}.txt`}, 'text/plain', 1, 'file', ${new Uint8Array([1])})
         RETURNING id
       `;
       attachmentIds.push(attachment!.id);

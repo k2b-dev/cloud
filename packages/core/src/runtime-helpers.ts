@@ -1,6 +1,6 @@
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
 import { getGeoIp } from "@k2b/cloud/server/request-context";
-import { logger, superviseRuntimeTask } from "@k2b/cloud/services";
+import { deviceOffersApproval, logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 /**
@@ -151,7 +151,14 @@ export const startCoreServices = async (
       onApprovalRequested: async ({ approvalId }) => {
         const [notice] = await Promise.allSettled([
           aiNotifications.notifyApprovalWaiting(approvalId),
-          appApproval.wakeForAction(approvalId),
+          deviceOffersApproval(approvalId)
+            .then((offered) => (offered ? appApproval.wakeForAction(approvalId) : undefined))
+            .catch((error) => {
+              logger("core:app-approval").warn("App action push eligibility check failed", {
+                approvalId,
+                error: error instanceof Error ? error.message : "Eligibility unavailable",
+              });
+            }),
         ]);
         if (notice.status === "rejected") throw notice.reason;
       },

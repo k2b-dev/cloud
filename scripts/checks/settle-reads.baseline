@@ -54,7 +54,6 @@ packages/mail/src/frontend/_components/MailComposerEditor.browser.test.ts | 8
 packages/mail/src/frontend/_components/MailConversationList.browser.test.ts | 49
 packages/mail/src/frontend/_components/MailFolderSettings.browser.test.ts | 13
 packages/mail/src/frontend/_components/MailMessageBody.browser.test.ts | 4
-packages/mail/src/frontend/_components/MailboxDetails.browser.test.ts | 5
 packages/mail/src/frontend/_components/email-design-preview-document.browser.test.ts | 1
 packages/notebooks/src/frontend/[id]/_components/book/book-hidden-navigation.browser.test.ts | 6
 packages/notebooks/src/frontend/[id]/_components/book/book-links.browser.test.ts | 4

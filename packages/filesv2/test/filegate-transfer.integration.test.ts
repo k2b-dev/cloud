@@ -10,7 +10,7 @@ import { apiError } from "../src/api/api-error";
 import { errorMessage } from "../src/api/messages";
 import { uploadFile } from "../src/cli-upload";
 import type { EntryResult } from "../src/contracts";
-import { filegateApiFetch } from "../src/service";
+import { filegateApiFetch } from "../src/service/filegate-facade";
 import { transferUpload, UploadTransferError, uploadResponseFailure } from "../src/upload-transfer";
 import { localFilegateToken } from "./private-database";
 

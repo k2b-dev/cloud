@@ -1,20 +1,44 @@
 import { submitAiTurnAction } from "../ai/runtime";
 import { aiConversations } from "../ai/store";
-import { APP_ACTION_LIMITS } from "../contracts/app-approval";
+import { APP_ACTION_LIMITS, type AppActionSummary } from "../contracts/app-approval";
+import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import type { AppDeviceActions } from "../services/app-approval";
-import { listPending } from "../services/approvals";
-import { appActionSummary, appActionView } from "../services/approvals/device";
+import { listPending, loadApprovalActionPolicies, pendingApprovalCard } from "../services/approvals";
+import { appActionOffered, appActionSummary, appActionView } from "../services/approvals/device";
+
+/** Pages of open requests one inbox poll reads at most while it skips browser-only questions. */
+const INBOX_PAGES = 5;
 
 export const createDeviceActions = (appName: (appId: string, locale: string) => string): AppDeviceActions => {
   const view: AppDeviceActions["view"] = async ({ userId, issuer, actionId }) => {
     const { items } = await listPending({ approverUserId: userId, id: actionId, limit: 1 });
-    return items[0] ? appActionView(items[0], { issuer, appName }) : null;
+    const row = items[0];
+    if (!row) return null;
+    const policy = (await loadApprovalActionPolicies([row]))(row);
+    const mapped = await appActionView(row, { issuer, appName, policy });
+    return appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy) ? mapped : null;
   };
   return {
     inbox: async ({ userId, issuer }) => {
-      const { items, count } = await listPending({ approverUserId: userId, limit: APP_ACTION_LIMITS.inboxActions });
-      const views = await Promise.all(items.map((row) => appActionView(row, { issuer, appName })));
-      return { actions: views.map(appActionSummary), moreActions: Math.max(0, count - items.length) };
+      // Browser-only questions are skipped, so read on past them. One poll reads at most this many pages of open
+      // requests, newest first, which keeps each 5-second poll bounded.
+      const actions: AppActionSummary[] = [];
+      let count = 0;
+      let cursor: string | undefined;
+      for (let page = 0; page < INBOX_PAGES && actions.length < APP_ACTION_LIMITS.inboxActions; page += 1) {
+        const result = await listPending({ approverUserId: userId, limit: APPROVALS_PAGE_SIZE, ...(cursor ? { cursor } : {}) });
+        count = result.count;
+        const policyOf = await loadApprovalActionPolicies(result.items);
+        for (const row of result.items) {
+          const policy = policyOf(row);
+          const mapped = await appActionView(row, { issuer, appName, policy });
+          if (appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy)) actions.push(appActionSummary(mapped));
+          if (actions.length === APP_ACTION_LIMITS.inboxActions) break;
+        }
+        if (!result.nextCursor) break;
+        cursor = result.nextCursor;
+      }
+      return { actions, moreActions: Math.max(0, count - actions.length) };
     },
     view,
     decide: async ({ userId, deviceId, issuer, actionId, digest, approved }) => {

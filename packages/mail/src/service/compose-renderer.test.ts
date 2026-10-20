@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { markdown } from "@k2b/cloud/shared";
 import { type ComposeFormattingWarning, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
 import {
   type ComposeRenderContext,
@@ -25,6 +26,15 @@ const context: ComposeRenderContext = {
   sender: { display_name: "Support", email: "support@example.test", reply_to: "" },
   message: { subject: "Hello", to: ["reader@example.test"], cc: [] },
 };
+
+const tableMarkdown = [
+  "| Nr. | Artikel | Menge |",
+  "| --- | --- | --- |",
+  `| 100 | ${"https://example.test/".padEnd(120, "x")} | 2 |`,
+  `| 110 | \`${"item".repeat(30)}\` | 3 |`,
+  "",
+  "See [the catalog](https://example.test/catalog).",
+].join("\n");
 
 const longBody = Array.from({ length: 900 }, (_, i) => `Paragraph ${i}`).join("\n\n");
 const largeMailboxCss = Array.from(
@@ -56,6 +66,532 @@ const expectLiteralText = (rendered: ReturnType<typeof renderComposeContent>, va
   const elements = new Set(rendered.data.html?.match(/<[a-z][a-z0-9]*/gi));
   expect(elements).toEqual(new Set(/[\r\n]/.test(value) ? ["<div", "<p", "<br"] : ["<div", "<p"]));
 };
+
+describe("Markdown tables", () => {
+  test("inlines break-word cells and anywhere links and code only inside cells", () => {
+    const rendered = renderComposeContent({ body: tableMarkdown, format: "markdown", customCss: "", context, renderLiquid: false });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The table message did not render");
+    const html = rendered.data.html;
+    const table = html.match(/<table\b[^>]*>[\s\S]*?<\/table>/)?.[0] ?? "";
+    const cells = Array.from(table.matchAll(/<(?:th|td)\b[^>]*style="([^"]*)"/g), (match) => match[1]!);
+    expect(cells).toHaveLength(9);
+    for (const style of cells) {
+      expect(style).toContain("overflow-wrap:break-word");
+      expect(style).toContain("word-break:normal");
+    }
+    for (const tag of ["a", "code"]) {
+      expect(table).toMatch(new RegExp(`<${tag}\\b[^>]*style="[^"]*overflow-wrap:anywhere[^"]*"`));
+    }
+    const prose = html.slice(html.indexOf("</table>") + "</table>".length);
+    expect(prose).toContain("<a ");
+    expect(prose).not.toContain("overflow-wrap:anywhere");
+    expect(html).toMatch(/^<div\b[^>]*style="[^"]*overflow-wrap:break-word[^"]*"/);
+  });
+});
+
+describe("Markdown dividers", () => {
+  const content = (body: string, options: Partial<Parameters<typeof renderComposeContent>[0]> = {}) => {
+    const result = renderComposeContent({ body, format: "markdown", customCss: "", context, renderLiquid: false, ...options });
+    if (!result.ok) throw new Error(result.error.message);
+    return { ...result.data, html: result.data.html ?? "" };
+  };
+  const divider = "-".repeat(40);
+
+  test.each(["---", "***", "___"])("keeps %s between paragraphs in HTML and text without warnings", (line) => {
+    const body = `a\n\n${line}\n\nb`;
+    const result = content(body);
+    expect(result.html.match(/<hr\b/g)).toHaveLength(1);
+    expect(result.html).toMatch(/<hr style="[^"]*border-top:1px solid #d4d4d8[^"]*"/);
+    expect(result.text).toBe(`a\n\n${divider}\n\nb`);
+    expect(previewFormattingWarnings([], body, "markdown")).toEqual([]);
+  });
+
+  test.each(["a\n---\nb", "a\r\n---\r\nb", "a\nb\n---\nc"])("treats a dash setext underline as a divider: %j", (body) => {
+    const result = content(body);
+    expect(result.html).not.toContain("<h2");
+    expect(result.html).toMatch(/<p[^>]*>a(?:<br \/>b)?<\/p>\s*<hr[^>]*\/>\s*<p[^>]*>[bc]<\/p>/);
+    expect(result.text).toBe(`${body.includes("a\nb") ? "a\nb" : "a"}\n\n${divider}\n\n${body.endsWith("c") ? "c" : "b"}`);
+  });
+
+  test.each(["a\n-", "a\n--", "a\n-\nb", "a\n--\nb", "Thanks\n-- \nAda", "a\n  --\nb"])(
+    "keeps short dash underlines as text: %j",
+    (body) => {
+      const result = content(body);
+      expect(result.html).not.toMatch(/<(?:h[1-6]|hr)\b/);
+      expect(result.html).toContain("<br />");
+      expect(result.text).toBe(body.replace(/ +\n/g, "\n").replace(/\n +/g, "\n"));
+    },
+  );
+
+  test("keeps equals setext and ATX headings, and the shared renderer's dash headings", () => {
+    const result = content("a\n===\nb\n\n## Heading");
+    expect(result.html).toMatch(/<h1[^>]*>a<\/h1>/);
+    expect(result.html).toMatch(/<h2[^>]*>Heading<\/h2>/);
+    expect(content("a\n---\nb").html).not.toContain("<h2");
+    expect(markdown.renderSync("a\n---\nb")).toContain("<h2");
+  });
+
+  test.each(["", "\n"])("keeps block boundaries after escaped short underlines with trailing %j", (ending) => {
+    const paragraph = /<p[^>]*>foo<br \/>--<\/p>/;
+    const divided = content(`foo\n--\n---\nbar${ending}`).html;
+    expect(divided).toMatch(/<p[^>]*>foo<br \/>--<\/p>\s*<hr[^>]*\/>\s*<p[^>]*>bar<\/p>/);
+    expect(divided).not.toContain("<h2");
+    const heading = content(`foo\n--\nbar\n===${ending}`).html;
+    expect(heading).toMatch(paragraph);
+    expect(heading).toMatch(/<h1[^>]*>bar<\/h1>/);
+    const code = content(`foo\n--\n    code${ending}`).html;
+    expect(code).toMatch(paragraph);
+    expect(code).toMatch(/<pre[^>]*>code\n?<\/pre>/);
+    const quote = content(`> foo\n> --\n> ---${ending}`).html;
+    expect(quote).toMatch(/<blockquote[^>]*>\s*<p[^>]*>foo<br \/>--<\/p>\s*<hr[^>]*\/>\s*<\/blockquote>/);
+    expect(quote).not.toContain("<h2");
+  });
+
+  test("keeps dash-line rendering stable across neighboring blocks", () => {
+    const bodies = ["foo\n--\nbar\n===", "foo\n--\n\nbar\n===", "foo\n--\n\n---", "foo\n--\n---\n\n----"];
+    let runs = ["foo"];
+    for (let length = 1; length <= 3; length += 1) {
+      runs = runs.flatMap((body) => [1, 2, 3, 4].map((dashes) => `${body}\n${"-".repeat(dashes)}`));
+      bodies.push(...runs);
+    }
+    for (const body of bodies) {
+      const html = content(body).html;
+      expect(html).not.toContain("<h2");
+      expect(html.match(/<hr\b/g) ?? []).toHaveLength((body.match(/^-{3,}$/gm) ?? []).length);
+    }
+  });
+
+  test.each(["> a\n> ---\n> b", "> > a\n> > ---\n> > b"])("rewrites dash underlines inside quotes: %j", (body) => {
+    const html = content(body).html;
+    expect(html).toMatch(/<blockquote[^>]*>[\s\S]*<p[^>]*>a<\/p>\s*<hr[^>]*\/>\s*<p[^>]*>b<\/p>[\s\S]*<\/blockquote>/);
+    expect(html).not.toContain("<h2");
+  });
+
+  test.each([
+    "```\na\n---\n```",
+    "    a\n    ---",
+    "<pre>a\n---\n</pre>",
+    "<div>\na\n---\n</div>",
+    ":::note\na\n---\n:::",
+    "- a\n  ---",
+    "| a | b |\n| --- | --- |\n| c | d |",
+  ])("leaves opaque blocks byte-identical before rendering: %j", (body) => {
+    const render = spyOn(markdown, "renderSync");
+    try {
+      const result = content(`${body}\n\nx\n---\ny`);
+      expect(render.mock.calls[0]?.[0]).toBe(`${body}\n\nx\n\n---\ny`);
+      expect(result.html).toContain("<hr");
+    } finally {
+      render.mockRestore();
+    }
+  });
+
+  test("inserts spacers on the original source before rewriting setext", () => {
+    const compact = content("a\n---\n\n\nb");
+    expect(compact).toEqual(content("a\n\n---\n\n\nb"));
+    expect(compact.html).toMatch(/<p[^>]*>a<\/p>\s*<hr[^>]*\/>\s*<p class="mail-blank-line"[^>]*> <\/p>\s*<p[^>]*>b<\/p>/);
+    expect(compact.text).toBe(`a\n\n${divider}\n\n\nb`);
+  });
+
+  test("keeps a written hr with the built-in style and no warning", () => {
+    expect(content("<hr>").html).toMatch(/<hr style="[^"]*border-top:1px solid #d4d4d8[^"]*"/);
+    expect(previewFormattingWarnings([], "<hr>", "markdown")).toEqual([]);
+  });
+
+  test("drops written inline styles on hr and p alike", () => {
+    const hr = '<hr style="border-top:2px solid #0f766e">';
+    const paragraph = '<p style="color:#ff0000">a</p>';
+    expect(content(hr).html).toMatch(/<hr style="[^"]*border-top:1px solid #d4d4d8[^"]*"/);
+    expect(content(hr).html).not.toContain("#0f766e");
+    expect(content(paragraph).html).not.toContain("#ff0000");
+    expect(previewFormattingWarnings([], hr, "markdown")).toEqual([{ code: "unsupported_attribute", element: "hr", attribute: "style" }]);
+    expect(previewFormattingWarnings([], paragraph, "markdown")).toEqual([
+      { code: "unsupported_attribute", element: "p", attribute: "style" },
+    ]);
+  });
+
+  test("reports only the class on a written hr", () => {
+    expect(previewFormattingWarnings([], '<hr class="x">', "markdown")).toEqual([
+      { code: "unsupported_attribute", element: "hr", attribute: "class" },
+    ]);
+  });
+
+  test("pins the Markdown elements email intentionally drops", () => {
+    const source = [
+      "Paragraph with `code`, *emphasis*, **strong**, ~~strikethrough~~, [link](https://example.test),",
+      "<https://example.test> and ![Image](https://example.test/image.png).  \nHard line break.",
+      "# Heading one",
+      "## Heading two",
+      "### Heading three",
+      "Setext heading\n===",
+      "> Quote\n>\n> > Nested quote",
+      "- Bullet",
+      "1. Ordered",
+      "- [x] Task",
+      "```text\nFenced code\n```",
+      "    Indented code",
+      "| Column |\n| --- |\n| Cell |",
+      "---",
+      ":::note\nInfo block\n:::",
+    ].join("\n\n");
+    const elements = (html: string) => new Set(Array.from(html.matchAll(/<([a-z][a-z0-9]*)\b/gi), (match) => match[1]));
+    const platform = elements(markdown.renderSync(source, { links: "plain" }));
+    const email = elements(content(source).html);
+    // img/figure/figcaption: body images; input: task checkbox; aside/svg/path: info block shell and icon.
+    // Email keeps their text only. Strikethrough is already removed by the platform Markdown sanitizer.
+    expect([...platform].filter((tag) => !email.has(tag)).sort()).toEqual(["aside", "figcaption", "figure", "img", "input", "path", "svg"]);
+  });
+
+  test("leaves divider-like markup in code and comments untouched while rewriting a real dash heading", () => {
+    const opaque = '```html\n<hr style="color:red">\na\n---\n```\n\n<!-- <hr style="color:red"> -->';
+    const render = spyOn(markdown, "renderSync");
+    try {
+      const result = content(`${opaque}\n\na\n---\nb`);
+      expect(render.mock.calls[0]?.[0]).toBe(`${opaque}\n\na\n\n---\nb`);
+      expect(result.html.match(/<hr\b/g)).toHaveLength(1);
+    } finally {
+      render.mockRestore();
+    }
+  });
+
+  test("rewrites underlines in the body, selected signature and quoted history", () => {
+    const result = content("a\n---\nb\n\nAda wrote:\n> c\n> ---\n> d", { signature: "Name\n---\nPhone" });
+    expect(result.html.match(/<hr\b/g)).toHaveLength(3);
+    expect(result.html).not.toContain("<h2");
+    expect(result.html).toMatch(/class="mail-signature"[\s\S]*<p[^>]*>Name<\/p>\s*<hr/);
+  });
+
+  test("the placeholder fallback still uses Mail's setext rule", () => {
+    const renderSync = markdown.renderSync;
+    const render = spyOn(markdown, "renderSync").mockImplementation((source, options) =>
+      renderSync(source, options).replace(/<p>(MAILBLANKLINE[A-Z0-9]+)<\/p>/g, "<div>$1</div>"),
+    );
+    try {
+      const result = content("a\n---\n\n\nb");
+      expect(result.html).toContain("<hr");
+      expect(result.html).not.toMatch(/<h2|MAILBLANKLINE/);
+      expect(result.text).toBe(`a\n\n${divider}\n\nb`);
+    } finally {
+      render.mockRestore();
+    }
+  });
+
+  test("lets mailbox divider CSS override the built-in design", () => {
+    const customCss = "hr { border-top-color: #0f766e; }";
+    expect(validateComposeCss(customCss).ok).toBe(true);
+    expect(content("a\n---\nb", { customCss }).html).toMatch(/<hr style="[^"]*border-top-color:#0f766e/);
+  });
+
+  test("plain-format signatures keep the name's case and a text divider", () => {
+    const result = content("Hello", { format: "plain", signature: "Name\n---\nPhone" });
+    expect(result.html).toBe("");
+    expect(result.text).toBe(`Hello\n\nName\n\n${divider}\n\nPhone`);
+  });
+});
+
+describe("Markdown blank lines", () => {
+  const render = (body: string, options: Partial<Parameters<typeof renderComposeContent>[0]> = {}) =>
+    renderComposeContent({ body, format: "markdown", customCss: "", context, renderLiquid: false, ...options });
+  const content = (body: string, options: Partial<Parameters<typeof renderComposeContent>[0]> = {}) => {
+    const result = render(body, options);
+    if (!result.ok) throw new Error(result.error.message);
+    return { ...result.data, html: result.data.html ?? "" };
+  };
+  const spacers = (html: string) => html.match(/<p class="mail-blank-line"[^>]*>\u00a0<\/p>/g) ?? [];
+
+  test.each([0, 1, 2, 3])("preserves %i extra blank lines in HTML and text", (extra) => {
+    const body = `a${"\n".repeat(extra + 2)}b`;
+    const result = content(body);
+    expect(result.html.match(/class="mail-blank-line"/g) ?? []).toHaveLength(extra);
+    expect(spacers(result.html)).toHaveLength(extra);
+    expect(result.text).toBe(body);
+    expect(result.text).not.toContain("\u00a0");
+    expect(result.html).not.toContain("MAILBLANKLINE");
+  });
+
+  test("counts only newlines on blank lines with spaces and tabs", () => {
+    const result = content("a\n \n\t\n\nb");
+    expect(spacers(result.html)).toHaveLength(2);
+    expect(result.text).toBe("a\n\n\n\nb");
+    expect(result.text).not.toContain("\u00a0");
+  });
+
+  test.each([0, 1, 2])("counts the separator newline consumed by an info block for %i extra blank lines", (extra) => {
+    const result = content(`:::note\na\n:::${"\n".repeat(extra + 2)}b`);
+    expect(spacers(result.html)).toHaveLength(extra);
+    expect(result.text).toBe(`Note:\n\na${"\n".repeat(extra + 2)}b`);
+  });
+
+  test.each([
+    ["> a\n>\n>\n> b", "> a\n> \n> \n> b", 1],
+    ["> > a\n> >\n> >\n> > b", "> > a\n> > \n> > \n> > b", 2],
+  ] as const)("preserves blank lines inside quotes: %s", (body, text, depth) => {
+    const result = content(body);
+    expect(spacers(result.html)).toHaveLength(1);
+    expect(result.html.match(/<blockquote\b/g)).toHaveLength(depth);
+    expect(result.html).toMatch(
+      /<blockquote[^>]*>\s*<p[^>]*>a<\/p>\s*<p class="mail-blank-line"[^>]*>\u00a0<\/p>\s*<p[^>]*>b<\/p>\s*<\/blockquote>/,
+    );
+    expect(result.text).toBe(text);
+    expect(result.text).not.toContain("\u00a0");
+  });
+
+  test("preserves a quote's trailing separator when rebuilding its contents", () => {
+    const result = content("> a\n>\n>\n> b\n\nafter");
+    expect(spacers(result.html)).toHaveLength(1);
+    expect(result.html).toMatch(/<\/blockquote>\s*<p[^>]*>after<\/p>/);
+    expect(result.text).toBe("> a\n> \n> \n> b\n\nafter");
+  });
+
+  test("preserves trailing code newlines in a quote with an unclosed fence", () => {
+    const result = content("> a\n>\n>\n> ```\n> code\n>\n>\n>");
+    expect(result.html).toMatch(/<pre\b[^>]*>code\n\n<\/pre>/);
+    expect(spacers(result.html)).toHaveLength(1);
+  });
+
+  test.each([
+    ["---", /<hr\b[^>]*>/],
+    ["# h", /<h1\b[^>]*>h<\/h1>/],
+  ] as const)("keeps an interrupting block outside a rewritten quote: %s", (block, html) => {
+    const renderMarkdown = spyOn(markdown, "renderSync");
+    try {
+      const result = content(`> a\n>\n>\n> b\n${block}`);
+      const quote = result.html.match(/<blockquote\b[^>]*>[\s\S]*?<\/blockquote>/)?.[0] ?? "";
+      expect(spacers(quote)).toHaveLength(1);
+      expect(spacers(result.html)).toHaveLength(1);
+      // Keep interrupting blocks outside the quote before and after email sanitization.
+      const fragment = renderMarkdown.mock.results[0]?.value;
+      if (typeof fragment !== "string") throw new Error("Missing rendered Markdown");
+      expect(fragment.slice(fragment.indexOf("</blockquote>") + "</blockquote>".length)).toMatch(html);
+      expect(quote).not.toMatch(html);
+      expect(result.html.slice(result.html.indexOf("</blockquote>") + "</blockquote>".length)).toMatch(html);
+    } finally {
+      renderMarkdown.mockRestore();
+    }
+  });
+
+  test("preserves spacing between a heading and a list", () => {
+    const result = content("# H\n\n\n- x");
+    expect(spacers(result.html)).toHaveLength(1);
+    expect(result.text).toBe("H\n\n\n * x");
+    expect(result.text).not.toContain("\u00a0");
+  });
+
+  test.each(["```\na\n\n\nb\n```", "    a\n\n\n    b"])("keeps code content unchanged: %s", (body) => {
+    const original = content(body);
+    const rewritten = content(`intro\n\n\n${body}`);
+    const pre = /<pre\b[^>]*>a\n\n\nb<\/pre>/;
+    expect(original.html).toMatch(pre);
+    expect(original.text).toBe("a\n\n\nb");
+    expect(spacers(original.html)).toHaveLength(0);
+    expect(rewritten.html.match(pre)?.[0]).toBe(original.html.match(pre)?.[0]);
+    expect(spacers(rewritten.html)).toHaveLength(1);
+    expect(rewritten.text).toBe("intro\n\n\na\n\n\nb");
+  });
+
+  test("keeps blank lines inside one loose list, including quoted paragraphs in items", () => {
+    for (const body of ["- a\n\n\n\n- b", "- > a\n  >\n  >\n  > b"]) {
+      const result = content(`intro\n\n\n${body}`);
+      expect(result.html.match(/<ul\b/g)).toHaveLength(1);
+      const list = result.html.match(/<ul\b[^>]*>[\s\S]*<\/ul>/)?.[0] ?? "";
+      expect(list).toContain("<p");
+      expect(spacers(list)).toHaveLength(0);
+      expect(spacers(result.html)).toHaveLength(1);
+    }
+  });
+
+  test("ignores leading and trailing blank lines, including when rebuilding", () => {
+    for (const body of ["a\n\nb", "a\n\n\nb"]) {
+      expect(content(`\n\n\n${body}\n\n\n`).html).toBe(content(body).html);
+    }
+  });
+
+  test.each([
+    "\r\n> quoted\r\ncontinued\r\n\r\n    a\r\n\r\n\r\n    b\r\n",
+    "<pre>a\r\n\r\n\r\n---------- Forwarded message ----------\r\nb</pre>",
+    "Answer\r\n\r\n\r\n\r\nAda wrote:\r\n> History",
+  ])("passes unchanged Markdown to the renderer byte for byte when no spacers qualify: %j", (body) => {
+    const renderMarkdown = spyOn(markdown, "renderSync");
+    try {
+      content(body);
+      expect(renderMarkdown).toHaveBeenCalledTimes(1);
+      expect(renderMarkdown).toHaveBeenCalledWith(body, { links: "plain" });
+    } finally {
+      renderMarkdown.mockRestore();
+    }
+  });
+
+  test.each(["a\n\n\n[ref]: https://example.test\n\n\nb", "[ref]: https://example.test\n\n\na", "a\n\n\n[ref]: https://example.test"])(
+    "ignores separators adjacent to non-rendered link definitions: %s",
+    (body) => {
+      expect(spacers(content(body).html)).toHaveLength(0);
+      expect(spacers(content(`${body}\n\nx\n\n\ny`).html)).toHaveLength(1);
+    },
+  );
+
+  test.each(["<pre>a\n\n\nb</pre>", ":::note\na\n\n\nb\n:::", "| a | b |\n| - | - |\n| c | d |"])(
+    "keeps opaque block contents unchanged during a rewrite: %s",
+    (body) => {
+      const original = content(body);
+      const rewritten = content(`intro\n\n\n${body}`);
+      expect(spacers(original.html)).toHaveLength(0);
+      expect(spacers(rewritten.html)).toHaveLength(1);
+      expect(rewritten.html.endsWith(original.html.replace(/^<div[^>]*>/, ""))).toBe(true);
+    },
+  );
+
+  test("leaves a quote untouched if its inner raw tokens cannot reproduce its text", () => {
+    const body = "> a\n>\n>\n> b\n\nc\n\n\nd";
+    const tokens = markdown.marked.lexer(body);
+    const quote = tokens[0];
+    if (quote?.type !== "blockquote") throw new Error("Missing quote");
+    quote.text += "\n";
+    const lexer = spyOn(markdown.marked, "lexer").mockReturnValue(tokens);
+    try {
+      const result = content(body);
+      expect(spacers(result.html)).toHaveLength(1);
+      expect(result.text).toBe("> a\n> \n> b\n\nc\n\n\nd");
+    } finally {
+      lexer.mockRestore();
+    }
+  });
+
+  test("falls back to the original fragment if a placeholder does not render as its own paragraph", () => {
+    const body = "a\n\n\nb";
+    const expected = content("a\n\nb");
+    const renderSync = markdown.renderSync;
+    const renderMarkdown = spyOn(markdown, "renderSync").mockImplementation((source, options) =>
+      renderSync(source, options).replace(/<p>(MAILBLANKLINE[A-Z0-9]+)<\/p>/g, "<div>$1</div>"),
+    );
+    try {
+      const result = content(body);
+      expect(result).toEqual(expected);
+      expect(result.html).not.toContain("MAILBLANKLINE");
+      expect(result.text).not.toContain("MAILBLANKLINE");
+      expect(renderMarkdown).toHaveBeenLastCalledWith(body, { links: "plain" });
+    } finally {
+      renderMarkdown.mockRestore();
+    }
+  });
+
+  test("ignores blank lines around a selected signature", () => {
+    expect(content("Answer\n\n\n\n", { signature: "\n\nRegards\n\n\n" }).html).toBe(content("Answer", { signature: "Regards" }).html);
+    expect(spacers(content("a\n\n\nb", { signature: "Regards\n\n\nAda" }).html)).toHaveLength(2);
+  });
+
+  test.each(["Ada wrote:\n> History", "---------- Forwarded message ----------\nHistory"])(
+    "ignores blank lines before quoted history with and without a signature: %s",
+    (history) => {
+      for (const signature of [null, "Regards"]) {
+        expect(content(`Answer\n\n\n\n${history}`, { signature }).html).toBe(content(`Answer\n\n${history}`, { signature }).html);
+      }
+      const result = content(`Answer\n\n\n\nAda wrote:\n> a\n>\n>\n> b`);
+      expect(spacers(result.html)).toHaveLength(1);
+    },
+  );
+
+  test.each(["", "intro\n\n\n"])("keeps a history separator inside raw pre content unchanged with prefix %j", (prefix) => {
+    const body = "<pre>a\n\n\n---------- Forwarded message ----------\nb</pre>";
+    const result = content(`${prefix}${body}`);
+    expect(result.html).toMatch(/<pre\b[^>]*>a\n\n\n---------- Forwarded message ----------\nb<\/pre>/);
+    expect(result.text).toBe(`${prefix}a\n\n\n---------- Forwarded message ----------\nb`);
+    expect(spacers(result.html)).toHaveLength(prefix ? 1 : 0);
+  });
+
+  test.each(["", "intro\n\n\n"])("keeps a history attribution inside indented code unchanged with prefix %j", (prefix) => {
+    const body = "    a\n\n\n    Ada wrote:\n> x";
+    expect(splitQuotedHistory(body).history).toBe("    Ada wrote:\n> x");
+    const result = content(`${prefix}${body}`);
+    expect(result.html).toMatch(/<pre\b[^>]*>a\n\n\nAda wrote:\n<\/pre>/);
+    expect(result.text).toBe(`${prefix}a\n\n\nAda wrote:\n\n\n> x`);
+    expect(spacers(result.html)).toHaveLength(prefix ? 1 : 0);
+  });
+
+  test("ignores CRLF blank lines before quoted history without a signature", () => {
+    expect(content("Answer\r\n\r\n\r\n\r\nAda wrote:\r\n> History").html).toBe(content("Answer\n\nAda wrote:\n> History").html);
+  });
+
+  test.each(["", "p { margin: 20px; font-size: 18px; line-height: 1.8; color: #123456; }"])(
+    "keeps inline zero margin through juice and preserves paragraph typography: %s",
+    (customCss) => {
+      const spacer = spacers(content("a\n\n\nb", { customCss }).html)[0] ?? "";
+      const style = spacer.match(/style="([^"]*)"/)?.[1] ?? "";
+      const margins = [...style.matchAll(/(?:^|;)\s*margin\s*:\s*([^;]+)/g)].map((match) => match[1]?.trim());
+      expect(margins.at(-1)).toBe("0");
+      if (customCss) {
+        expect(style).toContain("font-size:18px");
+        expect(style).toContain("line-height:1.8");
+        expect(style).toContain("color:#123456");
+      }
+    },
+  );
+
+  test("keeps spacers through the logo sanitization pass", () => {
+    const result = content("a\n\n\nb", {
+      signature: "{{ mailbox.logo }}",
+      logo: { src: "cid:logo", altText: "Logo", displayWidth: 100, pixelWidth: 100, pixelHeight: 50, byteLength: 68 },
+    });
+    expect(spacers(result.html)).toHaveLength(1);
+    expect(result.html).toContain('<img src="cid:logo"');
+    expect(result.text).toBe("a\n\n\nb\n\nLogo");
+  });
+
+  test("strips a user-written spacer class and still warns about it", () => {
+    const body = '<p class="mail-blank-line">x</p>\n\na\n\n\nb';
+    const result = content(body);
+    expect(spacers(result.html)).toHaveLength(1);
+    expect(result.html).toMatch(/<p style="[^"]*">x<\/p>/);
+    expect(composeFormattingWarnings(body, "markdown")).toEqual([{ code: "unsupported_attribute", element: "p", attribute: "class" }]);
+    expect(validateComposeCss(".mail-blank-line { margin: 20px; }").ok).toBe(false);
+  });
+
+  test("never leaks the random placeholder and produces identical results on repeated renders", () => {
+    const body = "a\r\n\r\n\r\nb\r\n\r\n> c\r\n>\r\n>\r\n> d";
+    const first = content(body);
+    expect(spacers(first.html)).toHaveLength(2);
+    expect(first).toEqual(content(body));
+    expect(first.html).not.toContain("MAILBLANKLINE");
+    expect(first.text).not.toContain("MAILBLANKLINE");
+  });
+
+  test("bounds spacer elements before rendering and stops the rewrite at the limit", () => {
+    const body = `a${"\n".repeat(3000)}b`;
+    const tokens = markdown.marked.lexer(body);
+    const last = tokens.at(-1);
+    if (!last) throw new Error("Missing final block");
+    const lastRaw = last.raw;
+    let lastRawReads = 0;
+    Object.defineProperty(last, "raw", {
+      get: () => {
+        lastRawReads += 1;
+        return lastRaw;
+      },
+    });
+    const lexer = spyOn(markdown.marked, "lexer").mockReturnValue(tokens);
+    const renderMarkdown = spyOn(markdown, "renderSync");
+    try {
+      expect(render(body)).toMatchObject({ ok: false, error: { composeRender: { reason: "tooComplex" } } });
+      expect(lastRawReads).toBe(0);
+      expect(renderMarkdown).not.toHaveBeenCalled();
+      expect(lexer).toHaveBeenCalledTimes(1);
+    } finally {
+      lexer.mockRestore();
+      renderMarkdown.mockRestore();
+    }
+    expect(spacers(content(`a${"\n".repeat(52)}b`).html)).toHaveLength(50);
+    expect(spacers(content(`a${"\n".repeat(1000)}b`).html)).toHaveLength(998);
+    expect(render(`a${"\n".repeat(1001)}b`)).toMatchObject({
+      ok: false,
+      error: { composeRender: { reason: "tooComplex" } },
+    });
+  });
+
+  test("keeps plain format and plain signature conversion unchanged", () => {
+    const body = "a\n\n\n\nb\n\n\nAda wrote:\n> History";
+    expect(content(body, { format: "plain" }).text).toBe(body);
+    expect(content("a", { format: "plain", signature: "b\n\n\n\nc" }).text).toBe("a\n\nb\n\nc");
+  });
+});
 
 describe("compose renderer", () => {
   test("merges preview warnings design first and caps the combined list", () => {

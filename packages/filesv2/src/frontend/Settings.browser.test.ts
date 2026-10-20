@@ -4,6 +4,7 @@ import type { Browser, BrowserContextOptions } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
 
 // #1303: the unreadable configuration notice and its reset fit a phone and read in light and dark.
+// The history retention field and its day unit fit as well.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
 const appCss = readFileSync(new URL("../styles/app.css", import.meta.url), "utf8")
   // Tailwind directives; the settings use app classes and @k2b/ui.
@@ -93,12 +94,18 @@ describe("Files settings with an unreadable configuration in a browser", () => {
               const card = notice.getBoundingClientRect();
               const reset = notice.querySelector("button")!.getBoundingClientRect();
               const form = document.querySelector("form")!;
+              const retention = document.querySelector<HTMLInputElement>('input[name="activity-retention-days"]')!;
+              const field = retention.closest<HTMLElement>(".k2b-field")!.getBoundingClientRect();
+              const unit = retention.parentElement!.textContent ?? "";
               return {
                 overflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
                 first: form.firstElementChild === notice,
                 resetInside: reset.width > 0 && reset.left >= card.left && reset.right <= card.right && reset.bottom <= card.bottom,
                 // Touch targets on a phone stay at least 32px high.
                 resetHeight: reset.height >= 32,
+                retentionInside: field.width > 0 && field.left >= 0 && field.right <= window.innerWidth,
+                retentionValue: retention.value,
+                retentionUnit: /days|Tage/.test(unit),
               };
             });
             expect({ device, theme, lang, ...layout }).toEqual({
@@ -109,6 +116,9 @@ describe("Files settings with an unreadable configuration in a browser", () => {
               first: true,
               resetInside: true,
               resetHeight: true,
+              retentionInside: true,
+              retentionValue: "365",
+              retentionUnit: true,
             });
             if (process.env.SHOTS) await tab.screenshot({ path: `${process.env.SHOTS}/files-${device}-${theme}-${lang}.png` });
           } finally {

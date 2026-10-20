@@ -4,6 +4,7 @@ import { coreSettings } from "@k2b/cloud/services";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
 import { ButtonLink, LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../../config";
+import { isSignOutOthersRetry } from "../../sign-out-others";
 import AuthFooter from "../AuthFooter";
 import { authMessages } from "../messages";
 import PasswordResetCompleteForm from "./PasswordResetCompleteForm.island";
@@ -17,15 +18,18 @@ export default ssr(async (c) => {
   const appName = rawAppName || "My App";
   const params = new URL(c.req.url).searchParams;
   const token = params.get("token") ?? undefined;
+  // After the password was set, the address keeps only the sign-out retry, without the used token.
+  const retry = isSignOutOthersRetry(params);
+  const completing = !!token || retry;
   const redirectTo = normalizeRedirectTo(params.get("redirectTo"));
   const loginParams = new URLSearchParams();
   if (redirectTo) loginParams.set("redirectTo", redirectTo);
   const loginHref = loginParams.size > 0 ? `/auth/login?${loginParams.toString()}` : "/auth/login";
 
-  const title = token ? t.setNewPassword : t.resetYourPassword;
-  const subtitle = token ? t.newPasswordIntro : t.resetIntro;
-  const formTitle = token ? t.setNewPassword : t.resetPassword;
-  const formSubtitle = token ? t.resetLinkDescription : t.resetRequestDescription;
+  const title = completing ? t.setNewPassword : t.resetYourPassword;
+  const subtitle = completing ? t.newPasswordIntro : t.resetIntro;
+  const formTitle = completing ? t.setNewPassword : t.resetPassword;
+  const formSubtitle = completing ? t.resetLinkDescription : t.resetRequestDescription;
 
   return () => (
     <LocaleProvider locale={locale}>
@@ -69,8 +73,8 @@ export default ssr(async (c) => {
                   </span>
                 </div>
 
-                {token ? (
-                  <PasswordResetCompleteForm token={token} redirectTo={redirectTo} />
+                {completing ? (
+                  <PasswordResetCompleteForm token={token ?? ""} redirectTo={redirectTo} signOutFailed={retry} />
                 ) : (
                   <PasswordResetRequestForm redirectTo={redirectTo} />
                 )}

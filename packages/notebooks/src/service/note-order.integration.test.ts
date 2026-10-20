@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, expect, spyOn } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
 import { create, get, getTree, list, move, type Note, type NotePlacement, remove, resetOrder, update } from "./notes";
 import * as workspaceEvents from "./workspace-events";
 
 const postgresTest = testFor("database");
 const notebookIds: string[] = [];
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 
 beforeAll(async () => {
   if (testInfra.database) await migrate();
@@ -20,7 +20,7 @@ afterAll(async () => {
 
 const notebook = async () => {
   const id = crypto.randomUUID();
-  await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${id}::uuid, ${shortId()}, 'Note order test')`;
+  await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${id}::uuid, ${testShortId()}, 'Note order test')`;
   notebookIds.push(id);
   return id;
 };

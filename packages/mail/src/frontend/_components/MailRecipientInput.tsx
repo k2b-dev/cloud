@@ -1,24 +1,38 @@
 import { IconButton, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
+import { apiClient } from "../../api/client";
+import { mailRecipientSuggestionsSchema } from "../../contracts";
 import { suggestContacts } from "./contact-capabilities";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { commitMailRecipient, shouldCommitMailRecipient } from "./mail-recipient";
 
-type RecipientSuggestion = { label: string; address: string; context: string | null };
+type RecipientSuggestion = { label: string; address: string; context: string | null; source: "contacts" | "mailbox" };
 
 export default function MailRecipientInput(props: {
   value: () => string[];
   onChange: (value: string[]) => void;
   placeholder: string;
   disabled?: boolean;
+  mailboxId?: string;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const suggestTarget = useMailContactDirectory().suggest;
-  const errorId = `${props.placeholder.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}-recipient-error`;
+  const fieldId = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
+  const errorId = `${fieldId}-recipient-error`;
+  const listboxId = `${fieldId}-recipient-suggestions`;
+  const optionId = (index: number) => `${listboxId}-${index}`;
   const [query, setQuery] = createSignal("");
-  const [suggestions, setSuggestions] = createSignal<RecipientSuggestion[]>([]);
+  const [suggestions, setSuggestionList] = createSignal<RecipientSuggestion[]>([]);
+  const [activeIndex, setActiveIndex] = createSignal(-1);
+  /** The query the shown list answers; while a newer lookup is pending the list stays visible but not keyboard-selectable. */
+  let suggestionsQuery = "";
+  const setSuggestions = (next: RecipientSuggestion[], forQuery = "") => {
+    setActiveIndex(-1);
+    suggestionsQuery = forQuery;
+    setSuggestionList(next);
+  };
   const [loading, setLoading] = createSignal(false);
   const [validationError, setValidationError] = createSignal<string | null>(null);
   const [editingIndex, setEditingIndex] = createSignal<number | null>(null);
@@ -39,6 +53,50 @@ export default function MailRecipientInput(props: {
     setQuery("");
     setSuggestions([]);
     setValidationError(null);
+  };
+
+  const pick = (suggestion: RecipientSuggestion) =>
+    add(suggestion.label === suggestion.address ? suggestion.address : `${suggestion.label} <${suggestion.address}>`);
+
+  /** Closes the list and ends a pending lookup, so its answer cannot reopen the list without new input. */
+  const dismissSuggestions = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    controller?.abort();
+    controller = null;
+    setLoading(false);
+    setSuggestions([]);
+  };
+
+  /** Arrow keys move through the open list, Enter takes the highlighted entry, Escape closes the list. */
+  const handleSuggestionKey = (event: KeyboardEvent): boolean => {
+    const count = suggestions().length;
+    if (event.key === "Escape" && count === 0 && (timer || controller)) {
+      event.preventDefault();
+      dismissSuggestions();
+      return true;
+    }
+    if (count === 0) return false;
+    if (event.key !== "Escape" && suggestionsQuery !== query().trim()) return false;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((index) => (index < 0 ? (step > 0 ? 0 : count - 1) : (index + step + count) % count));
+      document.getElementById(optionId(activeIndex()))?.scrollIntoView({ block: "nearest" });
+      return true;
+    }
+    const active = suggestions()[activeIndex()];
+    if (event.key === "Enter" && active) {
+      event.preventDefault();
+      pick(active);
+      return true;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      dismissSuggestions();
+      return true;
+    }
+    return false;
   };
 
   const focusInput = () =>
@@ -106,32 +164,59 @@ export default function MailRecipientInput(props: {
 
   createEffect(() => {
     const value = query().trim();
+    const mailboxId = props.mailboxId;
+    // A highlight belongs to the list it was made in; after typing, Enter commits the typed text until new results arrive.
+    setActiveIndex(-1);
     if (timer) clearTimeout(timer);
     controller?.abort();
-    if (value.length < 2 || !suggestTarget) {
+    controller = null;
+    if (value.length < 2 || (!suggestTarget && !mailboxId)) {
       setSuggestions([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     timer = setTimeout(async () => {
+      timer = null;
       const request = new AbortController();
       controller = request;
       try {
-        const result = await suggestContacts(suggestTarget, { query: value, limit: 8 }, request.signal);
+        const [contacts, mailbox] = await Promise.allSettled([
+          suggestTarget ? suggestContacts(suggestTarget, { query: value, limit: 8 }, request.signal) : Promise.resolve(null),
+          mailboxId
+            ? (async () => {
+                const response = await apiClient.mailboxes[":mailboxId"]["recipient-suggestions"].$get(
+                  { param: { mailboxId }, query: { query: value, limit: "8" } },
+                  { init: { signal: request.signal } },
+                );
+                if (!response.ok) throw new Error("Recipient suggestions unavailable");
+                return mailRecipientSuggestionsSchema.parse(await response.json());
+              })()
+            : Promise.resolve(null),
+        ]);
         if (disposed || controller !== request) return;
         const seen = new Set<string>();
-        setSuggestions(
-          result.data.flatMap((contact) => {
+        const merged: RecipientSuggestion[] = [];
+        if (contacts.status === "fulfilled" && contacts.value) {
+          for (const contact of contacts.value.data) {
             const context = [contact.companyName, contact.jobTitle, contact.phones[0]?.phone].filter(Boolean).join(" · ") || null;
-            return contact.emails.flatMap(({ email }) => {
-              const address = email.toLowerCase();
-              if (seen.has(address)) return [];
+            for (const { email } of contact.emails) {
+              const address = email.trim().toLowerCase();
+              if (seen.has(address)) continue;
               seen.add(address);
-              return [{ label: contact.displayName, address, context }];
-            });
-          }),
-        );
+              merged.push({ label: contact.displayName, address, context, source: "contacts" });
+            }
+          }
+        }
+        if (mailbox.status === "fulfilled" && mailbox.value) {
+          for (const item of mailbox.value.items) {
+            const address = item.address.trim().toLowerCase();
+            if (seen.has(address)) continue;
+            seen.add(address);
+            merged.push({ label: item.displayName ?? address, address, context: null, source: "mailbox" });
+          }
+        }
+        setSuggestions(merged, value);
       } catch (error) {
         if (!disposed && controller === request && !(error instanceof DOMException && error.name === "AbortError")) {
           setSuggestions([]);
@@ -202,11 +287,19 @@ export default function MailRecipientInput(props: {
                 aria-invalid={Boolean(validationError())}
                 aria-describedby={validationError() ? errorId : undefined}
                 autocomplete="off"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={suggestions().length > 0}
+                aria-controls={suggestions().length > 0 ? listboxId : undefined}
+                aria-activedescendant={activeIndex() >= 0 ? optionId(activeIndex()) : undefined}
                 onInput={(event) => {
                   setQuery(event.currentTarget.value);
                   setValidationError(null);
                 }}
                 onKeyDown={(event) => {
+                  // An IME composition owns its keys until it ends.
+                  if (event.isComposing) return;
+                  if (handleSuggestionKey(event)) return;
                   if (shouldCommitMailRecipient(query(), event.key)) {
                     event.preventDefault();
                     add(query().replace(/,$/, ""));
@@ -234,11 +327,19 @@ export default function MailRecipientInput(props: {
             aria-invalid={Boolean(validationError())}
             aria-describedby={validationError() ? errorId : undefined}
             autocomplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={suggestions().length > 0}
+            aria-controls={suggestions().length > 0 ? listboxId : undefined}
+            aria-activedescendant={activeIndex() >= 0 ? optionId(activeIndex()) : undefined}
             onInput={(event) => {
               setQuery(event.currentTarget.value);
               setValidationError(null);
             }}
             onKeyDown={(event) => {
+              // An IME composition owns its keys until it ends.
+              if (event.isComposing) return;
+              if (handleSuggestionKey(event)) return;
               if (shouldCommitMailRecipient(query(), event.key)) {
                 event.preventDefault();
                 add(query().replace(/,$/, ""));
@@ -252,9 +353,12 @@ export default function MailRecipientInput(props: {
             }}
           />
         </Show>
-        <Show when={loading()}>
-          <i class="ti ti-loader-2 animate-spin text-dimmed" aria-hidden="true" />
-        </Show>
+        {/* The spinner keeps its slot while idle, so the field never changes width when a lookup starts. */}
+        <i
+          class="ti ti-loader-2 w-4 shrink-0 text-center text-dimmed"
+          classList={{ "animate-spin": loading(), invisible: !loading() }}
+          aria-hidden="true"
+        />
       </div>
       <Show when={validationError()}>
         {(message) => (
@@ -264,21 +368,34 @@ export default function MailRecipientInput(props: {
         )}
       </Show>
       <Show when={suggestions().length > 0}>
-        <div class="mail-recipient-suggestions absolute inset-x-0 top-full z-30 mt-1 max-h-60 overflow-y-auto p-1" role="listbox">
+        <div
+          id={listboxId}
+          class="mail-recipient-suggestions absolute inset-x-0 top-full z-30 mt-1 max-h-60 overflow-y-auto p-1"
+          role="listbox"
+          aria-label={props.placeholder}
+        >
           <For each={suggestions()}>
-            {(suggestion) => (
+            {(suggestion, index) => (
               <button
+                id={optionId(index())}
                 type="button"
-                class="flex w-full min-w-0 items-center gap-2 rounded px-2 py-2 text-left hover:bg-[var(--ui-hover)]"
+                tabIndex={-1}
+                class="flex w-full min-w-0 items-center gap-2 rounded px-2 py-2 text-left hover:bg-[var(--ui-hover)] data-[active=true]:bg-[var(--ui-hover)]"
                 role="option"
-                aria-selected="false"
+                aria-selected={activeIndex() === index()}
+                data-active={activeIndex() === index() ? "true" : undefined}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => add(`${suggestion.label} <${suggestion.address}>`)}
+                onClick={() => pick(suggestion)}
               >
-                <i class="ti ti-user text-dimmed" aria-hidden="true" />
+                <i class={suggestion.source === "mailbox" ? "ti ti-mail text-dimmed" : "ti ti-user text-dimmed"} aria-hidden="true" />
+                <Show when={suggestion.source === "mailbox"}>
+                  <span class="sr-only">{t().fromThisMailbox}</span>
+                </Show>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-sm text-primary">{suggestion.label}</span>
-                  <span class="block truncate text-xs text-dimmed">{suggestion.address}</span>
+                  <Show when={suggestion.label !== suggestion.address}>
+                    <span class="block truncate text-xs text-dimmed">{suggestion.address}</span>
+                  </Show>
                   <Show when={suggestion.context}>
                     {(context) => <span class="block truncate text-[10px] text-dimmed">{context()}</span>}
                   </Show>

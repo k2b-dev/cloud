@@ -57,6 +57,9 @@ function BarNavigation(props: { currentPath: string }) {
     syncLocation();
     window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
     window.addEventListener("popstate", syncLocation);
+    window.addEventListener("ssr:nav-popstate", syncLocation);
+    window.addEventListener("ssr:nav-swapped", sync);
+    window.addEventListener("ssr:nav-swapped", syncLocation);
     window.addEventListener("hashchange", syncLocation);
     // In-page navigation (`@k2b/ssr/nav`) commits with pushState or replaceState, which only the Navigation API
     // reports; where a browser lacks it, the bar follows at the next page load.
@@ -64,6 +67,9 @@ function BarNavigation(props: { currentPath: string }) {
     onCleanup(() => {
       window.removeEventListener(RAIL_PREFERENCES_EVENT, sync);
       window.removeEventListener("popstate", syncLocation);
+      window.removeEventListener("ssr:nav-popstate", syncLocation);
+      window.removeEventListener("ssr:nav-swapped", sync);
+      window.removeEventListener("ssr:nav-swapped", syncLocation);
       window.removeEventListener("hashchange", syncLocation);
       window.navigation?.removeEventListener("currententrychange", syncLocation);
     });
@@ -95,7 +101,11 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
       <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
         {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger variant="rail" open={props.panelOpen} />}
         <GlobalSearchTrigger variant="rail" />
-        <LayoutHelpTrigger variant="rail" />
+        <LayoutHelpTrigger
+          variant="rail"
+          panel={data.panel?.providers.some((provider) => provider.id === "core")}
+          helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
+        />
         <ProfilePreferences
           appHref={data.profile.appHref}
           avatarSrc={data.profile.avatarSrc}
@@ -148,7 +158,11 @@ function HeaderControls(props: {
         <div class="flex items-center gap-1 lg:hidden">
           {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger variant="header" open={props.panelOpen} />}
           {props.authenticated && <GlobalSearchTrigger variant="header" />}
-          <LayoutHelpTrigger variant="header" />
+          <LayoutHelpTrigger
+            variant="header"
+            panel={data.panel?.providers.some((provider) => provider.id === "core")}
+            helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
+          />
           {props.launchpad && (
             <AppLaunchpadButton
               profile={

@@ -1218,7 +1218,7 @@ const RecordSnapshotSummarySchema = RecordSnapshotSchema.pick({
   recordId: true,
   createdBy: true,
   createdAt: true,
-});
+}).extend({ createdByName: z.string().optional() });
 export type RecordSnapshotSummary = z.infer<typeof RecordSnapshotSummarySchema>;
 
 const DocumentArtifactSchema = z

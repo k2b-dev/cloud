@@ -1,2 +1,4 @@
-export const appFaviconHref = (appId: string, version: number): string =>
-  appId === "core" ? "/branding/favicon" : `/public/${appId}/favicon.svg?v=${version}`;
+export const appFaviconHref = (appId: string, version: string | number | undefined): string =>
+  appId === "core"
+    ? "/branding/favicon"
+    : `/public/${appId}/favicon.svg${version === undefined ? "" : `?v=${encodeURIComponent(version)}`}`;

@@ -118,3 +118,27 @@ test("returns 404 without resolving an id segment missing the required prefix", 
   expect(await response.text()).toContain("Nothing here");
   expect(called).toBe(false);
 });
+
+test.each([false, true])("resource resolution restores its request timeout after failure=%s", async (fail) => {
+  signIn();
+  const calls: number[] = [];
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const app = routes(async () => {
+    entered.resolve();
+    await release.promise;
+    if (fail) throw new Error("resolution unavailable");
+    return "/app/demo";
+  });
+  const pending = app.fetch(new Request("https://cloud.example/open/demo.item/~item"), {
+    timeout: (_request: Request, seconds: number) => calls.push(seconds),
+  });
+  try {
+    await entered.promise;
+    expect(calls).toEqual([55]);
+  } finally {
+    release.resolve();
+  }
+  expect((await pending).status).toBe(fail ? 500 : 302);
+  expect(calls).toEqual([55, 10]);
+});

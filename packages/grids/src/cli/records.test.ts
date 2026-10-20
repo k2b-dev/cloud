@@ -84,3 +84,30 @@ describe("record file lifecycle commands", () => {
     expect(remove?.summary).toBe("Remove one file attachment from the current record");
   });
 });
+
+test("snapshot human rows use creator names and localized missing-person labels while retaining resource IDs", async () => {
+  const { snapshotRows } = await import("./records-support");
+  const rows = snapshotRows(
+    [
+      {
+        id: "snapshot",
+        recordId: "record",
+        tableId: "table",
+        createdBy: "11111111-1111-4111-8111-111111111111",
+        createdAt: "2026-10-20T12:00:00.000Z",
+      },
+      {
+        id: "named-snapshot",
+        recordId: "record",
+        tableId: "table",
+        createdBy: "22222222-2222-4222-8222-222222222222",
+        createdByName: "Ada Example",
+        createdAt: "2026-10-20T12:00:00.000Z",
+      },
+    ],
+    "de",
+  );
+  expect(rows[0]?.createdBy).toBe("Unbekannte Person");
+  expect(rows[1]?.createdBy).toBe("Ada Example");
+  expect(rows[0]?.recordId).toBe("record");
+});

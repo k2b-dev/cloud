@@ -1,9 +1,7 @@
 import { getProcessSync, lazySync } from "@k2b/cloud";
-import { fromBase64Strict } from "@k2b/stdlib";
+import { type SharedTextContributor, type SharedTextEvent, type SharedTextSyncEvent, sharedText } from "@k2b/cloud/shared-text";
 import type { TopicInventoryEntry } from "@k2b/sync";
-import * as Y from "yjs";
-import { notebooksYjs } from "../lib/yjs";
-import type { NoteVersionContributorInput } from "./notes";
+import type * as Y from "yjs";
 
 /** One document log for every note; the note id is the Sync tenant. */
 export const YJS_TOPIC_ID = "cloud:notebooks:yjs";
@@ -29,33 +27,45 @@ export const YJS_LOG_MAX_BYTES = 1024 * 1024 * 1024;
  * empty; Sync still provisions it. Two maximum-size dead letters fit.
  */
 export const YJS_DEAD_LETTER_MAX_BYTES = 16 * 1024 * 1024;
-export const NODE_ID = crypto.randomUUID();
+export {
+  applySharedTextEvent as applyYjsTopicEvent,
+  compareStreamCursor,
+  fromBase64,
+  isValidSharedTextUpdate as isValidYjsUpdate,
+  MalformedSharedTextEventError as MalformedSyncEventError,
+  maxStreamCursor,
+  parseStreamCursor,
+  sharedTextNodeId as NODE_ID,
+  toBase64,
+} from "@k2b/cloud/shared-text";
 
-/**
- * Yjs realtime event shape — internal data produced and consumed by our own
- * code; no runtime validation needed (generics give us type safety).
- */
-export type YjsTopicEvent = {
-  kind: "sync" | "awareness";
-  payload: string;
-  originNodeId: string;
-  originPeerId: string | null;
-  /** Optional for compatibility with retained events from older deployments. */
-  actor?: { kind: "user" | "service_account"; id: string };
-};
+export type YjsTopicEvent = SharedTextEvent;
+export type YjsSyncEvent = SharedTextSyncEvent;
+export type YjsAwarenessEvent = SharedTextEvent & { kind: "awareness" };
 
-export type YjsSyncEvent = YjsTopicEvent & { kind: "sync" };
-export type YjsAwarenessEvent = YjsTopicEvent & { kind: "awareness" };
-
-const STREAM_CURSOR_REGEX = new RegExp(notebooksYjs.streamCursorPattern);
+export const notebooksTextLog = sharedText.define({
+  id: YJS_TOPIC_ID,
+  retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: YJS_LOG_MAX_BYTES },
+  deadLetterRetention: { maxBytes: YJS_DEAD_LETTER_MAX_BYTES },
+  maxPayloadBytes: SYNC_TOPIC_ENVELOPE_BYTES,
+});
 
 // A fresh handle per call keeps per-connection hubs independent, as before.
-export const createYjsTopic = () =>
-  getProcessSync().topic<YjsSyncEvent>({
-    id: YJS_TOPIC_ID,
-    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: YJS_LOG_MAX_BYTES },
-    deadLetterRetention: { maxBytes: YJS_DEAD_LETTER_MAX_BYTES },
-    maxPayloadBytes: SYNC_TOPIC_ENVELOPE_BYTES,
+export const createYjsTopic = () => notebooksTextLog.topic();
+
+export const replayYjsTopicToCursor = (config: {
+  noteId: string;
+  after: string | null;
+  targetCursor: string;
+  doc: Y.Doc;
+  signal?: AbortSignal;
+}): Promise<SharedTextContributor[]> =>
+  notebooksTextLog.replay({
+    docId: config.noteId,
+    after: config.after,
+    until: config.targetCursor,
+    doc: config.doc,
+    signal: config.signal,
   });
 
 /**
@@ -104,87 +114,3 @@ export const createYjsAwarenessTopic = lazySync((sync) =>
     maxPayloadBytes: MAX_AWARENESS_TOPIC_PAYLOAD_BYTES + 4096,
   }),
 );
-
-export const toBase64 = (data: Uint8Array): string => Buffer.from(data).toString("base64");
-export const fromBase64 = fromBase64Strict;
-
-export const parseStreamCursor = (cursor: string | null | undefined): { resource: string; seq: number } | null => {
-  if (!cursor || !STREAM_CURSOR_REGEX.test(cursor)) return null;
-  const [, resource, sequence] = cursor.split(".");
-  const seq = Number(sequence);
-  if (!resource || !Number.isSafeInteger(seq) || seq < 0) return null;
-  return { resource, seq };
-};
-
-export const compareStreamCursor = (left: string, right: string): number => {
-  const l = parseStreamCursor(left);
-  const r = parseStreamCursor(right);
-  if (!l || !r || l.resource !== r.resource) throw new Error(`Invalid stream cursor comparison: "${left}" vs "${right}"`);
-  return l.seq - r.seq;
-};
-
-export const maxStreamCursor = (a: string | null, b: string | null): string | null => {
-  if (!a) return b;
-  if (!b) return a;
-  return compareStreamCursor(a, b) >= 0 ? a : b;
-};
-
-/** A retained event cannot be decoded as a Yjs update: retrying never helps, no replay can pass it. */
-export class MalformedSyncEventError extends Error {
-  constructor(
-    readonly noteId: string,
-    readonly cursor: string,
-    cause: unknown,
-  ) {
-    super(`Malformed sync event for note ${noteId} at cursor ${cursor}: ${cause instanceof Error ? cause.message : String(cause)}`);
-    this.name = "MalformedSyncEventError";
-  }
-}
-
-/** Ingress check: a publish is accepted only when it is base64 of a decodable Yjs update. */
-export const isValidYjsUpdate = (payload: string): boolean => {
-  try {
-    Y.decodeUpdate(fromBase64(payload));
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-export const applyYjsTopicEvent = (doc: Y.Doc, event: { cursor: string; data: YjsTopicEvent }, noteId: string): void => {
-  if (event.data.kind !== "sync") return;
-  try {
-    const update = fromBase64(event.data.payload);
-    // Decode completely before mutating the document: malformed bytes must not
-    // partially integrate state before recovery skips the invalid event.
-    Y.decodeUpdate(update);
-    Y.applyUpdate(doc, update, `replay:${event.cursor}`);
-  } catch (error) {
-    throw new MalformedSyncEventError(noteId, event.cursor, error);
-  }
-};
-
-export const replayYjsTopicToCursor = async (config: {
-  noteId: string;
-  after: string | null;
-  targetCursor: string;
-  doc: Y.Doc;
-  signal?: AbortSignal;
-}): Promise<NoteVersionContributorInput[]> => {
-  const contributors = new Map<string, NoteVersionContributorInput>();
-  const topic = createYjsTopic();
-  const after = config.after ?? topic.cursorAt(0);
-  if (compareStreamCursor(after, config.targetCursor) >= 0) return [];
-  let reachedTarget = false;
-  for await (const event of topic.replay({ tenantId: config.noteId, after, until: config.targetCursor, signal: config.signal })) {
-    applyYjsTopicEvent(config.doc, event, config.noteId);
-    if (event.data.actor)
-      contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
-        ...event.data.actor,
-        lastContributedAt: event.publishedAt,
-      });
-    reachedTarget = event.cursor === config.targetCursor;
-  }
-  if (!reachedTarget) throw new Error(`Target cursor "${config.targetCursor}" was not reached during replay`);
-  return [...contributors.values()];
-};

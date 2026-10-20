@@ -31,7 +31,7 @@ The filter dialog can search:
 
 Choose **Any condition** to match at least one filled field. Choose **All conditions** to require every filled field. Search filters stay in the page URL, so a reload or a shared URL keeps the current result.
 
-A search remembers the view where you started it, such as **Needs action** or a folder. To end the search, choose **Clear** in the search field, delete the text, press Esc, or choose **Clear search**. Mail then returns to that view and opens the conversation that was open before. The URL keeps the starting view, so a reload or Back keeps it too.
+A search remembers the view where you started it, such as **Needs action** or a folder. To end the search, choose **Clear** in the search field, delete the text, press Esc, or remove the **Search** chip in the head. **Reset** also clears the filters. Mail then returns to that view and opens the conversation that was open before. The URL keeps the starting view, so a reload or Back keeps it too.
 
 Provider keywords are advanced synchronized metadata, not a normal labeling system. Existing search URLs with keywords still work, and you can still edit them. New filters use local tags for labels that people read.
 
@@ -43,20 +43,20 @@ When extracted attachment text matches, the result names the attachment and show
 
 ## Use follow-up, assignment, and folders for different purposes {icon="layout-list"}
 
-The built-in **Follow-up** views show what happens next. **Assignment** shows who owns the work. Except for **Done**, these views leave out conversations that are only in Trash or Junk. Examples are spam that your provider filed there, or mail that someone deleted. When you move such a conversation back, it appears again with its next step.
+The view tabs in the head show what happens next and who owns the work. Open **More** for Later, Done, Recent activity, Kept, and saved views. Except for **Done**, these views leave out conversations that are only in Trash or Junk. Examples are spam that your provider filed there, or mail that someone deleted. When you move such a conversation back, it appears again with its next step.
 
-| Section | View | What it shows |
+| Place | View | What it shows |
 | --- | --- | --- |
-| Follow-up | Needs action | Conversations where the team needs to review or act |
-| Follow-up | Waiting for reply | Conversations where a confirmed team reply waits for someone else. New incoming mail moves them to Needs action. |
-| Follow-up | Later | Conversations hidden until the selected time. At that time, they appear again with the same next step. New incoming mail shows them immediately. |
-| Follow-up | Done | Conversations marked Done |
-| Assignment | Assigned to me | Conversations assigned to you |
-| Assignment | Unassigned | Conversations with no assignee who can still work on them, for example because the assignees lost their access |
-| Mail / More | All mail | Mail from every provider folder except Trash, Junk, and folders whose mail stays inside them |
-| More | Recent activity | Recently changed conversations |
-| More | Kept | Conversations protected from deletion, from every folder |
-| Mail | Scheduled | Messages that wait for later delivery |
+| Head tabs | Needs action | Conversations where the team needs to review or act |
+| Head tabs | Waiting for reply | Conversations where a confirmed team reply waits for someone else. New incoming mail moves them to Needs action. |
+| Head → More | Later | Conversations hidden until the selected time. At that time, they appear again with the same next step. New incoming mail shows them immediately. |
+| Head → More | Done | Conversations marked Done |
+| Head tabs | Assigned to me | Conversations assigned to you |
+| Head tabs | Unassigned | Conversations with no assignee who can still work on them, for example because the assignees lost their access |
+| Head tabs | All | Mail from every provider folder except Trash, Junk, and folders whose mail stays inside them |
+| Head → More | Recent activity | Recently changed conversations |
+| Head → More | Kept | Conversations protected from deletion, from every folder |
+| Sidebar → open mailbox | Scheduled | Messages that wait for later delivery |
 
 Provider folders are a different layer. When you move a conversation to Archive, Trash, Junk, or another provider folder, the remote mail moves too. Other clients can show this. Marking a conversation **Done** changes only the Cloud follow-up state. It does not archive, move, or mark the email read. The provider Inbox stays unchanged.
 
@@ -134,7 +134,7 @@ Conversation details also shows a small **Related mail** section for the convers
 
 When you open an unread conversation, Mail marks it as read. Use **More conversation actions** to mark it unread again, add or remove a flag, or print the conversation. A conversation that you mark unread stays unread in already open tabs until you open its row again. A live update alone does not mark it read.
 
-By default, Mail shows the HTML version of a message and adapts its colors to dark mode: light backgrounds become dark, text stays readable, and images keep their original colors. To change one message, open its actions and choose **View as plain text**, **View as HTML**, or in dark mode **Show original colors**. To keep one mode in this browser, use **Settings → Reading → Default message format**; **HTML with original colors** always shows the sender's colors.
+By default, Mail shows the HTML version of a message and adapts its colors to dark mode: light backgrounds become dark, text stays readable, and images keep their original colors. To change one message, open its actions and choose **View as plain text**, **View as HTML**, or in dark mode **Show original colors**. To keep one mode in this browser, use **… → Settings → Reading → Default message format**; **HTML with original colors** always shows the sender's colors.
 
 HTML messages keep a limited set of layout, typography, color, spacing, and table styles. Scripts, forms, embedded objects, external stylesheets, and other active content are removed. Remote images stay blocked separately until you choose to load them.
 
@@ -208,7 +208,7 @@ For older or partly synchronized messages, Mail can have the readable content wi
 
 ## Manage mailing lists {icon="news"}
 
-Mail recognizes mailing lists from the standard list information in received messages. Everyone who can view the mailbox can open **Mailbox tools → Mailing lists**. The page shows each detected list, its recent volume, its latest message, and the actions that the list offers.
+Mail recognizes mailing lists from the standard list information in received messages. Everyone who can view the mailbox can open **… → Mailing lists**. The page shows each detected list, its recent volume, its latest message, and the actions that the list offers.
 
 The available actions depend on the information from the sender. Unsubscribe and cleanup actions require **Edit** or **Manage** access. With **View** access, you can inspect lists and follow their archive or posting links.
 
@@ -229,7 +229,7 @@ Received attachments stay with the message that carried them. Choose an attachme
 
 **Preview** opens text, CSV, JSON, images, PDFs, audio, and video in a dialog. When a text file is Markdown and starts with a heading, that heading becomes the title, with the file name and size below it. The dialog header has **Download attachment**, and for text, CSV, and JSON also **Copy**. On a phone, the preview fills the screen.
 
-With **Manage** access, you can also create a public download link for an attachment. Mail shows the URL only when you create the link. You can protect it with a password, an expiry time, and a limit on download sessions. To review or revoke existing links, open **Mailbox tools → Shared links**.
+With **Manage** access, you can also create a public download link for an attachment. Mail shows the URL only when you create the link. You can protect it with a password, an expiry time, and a limit on download sessions. To review or revoke existing links, open **… → Shared links**.
 
 ## Control remote images {icon="photo-shield"}
 
@@ -241,7 +241,7 @@ When a message contains blocked images, choose:
 - **Always for sender** to allow images in future messages from that exact address.
 - **Always for domain** to allow images from every address at that domain. Use this broader option only for a domain that you trust.
 
-These preferences apply only to you in the current mailbox. They do not change what collaborators see. To review or remove saved preferences, open **Mailbox tools → Remote images**.
+These preferences apply only to you in the current mailbox. They do not change what collaborators see. To review or remove saved preferences, open **… → Remote images**.
 
 Mail loads allowed images through its protected image service, so your browser never gets the image address. The external server can still learn that someone requested its image. Keep images blocked for unknown or suspicious senders.
 
@@ -257,13 +257,13 @@ For composing, drafts, attachments, signatures, and delivery options, see [Write
 
 ## Create reusable views and local tags {icon="layout-list"}
 
-Open **Settings → Organization** to create a saved view from folder and collaboration filters. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
+Open **… → Settings → Organization** to create a saved view from folder and collaboration filters. Open saved views under **More** in the head. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
 
 - **Only me** creates a private view.
 - **Everyone with mailbox access** creates a mailbox view and requires **Edit** access.
 - You cannot change the visibility after creation. Create a replacement view if you need a different visibility.
 
-Local tags are mailbox labels for people, search, and automations. Choose a tag under **Tags** in the left navigation to open all matching conversations. Local tags are not IMAP folders or provider keywords, and other clients do not show them.
+Local tags are mailbox labels for people, search, and automations. Choose a tag with the **Tag** chip in the head to open all matching conversations. Local tags are not IMAP folders or provider keywords, and other clients do not show them.
 
 :::warning Deleting a local tag removes it everywhere
 Mail removes a deleted local tag from every conversation in that mailbox. Saved views and search links that filter by a deleted tag or folder find no conversations for that condition.

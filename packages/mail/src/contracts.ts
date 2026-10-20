@@ -16,11 +16,7 @@ export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
 export const MAIL_CONVERSATION_BATCH_LIMIT = 50;
 /** Maximum number of assignees on one conversation. */
 export const MAIL_CONVERSATION_ASSIGNEE_LIMIT = 20;
-/**
- * Pinned and, separately, hidden mailboxes one principal keeps. The overview lists at most 200
- * mailboxes, and Focus leaves out at most as many as the browser sends in one request.
- */
-export const MAX_MAILBOX_PREFERENCES = 200;
+export { MAX_MAILBOX_PREFERENCES } from "./mailbox-preference-limits";
 
 export const ResourceShortIdSchema = z.string().regex(RESOURCE_SHORT_ID_PATTERN).describe("Stable 6-character resource ID");
 
@@ -246,6 +242,32 @@ export const mailConversationContextQuerySchema = z
   .strict();
 export type MailConversationContextQuery = z.infer<typeof mailConversationContextQuerySchema>;
 
+/** The longest recipient display name a draft accepts (`mailAddressSchema`); suggestions shorten names to it. */
+export const MAIL_RECIPIENT_NAME_MAX = 200;
+export const mailRecipientSuggestionsQuerySchema = z
+  .object({
+    query: z.string().trim().min(2).max(320),
+    limit: z.coerce.number().int().min(1).max(20).default(8),
+  })
+  .strict();
+export type MailRecipientSuggestionsQuery = z.infer<typeof mailRecipientSuggestionsQuerySchema>;
+export const mailRecipientSuggestionSchema = z
+  .object({
+    address: normalizedContactEmailSchema.describe("Normalized recipient address."),
+    displayName: z
+      .string()
+      .min(1)
+      .max(MAIL_RECIPIENT_NAME_MAX)
+      .nullable()
+      .describe("Most recent non-empty display name, shortened to the recipient name limit."),
+    lastSeenAt: z.string().datetime().describe("Most recent message containing this address."),
+    writtenTo: z.boolean().describe("This mailbox sent a message to this address."),
+  })
+  .strict();
+export type MailRecipientSuggestion = z.infer<typeof mailRecipientSuggestionSchema>;
+export const mailRecipientSuggestionsSchema = z.object({ items: z.array(mailRecipientSuggestionSchema).max(20) }).strict();
+export type MailRecipientSuggestions = z.infer<typeof mailRecipientSuggestionsSchema>;
+
 export const mailConversationParticipantSchema = z
   .object({
     email: normalizedContactEmailSchema,
@@ -258,6 +280,17 @@ export const mailConversationContextSchema = z
     conversationId: ResourceShortIdSchema,
     participants: z.array(mailConversationParticipantSchema).max(100),
     contacts: z.discriminatedUnion("status", [
+      z
+        .object({
+          status: z.literal("absent"),
+          items: z.array(z.never()).length(0),
+          matchedEmails: z.array(z.never()).length(0),
+          nextCursor: z.null(),
+        })
+        .strict()
+        .describe(
+          "No contact directory is installed or mapped. Clients hide contact features. Unavailable means a configured directory failed and can be retried.",
+        ),
       z
         .object({
           status: z.literal("ready"),
@@ -3071,7 +3104,7 @@ export const senderAuthenticationPolicySchema = z.object({
 export type SenderAuthenticationPolicy = z.infer<typeof senderAuthenticationPolicySchema>;
 
 export const mailAddressSchema = z.object({
-  name: z.string().trim().max(200).nullable().optional().describe("Optional recipient display name."),
+  name: z.string().trim().max(MAIL_RECIPIENT_NAME_MAX).nullable().optional().describe("Optional recipient display name."),
   address: z.string().email().max(320).describe("Recipient email address."),
 });
 export type MailAddress = z.infer<typeof mailAddressSchema>;

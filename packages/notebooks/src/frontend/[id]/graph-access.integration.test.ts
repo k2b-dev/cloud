@@ -1,4 +1,5 @@
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../../scripts/fixtures/test-short-id";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { expect, test } from "bun:test";
 import type { CloudRuntime } from "@k2b/cloud/contracts";
@@ -17,7 +18,7 @@ import "./_components/detail/ssr-test-plugin";
 const { default: handler } = await import("./page");
 const suite = suiteFor("database", "nats", "valkey");
 const timestamp = "2026-10-01T08:00:00.000Z";
-const identity = () => ({ id: crypto.randomUUID(), shortId: crypto.randomUUID().replaceAll("-", "").slice(0, 6) });
+const identity = () => ({ id: crypto.randomUUID(), shortId: testShortId() });
 
 suite("Notebook graph read access on SSR and REST", () => {
   test("readers see only their notebook's nodes and internal edges; no grant denies both surfaces", async () => {

@@ -1,3 +1,4 @@
+import { capabilityMessages } from "../shared/capability-messages";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
 
 export { capabilityHash } from "./capability-schemas";
@@ -1302,6 +1303,15 @@ export const validateCapabilityResult = (
   return { ok: true, data: parsed.data };
 };
 
+const cancelledInvocation = (locale: string) => ({
+  ok: false as const,
+  error: {
+    code: CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled,
+    message: capabilityMessages(locale).requestCancelled,
+    status: 499 as const,
+  },
+});
+
 export const invokeCompiledCapability = async (params: {
   compiled: CompiledCapabilities;
   kind: "query" | "action";
@@ -1403,6 +1413,9 @@ export const invokeCompiledCapability = async (params: {
     )
       return { ok: false, error: { code: "VALIDATION_FAILED", message: "Unsupported search scope", status: 400 } };
   }
+  // Preparation can finish after the forwarding request was cancelled. Never
+  // cross into application code for the first time with an aborted invocation.
+  if (context.signal.aborted) return cancelledInvocation(context.locale);
   try {
     const invoked = await operation.definition.run(input.data, context);
     if (!invoked.ok) {
@@ -1496,6 +1509,7 @@ export const reviewCompiledCapability = async (params: {
       },
     };
   }
+  if (params.context.signal.aborted) return cancelledInvocation(params.context.locale);
   try {
     const reviewed = await operation.definition.review(input.data, params.context);
     if (!reviewed.ok) {

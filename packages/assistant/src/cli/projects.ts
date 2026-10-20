@@ -1,6 +1,11 @@
 import type { AiProject, AiProjectAccess, AiProjectFile, AiProjectKnowledge, AiProjectReference } from "@k2b/cloud/ai";
 import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { principalLabel } from "@k2b/cloud/shared";
 import { jsonRequest, printRows, printValue, queryString, readApi, readProjectsApi, requireConfirmation } from "./shared";
+
+/** Human rows name each grantee for people; structured output keeps the entries. */
+export const projectAccessRows = (access: AiProjectAccess[], locale?: string) =>
+  access.map((entry) => ({ id: entry.shortId, principal: principalLabel(entry, locale), permission: entry.permission }));
 
 const path = (projectId: string, suffix = ""): string => `/${encodeURIComponent(projectId)}${suffix}`;
 
@@ -325,16 +330,11 @@ export const assistantProjectCommands = [
     async run({ ctx, args }) {
       const project = await resolveProject(ctx, args.project);
       const result = await readProjectsApi<{ access: AiProjectAccess[] }>(ctx, path(project.shortId, "/access"));
-      printRows(
-        ctx,
-        result,
-        result.access.map((entry) => ({
-          id: entry.shortId,
-          principal: entry.displayName ?? entry.principal.type,
-          permission: entry.permission,
-        })),
-        [{ key: "id" }, { key: "principal" }, { key: "permission" }],
-      );
+      printRows(ctx, result, projectAccessRows(result.access, ctx.options.locale), [
+        { key: "id" },
+        { key: "principal" },
+        { key: "permission" },
+      ]);
     },
   }),
   command("projects access grant", {

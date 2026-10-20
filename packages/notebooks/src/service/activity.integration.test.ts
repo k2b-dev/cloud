@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
 import { list, noteAuthors, record } from "./activity";
 
@@ -13,7 +14,6 @@ const noteId = crypto.randomUUID();
 const creatorId = crypto.randomUUID();
 const editorId = crypto.randomUUID();
 const formerServiceId = crypto.randomUUID();
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 6);
 const start = new Date("2026-10-01T10:00:00.000Z");
 const later = new Date("2026-10-01T11:00:00.000Z");
 const latest = new Date("2026-10-01T12:00:00.000Z");
@@ -29,9 +29,9 @@ beforeAll(async () => {
     await sql`INSERT INTO auth.users (id, uid, display_name, avatar_data_url, avatar_hash, provider, profile)
       VALUES (${id}::uuid, ${`activity-${id}`}, ${name}, ${AVATAR_DATA_URL}, ${AVATAR_HASH}, 'local', 'user')`;
   }
-  await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${shortId()}, 'Activity test')`;
+  await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${testShortId()}, 'Activity test')`;
   await sql`INSERT INTO notebooks.notes (id, short_id, notebook_id, title, created_by)
-    VALUES (${noteId}::uuid, ${shortId()}, ${notebookId}::uuid, 'Activity note', ${creatorId}::uuid)`;
+    VALUES (${noteId}::uuid, ${testShortId()}, ${notebookId}::uuid, 'Activity note', ${creatorId}::uuid)`;
 }, 30_000);
 
 afterAll(async () => {

@@ -399,8 +399,10 @@ export const filterSnapshotRelatedRecords = async (
 export const listSnapshotsForRecord = async (tableId: string, recordId: string, limit = 100): Promise<RecordSnapshotSummary[]> => {
   const cap = Math.min(Math.max(limit, 1), 500);
   const rows = await sql<DocumentDbRow[]>`
-    SELECT snapshot.id, snapshot.base_id, snapshot.table_id, snapshot.record_id, snapshot.created_by, snapshot.created_at
+    SELECT snapshot.id, snapshot.base_id, snapshot.table_id, snapshot.record_id, snapshot.created_by, snapshot.created_at,
+      COALESCE(NULLIF(creator.display_name, ''), creator.uid) AS created_by_name
     FROM grids.record_snapshots snapshot
+    LEFT JOIN auth.users creator ON creator.id = snapshot.created_by
     WHERE snapshot.table_id = ${tableId}::uuid
       AND snapshot.record_id = ${recordId}::uuid
       AND NOT EXISTS (

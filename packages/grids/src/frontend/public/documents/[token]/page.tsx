@@ -52,7 +52,7 @@ export function PublicDocumentShare(props: {
             fallback={<NoticeCard tone="warning" title={t().linkUnavailable} detail={t().documentLinkUnavailable} />}
           >
             <div class="flex items-center gap-3">
-              <span class="app-accent-text flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)]">
+              <span class="k2b-icon-tile app-accent-text h-10 w-10">
                 <i class={`${fileIcon(props.mimeType)} text-lg`} aria-hidden="true" />
               </span>
               <div class="min-w-0 flex-1">

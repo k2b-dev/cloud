@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { Filegate } from "@k2b/filegate";
-import { filegateApiFetch, filegateCallTimeoutMs } from "./index";
+import { filegateApiFetch, filegateCallTimeoutMs } from "./filegate-facade";
 
 const prefix = "https://filegate.test/v1/roots/cloud/uploads/sessions";
 const slow = 10 * 60 * 1000;

@@ -8,9 +8,9 @@ const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "detail-float.fixture.ts");
 const fixture = `
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, DetailPanel, DataTable, MovedHint, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, appWorkspaceDetailElementId, DetailPanel, DataTable, MovedHint, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const params = new URLSearchParams(document.body.dataset.params);
 const [open, setOpen] = createSignal(params.has("initial"));
 let selected = 0;
@@ -29,6 +29,18 @@ const mainContent = () => {
   toolbar.id = "toolbar";
   toolbar.textContent = "Fixed toolbar";
   toolbar.style.cssText = "height:40px;flex-shrink:0";
+  if (params.has("request-control")) {
+    const toggle = document.createElement("button");
+    toggle.id = "reader-toggle";
+    toggle.textContent = "Reader";
+    toggle.setAttribute("aria-controls", appWorkspaceDetailElementId("record"));
+    createEffect(() => toggle.setAttribute("aria-pressed", String(open())));
+    toggle.addEventListener("click", () => {
+      document.body.dataset.toggleClicks = String(Number(document.body.dataset.toggleClicks || 0) + 1);
+      setOpen(value => !value);
+    });
+    toolbar.append(toggle);
+  }
   let hint = null;
   if (params.has("moved-hint")) {
     const target = document.createElement("button");
@@ -73,9 +85,9 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancesto
   get children() { return [
     createComponent(AppWorkspace.Sidebar, { id:"navigation", maxSize:960, get children() { return createComponent(AppWorkspace.SidebarDesktop, {get children() {return createComponent(AppWorkspace.SidebarItem, {href:"/devices", active:true, children:"Devices"});}}); } }),
     createComponent(AppWorkspace.Content, { get children() { return [
-      createComponent(AppWorkspace.Main, { class:"fixture-main", minWidth:params.has("moved-hint") ? 760 : undefined, scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
+      createComponent(AppWorkspace.Main, { class:"fixture-main", minWidth:params.has("moved-hint") || params.has("request-control") ? 760 : undefined, scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
       createComponent(AppWorkspace.Detail, {
-        id:"record", phone:params.has("phone-page") ? "page" : "sheet", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
+        id:"record", openOnChoice:!params.has("request-control"), phone:params.has("phone-page") ? "page" : "sheet", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
           document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + direction);
           const count = document.querySelectorAll('[id^="row-"]').length;
           selected = Math.max(0, Math.min(count - 1, selected + direction));
@@ -925,6 +937,60 @@ describe("floating workspace detail", () => {
       await page.close();
     }
   });
+
+  for (const activation of ["pointer", "Enter", "Space"] as const) {
+    test(`a Main toggle's ${activation} activation opens and parks an already-open waiting Detail`, async () => {
+      const page = await load(1194, 900, "initial=1&request-control=1");
+      try {
+        const detail = page.locator(".k2b-app-workspace__detail");
+        const control = page.locator("#reader-toggle");
+        expect(await control.getAttribute("aria-controls")).toBe(await detail.getAttribute("id"));
+        expect(await detail.isVisible()).toBe(false);
+        expect(await control.getAttribute("aria-expanded")).toBe("false");
+        const activate = async () => {
+          if (activation === "pointer") await control.click();
+          else {
+            await control.focus();
+            await page.keyboard.press(activation);
+          }
+          await settlePanel(page);
+        };
+        await activate();
+        expect(await detail.isVisible()).toBe(true);
+        expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+        expect(await control.getAttribute("aria-expanded")).toBe("true");
+        expect(await control.getAttribute("aria-pressed")).toBe("true");
+        expect(await page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent)).toBe(
+          activation === "pointer" ? "reader-toggle" : "Selected record",
+        );
+        await activate();
+        expect(await detail.isVisible()).toBe(false);
+        expect(await control.getAttribute("aria-expanded")).toBe("false");
+        await activate();
+        await detail.locator("h2").focus();
+        await page.keyboard.press("Escape");
+        await settlePanel(page);
+        expect(await detail.isVisible()).toBe(false);
+        expect(await control.getAttribute("aria-expanded")).toBe("false");
+        expect(await page.locator("[data-app-workspace-detail-toggle]").evaluate((element) => element === document.activeElement)).toBe(
+          true,
+        );
+        expect(await detail.getAttribute("hidden")).toBeNull();
+        expect(await control.getAttribute("aria-pressed")).toBe("true");
+        expect(await page.locator("body").getAttribute("data-toggle-clicks")).toBeNull();
+
+        await page.setViewportSize({ width: 1600, height: 900 });
+        await page.waitForFunction(() => !document.getElementById("reader-toggle")!.hasAttribute("aria-expanded"));
+        expect(await detail.isVisible()).toBe(true);
+        await control.click();
+        expect(await detail.getAttribute("hidden")).not.toBeNull();
+        expect(await control.getAttribute("aria-pressed")).toBe("false");
+        expect(await page.locator("body").getAttribute("data-toggle-clicks")).toBe("1");
+      } finally {
+        await page.close();
+      }
+    });
+  }
 
   test("an open MovedHint leaves detail J/K stepping and Escape drawer parking available", async () => {
     const page = await load(1194, 900, "initial=1&moved-hint=1");

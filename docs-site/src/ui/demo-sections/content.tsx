@@ -28,12 +28,17 @@ import {
   LinkCard,
   LocaleProvider,
   LogEntriesTable,
+  MapView,
+  type MapViewMarker,
+  type MapViewOwnLocation,
+  type MapViewStyle,
   MarkdownEditor,
   MarkdownView,
   MessageRow,
   type MessageRowAttachment,
   type MessageRowStatus,
   MessageSystemRow,
+  mapPalette,
   NoticeCard,
   Pagination,
   PanelDialog,
@@ -72,6 +77,173 @@ import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";
+
+const mapDemoMarkers: MapViewMarker[] = [
+  { id: "museum", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
+  { id: "garden", mark: 2, label: "Garden", point: { lat: 48.403, lon: 9.999 }, tone: "second" },
+  { id: "start", mark: "A", label: "Start", point: { lat: 48.398, lon: 9.992 }, tone: "second" },
+];
+const mapDemoBox = (kind: string, west: number, south: number, east: number, north: number) => ({
+  type: "Feature" as const,
+  properties: { kind },
+  geometry: {
+    type: "Polygon" as const,
+    coordinates: [
+      [
+        [west, south],
+        [east, south],
+        [east, north],
+        [west, north],
+        [west, south],
+      ],
+    ],
+  },
+});
+const mapDemoRoad = (kind: string, coordinates: [number, number][]) => ({
+  type: "Feature" as const,
+  properties: { kind },
+  geometry: { type: "LineString" as const, coordinates },
+});
+// Demo geometry painted with the real mapPalette; a host passes mapStyle() with its tile and glyph templates instead.
+const mapDemoStyle = (dark: boolean): MapViewStyle => {
+  const colors = mapPalette[dark ? "dark" : "light"];
+  const line = (kind: string, color: string, width: number) => ({
+    id: `${kind}-${color}`,
+    type: "line" as const,
+    source: "features",
+    filter: ["==", ["get", "kind"], kind] as ["==", ["get", string], string],
+    layout: { "line-cap": "round" as const, "line-join": "round" as const },
+    paint: { "line-color": color, "line-width": width },
+  });
+  return {
+    version: 8,
+    sources: {
+      features: {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: { kind: "water" },
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  [
+                    [9.976, 48.395],
+                    [10.008, 48.4],
+                    [10.008, 48.401],
+                    [9.976, 48.396],
+                    [9.976, 48.395],
+                  ],
+                ],
+              },
+            },
+            mapDemoBox("green", 9.996, 48.402, 10.003, 48.406),
+            mapDemoBox("green", 9.981, 48.402, 9.985, 48.405),
+            mapDemoBox("building", 9.9875, 48.3995, 9.9905, 48.4012),
+            mapDemoBox("building", 9.9925, 48.4002, 9.9952, 48.4018),
+            mapDemoBox("building", 9.9875, 48.4032, 9.9935, 48.4046),
+            mapDemoRoad("minor", [
+              [9.979, 48.4005],
+              [10.006, 48.4025],
+            ]),
+            mapDemoRoad("minor", [
+              [9.991, 48.396],
+              [9.9915, 48.408],
+            ]),
+            mapDemoRoad("major", [
+              [9.976, 48.3975],
+              [9.99, 48.3985],
+              [10.008, 48.4022],
+            ]),
+          ],
+        },
+      },
+    },
+    layers: [
+      { id: "land", type: "background", paint: { "background-color": colors.land } },
+      { id: "water", type: "fill", source: "features", filter: ["==", ["get", "kind"], "water"], paint: { "fill-color": colors.water } },
+      { id: "green", type: "fill", source: "features", filter: ["==", ["get", "kind"], "green"], paint: { "fill-color": colors.green } },
+      {
+        id: "building",
+        type: "fill",
+        source: "features",
+        filter: ["==", ["get", "kind"], "building"],
+        paint: { "fill-color": colors.building },
+      },
+      line("minor", colors.roadCasing, 6),
+      line("major", colors.roadCasing, 9),
+      line("minor", colors.road, 4.5),
+      line("major", colors.road, 7.5),
+    ],
+  };
+};
+const mapDemoStyles = { light: mapDemoStyle(false), dark: mapDemoStyle(true) };
+const MapViewDemo = () => {
+  const [selectedId, setSelectedId] = createSignal("museum");
+  const [location, setLocation] = createSignal<MapViewOwnLocation>();
+  return (
+    <DemoCard
+      id="map-view"
+      chip={[{ kind: "component", name: "MapView", from: "@k2b/ui" }]}
+      description="Pins and routes keep their position while the map image loads. The host list and info tile share selection. The demo paints its own shapes in the map palette."
+      code={
+        '<MapView height={360} style={styles} markers={markers} selectedId={selectedId()} onSelect={setSelectedId} attribution="Demo data" />'
+      }
+    >
+      <MapView
+        height={360}
+        style={mapDemoStyles}
+        markers={mapDemoMarkers}
+        selectedId={selectedId()}
+        onSelect={setSelectedId}
+        attribution="Demo data"
+        notice="A walk around Ulm"
+        infoTile={(marker) => <strong>{marker.label}</strong>}
+        lines={[
+          {
+            id: "walk",
+            points: [
+              { lat: 48.398, lon: 9.992 },
+              { lat: 48.401, lon: 9.994 },
+              { lat: 48.403, lon: 9.999 },
+            ],
+          },
+          {
+            id: "preview",
+            tone: "preview",
+            points: [
+              { lat: 48.403, lon: 9.999 },
+              { lat: 48.405, lon: 9.989 },
+            ],
+          },
+        ]}
+        areas={[
+          {
+            id: "garden",
+            tone: "second",
+            polygon: [
+              { lat: 48.402, lon: 9.996 },
+              { lat: 48.402, lon: 10.003 },
+              { lat: 48.406, lon: 10.003 },
+              { lat: 48.406, lon: 9.996 },
+            ],
+          },
+        ]}
+        ownLocation={location()}
+        onLocate={() => setLocation({ point: { lat: 48.4, lon: 9.99 }, accuracyMeters: 35 })}
+      />
+      <div class="flex flex-wrap gap-2 mt-3">
+        {mapDemoMarkers.map((marker) => (
+          <Button variant="text" aria-pressed={selectedId() === marker.id} onClick={() => setSelectedId(marker.id)}>
+            {marker.mark} {marker.label}
+          </Button>
+        ))}
+      </div>
+    </DemoCard>
+  );
+};
 
 type Row = { id: string; name: string; owner: string; requests: number };
 const rows: Row[] = [
@@ -1683,6 +1855,7 @@ const KbdHintDemo = () => {
 };
 
 const demos: DemoSection = {
+  "map-view": () => <MapViewDemo />,
   kbd: () => (
     <DemoGrid>
       <DemoCard

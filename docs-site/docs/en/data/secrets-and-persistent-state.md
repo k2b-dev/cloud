@@ -5,7 +5,7 @@ section: Data
 order: 440
 description: Store sensitive configuration and durable application state in the correct platform service.
 tags: [data, secrets, encryption, settings, valkey, storage, https, ssrf]
-updated: 2026-10-16
+updated: 2026-10-20
 ---
 
 # Secrets and persistent state
@@ -297,7 +297,9 @@ Well-known NAT64 addresses are judged by their embedded IPv4 address.
 
 It then connects to the address it checked, without a second lookup, so a DNS
 answer that changes in between cannot move the request. TLS still verifies the
-certificate for the URL's host name.
+certificate for the URL's host name. A response above `maxBytes` is stopped
+with `HTTP_TOO_LARGE`, including when its declared content length already
+exceeds the limit. Connection and response failures use `HTTP_FAILED`.
 
 For transports `requestPublicHttps` cannot cover, such as IMAP, SMTP, or a
 plain-HTTP tester, resolve with `resolvePublicNetworkAddresses` from
@@ -400,8 +402,9 @@ headers: content-type, retry-after, etag and last-modified.
   means.
 - A redirect resolves with its status and an empty body. `Location` is not
   returned, so the caller cannot follow it either.
-- A compressed response, a body above `maxBytes`, and a connection or TLS
-  failure throw `HTTP_FAILED`, and so does a cancellation after the name
+- A body above `maxBytes` throws `HTTP_TOO_LARGE`.
+- A compressed response or a connection or TLS failure throws `HTTP_FAILED`,
+  and so does a cancellation after the name
   lookup. A failed lookup and an earlier cancellation throw other errors, so
   treat every thrown error as a failed request. Errors never contain the
   request's headers or credentials.

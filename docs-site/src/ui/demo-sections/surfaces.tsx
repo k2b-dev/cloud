@@ -1,14 +1,21 @@
 import {
+  AppWorkspace,
   Avatar,
   AvatarStack,
   Button,
   Calendar,
   type CalendarEvent,
+  Checkbox,
   DataPanel,
+  DataTable,
   DateTimePicker,
   DescriptionList,
+  FileTypeIcon,
+  FilterChip,
+  FilterToggle,
   IconButton,
   LinkCard,
+  MarkdownView,
   MultiSelectInput,
   NotFoundState,
   NoticeCard,
@@ -27,13 +34,17 @@ import {
   StatCell,
   StatGrid,
   StatusBadge,
+  Switch,
+  Tabs,
   TextInput,
   Timeline,
   type TimelineItem,
+  ViewTabs,
 } from "@k2b/ui";
 import baseCss from "@k2b/ui/base.css" with { type: "text" };
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { type ColorDemoHost, colorDemoHosts } from "./color-hosts";
 import { DemoGrid, type DemoSection } from "./types";
 
 const violetTheme = {
@@ -67,20 +78,16 @@ const violetTheme = { /* --k2b-accent-50 through --k2b-accent-950 */ };
   class="k2b-ui ui-theme-demo"
   style={violet() ? violetTheme : undefined}
 >
-  <Button
-    variant={violet() ? "secondary" : "primary"}
-    aria-pressed={!violet()}
-    onClick={() => setViolet(false)}
-  >
-    Default blue
-  </Button>
-  <Button
-    variant={violet() ? "primary" : "secondary"}
-    aria-pressed={violet()}
-    onClick={() => setViolet(true)}
-  >
-    Violet
-  </Button>
+  <SegmentedControl
+    ariaLabel="Accent theme"
+    value={violet() ? "violet" : "blue"}
+    onValueChange={(value) => setViolet(value === "violet")}
+    options={[
+      { value: "blue", label: "Default blue" },
+      { value: "violet", label: "Violet" },
+    ]}
+  />
+  <Button>Primary action</Button>
   <Button variant="ghost"><i class="ti ti-palette" /> Themed icon</Button>
 </div>`}
     >
@@ -99,13 +106,17 @@ const violetTheme = { /* --k2b-accent-50 through --k2b-accent-950 */ };
             <code>--k2b-text</code>
           </div>
         </div>
-        <div class="ui-theme-demo__actions" role="group" aria-label="Accent theme">
-          <Button variant={violet() ? "secondary" : "primary"} aria-pressed={!violet()} onClick={() => setViolet(false)}>
-            Default blue
-          </Button>
-          <Button variant={violet() ? "primary" : "secondary"} aria-pressed={violet()} onClick={() => setViolet(true)}>
-            Violet
-          </Button>
+        <div class="ui-theme-demo__actions">
+          <SegmentedControl
+            ariaLabel="Accent theme"
+            value={violet() ? "violet" : "blue"}
+            onValueChange={(value) => setViolet(value === "violet")}
+            options={[
+              { value: "blue", label: "Default blue" },
+              { value: "violet", label: "Violet" },
+            ]}
+          />
+          <Button>Primary action</Button>
           <Button variant="ghost">
             <i class="ti ti-palette" aria-hidden="true" />
             Themed icon
@@ -115,6 +126,210 @@ const violetTheme = { /* --k2b-accent-50 through --k2b-accent-950 */ };
     </DemoCard>
   );
 };
+
+type ColorTask = { id: string; name: string; status: string };
+const colorTasks: ColorTask[] = [
+  { id: "brief", name: "Review the project brief", status: "Open" },
+  { id: "workshop", name: "Prepare the workshop", status: "Done" },
+];
+const colorTaskColumns = [
+  { id: "name", header: "Task", value: "name" },
+  { id: "status", header: "Status", value: "status" },
+] as const;
+
+/** Light and dark selection hooks of one host; ui-catalog.css picks the theme. */
+const colorHostStyle = (host: ColorDemoHost) =>
+  ({
+    "--ui-color-ink-light": host.light.ink,
+    "--ui-color-ink-dark": host.dark.ink,
+    "--ui-color-row-light": host.light.selected,
+    "--ui-color-row-dark": host.dark.selected,
+    "--ui-color-nav-light": host.light.selectedNav,
+    "--ui-color-nav-dark": host.dark.selectedNav,
+  }) as JSX.CSSProperties;
+
+const ColorHost = (props: { host: ColorDemoHost }) => {
+  const [place, setPlace] = createSignal("customer");
+  const [section, setSection] = createSignal("tasks");
+  const [range, setRange] = createSignal("week");
+  const [tags, setTags] = createSignal<string[]>(["customer"]);
+  const [mine, setMine] = createSignal(true);
+  const [row, setRow] = createSignal("brief");
+  const [notify, setNotify] = createSignal(true);
+  const [sync, setSync] = createSignal(true);
+  const id = (name: string) => `color-${props.host.id}-${name}`;
+
+  return (
+    <section class="ui-color-host" style={colorHostStyle(props.host)} aria-labelledby={id("title")}>
+      <header class="ui-color-host__head">
+        <span class="k2b-icon-tile ui-color-host__tile" aria-hidden="true">
+          <i class="ti ti-layout-kanban" />
+        </span>
+        <h3 id={id("title")}>{props.host.label}</h3>
+        <code>{props.host.accent}</code>
+      </header>
+
+      <h4 class="ui-color-host__label">Selection takes the app color</h4>
+      <div class="ui-color-host__nav">
+        <For
+          each={[
+            { id: "customer", label: "Customer work", icon: "ti ti-briefcase", description: "12 tasks" },
+            { id: "operations", label: "Operations", icon: "ti ti-tool", description: "4 tasks" },
+          ]}
+        >
+          {(item) => (
+            <AppWorkspace.SidebarItem
+              variant="object"
+              icon={item.icon}
+              description={item.description}
+              active={place() === item.id}
+              onClick={() => setPlace(item.id)}
+            >
+              {item.label}
+            </AppWorkspace.SidebarItem>
+          )}
+        </For>
+      </div>
+      <ViewTabs
+        label={`${props.host.label} views`}
+        current="board"
+        items={[
+          { id: "board", label: "Board", icon: "ti ti-layout-kanban", href: "?view=board#color" },
+          { id: "list", label: "List", icon: "ti ti-list", href: "?view=list#color" },
+          { id: "calendar", label: "Calendar", icon: "ti ti-calendar", href: "?view=calendar#color" },
+        ]}
+      />
+      <Tabs
+        ariaLabel={`${props.host.label} sections`}
+        variant="pill"
+        value={section}
+        onValueChange={setSection}
+        options={[
+          { value: "tasks", label: "Tasks" },
+          { value: "notes", label: "Notes" },
+          { value: "files", label: "Files" },
+        ]}
+      />
+      <div class="ui-color-host__row">
+        <SegmentedControl
+          ariaLabel={`${props.host.label} range`}
+          size="sm"
+          value={range}
+          onValueChange={setRange}
+          options={[
+            { value: "day", label: "Day" },
+            { value: "week", label: "Week" },
+            { value: "month", label: "Month" },
+          ]}
+        />
+      </div>
+      <div class="ui-color-host__row">
+        <FilterChip
+          label="Tags"
+          icon="ti ti-tag"
+          showValue
+          value={tags()}
+          onValueChange={setTags}
+          defaultValue={[]}
+          options={[
+            {
+              options: [
+                { value: "customer", label: "Customer", color: "#14b8a6" },
+                { value: "urgent", label: "Urgent", color: "#ef4444" },
+              ],
+              multiple: true,
+            },
+          ]}
+        />
+        <FilterToggle label="Only mine" icon="ti ti-user" active={mine()} onClick={() => setMine(!mine())} />
+      </div>
+      <DataTable
+        rows={colorTasks}
+        columns={[...colorTaskColumns]}
+        getRowId={(task) => task.id}
+        selectedRowId={row()}
+        onRowClick={(task) => setRow(task.id)}
+        surface="plain"
+      />
+
+      <h4 class="ui-color-host__label">Controls stay platform blue</h4>
+      <div class="ui-color-host__row">
+        <Button>
+          <i class="ti ti-plus" aria-hidden="true" />
+          New task
+        </Button>
+        <Button variant="secondary" class="ui-color-host__focus">
+          Focus ring
+        </Button>
+      </div>
+      <div class="ui-color-host__row">
+        <Checkbox label="Notify me" value={notify} onValueChange={setNotify} />
+        <Switch label="Sync" value={sync} onValueChange={setSync} />
+      </div>
+
+      <h4 class="ui-color-host__label">Status and content keep their own color</h4>
+      <div class="ui-color-host__row">
+        <StatusBadge tone="ok" label="Healthy" />
+        <StatusBadge tone="warning" label="Waiting" />
+        <StatusBadge tone="error" label="Failed" />
+      </div>
+      <div class="ui-color-host__row" role="group" aria-label="Icon tiles">
+        <span class="k2b-icon-tile ui-color-host__tile" role="img" aria-label="App icon">
+          <i class="ti ti-layout-kanban" aria-hidden="true" />
+        </span>
+        <FileTypeIcon name="Projects" folder />
+        <FileTypeIcon name="report.pdf" />
+        <FileTypeIcon name="budget.xlsx" />
+        <span class="k2b-icon-tile ui-color-host__tile ui-color-host__tile--model" role="img" aria-label="Model icon">
+          <i class="ti ti-sparkles" aria-hidden="true" />
+        </span>
+      </div>
+      <MarkdownView markdown="Link text stays body ink; its underline follows the app ink: read the [project brief](https://example.com/brief)." />
+    </section>
+  );
+};
+
+const ColorDemo = () => (
+  <DemoCard
+    id="color"
+    chip={[
+      { kind: "component", name: "ViewTabs", from: "@k2b/ui" },
+      { kind: "component", name: "FilterChip", from: "@k2b/ui" },
+      { kind: "asset", name: "global.css", from: "@k2b/ui/global.css" },
+    ]}
+    description="Two hosts set the selection hooks and the link accent from a teal and a yellow app color, as Cloud does. Selected rows, views, segments, and filters take that color with readable ink; buttons, toggles, focus, and status do not change. The theme follows this site."
+    code={`/* CSS: the hooks for light and dark mode */
+.teal-app {
+  --k2b-app-workspace-selected: #e8f8f6;
+  --k2b-app-workspace-active: #0d7b6f;
+  --k2b-row-selected: #effaf9;
+}
+.k2b-ui[data-theme="dark"] .teal-app,
+.k2b-ui.k2b-dark .teal-app,
+.dark .k2b-ui .teal-app {
+  --k2b-app-workspace-selected: #123133;
+  --k2b-app-workspace-active: #14b8a6;
+  --k2b-row-selected: #112c2e;
+}
+
+/* Inside a .k2b-ui scope */
+<div class="teal-app">
+  <AppWorkspace.SidebarItem variant="object" icon="ti ti-briefcase" active>Customer work</AppWorkspace.SidebarItem>
+  <ViewTabs label="Views" current="board" items={views} />
+  <SegmentedControl ariaLabel="Range" value={range} onValueChange={setRange} options={ranges} />
+  <FilterChip label="Tags" icon="ti ti-tag" showValue value={tags()} onValueChange={setTags} options={tagOptions} />
+  <DataTable rows={tasks} columns={columns} getRowId={(task) => task.id} selectedRowId="brief" />
+  <Button>New task</Button>
+  <Checkbox label="Notify me" value={notify} onValueChange={setNotify} />
+  <Switch label="Sync" value={sync} onValueChange={setSync} />
+  <StatusBadge tone="ok" label="Healthy" />
+</div>`}
+  >
+    <div class="ui-color-hosts">
+      <For each={colorDemoHosts}>{(host) => <ColorHost host={host} />}</For>
+    </div>
+  </DemoCard>
+);
 
 /** A plain HTML page that uses no classes beyond the documented helpers. */
 const basePage = `<main>
@@ -964,6 +1179,11 @@ const demos: DemoSection = {
   utilities: () => (
     <DemoGrid columns="one">
       <ThemeDemo />
+    </DemoGrid>
+  ),
+  color: () => (
+    <DemoGrid columns="one">
+      <ColorDemo />
     </DemoGrid>
   ),
   "base-stylesheet": () => (

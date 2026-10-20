@@ -6,7 +6,7 @@ description: Automatische Antworten, Verarbeitung eingehender E-Mails und sicher
 order: 60
 ---
 
-Öffne **Postfachwerkzeuge → Automatisierungen**. Die seitenbreite Übersicht zeigt, was aktiv ist, und öffnet genau die Einrichtung, die du wählst. **Automatische Antworten** und **Eingehende E-Mails** decken häufige Aufgaben ab. Mit Zugriff **Verwalten** siehst du unter Erweitert außerdem **Aktivität** und **Workflows**.
+Öffne **… → Automatisierungen**. Die seitenbreite Übersicht zeigt, was aktiv ist, und öffnet genau die Einrichtung, die du wählst. **Automatische Antworten** und **Eingehende E-Mails** decken häufige Aufgaben ab. Mit Zugriff **Verwalten** siehst du unter Erweitert außerdem **Aktivität** und **Workflows**.
 
 ## Das passende Automatisierungswerkzeug wählen {icon="route"}
 
@@ -136,7 +136,7 @@ Nachrichten in Gesendet, Entwürfe, Papierkorb und Spam bleiben, wo sie sind, un
 ## Eine automatische Antwort einrichten {icon="send"}
 
 :::steps
-1. Bitte jemanden mit Zugriff **Verwalten**, eine Absenderidentität zu prüfen und dafür **Automatische Antworten** einzuschalten. Das geht unter **Einstellungen → Konten und Identitäten → Absenderidentitäten**.
+1. Bitte jemanden mit Zugriff **Verwalten**, eine Absenderidentität zu prüfen und dafür **Automatische Antworten** einzuschalten. Das geht unter **… → Einstellungen → Konten und Identitäten → Absenderidentitäten**.
 2. Öffne **Automatisierungen → Automatische Antworten**.
 3. Wähle **Automatische Antwort hinzufügen**.
 4. Wähle **Abwesenheitsnotiz**, **Empfangsbestätigung zu Bürozeiten**, **Empfangsbestätigung mit Referenznummer** oder **Eigene automatische Antwort**.
@@ -149,7 +149,7 @@ Die **Vorschau** listet die Formatierung auf, die in der E-Mail weggelassen wird
 
 Betreff und Nachrichten sind Liquid-Vorlagen. Nutze die Variablen, die du im Editor kopieren kannst, zum Beispiel `{{ inputs.message.subject }}`. Nachdem eine Referenz vergeben wurde, steht auch `{{ reference.value }}` zur Verfügung. Mail lehnt ungültige Syntax und nicht verfügbare Variablen ab, bevor es die Antwort speichert.
 
-In einem Postfach kann nur eine automatische Antwort gleichzeitig eingeschaltet sein. Schalte die aktive Einrichtung aus, bevor du eine andere einschaltest. Standardmäßig können nur Personen mit Zugriff **Verwalten** automatische Antworten ändern. Sie können das unter **Einstellungen → Zugriff → Verwaltungszugriff für automatische Antworten** auch Personen mit Zugriff **Bearbeiten** erlauben.
+In einem Postfach kann nur eine automatische Antwort gleichzeitig eingeschaltet sein. Schalte die aktive Einrichtung aus, bevor du eine andere einschaltest. Standardmäßig können nur Personen mit Zugriff **Verwalten** automatische Antworten ändern. Sie können das unter **… → Einstellungen → Zugriff → Verwaltungszugriff für automatische Antworten** auch Personen mit Zugriff **Bearbeiten** erlauben.
 
 Mail antwortet nicht auf Nachrichten, die für automatische Antworten unsicher sind. Dazu gehören E-Mails von Mailinglisten, Massen-E-Mails, Zustellberichte, Nachrichten aus dem Postfach selbst und Nachrichten, die automatische Antworten ausdrücklich unterdrücken. Eine unterdrückte Antwort bleibt Teil der Aktivität und des Laufverlaufs. Mail macht daraus nicht still einen normalen Entwurf.
 

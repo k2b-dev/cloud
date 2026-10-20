@@ -5,6 +5,7 @@ import { Layout } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import { ssr } from "../config";
 import { BrowseQuerySchema, EntryQuerySchema, SearchQuerySchema } from "../contracts";
+import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
 import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
@@ -16,7 +17,6 @@ import type { WorkspaceSnapshot } from "./workspace-state";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = filesMessages.resolve([getLocale(c)]);
-  const actor = c.get("actor");
   const query = BrowseQuerySchema.safeParse(c.req.query());
   if (!query.success) return ssr.error(c, 400);
   const requestedFile = c.req.query("file");
@@ -44,7 +44,7 @@ export default ssr<AuthContext>(async (c) => {
     errorCode: null,
   };
   try {
-    initial.bases = await filesService.bases(actor);
+    initial.bases = await filesService.bases(requestCall(c));
     const overview = showsOverview(source.searchParams, initial.bases.items.length);
     const selected = overview
       ? undefined
@@ -56,18 +56,18 @@ export default ssr<AuthContext>(async (c) => {
     browse = browseOptions(new URL(c.req.url).searchParams, viewFor(preferences, selected?.id ?? ""));
     for (const [key, value] of Object.entries(browse)) source.searchParams.set(key, String(value));
     initial.source = `${source.pathname}${source.search}`;
-    if (view === "shares") initial.shares = await filesService.listShares(actor);
-    else if (view === "recent") initial.marks = await filesService.recent(actor);
-    else if (view === "favorites") initial.marks = await filesService.favorites(actor);
+    if (view === "shares") initial.shares = await filesService.listShares(requestCall(c));
+    else if (view === "recent") initial.marks = await filesService.recent(requestCall(c));
+    else if (view === "favorites") initial.marks = await filesService.favorites(requestCall(c));
     else if (editView && selected?.status === "existing")
-      initial.editor = await filesService.editor(actor, { baseId: selected.id, path: requestedFile! });
+      initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
       initial.directory = search
-        ? await filesService.search(actor, { baseId: selected.id, ...query.data, ...browse, q: search, scope })
-        : await filesService.list(actor, { baseId: selected.id, ...query.data, ...browse });
+        ? await filesService.search(requestCall(c), { baseId: selected.id, ...query.data, ...browse, q: search, scope })
+        : await filesService.list(requestCall(c), { baseId: selected.id, ...query.data, ...browse });
       if (requestedFile) {
         // Detail failures belong to the inspector, not the surrounding directory.
-        initial.detail = await filesService.entry(actor, { baseId: selected.id, path: requestedFile }).catch(() => null);
+        initial.detail = await filesService.entry(requestCall(c), { baseId: selected.id, path: requestedFile }).catch(() => null);
       }
     }
   } catch (error) {

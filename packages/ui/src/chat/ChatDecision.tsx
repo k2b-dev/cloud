@@ -75,6 +75,17 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   const [answeredHere, setAnsweredHere] = createSignal(false);
   const [arrive, setArrive] = createSignal(false);
   let reopenedHere = false;
+  // A press on the sentence focuses it too; only a focus moved there from elsewhere, such as a jump, lights it up.
+  // The browser also focuses the sentence again when its window comes back; that is no arrival either.
+  let sentencePressed = false;
+  let sentenceHeldAcrossWindow = false;
+  const windowLeft = () => {
+    if (sentence && document.activeElement === sentence) sentenceHeldAcrossWindow = true;
+  };
+  onMount(() => {
+    window.addEventListener("blur", windowLeft);
+    onCleanup(() => window.removeEventListener("blur", windowLeft));
+  });
   // A press counts only while its action runs: a reopen from elsewhere later must not take the focus.
   const scope = {
     answered: answeredHere,
@@ -144,6 +155,20 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
             class="k2b-chat-decision__sentence"
             tabindex="-1"
             data-arrive={arrive() ? "true" : undefined}
+            onPointerDown={() => {
+              sentencePressed = true;
+            }}
+            onPointerUp={() => {
+              sentencePressed = false;
+            }}
+            onPointerCancel={() => {
+              sentencePressed = false;
+            }}
+            onFocus={() => {
+              if (!sentencePressed && !sentenceHeldAcrossWindow) setArrive(true);
+              sentencePressed = false;
+              sentenceHeldAcrossWindow = false;
+            }}
             onAnimationEnd={() => setArrive(false)}
           >
             {props.sentence}

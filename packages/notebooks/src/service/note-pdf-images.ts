@@ -1,3 +1,4 @@
+import { requestPublicHttps } from "@k2b/cloud/services";
 import {
   GotenbergRenderError,
   type MarkdownPdfTemplateId,
@@ -11,6 +12,7 @@ import type { BookImagePlacement } from "../lib/book-renderer";
 import { bookRendererMessages } from "../lib/book-renderer-messages";
 import { type NotePdfOmission, type NotePdfOmissionCode, notePdfOmissionLabel } from "../lib/pdf-omissions";
 import * as attachments from "./attachments";
+import { fetchNotePdfExternalImage, type NotePdfImageRequest } from "./note-pdf-external-image";
 
 // A4 minus the named presets' @page margins in packages/cloud/src/services/pdf/markdown.ts.
 export const NOTE_PDF_PAGE_BOX_MM = {
@@ -22,7 +24,7 @@ const DPI = [300, 200, 150];
 const escape = highlight.escape;
 const bytes = (value: string) => new TextEncoder().encode(value).byteLength;
 const attachmentId = (href: string) => /^attach:\/\/([A-Za-z0-9]{6})$/.exec(href)?.[1];
-type ImageCode = Exclude<NotePdfOmissionCode, "invalid_block">;
+type ImageCode = Exclude<NotePdfOmissionCode, "invalid_block" | "not_rendered">;
 const IMAGE_CODES: ImageCode[] = [
   "not_found",
   "unsupported_format",
@@ -31,7 +33,6 @@ const IMAGE_CODES: ImageCode[] = [
   "over_budget",
   "timed_out",
   "blocked",
-  "not_rendered",
   "unreachable",
 ];
 
@@ -66,19 +67,21 @@ function externalLabel(href: string): string | null {
 }
 
 export type NotePdfImageDependencies = {
+  request: NotePdfImageRequest;
   list: typeof attachments.listByShortIds;
   content: typeof attachments.getContentInNotebook;
   prepare: typeof preparePdfImage;
   now: () => number;
 };
 const defaults: NotePdfImageDependencies = {
+  request: requestPublicHttps,
   list: attachments.listByShortIds,
   content: attachments.getContentInNotebook,
   prepare: preparePdfImage,
   now: Date.now,
 };
 
-/** Resolve only notebook-owned attachments, and retain at most one input budget per tier. */
+/** Resolve notebook-owned attachments and public images, retaining at most one input budget per tier. */
 export async function prepareNotePdfImages(
   input: {
     html: string;
@@ -111,10 +114,25 @@ export async function prepareNotePdfImages(
       ? await deps.list({ shortIds, notebookId: input.notebookId })
       : [];
   const metadata = new Map(rows.filter((row) => row.notebookId === input.notebookId).map((row) => [row.shortId, row]));
-  const label = (image: BookImagePlacement) =>
-    notePdfOmissionLabel(image.alt || metadata.get(attachmentId(image.href) ?? "")?.filename || externalLabel(image.href) || "");
+  // A pasted web address is not a prose label. Use the redacted source instead:
+  // guessing its end could leave credential/query tails after quotes or whitespace.
+  // WHATWG URL removes tabs and newlines even inside a scheme.
+  const externalAlt = (image: BookImagePlacement) => (/https?:/iu.test(image.alt.replace(/[\t\r\n]/gu, "")) ? "" : image.alt);
+  const label = (image: BookImagePlacement) => {
+    const url = externalLabel(image.href);
+    if (url !== null) {
+      const alt = externalAlt(image);
+      return notePdfOmissionLabel(alt ? `${alt} (${url})` : url);
+    }
+    return notePdfOmissionLabel(externalAlt(image) || metadata.get(attachmentId(image.href) ?? "")?.filename || "");
+  };
   const placeholder = (image: BookImagePlacement, code: ImageCode) => {
-    const text = t.imageNotIncluded({ label: label(image), reason: t[`imagePlaceholder_${code}`] });
+    const url = externalLabel(image.href);
+    const text = t.imageNotIncluded({
+      label: url !== null ? notePdfOmissionLabel(externalAlt(image)) : label(image),
+      reason: t[`imagePlaceholder_${code}`],
+      ...(url !== null ? { url: notePdfOmissionLabel(url) } : {}),
+    });
     return `<span class="notebook-book-image-missing" role="img" aria-label="${escape(text)}">${escape(text)}</span>`;
   };
   // Reserve the larger of an image and every possible localized placeholder at each surviving placement.
@@ -136,14 +154,32 @@ export async function prepareNotePdfImages(
   const tiers = DPI.map(() => ({ alive: true, total: 0, variants: new Map<string, PdfImageVariant>() }));
   let draftFull = false;
   let peakRetainedBytes = 0;
-  // Keep content scoped to this call so it is released before the next attachment is loaded.
-  const prepare = async (row: attachments.Attachment, placements: BookImagePlacement[]) => {
-    const loaded = await deps.content({ id: row.id, notebookId: input.notebookId });
-    if (!loaded) return { ok: false, code: "not_found" } as const;
+  // Keep source bytes scoped to this call so they are released before the next source loads.
+  const prepare = async (href: string, row: attachments.Attachment | undefined, placements: BookImagePlacement[]) => {
+    let data: Uint8Array;
+    if (row) {
+      const loaded = await deps.content({ id: row.id, notebookId: input.notebookId });
+      if (!loaded) return { ok: false, code: "not_found" } as const;
+      data = loaded.content;
+    } else {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), Math.max(0, input.deadline - deps.now()));
+      try {
+        const fetched = await fetchNotePdfExternalImage(href, {
+          request: deps.request,
+          maxBytes: Math.min(input.maxAttachmentBytes, PDF_IMAGE_MAX_INPUT_BYTES),
+          signal: AbortSignal.any([input.signal, controller.signal]),
+        });
+        if (!fetched.ok) return fetched;
+        data = fetched.data;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
     if (input.signal.aborted || deps.now() >= input.deadline) return { ok: false, code: "timed_out" } as const;
     return deps.prepare(
       {
-        data: loaded.content,
+        data,
         boxes: notePdfImageBoxes(placements, input.preset),
         maxBytes: Math.min(remaining, PDF_IMAGE_MAX_INPUT_BYTES),
       },
@@ -152,27 +188,29 @@ export async function prepareNotePdfImages(
   };
   for (const [href, group] of groups) {
     const id = attachmentId(href);
-    if (!id) {
-      group.code = externalLabel(href) === null ? "blocked" : "not_rendered";
+    if (!id && externalLabel(href) === null) {
+      group.code = "blocked";
       continue;
     }
     if (input.signal.aborted || deps.now() >= input.deadline) {
       group.code = "timed_out";
       continue;
     }
-    const row = metadata.get(id);
-    if (!row) {
-      group.code = "not_found";
-      continue;
-    }
-    if (!row.mimeType.startsWith("image/") || row.mimeType === "image/svg+xml") {
-      group.code = "unsupported_format";
-      continue;
-    }
-    // The image worker rejects larger inputs anyway; never load bytes it cannot take.
-    if (row.sizeBytes > Math.min(input.maxAttachmentBytes, PDF_IMAGE_MAX_INPUT_BYTES)) {
-      group.code = "too_large";
-      continue;
+    const row = id ? metadata.get(id) : undefined;
+    if (id) {
+      if (!row) {
+        group.code = "not_found";
+        continue;
+      }
+      if (!row.mimeType.startsWith("image/") || row.mimeType === "image/svg+xml") {
+        group.code = "unsupported_format";
+        continue;
+      }
+      // The image worker rejects larger inputs anyway; never load bytes it cannot take.
+      if (row.sizeBytes > Math.min(input.maxAttachmentBytes, PDF_IMAGE_MAX_INPUT_BYTES)) {
+        group.code = "too_large";
+        continue;
+      }
     }
     if (remaining <= 0 || (!tiers[0]!.alive && !tiers[1]!.alive && draftFull)) {
       group.code = "over_budget";
@@ -180,7 +218,7 @@ export async function prepareNotePdfImages(
     }
     let result: Awaited<ReturnType<typeof prepare>>;
     try {
-      result = await prepare(row, group.placements);
+      result = await prepare(href, row, group.placements);
     } catch (error) {
       if (!input.signal.aborted && deps.now() < input.deadline) throw error;
       group.code = "timed_out";

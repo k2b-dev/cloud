@@ -2,6 +2,7 @@ import { type AuthContext, middleware, requiresAuth, v } from "@k2b/cloud/server
 import { Hono } from "hono";
 import { z } from "zod";
 import { DownloadInputSchema } from "../contracts";
+import { requestCall } from "../files-call";
 import { filesService } from "../service";
 
 /** The browser's viewer shows the PDF; nothing from the response may load, submit, or be framed. */
@@ -36,5 +37,5 @@ export const inlinePdfApi = new Hono<AuthContext>().get(
   "/bases/:baseId/pdf/:path{.+}",
   middleware.openapi({ summary: "Open a stored PDF in the browser's PDF viewer", ...requiresAuth }),
   v("param", z.object({ baseId: z.string().min(1), path: DownloadInputSchema.shape.path })),
-  async (c) => inlinePdfResponse(await filesService.inlinePdf(c.get("actor"), c.req.valid("param"), c.req.raw.signal)),
+  async (c) => inlinePdfResponse(await filesService.inlinePdf(requestCall(c), c.req.valid("param"), c.req.raw.signal)),
 );

@@ -12,7 +12,17 @@ import {
 } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
+import {
+  AppWorkspace,
+  type AppWorkspaceWidthShare,
+  announce,
+  openSpotlightSearch,
+  Placeholder,
+  prompts,
+  type ToastHandle,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -28,13 +38,15 @@ import type { ConversationPresenceSnapshot } from "../service/presence";
 import type { MailboxListView, MailboxPageData, MailConversationDetailData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
+import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailConversationList from "./_components/MailConversationList";
-import MailConversationReader from "./_components/MailConversationReader";
+import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
-import MailSidebar from "./_components/MailSidebar";
+import MailSidebar, { type MailSidebarMailbox } from "./_components/MailSidebar";
+import { MailboxHeadFilters, MailboxViewTabs, MailListModeMenu } from "./_components/MailWorkspaceHead";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import { createMailActionQueue } from "./_components/mail-action-queue";
 import {
@@ -64,7 +76,7 @@ import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
 import { createRetryToasts } from "./_components/mail-feedback";
-import { onlyInFolderFolders } from "./_components/mail-folder-tree";
+import { buildVisibleMailFolderTree, flattenMailFolderTree, onlyInFolderFolders } from "./_components/mail-folder-tree";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
@@ -80,6 +92,7 @@ import {
   projectMailCounts,
   projectMailList,
 } from "./_components/mail-list-projection";
+import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
 import {
   buildMailListHref,
   buildMailSearchClearHref,
@@ -91,7 +104,9 @@ import {
 import { createMailPresenceSession } from "./_components/mail-presence-session";
 import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";
+import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
+import { mailboxCurrentTab, mailboxViewTabs } from "./_components/mail-view-tabs";
 import {
   decideMailAutoReadIntent,
   type MailWorkspaceActionOptions,
@@ -108,6 +123,20 @@ import {
 } from "./_components/mail-workspace-refresh";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 import { assertCursorProgress } from "./pagination";
+
+/**
+ * F2, wide windows: the list grows with the app card from 320 to 440 px (25 % of the card minus 24 px); its pane
+ * also holds the 12 px gap to the reader. A Detail is a column only while the reader beside the list keeps 440 px,
+ * so Main's minimum is the list pane plus that reader width.
+ */
+const MAIL_READER_BESIDE_DETAIL = 440;
+const MAIL_LIST_WIDTH = { share: 0.25, offset: -12, min: 332, max: 452 } satisfies AppWorkspaceWidthShare;
+const MAIL_MAIN_WITH_LIST = {
+  share: MAIL_LIST_WIDTH.share,
+  offset: MAIL_LIST_WIDTH.offset + MAIL_READER_BESIDE_DETAIL,
+  min: MAIL_LIST_WIDTH.min + MAIL_READER_BESIDE_DETAIL,
+  max: MAIL_LIST_WIDTH.max + MAIL_READER_BESIDE_DETAIL,
+} satisfies AppWorkspaceWidthShare;
 
 const rank = (permission: string): number => (permission === "admin" ? 3 : permission === "write" ? 2 : permission === "read" ? 1 : 0);
 const mailListScope = (href: string): string => {
@@ -139,6 +168,12 @@ function MailWorkspaceView(props: {
   /** `null` under Automatic: only the browser knows the device scheme, and it is read on mount. */
   initialTheme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
+  /** The mailboxes the sidebar lists, with this person's pins and hidden mailboxes. */
+  sidebar: {
+    mailboxes: MailSidebarMailbox[];
+    pinnedMailboxIds: string[];
+    hiddenMailboxIds: string[];
+  };
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
@@ -161,10 +196,6 @@ function MailWorkspaceView(props: {
   /** The live subscription has applied every update the server sent, so the counts and folders shown are current. */
   let liveCaughtUp = false;
   const activeSearch = () => data.search;
-  const activeTagId = createMemo(() => {
-    const expression = activeSearch().expression;
-    return expression?.type === "local_tag_id" ? expression.tagId : null;
-  });
   const [conversationSelection, setConversationSelection] = createSignal(emptyMailConversationSelection());
   const [selectionMode, setSelectionMode] = createSignal(false);
   const [conversationOpenIntent, setConversationOpenIntent] = createSignal(0);
@@ -646,7 +677,10 @@ function MailWorkspaceView(props: {
     transition.resolve("failed");
   });
 
+  // A later head or link navigation wins over pending search text.
+  let searchControls: { cancelPending: () => void } | undefined;
   const navigateWorkspace = async (nav: LinkNavigateEvent) => {
+    searchControls?.cancelPending();
     // A later navigation wins over a conversation still opening, also when it reloads the shown view.
     cancelConversationDetail();
     captureSearchStart(nav.href);
@@ -1093,6 +1127,7 @@ function MailWorkspaceView(props: {
   });
 
   const hasSelection = createMemo(() => Boolean(data.selectedConversationId || data.selectedMessageId));
+  const listOpen = () => !listCollapsed() || !hasSelection();
   const selectedListItem = createMemo(() =>
     selectableRows().find((item) =>
       item.selectionKind === "message" ? item.id === data.selectedMessageId : item.conversationId === data.selectedConversationId,
@@ -2345,53 +2380,176 @@ function MailWorkspaceView(props: {
     focusFrames.add(frame);
   };
 
+  const sidebarText = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const mailboxPreferences = createMailboxPreferences(props.sidebar);
+  const mailboxMenu = createMailboxMenu(() => ({
+    mailboxId: data.mailbox.id,
+    syncEnabled: data.mailbox.syncEnabled,
+    needsConnection: mailboxNeedsConnection(data.mailbox.health),
+    canWrite: canWrite(),
+    canAdmin: canAdmin(),
+    assignedOnly: assignedOnly(),
+    managementOpening: managementOpening(),
+    settingsOpening: settingsOpening(),
+    detailsOpening: detailsOpening(),
+    onOpenDetails: () => void openDetails(),
+    onOpenHealth: () => void openHealth(),
+    onOpenSharedLinks: () => void openSharedLinks(),
+    onOpenRemoteContent: () => void openRemoteContent(),
+    onOpenSubscriptions: () => void openSubscriptions(),
+    onOpenSettings: () => void openSettings(),
+  }));
+  // Folder, view, and saved view exclude each other: a folder shows no tabs, only its chips.
+  const currentTab = createMemo(() =>
+    mailboxCurrentTab({
+      scheduledMode: data.scheduledMode,
+      draftsMode: data.draftsMode,
+      folderId: data.folderId,
+      activeView: data.query ? null : data.activeView,
+      savedViewId: data.savedViewId,
+    }),
+  );
+  // The sidebar reports when the person collapsed what holds the open place's row; the heading then names it again.
+  const [openPlaceRowHidden, setOpenPlaceRowHidden] = createSignal(false);
+  const listNamedBy = createMemo(() => {
+    if (currentTab() !== null) return "tabs";
+    if (openPlaceRowHidden()) return null;
+    if (
+      data.scheduledMode ||
+      data.draftsMode ||
+      data.activeView === "send_problems" ||
+      flattenMailFolderTree(buildVisibleMailFolderTree(data.folders)).some(({ folder }) => folder.id === data.folderId)
+    )
+      return "sidebar";
+    return null;
+  });
+  const viewTabs = createMemo(() =>
+    mailboxViewTabs({
+      mailboxId: data.mailbox.id,
+      viewCounts: listCounts().viewCounts,
+      savedViews: data.savedViews,
+      assignedOnly: assignedOnly(),
+      labels: {
+        all: sidebarText().allConversations,
+        needs_action: sidebarText().needsAction,
+        mine: sidebarText().assignedToMe,
+        waiting: sidebarText().waitingForReply,
+        unassigned: sidebarText().unassigned,
+        snoozed: sidebarText().snoozed,
+        done: sidebarText().done,
+        recently_active: sidebarText().recentActivity,
+        kept: sidebarText().kept,
+      },
+      formatCount: (count) => count.toLocaleString(locale()),
+    }),
+  );
+  /** A search narrows the list: the head offers Reset back to where the search started. */
+  const searchFiltered = () => Boolean(data.query.trim() || activeSearch().expression);
+
   return (
     <AppWorkspace mobileSurface="flush" class="mail-workspace">
       <MailSidebar
         canCreate={Boolean(props.currentUserId)}
         currentUserEmail={props.currentUserEmail}
         contactDirectory={props.contactDirectory}
-        mailboxId={data.mailbox.id}
-        mailboxName={data.mailbox.name}
-        mailboxAddress={data.receivingAddress ?? undefined}
-        syncEnabled={data.mailbox.syncEnabled}
-        needsConnection={mailboxNeedsConnection(data.mailbox.health)}
-        folders={listCounts().folders}
-        localTags={data.localTags}
-        savedViews={data.savedViews}
-        scheduledMode={data.scheduledMode}
-        scheduledCount={data.scheduledCount}
-        activeFolderId={data.folderId}
-        activeView={data.query ? null : data.activeView}
-        activeSavedViewId={data.savedViewId}
-        activeTagId={activeTagId()}
-        searchActive={activeSearch().expression !== null}
-        viewCounts={listCounts().viewCounts}
-        canWrite={canWrite()}
-        canAdmin={canAdmin()}
-        assignedOnly={assignedOnly()}
-        managementOpening={managementOpening()}
-        settingsOpening={settingsOpening()}
-        detailsOpening={detailsOpening()}
-        composeStarting={composeStarting()}
-        onCompose={(options) => void startCompose(options)}
-        onOpenDetails={() => void openDetails()}
-        onOpenHealth={() => void openHealth()}
-        onOpenSharedLinks={() => void openSharedLinks()}
-        onOpenRemoteContent={() => void openRemoteContent()}
-        onOpenSubscriptions={() => void openSubscriptions()}
-        onOpenSettings={() => void openSettings()}
-        onMoveConversation={(input) => {
-          // The dragged row, not the first row of its conversation: in a message list, rows of one
-          // conversation can sit in different folders.
-          const item = selectableRows().find((candidate) => candidate.id === input.itemId);
-          const target = item ? actionTargetForItem(item, "move") : null;
-          return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
+        mailboxes={props.sidebar.mailboxes}
+        preferences={mailboxPreferences}
+        // Other mailboxes' counts require the cross-mailbox Focus read; keep mailbox opens fast.
+        counts={[]}
+        onOpenPlaceRowHiddenChange={setOpenPlaceRowHidden}
+        open={{
+          mailboxId: data.mailbox.id,
+          mailboxName: data.mailbox.name,
+          canWrite: canWrite(),
+          assignedOnly: assignedOnly(),
+          mailbox: { health: data.mailbox.health, healthReason: data.mailbox.healthReason, receivingAddress: data.receivingAddress },
+          folders: listCounts().folders,
+          scheduledMode: data.scheduledMode,
+          scheduledCount: data.scheduledCount,
+          activeFolderId: data.folderId,
+          activeView: data.query ? null : data.activeView,
+          viewCounts: listCounts().viewCounts,
+          menu: mailboxMenu,
+          onCompose: (options) => void startCompose(options),
+          onMoveConversation: (input) => {
+            // The dragged row, not the first row of its conversation: in a message list, rows of one
+            // conversation can sit in different folders.
+            const item = selectableRows().find((candidate) => candidate.id === input.itemId);
+            const target = item ? actionTargetForItem(item, "move") : null;
+            return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
+          },
+          onNavigate: navigateWorkspace,
         }}
-        onNavigate={navigateWorkspace}
+      />
+      <AppWorkspace.Head
+        views={
+          currentTab() !== null ? (
+            <MailboxViewTabs
+              items={viewTabs()}
+              current={currentTab()!}
+              onOpenHref={(href) => {
+                searchControls?.cancelPending();
+                void openWorkspaceHref(href);
+              }}
+            />
+          ) : undefined
+        }
+        filters={
+          data.scheduledMode || data.draftsMode ? undefined : (
+            <MailboxHeadFilters
+              requestUrl={requestPath()}
+              search={data.search}
+              folders={data.folders}
+              localTags={data.localTags}
+              onOpenHref={(href) => {
+                searchControls?.cancelPending();
+                void openWorkspaceHref(href);
+              }}
+            />
+          )
+        }
+        filtered={searchFiltered()}
+        resetHref={searchFiltered() ? buildMailSearchClearHref(mailRouteUrl(requestPath())) : undefined}
+        onReset={() => {
+          searchControls?.cancelPending();
+          void openWorkspaceHref(buildMailSearchClearHref(mailRouteUrl(requestPath())));
+        }}
+        actions={
+          <>
+            <Show when={!data.scheduledMode && !data.draftsMode}>
+              <MailListModeMenu listMode={data.listMode} onListModeChange={updateListMode} />
+            </Show>
+            <MailboxMenuButton menu={mailboxMenu} label={sidebarText().mailboxMenu({ name: data.mailbox.name })} />
+          </>
+        }
+        primary={
+          canWrite() && !assignedOnly()
+            ? {
+                label: sidebarText().compose,
+                icon: composeStarting() ? "ti ti-loader-2 animate-spin" : "ti ti-pencil",
+                // Modified and middle clicks, a new tab, and a page before hydration open the compose page.
+                href: `/app/mail/compose?mailbox=${data.mailbox.id}&autostart=1`,
+                onClick: (event) => {
+                  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                    return;
+                  event.preventDefault();
+                  const href = `/app/mail/compose?mailbox=${data.mailbox.id}&autostart=1`;
+                  // The spinner replaces the icon; screen readers hear the same progress.
+                  if (!composeStarting()) announce(t().preparingMessage);
+                  void startCompose({ fallback: () => documentNavigate(href), progressToast: false });
+                },
+              }
+            : undefined
+        }
       />
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="p-0" aria-busy={routeLoading()} mobilePane={hasSelection() ? "main" : "conversations"} scroll={false}>
+        <AppWorkspace.Main
+          class="p-0"
+          aria-busy={routeLoading()}
+          mobilePane={hasSelection() ? "main" : "conversations"}
+          scroll={false}
+          minWidth={data.scheduledMode || data.draftsMode ? undefined : listOpen() ? MAIL_MAIN_WITH_LIST : MAIL_READER_BESIDE_DETAIL}
+        >
           <Show
             when={data.scheduledMode || data.draftsMode}
             fallback={
@@ -2400,8 +2558,8 @@ function MailWorkspaceView(props: {
                   id="conversations"
                   label={t().conversationList}
                   scroll={false}
-                  open={!listCollapsed() || !hasSelection()}
-                  defaultSize={430}
+                  open={listOpen()}
+                  defaultSize={MAIL_LIST_WIDTH}
                   minSize={300}
                   maxSize={620}
                 >
@@ -2412,6 +2570,7 @@ function MailWorkspaceView(props: {
                     query={data.query}
                     search={data.search}
                     title={data.listTitle}
+                    namedBy={listNamedBy()}
                     items={listView().items}
                     leavingKeys={listView().leavingKeys}
                     error={data.listError}
@@ -2438,7 +2597,6 @@ function MailWorkspaceView(props: {
                     onNavigate={navigateWorkspace}
                     onNavigateItem={navigateConversation}
                     onToggleSelectionMode={toggleConversationSelectionMode}
-                    onListModeChange={updateListMode}
                     onToggleSelection={toggleConversationSelection}
                     onClearSelection={clearConversationSelection}
                     onAddTags={assignedOnly() ? undefined : addTagsToSelection}
@@ -2462,6 +2620,9 @@ function MailWorkspaceView(props: {
                           }
                     }
                     onOpenHref={openWorkspaceHref}
+                    onSearchControls={(controls) => {
+                      searchControls = controls;
+                    }}
                     onLoadMore={loadMoreConversations}
                     onRefresh={reconcileWorkspace}
                   />
@@ -2562,7 +2723,7 @@ function MailWorkspaceView(props: {
           </Show>
         </AppWorkspace.Main>
         <AppWorkspace.Detail
-          id="mail-context"
+          id={MAIL_CONTEXT_DETAIL_ID}
           openOnChoice={false}
           open={detailsOpen() && canShowDetails()}
           onClose={() => setDetailsVisible(false)}

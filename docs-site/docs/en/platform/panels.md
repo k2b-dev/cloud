@@ -5,7 +5,7 @@ section: Platform services
 order: 588
 description: Offer an authorized application page beside the current Cloud app.
 tags: [panels, applications, layout, ssr]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Offer a panel
@@ -15,6 +15,10 @@ open it beside the app they are using. Cloud owns the slot, sizing, provider
 tabs, loading feedback, and focus return. The application owns the page, its
 routes, data, and authorization. Built-in and third-party applications use the
 same contract.
+
+Core's Help is the first provider: every signed-in reader has Help in this
+slot. It uses the same `panel`, `PanelLayout`, and context APIs as any other
+application.
 
 ## Declare and serve the page
 
@@ -41,7 +45,9 @@ export const app = defineApp({
 
 `href` must be a same-origin path below an application-owned route. External
 URLs, protocol-relative URLs, and paths that escape the route are rejected at
-startup. `label` and `icon` must be nonempty strings. Translate the label with
+startup. `defineApp()` also rejects `panel.href` at or below the app's Help path
+`<basePath>/help`, because the framework answers those paths with Help redirects.
+`label` and `icon` must be nonempty strings. Translate the label with
 `presentation.translations[locale].panelLabel`; the label defaults to the
 application's base locale. Cloud sorts visible providers by localized label,
 then application ID. No provider gets priority.
@@ -115,6 +121,8 @@ provider. A provider's menu, dialog, or search field can keep Escape by calling
 `preventDefault()`; the provider runtime checks after event dispatch finishes.
 While a modal dialog is open in the provider page, Escape belongs to that
 dialog and never closes the panel.
+Ctrl+K, or Cmd+K on Apple devices, inside a provider opens the host page's global
+search when that page offers it.
 The close button also closes it. `closePanel()` works both in the host app and
 inside the provider page. Focus returns to the opener, or to the app's main area
 if the opener is gone or hidden. Opening a workspace Detail does not close the
@@ -164,6 +172,12 @@ open, a regular page can scroll its last row above it.
 
 ## Loading and message boundaries
 
+Readiness must not wait for on-demand code. Render a provider's static content
+as server HTML and keep its islands small; load heavy controls when the reader
+first reaches for them or when the browser is idle. `PanelRuntime` defers
+nothing: the ready mark and message, keyboard forwarding, link routing, theme
+sync, the context receiver, and the workspace controller stay eager.
+
 `PanelLayout` posts `{ type: "cloud.panel.ready", v: 1, provider: appId }` to the
 parent with `location.origin` as the target origin, and marks its own document
 as ready. When the server rendered the slot open, the provider can be ready
@@ -190,8 +204,8 @@ contains only the place and the page's static Help article IDs:
 ```ts
 type PanelPageContext = {
   v: 1;
-  seq: number;       // Nonnegative safe integer, initially 0.
-  pageId: string;    // New UUID for each host document.
+  seq: number;       // Nonnegative safe integer, increases on place or page changes.
+  pageId: string;    // New UUID for each host document; stays across page swaps.
   app: string;       // Host application ID.
   scope?: { type: string; id: string };
   help?: string[];   // Up to three local Help IDs, filtered by Layout.help.
@@ -211,7 +225,7 @@ at most 24 entries, with length limits on each string. Providers that need
 consent never receive shortcuts, including their titles, even after approval.
 
 Only the visible provider receives context, and only from its current tab.
-`Layout context={false}` disables sharing for that document, including live
+`Layout context={false}` disables sharing for that page, including live
 publishers. An invalid scope is omitted. Without a current app or a panel
 slot, there is no page context. The slot's cookie stores no context.
 
@@ -237,15 +251,16 @@ already seen.
   provider page does not bring it back.
 - **Saves are ordered.** Each answer carries a revision, and a save based on an
   older revision is refused. After such a conflict, Cloud reads the current
-  answer and saves the person's choice once more. A save that the browser gives
+  answer and saves the person's choice once more. A newer answer carried by a
+  page change supersedes an earlier pending choice. A save that the browser gives
   up on after 10 seconds is rolled back if the server notices the cancellation
   before it commits. A save that still lands later cannot override a newer
   answer, but it applies from the next page load.
 - **A failed save** keeps the question open with **Not saved. Try again.**, and
   nothing is shared until the person answers again.
 - **Other pages and tabs** that are already open follow the new answer on their
-  next page load. A page restored from the browser's back/forward cache stops
-  sharing until it has read the answers again.
+  next page load or in-app page change. A page restored from the browser's
+  back/forward cache stops sharing until it has read the answers again.
 - Context goes only to the selected provider's page below its panel path; a
   frame that navigated elsewhere receives none. A provider page that the
   browser restores from the panel's own history keeps the context it had
@@ -262,6 +277,12 @@ place, for example to render **For this view** without a second frame:
 import { readPanelContext } from "@k2b/cloud/ssr";
 
 const context = readPanelContext(c); // PanelPageContext | null
+// Core's Help selects context?.app ?? "core", checks the app's visibility,
+// then reads its authorized manifest before selecting any document IDs.
+const ids = new Set(manifest.documents.map((document) => document.id));
+const view = context?.app === app.id
+  ? [...new Set(context.help ?? [])].filter((id) => ids.has(id)).slice(0, 3)
+  : [];
 ```
 
 The helper never throws. It rejects oversized parameters before parsing JSON,
@@ -293,7 +314,11 @@ The platform sends `{ type: "cloud.panel.context", v: 1, context }` to
 `location.origin`. The embedded receiver accepts only its parent window at
 that origin and the exact message schema. Once it knows a `pageId`, it drops
 other page IDs and lower `seq` values; equal sequence values are idempotent.
-An effective place change increments `seq`, keeping the document's `pageId`.
+An effective place change or in-app page swap increments `seq`, keeping the
+document's `pageId`. With `defineApp({ pageSwap: true, ... })`, the slot and
+provider document stay mounted. The context takes the arriving page's app,
+scope, and Help ids. A page with `context={false}` clears sharing; a later page
+continues with the same document id and a higher sequence.
 Switching, closing, or withdrawing sharing sends `context: null` before the
 old frame is removed or further sharing stops. Null clears the place while
 preserving the receiver's page ID and sequence ordering.

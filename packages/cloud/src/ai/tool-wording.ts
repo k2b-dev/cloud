@@ -4,13 +4,12 @@ import {
   capabilityActionSubject,
   capabilityReviewSentence,
   capabilitySentenceText,
-  resolveCapabilityActionSentences,
 } from "../_internal/capability-sentences";
 import { CapabilityActionReceiptSchema } from "../contracts/capabilities";
 import { type AiStoredActionReview, isLegacyActionReview, storedActionReview } from "./action-review";
-import { displayToolName, isRecord } from "./chat/message-utils";
+import { isRecord } from "./chat/message-utils";
 import type { AiTurnBlock } from "./protocol";
-import { CLOUD_AI_TOOL_PRESENTATION } from "./tool-sentences";
+import { cloudToolReview } from "./tool-sentences";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -20,7 +19,7 @@ const reviewOf = (block: ToolBlock): AiStoredActionReview | null =>
 
 /**
  * How the chat words one call that acts on something: an app Action through its saved presentation, a
- * Cloud tool through Cloud's own catalog of the same shape. `null` for calls that only read.
+ * Cloud tool through its per-call review. `null` for calls that only read.
  */
 export const toolWording = (block: ToolBlock, locale: string): CapabilityActionWording | null => {
   const presentation = block.presentation;
@@ -32,8 +31,10 @@ export const toolWording = (block: ToolBlock, locale: string): CapabilityActionW
       ...(presentation.fields ? { fields: presentation.fields } : {}),
     };
   }
-  const sentences = resolveCapabilityActionSentences(block.name, CLOUD_AI_TOOL_PRESENTATION, locale);
-  return sentences ? { title: displayToolName(block.name, locale), sentences } : null;
+  const review = cloudToolReview(block.name, block.args, locale);
+  return review
+    ? { title: capabilitySentenceText(review.sentence.action, review.slots, { locale: review.locale, timeZone: "UTC" }) }
+    : null;
 };
 
 /**
@@ -45,6 +46,8 @@ export const toolSubject = (block: ToolBlock, locale: string, timeZone: string):
   const review = reviewOf(block);
   if (review && !isLegacyActionReview(review))
     return capabilitySentenceText(review.sentence.action, review.slots, { locale: review.locale, timeZone });
+  const cloudReview = cloudToolReview(block.name, block.args, locale);
+  if (cloudReview) return capabilitySentenceText(cloudReview.sentence.action, cloudReview.slots, { locale: cloudReview.locale, timeZone });
   const wording = toolWording(block, locale);
   return wording ? capabilityActionSubject(wording, block.args, { locale, timeZone }) : null;
 };
@@ -59,6 +62,9 @@ export const toolOutcome = (block: ToolBlock, key: "done" | "rejected" | "notRun
     return capabilityReviewSentence(review, key, { timeZone });
   }
   if (review && key === "done" && review.legacy.summary) return review.legacy.summary;
+  const cloudReview = cloudToolReview(block.name, block.args, locale);
+  // Only a form the tool names; otherwise the card keeps Cloud's own outcome words for the call.
+  if (cloudReview) return key === "done" || cloudReview.sentence[key] ? capabilityReviewSentence(cloudReview, key, { timeZone }) : null;
   const wording = toolWording(block, locale);
   if (!wording) return null;
   // App Actions return their data inside the result envelope; Cloud tools return the data itself.

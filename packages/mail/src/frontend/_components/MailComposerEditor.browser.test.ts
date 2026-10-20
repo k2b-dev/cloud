@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { ComposeFormattingWarning } from "../../contracts";
 import { renderComposeContent } from "../../service/compose-renderer";
 import type { MailComposerEditorHarnessOptions, MailComposerHarnessOptions } from "./MailComposerEditor.browser-harness";
@@ -363,6 +363,192 @@ describe("Mail composer preview with the mailbox logo", () => {
         expect(await page.locator('iframe[sandbox=""]').evaluate((frame) => getComputedStyle(frame).backgroundColor)).toBe(
           "rgb(255, 255, 255)",
         );
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+});
+
+describe("Mail composer preview with extra blank lines", () => {
+  const previewWithBlankLines = () => {
+    const rendered = renderComposeContent({
+      body: "Hello Grace,\n\nthe garden plan is ready.\n\n\nWe meet on Friday.\n\n\n\nSee you soon,\nAda",
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Garden", to: ["grace@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The preview did not render");
+    return rendered.data.html;
+  };
+
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`adds one text line of space for each extra blank line on ${label}`, async () => {
+      const page = await load({ context, theme: "light", locale: "en" });
+      try {
+        await page.waitForSelector('iframe[sandbox=""]');
+        await page.evaluate((html) => window.setPreviewHtml(html), previewWithBlankLines());
+        const frame = page.frameLocator('iframe[sandbox=""]');
+        await frame.getByText("We meet on Friday.").waitFor();
+        const paragraphs = await frame.locator("p:not(.mail-blank-line)").evaluateAll((elements) =>
+          elements.map((element) => {
+            const rect = element.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom };
+          }),
+        );
+        const spacers = await frame
+          .locator("p.mail-blank-line")
+          .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height));
+        expect(paragraphs).toHaveLength(4);
+        expect(spacers).toHaveLength(3);
+        const line = paragraphs[0]!.bottom - paragraphs[0]!.top;
+        // Each empty line is as tall as one line of text and adds no paragraph margin of its own.
+        for (const height of spacers) expect(Math.abs(height - line)).toBeLessThan(0.5);
+        const gap = (index: number) => paragraphs[index + 1]!.top - paragraphs[index]!.bottom;
+        expect(Math.abs(gap(1) - gap(0) - line)).toBeLessThan(0.5);
+        expect(Math.abs(gap(2) - gap(0) - 2 * line)).toBeLessThan(0.5);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+});
+
+describe("Mail composer preview with Markdown dividers", () => {
+  const previewWithDividers = () => {
+    const rendered = renderComposeContent({
+      body: "Hello Grace,\n\nthe garden plan is ready.\n\n---\n\nWe meet on Friday.\nSee you soon\n---\nAda",
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Garden", to: ["grace@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The divider message did not render");
+    return rendered.data.html;
+  };
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`shows two full-width 1px dividers with paragraph spacing on ${label}`, async () => {
+      const page = await load({ context, theme: "light", locale: "en" });
+      try {
+        await page.waitForSelector('iframe[sandbox=""]');
+        await page.evaluate((html) => window.setPreviewHtml(html), previewWithDividers());
+        const frame = page.frameLocator('iframe[sandbox=""]');
+        await frame.getByText("Ada", { exact: true }).waitFor();
+        const dividers = await frame.locator("hr").evaluateAll((elements) =>
+          elements.map((element) => {
+            const rect = element.getBoundingClientRect();
+            const before = element.previousElementSibling;
+            const after = element.nextElementSibling;
+            if (before?.tagName !== "P" || after?.tagName !== "P") throw new Error("Divider needs neighboring paragraphs");
+            const previous = before.getBoundingClientRect();
+            const next = after.getBoundingClientRect();
+            return {
+              height: rect.height,
+              width: rect.width,
+              paragraphWidth: previous.width,
+              nextWidth: next.width,
+              above: rect.top - previous.bottom,
+              below: next.top - rect.bottom,
+            };
+          }),
+        );
+        expect(dividers).toHaveLength(2);
+        for (const divider of dividers) {
+          expect(divider.height).toBeGreaterThanOrEqual(0.5);
+          expect(divider.height).toBeLessThanOrEqual(1.5);
+          expect(Math.abs(divider.width - divider.paragraphWidth)).toBeLessThanOrEqual(1);
+          expect(Math.abs(divider.width - divider.nextWidth)).toBeLessThanOrEqual(1);
+          expect(divider.above).toBeGreaterThanOrEqual(8);
+          expect(divider.below).toBeGreaterThanOrEqual(8);
+        }
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+});
+
+const tableMarkdown = [
+  "| Nr. | Artikel | Menge |",
+  "| --- | --- | --- |",
+  `| 100 | ${"https://example.test/".padEnd(120, "x")} | 2 |`,
+  `| 110 | \`${"item".repeat(30)}\` | 3 |`,
+  "",
+  "See [the catalog](https://example.test/catalog).",
+].join("\n");
+
+describe("Mail composer preview with a table", () => {
+  const previewWithTable = () => {
+    const rendered = renderComposeContent({
+      body: tableMarkdown,
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Catalog", to: ["grace@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The table preview did not render");
+    return rendered.data.html;
+  };
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`keeps short tokens on one line and long links and code inside the preview on ${label}`, async () => {
+      const page = await load({ context: { ...context, reducedMotion: "reduce" }, theme: "light", locale: "en" });
+      try {
+        await page.waitForSelector('iframe[sandbox=""]');
+        await page.evaluate((html) => window.setPreviewHtml(html), previewWithTable());
+        const frame = page.frameLocator('iframe[sandbox=""]');
+        await frame.locator("table").waitFor();
+        await frame.locator("html").evaluate((element) => element.ownerDocument.fonts.ready);
+        await settled(page);
+        const layout = await frame.locator("table").evaluate((table) => {
+          const document = table.ownerDocument;
+          const tokens = Array.from(table.querySelectorAll("th, td"))
+            .filter((cell) => ["Nr.", "100", "110"].includes(cell.textContent?.trim() ?? ""))
+            .map((cell) => {
+              // Count the text's own line boxes: inline padding of the element adds rects of its own.
+              const text = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT).nextNode();
+              if (!text) throw new Error("Expected a cell text node");
+              const range = document.createRange();
+              range.selectNodeContents(text);
+              return { text: text.textContent, lines: new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top))).size };
+            });
+          return {
+            clientWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            right: table.getBoundingClientRect().right,
+            tokens,
+          };
+        });
+        expect(layout.tokens).toEqual(["Nr.", "100", "110"].map((text) => ({ text, lines: 1 })));
+        expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+        expect(layout.right).toBeLessThanOrEqual(layout.clientWidth + 0.5);
         expect(page.errors).toEqual([]);
       } finally {
         await page.context().close();

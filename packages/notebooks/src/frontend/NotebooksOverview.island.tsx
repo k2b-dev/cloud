@@ -418,8 +418,8 @@ export default function NotebooksOverview(props: Props) {
                   <For each={props.recentNotes}>
                     {(note) => (
                       <li>
-                        <a href={`/app/notebooks/${note.notebookId}/notes/${note.id}`} class="notebooks-overview-note">
-                          <span class="notebooks-overview-note-icon" aria-hidden="true">
+                        <a href={`/app/notebooks/${note.notebookId}/notes/${note.id}`} class="notebooks-overview-note focus-ui">
+                          <span class="notebooks-overview-note-icon k2b-icon-tile app-accent-text" aria-hidden="true">
                             <i class={note.notebookIcon || "ti ti-note"} />
                           </span>
                           <span class="notebooks-overview-note-copy">
