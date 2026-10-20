@@ -1,6 +1,7 @@
 import { disposeIslands, islandsPending, mountIslands, onIslandMount } from "./mount";
 import type { ScrollSnapshot } from "./nav";
 import { captureScroll, documentNavigate, restoreScroll, swapKey } from "./nav-history";
+import { allowsLeave } from "./nav-veto";
 
 type SwapState = {
   document: Document;
@@ -25,6 +26,7 @@ type SwapState = {
   /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
   headBase: string;
   fragment?: { event: MouseEvent; href: string };
+  rollback?: { position: number; key?: string };
 };
 const documentKey = Symbol.for("@k2b/ssr/nav-document");
 const shared: typeof globalThis & {
@@ -306,6 +308,7 @@ export function installPageSwap(): () => void {
     uninstall: () => {
       if (shared[swapKey] !== state) return;
       stopRestore();
+      state.rollback = undefined;
       window.removeEventListener("click", captureClick, true);
       window.removeEventListener("click", click);
       window.removeEventListener("submit", submit, true);
@@ -424,6 +427,38 @@ export function installPageSwap(): () => void {
     void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key, moves: state.moves });
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
+  const absorb = (event: PopStateEvent): "nav" => {
+    decisions.set(event, "nav");
+    event.stopImmediatePropagation();
+    departure = undefined;
+    return "nav";
+  };
+  const rollback = (delta: number): void => {
+    const target = navigation?.entries()[state.shown.position];
+    const pending = { position: state.shown.position, key: target?.key };
+    state.rollback = pending;
+    const failed = (): void => {
+      if (state.rollback !== pending) return;
+      state.rollback = undefined;
+      if (marker(window.history.state)?.page !== state.currentPage) window.location.reload();
+    };
+    if (!navigation) {
+      window.history.go(-delta);
+      return;
+    }
+    try {
+      if (!target) {
+        failed();
+        return;
+      }
+      // Absolute entry identity survives another Back queued before this rollback runs.
+      const result = navigation.traverseTo(target.key);
+      void result.committed?.catch(() => {});
+      void result.finished?.catch(failed);
+    } catch {
+      failed();
+    }
+  };
   const claim = (event: PopStateEvent, entry: Entry): void => {
     decisions.set(event, "nav");
     event.stopImmediatePropagation();
@@ -437,6 +472,19 @@ export function installPageSwap(): () => void {
     if (known) {
       if (known === "nav") event.stopImmediatePropagation();
       return known;
+    }
+    if (state.rollback) {
+      const pending = state.rollback;
+      absorb(event);
+      if (navigation) {
+        if (navigation.currentEntry?.key === pending.key) state.rollback = undefined;
+      } else {
+        // Without absolute traversal, the first arrival is best effort; a rapid second Back may need a reload.
+        state.rollback = undefined;
+        const entry = marker(event.state);
+        if (entry?.page !== state.currentPage || entry.position !== pending.position) window.location.reload();
+      }
+      return "nav";
     }
     stopRestore();
     // A traversal's departure must match the arriving entry; a fragment navigation's popstate follows its navigate.
@@ -494,6 +542,16 @@ export function installPageSwap(): () => void {
       decisions.set(event, "page");
       return "page";
     }
+    const arrived = navigation?.currentEntry?.index ?? entry?.position;
+    const delta = arrived === undefined ? undefined : arrived - state.shown.position;
+    const context = shellContext(document);
+    const url = new URL(window.location.href);
+    // An unknown or zero delta cannot be rolled back, so it cannot be vetoed.
+    if (delta && context && inScope(url, context.scope) && !allowsLeave(context.root, url, delta)) {
+      absorb(event);
+      rollback(delta);
+      return "nav";
+    }
     claim(event, entry ?? { position: basePosition() });
     return "nav";
   };
@@ -536,23 +594,32 @@ export async function swapPage(href: string, options: { replace?: boolean } = {}
   return runSwap(href, options);
 }
 
+const parseUrl = (href: string): URL | undefined => {
+  try {
+    return new URL(href, document.baseURI || window.location.href);
+  } catch {
+    return undefined;
+  }
+};
+
 async function runSwap(href: string, options: { replace?: boolean }, traversal?: Traversal): Promise<void> {
   if (typeof window === "undefined") return;
   const state = shared[swapKey];
+  const requested = parseUrl(href);
+  const context = shellContext(document);
+  const swaps = requested !== undefined && state?.document === document && context !== undefined && inScope(requested, context.scope);
+  // A vetoed swap changes nothing, not even an older pending swap; document loads are left to beforeunload.
+  if (swaps && !traversal && !allowsLeave(context.root, requested)) return;
   if (state) {
     state.stopRestore();
     abort(state);
     state.started++;
   }
-  let requested: URL;
-  try {
-    requested = new URL(href, document.baseURI || window.location.href);
-  } catch {
+  if (!requested) {
     loadDocument(href, options);
     return;
   }
-  const context = shellContext(document);
-  if (!state || state.document !== document || !context || !inScope(requested, context.scope)) {
+  if (!swaps) {
     if (traversal) {
       if (state && stillCurrent(state, traversal)) window.location.reload();
     } else loadDocument(requested.href, options);

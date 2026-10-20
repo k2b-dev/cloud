@@ -199,7 +199,9 @@ declares the contract in server HTML, and nav knows nothing else about it:
 
 A swap is one transaction, and its order is the contract:
 
-1. Abort the previous swap. Only the newest navigation may commit: a newer
+1. For eligible clicks and `swapPage()`, ask the column checks (below) before
+   aborting the previous swap. A veto stops here. A popstate aborts pending
+   work before asking its checks. Only the newest navigation may commit: a newer
    swap, `popstate`, a native same-tab link or form submission, and the
    history helpers (`navigate()`, `documentNavigate()`, `navigateTo()`,
    `refreshCurrentPath()`) abort a pending swap, and so does a `Link` when it
@@ -262,8 +264,8 @@ departing content clamped it, nav retries once in the next frame unless an
 island scrolled meanwhile. An island that renders the entry asynchronously
 restores its own scroll afterwards, as the browser's restoration would not
 wait for it either. A push through `navigate()` records the departure scroll
-the helper captured before the island changed the page. Cross-page
-and unmarked entries first dispatch `ssr:nav-popstate` on window with the
+the helper captured before the island changed the page. Allowed cross-page
+and unmarked entries dispatch `ssr:nav-popstate` on window with the
 PopStateEvent as `detail`, so history owners that must see every traversal
 (`@k2b/ui` dialog-core, and shell listeners outside the column such as a
 panel sheet that closes on Back) still do when nav registered first, then
@@ -318,12 +320,58 @@ wrappers, listener ordering, unmarked entries, pageshow/pagehide, manual scroll
 restoration, and traversal ownership and recovery. The real-engine history
 suite covers Back/Forward across pages and island entries, reload equivalence,
 sibling identity, actual dialog-core disposal, raw history writes, listener
-suppression, and window/region scroll in both directions.
+suppression, and window/region scroll in both directions. The real-engine veto
+suite covers clicks, programmatic swaps, Back/Forward rollback, listener suppression, owner
+disposal, shell scoping, throwing checks, first-veto ordering, rapid Back-Back,
+and veto plus abort. Happy DOM covers registration, cleanup, element-less
+checks, rollback failure recovery, and veto without fetch; unit tests cover
+the SSR-safe public export.
 
-A swap does not fire `beforeunload`; an island with unsaved input must prevent
-in-scope link clicks itself (for example, a document capture listener calling
-`preventDefault()`, which the swap honours) or mark the links with
-`data-nav-document`.
+`onBeforeLeave()` in `src/nav-veto.ts` gates eligible clicks and `swapPage()`
+before cancellation, fetch, or history writes. It also gates the cross-page or
+unmarked branch of `decide`, before claiming the traversal. Same-page island
+navigation, document loads, persisted `pageshow`, and fragment claims are not
+asked. A vetoed click or `swapPage()` does not abort older work; a vetoed
+popstate still aborts the pending swap.
+
+Registration uses Solid's `getOwner()` and ends through `onCleanup` or the
+returned disposer. Mount records each wrapper's Solid root owner in a WeakMap
+on the shared `@k2b/ssr/islands` registry. Walking the owner chain identifies
+the island across runtime copies. The ordered checks share the global
+`Symbol.for("@k2b/ssr/nav-veto")` registry. Ask only connected elements within
+the current column, plus element-less checks. Shell islands are not asked.
+Without an owner or outside an island, a check is global; on the server it is
+a no-op. Each check gets its own event with an absolute URL and an optional
+signed traversal delta. First veto wins. Throw means allow plus
+`globalThis.reportError(error)`, even after prevention; promises and return
+values are ignored. Async dialogs veto first, then clear dirty state and
+retry with `swapPage(event.url.href)` or `history.go(event.delta)`.
+
+For a vetoable traversal, arrived position is the Navigation API index or the
+validated arriving marker position; shown position is `state.shown.position`.
+An unknown or zero delta is not vetoable. Veto keeps the tracked entry and
+column, clears departure, stops immediate propagation, memoizes `"nav"`, and
+never dispatches `ssr:nav-popstate`. Roll back to the absolute
+`navigation.entries()[state.shown.position].key` with `traverseTo`, after
+checking the index, or use `history.go(-delta)`. The target must be absolute:
+Chromium runs a second Back that was queued before the rollback first, so a
+relative `history.go()` would land on a cross-page entry with the old column
+(the rapid Back-Back engine test fails with it). While `state.rollback` is
+pending, absorb every popstate before cancellation or restoration: no checks,
+listeners, swaps, scroll changes, or abort of newer work. Clear it at the
+matching Navigation API key. Swallow `committed` rejection; on `finished`
+rejection clear rollback and reload unless the current marker belongs to the
+shown page. Without the API, clear on the first popstate and reload a wrong
+arrival; rapid traversals can therefore fall back to a reload. Uninstall
+clears rollback.
+
+Nav does not run or consult `beforeunload` handlers during a swap: there is
+no API to ask them, and a synthetic event shows no dialog. `onBeforeLeave` is
+the contract for swaps. Keep `beforeunload` for document loads, such as a
+reload, a closed tab, a link outside the scope, or a swap that fails after the
+checks allowed it and loads the document. Built-in applications move their
+`beforeunload` users to `onBeforeLeave` app by app; until then a swap does not
+protect their input.
 
 Cover every change in the unit, Happy DOM, and `test/engine` suites: history
 push and replace, Back and Forward, hash links, async fallbacks, reactive
