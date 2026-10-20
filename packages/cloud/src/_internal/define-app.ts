@@ -84,13 +84,13 @@ import { appRuntimeMetadata, buildMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
 import { cliPluginRoutePrefixes, createCliPluginRoutes, validateAppCliModules } from "./cli-plugins";
 import { FONT_PRELOAD_LINKS } from "./font-preloads";
-import { createHeartbeat } from "./heartbeat";
+import { createHeartbeat, createRegistryMembership } from "./heartbeat";
 import { compileHelp } from "./help";
 import { createPageResponses } from "./page-responses";
 import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
-import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
+import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
 import { canonicalRoute, isOwnAppPath } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
@@ -687,9 +687,16 @@ export const defineApp = <
         cliModules: cliModules.length > 0 ? cliModules : undefined,
       };
 
+      // Both shared entries follow one process membership; creating it touches no Sync resources.
+      const membership = createRegistryMembership(meta.id, {
+        registry: appInstanceRegistry,
+        lock: appMembershipLock,
+        startedAt: entry.startedAt,
+      });
       // Heartbeat
       const heartbeat = createHeartbeat(meta.id, entry, {
         registry: appRegistry(),
+        membership,
         beforeWrite: async () => {
           if (compiledHelp) await registerHelp(compiledHelp.corpus);
           if (appSkills && skillsManifestHash) await registerAppSkills(meta.id, appSkills, skillsManifestHash);
@@ -718,6 +725,7 @@ export const defineApp = <
         ? createHeartbeat(meta.id, capabilityEntry, {
             key: `capabilities/${meta.id}`,
             registry: capabilityRegistry(),
+            membership,
             onError: (error) =>
               log.error("Capability registry heartbeat failed", {
                 appId: meta.id,

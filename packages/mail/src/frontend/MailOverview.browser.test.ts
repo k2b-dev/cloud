@@ -321,3 +321,44 @@ describe("Mail overview views", () => {
     }, 30_000);
   }
 });
+
+test("on a narrow phone a long mailbox name shortens and Waiting stays inside the row", async () => {
+  const waiting = {
+    ...item(1),
+    mailboxName: "Customer support for the 2027 summer festival and its partners",
+    workStatus: "waiting" as const,
+  };
+  const page = await load(
+    { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true },
+    {
+      initialView: "all",
+      initialFocusError: null,
+      initialFocus: {
+        pages: {
+          mine: { items: [], nextCursor: null },
+          unassigned: { items: [], nextCursor: null },
+          waiting: { items: [waiting], nextCursor: null },
+          all: { items: [waiting], nextCursor: null },
+        },
+        counts,
+        mailboxCounts: [],
+      },
+    },
+  );
+  try {
+    await idle(page);
+    const boxes = await page.locator("a.mail-focus-row .mail-row-extra").evaluate((extra) => {
+      const box = (selector: string) => extra.querySelector(selector)!.getBoundingClientRect();
+      const name = extra.querySelector<HTMLElement>(".mail-row-mailbox-name")!;
+      return {
+        extra: extra.getBoundingClientRect().right,
+        waiting: box(".mail-row-waiting").right,
+        shortened: name.scrollWidth > name.clientWidth,
+      };
+    });
+    expect(boxes.shortened).toBe(true);
+    expect(boxes.waiting).toBeLessThanOrEqual(boxes.extra + 0.5);
+  } finally {
+    await close(page);
+  }
+}, 30_000);

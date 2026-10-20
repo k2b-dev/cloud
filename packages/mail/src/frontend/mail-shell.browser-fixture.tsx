@@ -4,6 +4,7 @@ import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { ConversationView, MailFocusPage, MailFocusView } from "../contracts";
 import { resolveMailSearchRoute } from "../search-state";
 import type { MailboxListView, MailboxPageData } from "../service/workspace";
+import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
@@ -123,6 +124,42 @@ export const focusPage = (view: MailFocusView): MailFocusPage => ({
   mailboxCounts: focusMailboxCounts,
 });
 
+/** Conv02 is a long conversation: six messages, oldest first as the service sends them, so the reader folds the older ones. */
+const longThread: MailboxPageData["detailMessages"] = Array.from({ length: 6 }, (_, index) => {
+  const at = new Date(Date.parse(MAIL_SHELL_NOW) - (5 - index) * 86_400_000).toISOString();
+  const text = `Invented message ${index + 1} of a long conversation.`;
+  return {
+    id: `Long0${index + 1}`,
+    subject: "Example request 2",
+    messageId: `<long0${index + 1}@example.test>`,
+    internalDate: at,
+    sentAt: at,
+    from: [{ name: index % 2 ? "Example support" : "Example sender", address: index % 2 ? "support@example.test" : "sender@example.test" }],
+    to: [{ name: "Example support", address: "support@example.test" }],
+    preview: text,
+    hasAttachments: false,
+    replyTo: [],
+    cc: [],
+    flags: ["\\Seen"],
+    keywords: [],
+    hydrationStatus: "complete",
+    remoteAvailable: true,
+    folderId: "Inbox1",
+    deletedOnServer: false,
+    contentType: "text/plain",
+    sizeBytes: 64,
+    plainText: text,
+    sanitizedHtml: null,
+    forwardText: text,
+    selectedHeaders: {},
+    sourceAvailable: true,
+    mailingList: null,
+    remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
+    delivery: null,
+    attachments: [],
+  };
+});
+
 /** URL state is resolved for every SSR request and every in-place workspace API read. */
 export function mailboxData(url: URL): MailboxPageData {
   const variant = fixturePermission(url);
@@ -174,7 +211,7 @@ export function mailboxData(url: URL): MailboxPageData {
     query: search.query,
     search,
     selectedConversationId,
-    selectedMessageId: null,
+    selectedMessageId: url.searchParams.get("message"),
     listItems: scheduledMode || draftsMode ? [] : listRows,
     listCursor: null,
     nextListCursor: null,
@@ -201,38 +238,40 @@ export function mailboxData(url: URL): MailboxPageData {
               }[activeView]
             : (folders.find((folder) => folder.id === folderId)?.name ?? "All mail"),
     detailMessages: selectedConversationId
-      ? [
-          {
-            id: "Msg001",
-            subject: "Example request 1",
-            messageId: "<msg001@example.test>",
-            internalDate: MAIL_SHELL_NOW,
-            sentAt: MAIL_SHELL_NOW,
-            from: [{ name: "Example sender", address: "sender@example.test" }],
-            to: [{ name: "Example support", address: "support@example.test" }],
-            preview: "Invented message for the browser suite.",
-            hasAttachments: false,
-            replyTo: [],
-            cc: [],
-            flags: ["\\Seen"],
-            keywords: [],
-            hydrationStatus: "complete",
-            remoteAvailable: true,
-            folderId: "Inbox1",
-            deletedOnServer: false,
-            contentType: "text/plain",
-            sizeBytes: 64,
-            plainText: "Invented message for the browser suite.",
-            sanitizedHtml: null,
-            forwardText: "Invented message for the browser suite.",
-            selectedHeaders: {},
-            sourceAvailable: true,
-            mailingList: null,
-            remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
-            delivery: null,
-            attachments: [],
-          },
-        ]
+      ? selectedConversationId === "Conv02"
+        ? longThread
+        : [
+            {
+              id: "Msg001",
+              subject: "Example request 1",
+              messageId: "<msg001@example.test>",
+              internalDate: MAIL_SHELL_NOW,
+              sentAt: MAIL_SHELL_NOW,
+              from: [{ name: "Example sender", address: "sender@example.test" }],
+              to: [{ name: "Example support", address: "support@example.test" }],
+              preview: "Invented message for the browser suite.",
+              hasAttachments: false,
+              replyTo: [],
+              cc: [],
+              flags: ["\\Seen"],
+              keywords: [],
+              hydrationStatus: "complete",
+              remoteAvailable: true,
+              folderId: "Inbox1",
+              deletedOnServer: false,
+              contentType: "text/plain",
+              sizeBytes: 64,
+              plainText: "Invented message for the browser suite.",
+              sanitizedHtml: null,
+              forwardText: "Invented message for the browser suite.",
+              selectedHeaders: {},
+              sourceAvailable: true,
+              mailingList: null,
+              remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
+              delivery: null,
+              attachments: [],
+            },
+          ]
       : [],
     conversationSummary: selectedConversationId
       ? { summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 }
@@ -351,7 +390,15 @@ export default function MailShellFixture(props: { source: string; locale?: "en" 
           currentUserEmail="reader@example.test"
           contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
           dateConfig={{ locale, timeZone: "UTC" }}
-          initialPreferences={{ ...readMailWorkspacePreferences(""), detailsOpen: url.searchParams.get("details") === "1" }}
+          initialPreferences={{
+            ...readMailWorkspacePreferences(""),
+            detailsOpen: url.searchParams.get("details") === "1",
+            listCollapsed: url.searchParams.get("list") === "hidden",
+            // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
+            ...(url.searchParams.has("toolbar")
+              ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
+              : {}),
+          }}
           initialUserPreferences={readMailUserPreferencesFromCookieHeader("", "Box001")}
           initialTheme={props.theme}
           calendarIntegrationAvailable={false}

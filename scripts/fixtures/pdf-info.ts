@@ -32,7 +32,8 @@ export const pdfTitle = async (pdf: Uint8Array): Promise<string | null> =>
   /^Title:[ \t]*(.*)$/m.exec(await poppler("pdfinfo", pdf, ["-enc", "UTF-8"]))?.[1] ?? null;
 
 /** The text layer of a PDF: what copy and search see. */
-export const pdfText = (pdf: Uint8Array): Promise<string> => poppler("pdftotext", pdf, ["-enc", "UTF-8"]);
+export const pdfText = (pdf: Uint8Array, options: { layout?: boolean } = {}): Promise<string> =>
+  poppler("pdftotext", pdf, ["-enc", "UTF-8", ...(options.layout ? ["-layout"] : [])]);
 
 /** Fonts that draw the PDF, without subset prefixes, and whether each is embedded, subset, and mapped to Unicode. */
 export const pdfFonts = async (pdf: Uint8Array) =>

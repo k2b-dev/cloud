@@ -472,6 +472,50 @@ Project context can be shared through normal Cloud access grants, but each
 conversation remains owned by its creator and only appears in that user's
 updates and queries.
 
+### List the person's open questions
+
+Use `listAiOpenQuestions` from `@k2b/cloud/ai` on the server to seed a personal
+chat overview. Resolve `ownerUserId` from the authenticated user; the read
+includes only that person's pending approvals in chats they own.
+
+```ts
+import { listAiOpenQuestions } from "@k2b/cloud/ai";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+
+const user = expectUserBackedActor(c);
+const questions = await listAiOpenQuestions({
+  ownerUserId: user.id,
+  locale: getLocale(c),
+  timeZone: getTimeZone(c),
+});
+```
+
+`AiOpenQuestions` contains at most 20 `items`, newest first, and a `count` of
+all matching questions. Each `AiOpenQuestion` carries the approval ID, chat
+short ID and current title, tool-block `anchor`, short plain text, app
+presentation, and ISO creation time. The short text uses the review's `short`
+template when provided, otherwise its action sentence, rendered like the card's
+chips: person names only, object and place titles without quotes, and formatted
+time labels. Legacy reviews and calls without a review keep the card's literal
+question text. Missing or unreadable tool blocks fall back to the first line of
+the request sentence and a tool anchor; one damaged question does not prevent
+the others from loading.
+
+`short` is limited to 160 Unicode code points and `conversationTitle` to 200.
+Truncated values end with `…`, included in the limit, without splitting a code
+point. These bounds also apply to legacy questions and fallback text.
+
+Assistant carries this read in its sidebar snapshot for both server rendering
+and subsequent reloads. Opening, resolving, or removing a question invalidates
+`conversation-list`, including when another question in the same turn remains
+open; browser tool calls do not. Reuse that invalidation to reload the
+snapshot; no separate polling or question endpoint is needed.
+
+In tests, `@k2b/cloud/ai/testing` provides demo questions:
+`aiQuestionFixtures(locale)` returns tool blocks with reviews, and
+`aiOpenQuestionFixture` presents one of them as this read would. The demo data
+may change in any release, so assert on what your host renders from it.
+
 ## Treat turns as asynchronous
 
 Starting a turn does not mean it completed. The API returns the persisted turn,

@@ -6249,3 +6249,187 @@
 .k2b-ui .k2b-content-markdown ol.k2b-steps { padding: 0; list-style: none; }
 .k2b-ui .k2b-steps > li { position: relative; min-height: 2rem; margin: 0; padding: 0.1875rem 0 0 2.875rem; counter-increment: k2b-step; }
 .k2b-ui .k2b-steps > li::before { content: counter(k2b-step); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 999px; background: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 14%, transparent); color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* MapView: shared static geometry and the progressively loaded map image. */
+.k2b-ui .k2b-map-view {
+  /* The map image palette; mapPalette in map-palette.ts carries the same values, and a test keeps them equal. */
+  --k2b-map-land: #f1efe9;
+  --k2b-map-green: #e3ecd9;
+  --k2b-map-water: #cfe3f3;
+  --k2b-map-building: #e8e5dd;
+  --k2b-map-road: #ffffff;
+  --k2b-map-road-casing: #dcd8ce;
+  --k2b-map-motorway: #f6c76b;
+  --k2b-map-motorway-casing: #d9a443;
+  --k2b-map-rail: #c4bfb4;
+  --k2b-map-boundary: #aea89c;
+  --k2b-map-label: #52525b;
+  --k2b-map-label-strong: #27272a;
+  --k2b-map-water-label: #3a6383;
+  --k2b-map-surface: var(--k2b-surface);
+  --k2b-map-accent: var(--k2b-action-solid);
+  --k2b-map-accent-on: #fff;
+  --k2b-map-accent-ink: var(--k2b-map-accent);
+  /* Text on a filled pin keeps 4.5:1 against its tone in both themes. */
+  --k2b-map-second-on: #fff;
+  --k2b-map-neutral-on: #fff;
+  --k2b-map-warning-on: #fff;
+  --k2b-map-second: #0f766e;
+  --k2b-map-second-ink: #0f766e;
+  --k2b-map-neutral: #52525b;
+  --k2b-map-warning: #b45309;
+  --k2b-map-me: #2563eb;
+  --k2b-map-line-muted: #71717a;
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-map-land);
+  isolation: isolate;
+}
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui .k2b-map-view,
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-view,
+.k2b-ui :where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-view,
+.k2b-ui .k2b-map-view:where(.dark, .k2b-dark, [data-theme="dark"]) {
+  --k2b-map-land: #1a1f26;
+  --k2b-map-green: #1c2a22;
+  --k2b-map-water: #14283a;
+  --k2b-map-building: #20262e;
+  --k2b-map-road: #2c333d;
+  --k2b-map-road-casing: #222830;
+  --k2b-map-motorway: #5d6470;
+  --k2b-map-motorway-casing: #444a54;
+  --k2b-map-rail: #39404a;
+  --k2b-map-boundary: #4f5763;
+  --k2b-map-label: #a1a1aa;
+  --k2b-map-label-strong: #e4e4e7;
+  --k2b-map-water-label: #8fb5d3;
+  --k2b-map-accent-ink: color-mix(in srgb, var(--k2b-map-accent) 55%, #fff);
+  --k2b-map-second-on: #042f2e;
+  --k2b-map-neutral-on: #18181b;
+  --k2b-map-warning-on: #1c1917;
+  --k2b-map-second: #14b8a6;
+  --k2b-map-second-ink: #5eead4;
+  --k2b-map-neutral: #a1a1aa;
+  --k2b-map-warning: #fcd34d;
+  --k2b-map-me: #60a5fa;
+  --k2b-map-line-muted: #8b8b94;
+}
+.k2b-ui .k2b-map-view__live { position: absolute; inset: 0; opacity: 0; transition: opacity var(--k2b-motion-base) var(--k2b-ease-out); }
+.k2b-ui .k2b-map-view[data-state="ready"] .k2b-map-view__live { opacity: 1; }
+/* Its own stacking context: a raised selected pin never rises above the controls, notice, info tile, or attribution. */
+.k2b-ui .k2b-map-view__fit { position: absolute; pointer-events: none; isolation: isolate; }
+.k2b-ui .k2b-map-view__pins { position: absolute; inset: 0; }
+.k2b-ui .k2b-map-view__geometry { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.k2b-ui .k2b-map-view [data-tone] { --k2b-map-tone: var(--k2b-map-accent); --k2b-map-ink: var(--k2b-map-accent-ink); --k2b-map-on: var(--k2b-map-accent-on); }
+.k2b-ui .k2b-map-view [data-tone="second"] { --k2b-map-tone: var(--k2b-map-second); --k2b-map-ink: var(--k2b-map-second-ink); --k2b-map-on: var(--k2b-map-second-on); }
+.k2b-ui .k2b-map-view [data-tone="neutral"] { --k2b-map-tone: var(--k2b-map-neutral); --k2b-map-ink: var(--k2b-map-neutral); --k2b-map-on: var(--k2b-map-neutral-on); }
+.k2b-ui .k2b-map-view [data-tone="warning"] { --k2b-map-tone: var(--k2b-map-warning); --k2b-map-ink: var(--k2b-map-warning); --k2b-map-on: var(--k2b-map-warning-on); }
+.k2b-ui .k2b-map-view__area { fill: var(--k2b-map-tone); fill-opacity: .14; stroke: var(--k2b-map-tone); stroke-opacity: .6; stroke-width: 1.5px; }
+.k2b-ui .k2b-map-view__line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.k2b-ui .k2b-map-view__casing { stroke: var(--k2b-map-surface); stroke-width: 8.5px; }
+.k2b-ui .k2b-map-view__stroke { stroke: var(--k2b-map-accent); stroke-width: 5px; }
+.k2b-ui .k2b-map-view__line[data-tone="muted"] .k2b-map-view__stroke { stroke: var(--k2b-map-line-muted); stroke-width: 4px; }
+.k2b-ui .k2b-map-view__line[data-tone="preview"] .k2b-map-view__casing { stroke-width: 7px; }
+.k2b-ui .k2b-map-view__line[data-tone="preview"] .k2b-map-view__stroke { stroke: var(--k2b-map-second); stroke-width: 4px; stroke-dasharray: 7 5; }
+.k2b-ui .k2b-map-view__line[data-tone="previous"] .k2b-map-view__stroke { stroke: var(--k2b-map-line-muted); stroke-width: 3px; stroke-opacity: .55; stroke-dasharray: 3 6; }
+.k2b-ui .k2b-map-view__accuracy { fill: var(--k2b-map-me); fill-opacity: .14; }
+/* As in the mockup: a fixed 22 px halo marks the person's place even on a route line of a similar blue. */
+.k2b-ui .k2b-map-view__me { box-sizing: border-box; position: absolute; width: 17px; height: 17px; border: 2.5px solid var(--k2b-map-surface); border-radius: 50%; background: var(--k2b-map-me); box-shadow: 0 0 0 13.5px color-mix(in srgb, var(--k2b-map-me) 14%, transparent); transform: translate(-50%, -50%); }
+.k2b-ui .k2b-map-view__pin {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--k2b-map-surface);
+  box-shadow: inset 0 0 0 2px var(--k2b-map-tone), 0 0 0 2.5px var(--k2b-map-surface);
+  color: var(--k2b-map-ink);
+  font: 600 11px / 1 var(--k2b-font-sans);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(calc(-50% + var(--k2b-map-pin-dx)), calc(-50% + var(--k2b-map-pin-dy)));
+}
+.k2b-ui .k2b-map-view__pin[data-stop],
+.k2b-ui .k2b-map-view__pin:is([aria-pressed="true"], [data-selected]) { background: var(--k2b-map-tone); color: var(--k2b-map-on); }
+.k2b-ui .k2b-map-view__pin:is([aria-pressed="true"], [data-selected]) { width: 28px; height: 28px; font-size: 12.5px; z-index: 2; }
+.k2b-ui .k2b-map-view__pin[data-drop] {
+  width: 20px; height: 28px; border-radius: 10px; background: transparent; box-shadow: none;
+  transform: translate(calc(-50% + var(--k2b-map-pin-dx)), calc(-100% + var(--k2b-map-pin-dy)));
+}
+.k2b-ui .k2b-map-view__pin[data-drop] > span { position: absolute; inset: 0; border-radius: 50% 50% 0 0; background: var(--k2b-map-tone); clip-path: polygon(0 0, 100% 0, 100% 68%, 50% 100%, 0 68%); }
+/* A selected drop pin grows and gains a surface centre, so selection never rests on stacking order alone. */
+.k2b-ui .k2b-map-view__pin[data-drop]:is([aria-pressed="true"], [data-selected]) { width: 24px; height: 34px; }
+.k2b-ui .k2b-map-view__pin[data-drop]:is([aria-pressed="true"], [data-selected]) > span::after { content: ""; position: absolute; left: 50%; top: 34%; width: 8px; height: 8px; border-radius: 50%; background: var(--k2b-map-surface); transform: translate(-50%, -50%); }
+.k2b-ui button.k2b-map-view__pin:hover { filter: brightness(.94); }
+.k2b-ui span.k2b-map-view__pin { cursor: default; pointer-events: none; }
+.k2b-ui .k2b-map-view__pin:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
+.k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)) { background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .14); border: 0; }
+/* Dark floating surfaces sit on a dark map: an inset ring gives them their edge instead of a shadow nobody sees. */
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui .k2b-map-view__empty > span,
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-view__empty > span {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), 0 1px 4px rgb(0 0 0 / .4);
+}
+.k2b-ui .k2b-map-view__controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 8px; }
+.k2b-ui .k2b-map-view__zoom { display: flex; flex-direction: column; border-radius: 9px; }
+.k2b-ui .k2b-map-view__controls .k2b-icon-button { width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 9px; }
+.k2b-ui .k2b-map-view__controls .k2b-icon-button:hover { transform: none; }
+.k2b-ui .k2b-map-view__messages { position: absolute; top: 10px; left: 10px; max-width: calc(100% - 64px); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.k2b-ui :is(.k2b-map-view__notice, .k2b-map-view__status) { min-height: 30px; box-sizing: border-box; padding: 5px 12px; border-radius: 15px; font-size: 12.5px; pointer-events: auto; }
+.k2b-ui .k2b-map-view__status { display: flex; align-items: center; gap: 6px; color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-map-view__status > span { min-width: 0; }
+.k2b-ui .k2b-map-view__status > .k2b-button { flex: none; min-height: 0; padding-block: 0; font-weight: 500; color: var(--k2b-action); }
+.k2b-ui .k2b-map-view[data-state="loading"] .k2b-map-view__status { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-view__status > i { font-size: 15px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-view__notice { color: var(--k2b-text-secondary); }
+/* The bottom stack: the info tile always sits above the row, and the row keeps the scale and the attribution apart. */
+.k2b-ui .k2b-map-view__foot { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.k2b-ui .k2b-map-view__info { box-sizing: border-box; margin-inline: 10px; max-width: min(22rem, calc(100% - 20px)); border-radius: 12px; pointer-events: auto; }
+.k2b-ui .k2b-map-view__info:not(:empty) { padding: 12px 14px; }
+.k2b-ui .k2b-map-view__foot-row { align-self: stretch; display: flex; align-items: flex-end; gap: 10px; }
+.k2b-ui .k2b-map-view__scale { flex: none; margin: 0 0 8px 10px; color: var(--k2b-map-line-muted); font-size: 11px; line-height: 1.2; pointer-events: none; }
+.k2b-ui .k2b-map-view__scale span { white-space: nowrap; }
+.k2b-ui .k2b-map-view__scale > div { height: 4px; border: 1.5px solid currentColor; border-top: 0; }
+.k2b-ui .k2b-map-view__attribution { min-width: 0; margin-left: auto; padding: 2px 8px; border-top-left-radius: 7px; background: var(--k2b-map-surface); color: var(--k2b-text-muted); font-size: 11px; text-align: end; overflow-wrap: anywhere; pointer-events: auto; }
+.k2b-ui .k2b-map-view__attribution:empty { display: none; }
+.k2b-ui .k2b-map-view__attribution a { text-decoration: underline; }
+.k2b-ui .k2b-map-view__empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 48px; text-align: center; pointer-events: none; }
+.k2b-ui .k2b-map-view__empty > span { max-width: 100%; padding: 7px 14px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .12); color: var(--k2b-text-secondary); font-size: 13px; }
+.k2b-ui .k2b-map-view :is(.maplibregl-canvas-container, .maplibregl-canvas) { position: absolute; left: 0; top: 0; }
+.k2b-ui .k2b-map-view .maplibregl-canvas-container { width: 100%; height: 100%; }
+/* The canvas takes arrow keys for panning; its focus shows as the token ring inset on the rounded map, never clipped. */
+.k2b-ui .k2b-map-view .maplibregl-canvas:focus-visible { outline: none; }
+.k2b-ui .k2b-map-view:has(.maplibregl-canvas:focus-visible)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring); pointer-events: none; }
+@media (forced-colors: active) {
+  .k2b-ui .k2b-map-view:has(.maplibregl-canvas:focus-visible)::after { outline: var(--k2b-focus-width) solid Highlight; outline-offset: calc(-1 * var(--k2b-focus-width)); }
+}
+.k2b-ui .k2b-map-view .maplibregl-interactive { cursor: grab; user-select: none; }
+.k2b-ui .k2b-map-view .maplibregl-interactive:active { cursor: grabbing; }
+.k2b-ui .k2b-map-view .maplibregl-cooperative-gestures { touch-action: pan-x pan-y; }
+.k2b-ui .k2b-map-view .maplibregl-cooperative-gesture-screen { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max-content; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .14); font-size: 12.5px; text-align: center; pointer-events: none; visibility: hidden; }
+.k2b-ui .k2b-map-view .maplibregl-cooperative-gesture-screen.maplibregl-show { visibility: visible; }
+.k2b-ui .k2b-map-view .maplibregl-mobile-message { display: none; }
+@media (hover: none), (pointer: coarse) {
+  .k2b-ui .k2b-map-view .maplibregl-desktop-message { display: none; }
+  .k2b-ui .k2b-map-view .maplibregl-mobile-message { display: block; }
+}
+@media (any-pointer: coarse) {
+  /* A round target of up to 2.75rem that stops before a neighbouring pin's visible mark (radius from the data). */
+  .k2b-ui button.k2b-map-view__pin::after { content: ""; position: absolute; inset: min(0px, calc(50% - var(--k2b-map-pin-hit, 1.375rem))); border-radius: 50%; }
+  /* The map controls stack vertically: the row rule that stops a later button's hit area at its start does not apply. */
+  .k2b-ui .k2b-map-view__controls .k2b-button.k2b-icon-button::after { left: min(0px, calc((100% - 2.75rem) / 2)); right: min(0px, calc((100% - 2.75rem) / 2)); }
+  /* Zoom keeps its tight 32 + 32 stack: the two 2.75rem hit areas meet at the seam and grow outward instead. */
+  .k2b-ui .k2b-map-view__zoom > :first-child .k2b-icon-button::after,
+  .k2b-ui .k2b-map-view__zoom > .k2b-icon-button:first-child::after { top: calc(32px - 2.75rem); bottom: 0; }
+  .k2b-ui .k2b-map-view__zoom > :last-child .k2b-icon-button::after,
+  .k2b-ui .k2b-map-view__zoom > .k2b-icon-button:last-child::after { top: 0; bottom: calc(32px - 2.75rem); }
+  /* Room above for the zoom-in hit area inside the map, and between the stack's and the locate button's hit areas. */
+  .k2b-ui .k2b-map-view__controls { top: 12px; gap: 18px; }
+}

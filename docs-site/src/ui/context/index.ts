@@ -23,6 +23,7 @@ import contentIntl from "./content/intl.md" with { type: "text" };
 import contentKbd from "./content/kbd.md" with { type: "text" };
 import contentLabelChip from "./content/label-chip.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
+import contentMapView from "./content/map-view.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
@@ -172,6 +173,7 @@ const catalogContextSources = {
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
   "feedback/install-guide": { file: "feedback/install-guide.md", content: feedbackInstallGuide },
+  "content/map-view": { file: "content/map-view.md", content: contentMapView },
   "content/kbd": { file: "content/kbd.md", content: contentKbd },
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
   "content/steps": { file: "content/steps.md", content: contentSteps },

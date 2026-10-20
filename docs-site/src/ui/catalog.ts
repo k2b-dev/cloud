@@ -267,6 +267,7 @@ const portableSections = [
     title: "Content",
     icon: "ti ti-file-description",
     pages: [
+      page("map-view", "MapView", "ti ti-map", "Server-rendered places and routes with a progressively loaded map image."),
       page("kbd", "Kbd", "ti ti-keyboard", "Accessible platform and locale aware shortcut caps."),
       page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
@@ -396,7 +397,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 149;
+export const portableUiComponentCount = 152;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -436,6 +437,10 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",
+  mapAttribution: "Plain attribution data for custom map credits; documented on the MapView page.",
+  mapStyle: "OpenMapTiles style builder requiring host tile and glyph templates; documented on the MapView page.",
+  MapViewFrame: "Server-only and PDF rendering uses the shared MapView geometry; documented on the MapView page.",
   truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
   REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
   prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
@@ -477,6 +482,7 @@ export const documentedOnlyUiCatalogExports = {
   abbreviations: "Documented completion dictionary used by editor examples.",
   activatePanesItem: "Documented pure Panes activation helper.",
   applyPanesIntent: "Documented programmatic Panes move and split helper.",
+  appWorkspaceDetailElementId: "Documented AppWorkspace Detail DOM id helper for application controls.",
   appWorkspacePanelVariable: "Documented AppWorkspace panel-variable helper.",
   appWorkspaceResizeLimits: "Documented AppWorkspace resize helper.",
   canPreviewFile: "Documented FileView capability helper.",

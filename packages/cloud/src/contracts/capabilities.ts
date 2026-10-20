@@ -195,7 +195,7 @@ const reviewBlock = (max: number) =>
     .max(max)
     .refine((text) => !/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(text.replace(/[\n\t]/g, "")), "Contains unsafe characters");
 export const CapabilityPersonSchema = z
-  .object({ name: reviewLine(120).optional(), address: reviewLine(320).optional(), userId: z.uuid().optional() })
+  .object({ name: reviewLine(200).optional(), address: reviewLine(320).optional(), userId: z.uuid().optional() })
   .strict()
   .refine((person) => person.name !== undefined || person.address !== undefined, "A person needs a name or address");
 export type CapabilityPerson = z.infer<typeof CapabilityPersonSchema>;

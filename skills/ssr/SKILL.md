@@ -20,7 +20,7 @@ skill for them.
 
 - `createConfig()` options, Hono `basePath`, the Bun and Elysia adapters, and development reload: [Configuration and adapters](references/configuration.md)
 - Island error boundaries, `errorFallback`, and the `ssr:island-error` event: [Island errors](references/island-errors.md)
-- Progressive same-origin links and page swaps with `@k2b/ssr/nav`: [Navigation](references/navigation.md)
+- Progressive same-origin links, page swaps, and unsaved-input guards (`onBeforeLeave`) with `@k2b/ssr/nav`: [Navigation](references/navigation.md)
 
 ## Quick Start
 
@@ -210,6 +210,7 @@ Do not return an async render function. The render function is called by `render
 - passing callbacks or event handlers as island/client props fails because props must be serialized
 - expecting route matching or client loaders from `@k2b/ssr/nav` leads to stale server data; it enhances anchors after client state is handled, or swaps whole server pages when the host opts in (see [Navigation](references/navigation.md))
 - using `nav.push()` without reconciling `popstate` leaves island state stale after Back/Forward; use `listenPopState()`
+- relying on `beforeunload` alone loses unsaved input on a page swap; register `onBeforeLeave()` in the island and keep `beforeunload` for document loads
 - importing server-only modules into islands or client components can break browser bundling
 - a nested island/client build error means shared code belongs in a plain `.tsx` module; lazy-load that module instead of an island
 - named exports for islands/clients are not supported

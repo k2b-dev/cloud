@@ -804,6 +804,19 @@
   initial-value: 0px;
 }
 
+/* Resolve container units where they belong, then inherit absolute lengths. */
+@property --k2b-workspace-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --k2b-workspace-host-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 /* The nearest named host supplies the app width; standalone pages use the
    document root (its content width excludes a classic scrollbar). */
 html {
@@ -821,6 +834,8 @@ html {
   /* The width `Main` keeps beside the sidebar and an open detail.
      `AppWorkspace.Main` raises it with `minWidth`. */
   --k2b-workspace-main-min: 20rem;
+  --k2b-workspace-main-min-grid: var(--k2b-workspace-main-min);
+  --k2b-workspace-main-min-cq: var(--k2b-workspace-main-min);
   /* The sidebar's column from 64 rem of host width, 0 without one. */
   --k2b-workspace-sidebar-space: 0px;
   /* Space at the end of a `k2b-detail-trail` scroller under an open drawer. */
@@ -1357,6 +1372,20 @@ html {
        cannot hold the sidebar and Main's minimum, the content box ends just
        below 20 rem, so the sidebar is the overlay and the Detail waits, and
        the padding never outgrows the workspace. */
+    --k2b-workspace-host-width: 100cqi;
+    /* W = C + 2px + S + E; the root has a 1px border on each side.
+       For E = M(W) - B (B = 20rem), inversion gives
+       M = clamp(min, (share * (C + S + 2px - B) + offset) / (1 - share), max).
+       The zero floor agrees too: M(W) <= B iff the inverse is <= B.
+       For host bound L = max(0px, host - S - B + 1px), E = L gives
+       W = C + 2px + S + L.
+       Since 0 < share < 1, M(W) >= B + L iff the inverse >= B + L.
+       Thus the same host bound binds in padding, grid, and descendant contexts. */
+    --k2b-workspace-main-extra-grid: clamp(
+      0px,
+      var(--k2b-workspace-main-min-grid) - 20rem,
+      100cqi - var(--k2b-workspace-sidebar-space) - 20rem + 1px
+    );
     --k2b-workspace-main-extra: clamp(
       0px,
       var(--k2b-workspace-main-min) - 20rem,
@@ -1375,8 +1404,22 @@ html {
       "content detail"
       "drawer detail";
     grid-template-columns:
-      calc(100% + var(--k2b-workspace-main-extra) - var(--k2b-workspace-detail-column))
+      calc(100% + var(--k2b-workspace-main-extra-grid) - var(--k2b-workspace-detail-column))
       var(--k2b-workspace-detail-column);
+  }
+
+  /* These children query the root content box. The registered length freezes
+     that measurement before a descendant establishes another container. */
+  .k2b-ui .k2b-app-workspace > .k2b-app-workspace__content,
+  .k2b-ui .k2b-app-workspace > :is(solid-island, solid-client) {
+    --k2b-workspace-width: calc(
+      100cqi + 2px + var(--k2b-workspace-sidebar-space) +
+      clamp(
+        0px,
+        var(--k2b-workspace-main-min-cq) - 20rem,
+        var(--k2b-workspace-host-width) - var(--k2b-workspace-sidebar-space) - 20rem + 1px
+      )
+    );
   }
 
   .k2b-ui
@@ -1759,7 +1802,7 @@ html {
     grid-template-columns:
       var(--k2b-workspace-sidebar-track)
       calc(
-        100% + var(--k2b-workspace-main-extra) + var(--k2b-workspace-sidebar-space) - var(--k2b-workspace-sidebar-track) -
+        100% + var(--k2b-workspace-main-extra-grid) + var(--k2b-workspace-sidebar-space) - var(--k2b-workspace-sidebar-track) -
           var(--k2b-workspace-detail-column)
       )
       var(--k2b-workspace-detail-column);
