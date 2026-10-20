@@ -3,6 +3,7 @@ import { CHAT_TASK_REASON_CODES, chatTaskReasonSentence, chatTaskReasonState } f
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import { coreSettings } from "@k2b/cloud/services";
 import { prepareNotificationEmail } from "@k2b/cloud/services/notifications/email-frame";
+import * as settings from "@k2b/cloud/services/settings";
 import { AI_NOTIFICATIONS } from "./ai-notifications";
 
 for (const locale of ["de", "en"])
@@ -62,6 +63,8 @@ for (const locale of ["de", "en"]) {
     );
     expect(Object.keys(AI_NOTIFICATIONS.approvalWaiting.data.shape)).not.toContain("locale");
     const setting = spyOn(coreSettings, "get").mockResolvedValue("https://cloud.example");
+    // The email frame reads the app's name and address; mocked, so this unit test needs no database.
+    const frame = spyOn(settings, "get").mockResolvedValue("Test Cloud");
     try {
       const email = await AI_NOTIFICATIONS.approvalWaiting.email!(
         { count: 1, question: card.questionText, reason: card.reason.text },
@@ -78,6 +81,7 @@ for (const locale of ["de", "en"]) {
       expect(oldEmail.content).toBe(`${old.body} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`);
     } finally {
       setting.mockRestore();
+      frame.mockRestore();
     }
   });
 }

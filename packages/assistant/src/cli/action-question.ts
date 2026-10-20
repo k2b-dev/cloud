@@ -22,7 +22,7 @@ export const actionOriginMessages = i18n.define({
 
 /** One shared card supplies every terminal question, including old reviews and unreviewed calls. */
 export const pendingActionQuestion = (
-  ctx: CloudCliContext,
+  ctx: Pick<CloudCliContext, "options">,
   action: ApprovalAction,
   commands?: { approve: string; reject: string },
 ): { lines: string[]; showInput: boolean } => {
@@ -50,8 +50,8 @@ export const pendingActionQuestion = (
     .join(" · ");
   return {
     lines: actionQuestionLines(text, { ...(origin ? { origin } : {}), ...(commands ? { commands } : {}), timeZone }).map(terminalSafeText),
-    // Only an app's review describes the call; without one, the validated input stays the source of truth, whatever
-    // lines the approval message adds.
-    showInput: !action.review,
+    // Only an app's review describes the call; without one, or when the question leaves something out and no link
+    // opens it, the validated input stays the way to see everything before deciding.
+    showInput: !action.review || (text.incomplete && !text.readMore),
   };
 };
