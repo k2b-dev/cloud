@@ -161,7 +161,7 @@ describe("MapView geometry", () => {
       const o = offsets.get(id)!;
       return { x: ((p.x - f.minX) * fitted) / f.spanX + o.dx, y: ((p.y - f.minY) * fitted) / f.spanX + o.dy };
     };
-    for (let width = 390; width <= 1600; width += 5) {
+    for (let width = 320; width <= 1600; width += 5) {
       for (const [a, b, min] of [
         ["stop", "hit", 20],
         ["stop", "other", 28],
@@ -179,8 +179,34 @@ describe("MapView geometry", () => {
           Math.hypot(clusterOffsets[i]!.dx - clusterOffsets[j]!.dx, clusterOffsets[i]!.dy - clusterOffsets[j]!.dy),
         ).toBeGreaterThanOrEqual(28 - 1e-6);
   });
+  test("narrow maps and drop pins keep their marks apart", () => {
+    const check = (pins: MapViewMarker[]) => {
+      const sorted = sortMarkers(pins);
+      const f = mapFrame({ markers: sorted }, 360)!;
+      const offsets = pinOffsets(sorted, f);
+      // The middle of each visible mark: a drop pin's mark sits 14 px above its point.
+      const drawnAt = (width: number, pin: MapViewMarker) => {
+        const fitted = Math.max(f.minWidth, Math.min(width - 2 * DEFAULT_PADDING, f.referenceWidth));
+        const p = projectPoint(pin.point);
+        const o = offsets.get(pin.id)!;
+        return {
+          x: ((p.x - f.minX) * fitted) / f.spanX + o.dx,
+          y: ((p.y - f.minY) * fitted) / f.spanX + o.dy - (pin.mark === undefined ? 14 : 0),
+        };
+      };
+      for (let width = 320; width <= 1600; width += 5)
+        for (let i = 0; i < sorted.length; i++)
+          for (let j = i + 1; j < sorted.length; j++) {
+            const a = drawnAt(width, sorted[i]!);
+            const b = drawnAt(width, sorted[j]!);
+            expect(Math.hypot(a.x - b.x, a.y - b.y), `${sorted[i]!.id}/${sorted[j]!.id} at ${width}px`).toBeGreaterThanOrEqual(28 - 1e-6);
+          }
+    };
+    check([marker("a", 1, 0, 0), marker("b", 2, 0, 0.003), marker("c", 3, 0, 0.0262)]);
+    check([marker("north", 1, 0.0033, 0), { ...marker("drop", undefined, 0, 0) }, marker("far", 2, 0.0262, 0)]);
+  });
   test("keeps stops apart and decides separation at phone width", () => {
-    // A wide route: C and "+" are a pin apart on a wide screen but would cover each other on a phone.
+    // A wide route: C and "+" are a pin apart on a wide screen but would cover each other on a 320 px phone.
     const pins = sortMarkers([
       marker("c", "C", 48.493, 9.399),
       marker("plus", "+", 48.493, 9.43),
@@ -192,7 +218,7 @@ describe("MapView geometry", () => {
     expect(offsets.get("c")).toEqual({ dx: 0, dy: 0 });
     expect(Math.hypot(offsets.get("plus")!.dx, offsets.get("plus")!.dy)).toBeCloseTo(28, 9);
     const phoneScale = f.overlapWidth / f.spanX;
-    expect(f.overlapWidth).toBeCloseTo(390 - 96, 9);
+    expect(f.overlapWidth).toBeCloseTo(320 - 96, 9);
     const at = (id: string) => {
       const m = pins.find((pin) => pin.id === id)!;
       const p = projectPoint(m.point);

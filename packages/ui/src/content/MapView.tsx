@@ -105,7 +105,6 @@ export function MapView(props: MapViewProps): JSX.Element {
       height: `${bottom.y - top.y}px`,
       transform: "none",
     });
-    setZoomFactor(touched ? 2 ** (map.getZoom() - fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING).zoom) : 1);
     const mpp = metersPerPixel(map.getCenter().lat, map.getZoom());
     const bar = scaleBar(mpp);
     setLiveScale({ label: bar.label, width: `${bar.meters / mpp}px` });
@@ -190,6 +189,12 @@ export function MapView(props: MapViewProps): JSX.Element {
         if (event.originalEvent) touched = true;
       });
       instance.on("move", syncOverlay);
+      // Pin separation is decided again once a zoom ends, not on every animation frame.
+      instance.on("zoomend", () => {
+        const f = frame();
+        if (!f || map !== instance) return;
+        setZoomFactor(touched ? 2 ** (instance.getZoom() - fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING).zoom) : 1);
+      });
       instance.on("resize", syncOverlay);
     } catch {
       fail();

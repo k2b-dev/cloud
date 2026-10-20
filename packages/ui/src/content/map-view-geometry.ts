@@ -4,8 +4,8 @@ export const MIN_SPAN = 256 / (512 * 2 ** 16);
 export const EARTH_CIRCUMFERENCE = 40075016.686;
 /** Room around the fitted geometry: clears the floating controls, the notice, the scale bar and the attribution. */
 export const DEFAULT_PADDING = 64;
-/** Phones are first-class: pin separation is decided for the narrowest common screen, then holds at every width. */
-const PHONE_WIDTH = 390;
+/** Phones are first-class: pin separation is decided from the narrowest common screen up, so it holds at every width. */
+const PHONE_WIDTH = 320;
 /**
  * `referenceWidth` is the fitted width when the container is wide enough; `minWidth` keeps the whole world at least as
  * tall as the map, the smallest zoom MapLibre allows, so a world-scale fit lands where MapLibre puts it.
@@ -18,7 +18,7 @@ export type MapFrame = {
   aspect: number;
   referenceWidth: number;
   minWidth: number;
-  /** The fitted width on a 390 px phone: pins are kept apart at this scale, so they never cover each other there. */
+  /** The fitted width on a 320 px phone: pins are kept apart from this scale up, so they never cover each other there. */
   overlapWidth: number;
 };
 
@@ -129,7 +129,8 @@ const closest = (gx: number, gy: number, ox: number, oy: number, rMax: number): 
 /** Deterministic places around a point: the mockup's two rings first, then wider rings for dense clusters. */
 const candidateOffsets = (count: number): PinOffset[] => {
   const angles = [-45, 45, 135, -135, 0, 90, 180, -90];
-  const rings = Math.ceil(Math.sqrt(count)) + 2;
+  // Ring k holds 8k places, so this many rings fit every pin of a cluster at one point with room to spare.
+  const rings = Math.ceil(Math.sqrt(count / 4)) + 2;
   const result: PinOffset[] = [];
   for (let ring = 1; ring <= rings; ring++) {
     const steps = ring <= 2 ? angles : Array.from({ length: 8 * ring }, (_, index) => -45 + (360 * index) / (8 * ring));
@@ -144,9 +145,10 @@ const candidateOffsets = (count: number): PinOffset[] => {
 
 const pinPlaces = (sortedMarkers: MapViewMarker[], frame: MapFrame, zoomFactor: number) => {
   const scale = (frame.overlapWidth / frame.spanX) * zoomFactor;
+  // A drop pin's mark sits above its point (its tip is on the point); collisions use the middle of the mark.
   return (marker: MapViewMarker) => {
     const p = projectPoint(marker.point);
-    return { x: (p.x - frame.minX) * scale, y: (p.y - frame.minY) * scale };
+    return { x: (p.x - frame.minX) * scale, y: (p.y - frame.minY) * scale - (marker.mark === undefined ? 14 : 0) };
   };
 };
 
@@ -159,30 +161,41 @@ export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame, zoom
   const position = pinPlaces(sortedMarkers, frame, zoomFactor);
   const rMax = Math.max(1, frame.referenceWidth / frame.overlapWidth);
   const candidates = candidateOffsets(sortedMarkers.length);
-  const placed: PlacedPin[] = [];
+  const reachOf = (offset: PinOffset) => Math.hypot(offset.dx, offset.dy);
+  const furthest = reachOf(candidates[candidates.length - 1]!);
+  const placed: (PlacedPin & { reach: number })[] = [];
   const offsets = new Map<string, PinOffset>();
-  const clear = (p: { x: number; y: number }, offset: PinOffset, anchorId?: string) =>
-    placed.every(
-      (other) =>
-        closest(p.x - other.x, p.y - other.y, offset.dx - other.dx, offset.dy - other.dy, rMax) >=
-        (other.id === anchorId ? ATTACHED_SPACING : PIN_SPACING) - 1e-9,
-    );
+  // Pins at one point search on from where the previous one found its place, so a dense cluster costs one pass.
+  const searchFrom = new Map<string, number>();
   const place = (marker: MapViewMarker, preferred: PinOffset, anchorId?: string) => {
     const p = position(marker);
-    const offset = clear(p, preferred, anchorId)
-      ? preferred
-      : (candidates.find((candidate) => clear(p, candidate)) ?? candidates[candidates.length - 1]!);
+    // Two pins whose points are further apart than their offsets plus one pin never meet at a wider fit
+    // (|g·r + o| ≥ |g| − |o| for r ≥ 1), so only the pins near this one are checked, once per pin.
+    const near = placed.filter((other) => Math.hypot(p.x - other.x, p.y - other.y) < furthest + other.reach + PIN_SPACING);
+    const clear = (offset: PinOffset, anchor?: string) =>
+      near.every(
+        (other) =>
+          closest(p.x - other.x, p.y - other.y, offset.dx - other.dx, offset.dy - other.dy, rMax) >=
+          (other.id === anchor ? ATTACHED_SPACING : PIN_SPACING) - 1e-9,
+      );
+    let offset = preferred;
+    if (!clear(preferred, anchorId)) {
+      const key = `${Math.round(p.x)},${Math.round(p.y)}`;
+      const first = searchFrom.get(key) ?? 0;
+      const found = candidates.findIndex((candidate, index) => index >= first && clear(candidate));
+      offset = candidates[found] ?? candidates[candidates.length - 1]!;
+      searchFrom.set(key, found < 0 ? candidates.length : found + 1);
+    }
     offsets.set(marker.id, offset);
-    placed.push({ id: marker.id, ...p, ...offset });
+    const pin = { id: marker.id, ...p, ...offset, reach: reachOf(offset) };
+    placed.push(pin);
+    return pin;
   };
   // Stops come first in mark order; a later stop that would cover an earlier one (such as "+" beside C) moves aside.
-  const stops = sortedMarkers.filter(isStop);
-  for (const stop of stops) place(stop, { dx: 0, dy: 0 });
+  const stops = sortedMarkers.filter(isStop).map((stop) => place(stop, { dx: 0, dy: 0 }));
   for (const marker of sortedMarkers.filter((marker) => !isStop(marker))) {
     const p = position(marker);
-    const anchor = placed.find(
-      (stop) => stops.some((s) => s.id === stop.id) && Math.hypot(p.x - stop.x - stop.dx, p.y - stop.y - stop.dy) < PIN_SPACING,
-    );
+    const anchor = stops.find((stop) => Math.hypot(p.x - stop.x - stop.dx, p.y - stop.y - stop.dy) < PIN_SPACING);
     // The attachment sits top right of where the stop is drawn, wherever the hit lies around it.
     place(marker, anchor ? { dx: anchor.x + anchor.dx + 17 - p.x, dy: anchor.y + anchor.dy - 17 - p.y } : { dx: 0, dy: 0 }, anchor?.id);
   }
