@@ -10,7 +10,7 @@ updated: 2026-10-20
 
 # Deprecations and migrations
 
-## Missing principals no longer get English placeholder names
+## Unknown principals and audiences have no English display name
 
 `resolveDisplayNames()` no longer invents English names. A deleted or unknown
 person, group, or service account and the `authenticated` and `public`
