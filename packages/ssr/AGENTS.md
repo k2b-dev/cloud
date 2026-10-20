@@ -249,7 +249,9 @@ unmarked), so a pending traversal can commit; otherwise the shown page wrote
 it and the entry takes the shown page's id, also over the marker of a
 traversal that a newer navigation cancelled. A pending traversal yields to any
 push through the wrapper, so it never commits over a newer entry. The history
-helpers also cancel a pending reload scroll replay. Nav's own writes use the saved originals. Positions use
+helpers also cancel a pending reload scroll replay; a raw replace does not,
+because islands use it to tidy their URL on mount. History treats an empty URL
+argument as the current URL, and so does nav. Nav's own writes use the saved originals. Positions use
 Navigation API indices when available, otherwise the tracked entry or the
 initial history.length - 1.
 

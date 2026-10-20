@@ -160,7 +160,8 @@ const patchHistory = (): HistoryWrites => {
     const [, url] = args;
     let moves = false;
     try {
-      moves = url != null && new URL(url, document.baseURI).href !== window.location.href;
+      // History treats a missing, null, or empty URL as the current one.
+      moves = url != null && url !== "" && new URL(url, document.baseURI).href !== window.location.href;
     } catch {
       // The original call rejects an invalid URL below.
     }

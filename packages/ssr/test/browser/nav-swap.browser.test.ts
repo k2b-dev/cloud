@@ -1879,6 +1879,18 @@ test("a traversal stays superseded after replaces move the URL away and back", a
   expect(document.title).toBe("old");
 });
 
+test("an empty replaceState URL keeps a pending traversal to a hashed URL", async () => {
+  install();
+  const requests = deferredFetch(true);
+  arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new#section");
+  window.history.replaceState({ island: 1 }, "", "");
+  const done = swapped("new");
+  requests[0]!.resolve(response());
+  await done;
+  expect(window.location.hash).toBe("#section");
+  expect(window.history.state[markerKey]).toEqual({ page: "other", position: 5 });
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;
@@ -1968,7 +1980,7 @@ test.each(["wheel", "touchstart", "keydown", "pointerdown"])("%s before initial 
   }
 });
 
-test.each([false, true])("a navigate() before the initial islands mount cancels the reload replay (replace: %p)", async (replace) => {
+test.each(["push", "replace"])("a navigate() %s before the initial islands mount cancels the reload replay", async (kind) => {
   const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
   const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
   spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
@@ -1977,7 +1989,7 @@ test.each([false, true])("a navigate() before the initial islands mount cancels 
   document.querySelector("main")!.innerHTML = wrapper("list", scrollId);
   window.history.replaceState({ [markerKey]: { page: "reloaded", position: 4, scroll: snapshot } }, "");
   install();
-  navigate("/app/old?tab=2", { replace, viewTransition: false });
+  navigate("/app/old?tab=2", { replace: kind === "replace", viewTransition: false });
   const calls = (window.scrollTo as ReturnType<typeof mock>).mock.calls.length;
   mountIslands(document);
   await (window as unknown as Window).happyDOM.waitUntilComplete();
