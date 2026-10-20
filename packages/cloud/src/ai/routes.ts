@@ -2,8 +2,8 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { CAPABILITY_DISCOVERY_TIMEOUT_MS, capabilityTimeoutMs } from "../_internal/capability-timeout";
 import { getApp, listCapabilities } from "../_internal/registry";
-import { QUERY_TIMEOUT_MS } from "../api/capabilities";
 import { ErrorResponseSchema } from "../contracts";
 import { APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
 import { capabilityActionPolicy } from "../contracts/capabilities";
@@ -497,7 +497,7 @@ export const aiRoutes = (() => {
           c.header("Cache-Control", "no-store");
           const ctx = await resolveContext(c);
           if (ctx instanceof Response) return ctx;
-          setRequestTimeout(c, Math.ceil(QUERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
+          setRequestTimeout(c, Math.ceil(CAPABILITY_DISCOVERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
           try {
             const resources = await listAiRecentResources({
               ownerUserId: ctx.ownerUserId,
@@ -1223,7 +1223,7 @@ export const aiRoutes = (() => {
         if (!turn || !callId) return notFound(c);
         const target = { conversationId: conversation.id, turnId: turn.id, callId };
         // The app's Query may take its whole budget; the request must outlast it.
-        setRequestTimeout(c, Math.ceil(QUERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
+        setRequestTimeout(c, Math.ceil(capabilityTimeoutMs("query") / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
         try {
           const messages = await aiConversations.listTurnMessages({
             conversationId: conversation.id,

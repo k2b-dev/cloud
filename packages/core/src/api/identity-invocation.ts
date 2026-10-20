@@ -1,4 +1,4 @@
-import { type CapabilityDispatchDependencies, dispatchCapability } from "@k2b/cloud/api";
+import { type CapabilityDispatchDependencies, dispatchCapability, withCapabilityRequestTimeout } from "@k2b/cloud/api";
 import {
   CAPABILITY_MAX_REQUEST_BYTES,
   CapabilityAppIdSchema,
@@ -123,22 +123,24 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
     const input = await readRequest(c.req.raw);
     if (!input) return errorResponse(c, 400, "VALIDATION_FAILED");
 
-    const response = await dispatchCapability({
-      request: dispatchRequest(c.req.raw, input),
-      kind: input.kind === "query" ? "queries" : "actions",
-      origin: "app",
-      appId: input.targetApp,
-      capabilityId: input.capabilityId,
-      input: input.input,
-      mandate: {
-        mandateId: input.mandateId,
-        mandateRevision: input.mandateRevision,
-        ownerAppId: workload.appId,
-      },
-      callingAppId: workload.appId,
-      locale: input.metadata?.locale,
-      dependencies: dependencies.dispatchDependencies,
-    });
+    const response = await withCapabilityRequestTimeout(c, input.kind, () =>
+      dispatchCapability({
+        request: dispatchRequest(c.req.raw, input),
+        kind: input.kind === "query" ? "queries" : "actions",
+        origin: "app",
+        appId: input.targetApp,
+        capabilityId: input.capabilityId,
+        input: input.input,
+        mandate: {
+          mandateId: input.mandateId,
+          mandateRevision: input.mandateRevision,
+          ownerAppId: workload.appId,
+        },
+        callingAppId: workload.appId,
+        locale: input.metadata?.locale,
+        dependencies: dependencies.dispatchDependencies,
+      }),
+    );
     response.headers.set("Cache-Control", "no-store");
     return response;
   });

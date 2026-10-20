@@ -1,7 +1,8 @@
 export type BoundedJsonResult = { ok: true; data: unknown } | { ok: false; reason: "too_large" | "invalid_json" };
 
 /** Reads JSON without allowing a missing or forged Content-Length to bypass the byte cap. */
-export const readBoundedJson = async (message: Request | Response, maxBytes: number): Promise<BoundedJsonResult> => {
+export const readBoundedJson = async (message: Request | Response, maxBytes: number, signal?: AbortSignal): Promise<BoundedJsonResult> => {
+  signal?.throwIfAborted();
   const declared = message.headers.get("content-length");
   if (declared !== null) {
     const bytes = Number(declared);
@@ -13,6 +14,12 @@ export const readBoundedJson = async (message: Request | Response, maxBytes: num
 
   const reader = message.body?.getReader();
   if (!reader) return { ok: false, reason: "invalid_json" };
+  const aborted = () => {
+    // Releasing the caller must not wait for a stalled source's cancellation hook.
+    void reader.cancel(signal?.reason).catch(() => undefined);
+  };
+  signal?.addEventListener("abort", aborted, { once: true });
+  if (signal?.aborted) aborted();
 
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -28,9 +35,14 @@ export const readBoundedJson = async (message: Request | Response, maxBytes: num
       chunks.push(next.value);
     }
   } catch {
-    await reader.cancel().catch(() => undefined);
+    if (!signal?.aborted) await reader.cancel().catch(() => undefined);
     return { ok: false, reason: "invalid_json" };
+  } finally {
+    signal?.removeEventListener("abort", aborted);
+    reader.releaseLock();
   }
+
+  signal?.throwIfAborted();
 
   const bytes = new Uint8Array(total);
   let offset = 0;

@@ -255,3 +255,28 @@ describe("identity invocation broker", () => {
     expect((await routes.request(request(invocation()))).status).toBe(401);
   });
 });
+
+test("mandate invocation keeps its socket raised through dispatch and restores it on failure", async () => {
+  const calls: number[] = [];
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const routes = createIdentityInvocationRoutes({
+    authenticateWorkload,
+    dispatchDependencies: {
+      getCapability: async () => {
+        entered.resolve();
+        await release.promise;
+        throw new Error("registry unavailable");
+      },
+    },
+  });
+  const pending = routes.fetch(request(invocation()), { timeout: (_request: Request, seconds: number) => calls.push(seconds) });
+  try {
+    await entered.promise;
+    expect(calls).toEqual([55]);
+  } finally {
+    release.resolve();
+  }
+  expect((await pending).status).toBe(503);
+  expect(calls).toEqual([55, 10]);
+});
