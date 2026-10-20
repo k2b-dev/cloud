@@ -13,6 +13,9 @@ export const pulseMessages = i18n.define({
       settingsTimezoneHint: "IANA time zone used for calendar buckets and local dates.",
       settingsIdentifierHint: "Use this identifier in links and the CLI.",
       settingsOnlyCloudAdmin: "Only a Cloud admin can change these limits in Administration → Pulse → Bases.",
+      settingsAppearance: "Icon and color",
+      settingsValuesPerMinute: "Values per minute",
+      settingsRateLimitOnly: "Limit; current rate is not measured.",
       settingsIcon: "Icon",
       settingsColor: "Color",
       settingsTimezone: "Time zone",
@@ -35,11 +38,35 @@ export const pulseMessages = i18n.define({
       sqlDeleteQuery: "Delete query",
       sqlQueryName: "Query name",
       sqlReady: "Ready",
+      sqlNoParameters: "No parameters",
+      sqlHelperHint: "Helper views: rate, increase, histogram_quantile",
+      sqlTables: ({ tables }: { tables: string }) => `Tables: ${tables}`,
+      sqlExampleLabel: "Example SQL",
+      sqlChartMeta: ({
+        column,
+        series,
+        points,
+        formattedPoints,
+        maxSeries,
+        maxPoints,
+      }: {
+        column: string;
+        series: number;
+        points: number;
+        formattedPoints: string;
+        maxSeries: string;
+        maxPoints: string;
+      }) =>
+        `x: ${column} · ${series} series · ${formattedPoints} ${points === 1 ? "point" : "points"} · at most ${maxSeries} series and ${maxPoints} points`,
+      sqlResultRows: ({ count, formatted }: { count: number; formatted: string }) => `${formatted} ${count === 1 ? "row" : "rows"}`,
+      sqlResultStats: ({ elapsed, read }: { elapsed: string; read: string }) => `${elapsed} ms · ${read} MiB read`,
+      sqlEmptyDetail: "no query yet",
       sqlEmpty: "Ready · no query yet",
       sqlEmptyHint: "Write a query, open a saved one, or ask for help.",
       sqlRunning: "Running",
       sqlCancelled: "Cancelled",
       sqlTruncated: "Truncated",
+      sqlInputTooLargeTitle: "Input too large",
       sqlInputTooLarge: "Pulse did not start the query. Use at most 16 KiB of SQL, 32 parameters and 2 KiB per parameter value.",
       sqlParameterMissing: "Parameter missing",
       sqlParameterFocus: "Enter value",
@@ -76,6 +103,7 @@ export const pulseMessages = i18n.define({
       sqlSavedEmptyHint: "Saved queries belong to a base. Save a query in the console and it will appear here.",
       sqlBackToConsole: "Go to console",
       sqlSavedLoading: "Loading saved queries…",
+      sqlSavedUpdatedLabel: "Updated",
       sqlSavedLoadFailed: "Could not load saved queries. Please try again.",
       settingsGeneral: "General",
       settingsColorGray: "Gray",
@@ -114,32 +142,13 @@ export const pulseMessages = i18n.define({
         pointsShown: string;
         pointsTotal: string;
       }) => `${seriesShown} of ${seriesTotal} series · first ${pointsShown} of ${pointsTotal} points`,
-      sqlLimits: ({
-        profile,
-        memory,
-        seconds,
-        rows,
-        result,
-        used,
-        quota,
-        baseSlots,
-        cloudSlots,
-        waiting,
-        wait,
-      }: {
-        profile: string;
-        memory: string;
-        seconds: string;
-        rows: string;
-        result: string;
-        used: string;
-        quota: string;
-        baseSlots: string;
-        cloudSlots: string;
-        waiting: string;
-        wait: string;
-      }) =>
-        `Profile ${profile}: ${memory} GB, ${seconds} s · ${rows} rows or ${result} MiB · ${used} of ${quota} queries this hour · Queue ${baseSlots} per base, ${cloudSlots} per Cloud, ${waiting} waiting, ${wait} s`,
+      sqlLimitProfile: ({ profile }: { profile: string }) => `Profile ${profile}: `,
+      sqlLimitMemory: ({ memory }: { memory: string }) => `${memory} GB`,
+      sqlLimitTime: ({ seconds }: { seconds: string }) => `${seconds} s`,
+      sqlLimitResult: ({ rows, result }: { rows: string; result: string }) => `${rows} rows or ${result} MiB`,
+      sqlLimitQuota: ({ used, quota }: { used: string; quota: string }) => `${used} of ${quota} queries this hour`,
+      sqlLimitQueue: ({ baseSlots, cloudSlots, waiting, wait }: { baseSlots: string; cloudSlots: string; waiting: string; wait: string }) =>
+        `Queue ${baseSlots} per base, ${cloudSlots} per Cloud, ${waiting} waiting, ${wait} s`,
       selectBase: "Switch base",
       dashboardsAndQuestions: "Dashboards",
       comingBackTitle: "Dashboards are coming back",
@@ -382,6 +391,9 @@ export const pulseMessages = i18n.define({
       settingsTimezoneHint: "IANA-Zeitzone für Kalenderintervalle und lokale Datumswerte.",
       settingsIdentifierHint: "Diese Kennung gilt in Links und in der CLI.",
       settingsOnlyCloudAdmin: "Diese Grenzen ändert nur eine Cloud-Admin unter Verwaltung → Pulse → Bases.",
+      settingsAppearance: "Symbol und Farbe",
+      settingsValuesPerMinute: "Werte pro Minute",
+      settingsRateLimitOnly: "Obergrenze; die aktuelle Rate wird nicht gemessen.",
       settingsIcon: "Symbol",
       settingsColor: "Farbe",
       settingsTimezone: "Zeitzone",
@@ -404,11 +416,35 @@ export const pulseMessages = i18n.define({
       sqlDeleteQuery: "Abfrage löschen",
       sqlQueryName: "Name der Abfrage",
       sqlReady: "Bereit",
+      sqlNoParameters: "Keine Parameter",
+      sqlHelperHint: "Hilfen als Views: rate, increase, histogram_quantile",
+      sqlTables: ({ tables }: { tables: string }) => `Tabellen: ${tables}`,
+      sqlExampleLabel: "Beispiel-SQL",
+      sqlChartMeta: ({
+        column,
+        series,
+        points,
+        formattedPoints,
+        maxSeries,
+        maxPoints,
+      }: {
+        column: string;
+        series: number;
+        points: number;
+        formattedPoints: string;
+        maxSeries: string;
+        maxPoints: string;
+      }) =>
+        `x: ${column} · ${series} ${series === 1 ? "Reihe" : "Reihen"} · ${formattedPoints} ${points === 1 ? "Punkt" : "Punkte"} · höchstens ${maxSeries} Reihen und ${maxPoints} Punkte`,
+      sqlResultRows: ({ count, formatted }: { count: number; formatted: string }) => `${formatted} ${count === 1 ? "Zeile" : "Zeilen"}`,
+      sqlResultStats: ({ elapsed, read }: { elapsed: string; read: string }) => `${elapsed} ms · ${read} MiB gelesen`,
+      sqlEmptyDetail: "noch keine Abfrage",
       sqlEmpty: "Bereit · noch keine Abfrage",
       sqlEmptyHint: "Schreib eine Abfrage, öffne eine gespeicherte oder lass dir helfen.",
       sqlRunning: "Läuft",
       sqlCancelled: "Abgebrochen",
       sqlTruncated: "Gekürzt",
+      sqlInputTooLargeTitle: "Eingabe zu groß",
       sqlInputTooLarge:
         "Pulse hat die Abfrage nicht gestartet. Eine Abfrage darf höchstens 16 KiB Text, 32 Parameter und 2 KiB je Parameterwert haben.",
       sqlParameterMissing: "Parameter fehlt",
@@ -447,6 +483,7 @@ export const pulseMessages = i18n.define({
       sqlSavedEmptyHint: "Gespeicherte Abfragen gehören zu einer Base. Speichere eine Abfrage in der Konsole, dann erscheint sie hier.",
       sqlBackToConsole: "Zur Konsole",
       sqlSavedLoading: "Gespeicherte Abfragen werden geladen …",
+      sqlSavedUpdatedLabel: "Geändert",
       sqlSavedLoadFailed: "Gespeicherte Abfragen ließen sich nicht laden. Bitte versuche es erneut.",
       settingsGeneral: "Allgemein",
       settingsColorGray: "Grau",
@@ -485,32 +522,13 @@ export const pulseMessages = i18n.define({
         pointsShown: string;
         pointsTotal: string;
       }) => `${seriesShown} von ${seriesTotal} Reihen · erste ${pointsShown} von ${pointsTotal} Punkten`,
-      sqlLimits: ({
-        profile,
-        memory,
-        seconds,
-        rows,
-        result,
-        used,
-        quota,
-        baseSlots,
-        cloudSlots,
-        waiting,
-        wait,
-      }: {
-        profile: string;
-        memory: string;
-        seconds: string;
-        rows: string;
-        result: string;
-        used: string;
-        quota: string;
-        baseSlots: string;
-        cloudSlots: string;
-        waiting: string;
-        wait: string;
-      }) =>
-        `Profil ${profile}: ${memory} GB, ${seconds} s · ${rows} Zeilen oder ${result} MiB · ${used} von ${quota} Abfragen diese Stunde · Warteschlange ${baseSlots} pro Base, ${cloudSlots} pro Cloud, ${waiting} wartend, ${wait} s`,
+      sqlLimitProfile: ({ profile }: { profile: string }) => `Profil ${profile}: `,
+      sqlLimitMemory: ({ memory }: { memory: string }) => `${memory} GB`,
+      sqlLimitTime: ({ seconds }: { seconds: string }) => `${seconds} s`,
+      sqlLimitResult: ({ rows, result }: { rows: string; result: string }) => `${rows} Zeilen oder ${result} MiB`,
+      sqlLimitQuota: ({ used, quota }: { used: string; quota: string }) => `${used} von ${quota} Abfragen diese Stunde`,
+      sqlLimitQueue: ({ baseSlots, cloudSlots, waiting, wait }: { baseSlots: string; cloudSlots: string; waiting: string; wait: string }) =>
+        `Warteschlange ${baseSlots} pro Base, ${cloudSlots} pro Cloud, ${waiting} wartend, ${wait} s`,
       selectBase: "Base wechseln",
       dashboardsAndQuestions: "Dashboards",
       comingBackTitle: "Dashboards kommen zurück",

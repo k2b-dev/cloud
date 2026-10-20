@@ -28,6 +28,8 @@ export type SqlRunState =
 export type SqlStatusBand = {
   kind: "neutral" | "running" | "ok" | "warning" | "error";
   message: string;
+  /** Optional presentation heading; message remains the complete localized diagnosis. */
+  title?: string;
   action?: {
     kind:
       | "retry"
@@ -163,7 +165,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
   };
   const quotaBlocked = () => quotaResetAt() !== null;
   const canRun = () => !disposed && !!sql().trim() && state().kind !== "running" && !quotaBlocked();
-  const canSave = () => !disposed && !!sql().trim() && !saving();
+  const canSave = () => !disposed && !!sql().trim() && !saving() && state().kind !== "running";
   const syncRoute = () =>
     options.onRouteChange?.({ view: "sql", sourceId: "", queryId: saved()?.id ?? "", sql: sql(), params: activeParams() });
   const blockUntil = (resetAt: string | undefined, retryAfter?: number) => {
@@ -385,32 +387,60 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     }
   };
   const number = (value: number, maximumFractionDigits = 1) => new Intl.NumberFormat(locale(), { maximumFractionDigits }).format(value);
-  const inputBytes = () =>
-    t().sqlInputBytes({ used: number(new TextEncoder().encode(sql()).length / 1024), max: number(SQL_MAX_BYTES / 1024) });
-  const limitsLine = () => {
+  const inputByteCount = () => new TextEncoder().encode(sql()).length;
+  const inputBytesOverLimit = () => inputByteCount() > SQL_MAX_BYTES;
+  const inputParametersOverLimit = () => parameterNames().length > SQL_MAX_PARAMETERS;
+  const inputBytes = () => t().sqlInputBytes({ used: number(inputByteCount() / 1024), max: number(SQL_MAX_BYTES / 1024) });
+  const inputParameters = () => t().sqlInputParameters({ used: number(parameterNames().length, 0), max: number(SQL_MAX_PARAMETERS, 0) });
+  const limitSegments = () => {
     const value = limits();
+    if (!value) return [];
     const storeT = baseStoreMessages.resolve([locale()]).t;
-    return value
-      ? t().sqlLimits({
+    const messages = t();
+    return [
+      {
+        kind: "profile",
+        text: messages.sqlLimitProfile({
           profile: { small: storeT.profileSmall, normal: storeT.profileNormal, large: storeT.profileLarge }[value.profile],
-          memory: number(value.memoryBytes / 1_000_000_000),
-          seconds: number(value.timeSeconds),
-          rows: number(value.maxRows, 0),
-          result: number(value.maxResultBytes / 1024 ** 2),
-          used: number(value.queriesUsed, 0),
-          quota: number(value.queriesPerHour, 0),
+        }),
+        separator: "",
+      },
+      { kind: "memory", text: messages.sqlLimitMemory({ memory: number(value.memoryBytes / 1_000_000_000) }), separator: ", " },
+      { kind: "time", text: messages.sqlLimitTime({ seconds: number(value.timeSeconds) }), separator: " · " },
+      {
+        kind: "result",
+        text: messages.sqlLimitResult({ rows: number(value.maxRows, 0), result: number(value.maxResultBytes / 1024 ** 2) }),
+        separator: " · ",
+      },
+      {
+        kind: "quota",
+        text: messages.sqlLimitQuota({ used: number(value.queriesUsed, 0), quota: number(value.queriesPerHour, 0) }),
+        separator: " · ",
+      },
+      {
+        kind: "queue",
+        text: messages.sqlLimitQueue({
           baseSlots: number(value.baseSlots, 0),
           cloudSlots: number(value.cloudSlots, 0),
           waiting: number(value.maxWaiting, 0),
           wait: number(value.waitMs / 1000),
-        })
-      : "";
+        }),
+        separator: "",
+      },
+    ];
   };
-  const statusBand = (): SqlStatusBand => {
-    const messages = t();
+  const limitsLine = () =>
+    limitSegments()
+      .map((segment) => segment.text + segment.separator)
+      .join("");
+  // The field and its visible diagnosis share this source, independent of status priority.
+  const missingParameter = () => {
     const current = state();
-    if (current.kind === "running")
-      return { kind: "running", message: messages.sqlRunning, action: { kind: "cancel", label: messages.sqlCancel, run: cancel } };
+    if (current.kind !== "error" || !current.details.parameterName) return null;
+    return { name: current.details.parameterName, message: t().sqlMissingParameter({ name: current.details.parameterName }) };
+  };
+  const assistantBand = (): SqlStatusBand | null => {
+    const messages = t();
     if (assistantState() === "launching") return { kind: "running", message: messages.sqlAssistantLaunching };
     if (assistantState() === "failed")
       return {
@@ -418,6 +448,10 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
         message: messages.sqlAssistantFailed,
         action: { kind: "retry-assistant", label: messages.sqlRetry, run: launchAssistant },
       };
+    return null;
+  };
+  const saveErrorBand = (): SqlStatusBand | null => {
+    const messages = t();
     const writeError = saveError();
     if (writeError) {
       const conflict = writeError.cause instanceof SqlClientError && writeError.cause.status === 409;
@@ -440,9 +474,14 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
               : { kind: "retry-save", label: messages.sqlRetry, run: () => persist(lastSaveName) },
       };
     }
+    return null;
+  };
+  const quotaBand = (): SqlStatusBand | null => {
+    const messages = t();
     if (quotaBlocked())
       return {
         kind: "warning",
+        title: messages.sqlQuota,
         message: `${messages.sqlQuotaReset({
           resetAt: new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" }).format(
             new Date(quotaResetAt()!),
@@ -450,6 +489,11 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
         })}${limitsError() ? ` · ${messages.sqlUsageRefreshFailed}` : ""}`,
         action: limitsError() ? { kind: "retry-limits", label: messages.sqlRetry, run: refreshLimits } : undefined,
       };
+    return null;
+  };
+  const runErrorBand = (): SqlStatusBand | null => {
+    const messages = t();
+    const current = state();
     if (current.kind === "error") {
       const detail = current.details;
       const byCode: Record<string, string> = {
@@ -460,7 +504,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
         MEMORY_LIMIT: messages.sqlMemoryLimit,
         RESULT_TOO_LARGE: messages.sqlResultTooLarge,
         INPUT_TOO_LARGE: `${messages.sqlInputTooLarge} · ${inputBytes()} · ${messages.sqlInputParameters({ used: number(parameterNames().length, 0), max: number(SQL_MAX_PARAMETERS, 0) })}`,
-        PARAMETER_MISSING: messages.sqlMissingParameter({ name: detail.parameterName ?? "" }),
+        PARAMETER_MISSING: missingParameter()?.message ?? messages.sqlMissingParameter({ name: detail.parameterName ?? "" }),
         BUSY: messages.sqlBusy,
         QUEUE_FULL: messages.sqlQueueFull,
         QUOTA: messages.sqlQuota,
@@ -480,6 +524,14 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
             ? undefined
             : { kind: "retry" as const, label: messages.sqlRetry, run };
       return {
+        title:
+          current.code === "PARAMETER_MISSING"
+            ? messages.sqlParameterMissing
+            : current.code === "SQL_ERROR"
+              ? messages.sqlError
+              : current.code === "INPUT_TOO_LARGE"
+                ? messages.sqlInputTooLargeTitle
+                : (byCode[current.code] ?? messages.sqlRequestFailed),
         kind: ["BUSY", "QUEUE_FULL", "QUOTA", "CANCELLED"].includes(current.code) ? "warning" : "error",
         message:
           current.code === "SQL_ERROR" && current.message
@@ -488,6 +540,10 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
         action,
       };
     }
+    return null;
+  };
+  const limitsErrorBand = (): SqlStatusBand | null => {
+    const messages = t();
     if (limitsError())
       return {
         kind: "error",
@@ -499,6 +555,15 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
               : messages.sqlRequestFailed,
         action: { kind: "retry-limits", label: messages.sqlRetry, run: refreshLimits },
       };
+    return null;
+  };
+  const statusBand = (): SqlStatusBand => {
+    const messages = t();
+    const current = state();
+    if (current.kind === "running")
+      return { kind: "running", message: messages.sqlRunning, action: { kind: "cancel", label: messages.sqlCancel, run: cancel } };
+    const failure = assistantBand() ?? saveErrorBand() ?? quotaBand() ?? runErrorBand() ?? limitsErrorBand();
+    if (failure) return failure;
     const result = lastResult();
     if (current.kind === "ok" && result)
       return {
@@ -538,8 +603,18 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     canRun,
     canSave,
     inputBytes,
+    inputBytesOverLimit,
+    inputParametersOverLimit,
+    inputParameters,
+    limitSegments,
     limitsLine,
     statusBand,
+    missingParameter,
+    assistantBand,
+    saveErrorBand,
+    quotaBand,
+    runErrorBand,
+    limitsErrorBand,
     run,
     cancel,
     retry: run,

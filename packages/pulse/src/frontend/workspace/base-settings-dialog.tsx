@@ -10,8 +10,8 @@ import {
   IconInput,
   NoticeCard,
   NumberInput,
+  ProgressBar,
   prompts,
-  Select,
   SettingsField,
   SettingsGroup,
   SettingsModal,
@@ -21,7 +21,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { type Accessor, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { type Accessor, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { BASE_COLORS } from "../../base-settings";
 import type { PulseBase } from "../../contracts";
 import type { BaseStoreStatus } from "../../store/admin-contracts";
@@ -83,7 +83,6 @@ const StoreStatusGroup = (props: { store: () => BaseStoreStatus; busy: () => boo
   const locale = useLocale();
   const t = createMemo(() => baseStoreMessages.resolve([locale()]).t);
   const badge = () => storeBadge(t(), props.store());
-  const bytes = (value: number) => text.pprintBytes(value, { locale: locale(), mode: "si" });
   const notice = () => {
     const store = props.store();
     if (store.state === "failed") return { tone: "danger" as const, text: failedText(t(), store), retry: true };
@@ -109,22 +108,6 @@ const StoreStatusGroup = (props: { store: () => BaseStoreStatus; busy: () => boo
                 <Button size="xs" variant="secondary" loading={props.busy()} onClick={() => props.onRetry()}>
                   {t().retry}
                 </Button>
-              </Show>
-            ),
-          },
-          {
-            term: t().usage,
-            description: (
-              <Show when={props.store().usage} fallback={<span class="text-secondary">{t().notMeasured}</span>}>
-                {(usage) => (
-                  <span class="tabular-nums">
-                    {t().usageOf({ used: bytes(usage().bytes), limit: bytes(props.store().limits.storageBytes) })}
-                    <span class="text-xs text-dimmed">
-                      {" · "}
-                      {t().measured} <Format.RelativeTime value={usage().measuredAt} />
-                    </span>
-                  </span>
-                )}
               </Show>
             ),
           },
@@ -305,7 +288,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       });
 
       return (
-        <div class="flex h-[86vh] min-h-0 flex-col overflow-hidden">
+        <div class="flex h-[86dvh] min-h-0 flex-col overflow-hidden md:h-[min(640px,86dvh)]">
           <SettingsModal
             defaultTab={options.initialTab}
             onTabChange={(tab) => {
@@ -319,283 +302,448 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
             onClose={() => void requestClose()}
             closeLabel={t().close}
           >
-            <SettingsModal.Group title={t().base}>
-              <SettingsModal.Tab id="general" title={t().general} icon="ti ti-settings" description={t().baseGeneralDescription}>
-                <SettingsGroup title={t().identity} description={t().identityDescription}>
-                  <SettingsField
-                    label={t().name}
-                    description={t().baseNameDescription}
-                    error={() => (!name().trim() ? t().nameRequired : undefined)}
-                    changed={() => name() !== saved().name}
+            <SettingsModal.Tab id="general" title={t().general} icon="ti ti-settings" description={t().baseGeneralDescription}>
+              <div class="flex max-w-[460px] flex-col gap-4">
+                <Show when={!options.canAdmin}>
+                  <p class="text-sm text-secondary">
+                    <i class="ti ti-lock mr-2" aria-hidden="true" />
+                    {t().settingsNotAdmin} {options.admins.join(", ")}
+                  </p>
+                </Show>
+                <TextInput
+                  label={t().name}
+                  disabled={!options.canAdmin}
+                  value={name}
+                  onValueChange={setName}
+                  required
+                  error={() => (!name().trim() ? t().nameRequired : undefined)}
+                />
+                <div class="flex flex-col gap-2">
+                  <span class="text-sm font-medium">{t().settingsAppearance}</span>
+                  <div role="group" aria-label={t().settingsColor} class="flex flex-wrap gap-2.5 py-1">
+                    <For each={BASE_COLORS}>
+                      {(value) => (
+                        <Button
+                          variant="ghost"
+                          class="h-[38px] w-[38px] rounded-[10px] p-0!"
+                          disabled={!options.canAdmin}
+                          aria-label={
+                            {
+                              zinc: t().settingsColorGray,
+                              blue: t().settingsColorBlue,
+                              emerald: t().settingsColorGreen,
+                              amber: t().settingsColorAmber,
+                              red: t().settingsColorRed,
+                            }[value]
+                          }
+                          aria-pressed={color() === value}
+                          onClick={() => setColor(value)}
+                          style={{
+                            color: `color-mix(in srgb, var(--k2b-${{ zinc: "neutral", blue: "accent", emerald: "success", amber: "warning", red: "danger" }[value]}-500) 72%, var(--k2b-text))`,
+                            background: `color-mix(in srgb, var(--k2b-${{ zinc: "neutral", blue: "accent", emerald: "success", amber: "warning", red: "danger" }[value]}-500) 16%, var(--k2b-surface))`,
+                            "box-shadow": color() === value ? "0 0 0 2px var(--k2b-surface), 0 0 0 4px var(--k2b-action)" : undefined,
+                          }}
+                        >
+                          <i class={`${icon()} text-lg`} aria-hidden="true" />
+                        </Button>
+                      )}
+                    </For>
+                  </div>
+                  <IconInput aria-label={t().settingsIcon} value={icon} onValueChange={setIcon} disabled={!options.canAdmin} />
+                </div>
+                <TextInput
+                  label={t().settingsTimezone}
+                  description={t().settingsTimezoneHint}
+                  value={timezone}
+                  onValueChange={setTimezone}
+                  disabled={!options.canAdmin}
+                />
+                <TextInput
+                  label={t().settingsIdentifier}
+                  description={t().settingsIdentifierHint}
+                  value={options.base.shortId}
+                  monospace
+                  readOnly
+                />
+                <TextInput
+                  label={t().description}
+                  value={description}
+                  onValueChange={setDescription}
+                  multiline
+                  lines={3}
+                  placeholder={t().optional}
+                  disabled={!options.canAdmin}
+                />
+              </div>
+
+              <SettingsModal.Footer>
+                <SettingsPanelFooter
+                  changeCount={changeCount}
+                  loading={options.loading}
+                  onDiscard={discard}
+                  onSave={() => options.canAdmin && void saveSettings()}
+                />
+              </SettingsModal.Footer>
+            </SettingsModal.Tab>
+
+            <SettingsModal.Tab id="members" title={t().settingsMembers} icon="ti ti-users" description={t().accessDescription}>
+              <Show when={!options.canAdmin}>
+                <NoticeCard title={t().settingsNotAdmin} detail={options.admins.join(", ")} />
+              </Show>
+              <Show when={options.canAdmin}>
+                <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
+                  <Show when={access.data() && access.error()}>
+                    {(error) => (
+                      <NoticeCard tone="danger" title={t().accessRefreshFailed} detail={error().message}>
+                        <Button onClick={() => void access.refresh()}>{t().retry}</Button>
+                      </NoticeCard>
+                    )}
+                  </Show>
+                  <Show
+                    when={access.data()}
+                    fallback={
+                      <NoticeCard
+                        tone={access.error() ? "danger" : "neutral"}
+                        title={access.error() ? t().accessLoadFailed : t().loadingAccess}
+                        detail={access.error()?.message}
+                      >
+                        {access.error() ? <Button onClick={() => void access.refresh()}>{t().retry}</Button> : null}
+                      </NoticeCard>
+                    }
                   >
-                    <TextInput
-                      disabled={!options.canAdmin}
-                      aria-label={t().name}
-                      icon="ti ti-tag"
-                      value={name}
-                      onValueChange={setName}
-                      required
-                    />
-                  </SettingsField>
-                  <SettingsField
-                    label={t().description}
-                    description={t().baseDescriptionDescription}
-                    error={() => undefined}
-                    changed={() => description() !== saved().description}
-                  >
-                    <TextInput
-                      disabled={!options.canAdmin}
-                      aria-label={t().description}
-                      icon="ti ti-align-left"
-                      value={description}
-                      onValueChange={setDescription}
-                      multiline
-                      lines={3}
-                      placeholder={t().optional}
-                    />
-                  </SettingsField>
-                  <SettingsField label={t().settingsIcon} description={t().settingsIconHint} error={() => undefined}>
-                    <IconInput aria-label={t().settingsIcon} value={icon} onValueChange={setIcon} disabled={!options.canAdmin} />
-                  </SettingsField>
-                  <SettingsField label={t().settingsColor} description={t().settingsColorHint} error={() => undefined}>
-                    <Select
-                      aria-label={t().settingsColor}
-                      value={color}
-                      onValueChange={(value) => value && setColor(value)}
-                      options={BASE_COLORS.map((value) => ({
-                        value,
-                        label: {
-                          zinc: t().settingsColorGray,
-                          blue: t().settingsColorBlue,
-                          emerald: t().settingsColorGreen,
-                          amber: t().settingsColorAmber,
-                          red: t().settingsColorRed,
-                        }[value],
-                      }))}
-                      disabled={!options.canAdmin}
-                    />
-                  </SettingsField>
-                  <SettingsField label={t().settingsTimezone} description={t().settingsTimezoneHint} error={() => undefined}>
-                    <TextInput
-                      aria-label={t().settingsTimezone}
-                      value={timezone}
-                      onValueChange={setTimezone}
-                      disabled={!options.canAdmin}
-                    />
-                  </SettingsField>
-                  <SettingsField label={t().settingsIdentifier} description={t().settingsIdentifierHint} error={() => undefined}>
-                    <TextInput aria-label={t().settingsIdentifier} value={options.base.shortId} disabled />
-                  </SettingsField>
-                  <Show when={!options.canAdmin}>
-                    <NoticeCard title={t().settingsNotAdmin} detail={options.admins.join(", ")} />
+                    {(entries) => (
+                      <PermissionEditor
+                        initialEntries={entries()}
+                        canEdit
+                        grantAccess={grantAccess}
+                        updateAccess={updateAccess}
+                        revokeAccess={revokeAccess}
+                        allowedLevels={[
+                          { level: "read", label: t().view, icon: "ti-eye" },
+                          { level: "write", label: t().edit, icon: "ti-pencil" },
+                          { level: "admin", label: t().manage, icon: "ti-shield" },
+                        ]}
+                      />
+                    )}
                   </Show>
                 </SettingsGroup>
+              </Show>
+            </SettingsModal.Tab>
 
-                <SettingsModal.Footer>
-                  <SettingsPanelFooter
-                    changeCount={changeCount}
-                    loading={options.loading}
-                    onDiscard={discard}
-                    onSave={() => options.canAdmin && void saveSettings()}
-                  />
-                </SettingsModal.Footer>
-              </SettingsModal.Tab>
-            </SettingsModal.Group>
-
-            <SettingsModal.Group title={t().sharing}>
-              <SettingsModal.Tab id="members" title={t().settingsMembers} icon="ti ti-users" description={t().accessDescription}>
-                <Show when={!options.canAdmin}>
-                  <NoticeCard title={t().settingsNotAdmin} detail={options.admins.join(", ")} />
-                </Show>
-                <Show when={options.canAdmin}>
-                  <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
-                    <Show when={access.data() && access.error()}>
-                      {(error) => (
-                        <NoticeCard tone="danger" title={t().accessRefreshFailed} detail={error().message}>
-                          <Button onClick={() => void access.refresh()}>{t().retry}</Button>
-                        </NoticeCard>
-                      )}
-                    </Show>
-                    <Show
-                      when={access.data()}
-                      fallback={
-                        <NoticeCard
-                          tone={access.error() ? "danger" : "neutral"}
-                          title={access.error() ? t().accessLoadFailed : t().loadingAccess}
-                          detail={access.error()?.message}
-                        >
-                          {access.error() ? <Button onClick={() => void access.refresh()}>{t().retry}</Button> : null}
-                        </NoticeCard>
-                      }
-                    >
-                      {(entries) => (
-                        <PermissionEditor
-                          initialEntries={entries()}
-                          canEdit
-                          grantAccess={grantAccess}
-                          updateAccess={updateAccess}
-                          revokeAccess={revokeAccess}
-                          allowedLevels={[
-                            { level: "read", label: t().view, icon: "ti-eye" },
-                            { level: "write", label: t().edit, icon: "ti-pencil" },
-                            { level: "admin", label: t().manage, icon: "ti-shield" },
-                          ]}
-                        />
-                      )}
-                    </Show>
-                  </SettingsGroup>
-                </Show>
-              </SettingsModal.Tab>
-            </SettingsModal.Group>
-
-            <SettingsModal.Group title={t().data}>
-              <SettingsModal.Tab id="retention" title={t().retention} icon="ti ti-clock-cog" description={t().retentionTabDescription}>
-                <SettingsGroup title={t().dataLifecycle} description={t().dataLifecycleDescription}>
-                  <SettingsField
-                    label={t().rawDataRetention}
-                    description={t().rawDataRetentionDescription}
-                    error={() => undefined}
-                    changed={() => draft().rawRetentionDays !== saved().rawRetentionDays}
-                  >
-                    <NumberInput
-                      aria-label={t().rawDataRetention}
-                      icon="ti ti-clock"
-                      suffix={t().days}
-                      min={1}
-                      max={options.maxRawRetentionDays}
-                      disabled={!options.canAdmin}
-                      value={rawRetentionDays}
-                      onValueChange={setRawRetentionDays}
-                      required
-                    />
-                  </SettingsField>
-                  <SettingsField
-                    label={t().hourlyRollupRetention}
-                    description={t().hourlyRollupRetentionDescription}
-                    error={() => undefined}
-                    changed={() => draft().rollupRetentionDays !== saved().rollupRetentionDays}
-                  >
-                    <NumberInput
-                      aria-label={t().hourlyRollupRetention}
-                      icon="ti ti-chart-histogram"
-                      suffix={t().days}
-                      min={1}
-                      max={3650}
-                      disabled={!options.canAdmin}
-                      value={rollupRetentionDays}
-                      onValueChange={setRollupRetentionDays}
-                      required
-                    />
-                  </SettingsField>
-                  <SettingsField
-                    label={t().sensitiveEventRetention}
-                    description={t().sensitiveEventRetentionDescription}
-                    error={() => undefined}
-                    changed={() => draft().sensitiveRetentionHours !== saved().sensitiveRetentionHours}
-                  >
-                    <NumberInput
-                      aria-label={t().sensitiveEventRetention}
-                      icon="ti ti-shield-lock"
-                      suffix={t().hours}
-                      min={1}
-                      max={8760}
-                      disabled={!options.canAdmin}
-                      value={sensitiveRetentionHours}
-                      onValueChange={setSensitiveRetentionHours}
-                      required
-                    />
-                  </SettingsField>
-                </SettingsGroup>
-                <SettingsModal.Footer>
-                  <SettingsPanelFooter
-                    changeCount={changeCount}
-                    loading={options.loading}
-                    onDiscard={discard}
-                    onSave={() => options.canAdmin && void saveSettings()}
-                  />
-                </SettingsModal.Footer>
-              </SettingsModal.Tab>
-            </SettingsModal.Group>
-
-            <SettingsModal.Group title={t().lifecycle}>
-              <SettingsModal.Tab id="usage" title={t().settingsUsage} icon="ti ti-gauge">
-                <StoreStatusGroup store={store} busy={retrying} onRetry={() => options.canAdmin && void retry()} />
-                <SettingsGroup title={t().settingsSqlLimits}>
-                  <div class="min-h-48">
-                    <Show when={usage.error()}>
-                      <NoticeCard tone="danger" title={t().sqlRequestFailed}>
-                        <Button onClick={() => void usage.refresh()}>{t().retry}</Button>
-                      </NoticeCard>
-                    </Show>
-                    <Show when={usage.loading()}>
-                      <p role="status">{t().settingsLoading}</p>
-                    </Show>
-                    <Show when={usage.data()}>
-                      {(limits) => (
-                        <DescriptionList
-                          layout="rows"
-                          items={[
-                            { term: t().settingsSqlInput, description: "16 KiB · 32 × 2 KiB" },
-                            {
-                              term: t().settingsSqlLimits,
-                              description: `${{ small: storeT().profileSmall, normal: storeT().profileNormal, large: storeT().profileLarge }[limits().profile]} · ${limits().memoryBytes / 1e9} GB · ${limits().timeSeconds} s · ${limits().maxRows} · 4 MiB`,
-                            },
-                            {
-                              term: t().settingsSqlConcurrency,
-                              description: `${limits().baseSlots} / ${limits().cloudSlots} · ${limits().maxWaiting} · ${limits().waitMs / 1000} s`,
-                            },
-                            { term: t().settingsQueriesPerHour, description: `${limits().queriesUsed} / ${limits().queriesPerHour}` },
-                          ]}
-                        />
-                      )}
-                    </Show>
-                  </div>
-                  <p class="text-xs text-secondary">{t().settingsOnlyCloudAdmin}</p>
-                </SettingsGroup>
-              </SettingsModal.Tab>
-              <SettingsModal.Tab
-                id="danger"
-                title={t().settingsDanger}
-                icon="ti ti-alert-triangle"
-                tone="danger"
-                description={t().destructiveBaseActions}
-              >
-                <SettingsGroup
-                  title={t().clearTelemetry}
-                  description={clearBlocked() ? storeT().clearBlockedText : t().clearTelemetryDescription}
+            <SettingsModal.Tab id="retention" title={t().retention} icon="ti ti-clock-cog" description={t().retentionTabDescription}>
+              <div class="max-w-[860px]">
+                <SettingsField
+                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
+                  label={t().rawDataRetention}
+                  description={t().rawDataRetentionDescription}
+                  error={() => undefined}
+                  changed={() => draft().rawRetentionDays !== saved().rawRetentionDays}
                 >
-                  <SettingsGroup.Action>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      disabled={!options.canAdmin || options.loading() || options.writeBlocked() || clearBlocked()}
-                      onClick={() => void options.clearBaseData()}
-                    >
-                      <i class="ti ti-eraser text-sm" />
-                      {t().clearTelemetry}
-                    </Button>
-                  </SettingsGroup.Action>
-                </SettingsGroup>
-                <SettingsGroup title={t().deletePulseBase} description={t().deletePulseBaseDescription}>
-                  <SettingsGroup.Action>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      disabled={!options.canAdmin || options.loading() || options.writeBlocked()}
-                      onClick={() => void options.deleteBase().then((deleted) => deleted && close())}
-                    >
-                      <i class="ti ti-trash text-sm" />
-                      {t().deletePulseBase}
-                    </Button>
-                  </SettingsGroup.Action>
-                </SettingsGroup>
-              </SettingsModal.Tab>
-            </SettingsModal.Group>
+                  {({ describedBy }) => (
+                    <div class="flex min-w-0 flex-col gap-2">
+                      <div role="group" aria-label={t().rawDataRetention} aria-describedby={describedBy()} class="flex flex-wrap gap-1">
+                        <For each={[7, 30, 90, 400, 730, 1095]}>
+                          {(value) => (
+                            <Button
+                              aria-describedby={describedBy()}
+                              size="sm"
+                              variant="subtle"
+                              aria-pressed={rawRetentionDays() === value}
+                              disabled={!options.canAdmin || value > options.maxRawRetentionDays}
+                              class="h-[34px] rounded-[9px]"
+                              style={
+                                rawRetentionDays() === value
+                                  ? {
+                                      color: "var(--k2b-action)",
+                                      background: "var(--k2b-selected)",
+                                      "box-shadow": "inset 0 0 0 1.5px color-mix(in srgb, var(--k2b-action) 40%, transparent)",
+                                    }
+                                  : undefined
+                              }
+                              onClick={() => setRawRetentionDays(value)}
+                            >
+                              {new Intl.NumberFormat(locale()).format(value)} {t().days}
+                            </Button>
+                          )}
+                        </For>
+                      </div>
+                      <div class="w-full max-w-[280px]">
+                        <NumberInput
+                          aria-label={t().rawDataRetention}
+                          aria-describedby={describedBy()}
+                          icon="ti ti-clock"
+                          suffix={t().days}
+                          min={1}
+                          max={options.maxRawRetentionDays}
+                          disabled={!options.canAdmin}
+                          value={rawRetentionDays}
+                          onValueChange={setRawRetentionDays}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+                </SettingsField>
+                <SettingsField
+                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
+                  label={t().hourlyRollupRetention}
+                  description={t().hourlyRollupRetentionDescription}
+                  error={() => undefined}
+                  changed={() => draft().rollupRetentionDays !== saved().rollupRetentionDays}
+                >
+                  {({ describedBy }) => (
+                    <div class="flex min-w-0 flex-col gap-2">
+                      <div
+                        role="group"
+                        aria-label={t().hourlyRollupRetention}
+                        aria-describedby={describedBy()}
+                        class="flex flex-wrap gap-1"
+                      >
+                        <For each={[365, 800, 1095, 3650]}>
+                          {(value) => (
+                            <Button
+                              aria-describedby={describedBy()}
+                              size="sm"
+                              variant="subtle"
+                              aria-pressed={rollupRetentionDays() === value}
+                              disabled={!options.canAdmin || value > 3650}
+                              class="h-[34px] rounded-[9px]"
+                              style={
+                                rollupRetentionDays() === value
+                                  ? {
+                                      color: "var(--k2b-action)",
+                                      background: "var(--k2b-selected)",
+                                      "box-shadow": "inset 0 0 0 1.5px color-mix(in srgb, var(--k2b-action) 40%, transparent)",
+                                    }
+                                  : undefined
+                              }
+                              onClick={() => setRollupRetentionDays(value)}
+                            >
+                              {new Intl.NumberFormat(locale()).format(value)} {t().days}
+                            </Button>
+                          )}
+                        </For>
+                      </div>
+                      <div class="w-full max-w-[280px]">
+                        <NumberInput
+                          aria-label={t().hourlyRollupRetention}
+                          aria-describedby={describedBy()}
+                          icon="ti ti-chart-histogram"
+                          suffix={t().days}
+                          min={1}
+                          max={3650}
+                          disabled={!options.canAdmin}
+                          value={rollupRetentionDays}
+                          onValueChange={setRollupRetentionDays}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+                </SettingsField>
+                <SettingsField
+                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
+                  label={t().sensitiveEventRetention}
+                  description={t().sensitiveEventRetentionDescription}
+                  error={() => undefined}
+                  changed={() => draft().sensitiveRetentionHours !== saved().sensitiveRetentionHours}
+                >
+                  {({ describedBy }) => (
+                    <div class="flex min-w-0 flex-col gap-2">
+                      <div
+                        role="group"
+                        aria-label={t().sensitiveEventRetention}
+                        aria-describedby={describedBy()}
+                        class="flex flex-wrap gap-1"
+                      >
+                        <For each={[24, 168, 720]}>
+                          {(value) => (
+                            <Button
+                              aria-describedby={describedBy()}
+                              size="sm"
+                              variant="subtle"
+                              aria-pressed={sensitiveRetentionHours() === value}
+                              disabled={!options.canAdmin || value > 8760}
+                              class="h-[34px] rounded-[9px]"
+                              style={
+                                sensitiveRetentionHours() === value
+                                  ? {
+                                      color: "var(--k2b-action)",
+                                      background: "var(--k2b-selected)",
+                                      "box-shadow": "inset 0 0 0 1.5px color-mix(in srgb, var(--k2b-action) 40%, transparent)",
+                                    }
+                                  : undefined
+                              }
+                              onClick={() => setSensitiveRetentionHours(value)}
+                            >
+                              {new Intl.NumberFormat(locale()).format(value)} {t().hours}
+                            </Button>
+                          )}
+                        </For>
+                      </div>
+                      <div class="w-full max-w-[280px]">
+                        <NumberInput
+                          aria-label={t().sensitiveEventRetention}
+                          aria-describedby={describedBy()}
+                          icon="ti ti-shield-lock"
+                          suffix={t().hours}
+                          min={1}
+                          max={8760}
+                          disabled={!options.canAdmin}
+                          value={sensitiveRetentionHours}
+                          onValueChange={setSensitiveRetentionHours}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+                </SettingsField>
+              </div>
+              <SettingsModal.Footer>
+                <SettingsPanelFooter
+                  changeCount={changeCount}
+                  loading={options.loading}
+                  onDiscard={discard}
+                  onSave={() => options.canAdmin && void saveSettings()}
+                />
+              </SettingsModal.Footer>
+            </SettingsModal.Tab>
+
+            <SettingsModal.Tab id="usage" title={t().settingsUsage} icon="ti ti-gauge">
+              <div class="mb-6 grid max-w-[860px] grid-cols-1 gap-6 @min-[760px]/k2b-app-area:grid-cols-3">
+                <div>
+                  <p class="text-[13px] text-dimmed">{storeT().usage}</p>
+                  <Show when={store().usage} fallback={<p class="mt-2 text-sm text-secondary">{storeT().notMeasured}</p>}>
+                    {(measured) => (
+                      <>
+                        <p class="mt-0.5 mb-2 text-[22px] font-semibold tabular-nums">
+                          {text.pprintBytes(measured().bytes, { locale: locale(), mode: "si" })}{" "}
+                          <span class="text-[13px] font-medium text-dimmed">
+                            / {text.pprintBytes(store().limits.storageBytes, { locale: locale(), mode: "si" })}
+                          </span>
+                        </p>
+                        <ProgressBar
+                          value={(measured().bytes / store().limits.storageBytes) * 100}
+                          label={storeT().usageOf({
+                            used: text.pprintBytes(measured().bytes, { locale: locale(), mode: "si" }),
+                            limit: text.pprintBytes(store().limits.storageBytes, { locale: locale(), mode: "si" }),
+                          })}
+                          size="xs"
+                        />
+                        <p class="mt-1 text-xs text-dimmed">
+                          {storeT().measured} <Format.RelativeTime value={measured().measuredAt} />
+                        </p>
+                      </>
+                    )}
+                  </Show>
+                </div>
+                <div>
+                  <p class="text-[13px] text-dimmed">{t().settingsValuesPerMinute}</p>
+                  <p class="mt-0.5 text-[22px] font-semibold tabular-nums">
+                    {new Intl.NumberFormat(locale()).format(store().limits.valuesPerMinute)}
+                  </p>
+                  <p class="text-xs text-dimmed">{t().settingsRateLimitOnly}</p>
+                </div>
+                <div>
+                  <p class="text-[13px] text-dimmed">{t().settingsQueriesPerHour}</p>
+                  <Show
+                    when={!usage.error() && usage.data()}
+                    fallback={<p class="mt-2 text-sm text-secondary">{usage.loading() ? t().settingsLoading : storeT().notMeasured}</p>}
+                  >
+                    {(limits) => (
+                      <>
+                        <p class="mt-0.5 mb-2 text-[22px] font-semibold tabular-nums">
+                          {new Intl.NumberFormat(locale()).format(limits().queriesUsed)}{" "}
+                          <span class="text-[13px] font-medium text-dimmed">
+                            / {new Intl.NumberFormat(locale()).format(limits().queriesPerHour)}
+                          </span>
+                        </p>
+                        <ProgressBar
+                          value={(limits().queriesUsed / limits().queriesPerHour) * 100}
+                          label={t().settingsQueriesPerHour}
+                          size="xs"
+                        />
+                      </>
+                    )}
+                  </Show>
+                </div>
+              </div>
+              <StoreStatusGroup store={store} busy={retrying} onRetry={() => options.canAdmin && void retry()} />
+              <SettingsGroup title={t().settingsSqlLimits}>
+                <div class="min-h-48">
+                  <Show when={usage.error()}>
+                    <NoticeCard tone="danger" title={t().sqlRequestFailed}>
+                      <Button onClick={() => void usage.refresh()}>{t().retry}</Button>
+                    </NoticeCard>
+                  </Show>
+                  <Show when={usage.loading()}>
+                    <p role="status">{t().settingsLoading}</p>
+                  </Show>
+                  <Show when={usage.data()}>
+                    {(limits) => (
+                      <DescriptionList
+                        layout="rows"
+                        items={[
+                          { term: t().settingsSqlInput, description: "16 KiB · 32 × 2 KiB" },
+                          {
+                            term: t().settingsSqlLimits,
+                            description: `${{ small: storeT().profileSmall, normal: storeT().profileNormal, large: storeT().profileLarge }[limits().profile]} · ${limits().memoryBytes / 1e9} GB · ${limits().timeSeconds} s · ${limits().maxRows} · 4 MiB`,
+                          },
+                          {
+                            term: t().settingsSqlConcurrency,
+                            description: `${limits().baseSlots} / ${limits().cloudSlots} · ${limits().maxWaiting} · ${limits().waitMs / 1000} s`,
+                          },
+                          { term: t().settingsQueriesPerHour, description: `${limits().queriesUsed} / ${limits().queriesPerHour}` },
+                        ]}
+                      />
+                    )}
+                  </Show>
+                </div>
+                <p class="text-xs text-secondary">{t().settingsOnlyCloudAdmin}</p>
+              </SettingsGroup>
+            </SettingsModal.Tab>
+            <SettingsModal.Tab
+              id="danger"
+              title={t().settingsDanger}
+              icon="ti ti-alert-triangle"
+              tone="danger"
+              description={t().destructiveBaseActions}
+            >
+              <SettingsGroup
+                title={t().clearTelemetry}
+                description={clearBlocked() ? storeT().clearBlockedText : t().clearTelemetryDescription}
+              >
+                <SettingsGroup.Action>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={!options.canAdmin || options.loading() || options.writeBlocked() || clearBlocked()}
+                    onClick={() => void options.clearBaseData()}
+                  >
+                    <i class="ti ti-eraser text-sm" />
+                    {t().clearTelemetry}
+                  </Button>
+                </SettingsGroup.Action>
+              </SettingsGroup>
+              <SettingsGroup title={t().deletePulseBase} description={t().deletePulseBaseDescription}>
+                <SettingsGroup.Action>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={!options.canAdmin || options.loading() || options.writeBlocked()}
+                    onClick={() => void options.deleteBase().then((deleted) => deleted && close())}
+                  >
+                    <i class="ti ti-trash text-sm" />
+                    {t().deletePulseBase}
+                  </Button>
+                </SettingsGroup.Action>
+              </SettingsGroup>
+            </SettingsModal.Tab>
           </SettingsModal>
         </div>
       );
     },
-    { surface: "bare", header: false, size: "large", history: false, signal: options.signal },
+    { surface: "bare", header: false, size: "wide", history: false, signal: options.signal },
   );

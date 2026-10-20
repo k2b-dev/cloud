@@ -143,6 +143,9 @@ test("input checks run before all transport and missing parameter exposes a focu
   expect(c.state()).toMatchObject({ code: "INPUT_TOO_LARGE" });
   expect(c.inputBytes()).toBe("22,2 von 16 KiB");
   expect(c.statusBand().message).toContain("22,2 von 16 KiB");
+  expect(c.statusBand().title).toBe("Eingabe zu groß");
+  expect(c.statusBand().message).toContain("2 KiB");
+  expect(c.statusBand().title).not.toBe(c.statusBand().message);
   c.setSql("DELETE FROM samples");
   await c.run();
   expect(c.state()).toMatchObject({ code: "SQL_ERROR" });
@@ -330,11 +333,24 @@ test("assistant failure/retry uses the current SQL and values without ever chang
   expect(launches[1]).toMatchObject({ sql: sqlTestQuery.sql, params: { host: "db-01" }, queryName: "CPU", locale: "de" });
   expect(c.sql()).toBe(sqlTestQuery.sql);
 });
-test("limits text uses locale grouping and retains all queue budgets", () => {
-  const { controller: c } = harness();
-  expect(c.limitsLine()).toBe(
+test.each([
+  [
+    "de",
     "Profil normal: 2 GB, 10 s · 10.000 Zeilen oder 4 MiB · 12 von 600 Abfragen diese Stunde · Warteschlange 1 pro Base, 3 pro Cloud, 20 wartend, 5 s",
-  );
+  ],
+  [
+    "en",
+    "Profile normal: 2 GB, 10 s · 10,000 rows or 4 MiB · 12 of 600 queries this hour · Queue 1 per base, 3 per Cloud, 20 waiting, 5 s",
+  ],
+])("limits text keeps its complete wording and separators in %s", (locale, expected) => {
+  const { controller: c } = harness({ locale: () => locale });
+  expect(c.limitsLine()).toBe(expected);
+  expect(
+    c
+      .limitSegments()
+      .map((segment) => segment.text + segment.separator)
+      .join(""),
+  ).toBe(expected);
 });
 
 test("every run error code has a localized band and retry keeps SQL intact", async () => {
@@ -622,4 +638,110 @@ test("quota usage refresh failure stays visible and retry never unblocks SQL ear
   expect(c.statusBand().message).not.toContain("Nutzungszahlen");
   expect(c.limits()?.queriesUsed).toBe(600);
   expect(c.canRun()).toBe(false);
+});
+
+test("input counters remain available alongside budgets and limits keep separate semantic segments", () => {
+  const { controller: c } = harness();
+  c.setSql("SELECT :host");
+  expect(c.inputBytes()).toBe("0 von 16 KiB");
+  expect(c.inputParameters()).toBe("1 von 32 Parametern");
+  expect(c.inputBytesOverLimit()).toBe(false);
+  expect(c.inputParametersOverLimit()).toBe(false);
+  expect(c.limitSegments().map(({ kind }) => kind)).toEqual(["profile", "memory", "time", "result", "quota", "queue"]);
+  expect(c.limitSegments().find(({ kind }) => kind === "time")?.text).toBe("10 s");
+  c.setSql(`SELECT '${"x".repeat(16 * 1024)}'`);
+  expect(c.inputBytesOverLimit()).toBe(true);
+  c.setSql(`SELECT ${Array.from({ length: 33 }, (_, i) => `:p${i}`).join(", ")}`);
+  expect(c.inputParametersOverLimit()).toBe(true);
+});
+
+test("missing diagnosis and recovery survive simultaneous save and Assistant errors", async () => {
+  const save = deferred<SavedQuery>();
+  let focused = "";
+  const { controller: c, requests } = harness(
+    {
+      focusParameter: (name) => {
+        focused = name;
+      },
+      launchAssistant: async () => {
+        throw new Error("Assistant unavailable");
+      },
+    },
+    { create: () => save.promise },
+  );
+  c.setSql("SELECT 1");
+  const saving = c.saveAs("Answer");
+  c.setSql("SELECT :missing");
+  await c.run();
+  const diagnosis = { name: "missing", message: "Parameter fehlt · :missing ohne Wert · nichts gerechnet" };
+  expect(c.missingParameter()).toEqual(diagnosis);
+  save.reject(new Error("Save unavailable"));
+  await saving;
+  expect(c.saveErrorBand()?.action?.kind).toBe("retry-save");
+  await c.launchAssistant();
+  expect(c.statusBand().action?.kind).toBe("retry-assistant");
+  expect(c.assistantBand()?.action?.kind).toBe("retry-assistant");
+  expect(c.saveErrorBand()?.action?.kind).toBe("retry-save");
+  expect(c.missingParameter()).toEqual(diagnosis);
+  expect(c.runErrorBand()?.message).toBe(diagnosis.message);
+  await c.runErrorBand()?.action?.run();
+  expect(focused).toBe("missing");
+  expect(requests.filter((request) => request.kind === "run")).toHaveLength(0);
+  c.setParameter("missing", "1");
+  expect(c.missingParameter()).toBeNull();
+  expect(c.runErrorBand()).toBeNull();
+  expect(c.saveErrorBand()?.action?.kind).toBe("retry-save");
+  expect(c.assistantBand()?.action?.kind).toBe("retry-assistant");
+});
+
+test("running blocks save, save-as and an existing retry while quota still permits saving", async () => {
+  const pending = deferred<SqlResult>();
+  let creates = 0;
+  const { controller: c } = harness(
+    {},
+    {
+      run: () => pending.promise,
+      create: async (_base, input) => {
+        creates++;
+        if (creates === 1) throw new Error("Lost write response");
+        return { ...sqlTestQuery, ...input, params: input.params ?? {} };
+      },
+    },
+  );
+  c.setSql("SELECT 1");
+  await c.saveAs("Answer");
+  const retry = c.saveErrorBand()?.action;
+  expect(retry?.kind).toBe("retry-save");
+  const running = c.run();
+  expect(c.canSave()).toBe(false);
+  expect(await c.save()).toBeNull();
+  expect(await c.saveAs("Copy")).toBeNull();
+  await retry?.run();
+  expect(creates).toBe(1);
+  pending.resolve({ ...sqlTestResult, limits: { ...sqlTestLimits, queriesUsed: 600 } });
+  await running;
+  expect(c.quotaBlocked()).toBe(true);
+  expect(c.canRun()).toBe(false);
+  expect(c.canSave()).toBe(true);
+  expect(c.lastResult()?.rows).toEqual(sqlTestResult.rows);
+  await retry?.run();
+  expect(creates).toBe(2);
+  expect(c.chosenQuery()?.name).toBe("Answer");
+});
+
+test.each(["SQL_ERROR", "QUOTA"])("a delayed %s cannot attach to a programmatically edited run snapshot", async (code) => {
+  const pending = deferred<SqlResult>();
+  const { controller: c } = harness({}, { run: () => pending.promise });
+  c.setSql("SELECT :value");
+  c.setParameter("value", "1");
+  const running = c.run();
+  c.setParameter("value", "2");
+  pending.reject(new SqlClientError(code, "Old query failed", 429, { resetAt: "2026-10-20T15:00:00Z" }));
+  await running;
+  expect(c.state()).toEqual({ kind: "ready" });
+  expect(c.lastResult()).toBeNull();
+  expect(c.runErrorBand()).toBeNull();
+  expect(c.missingParameter()).toBeNull();
+  expect(c.quotaBlocked()).toBe(code === "QUOTA");
+  expect(c.statusBand().message).not.toContain("Old query failed");
 });

@@ -86,20 +86,26 @@ test("one in-place hint renders in each locale with a sources action", () => {
 
 test("SQL console SSR renders the same initial draft as the controller without browser effects", async () => {
   const { default: SqlConsoleView } = await import("./workspace/SqlConsoleView");
-  const html = renderToString(() =>
-    createComponent(LocaleProvider, {
-      locale: "en",
-      get children() {
-        return createComponent(SqlConsoleView, {
-          base: { id: "Base01", name: "Operations" },
-          route: { view: "sql", sourceId: "", sql: "SELECT 123", params: {} },
-          snapshot: undefined,
-          canWrite: false,
-        });
-      },
-    }),
-  );
-  expect(html).toMatch(/<textarea[^>]*>\nSELECT 123<\/textarea>/);
-  expect(html).toContain("New query");
-  expect(html).not.toContain("Save as");
+  for (const [locale, title, save, helper] of [
+    ["en", "New query", "Save as", "Helper views: rate, increase, histogram_quantile"],
+    ["de", "Neue Abfrage", "Speichern unter", "Hilfen als Views: rate, increase, histogram_quantile"],
+  ] as const) {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(SqlConsoleView, {
+            base: { id: "Base01", name: "Operations" },
+            route: { view: "sql", sourceId: "", sql: "SELECT 123", params: {} },
+            snapshot: undefined,
+            canWrite: false,
+          });
+        },
+      }),
+    );
+    expect(html).toMatch(/<textarea[^>]*>\nSELECT 123<\/textarea>/);
+    expect(html).toContain(title);
+    expect(html).not.toContain(save);
+    expect(html).toContain(helper);
+  }
 });

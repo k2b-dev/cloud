@@ -41,7 +41,9 @@ const open = async (
     return route.fulfill(answer(route.request().url()));
   });
   await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: page(props, locale) }));
-  await tab.goto(`${origin}/app/pulse/Lad001${props.initialRouteState.view === "coming-back" ? "/dashboards" : "/sources"}`);
+  await tab.goto(
+    `${origin}/app/pulse/Lad001${props.initialRouteState.view === "coming-back" ? "/dashboards" : "/sources"}${props.initialRouteState.settings ? `?settings=${props.initialRouteState.settings}` : ""}`,
+  );
   return { tab, calls };
 };
 const overflow = (tab: Awaited<ReturnType<typeof open>>["tab"]) =>
@@ -254,3 +256,134 @@ test("Browser Back asks before discarding base settings and Cancel preserves the
     await tab.close();
   }
 }, 30_000);
+
+test("base settings preserve arbitrary values and show only measured usage on phone and desktop", async () => {
+  for (const view of views) {
+    const base = { ...workspaceFixture.initialBases[0]!, rawRetentionDays: 45 };
+    const { tab } = await open(
+      view,
+      { ...workspaceFixture, initialBases: [base], initialRouteState: { ...workspaceFixture.initialRouteState, settings: "general" } },
+      "de",
+      (url) => {
+        if (new URL(url).pathname.endsWith("/sql/limits")) return { status: 200, json: sqlTestLimits };
+        return { status: 200, json: [] };
+      },
+    );
+    try {
+      const dialog = tab.locator("dialog[open]");
+      await dialog.getByRole("textbox", { name: "Name", exact: true }).waitFor();
+      const dialogBox = (await dialog.boundingBox())!;
+      if (view.width >= 768) {
+        expect(dialogBox.width).toBe(1024);
+        expect(dialogBox.height).toBeLessThanOrEqual(642);
+      }
+      expect(await dialog.getByRole("tab").count()).toBe(5);
+      expect(await dialog.getByText("Lebenszyklus", { exact: true }).count()).toBe(0);
+      const colors = dialog.getByRole("group", { name: "Farbe", exact: true });
+      expect(await colors.getByRole("button").count()).toBe(5);
+      await colors.getByRole("button", { name: "Grün", exact: true }).click();
+      expect(await colors.getByRole("button", { name: "Grün", exact: true }).getAttribute("aria-pressed")).toBe("true");
+      expect(await colors.locator("i").first().getAttribute("class")).toContain(base.icon);
+      await dialog.getByRole("textbox", { name: "Beschreibung", exact: true }).fill("A real description");
+      await dialog.getByRole("tab", { name: "Aufbewahrung", exact: true }).click();
+      const raw = dialog.getByRole("spinbutton", { name: "Aufbewahrung von Rohdaten", exact: true });
+      expect(await raw.inputValue()).toBe("45");
+      const fieldGeometry = await raw.evaluate((element) => {
+        const field = element.closest(".k2b-settings-field")!;
+        return {
+          display: getComputedStyle(field).display,
+          columns: getComputedStyle(field).gridTemplateColumns,
+          padding: getComputedStyle(field).paddingLeft,
+        };
+      });
+      expect(fieldGeometry.padding).toBe("0px");
+      if (view.width >= 768) {
+        expect(fieldGeometry.display).toBe("grid");
+        expect(fieldGeometry.columns.startsWith("170px ")).toBe(true);
+      }
+      for (const name of ["Aufbewahrung von Rohdaten", "Aufbewahrung stündlicher Aggregate", "Aufbewahrung sensibler Ereignisdaten"]) {
+        const input = dialog.getByRole("spinbutton", { name, exact: true });
+        const descriptionId = await input.getAttribute("aria-describedby");
+        expect(descriptionId).toBeTruthy();
+        expect(
+          await input.evaluate((element) => {
+            const id = element.getAttribute("aria-describedby");
+            const description = id ? document.getElementById(id) : null;
+            return Boolean(description?.textContent?.trim() && description.getClientRects().length);
+          }),
+        ).toBe(true);
+        const presets = dialog.getByRole("group", { name, exact: true });
+        expect(await presets.getAttribute("aria-describedby")).toBe(descriptionId);
+        expect(
+          await presets
+            .getByRole("button")
+            .evaluateAll(
+              (buttons, id) => buttons.length > 0 && buttons.every((button) => button.getAttribute("aria-describedby") === id),
+              descriptionId,
+            ),
+        ).toBe(true);
+      }
+      const sensitive = dialog.getByRole("spinbutton", { name: "Aufbewahrung sensibler Ereignisdaten", exact: true });
+      for (const value of ["24", "125", "8760"]) {
+        await sensitive.fill(value);
+        await sensitive.press("Tab");
+        expect(await sensitive.inputValue()).toBe(value);
+        const fitting = await sensitive.evaluate((element) => {
+          if (!(element instanceof HTMLInputElement)) throw new Error("Expected native retention input");
+          const style = getComputedStyle(element);
+          const context = document.createElement("canvas").getContext("2d")!;
+          context.font = style.font;
+          return {
+            text: context.measureText(element.value).width,
+            available: element.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight),
+            scroll: element.scrollLeft,
+          };
+        });
+        expect(fitting.available).toBeGreaterThan(fitting.text);
+        expect(fitting.scroll).toBe(0);
+      }
+      await dialog
+        .getByRole("group", { name: "Aufbewahrung von Rohdaten", exact: true })
+        .getByRole("button", { name: "7 Tage", exact: true })
+        .click();
+      expect(await raw.inputValue()).toBe("7");
+      await raw.fill("46");
+      await raw.press("Tab");
+      expect(await raw.inputValue()).toBe("46");
+      await dialog.getByRole("button", { name: "Verwerfen", exact: true }).click();
+      expect(await raw.inputValue()).toBe("45");
+      await dialog.getByRole("tab", { name: "Nutzung und Grenzen", exact: true }).click();
+      await dialog.getByRole("progressbar").first().waitFor();
+      expect(await dialog.getByRole("progressbar").count()).toBe(2);
+      expect(await dialog.getByRole("progressbar").first().getAttribute("aria-valuenow")).toBe("36");
+      expect(await dialog.getByText("Obergrenze; die aktuelle Rate wird nicht gemessen.", { exact: true }).isVisible()).toBe(true);
+      expect(await overflow(tab)).toBeLessThanOrEqual(0);
+    } finally {
+      await tab.close();
+    }
+  }
+  const { tab } = await open(
+    views[0]!,
+    {
+      ...workspaceFixture,
+      initialPermissions: { write: false, admin: false },
+      initialRouteState: { ...workspaceFixture.initialRouteState, settings: "general" },
+    },
+    "de",
+    (url) => ({
+      status: 200,
+      json: new URL(url).pathname.endsWith("/sql/limits") ? sqlTestLimits : [],
+    }),
+  );
+  try {
+    const dialog = tab.locator("dialog[open]");
+    await dialog.getByRole("textbox", { name: "Name", exact: true }).waitFor();
+    expect(await dialog.getByRole("textbox", { name: "Name", exact: true }).isDisabled()).toBe(true);
+    expect(
+      await dialog.getByRole("group", { name: "Farbe", exact: true }).getByRole("button", { name: "Grün", exact: true }).isDisabled(),
+    ).toBe(true);
+    expect(await dialog.getByText("Nur Admins der Base können diese Einstellungen ändern.", { exact: false }).isVisible()).toBe(true);
+  } finally {
+    await tab.close();
+  }
+}, 60_000);

@@ -177,6 +177,17 @@ In the worst case these steps expand a value sixfold: 32 × 6 × 2 KiB uses
 384 KiB of the client's 512 KiB URL budget. The remaining 128 KiB covers names,
 types, database, query ID, and other URL overhead. SQL is sent in the body.
 
+While a query runs, the SQL and parameter fields remain selectable but
+read-only. Run changes to Cancel in the same position; the editor shortcut
+and Enter in a parameter field also cancel the current run. Saving resumes
+when the run settles. A missing parameter stays associated with its visible
+diagnosis and focus action even if a save or Assistant launch also fails.
+
+The console shows each active limit separately. Only the affected limit is
+highlighted. Results without a chart use the table area directly; time-series
+results show a wrapping legend above the plot. Loading shapes preserve known
+result geometry and do not imply a row count before a result is available.
+
 ### Use time buckets and metric helpers
 
 Buckets use native ClickHouse SQL. For fixed intervals, write:
@@ -251,6 +262,8 @@ started the run can cancel it. Closing the request also cancels the run.
 Use `/api/pulse/bases/:baseId/queries` to list or create queries, and
 `/queries/:queryId` to get, update, or delete one. Lists use Cloud pagination.
 Saved queries keep a name, SQL, string-valued parameters, and revision.
+The saved list shows each query’s name, SQL excerpt and last update time.
+Select its row to open it in the console.
 Names are unique within a base without regard to case. A `PATCH` supplies a
 complete snapshot: `name`, `sql`, optional `params`, and `expectedRevision`.
 Omitting `params` saves an empty parameter map. A stale revision returns `409`.
@@ -475,7 +488,13 @@ Open **Settings** in a base for General, Members, Retention, Usage and limits,
 and Clear and delete. Base admins can change the name, icon, color, timezone,
 members and retention. Readers can inspect settings and see whom to contact
 for changes. Shorter retention asks for confirmation of its cutoff and amount.
-Usage shows the query profile, input and concurrency limits, and hourly quota.
+Choose a color tile and any icon from the picker; the five supported colors
+are gray, blue, green, amber, and red. Retention offers presets and a numeric
+field for other permitted values.
+Usage shows measured storage and hourly SQL consumption against their limits,
+plus the query profile, input and concurrency limits. The ingestion rate is
+shown as a limit only: the current rate and total series count are not measured
+in this view. A missing storage measurement is labeled instead of drawn as zero.
 Only Cloud admins change quotas and profiles in **Administration → Pulse → Bases**.
 After a quota refusal, the console reloads current usage. If that fails, it
 keeps the quota block and offers **Retry** for the usage read.
