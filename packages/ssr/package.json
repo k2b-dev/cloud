@@ -13,7 +13,7 @@
     "./nav": "./src/nav.ts"
   },
   "scripts": {
-    "test": "bun test test/unit && bun test --conditions=browser --preload ./test/browser/setup.ts test/browser",
+    "test": "bun test test/unit && bun test --conditions=browser --preload ./test/browser/setup.ts test/browser && bun test test/engine",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "peerDependencies": {

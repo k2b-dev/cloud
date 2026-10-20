@@ -254,6 +254,11 @@ const connect = async (options: {
         throw new AppApprovalClientError("INVALID_RESPONSE");
       return "changes" in result ? AppDeviceInboxWithChangesSchema.parse(result) : AppDeviceInboxSchema.parse(result);
     },
+    /**
+     * Signs a decision on one entry of `changes`, a request to pair or remove a device of this account. Only call it on an
+     * explicit choice of the person. The device being removed can approve its own removal; its `deny` throws
+     * `AppApprovalClientError` with code `HTTP` and status 409.
+     */
     decideChange: async (device: AppApprovalDevice, change: AppDeviceChange, decision: "approve" | "deny", signal?: AbortSignal) => {
       const parsed = AppDeviceChangeSchema.safeParse(change);
       if (!parsed.success || Date.parse(parsed.data.expiresAt) <= Date.now()) throw new AppApprovalClientError("INVALID_INPUT");
@@ -303,6 +308,10 @@ const connect = async (options: {
       if (!("state" in result) || result.state !== "updated") throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },
+    /**
+     * Removes this device itself at once, without approval from a paired device. Sign-ins it approved stay signed in.
+     * Removing a device from Cloud in the browser waits for a paired device to approve instead.
+     */
     revoke: async (device: AppApprovalDevice, signal?: AbortSignal) => {
       const result = await command(device, { operation: "revoke" }, signal);
       if (!("state" in result) || result.state !== "revoked") throw new AppApprovalClientError("INVALID_RESPONSE");

@@ -47,7 +47,7 @@ numbers, including bigint, and `Date` values stay on one line; strings wrap.
 `white-space` set by `cellContentClass` itself wins over `nowrap`.
 
 Pass `getRowId` when selection or stable row identity matters. Use `selectedRowId` for a selected record, not the row index.
-Selected rows use `--k2b-row-selected` without changing text weight or row geometry.
+Selected rows take the row selection fill without changing text weight or row geometry; see [Colors and selection](/en/ui/surfaces/color).
 
 The default cell renderer displays missing values as an em dash, dates with the current locale, and booleans as Yes or No.
 

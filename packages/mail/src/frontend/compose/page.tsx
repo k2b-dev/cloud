@@ -1,8 +1,8 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import { requestContactDirectory } from "../../contact-directory-settings";
 import { type MailRequestContext, mailboxes } from "../../service";
+import { requestContactDirectory } from "../../service/contact-directory";
 import MailComposeIntentPage from "../_components/MailComposeIntentPage.island";
 import { mailPageMessages } from "../pages-messages";
 import { projectSsrMailboxList } from "../ssr-public-boundary";
@@ -36,6 +36,7 @@ export default ssr<AuthContext>(async (c) => {
       ? writableMailboxes[0]!.id
       : "";
 
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
@@ -50,7 +51,7 @@ export default ssr<AuthContext>(async (c) => {
         autoStart={!c.req.query("command") && c.req.query("autostart") === "1" && Boolean(initialMailboxId) && !c.req.query("mailto")}
         mailto={c.req.query("mailto") ?? null}
         returnHref={c.req.query("return") ?? null}
-        contactDirectory={requestContactDirectory(c)}
+        contactDirectory={directory}
         currentUserEmail={user?.mail ?? null}
       />
     </Layout>

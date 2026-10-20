@@ -42,10 +42,10 @@ views and filters in the head, the detail beside the content.
 | Rule | What it says |
 | --- | --- |
 | R1 Objects, not views | The sidebar shows objects: things you open and go to, such as Spaces, tables, books, and mailboxes. Actions on an object (settings, iCal, share) sit in its head or under "…". An app with only one object has no sidebar. |
-| R2 Views as tabs | Views are tabs in the head, right beside the title. From about five views, "More +n" appears and the selected view stays visible. On the phone they are tabs at the top of the card. The selected view stays in the URL (`?view=`). |
+| R2 Views as tabs | Views are tabs in the head, right beside the title. From about five views, "More +n" appears and the selected view stays visible. On the phone they are tabs at the top of the card, in every app. A tab keeps its full label and count; a strip too narrow for its views scrolls sideways, cut at the card edge, starts with the selected view in view, and fades the edges where more views wait. The selected view stays in the URL (`?view=`). |
 | R3 Filters as chips | Filters are chips in the same row as the tabs when there is room; otherwise they wrap to a second row. The workspace's width decides, not the window's. An active filter is tinted and names its value ("Tags: Customer"; set `showValue`, which toolbars outside the head row do not use yet); while filters are active, "Reset" appears. The count on a tab is enough; a quiet result count appears only while a filter is active and is the first thing to go when space is short. A single on/off filter is a `FilterToggle`. |
 | R4 One surface | Head, filters, and content lie on the same white surface: no gray column trays, no `Paper` box, no line under the head. Space and a clear group heading (dot, name, count) separate groups. |
-| R5 Color from content | Status dots, tag colors, places, and stock carry color. The app color carries only the selection and the one filled primary action. Color is never the only signal; the name always shows. A selection is tinted on white and white on color. |
+| R5 Color from content | Status dots, tag colors, places, and stock carry color. The accent carries only the selection; controls stay platform blue, and only the one main action is filled. See [Colors and selection](/en/ui/surfaces/color). |
 | R6 Space, not lines | Rows and tables have no dividers and no grid; rows are 40–44 px high with a hover fill. |
 
 Three exceptions:
@@ -107,7 +107,10 @@ import { AppWorkspace, ViewTabs } from "@k2b/ui";
 ```
 
 The server reads `current` from `?view=`. No client measurement changes the
-strip or head layout after mounting. `resetHref` works before JavaScript;
+strip or head layout after mounting. Only the view strip's own scroll position
+is set, by an inline script before the first paint, so a strip that scrolls
+on a phone shows the current view in the first frame
+([ViewTabs](/en/ui/actions/tabs#viewtabs)). `resetHref` works before JavaScript;
 `onReset` handles an interactive reset. With both, the callback handles a
 plain click while the URL remains available to the browser. The result count
 and Reset appear only while `filtered` is true.
@@ -659,7 +662,7 @@ navigation rows carry the stronger visual emphasis.
 Active rows use `--k2b-app-workspace-selected` with `--k2b-app-workspace-active` ink
 and weight 600, and keep their fill on hover. Ordinary hover uses
 `--k2b-app-workspace-hover`; active cards also keep an accent-tinted border.
-Keyboard focus keeps the shared focus ring. See [Theme and styles](/en/ui/surfaces/utilities)
+Keyboard focus keeps the shared focus ring. See [Colors and selection](/en/ui/surfaces/color)
 for standalone defaults and Cloud mappings.
 
 Mark the exact current page with `active`; on a page deeper than the sidebar
@@ -1464,7 +1467,8 @@ trackpad, including a tablet with a mouse, instead of pushing it toward the
 title. It appears when the row is hovered, keyboard-focused, current, or has
 its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
-one. A plain object-row icon sits in a soft chip of the app color; custom
+one. A plain object-row icon sits in a soft chip of the accent ink
+`--k2b-app-workspace-active`; custom
 icon content, such as an avatar, keeps its own treatment in the same 2rem box.
 Object rows keep their title on one line that fades out.
 
@@ -1533,8 +1537,8 @@ Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
 (default `clamp(1rem, 3vw, 2.5rem)`, `1rem` below a 40 rem viewport),
 `--k2b-workspace-chip-background` for chip fill (default
 `--k2b-surface-muted`), and `--k2b-app-workspace-selected` for selected fill
-(default `--k2b-selected`), the same hook as a selected sidebar row. Cloud maps
-selected fill to `--ui-app-selected-nav`.
+(default `--k2b-selected`), the same hook as a selected sidebar row; see
+[Colors and selection](/en/ui/surfaces/color).
 
 Leave the default `mobile="hidden"` when the host's phone navigation already
 provides the object list. Views of an object belong in the head.

@@ -5549,7 +5549,9 @@ const specialistCommands = {
         if (printStructured(ctx, { ...value, permalink: cloudResourceUrl(ctx, { type: "mail.conversation", id: value.conversationId }) }))
           return;
         ctx.print(`Participants: ${value.participants.length}`);
-        ctx.print(`Contacts: ${value.contacts.status === "ready" ? value.contacts.items.length : "unavailable"}`);
+        ctx.print(
+          `Contacts: ${value.contacts.status === "ready" ? value.contacts.items.length : value.contacts.status === "absent" ? "no contact directory installed" : "unavailable"}`,
+        );
         if (value.contacts.status === "ready" && value.contacts.nextCursor) ctx.print(`Next Contacts cursor: ${value.contacts.nextCursor}`);
       },
     }),

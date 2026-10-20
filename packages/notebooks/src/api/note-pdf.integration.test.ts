@@ -1,4 +1,5 @@
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { expect, spyOn, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
@@ -6,16 +7,14 @@ import * as pdfModule from "@k2b/cloud/services/pdf";
 import { sql } from "bun";
 import api from ".";
 
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 6);
-
 databaseSuite()("PDF route admission and idle timeout", () => {
   test("slow rendering returns localized 504 and denied oversized requests never parse their body", async () => {
     const [notebook] = await sql<{ id: string; short_id: string }[]>`INSERT INTO notebooks.notebooks (short_id, name)
-      VALUES (${shortId()}, 'PDF route fixture') RETURNING id, short_id`;
+      VALUES (${testShortId()}, 'PDF route fixture') RETURNING id, short_id`;
     const [note] = await sql<{ short_id: string }[]>`INSERT INTO notebooks.notes (short_id, notebook_id, title, content_md)
-      VALUES (${shortId()}, ${notebook!.id}::uuid, 'Timeout fixture', '# Timeout') RETURNING short_id`;
+      VALUES (${testShortId()}, ${notebook!.id}::uuid, 'Timeout fixture', '# Timeout') RETURNING short_id`;
     const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
-      VALUES (${`PDF route ${shortId()}`}, 'agent') RETURNING id`;
+      VALUES (${`PDF route ${testShortId()}`}, 'agent') RETURNING id`;
     const config = await pdfModule.getGotenbergConfig();
     const hanging = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Promise<Response>(() => {}) });
     // Record the idle timeouts the route sets on its socket. Bun 1.4 does not drop a pending POST at its idle

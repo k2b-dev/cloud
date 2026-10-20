@@ -227,7 +227,7 @@ suite("Spaces automatic Kanban columns", () => {
 
   test("a reorder or switch that races a switch-off never brings the automatic column back", async () => {
     const [space] = await sql<{ id: string }[]>`
-      INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, ${`Race ${crypto.randomUUID().slice(0, 8)}`}) RETURNING id`;
+      INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, ${`Race ${crypto.randomUUID()}`}) RETURNING id`;
     const spaceId = space!.id;
     try {
       const statuses: string[] = [];

@@ -3,7 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-16
+updated: 2026-10-19
 order: 30
 kind: task
 ---
@@ -13,6 +13,8 @@ kind: task
 Choose **Compose** for a new message. In a conversation, choose **Reply**, **Reply all**, **Forward**, or **Quote selection**. Mail first creates a shared draft and then opens its focused composer page. Mail keeps the purpose of the draft, so the final action button says **Send**, **Reply**, **Reply all**, or **Forward**.
 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
+
+While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the contact directory first. Then it suggests addresses this mailbox wrote to or received mail from. Mailbox suggestions also work without the Contacts app. A mail icon marks them. Use the arrow keys to highlight a suggestion and Enter to add it. People who see only assigned conversations get no mailbox suggestions.
 
 The composer is separate from the mailbox workspace. **Back to mailbox** saves the latest changes, releases the editing lease, and returns to the mailbox. **Open in new window** moves the same draft to its own browser window. It never creates a second draft.
 
@@ -57,7 +59,7 @@ Open **Message options** and choose the format for the current draft:
 - **Plain text** has no Preview pane. A standalone message stays in one editor. A conversation draft shows **Write** and **History**.
 :::
 
-Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
+Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Each extra blank line between paragraphs adds an empty line to the sent message, also in quotes; lists and code blocks keep their usual spacing. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
 
 Markdown can also contain simple HTML. Email keeps the elements `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` to `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email removes images written directly into the body and horizontal lines. A signature can show the mailbox logo with `{{ mailbox.logo }}`. It shows Markdown quotes with a line on the left. Code blocks keep their line breaks but not their language label. When Mail removes HTML or an image, the Preview lists it below the message. The Preview also lists values of the mailbox email design that email ignores. For a very long message, Mail uses the built-in design if the mailbox email design would make it too complex to render. The Preview says so, and the message still sends. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
 

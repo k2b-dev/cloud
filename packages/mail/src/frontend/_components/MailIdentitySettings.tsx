@@ -691,6 +691,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
               <p class="text-sm font-medium text-primary">{messages().defaultCc}</p>
               <p class="mb-1 text-xs text-dimmed">{messages().defaultCcDescription}</p>
               <MailRecipientInput
+                mailboxId={props.mailbox.id}
                 value={defaultCc}
                 onChange={setDefaultCc}
                 placeholder={messages().addDefaultCc}
@@ -701,6 +702,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
               <p class="text-sm font-medium text-primary">{messages().defaultBcc}</p>
               <p class="mb-1 text-xs text-dimmed">{messages().defaultBccDescription}</p>
               <MailRecipientInput
+                mailboxId={props.mailbox.id}
                 value={defaultBcc}
                 onChange={setDefaultBcc}
                 placeholder={messages().addDefaultBcc}

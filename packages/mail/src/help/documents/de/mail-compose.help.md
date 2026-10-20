@@ -3,7 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-10-16
+updated: 2026-10-19
 order: 30
 ---
 
@@ -12,6 +12,8 @@ order: 30
 Wähle **Verfassen** für eine neue Nachricht. Wähle in einer Unterhaltung **Antworten**, **Allen antworten**, **Weiterleiten** oder **Auswahl zitieren**. Mail erstellt zuerst einen gemeinsamen Entwurf und öffnet dann die Seite des Editors. Mail behält den Zweck des Entwurfs bei, deshalb heißt die letzte Aktionsschaltfläche **Senden**, **Antworten**, **Allen antworten** oder **Weiterleiten**.
 
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
+
+Während du in **An**, **Cc** oder **Bcc** tippst, schlägt Mail zuerst Kontakte aus dem Kontaktverzeichnis vor. Danach folgen Adressen, an die dieses Postfach geschrieben oder von denen es E-Mails erhalten hat. Diese Vorschläge funktionieren auch ohne die Contacts-App. Ein Briefsymbol kennzeichnet sie. Mit den Pfeiltasten markierst du einen Vorschlag, mit der Eingabetaste fügst du ihn hinzu. Wer nur zugewiesene Unterhaltungen sieht, bekommt keine Vorschläge aus dem Postfach.
 
 Der Editor ist vom Arbeitsbereich des Postfachs getrennt. **Zurück zum Postfach** speichert die letzten Änderungen, gibt die Bearbeitungssperre frei und kehrt zum Postfach zurück. **In neuem Fenster öffnen** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf.
 
@@ -56,7 +58,7 @@ Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausf�
 - **Nur Text** hat keine Vorschau. Eine eigenständige Nachricht bleibt in einem Editor. Ein Entwurf in einer Unterhaltung zeigt **Verfassen** und **Verlauf**.
 :::
 
-Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text sendet keine HTML-Alternative. Kann die **Vorschau** die Nachricht nicht zeigen, etwa weil sie zu lang ist, nennt sie den Grund und bietet **Erneut versuchen** an. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
+Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Jede zusätzliche Leerzeile zwischen deinen Absätzen fügt der gesendeten Nachricht eine leere Zeile hinzu, auch in Zitaten; Listen und Codeblöcke behalten ihre üblichen Abstände. Nur Text sendet keine HTML-Alternative. Kann die **Vorschau** die Nachricht nicht zeigen, etwa weil sie zu lang ist, nennt sie den Grund und bietet **Erneut versuchen** an. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
 
 Markdown kann auch einfaches HTML enthalten. Die E-Mail behält die Elemente `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` bis `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul` und die Tabellenelemente. Andere Elemente wie `small` entfernt sie, ihr Text bleibt erhalten. Außerdem entfernt sie `class`, Inline-`style` und die meisten anderen Attribute. Links können Webseiten, E-Mail-Adressen (`mailto:`) und Telefonnummern öffnen, zum Beispiel `[+49 731 000000](tel:+49731000000)`. Die E-Mail entfernt direkt in den Text geschriebene Bilder und Trennlinien. Eine Signatur kann das Postfachlogo mit `{{ mailbox.logo }}` anzeigen. Sie zeigt Markdown-Zitate mit einer Linie links. Codeblöcke behalten ihre Zeilenumbrüche, aber nicht ihre Sprachbezeichnung. Entfernt Mail HTML oder ein Bild, listet die **Vorschau** es unter der Nachricht auf. Die **Vorschau** listet auch Werte des E-Mail-Designs des Postfachs auf, die E-Mails ignorieren. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das E-Mail-Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau**, und die Nachricht wird trotzdem gesendet. Das Aussehen aller Nachrichten ändert, wer das Postfach verwaltet, im E-Mail-Design des Postfachs. Inline-Stile können das nicht.
 

@@ -45,6 +45,7 @@ import * as operatorActions from "./operator-actions";
 import * as presence from "./presence";
 import * as providerConnections from "./provider-connections";
 import * as publicResources from "./public-resources";
+import * as recipientSuggestions from "./recipient-suggestions";
 import * as reminders from "./reminders";
 import * as remoteContent from "./remote-content";
 import * as resourceParents from "./resource-parents";
@@ -129,6 +130,7 @@ export {
   presence,
   providerConnections,
   publicResources,
+  recipientSuggestions,
   reminders,
   remoteContent,
   resourceParents,
@@ -182,6 +184,7 @@ export const mailService = {
   providerConnections,
   publicResources,
   presence,
+  recipientSuggestions,
   reminders,
   resourceParents,
   remoteContent,

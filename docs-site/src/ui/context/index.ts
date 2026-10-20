@@ -89,6 +89,7 @@ import surfaceAvatarStack from "./surfaces/avatar-stack.md" with { type: "text" 
 import surfaceBaseStylesheet from "./surfaces/base-stylesheet.md" with { type: "text" };
 import contentCalendar from "./surfaces/calendar.md" with { type: "text" };
 import surfaceCards from "./surfaces/cards.md" with { type: "text" };
+import surfaceColor from "./surfaces/color.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
 import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" };
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
@@ -153,6 +154,7 @@ const catalogContextSources = {
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },
   "layout/floating-window": { file: "layout/floating-window.md", content: layoutFloatingWindow },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
+  "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },

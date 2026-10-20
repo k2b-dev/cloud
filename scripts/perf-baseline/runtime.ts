@@ -180,7 +180,8 @@ export class Runtime {
       HOME: Bun.env.HOME,
       NODE_ENV: "production",
       CLOUD_VERSION: "0.0.0-perf",
-      CLOUD_RELEASE: "perf",
+      // One release per build: a shared stylesheet URL names one build, so two measured builds must not share it.
+      CLOUD_RELEASE: `perf-${this.prefix}`,
       BUN_OPTIONS: "--no-env-file",
       TMPDIR: join(this.directory, "tmp"),
     };
