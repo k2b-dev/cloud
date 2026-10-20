@@ -166,13 +166,13 @@ module uses an import with `type: "file"` to emit its module worker as a `.js`
 asset. Serve that asset alongside the JavaScript chunks from the same origin.
 MapLibre and its worker stay outside the initial static import closure.
 
-Measured with MapLibre 6.15.0, Bun 1.4.2, minified production builds:
+Measured with MapLibre 6.15.0 and Bun 1.4.2 in minified builds, gzip at level 6, in KiB:
 
 | Part | Raw | gzip | Loaded |
 | --- | --- | --- | --- |
-| MapView in the island (static imports) | 22.9 KB | 8.9 KB | with the island |
-| MapLibre chunk | 1,049 KB | 285 KB | when the map becomes visible |
-| MapLibre worker (`map-view-worker-<hash>.js`) | 519 KB | 147 KB | when the map becomes visible |
+| MapView in the island (static imports) | 23.5 | 9.2 | with the island |
+| MapLibre chunk | 1,024 | 283 | when the map becomes visible |
+| MapLibre worker (`map-view-worker-<hash>.js`) | 507 | 146 | when the map becomes visible |
 | MapLibre CSS | 0 | 0 | not loaded; `@k2b/ui` styles the few MapLibre elements itself |
 
 A page without a map loads none of these.
