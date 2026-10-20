@@ -259,7 +259,11 @@ export function installPageSwap(): () => void {
   window.history.scrollRestoration = "manual";
   let stopWaiting: (() => void) | undefined;
   const inputs = ["wheel", "touchstart", "keydown", "pointerdown"];
+  let retry = 0;
+  // Any newer navigation or user scroll ends pending restoration work.
   const stopRestore = (): void => {
+    if (retry) cancelAnimationFrame(retry);
+    retry = 0;
     if (!stopWaiting) return;
     stopWaiting();
     stopWaiting = undefined;
@@ -401,12 +405,12 @@ export function installPageSwap(): () => void {
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
   const decide = (event: PopStateEvent): "page" | "nav" => {
-    stopRestore();
     const known = decisions.get(event);
     if (known) {
       if (known === "nav") event.stopImmediatePropagation();
       return known;
     }
+    stopRestore();
     // A traversal's departure must match the arriving entry; a fragment navigation's popstate follows its navigate.
     const fragmentDeparture = departure && departure.kind !== "traverse" ? departure.kind : undefined;
     const from =
@@ -455,7 +459,8 @@ export function installPageSwap(): () => void {
         const set = { x: window.scrollX, y: window.scrollY };
         // The departing content can clamp the position; after islands rendered the entry, retry unless one scrolled.
         if (set.x !== x || set.y !== y)
-          requestAnimationFrame(() => {
+          retry = requestAnimationFrame(() => {
+            retry = 0;
             const here = marker(window.history.state);
             if (here && entryKey(here) === entryKey(entry) && window.scrollX === set.x && window.scrollY === set.y) window.scrollTo(x, y);
           });

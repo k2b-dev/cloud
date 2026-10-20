@@ -2076,8 +2076,9 @@ test("same-page traversal restores window before the island and leaves region sc
   }
 });
 
-test.each([false, true])("a clamped same-page restore retries after the island renders (island scrolls: %p)", async (islandScrolls) => {
-  let max = 300;
+test.each(["none", "scroll", "navigate"])("a clamped same-page restore retries after the island renders (island: %p)", async (island) => {
+  // Clamped to the top, the retry guard cannot tell a newer navigation from no change.
+  let max = island === "navigate" ? 0 : 300;
   let y = 0;
   Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
   spyOn(window, "scrollTo").mockImplementation(((x: number, top: number) => {
@@ -2091,12 +2092,14 @@ test.each([false, true])("a clamped same-page restore retries after the island r
   const stop = listenPopState(() => {
     // The island renders the taller entry synchronously in its handler.
     max = 2000;
-    if (islandScrolls) window.scrollTo(0, 50);
+    if (island === "scroll") window.scrollTo(0, 50);
   });
   try {
     arrive(tall);
+    // A newer navigation in the same frame owns the scroll; navigate(replace) keeps the entry and its top position.
+    if (island === "navigate") navigate("/app/old?tab=edited", { replace: true, viewTransition: false });
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    expect(y).toBe(islandScrolls ? 50 : 900);
+    expect(y).toBe({ none: 900, scroll: 50, navigate: 0 }[island]);
   } finally {
     stop();
   }
