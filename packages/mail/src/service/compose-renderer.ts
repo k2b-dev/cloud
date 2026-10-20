@@ -32,6 +32,7 @@ const MAX_MARKDOWN_SYNTAX_MARKERS = 12_000;
 const MAX_RENDERED_SOURCE_BYTES = 3 * 1024 * 1024;
 const MAIL_CONTENT_CLASS = "mail-content";
 const SIGNATURE_CLASS = "mail-signature";
+const BLANK_LINE_CLASS = "mail-blank-line";
 // Invisible marks around an inserted signature: the text between a matching pair stays a template until preview and send.
 const COMPOSE_SEGMENT_START = "\u2063";
 const COMPOSE_SEGMENT_END = "\u2064";
@@ -84,11 +85,11 @@ const INLINED_EMAIL_SANITIZE_OPTIONS = {
   allowedAttributes: Object.fromEntries(
     [...EMAIL_HTML_TAGS].map((tag) => [
       tag,
-      [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style", ...(tag === "div" ? ["class"] : [])])],
+      [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style", ...(tag === "div" || tag === "p" ? ["class"] : [])])],
     ]),
   ),
   // The signature block keeps its class, as mail clients mark signatures, so a reader can tell it from the text.
-  allowedClasses: { div: [SIGNATURE_CLASS] },
+  allowedClasses: { div: [SIGNATURE_CLASS], p: [BLANK_LINE_CLASS] },
   allowedStyles: allowedEmailInlineStyles(EMAIL_HTML_TAGS),
   transformTags: {
     a: (tagName, attribs) => EMAIL_HTML_SANITIZE_OPTIONS.transformTags.a(tagName, withoutSegmentMarks(attribs)),
@@ -482,6 +483,67 @@ export const hasUnrenderedTemplateSyntax = (body: string): boolean => {
 const emailHtmlFragment = (source: string): string =>
   sanitizeHtml(markdown.renderSync(source, { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
 
+/** Rewrites only block separators and quotes; every other token keeps its raw source. Null means too many spacers. */
+const withBlankLinePlaceholders = (source: string, placeholder: string): { source: string; count: number } | null => {
+  let count = 0;
+  const rewrite = (tokens: ReturnType<typeof markdown.marked.lexer>[number][], original: string): string | null => {
+    const initialCount = count;
+    const chunks: string[] = [];
+    for (const [index, token] of tokens.entries()) {
+      let raw = token.raw;
+      const previous = tokens[index - 1];
+      const next = tokens[index + 1];
+      if (
+        token.type === "space" &&
+        previous &&
+        previous.type !== "space" &&
+        previous.type !== "def" &&
+        next &&
+        next.type !== "space" &&
+        next.type !== "def"
+      ) {
+        let extra = -2;
+        for (const character of raw) {
+          if (character === "\n") extra += 1;
+          if (count + extra > MAX_EMAIL_HTML_ELEMENTS) return null;
+        }
+        if (extra > 0) {
+          count += extra;
+          raw = `\n\n${`${placeholder}\n\n`.repeat(extra)}`;
+        }
+      } else if (token.type === "blockquote" && token.tokens && token.tokens.map((inner) => inner.raw).join("") === token.text) {
+        const beforeQuote = count;
+        const inner = rewrite(token.tokens, token.text);
+        if (inner === null) return null;
+        if (count > beforeQuote) {
+          raw =
+            inner
+              .replace(/\n+$/, "")
+              .split("\n")
+              .map((line) => (line ? `> ${line}` : ">"))
+              .join("\n") + (raw.match(/\n*$/)?.[0] ?? "");
+        }
+      }
+      chunks.push(raw);
+    }
+    // Preserve the original bytes when no separator changed, including CRLF and quote syntax.
+    return count === initialCount ? original : chunks.join("");
+  };
+  const rewritten = rewrite(markdown.marked.lexer(source), source);
+  return rewritten === null ? null : { source: rewritten, count };
+};
+
+/** Only Mail-authored spacers bypass the first sanitizer; user HTML still follows the original fragment policy. */
+const mailBodyHtmlFragment = (source: string, token: string): Result<string> => {
+  const rewritten = withBlankLinePlaceholders(source, token);
+  if (rewritten === null) return fail(composeRenderFailure("tooComplex"));
+  const html = emailHtmlFragment(rewritten.source).replaceAll(
+    `<p>${token}</p>`,
+    `<p class="${BLANK_LINE_CLASS}" style="margin:0">&nbsp;</p>`,
+  );
+  return ok(html.includes(token) ? emailHtmlFragment(source) : html);
+};
+
 const markdownToPlainText = (source: string): Result<string> => {
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
@@ -631,9 +693,19 @@ export const renderComposeContent = (params: {
   if (!complexity.ok) return complexity;
 
   try {
-    const fragment = parts
-      ? `${emailHtmlFragment(parts.reply)}<div class="${SIGNATURE_CLASS}">${emailHtmlFragment(parts.signature)}</div>${emailHtmlFragment(parts.history)}`
-      : emailHtmlFragment(source);
+    const blankLineToken = `MAILBLANKLINE${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
+    const split = parts ?? splitQuotedHistory(source);
+    const bodySource = split.history ? [split.reply, split.history].filter(Boolean).join("\n\n") : source;
+    const reply = mailBodyHtmlFragment(parts ? parts.reply : bodySource, blankLineToken);
+    if (!reply.ok) return reply;
+    let fragment = reply.data;
+    if (parts) {
+      const signature = mailBodyHtmlFragment(parts.signature, blankLineToken);
+      if (!signature.ok) return signature;
+      const history = mailBodyHtmlFragment(parts.history, blankLineToken);
+      if (!history.ok) return history;
+      fragment += `<div class="${SIGNATURE_CLASS}">${signature.data}</div>${history.data}`;
+    }
     const elementCount = fragment.match(/<[a-z][^>]*>/gi)?.length ?? 0;
     if (elementCount > MAX_EMAIL_HTML_ELEMENTS) {
       return fail(composeRenderFailure("tooComplex"));
@@ -687,7 +759,11 @@ export const renderComposeContent = (params: {
     }
     const text = convert(html, {
       wordwrap: false,
-      selectors: [{ selector: "a", options: { hideLinkHrefIfSameAsText: true } }],
+      selectors: [
+        { selector: "a", options: { hideLinkHrefIfSameAsText: true } },
+        { selector: `p.${BLANK_LINE_CLASS}`, format: "mailBlankLine" },
+      ],
+      formatters: { mailBlankLine: (_elem, _walk, builder) => builder.addLineBreak() },
     })
       .trimEnd()
       .replaceAll(token, () => params.logo?.altText ?? "");

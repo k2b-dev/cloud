@@ -370,3 +370,57 @@ describe("Mail composer preview with the mailbox logo", () => {
     }, 30_000);
   }
 });
+
+describe("Mail composer preview with extra blank lines", () => {
+  const previewWithBlankLines = () => {
+    const rendered = renderComposeContent({
+      body: "Hello Grace,\n\nthe garden plan is ready.\n\n\nWe meet on Friday.\n\n\n\nSee you soon,\nAda",
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Garden", to: ["grace@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The preview did not render");
+    return rendered.data.html;
+  };
+
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`adds one text line of space for each extra blank line on ${label}`, async () => {
+      const page = await load({ context, theme: "light", locale: "en" });
+      try {
+        await page.waitForSelector('iframe[sandbox=""]');
+        await page.evaluate((html) => window.setPreviewHtml(html), previewWithBlankLines());
+        const frame = page.frameLocator('iframe[sandbox=""]');
+        await frame.getByText("We meet on Friday.").waitFor();
+        const paragraphs = await frame.locator("p:not(.mail-blank-line)").evaluateAll((elements) =>
+          elements.map((element) => {
+            const rect = element.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom };
+          }),
+        );
+        const spacers = await frame
+          .locator("p.mail-blank-line")
+          .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height));
+        expect(paragraphs).toHaveLength(4);
+        expect(spacers).toHaveLength(3);
+        const line = paragraphs[0]!.bottom - paragraphs[0]!.top;
+        // Each empty line is as tall as one line of text and adds no paragraph margin of its own.
+        for (const height of spacers) expect(Math.abs(height - line)).toBeLessThan(0.5);
+        const gap = (index: number) => paragraphs[index + 1]!.top - paragraphs[index]!.bottom;
+        expect(Math.abs(gap(1) - gap(0) - line)).toBeLessThan(0.5);
+        expect(Math.abs(gap(2) - gap(0) - 2 * line)).toBeLessThan(0.5);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+});
