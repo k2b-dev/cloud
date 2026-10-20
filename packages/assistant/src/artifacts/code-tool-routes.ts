@@ -1,4 +1,4 @@
-import { aiConversations, CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
+import { CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { type AuthContext, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
@@ -7,8 +7,10 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { AgentHostRequest, agentHost } from "./agent-host";
+import { ChatReference, requireToolChat } from "./chat-access";
 import { artifactCodeHandlers, type CodeToolContext } from "./code-tools";
 import { LIMITS } from "./contracts";
+import { ArtifactError } from "./service";
 
 export const codeToolRoutes = new Hono<AuthContext>().use("*", bodyLimit({ maxSize: LIMITS.rpcBytes })).onError((error, c) => {
   if (error instanceof ImageMetadataError) return c.json({ ok: false, error: { code: error.code, message: error.message } }, 422);
@@ -26,16 +28,19 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
     requireInvocation(() => ({ targetAppId: "assistant", operation: `tool:${name}`, schemaHash: null })),
     async (c) => {
       const envelope = z
-        .object({ input: z.unknown(), conversationId: z.uuid(), review: z.boolean().optional() })
+        .object({ input: z.unknown(), conversationId: ChatReference, review: z.boolean().optional() })
         .strict()
         .parse(await c.req.json());
       const input = schema.parse(envelope.input);
       const actor = c.get("actor");
       if (actor.kind !== "user") return c.json({ ok: false, error: { code: "ACCESS_DENIED", message: "A user is required." } }, 403);
-      const conversation = await aiConversations.getConversation({ conversationId: envelope.conversationId, ownerUserId: actor.user.id });
-      if (!conversation || conversation.archivedAt || (conversation.allowedTools && !conversation.allowedTools.includes(name))) {
-        return c.json({ ok: false, error: { code: "ACCESS_DENIED", message: "Conversation access denied." } }, 403);
-      }
+      const conversation = await requireToolChat(envelope.conversationId, { actor, accessSubject: c.get("accessSubject") }, name).catch(
+        (error: unknown) => {
+          if (error instanceof ArtifactError && error.code === "ACCESS_DENIED") return null;
+          throw error;
+        },
+      );
+      if (!conversation) return c.json({ ok: false, error: { code: "ACCESS_DENIED", message: "Conversation access denied." } }, 403);
       return Response.json(
         await run(input, {
           actor,
