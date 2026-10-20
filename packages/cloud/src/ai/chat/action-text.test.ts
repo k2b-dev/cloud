@@ -306,9 +306,24 @@ test("legacy rows and Markdown flatten once; unreviewed requests use their later
 });
 
 test("blocks show at most eight lines and one ellipsis when incomplete", () => {
-  const text = textFor("en", { ...message, body: Array.from({ length: 9 }, (_, i) => String(i + 1)).join("\n"), truncated: true });
+  const text = textFor(
+    "en",
+    { ...message, body: Array.from({ length: 9 }, (_, i) => String(i + 1)).join("\n"), truncated: true },
+    { links: [{ rel: "open", href: "https://cloud.example/drafts/1" }] },
+  );
   const lines = actionQuestionLines(text, { timeZone: "UTC" });
-  expect(lines.slice(-9)).toEqual(["  1", "  2", "  3", "  4", "  5", "  6", "  7", "  8", "  …"]);
+  expect(lines.slice(-10)).toEqual([
+    "  1",
+    "  2",
+    "  3",
+    "  4",
+    "  5",
+    "  6",
+    "  7",
+    "  8",
+    "  …",
+    "  Read all: https://cloud.example/drafts/1",
+  ]);
   expect(actionQuestionLines(textFor("en", { ...message, truncated: true }), { timeZone: "UTC" }).at(-1)).toBe("  …");
 });
 
@@ -354,4 +369,17 @@ test("people named in a consequence count for completeness too", () => {
   const text = actionCardText(reviewActionCard(review, { locale: "en", timeZone: "UTC", app: { name: "Mail", icon: "ti ti-mail" } }));
   expect(text.rows).toEqual([{ label: "Also", value: "Notifies Lea <lea@example.com> and 3 more" }]);
   expect(text.incomplete).toBe(true);
+});
+
+test("a long text is cut only when Read all can open it", () => {
+  const body = Array.from({ length: 10 }, (_, index) => `Line ${index + 1}`).join("\n");
+  const page = (links?: CapabilityActionCallReview["links"]) =>
+    actionQuestionLines(textFor("en", { kind: "page", title: "Send message", body, format: "plain" }, links ? { links } : {}), {
+      timeZone: "UTC",
+    });
+  expect(page().filter((line) => line.startsWith("  Line "))).toHaveLength(10);
+  const linked = page([{ rel: "open", href: "https://cloud.example/notes/1" }]);
+  expect(linked.filter((line) => line.startsWith("  Line "))).toHaveLength(8);
+  expect(linked).toContain("  …");
+  expect(linked).toContain("  Read all: https://cloud.example/notes/1");
 });

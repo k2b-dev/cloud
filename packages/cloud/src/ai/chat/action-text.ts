@@ -248,8 +248,10 @@ export const actionQuestionLines = (
   for (const row of text.rows) {
     if (row.block) {
       const body = row.value.split(/\r?\n/);
-      lines.push(...body.slice(0, 8).map((line) => `  ${line}`));
-      if (body.length > 8 || (text.incomplete && !markedIncomplete)) {
+      // Cut a long text only when "Read all" can open the whole thing; otherwise the terminal shows all of it.
+      const shown = text.readMore ? body.slice(0, 8) : body;
+      lines.push(...shown.map((line) => `  ${line}`));
+      if (shown.length < body.length || (text.incomplete && !markedIncomplete)) {
         lines.push("  …");
         markedIncomplete = true;
       }

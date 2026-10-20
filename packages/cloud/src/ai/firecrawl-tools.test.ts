@@ -67,23 +67,33 @@ describe("Firecrawl AI tools", () => {
       );
     }
   });
-  test("an address whose encoded form outgrows the review bounds still asks, with its full text", async () => {
-    const url = new URL(`https://example.com/${"ä".repeat(400)}`).href;
-    expect(url.length).toBeGreaterThan(2_000);
-    let asked: { message: string; review: CapabilityActionCallReview | undefined } | undefined;
-    await authorizeWebRead("page", url, {
-      actor,
-      locale: "en",
-      requestApproval: async () => {
-        throw new Error("Expected the website target");
-      },
-      requestApprovalFor: async (message, _target, review) => {
-        asked = { message, review };
-        return true;
-      },
-    });
-    expect(asked?.review).toBeUndefined();
-    expect(asked?.message).toContain(url);
+  test("an address whose encoded form outgrows the review bounds still asks with the sends review", async () => {
+    const ask = async (url: string) => {
+      let review: CapabilityActionCallReview | undefined;
+      await authorizeWebRead("page", url, {
+        actor,
+        locale: "en",
+        requestApproval: async () => {
+          throw new Error("Expected the website target");
+        },
+        requestApprovalFor: async (_message, _target, question) => {
+          review = question;
+          return true;
+        },
+      });
+      if (!review) throw new Error("Expected a review");
+      expect(review.ask).toBe("sends");
+      return review.preview?.kind === "fields" ? review.preview.rows[0]?.value : undefined;
+    };
+    // Shown as written when its encoded form is too long, so the person still reads the whole address.
+    const umlauts = new URL(`https://example.com/${"ä".repeat(400)}`).href;
+    expect(umlauts.length).toBeGreaterThan(2_000);
+    expect(await ask(umlauts)).toBe(`https://example.com/${"ä".repeat(400)}`);
+    // A written form with characters a review may not carry is cut in the middle instead, never dropped.
+    const hidden = new URL(`https://example.com/?q=${"\u202e".repeat(250)}`).href;
+    const shown = await ask(hidden);
+    expect(shown?.length).toBe(2_000);
+    expect(shown?.startsWith("https://example.com/?q=%E2%80%AE")).toBe(true);
   });
   test("rejects non-public URLs before extraction", () => {
     expect(() => assertPublicHttpUrl("ftp://example.com/file")).toThrow("http or https");

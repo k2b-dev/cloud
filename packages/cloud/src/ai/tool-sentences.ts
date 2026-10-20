@@ -88,6 +88,16 @@ const forms = {
   },
 } as const;
 
+/** The bound of a `fields` preview value. */
+const ADDRESS_MAX = 2000;
+const readableAddress = (address: string): string | null => {
+  try {
+    return decodeURI(address);
+  } catch {
+    return null;
+  }
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 
 /** Cloud tools use the same per-call review contract as application Actions. Safe for historical, incomplete inputs. */
@@ -106,14 +116,26 @@ export const cloudToolReview = (name: string, args: unknown, locale: string): Ca
       return actionReview({ locale: language, sentence: sentence.code_action }, { action: { kind: "text", value: parsed.data } });
     }
     if (name === "web_extract" || name === "fetch_file") {
-      if (typeof input.url !== "string" || !input.url.trim() || input.url.length > 2000) return null;
+      if (typeof input.url !== "string" || !input.url.trim()) return null;
       const url = new URL(input.url);
       if (!url.host) return null;
-      return actionReview(
-        { locale: language, sentence: sentence[name] },
-        { site: { kind: "place", title: url.host } },
-        { preview: { kind: "fields", rows: [{ label: language === "de" ? "Adresse" : "Address", value: input.url }] } },
-      );
+      const review = (address: string) =>
+        actionReview(
+          { locale: language, sentence: sentence[name] },
+          { site: { kind: "place", title: url.host } },
+          { preview: { kind: "fields", rows: [{ label: language === "de" ? "Adresse" : "Address", value: address }] } },
+        );
+      // The address row holds at most 2,000 characters. An address whose encoded form is longer shows as written,
+      // and only if even that does not fit is it cut in the middle; the question asks either way.
+      for (const address of [input.url, readableAddress(input.url)])
+        if (address && address.length <= ADDRESS_MAX) {
+          try {
+            return review(address);
+          } catch {
+            // Try the next form.
+          }
+        }
+      return review(`${input.url.slice(0, ADDRESS_MAX / 2 - 1)}…${input.url.slice(-(ADDRESS_MAX / 2))}`);
     }
     if (name === "write_file") {
       if (typeof input.path !== "string" || !input.path.trim()) return null;
