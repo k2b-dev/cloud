@@ -401,4 +401,40 @@ describe("Pulse administration tabs in a browser", () => {
       await page.close();
     }
   }, 30_000);
+
+  test("a failed status lookup marks running rows as unknown, and Retry asks again at once, without moving rows", async () => {
+    const deleting = row("Alt001", "Altbestand", { state: "deleting", operation: "delete" });
+    const page0: AdminBasesPage = { ...basesPage, items: [...basesPage.items, deleting], total: 4 };
+    const { page, release } = await open(desktop, { view: "bases", policy, page: page0 }, { frozenAt: new Date(measuredAt) });
+    let lookups = 0;
+    let fail = true;
+    await page.route(`${origin}/api/pulse/admin/bases?*`, (route) => {
+      lookups++;
+      return fail
+        ? route.fulfill({ status: 500, json: { code: "ADMIN_REQUEST_FAILED" } })
+        : route.fulfill({ json: { ...basesPage, items: [deleting], total: 1 } });
+    });
+    try {
+      release();
+      const alt = page.getByRole("row", { name: /Altbestand/ });
+      await alt.getByText("Being deleted").waitFor();
+      const before = await layout(page);
+      expect(await alt.getByRole("button", { name: "Retry" }).count()).toBe(0);
+      await page.clock.runFor(5_100);
+      // The row keeps its last state as "unknown", with Retry where a failed row has it.
+      await alt.getByText("Status unknown").waitFor();
+      const retry = alt.getByRole("button", { name: "Retry" });
+      expect(await retry.isEnabled()).toBe(true);
+      expect((await layout(page)).rows).toEqual(before.rows);
+      fail = false;
+      await retry.click();
+      await page.clock.runFor(100);
+      await alt.getByText("Being deleted").waitFor();
+      expect(await retry.count()).toBe(0);
+      expect(lookups).toBe(2);
+      expect((await layout(page)).rows).toEqual(before.rows);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 });

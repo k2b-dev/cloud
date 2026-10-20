@@ -19,6 +19,7 @@ export const baseStoreMessages = i18n.define({
       failedClear: "Clearing the data failed. Pulse continues where it stopped when you retry.",
       failedDelete: "Deleting the base failed. Pulse continues where it stopped when you retry.",
       deletingText: "Pulse is deleting this base in the background. This card shows when it is done.",
+      staleText: "Pulse is deleting this base. Its status did not load; Retry asks again now.",
       deletedText: "Pulse deleted this base and its data. It no longer appears after the next reload.",
       busyText: "Pulse is working on this base. Writing waits until it is active again.",
       blockedText:
@@ -63,6 +64,7 @@ export const baseStoreMessages = i18n.define({
       failedClear: "Die Daten konnten nicht geleert werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
       failedDelete: "Die Base konnte nicht gelöscht werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
       deletingText: "Pulse löscht diese Base im Hintergrund. Hier siehst du, wann das Löschen fertig ist.",
+      staleText: "Pulse löscht diese Base. Der Zustand ließ sich nicht laden; „Erneut versuchen“ fragt nach.",
       deletedText: "Pulse hat diese Base und ihre Daten gelöscht. Nach dem nächsten Laden erscheint sie hier nicht mehr.",
       busyText: "Pulse arbeitet an dieser Base. Schreiben wartet, bis sie wieder aktiv ist.",
       blockedText:

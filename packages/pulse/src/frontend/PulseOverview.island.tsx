@@ -33,8 +33,9 @@ const DeletingBaseNotice = (props: { base: PulseBase }) => {
     onError: () => toast.error(t().retryFailed),
   });
   onCleanup(() => retry.abort());
-  // Follow the running deletion so a finish or a new failure shows here without a reload.
-  installPeriodicRefresh({
+  // Follow the running deletion so a finish or a new failure shows here without a reload. A failed lookup says so
+  // in the card and enables Retry, which asks again at once.
+  const followed = installPeriodicRefresh({
     active: () => !deleted() && !failed() && !retry.loading(),
     refresh: async () => {
       const gone = new Error("PULSE_BASE_GONE");
@@ -53,11 +54,17 @@ const DeletingBaseNotice = (props: { base: PulseBase }) => {
       tone={failed() ? "danger" : "neutral"}
       title={base().name}
       meta={deleted() ? t().stateDeleted : failed() ? t().stateFailed : t().stateDeleting}
-      detail={deleted() ? t().deletedText : failed() ? t().failedDelete : t().deletingText}
+      detail={deleted() ? t().deletedText : failed() ? t().failedDelete : followed.failed() ? t().staleText : t().deletingText}
       aria-live="polite"
     >
       {/* The button keeps its place after a retry so the card does not change height. */}
-      <Button size="xs" variant="secondary" disabled={!failed()} loading={retry.loading()} onClick={() => void retry.mutate()}>
+      <Button
+        size="xs"
+        variant="secondary"
+        disabled={!failed() && !followed.failed()}
+        loading={retry.loading()}
+        onClick={() => (failed() ? void retry.mutate() : followed.retry())}
+      >
         {t().retry}
       </Button>
     </NoticeCard>

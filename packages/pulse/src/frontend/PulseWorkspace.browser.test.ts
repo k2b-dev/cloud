@@ -196,6 +196,16 @@ describe("Pulse base page after the cut", () => {
       expect(await retry.isEnabled()).toBe(true);
       await retry.click();
       await card.getByText("Wird gelöscht").waitFor();
+      // A failed status lookup says so in the card and enables Retry, which asks again at once.
+      answer = { status: 500, json: { code: "INTERNAL", message: "Lookup failed" } };
+      await tab.clock.runFor(5_100);
+      await card.getByText("Der Zustand ließ sich nicht laden", { exact: false }).waitFor();
+      expect(await retry.isEnabled()).toBe(true);
+      answer = { status: 200, json: deleting };
+      await retry.click();
+      await tab.clock.runFor(100);
+      await card.getByText("Pulse löscht diese Base im Hintergrund", { exact: false }).waitFor();
+      expect(await retry.isDisabled()).toBe(true);
       // The deletion finishes: the card says so and keeps its place until the next reload. Its text may wrap
       // differently, but it is the last element, so nothing else moves.
       answer = { status: 404, json: { code: "NOT_FOUND", message: "Pulse base not found" } };
@@ -206,7 +216,7 @@ describe("Pulse base page after the cut", () => {
       expect(after?.y).toBe(box?.y);
       expect(after?.x).toBe(box?.x);
       expect(after?.width).toBe(box?.width);
-      expect(calls.filter((call) => call === `GET /api/pulse/bases/${base.id}`).length).toBe(2);
+      expect(calls.filter((call) => call === `GET /api/pulse/bases/${base.id}`).length).toBe(4);
       expect(await overflow(tab)).toBe(0);
     } finally {
       await tab.close();

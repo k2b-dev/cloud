@@ -73,4 +73,44 @@ describe("installPeriodicRefresh", () => {
     pending.forEach((resolve) => resolve());
     dom.cleanup();
   });
+
+  test("a failed refresh stays visible until one succeeds, and retry asks again at once", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    let calls = 0;
+    let fail = true;
+    const root = createRoot((dispose) => {
+      const [enabled, setEnabled] = createSignal(true);
+      const followed = installPeriodicRefresh({
+        active: enabled,
+        refresh: async () => {
+          calls++;
+          if (fail) throw new Error("lookup failed");
+        },
+      });
+      return { dispose, setEnabled, followed };
+    });
+
+    jest.advanceTimersByTime(5_000);
+    await flush();
+    expect(calls).toBe(1);
+    expect(root.followed.failed()).toBe(true);
+    // Retry does not wait for the backoff.
+    fail = false;
+    root.followed.retry();
+    jest.advanceTimersByTime(0);
+    await flush();
+    expect(calls).toBe(2);
+    expect(root.followed.failed()).toBe(false);
+
+    // A failure ends with the work it followed.
+    fail = true;
+    jest.advanceTimersByTime(5_000);
+    await flush();
+    expect(root.followed.failed()).toBe(true);
+    root.setEnabled(false);
+    expect(root.followed.failed()).toBe(false);
+    root.dispose();
+    dom.cleanup();
+  });
 });

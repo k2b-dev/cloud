@@ -59,6 +59,9 @@ read access before removing the database. The overview keeps a deleting base
 visible to its administrators until deletion finishes. After five failed
 attempts the operation is `failed`. A base administrator chooses **Retry** in
 the base settings or overview; a Cloud administrator can retry from **Bases**.
+Open pages check a running operation every five seconds. If that check fails,
+the overview card and the **Bases** row say the status is unknown, keep
+checking, and offer **Retry** to check again at once.
 
 | Per-base setting | Default or fixed profile |
 | --- | --- |
