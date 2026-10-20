@@ -669,6 +669,112 @@ else {
     });
   }
 
+  for (const state of ["queued", "conflict"] as const) {
+    test(`a ${state} Allow operation cannot overwrite a newer swapped-page withdrawal`, async () => {
+      const pending = Promise.withResolvers<Response>();
+      const fetch = spyOn(globalThis, "fetch")
+        .mockReturnValueOnce(pending.promise)
+        .mockImplementation(async (_url, init) =>
+          Response.json(
+            init?.method === "PUT"
+              ? { provider: "fixture", allowed: true, revision: 4 }
+              : { answers: { fixture: { allowed: false, revision: 3 } } },
+          ),
+        );
+      fetchSpy = fetch;
+      const h = setupContext(pageContext, true, false);
+      h.open();
+      const { post, shown } = loadedDocument(h, h.frame().src);
+      ready(h);
+      if (state === "queued") restore();
+      h.click('[data-cloud-panel-consent-answer="allow"]');
+      await tick();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      swapShellData((panel) => ({
+        ...panel,
+        context: nextContext,
+        consent: { provider: "fixture", allowed: false, revision: 3 },
+      }));
+      pending.resolve(
+        state === "conflict"
+          ? new Response(null, { status: 409 })
+          : Response.json({ answers: { fixture: { allowed: false, revision: 1 } } }),
+      );
+      await tick();
+      await tick();
+      const writes = fetch.mock.calls.filter(([, init]) => init?.method === "PUT");
+      expect(writes).toHaveLength(state === "queued" ? 0 : 1);
+      expect(h.slot.dataset.contextAllowed).toBe("false");
+      expect(shown.searchParams.has(PANEL_CONTEXT_PARAM)).toBe(false);
+      expect(
+        post.mock.calls
+          .map(([data]) => data)
+          .filter(isPanelContextMessage)
+          .every((message) => message.context === null),
+      ).toBe(true);
+    });
+  }
+
+  test("a swapped withdrawal fences an Allow retry even when its revision was already read", async () => {
+    const retry = Promise.withResolvers<Response>();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(Response.json({ answers: { fixture: { allowed: false, revision: 3 } } }))
+      .mockReturnValueOnce(retry.promise);
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, false);
+    h.open();
+    ready(h);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    swapShellData((panel) => ({
+      ...panel,
+      context: nextContext,
+      consent: { provider: "fixture", allowed: false, revision: 3 },
+    }));
+    retry.resolve(Response.json({ provider: "fixture", allowed: true, revision: 4 }));
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
+  test("a swapped withdrawal fences pending Allow for an inactive provider", async () => {
+    const pending = Promise.withResolvers<Response>();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(pending.promise)
+      .mockImplementation(async (_url, init) =>
+        Response.json(
+          init?.method === "PUT"
+            ? { provider: "fixture", allowed: true, revision: 4 }
+            : { answers: { fixture: { allowed: false, revision: 3 } } },
+        ),
+      );
+    fetchSpy = fetch;
+    const h = setup(1440, false, true, undefined, false, undefined, {
+      context: pageContext,
+      consent: true,
+      answer: false,
+      providerIds: ["fixture", "core"],
+    });
+    h.open();
+    ready(h);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    h.open("core");
+    swapShellData((panel) => ({
+      ...panel,
+      context: nextContext,
+      consent: { provider: "fixture", allowed: false, revision: 3 },
+    }));
+    pending.resolve(new Response(null, { status: 409 }));
+    await tick();
+    await tick();
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(1);
+    h.open("fixture");
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
   test("a swapped page with the same consent answer shares at once and reads nothing", () => {
     const fetch = spyOn(globalThis, "fetch");
     fetchSpy = fetch;

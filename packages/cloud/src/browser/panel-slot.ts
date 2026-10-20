@@ -86,11 +86,16 @@ export function installPanelSlot(): () => void {
     const arriving = readShellData()?.panel;
     // The arriving page carries the server's current consent answer, as a reload would; a newer revision wins.
     const consent = arriving?.consent;
-    if (consent && consent.provider === provider.id) {
+    if (consent) {
+      // Page observations fence pending choices even when a read already learned this revision or the provider changed.
+      if (consent.revision > (observedRevisions.get(consent.provider) ?? 0)) observedRevisions.set(consent.provider, consent.revision);
       if (consent.revision > (revisions.get(consent.provider) ?? 0)) {
         answers.set(consent.provider, consent.allowed);
         revisions.set(consent.provider, consent.revision);
-      } else if (consent.allowed !== answers.get(consent.provider) || consent.revision !== revisions.get(consent.provider)) {
+      }
+    }
+    if (consent && consent.provider === provider.id) {
+      if (consent.allowed !== answers.get(consent.provider) || consent.revision !== revisions.get(consent.provider)) {
         // An older or unreadable answer (`allowed: null`) is what a reload would show: stop and read again.
         void revalidate();
       }
@@ -111,9 +116,12 @@ export function installPanelSlot(): () => void {
   let loadVersion = 0;
   const answers = new Map<string, boolean | null>();
   const revisions = new Map<string, number>();
+  // A newer server page supersedes choices made before it, including queued saves and conflict retries.
+  const observedRevisions = new Map<string, number>();
   if (panel.consent) {
     answers.set(panel.consent.provider, panel.consent.allowed);
     revisions.set(panel.consent.provider, panel.consent.revision);
+    observedRevisions.set(panel.consent.provider, panel.consent.revision);
   }
   const saving = new Set<string>();
   const errors = new Set<string>();
@@ -488,6 +496,8 @@ export function installPanelSlot(): () => void {
     if (!item || typeof request.allowed !== "boolean" || saving.has(item.id)) return;
     saving.add(item.id);
     errors.delete(item.id);
+    const observedRevision = observedRevisions.get(item.id);
+    const current = () => observedRevisions.get(item.id) === observedRevision;
     const questionHadFocus = slot.querySelector("[data-cloud-panel-consent]")?.contains(document.activeElement);
     // Enqueueing blocks sharing at once, so a withdrawal stops disclosure before its save even starts.
     // keepalive: leaving the page does not cancel the save. A save the browser gives up on (timeout) is rolled back
@@ -502,11 +512,14 @@ export function installPanelSlot(): () => void {
       });
     void enqueueConsent(async () => {
       try {
+        if (!current()) return;
         let response = await put();
+        if (!current()) return;
         // Changed meanwhile (another tab, or a read that failed): the person's choice now is the newest one, so read
         // the current revision and save it once more. A second conflict shows the question again.
         if (response.status === 409) {
           await readAnswersNow();
+          if (!current()) return;
           response = await put();
         }
         if (!response.ok) throw new Error("Panel consent was not saved");
@@ -524,15 +537,17 @@ export function installPanelSlot(): () => void {
           saved.revision <= 0
         )
           throw new Error("Invalid panel consent answer");
-        if (saved.revision >= (revisions.get(item.id) ?? 0)) {
+        if (current() && saved.revision >= (revisions.get(item.id) ?? 0)) {
           answers.set(item.id, request.allowed);
           revisions.set(item.id, saved.revision);
         }
       } catch {
+        // A superseded request cannot invalidate the newer page's answer either.
+        if (!current()) return;
         // Not saved: nothing is shared until the person answers again; the read learns the current revision.
         errors.add(item.id);
         await readAnswersNow();
-        answers.set(item.id, null);
+        if (current()) answers.set(item.id, null);
       } finally {
         saving.delete(item.id);
       }

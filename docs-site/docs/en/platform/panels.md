@@ -251,7 +251,8 @@ already seen.
   provider page does not bring it back.
 - **Saves are ordered.** Each answer carries a revision, and a save based on an
   older revision is refused. After such a conflict, Cloud reads the current
-  answer and saves the person's choice once more. A save that the browser gives
+  answer and saves the person's choice once more. A newer answer carried by a
+  page change supersedes an earlier pending choice. A save that the browser gives
   up on after 10 seconds is rolled back if the server notices the cancellation
   before it commits. A save that still lands later cannot override a newer
   answer, but it applies from the next page load.
