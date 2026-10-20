@@ -38,12 +38,12 @@ export async function requestPublicHttps(
   return new Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }>((resolve, reject) => {
     let settled = false;
     const fail = () => finish(undefined);
-    const finish = (value?: { status: number; headers: Record<string, string>; body: Uint8Array }) => {
+    const finish = (value?: { status: number; headers: Record<string, string>; body: Uint8Array }, code = "HTTP_FAILED") => {
       if (settled) return;
       settled = true;
       input.signal.removeEventListener("abort", abort);
       if (value) resolve(value);
-      else reject(new Error("HTTP_FAILED"));
+      else reject(new Error(code));
     };
     const outgoing = dependencies.request(
       {
@@ -74,14 +74,19 @@ export async function requestPublicHttps(
           fail();
           return;
         }
+        if (Number(incoming.headers["content-length"]) > input.maxBytes) {
+          finish(undefined, "HTTP_TOO_LARGE");
+          incoming.destroy();
+          return;
+        }
         const chunks: Uint8Array[] = [];
         let bytes = 0;
         incoming.on("data", (chunk: Buffer) => {
           if (settled) return;
           bytes += chunk.byteLength;
           if (bytes > input.maxBytes) {
+            finish(undefined, "HTTP_TOO_LARGE");
             incoming.destroy();
-            fail();
           } else chunks.push(chunk);
         });
         incoming.on("end", () => finish({ status, headers, body: Buffer.concat(chunks, bytes) }));

@@ -38,7 +38,7 @@ Notebooks are Markdown workspaces for knowledge. Your text stays readable first.
 :::reference
 - **Capture notes:** Open a notebook, then create or select a note. Write decisions, meeting notes, research, recipes, plans, and small task lists in Markdown.
 - **Download a note:** Open the note details. Download the current content as Markdown or PDF.
-- **PDF content:** The PDF shows the note as Book shows it, with callouts, named data, contents, and query results. Attached JPEG, PNG, WebP and GIF images appear at the size Book shows them; diagrams appear as their source. SVG attachments and external images are not printed yet. After the download, the dialog lists anything the PDF could not include. The PDF marks each item in place.
+- **PDF content:** The PDF shows the note as Book shows it, with callouts, named data, contents, and query results. Attached JPEG, PNG, WebP and GIF images appear at the size Book shows them; diagrams appear as their source. SVG attachments are not printed yet. External images print when the Cloud server can reach them at a public HTTPS address without a redirect. After the download, the dialog lists anything the PDF could not include. The PDF marks each item in place.
 - **PDF format:** The PDF export offers three A4 presets and **Custom**. Notebooks processes the current Markdown, the CSS, and the PDF in memory and does not store the PDF.
 - **Connect knowledge:** Use note links, tags, and attachments. People then find related information without moving everything into one file.
 - **Track small structured data:** Use Markdown tables and named blocks for small data sets that belong next to their text.

@@ -23,7 +23,23 @@ let unseenId: string;
 let brokenId: string;
 let heldA: ReturnType<typeof Promise.withResolvers<Response>> | undefined;
 let receivedA: ReturnType<typeof Promise.withResolvers<void>>;
-const scenarios = ["A", "B", "new", "non-html", "403", "redirect", "signature", "prefix", "deploy", "styles", "throw", "sub/nested"];
+/** Holds the document load of `non-html-stream` until the test saw the swap fetch end. */
+let streamDocument: ReturnType<typeof Promise.withResolvers<void>>;
+const scenarios = [
+  "A",
+  "B",
+  "new",
+  "non-html",
+  "non-html-stream",
+  "403",
+  "redirect",
+  "signature",
+  "prefix",
+  "deploy",
+  "styles",
+  "throw",
+  "sub/nested",
+];
 /** Paths of frame requests, to see which URL a relative `src` in a swapped column resolved against. */
 const frames: string[] = [];
 const wrapper = (id: string, label: string) =>
@@ -47,10 +63,11 @@ beforeAll(async () => {
   writeFileSync(
     rail,
     `import { onMount, onCleanup } from "solid-js";
-    import { installPageSwap } from ${JSON.stringify(resolve(import.meta.dir, "../../src/nav.ts"))};
+    import { installPageSwap, swapPage } from ${JSON.stringify(resolve(import.meta.dir, "../../src/nav.ts"))};
     export default function Rail() {
       onMount(() => { onCleanup(installPageSwap()); document.documentElement.dataset.ready = "yes"; });
       return <nav>${scenarios.map((name) => `<a id="${name.replace("/", "-")}" href="/app/${name}">${name}</a>`).join("")}
+      <button id="swap-replace" onClick={() => void swapPage("/app/new", { replace: true })}>Replace page</button>
       <a id="prevented" href="/app/prevented" onClick={e => e.preventDefault()}>prevented</a></nav>;
     }`,
   );
@@ -84,7 +101,10 @@ beforeAll(async () => {
         return new Response(file, { headers: { "content-type": "text/javascript" } });
       }
       const label = url.pathname.split("/").at(-1)!;
-      if (request.headers.get("sec-fetch-dest") === "document") return pageResponse(label);
+      if (request.headers.get("sec-fetch-dest") === "document") {
+        if (label === "non-html-stream") await streamDocument.promise;
+        return pageResponse(label);
+      }
       switch (label) {
         case "A":
           heldA = Promise.withResolvers<Response>();
@@ -92,6 +112,14 @@ beforeAll(async () => {
           return heldA.promise;
         case "non-html":
           return new Response("plain", { headers: { "content-type": "text/plain" } });
+        case "non-html-stream":
+          // The body never ends, so only the swap itself can end this fetch before the document unloads.
+          return new Response(
+            new ReadableStream({
+              start: (controller) => controller.enqueue(new TextEncoder().encode("plain")),
+            }),
+            { headers: { "content-type": "text/plain" } },
+          );
         case "403":
           return new Response("forbidden", { status: 403 });
         case "redirect":
@@ -123,6 +151,7 @@ beforeEach(() => {
   version = "v1";
   heldA = undefined;
   receivedA = Promise.withResolvers<void>();
+  streamDocument = Promise.withResolvers<void>();
 });
 afterAll(async () => {
   try {
@@ -192,6 +221,26 @@ test.each(["non-html", "403", "redirect", "signature", "prefix", "deploy", "styl
     }
   },
 );
+
+test(`${browserName}: a rejected body stops downloading before the document load asks again`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page);
+    const documents = trackDocuments(page);
+    const fetchEnded = page.waitForEvent("requestfailed", {
+      predicate: (request) => request.url() === `${origin}/app/non-html-stream` && !request.isNavigationRequest(),
+    });
+    await page.click("#non-html-stream");
+    await fetchEnded;
+    streamDocument.resolve();
+    await page.waitForFunction(() => location.pathname === "/app/non-html-stream" && document.documentElement.dataset.ready === "yes");
+    expect(documents).toEqual([`${origin}/app/non-html-stream`]);
+  } finally {
+    streamDocument.resolve();
+    await context.close();
+  }
+});
 
 test(`${browserName}: evaluation failure leaves the old column mounted until the document load`, async () => {
   const context = await browser.newContext();
@@ -372,6 +421,66 @@ test(`${browserName}: Back onto a URL with a hash after a swap swaps that page`,
         document.querySelector("main [data-mounted]")?.textContent === "old",
     );
     // The request carries no fragment; location.hash above shows the URL kept it.
+    expect(documents).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test(`${browserName}: post-commit signal observes mounted, focused and announced columns, never a fallback`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      window.addEventListener("ssr:nav-swapped", (event) => {
+        if (!(event instanceof CustomEvent)) throw new Error("Missing swap detail");
+        const rows = JSON.parse(sessionStorage.getItem("swap-signals") ?? "[]");
+        rows.push({
+          title: document.title,
+          mounted: event.detail.root.querySelector("[data-mounted]")?.textContent,
+          root: event.detail.root === document.querySelector("[data-nav-root]"),
+          focused: document.activeElement === event.detail.root.querySelector("h1"),
+          announced: document.querySelector("[data-nav-announcer]")?.textContent,
+        });
+        sessionStorage.setItem("swap-signals", JSON.stringify(rows));
+      });
+    });
+    await open(page);
+    const documents = trackDocuments(page);
+    await page.click("#B");
+    await page.waitForFunction(() => document.title === "B");
+    await page.click("#swap-replace");
+    await page.waitForFunction(() => document.title === "new");
+    await page.goBack();
+    await page.waitForFunction(() => document.title === "old");
+    const expected = ["B", "new", "old"].map((title) => ({ title, mounted: title, root: true, focused: true, announced: title }));
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("swap-signals") ?? "[]"))).toEqual(expected);
+    expect(documents).toEqual([]);
+    await page.click("#non-html");
+    await page.waitForFunction(() => location.pathname === "/app/non-html" && document.documentElement.dataset.ready === "yes");
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("swap-signals") ?? "[]"))).toEqual(expected);
+    expect(documents).toEqual([`${origin}/app/non-html`]);
+  } finally {
+    await context.close();
+  }
+});
+
+test(`${browserName}: a throwing swap listener reports an error without loading a document`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    const documents = trackDocuments(page);
+    await page.evaluate(() =>
+      window.addEventListener("ssr:nav-swapped", () => {
+        throw new Error("fixture swap listener");
+      }),
+    );
+    await page.click("#B");
+    await page.waitForFunction(() => document.title === "B");
+    expect(errors).toEqual(["fixture swap listener"]);
     expect(documents).toEqual([]);
   } finally {
     await context.close();

@@ -23,9 +23,16 @@ export type QueryOptions = {
   signal?: AbortSignal;
   timeoutMs: number;
   format?: "JSON" | "TabSeparated";
+  /** Response body cap; the default fits service queries. Read users' answers are bounded by their profile. */
+  maxResponseBytes?: number;
   transport?: (input: string, init: RequestInit) => Promise<Response>;
 };
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+// ClickHouse defaults http_max_uri_size to 1 MiB. Reserve 3/4 for intermediaries and overhead.
+export const CLICKHOUSE_MAX_URL_BYTES = 256 * 1024;
+// Encoded UUID + Int64 pair: (36 + 2*3 quotes + 3 comma) + (20 digits/sign + 3 comma) = 68 bytes.
+// 2,000 pairs need <=136,000 bytes, leaving >123 KiB for the origin, brackets, keys and scalar settings.
+export const CLICKHOUSE_UUID_CHUNK_SIZE = 2_000;
 
 // By Pulse's design, the Cloud admin owns internal targets: the saved or submitted
 // host is the allowlist entry, with no env vars. Remote responses are never echoed.
@@ -44,6 +51,8 @@ export const clickhouseQuery = async (options: QueryOptions): Promise<Record<str
   url.searchParams.set("default_format", options.format ?? "JSON");
   for (const [name, value] of Object.entries(options.params ?? {})) url.searchParams.set(`param_${name}`, String(value));
   for (const [name, value] of Object.entries(options.settings ?? {})) url.searchParams.set(name, String(value));
+  if (new TextEncoder().encode(url.href).byteLength > CLICKHOUSE_MAX_URL_BYTES)
+    throw new RangeError(`ClickHouse request URL exceeds the ${CLICKHOUSE_MAX_URL_BYTES}-byte budget; chunk query parameters`);
   const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(options.timeoutMs)]);
   try {
     const transport = options.transport ?? createAllowedNetworkFetch(storeAllowlist(url));
@@ -65,7 +74,7 @@ export const clickhouseQuery = async (options: QueryOptions): Promise<Record<str
           const { done, value } = await reader.read();
           if (done) break;
           length += value.byteLength;
-          if (length > MAX_RESPONSE_BYTES) throw new StoreQueryError("unreachable");
+          if (length > (options.maxResponseBytes ?? MAX_RESPONSE_BYTES)) throw new StoreQueryError("unreachable");
           chunks.push(value);
         }
     } finally {

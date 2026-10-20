@@ -83,7 +83,7 @@ All three components render on the server. Link navigation works without browser
   color="cyan"
 />
 
-<LinkCard href="/app/capabilities/pulse" title="Pulse" description="Metrics and dashboards" icon="ti ti-activity" meta="12 capabilities" />
+<LinkCard href="/app/capabilities/pulse" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
 
 <ResourceCard
   title="Onboarding checklist"

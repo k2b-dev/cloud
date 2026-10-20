@@ -17,6 +17,9 @@ Record permission changes, credential lifecycle events, administrative
 mutations, and denied security decisions. Do not use audit storage for routine
 diagnostics or product analytics.
 
+Domain history belongs to its application (Grids `audit_log`, Files `activity`);
+security evidence belongs to audit events.
+
 ## Record an outcome
 
 ```ts

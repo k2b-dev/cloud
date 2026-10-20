@@ -1,7 +1,7 @@
 import { Button, dialogCore, NoticeCard, NumberInput, PanelDialog, panelDialogOptions, Select, TextInput } from "@k2b/ui";
 import { type Accessor, createSignal, Show } from "solid-js";
+import { MetricFiltersSchema, parseMetricFilterInput } from "../../metric-filters";
 import { usePulseMessages } from "../use-messages";
-import { SOURCE_TYPE_OPTIONS } from "./helpers";
 import type { CreateSourceInput, SourceCreateKind } from "./types";
 
 type SourceCreateDialogOptions = {
@@ -15,16 +15,20 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
     const [kind, setKind] = createSignal<SourceCreateKind>("http_ingest");
     const [name, setName] = createSignal("");
     const [endpointUrl, setEndpointUrl] = createSignal("");
+    const [metricFilters, setMetricFilters] = createSignal("");
+    const filtersValid = () => MetricFiltersSchema.safeParse(parseMetricFilterInput(metricFilters())).success;
     const [bearerToken, setBearerToken] = createSignal("");
     const [scrapeIntervalSeconds, setScrapeIntervalSeconds] = createSignal<number | null>(60);
     const title = () => (kind() === "http_ingest" ? t().httpIngest : t().metricsEndpoint);
 
     const submit = async () => {
+      if (kind() === "metrics" && !filtersValid()) return;
       const created = await options.createSource({
         kind: kind(),
         name: name(),
         endpointUrl: endpointUrl(),
         bearerToken: bearerToken(),
+        metricFilters: kind() === "metrics" ? parseMetricFilterInput(metricFilters()) : undefined,
         scrapeIntervalSeconds: scrapeIntervalSeconds() ?? 60,
       });
       if (created) close();
@@ -56,8 +60,13 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                 description={t().sourceTypeDescription}
                 icon="ti ti-plug-connected"
                 value={kind}
-                onValueChange={(value) => setKind(value as SourceCreateKind)}
-                options={SOURCE_TYPE_OPTIONS.map((option) => ({
+                onValueChange={(value) => {
+                  if (value === "http_ingest" || value === "metrics") setKind(value);
+                }}
+                options={[
+                  { id: "http_ingest", icon: "ti ti-webhook" },
+                  { id: "metrics", icon: "ti ti-plug" },
+                ].map((option) => ({
                   ...option,
                   label: option.id === "http_ingest" ? t().httpIngest : t().metricsEndpoint,
                   description: option.id === "http_ingest" ? t().ingestDescription : t().metricsEndpointEditDescription,
@@ -89,6 +98,17 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                   />
                 </div>
                 <TextInput
+                  label={t().metricFilters}
+                  description={t().metricFiltersDescription}
+                  value={metricFilters}
+                  onValueChange={setMetricFilters}
+                  placeholder="node_cpu_seconds_total, node_filesystem_*"
+                  icon="ti ti-filter"
+                  monospace
+                  multiline
+                  error={filtersValid() ? undefined : t().invalidMetricFilters}
+                />
+                <TextInput
                   label={t().bearerToken}
                   description={t().bearerTokenDescription}
                   icon="ti ti-key"
@@ -107,7 +127,11 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
             <Button type="button" variant="secondary" size="sm" onClick={() => close()} disabled={options.loading()}>
               {t().cancel}
             </Button>
-            <Button type="submit" size="sm" disabled={options.loading() || (kind() === "metrics" && !endpointUrl().trim())}>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={options.loading() || (kind() === "metrics" && (!endpointUrl().trim() || !filtersValid()))}
+            >
               <i class={`ti ${options.loading() ? "ti-loader-2 animate-spin" : "ti-plus"} text-sm`} />
               {t().add}
             </Button>

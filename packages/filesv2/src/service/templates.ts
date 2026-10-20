@@ -16,6 +16,7 @@ import { sql } from "bun";
 import { TEMPLATE_LIMIT } from "../document-assets";
 import type { FileTemplate, TemplatePage } from "../template-contracts";
 import { FilesError, filesService } from ".";
+import type { UserFilesCall } from "./activity";
 
 type Row = { id: string; name: string; description: string; filename: string; size: number; updated_at: Date };
 const view = (row: Row): FileTemplate => ({
@@ -85,12 +86,9 @@ function bytes(content: string) {
 }
 export function createTemplateService(files = filesService) {
   return {
-    async list(
-      actor: RequestActor,
-      subject: AccessSubject,
-      input: { q: string; after?: string },
-      administrative = false,
-    ): Promise<TemplatePage> {
+    async list(call: UserFilesCall, input: { q: string; after?: string }, administrative = false): Promise<TemplatePage> {
+      const actor = call.actor;
+      const subject = call.accessSubject;
       if (administrative) await admin(actor);
       else await user(actor);
       const principal = buildAccessPrincipalCondition({
@@ -110,12 +108,15 @@ export function createTemplateService(files = filesService) {
       ORDER BY t.id LIMIT 51`;
       return { items: rows.slice(0, 50).map(view), next: rows.length > 50 ? rows[49]!.id : null };
     },
-    async get(actor: RequestActor, subject: AccessSubject, id: string, administrative = false) {
+    async get(call: UserFilesCall, id: string, administrative = false) {
+      const actor = call.actor;
+      const subject = call.accessSubject;
       if (administrative) await admin(actor);
       else await requireUse(actor, subject, id);
       return get(id);
     },
-    async upload(actor: RequestActor, input: { name: string; description: string; filename: string; content: string }) {
+    async upload(call: UserFilesCall, input: { name: string; description: string; filename: string; content: string }) {
+      const actor = call.actor;
       const self = await admin(actor);
       const data = bytes(input.content);
       const [row] = await sql<
@@ -123,16 +124,18 @@ export function createTemplateService(files = filesService) {
       >`INSERT INTO filesv2.templates(name,description,filename,bytes,size,created_by) VALUES(${input.name},${input.description},${input.filename},${data},${data.length},${self.user.id}::uuid) RETURNING ${fields}`;
       return view(row!);
     },
-    async import(actor: RequestActor, input: { name: string; description: string; source: { baseId: string; path: string } }) {
+    async import(call: UserFilesCall, input: { name: string; description: string; source: { baseId: string; path: string } }) {
+      const actor = call.actor;
       await admin(actor);
-      const source = await files.templateSource(actor, input.source);
-      return this.upload(actor, { ...input, filename: source.filename, content: Buffer.from(source.bytes).toString("base64") });
+      const source = await files.templateSource(call, input.source);
+      return this.upload(call, { ...input, filename: source.filename, content: Buffer.from(source.bytes).toString("base64") });
     },
     async update(
-      actor: RequestActor,
+      call: UserFilesCall,
       id: string,
       input: { name: string; description: string; file?: { filename: string; content: string } },
     ) {
+      const actor = call.actor;
       await admin(actor);
       const data = input.file ? bytes(input.file.content) : null;
       const [row] = await sql<
@@ -141,7 +144,8 @@ export function createTemplateService(files = filesService) {
       if (!row) throw new FilesError("not_found", 404);
       return view(row);
     },
-    async replace(actor: RequestActor, id: string, input: { filename: string; content: string }) {
+    async replace(call: UserFilesCall, id: string, input: { filename: string; content: string }) {
+      const actor = call.actor;
       await admin(actor);
       const data = bytes(input.content);
       const [row] = await sql<
@@ -150,7 +154,8 @@ export function createTemplateService(files = filesService) {
       if (!row) throw new FilesError("not_found", 404);
       return view(row);
     },
-    async remove(actor: RequestActor, id: string) {
+    async remove(call: UserFilesCall, id: string) {
+      const actor = call.actor;
       await admin(actor);
       await sql.begin(async (tx) => {
         await tx`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM filesv2.template_access WHERE template_id=${id}::uuid)`;
@@ -158,12 +163,14 @@ export function createTemplateService(files = filesService) {
       });
       return { deleted: true };
     },
-    async grants(actor: RequestActor, id: string) {
+    async grants(call: UserFilesCall, id: string) {
+      const actor = call.actor;
       await admin(actor);
       await get(id);
       return access.list(id);
     },
-    async grant(actor: RequestActor, id: string, principal: Principal) {
+    async grant(call: UserFilesCall, id: string, principal: Principal) {
+      const actor = call.actor;
       await admin(actor);
       await get(id);
       if (!["user", "group", "authenticated"].includes(principal.type)) throw new FilesError("forbidden", 403);
@@ -177,18 +184,21 @@ export function createTemplateService(files = filesService) {
       }
       return (await access.list(id)).find((entry) => entry.id === result.data.id)!;
     },
-    async revoke(actor: RequestActor, id: string, accessId: string) {
+    async revoke(call: UserFilesCall, id: string, accessId: string) {
+      const actor = call.actor;
       await admin(actor);
       const [row] = await sql`SELECT access_id FROM filesv2.template_access WHERE template_id=${id}::uuid AND access_id=${accessId}::uuid`;
       if (!row) throw new FilesError("not_found", 404);
       await deleteAccess({ id: accessId });
       return { deleted: true };
     },
-    async use(actor: RequestActor, subject: AccessSubject, id: string, input: { baseId: string; path: string }) {
+    async use(call: UserFilesCall, id: string, input: { baseId: string; path: string }) {
+      const actor = call.actor;
+      const subject = call.accessSubject;
       await requireUse(actor, subject, id);
       const [row] = await sql<{ bytes: Uint8Array<ArrayBuffer> }[]>`SELECT bytes FROM filesv2.templates WHERE id=${id}::uuid`;
       if (!row) throw new FilesError("not_found", 404);
-      return files.createFromBytes(actor, input, new Uint8Array(row.bytes));
+      return files.createFromBytes(call, input, new Uint8Array(row.bytes));
     },
   };
 }

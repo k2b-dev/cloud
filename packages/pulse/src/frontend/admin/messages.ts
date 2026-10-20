@@ -7,9 +7,9 @@ export const storeMessages = i18n.define({
     en: {
       title: "Data store",
       description: "Pulse keeps measurements and events in ClickHouse, separate from the Cloud database. Only Cloud admins see this page.",
-      notConfiguredTitle: "Not set up yet",
+      notConfiguredTitle: "Pulse needs a data store",
       notConfiguredText:
-        "Connect a ClickHouse instance that serves only Pulse. Until then, Pulse keeps working as before; later versions need the connection.",
+        "Pulse keeps measurements and events in ClickHouse, separate from the Cloud database. Until the connection works, people see “Pulse is not set up yet”.",
       step1: "Start ClickHouse 26.9 or newer as one node on the internal network, with its own volume.",
       step2: "Run the setup script once as the ClickHouse admin. It creates the service user and the fixed query limits.",
       step3: "Enter the address and the service user here. Pulse checks the connection before it saves anything.",
@@ -98,9 +98,9 @@ export const storeMessages = i18n.define({
       title: "Datenspeicher",
       description:
         "Pulse speichert Messwerte und Ereignisse in ClickHouse, getrennt von der Cloud-Datenbank. Nur Cloud-Admins sehen diese Seite.",
-      notConfiguredTitle: "Noch nicht eingerichtet",
+      notConfiguredTitle: "Pulse braucht einen Datenspeicher",
       notConfiguredText:
-        "Verbinde eine ClickHouse-Instanz, die nur Pulse dient. Bis dahin arbeitet Pulse wie bisher; spätere Versionen brauchen die Verbindung.",
+        "Pulse speichert Messwerte und Ereignisse in ClickHouse, getrennt von der Cloud-Datenbank. Bis die Verbindung steht, sehen Nutzer „Pulse ist noch nicht eingerichtet“.",
       step1: "Starte ClickHouse 26.9 oder neuer als einen Knoten im internen Netz, mit eigenem Volume.",
       step2:
         "Führe das Einrichtungs-Skript einmal als ClickHouse-Admin aus. Es legt den Dienst-Zugang und die festen Grenzen für Abfragen an.",

@@ -25,6 +25,7 @@ export const CollaboraConfigurationSchema = z.object({
   documentFormat: DocumentFormatSchema.default("odf"),
 });
 export const ConfigurationSchema = z.object({
+  activityRetentionDays: z.number().int().min(30).max(3650).default(365),
   url: z.string().url().or(z.literal("")),
   cloud: AreaConfigurationSchema.extend({ autoCreate: z.boolean().default(false), autoArchive: z.boolean().default(true) }),
   freeipa: AreaConfigurationSchema,
@@ -345,4 +346,5 @@ export type ArchiveEntry = {
   canDelete: boolean;
 };
 export type ArchivePage = { items: ArchiveEntry[]; next: string | null };
-export type MaintenanceResult = { processed: number; archived: number; pending: number };
+export type DirectoryMaintenanceResult = { processed: number; archived: number; pending: number };
+export type MaintenanceResult = DirectoryMaintenanceResult & { activityChecked: number; activityPurged: number };

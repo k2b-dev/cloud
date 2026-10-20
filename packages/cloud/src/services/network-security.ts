@@ -27,9 +27,10 @@ export const resolveAllowedNetworkAddresses = async (
   rawHostname: string,
   allowlist: NetworkAllowlist,
   lookup: NetworkLookup = (hostname) => dnsLookup(hostname, { all: true, verbatim: true }),
+  port?: number,
 ): Promise<PublicNetworkAddress[]> => {
   const hostname = normalizeNetworkHostname(rawHostname);
-  const trustedHost = allowlist.hosts.has(hostname);
+  const trustedHost = allowlist.hosts.has(hostname) || (port !== undefined && allowlist.hostPorts?.get(hostname)?.has(port) === true);
   if (!trustedHost && isUnsafeNetworkHostname(rawHostname)) throw new NetworkTargetBlockedError("Network target host is not allowed");
 
   const literal = parseNetworkAddress(rawHostname);
@@ -45,7 +46,7 @@ export const resolveAllowedNetworkAddresses = async (
   });
   if (
     !trustedHost &&
-    normalized.some((entry) => isUnsafeNetworkAddress(entry.address) && !isAllowlistedNetworkAddress(allowlist, entry.address))
+    normalized.some((entry) => isUnsafeNetworkAddress(entry.address) && !isAllowlistedNetworkAddress(allowlist, entry.address, port))
   ) {
     throw new NetworkTargetBlockedError("Network target resolved to a private or reserved address");
   }
@@ -59,15 +60,17 @@ export const isNetworkTargetBlocked = async (
   {
     resolve = resolveAllowedNetworkAddresses,
     timeoutMs = 5000,
+    port,
   }: {
     resolve?: typeof resolveAllowedNetworkAddresses;
     timeoutMs?: number;
+    port?: number;
   } = {},
 ): Promise<boolean> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      resolve(hostname, allowlist),
+      resolve(hostname, allowlist, undefined, port),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, timeoutMs);
       }),

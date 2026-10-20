@@ -1,4 +1,5 @@
 import type { HelpArticleLink, HelpDocumentManifest, HelpDocumentPayload } from "@k2b/cloud/shared";
+import { listenPopState } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/solid";
 import {
   BottomSheet,
@@ -383,12 +384,12 @@ const HelpShell = (props: {
       // The hub keeps its search, as the reader's own Back button does. An unknown topic shows the hub, as the server does.
       else setView("hub");
     };
-    if (props.syncPageUrl) window.addEventListener("popstate", onPopState);
+    const stopPopState = props.syncPageUrl ? listenPopState(onPopState) : undefined;
     onCleanup(() => {
       scrollArea?.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onResize);
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
-      window.removeEventListener("popstate", onPopState);
+      stopPopState?.();
     });
   });
   onCleanup(() => copyAllController?.abort());

@@ -1,8 +1,9 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createTestAppSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { settingsFixture } from "../store/settings.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import api from ".";
 
@@ -10,7 +11,17 @@ const suite = suiteFor("database", "nats", "valkey");
 const users: string[] = [];
 
 suite("Pulse API keys and the mobile app", () => {
+  let settings: ReturnType<typeof settingsFixture>;
+  beforeAll(() => {
+    settings = settingsFixture();
+    settings.values["pulse.clickhouse_connection"] = JSON.stringify({
+      url: "http://127.0.0.1:1",
+      user: "fixture",
+      password: "fixture-password",
+    });
+  });
   afterAll(async () => {
+    settings.restore();
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });
 

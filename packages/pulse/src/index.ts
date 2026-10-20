@@ -9,7 +9,6 @@ import { pulseHelp } from "./help";
 import { migrate } from "./migrate";
 import { pulseService } from "./service";
 import { pulseRuntime } from "./service/runtime";
-import { scrapeAllowlist } from "./service/scrape-target";
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
@@ -30,7 +29,6 @@ export default await app.start({
       await migrate();
     },
     start: async () => {
-      scrapeAllowlist();
       await pulseRuntime.start();
     },
     stop: async () => {

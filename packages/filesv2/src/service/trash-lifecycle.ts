@@ -1,17 +1,19 @@
 import type { RequestActor } from "@k2b/cloud/server";
-import { FilegateError, type Node, type RootClient, type TransferResult } from "@k2b/filegate";
+import { FilegateError, type Node, type TransferResult } from "@k2b/filegate";
 import { z } from "zod";
 import type { BaseSummary, EntryResult, TrashEntry } from "../contracts";
 import { rootLockWait, withRootLock } from "../data/operations";
 import { type TrashRow, trash } from "../data/trash";
+import { pendingMigration, type UserFilesCall } from "./activity";
 import { operationError, runFileBatch } from "./batches";
 import { FilesError } from "./errors";
 import { fileEntry } from "./file-entry";
+import type { FilesRoot } from "./filegate-facade";
 import { joinPath, relativePath, userPath } from "./paths";
 
 /** Request-authorized location. Rights checks remain in the owning service. */
 export type TrashLocation = {
-  root: Pick<RootClient, "stat" | "transfer" | "list">;
+  root: Pick<FilesRoot, "stat" | "transfer" | "list">;
   rootName: string;
   serverUrl: string;
   basePath: string;
@@ -45,7 +47,7 @@ function decode(value?: string): z.infer<typeof Cursor> | undefined {
     throw new FilesError("invalid_cursor");
   }
 }
-async function stat(root: Pick<RootClient, "stat">, path: string): Promise<Node | null> {
+async function stat(root: Pick<FilesRoot, "stat">, path: string): Promise<Node | null> {
   try {
     return await root.stat(path);
   } catch (error) {
@@ -124,7 +126,9 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         let receipt: TransferResult | undefined;
         let answered = false;
         try {
-          receipt = await current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" });
+          receipt = await pendingMigration("trash.transfer", () =>
+            current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" }),
+          );
           answered = true;
         } catch (error) {
           source = await stat(current.root, sourceAbsolute);
@@ -152,7 +156,8 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
     }
   }
   return {
-    async remove(actor: RequestActor, input: { baseId: string; paths: string[] }) {
+    async remove(call: UserFilesCall, input: { baseId: string; paths: string[] }) {
+      const actor = call.actor;
       const wait = rootLockWait();
       return runFileBatch(
         input.paths,
@@ -190,15 +195,16 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
       );
     },
     async trash(
-      actor: RequestActor,
+      call: UserFilesCall,
       input: { baseId: string; after?: string },
     ): Promise<{ base: BaseSummary; entries: TrashEntry[]; next: string | null }> {
+      const actor = call.actor;
       const current = await authorize(actor, input.baseId, "", "read");
       const cursor = decode(input.after);
       const entries: TrashEntry[] = [];
       if (cursor?.phase !== "filesystem") {
         const rows = await store.list(current.bindingId, cursor?.phase === "records" ? cursor : undefined, PAGE_SIZE + 1);
-        if (rows.length === 0) return this.trash(actor, { ...input, after: encode({ phase: "filesystem" }) });
+        if (rows.length === 0) return this.trash(call, { ...input, after: encode({ phase: "filesystem" }) });
         for (const listed of rows.slice(0, PAGE_SIZE)) {
           let row = listed;
           if (row.root !== current.rootName || (row.server_url !== null && row.server_url !== current.serverUrl)) continue;
@@ -273,7 +279,8 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
      * One recoverable entry, for an approval review that must name what it restores. It applies the listing's
      * disclosure rules and only reads: nothing is reconciled or recorded.
      */
-    async trashEntry(actor: RequestActor, input: { baseId: string; id: string }): Promise<TrashEntry> {
+    async trashEntry(call: UserFilesCall, input: { baseId: string; id: string }): Promise<TrashEntry> {
+      const actor = call.actor;
       const current = await authorize(actor, input.baseId, "", "read");
       const listed = input.id.startsWith("fs:") ? filesystemPath(input.id) : null;
       const row = listed ? await store.at(current.bindingId, listed) : await store.get(input.id, current.bindingId);
@@ -301,7 +308,8 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         state: "trashed",
       };
     },
-    async restoreTrash(actor: RequestActor, input: { baseId: string; id: string; path?: string }): Promise<EntryResult> {
+    async restoreTrash(call: UserFilesCall, input: { baseId: string; id: string; path?: string }): Promise<EntryResult> {
+      const actor = call.actor;
       const located = await authorize(actor, input.baseId, "", "read");
       return locked(
         located.rootName,
