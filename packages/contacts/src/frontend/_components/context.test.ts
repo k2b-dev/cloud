@@ -53,7 +53,7 @@ test("selection merges history fields and Back uses only a selection pushed in t
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   const previousHistory = globalThis.history;
-  let href = "http://localhost/app/contacts/team?contact=direct&contactBook=team";
+  let href = "http://localhost/app/contacts/team?contact=direct&contactBook=team&contactOutcome=created";
   const initialState = { "@k2b/ssr/nav": { page: "page-1", position: 4 }, foreign: "preserve" };
   let state: Record<string, unknown> = initialState;
   const calls: string[] = [];
@@ -93,6 +93,7 @@ test("selection merges history fields and Back uses only a selection pushed in t
   try {
     backFromContactDetail();
     expect(calls).toEqual(["replace"]);
+    expect(href).toBe("http://localhost/app/contacts/team");
     setSelectedContactInUrl({ contactId: "ada", bookId: "team" });
     expect(calls).toEqual(["replace", "push"]);
     expect(state.foreign).toBe("preserve");
