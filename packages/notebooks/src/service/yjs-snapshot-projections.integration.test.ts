@@ -6,7 +6,7 @@ import { connectTestNats, requireDatabaseUrl, testFor, testSyncNamespace } from 
 const databaseName = process.env.NOTEBOOKS_SNAPSHOT_PROJECTIONS_DB_CHILD;
 if (!databaseName) {
   testFor("database", "nats")(
-    "overtaken snapshots leave every note projection and version unchanged",
+    "snapshots fence overtaken writes and share a binary base with live editors",
     async () => {
       const url = new URL(requireDatabaseUrl());
       const database = `notebook_projection_${crypto.randomUUID().replaceAll("-", "")}_test`;
@@ -124,6 +124,67 @@ if (!databaseName) {
         expect(losing).toMatchObject(race === "newer" ? { ok: true, data: { versionId: null } } : { ok: false, status: 409 });
         expect(await inspect()).toEqual(before);
         expect(notify).not.toHaveBeenCalled();
+      }
+
+      const { yjsSnapshotWorker } = await import("./yjs-snapshot-worker");
+      try {
+        await yjsSnapshotWorker.start();
+        for (const anchored of [false, true]) {
+          const noteId = crypto.randomUUID();
+          const cursor = anchored ? await createYjsTopic().head() : null;
+          await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, content_md, yjs_stream_cursor, created_at)
+            VALUES (${noteId}::uuid, ${anchored ? "seed01" : "seed02"}, ${notebookId}::uuid, '', 'Original', ${cursor}, '2020-01-01')`;
+          const [first, second] = await Promise.all([notes.getAnchoredYjsState({ noteId }), notes.getAnchoredYjsState({ noteId })]);
+          // This is the binary state sent by the real socket's initial syncPush.
+          // A text-only row must not let the live editor start from an empty doc.
+          if (!first?.yjsState || !second?.yjsState) throw new Error("Live editor received no binary base");
+          expect(first.yjsState).toEqual(second.yjsState);
+          const editor = new Y.Doc();
+          try {
+            Y.applyUpdate(editor, first.yjsState);
+            const text = editor.getText("codemirror");
+            expect(text.toString()).toBe("Original");
+            expect(Y.decodeStateVector(Y.encodeStateVector(editor)).get(0)).toBe("Original".length);
+            const before = Y.encodeStateVector(editor);
+            text.insert(text.length, " + live");
+            const published = await createYjsTopic().publish({
+              tenantId: noteId,
+              data: {
+                kind: "sync",
+                payload: Buffer.from(Y.encodeStateAsUpdate(editor, before)).toString("base64"),
+                originNodeId: "test",
+                originPeerId: null,
+              },
+            });
+            await yjsSnapshotWorker.queueSnapshotSave({ noteId, targetCursor: published.cursor, reason: "unload" });
+            const deadline = Date.now() + 10_000;
+            let persisted = false;
+            while (Date.now() < deadline) {
+              const stored = await notes.getYjsStateWithCursor({ noteId });
+              if (stored?.streamCursor === published.cursor) {
+                expect(stored.contentMd).toBe(text.toString());
+                persisted = true;
+                break;
+              }
+              await Bun.sleep(25);
+            }
+            expect(persisted).toBe(true);
+            expect(
+              await notes.editContent({
+                noteId,
+                createdBy: null,
+                data: { operations: [{ kind: "append", content: "AGENT" }] },
+              }),
+            ).toMatchObject({ ok: true });
+            const updated = await notes.getYjsStateWithCursor({ noteId });
+            expect(updated?.contentMd).toContain("Original + live");
+            expect(updated?.contentMd).toContain("AGENT");
+          } finally {
+            editor.destroy();
+          }
+        }
+      } finally {
+        await yjsSnapshotWorker.stop();
       }
     } finally {
       invalidations?.mockRestore();

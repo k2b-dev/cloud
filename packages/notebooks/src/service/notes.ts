@@ -1468,8 +1468,32 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
   const { noteId } = params;
   for (let attempt = 0; attempt < 5; attempt++) {
     const stored = await getYjsStateWithCursor({ noteId });
-    if (!stored || isSharedCursor(stored.streamCursor)) return stored;
+    if (!stored) return null;
     params.signal?.throwIfAborted();
+    if (!stored.yjsState) {
+      // Persist one common base before a live editor can publish against it.
+      // Client 0 matches the platform's fallback reconstruction, including
+      // updates already published by server-side writers for a text-only row.
+      const doc = new Y.Doc({ gc: true });
+      let state: Uint8Array;
+      try {
+        doc.clientID = 0;
+        if (stored.contentMd) doc.getText(SHARED_TEXT_NAME).insert(0, stored.contentMd);
+        state = Y.encodeStateAsUpdate(doc);
+      } finally {
+        doc.destroy();
+      }
+      await sql`
+        UPDATE notebooks.notes SET yjs_snapshot = ${Buffer.from(state)}
+        WHERE id = ${noteId}::uuid AND yjs_snapshot IS NULL
+          AND yjs_restore_revision = ${stored.restoreRevision}::bigint
+          AND yjs_stream_cursor IS NOT DISTINCT FROM ${stored.streamCursor}
+          AND content_md IS NOT DISTINCT FROM ${stored.contentMd}
+      `;
+      // Re-read after a concurrent initialization, save, or restore.
+      continue;
+    }
+    if (isSharedCursor(stored.streamCursor)) return stored;
     const topic = createYjsTopic();
     const head = await topic.head();
     const latest = await topic.latestCursor({ tenantId: noteId });
