@@ -1738,6 +1738,31 @@ test("scrolling the shown page while a traversal loads keeps that scroll for For
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 800);
 });
 
+test("a newer unmarked entry at the same URL drops a traversal to an unmarked entry", async () => {
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 2 } });
+  Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+  try {
+    install();
+    const requests = deferredFetch(true);
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    navigation.currentEntry = { key: "unmarked", index: 1 };
+    arrive(null, "/app/new");
+    navigation.currentEntry = { key: "newer", index: 2 };
+    window.history.pushState([], "", "/app/new");
+    const result = response();
+    const read = spyOn(result, "text");
+    requests[0]!.resolve(result);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(read).not.toHaveBeenCalled();
+    expect(document.title).toBe("old");
+    expect(reload).not.toHaveBeenCalled();
+  } finally {
+    uninstall();
+    Reflect.deleteProperty(window, "navigation");
+  }
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;

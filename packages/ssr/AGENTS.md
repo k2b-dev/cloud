@@ -252,7 +252,8 @@ capture listener or listenPopState's wrapper. Same-page entries reach islands;
 nav restores their window scroll first, leaving regions to islands. Cross-page
 and unmarked entries stopImmediatePropagation and fetch the arriving URL in
 the swap transaction without pushing history. Commit and reload recovery must
-still own that URL and marker; a different final URL reloads. Restore window
+still own that URL, marker, and Navigation API entry key; a different final
+URL reloads. Restore window
 and keyed regions from the entry's in-memory snapshot, then its stored scroll,
 otherwise use top/hash scrolling. Snapshots belong to the shown entry: when no
 cross-page traversal is pending, derive it from the current entry if it belongs
@@ -262,6 +263,9 @@ Keep scrollRestoration manual for the whole installation and restore the
 previous value on uninstall. The setting belongs to each entry, and pushes copy
 it, so entries created while installed stay manual after uninstall; uninstall
 is a teardown path, not a way to hand a running page back to the browser.
+Entries written before install keep the browser's own restoration: on a Back
+onto one, Chromium may scroll the still-shown column before the swap commits,
+so that page's last snapshot can be off. Install before islands write history.
 
 Install before islands add raw popstate listeners: Chromium uses registration
 order even for capture. listenPopState is safe in any order through the shared
@@ -269,13 +273,17 @@ swap state. Navigation API navigate captures the departing marker and scroll
 before traversal, also when dialog-core hides a dialog-only popstate from nav
 and applications. If nav runs first, inherited page ids keep those traversals
 with the page; nav must not stop them. Keep the fragment-click fallback for
-browsers without the Navigation API. A fragment entry belongs to the page of
+browsers without the Navigation API. Without it, a popstate that dialog-core
+stops (its own Back on close) leaves nav's tracked entry on the dialog entry
+until the next push or popstate, so one snapshot can land on the dialog entry;
+Chromium and WebKit ship the API. A fragment entry belongs to the page of
 the entry it came from: during a pending traversal that is the arriving page,
 so nav restarts the traversal for the fragment URL. Persisted pageshow aborts
 pending work and swaps a foreign or unmarked arriving entry; for a same-page
 return it keeps the tracked entry, so a following popstate departs from the
-shown one. pagehide
-first remembers the shown entry's current scroll and persists it in that entry
+shown one.
+
+`pagehide` first remembers the shown entry's current scroll and persists it in that entry
 best effort. It also mirrors the in-memory snapshots to sessionStorage under
 the reserved key `"@k2b/ssr/nav:scroll"`, so a reload keeps departure snapshots
 for Back and Forward. Load only valid snapshots on install; the map takes

@@ -57,7 +57,8 @@ const recover = (href: string, replace: boolean): void => {
 };
 type Entry = { page?: string; position: number; scroll?: ScrollSnapshot };
 type Marker = Entry & { page: string };
-type Traversal = { href: string; entry: Entry };
+/** `key` is the Navigation API entry key: it tells entries apart even when neither carries a marker. */
+type Traversal = { href: string; entry: Entry; key?: string };
 const historyKey = Symbol.for("@k2b/ssr/nav-history");
 type HistoryWrites = { push: History["pushState"]; replace: History["replaceState"] };
 const plain = (value: unknown): value is Record<string, unknown> =>
@@ -159,6 +160,7 @@ const stillCurrent = (state: SwapState, traversal: Traversal): boolean => {
   const entry = marker(window.history.state);
   return (
     window.location.href === traversal.href &&
+    window.navigation?.currentEntry?.key === traversal.key &&
     entry?.page === traversal.entry.page &&
     (entry === undefined || entry.position === traversal.entry.position)
   );
@@ -380,7 +382,7 @@ export function installPageSwap(): () => void {
   };
   const traverse = (entry: Entry): void => {
     state.currentEntry = entry;
-    void runSwap(window.location.href, {}, { href: window.location.href, entry });
+    void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key });
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
   const decide = (event: PopStateEvent): "page" | "nav" => {
