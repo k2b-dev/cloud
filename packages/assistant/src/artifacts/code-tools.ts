@@ -1,6 +1,7 @@
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, AiFileWriteError, type CODE_SOURCE_TOOLS, createAiConversationArtifact } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
+import { principalLabel } from "@k2b/cloud/shared";
 import { fail, ok, text } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -309,7 +310,7 @@ export const artifactCodeHandlers = {
           data: {
             message: [
               t.changeAccess({ app }),
-              `${t.recipient}: ${recipient!.displayName} — ${JSON.stringify(principal)}`,
+              `${t.recipient}: ${principalLabel(recipient!, context.locale)} — ${JSON.stringify(principal)}`,
               `${t.before}: ${previous ? level(previous.permission) : t.noAccess}`,
               `${t.after}: ${input.permission ? level(input.permission) : t.removeAccess}`,
               t.skillsUnchanged,

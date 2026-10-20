@@ -109,7 +109,7 @@ export const messageRecord = (row: LogRow): MailRecord => ({
   ...(row.error_message ? { error: row.error_message } : {}),
   failures: MailRecordSchema.shape.failures.parse(parsePgJsonValue(row.failures)),
   attempts: row.attempt_count,
-  ...(row.actor_id ? { actor: { id: row.actor_id, name: row.actor_name ?? row.actor_id } } : {}),
+  ...(row.actor_id ? { actor: { id: row.actor_id, name: row.actor_name ?? "" } } : {}),
   createdAt: date(row.created_at),
   ...(row.sent_at ? { sentAt: date(row.sent_at) } : {}),
   ...(row.content_purged_at ? { contentPurgedAt: date(row.content_purged_at) } : {}),

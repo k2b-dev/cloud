@@ -1809,7 +1809,7 @@ export function createFilesService(
       const deadline = Date.now() + 5_000;
       const signal = AbortSignal.timeout(5_000);
       // Display names are presentation only; one batched lookup per identity page keeps search on them cheap.
-      const names = new Map<string, string>();
+      const names = new Map<string, string | undefined>();
       const resolveNames = async (ids: string[]) => {
         const missing = [...new Set(ids)].filter((id) => !names.has(id));
         if (missing.length === 0) return;
