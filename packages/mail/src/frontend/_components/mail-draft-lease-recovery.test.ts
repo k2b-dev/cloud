@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AcquiredDraftLease } from "../../contracts";
-import { recoverDraftLeaseHeartbeat } from "./mail-draft-lease-recovery";
+import { classifyDraftLeaseAnswer, recoverDraftLeaseRequest } from "./mail-draft-lease-recovery";
 
 const lease: AcquiredDraftLease = {
   token: "lease-token",
@@ -17,8 +17,8 @@ const lease: AcquiredDraftLease = {
 describe("draft lease heartbeat recovery", () => {
   test("recovers automatically from transient transport failures", async () => {
     let attempts = 0;
-    const result = await recoverDraftLeaseHeartbeat({
-      heartbeat: async () => (++attempts < 3 ? { kind: "unavailable" } : { kind: "ok", lease }),
+    const result = await recoverDraftLeaseRequest({
+      run: async () => (++attempts < 3 ? { kind: "unavailable" } : { kind: "ok", lease }),
       signal: new AbortController().signal,
       retryBaseMs: 0,
       retryMaxMs: 0,
@@ -31,10 +31,10 @@ describe("draft lease heartbeat recovery", () => {
 
   test("does not retry a confirmed lease rejection", async () => {
     let attempts = 0;
-    const result = await recoverDraftLeaseHeartbeat({
-      heartbeat: async () => {
+    const result = await recoverDraftLeaseRequest({
+      run: async () => {
         attempts++;
-        return { kind: "rejected" };
+        return { kind: "held" };
       },
       signal: new AbortController().signal,
       retryBaseMs: 0,
@@ -42,14 +42,14 @@ describe("draft lease heartbeat recovery", () => {
       retryJitter: 0,
     });
 
-    expect(result).toEqual({ kind: "rejected" });
+    expect(result).toEqual({ kind: "held" });
     expect(attempts).toBe(1);
   });
 
   test("stops after the bounded recovery window", async () => {
     let attempts = 0;
-    const result = await recoverDraftLeaseHeartbeat({
-      heartbeat: async () => {
+    const result = await recoverDraftLeaseRequest({
+      run: async () => {
         attempts++;
         return { kind: "unavailable" };
       },
@@ -66,8 +66,8 @@ describe("draft lease heartbeat recovery", () => {
   test("honors lifecycle cancellation between attempts", async () => {
     const controller = new AbortController();
     let attempts = 0;
-    const recovery = recoverDraftLeaseHeartbeat({
-      heartbeat: async () => {
+    const recovery = recoverDraftLeaseRequest({
+      run: async () => {
         attempts++;
         controller.abort();
         return { kind: "unavailable" };
@@ -80,5 +80,34 @@ describe("draft lease heartbeat recovery", () => {
 
     await expect(recovery).rejects.toMatchObject({ name: "AbortError" });
     expect(attempts).toBe(1);
+  });
+});
+
+describe("draft lease answer classification", () => {
+  test.each([
+    [200, undefined, "ok"],
+    [409, "DRAFT_LEASE_HELD", "held"],
+    [409, "DRAFT_LEASE_NOT_OWNED", "not-owned"],
+    [409, "DRAFT_LEASE_BUSY", "unavailable"],
+    [500, undefined, "unavailable"],
+    [503, undefined, "unavailable"],
+    [408, undefined, "unavailable"],
+    [429, undefined, "unavailable"],
+    [401, undefined, "unavailable"],
+    [undefined, undefined, "unavailable"],
+    [400, undefined, "failed"],
+    [403, undefined, "failed"],
+    [404, undefined, "failed"],
+    [409, "CONFLICT", "failed"],
+    [409, undefined, "failed"],
+    [403, "DRAFT_LEASE_HELD", "failed"],
+  ] as const)("classifies status %s and code %s as %s", (status, code, expected) => {
+    expect(classifyDraftLeaseAnswer(status, { code, message: "Draft open elsewhere" })).toBe(expected);
+  });
+
+  test("does not interpret messages or malformed bodies as lease codes", () => {
+    for (const body of [null, "DRAFT_LEASE_HELD", { message: "Draft lease expired" }, { code: 409 }]) {
+      expect(classifyDraftLeaseAnswer(409, body)).toBe("failed");
+    }
   });
 });

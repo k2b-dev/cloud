@@ -9,6 +9,7 @@ import {
   Dropdown,
   DropTarget,
   FilterChip,
+  FilterToggle,
   GestureMenu,
   type GestureMenuItem,
   IconButton,
@@ -686,6 +687,7 @@ const actions = [
 };
 
 export const FilterDemo = () => {
+  const [onlyMine, setOnlyMine] = createSignal(false);
   const [clearValue, setClearValue] = createSignal<string[]>(["open", "ui"]);
   const [resetValue, setResetValue] = createSignal<string[]>(["done"]);
   const [viewValue, setViewValue] = createSignal<string[]>(["open", "sort:newest"]);
@@ -729,7 +731,16 @@ export const FilterDemo = () => {
       id="filters"
       chip={{ kind: "component", name: "FilterChip", from: "@k2b/ui" }}
       description="Clear mode shows the selected count; a non-empty baseline hides the count and offers Reset when the selection differs. A row section sets a short single choice side by side."
-      code={`<FilterChip
+      code={`const [onlyMine, setOnlyMine] = createSignal(false);
+
+<FilterToggle
+  label="Only mine"
+  icon="ti ti-user"
+  active={onlyMine()}
+  onClick={() => setOnlyMine(!onlyMine())}
+/>
+
+<FilterChip
   label="Clear mode"
   icon="ti ti-filter"
   value={clearValue()}
@@ -770,6 +781,7 @@ export const FilterDemo = () => {
 />`}
     >
       <div class="ui-demo-row">
+        <FilterToggle label="Only mine" icon="ti ti-user" active={onlyMine()} onClick={() => setOnlyMine(!onlyMine())} />
         <FilterChip
           label="Clear mode"
           icon="ti ti-filter"

@@ -4,12 +4,22 @@ import { packageIds } from "../workspace";
 import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule, RuleContext } from "./rule";
 
-type Kind = "selection" | "accent-mix" | "accent-raw";
+type Kind = "selection" | "accent-mix" | "accent-raw" | "selected-button";
 export type SelectionFinding = Finding & { file: string; line: number; kind: Kind; subject: string };
 export type SelectionAllowance = { file: string; subject: string; reason: string };
 
 /** CSS subjects match exactly; TS/TSX subjects match a substring of the trimmed source line. */
 export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
+  {
+    file: "packages/core/src/pages/me/AppDevices.island.tsx",
+    subject: 'variant={touch() ? "primary" : "secondary"}',
+    reason: "Action: copying the pairing link is the link step's main action on touch devices.",
+  },
+  {
+    file: "packages/grids/src/frontend/_components/custom-apps/CustomAppBlockPreview.tsx",
+    subject: 'variant={action.kind === "workflow" ? "primary" : "secondary"}',
+    reason: "Action preview: the disabled configured workflow action retains its primary emphasis.",
+  },
   {
     file: "packages/cloud/src/styles/tokens.css",
     subject: ":root { --ui-pagination-current-surface }",
@@ -219,6 +229,8 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
 
 const BASELINE = "scripts/checks/selection-tokens.baseline";
 const messages: Record<Kind, string> = {
+  "selected-button":
+    "Use ViewTabs, Tabs, SegmentedControl, FilterChip or FilterToggle for a selection; allowlist a real action in scripts/checks/selection-tokens.ts with a reason. selected-button cannot be baselined",
   "accent-raw":
     "Use --ui-app-accent-text (or app-accent-text) for ink, the platform focus (--ui-focus, focus-ui, --k2b-focus-ring) for rings, and --ui-app-accent-border for an app-colored border",
   selection:
@@ -299,6 +311,12 @@ export const checkSelectionSource = (file: string, original: string): SelectionF
     /\bvar\(\s*--(?:ui|k2b)-selected\s*(?=[,)])|(?<![\w-])!?bg-blue-(?:50|100)(?:\/(?:\d+(?:\.\d+)?|\[[^\]\r\n]+\]))?(?![\w/-])/g,
   )) {
     report(match.index, "selection");
+  }
+  if (file.endsWith(".tsx")) {
+    for (const match of source.matchAll(
+      /(?<![\w-])variant\s*=\s*\{[^{}]*?\?\s*(["'])primary\1\s*:\s*(["'])(?:subtle|secondary|ghost)\2\s*\}/g,
+    ))
+      report(match.index, "selected-button");
   }
   const mixes: { start: number; end: number }[] = [];
   for (const match of source.matchAll(/\bcolor-mix\s*\(/g)) {
@@ -381,16 +399,23 @@ const BASELINE_HEADER = [
   "# `bun scripts/check.ts selection-tokens --fix` lowers counts whose findings are gone.",
 ];
 const countKey = (finding: Pick<SelectionFinding, "file" | "kind">) => `${finding.file} | ${finding.kind}`;
-export const formatSelectionBaseline = (counts: ReadonlyMap<string, number>): string =>
-  `${[...BASELINE_HEADER, ...[...counts].map(([key, count]) => `${key} | ${count}`).sort()].join("\n")}\n`;
+export const formatSelectionBaseline = (counts: ReadonlyMap<string, number>): string => {
+  for (const key of counts.keys()) {
+    if (key.endsWith(" | selected-button"))
+      throw new Error("selected-button cannot be baselined; use a selection primitive or allowlist a real action with a reason.");
+  }
+  return `${[...BASELINE_HEADER, ...[...counts].map(([key, count]) => `${key} | ${count}`).sort()].join("\n")}\n`;
+};
 
 const readBaseline = (path: string): Map<string, number> => {
   const counts = new Map<string, number>();
   if (!existsSync(path)) return counts;
   for (const line of readFileSync(path, "utf8").split("\n")) {
     if (!line.trim() || line.startsWith("#")) continue;
-    const match = /^(.+) \| (selection|accent-mix|accent-raw) \| ([1-9]\d*)$/.exec(line);
+    const match = /^(.+) \| (selection|accent-mix|accent-raw|selected-button) \| ([1-9]\d*)$/.exec(line);
     if (!match) throw new Error(`Invalid selection-tokens baseline entry: ${line}`);
+    if (match[2] === "selected-button")
+      throw new Error("selected-button cannot be baselined; use a selection primitive or allowlist a real action with a reason.");
     const key = `${match[1]} | ${match[2]}`;
     if (counts.has(key)) throw new Error(`Duplicate selection-tokens baseline entry: ${key}`);
     counts.set(key, Number(match[3]));
@@ -438,6 +463,6 @@ export const runSelectionTokens = async (
 
 export const rule: Rule = {
   name: "selection-tokens",
-  description: "App rows use app selection tokens; ink, borders and focus use semantic colors",
+  description: "App selections use selection primitives and tokens; ink, borders and focus use semantic colors",
   run: runSelectionTokens,
 };
