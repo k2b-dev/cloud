@@ -193,8 +193,9 @@ returning to them fetches the server page or reloads the document.
 
 While installed, nav sets `history.scrollRestoration` to `"manual"` and restores
 its previous value on uninstall. The history wrappers stay installed but become
-inert. Reloads retain page identity; bfcache returns check the arriving entry.
-Dialog-only traversals remain with the dialog history owner.
+inert. Reloads retain page identity and scroll snapshots for up to 50 entries;
+`"@k2b/ssr/nav:scroll"` is reserved in sessionStorage. bfcache returns check the
+arriving entry. Dialog-only traversals remain with the dialog history owner.
 
 A swap does not fire `beforeunload`; an island with unsaved input must prevent
 in-scope link clicks itself (for example, a document capture listener calling

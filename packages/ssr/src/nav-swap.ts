@@ -16,6 +16,7 @@ type SwapState = {
   currentEntry: Entry;
   /** Traversal moves history before the DOM, so its scroll still belongs to the shown entry. */
   shown: Entry;
+  traversing?: Traversal;
   stopRestore: () => void;
   scroll: Map<string, ScrollSnapshot>;
   decide: (event: PopStateEvent) => "page" | "nav";
@@ -25,6 +26,9 @@ type SwapState = {
 };
 const shared: typeof globalThis & { [swapKey]?: SwapState } = globalThis;
 const markerKey = "@k2b/ssr/nav";
+const scrollKey = "@k2b/ssr/nav:scroll";
+// Chromium and Firefox keep at most 50 session history entries.
+const scrollLimit = 50;
 const loadDocument = (href: string, options: { replace?: boolean }): void => {
   try {
     documentNavigate(href, options);
@@ -85,11 +89,35 @@ const mergeMarker = (value: unknown, entry: Marker): unknown =>
 const basePosition = (): number => window.navigation?.currentEntry?.index ?? window.history.length - 1;
 const entryKey = (entry: Entry): string => `${entry.page}:${entry.position}`;
 const remember = (state: SwapState, entry: Entry, snapshot: ScrollSnapshot): void => {
-  if (entry.page !== undefined) state.scroll.set(entryKey(entry), snapshot);
+  if (entry.page === undefined) return;
+  const key = entryKey(entry);
+  state.scroll.delete(key);
+  state.scroll.set(key, snapshot);
+  if (state.scroll.size > scrollLimit) state.scroll.delete(state.scroll.keys().next().value!);
+};
+const loadScroll = (): Map<string, ScrollSnapshot> => {
+  try {
+    const stored: unknown = JSON.parse(window.sessionStorage.getItem(scrollKey) ?? "null");
+    if (Array.isArray(stored))
+      return new Map(
+        stored
+          .filter(
+            (item): item is [string, ScrollSnapshot] =>
+              Array.isArray(item) && item.length === 2 && typeof item[0] === "string" && scrollSnapshot(item[1]),
+          )
+          .slice(-scrollLimit),
+      );
+  } catch {
+    // Storage can be disabled or contain malformed data; navigation must still work.
+  }
+  return new Map();
 };
 const savedScroll = (state: SwapState, entry: Entry): ScrollSnapshot | undefined => state.scroll.get(entryKey(entry)) ?? entry.scroll;
 const newPage = (state: SwapState): string => `${state.token}:${++state.counter}`;
 const currentEntry = (state: SwapState): Entry => marker(window.history.state) ?? state.currentEntry;
+// Islands and dialogs own every entry of the shown page, including traversals hidden from nav.
+const shownEntry = (state: SwapState, current: Entry | undefined = marker(window.history.state)): Entry =>
+  !state.traversing && current?.page === state.currentPage ? current : state.shown;
 const persistScroll = (writes: HistoryWrites, entry: Marker, snapshot: ScrollSnapshot): void => {
   if (JSON.stringify(entry.scroll) === JSON.stringify(snapshot)) return;
   try {
@@ -108,11 +136,12 @@ const patchHistory = (): HistoryWrites => {
     if (!state || state.document !== document) return writes.push.call(history, value, ...args);
     const departing = currentEntry(state);
     const snapshot = captureScroll();
+    const shown = shownEntry(state);
     const stored = marker(history.state);
-    if (stored && entryKey(stored) === entryKey(state.shown)) persistScroll(writes, stored, snapshot);
+    if (stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);
     const entry = { page: state.currentPage, position: departing.position + 1 };
     writes.push.call(history, mergeMarker(value, entry), ...args);
-    remember(state, state.shown, snapshot);
+    remember(state, shown, snapshot);
     state.currentEntry = entry;
     state.shown = entry;
   };
@@ -137,6 +166,7 @@ const stillCurrent = (state: SwapState, traversal: Traversal): boolean => {
 const abort = (state: SwapState): void => {
   state.active?.abort();
   state.active = undefined;
+  state.traversing = undefined;
 };
 const shellContext = (doc: Document) => {
   const shells = doc.querySelectorAll<HTMLElement>("[data-nav-shell]");
@@ -233,7 +263,7 @@ export function installPageSwap(): () => void {
     currentEntry: initial ?? { position: basePosition() },
     shown: initial ?? { position: basePosition() },
     stopRestore,
-    scroll: new Map(),
+    scroll: loadScroll(),
     decide: (event) => decide(event),
     // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
     headBase: timing?.name || window.location.href,
@@ -253,6 +283,7 @@ export function installPageSwap(): () => void {
       if (shared[swapKey] === state) delete shared[swapKey];
     },
   };
+  const snapshot = initial && savedScroll(state, initial);
   if (!initial) {
     const entry = { page: newPage(state), position: basePosition() };
     state.currentPage = entry.page;
@@ -260,8 +291,7 @@ export function installPageSwap(): () => void {
     state.shown = entry;
     if (window.history.state == null || plain(window.history.state))
       writes.replace.call(window.history, mergeMarker(window.history.state, entry), "");
-  } else if (timing && "type" in timing && ["reload", "back_forward"].includes(String(timing.type)) && initial.scroll) {
-    const snapshot = initial.scroll;
+  } else if (timing && "type" in timing && ["reload", "back_forward"].includes(String(timing.type)) && snapshot) {
     restoreScroll(snapshot);
     if (islandsPending(document)) {
       // Mounting replaces server regions and creates client-only ones; replay once, unless the person took over.
@@ -361,11 +391,12 @@ export function installPageSwap(): () => void {
       if (known === "nav") event.stopImmediatePropagation();
       return known;
     }
-    abort(state);
     const from =
       departure && departure.key === navigation?.currentEntry?.key ? departure : { entry: state.currentEntry, scroll: captureScroll() };
+    const shown = shownEntry(state, from.entry);
+    abort(state);
     departure = undefined;
-    remember(state, state.shown, from.scroll);
+    remember(state, shown, from.scroll);
     const fragmentMode = navigation
       ? fragment
       : event.state === null &&
@@ -409,8 +440,16 @@ export function installPageSwap(): () => void {
     else traverse(entry ?? { position: basePosition() });
   };
   const pagehide = (): void => {
+    const shown = shownEntry(state);
+    const snapshot = captureScroll();
+    remember(state, shown, snapshot);
     const entry = marker(window.history.state);
-    if (entry && entryKey(entry) === entryKey(state.shown)) persistScroll(writes, entry, captureScroll());
+    if (entry && entryKey(entry) === entryKey(shown)) persistScroll(writes, entry, snapshot);
+    try {
+      window.sessionStorage.setItem(scrollKey, JSON.stringify([...state.scroll]));
+    } catch {
+      // Disabled or full storage must never prevent navigation.
+    }
   };
   shared[swapKey] = state;
   window.addEventListener("popstate", popstate, { capture: true });
@@ -453,11 +492,12 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
   }
   const controller = new AbortController();
   state.active = controller;
+  state.traversing = traversal;
   const active = () => {
     if (state.native?.controller === controller && state.native.event.eventPhase === Event.NONE && !state.native.event.defaultPrevented) {
       // Dispatch finished without prevention, so the browser's native default action ran and wins.
-      if (state.active === controller) state.active = undefined;
-      controller.abort();
+      if (state.active === controller) abort(state);
+      else controller.abort();
       return false;
     }
     return (
@@ -526,11 +566,13 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
     // but only an active swap inserts its column.
     await Promise.all([...new Set(wrappers(next.root).map((element) => element.dataset.id))].map((id) => import(`${prefix}/${id}.js`)));
     if (!active()) return;
+    commit(state, context, next, fetched, finalUrl, requested, options, traversal);
   } catch (error) {
     fail(error);
-    return;
+  } finally {
+    if (state.active === controller) state.active = undefined;
+    if (state.traversing === traversal) state.traversing = undefined;
   }
-  commit(state, context, next, fetched, finalUrl, requested, options, traversal);
 }
 
 /**
@@ -589,9 +631,10 @@ const commit = (
       }
     } else {
       const departing = currentEntry(state);
-      remember(state, state.shown, snapshot);
+      const shown = shownEntry(state);
+      remember(state, shown, snapshot);
       const stored = marker(window.history.state);
-      if (!options.replace && stored && entryKey(stored) === entryKey(state.shown)) persistScroll(writes, stored, snapshot);
+      if (!options.replace && stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);
       entry = { page: newPage(state), position: departing.position + (options.replace ? 0 : 1) };
       // History first: inserted resources with relative URLs resolve against the new page's URL.
       const write = options.replace ? writes.replace : writes.push;

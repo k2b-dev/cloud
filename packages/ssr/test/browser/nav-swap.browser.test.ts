@@ -138,6 +138,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   previousScrollY = Object.getOwnPropertyDescriptor(window, "scrollY");
+  window.sessionStorage.removeItem(scrollKey);
   const settings = (window as unknown as Window).happyDOM.settings;
   previousLoadingSettings = {
     disableCSSFileLoading: settings.disableCSSFileLoading,
@@ -202,6 +203,7 @@ test("install preserves island state while marking the entry", () => {
 });
 
 const markerKey = "@k2b/ssr/nav";
+const scrollKey = "@k2b/ssr/nav:scroll";
 const arrive = (state: unknown, url = "/app/old") => {
   History.prototype.replaceState.call(window.history, state, "", url);
   window.dispatchEvent(new PopStateEvent("popstate", { state }));
@@ -1479,6 +1481,137 @@ test("pagehide persists scroll; reload restores window and keyed regions", () =>
   expect(window.history.state[markerKey].page).toBe(page);
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 220);
   expect(region.scrollTop).toBe(80);
+});
+
+test.each(["swap", "push", "pagehide", "traversal"])("%s saves the shown entry after a dialog-only Back hidden from nav", async (mode) => {
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "page", index: 0 } });
+  Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+  let y = 120;
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+  try {
+    install();
+    const page = window.history.state;
+    window.history.pushState({ dialog: true }, "");
+    navigation.currentEntry = { key: "dialog", index: 1 };
+    navigation.dispatchEvent(
+      Object.assign(new Event("navigate"), { navigationType: "traverse", destination: { key: "page" }, hashChange: false }),
+    );
+    // dialog-core consumes this popstate before nav; the Navigation API still reports its departure.
+    History.prototype.replaceState.call(window.history, page, "");
+    navigation.currentEntry = { key: "page", index: 0 };
+    y = 460;
+    if (mode === "pagehide") {
+      window.dispatchEvent(new Event("pagehide"));
+      expect(window.history.state[markerKey].scroll?.window.y).toBe(460);
+      return;
+    }
+    if (mode === "push") window.history.pushState(null, "", "/app/old?tab=1");
+    else {
+      spyOn(globalThis, "fetch").mockResolvedValue(response());
+      if (mode === "swap") await swapPage("/app/new");
+      else {
+        navigation.dispatchEvent(
+          Object.assign(new Event("navigate"), { navigationType: "traverse", destination: { key: "other" }, hashChange: false }),
+        );
+        navigation.currentEntry = { key: "other", index: 1 };
+        const done = swapped("new");
+        arrive({ [markerKey]: { page: "other", position: 1 } }, "/app/new");
+        await done;
+      }
+      spyOn(globalThis, "fetch").mockResolvedValue(response(html("old"), {}, "https://example.test/app/old"));
+    }
+    y = 0;
+    const done = mode === "push" ? Promise.resolve() : swapped("old");
+    arrive(page);
+    await done;
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 460);
+  } finally {
+    uninstall();
+    Reflect.deleteProperty(window, "navigation");
+  }
+});
+
+test("departure snapshots survive pagehide and a reload before Forward", async () => {
+  document.querySelector("main")!.insertAdjacentHTML("beforeend", '<div data-scroll-preserve="list"></div>');
+  document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop = 60;
+  let y = 130;
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+  install();
+  const a = window.history.state;
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", wrapper("new", scrollId))));
+  await swapPage("/app/new");
+  const b = {
+    ...window.history.state,
+    [markerKey]: { ...window.history.state[markerKey], scroll: { window: { x: 0, y: 20 }, regions: [{ key: "list", x: 0, y: 10 }] } },
+  };
+  y = 690;
+  document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop = 90;
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("old", wrapper("old", scrollId)), {}, "https://example.test/app/old"));
+  const back = swapped("old");
+  arrive(a);
+  await back;
+  y = 130;
+  window.dispatchEvent(new Event("pagehide"));
+  uninstall();
+  y = 0;
+  document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop = 0;
+  const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
+  spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
+  install();
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 130);
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop).toBe(60);
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", wrapper("new", scrollId))));
+  const forward = swapped("new");
+  arrive(b, "/app/new");
+  await forward;
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 690);
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop).toBe(90);
+});
+
+test.each(["{", "null", "{}", '[null, [12, {}], ["bad", {}], ["bad-window", {"window":{"x":0,"y":"12"},"regions":[]}]]'])(
+  "malformed stored scroll is ignored: %s",
+  (stored) => {
+    window.sessionStorage.setItem(scrollKey, stored);
+    install();
+    const entry = window.history.state[markerKey];
+    window.dispatchEvent(new Event("pagehide"));
+    expect(JSON.parse(window.sessionStorage.getItem(scrollKey)!)).toEqual([
+      [`${entry.page}:${entry.position}`, { window: { x: 0, y: 0 }, regions: [] }],
+    ]);
+  },
+);
+
+test.each(["getItem", "setItem"] as const)("unavailable storage (%s) does not break navigation", async (method) => {
+  spyOn(window.sessionStorage, method).mockImplementation(() => {
+    throw new DOMException("Storage unavailable", "SecurityError");
+  });
+  install();
+  window.dispatchEvent(new Event("pagehide"));
+  expect(window.history.state[markerKey].scroll).toEqual({ window: { x: 0, y: 0 }, regions: [] });
+  spyOn(globalThis, "fetch").mockResolvedValue(response());
+  await swapPage("/app/new");
+  expect(document.title).toBe("new");
+});
+
+test("the scroll map keeps the 50 most recently remembered entries, including after loading", () => {
+  const snapshot = { window: { x: 0, y: 15 }, regions: [] };
+  window.sessionStorage.setItem(scrollKey, JSON.stringify(Array.from({ length: 55 }, (_, index) => [`stored:${index}`, snapshot])));
+  install();
+  const initial = window.history.state;
+  const entry = initial[markerKey];
+  window.dispatchEvent(new Event("pagehide"));
+  let stored = JSON.parse(window.sessionStorage.getItem(scrollKey)!);
+  expect(stored).toHaveLength(50);
+  expect(stored[0][0]).toBe("stored:6");
+  for (let index = 0; index < 49; index++) window.history.pushState(null, "", `/app/old?tab=${index}`);
+  // Revisiting an entry refreshes its recency rather than evicting it on the next push.
+  arrive(initial);
+  window.history.pushState(null, "", "/app/old?last");
+  window.dispatchEvent(new Event("pagehide"));
+  stored = JSON.parse(window.sessionStorage.getItem(scrollKey)!);
+  expect(stored).toHaveLength(50);
+  expect(stored.some(([key]: [string, unknown]) => key.startsWith("stored:"))).toBe(false);
+  expect(stored.at(-2)[0]).toBe(`${entry.page}:${entry.position}`);
 });
 
 test("overlapping Back traversals keep A1's scroll for Forward", async () => {

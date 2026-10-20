@@ -382,3 +382,51 @@ test(`${browserName}: Back and Forward restore each entry's window and keyed col
     await context.close();
   }
 });
+
+test(`${browserName}: a reload keeps the departed page's window and keyed column scroll for Forward`, async () => {
+  const context = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  try {
+    const page = await context.newPage();
+    await open(page);
+    await page.evaluate(() => {
+      window.scrollTo(0, 620);
+      document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')!.scrollTop = 180;
+    });
+    await page.waitForFunction(
+      () => scrollY === 620 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 180,
+    );
+    // Programmatic activation preserves the departure scroll instead of scrolling the link into view.
+    await page.locator("#B").evaluate((element) => element instanceof HTMLElement && element.click());
+    await column(page, "B");
+    await page.evaluate(() => {
+      window.scrollTo(0, 930);
+      document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')!.scrollTop = 410;
+    });
+    await page.waitForFunction(
+      () => scrollY === 930 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 410,
+    );
+    await page.goBack();
+    await column(page, "A");
+    await page.waitForFunction(
+      () => scrollY === 620 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 180,
+    );
+    await page.reload();
+    await column(page, "A");
+    await page.waitForFunction(
+      () => scrollY === 620 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 180,
+    );
+    const documents = trackDocuments(page);
+    await page.goForward();
+    await column(page, "B");
+    await page.waitForFunction(
+      () => scrollY === 930 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 410,
+    );
+    expect([...swaps]).toEqual([
+      ["/app/B", 2],
+      ["/app/A", 1],
+    ]);
+    expect(documents).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});

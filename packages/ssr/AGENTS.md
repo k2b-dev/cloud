@@ -254,8 +254,12 @@ and unmarked entries stopImmediatePropagation and fetch the arriving URL in
 the swap transaction without pushing history. Commit and reload recovery must
 still own that URL and marker; a different final URL reloads. Restore window
 and keyed regions from the entry's in-memory snapshot, then its stored scroll,
-otherwise use top/hash scrolling. Keep scrollRestoration manual for the whole
-installation and restore the previous value on uninstall.
+otherwise use top/hash scrolling. Snapshots belong to the shown entry: when no
+cross-page traversal is pending, derive it from the current entry if it belongs
+to the shown page, even if nav never saw that entry's traversal. During a
+pending traversal, keep attributing snapshots to the tracked shown entry.
+Keep scrollRestoration manual for the whole installation and restore the
+previous value on uninstall.
 
 Install before islands add raw popstate listeners: Chromium uses registration
 order even for capture. listenPopState is safe in any order through the shared
@@ -265,7 +269,13 @@ and applications. If nav runs first, inherited page ids keep those traversals
 with the page; nav must not stop them. Keep the fragment-click fallback for
 browsers without the Navigation API. Persisted pageshow aborts pending work and
 checks the arriving marker, swapping a foreign or unmarked entry. pagehide
-persists the current scroll best effort.
+first remembers the shown entry's current scroll and persists it in that entry
+best effort. It also mirrors the in-memory snapshots to sessionStorage under
+the reserved key `"@k2b/ssr/nav:scroll"`, so a reload keeps departure snapshots
+for Back and Forward. Load only valid snapshots on install; the map takes
+precedence over an entry's stored scroll. Keep the 50 most recently remembered
+entries, refreshing a key's order on each write. Disabled or full storage must
+never break navigation.
 
 History tests cover state merging without mutation, non-plain state, marker
 validation and replacement, push/replace positions, inert single-install
