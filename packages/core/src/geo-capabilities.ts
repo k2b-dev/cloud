@@ -32,7 +32,7 @@ export const geoCapabilities = defineCapabilities({
     "address.geocode": {
       title: "Locate an address",
       description:
-        "Locate address text up to 300 characters or structured fields up to 200 each. Ambiguity returns up to 5 candidates for the person to choose. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
+        "Locate address text up to 300 characters or structured fields up to 200 each. Requests 5 provider candidates; confidence ≥ 0.5 is plausible. Returns one address, up to 5 candidates on ambiguity, or not found. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
       input: geoContract.geocode.input,
       data: geoContract.geocode.data,
       openWorld: true,

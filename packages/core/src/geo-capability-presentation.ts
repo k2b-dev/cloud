@@ -7,7 +7,7 @@ export const geoCapabilityPresentation = {
   "address.geocode": {
     title: "Adresse verorten",
     description:
-      "Verortet eine Adresse aus höchstens 300 Zeichen oder Feldern bis 200 Zeichen. Bei Mehrdeutigkeit bis zu 5 Kandidaten zur Auswahl. Herkunft und Namensnennung beibehalten; Credits im Betreiberbudget.",
+      "Verortet eine Adresse aus höchstens 300 Zeichen oder Feldern bis 200 Zeichen. Fragt 5 Anbieterkandidaten an; plausibel ist eine Konfidenz ≥ 0,5. Liefert eine Adresse, bei Mehrdeutigkeit bis zu 5 Kandidaten oder meldet keinen Treffer. Herkunft und Namensnennung beibehalten; Credits im Betreiberbudget.",
   },
   "address.reverse": {
     title: "Adresse zu Koordinaten finden",

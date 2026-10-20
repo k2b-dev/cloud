@@ -35,6 +35,9 @@ test("Core registers all five queries with shared schemas and en/de presentation
     expect(geoCapabilityPresentation[contract.id].description.length).toBeGreaterThan(0);
     expect(JSON.stringify(entry.inputSchema)).not.toContain('"locale"');
     expect(entry.openWorld).toBe(contract.id !== "geo.availability");
+    if (contract.id === "address.geocode") {
+      expect(JSON.stringify(entry.inputSchema)).not.toContain('"limit"');
+    }
   }
 });
 test("Core geo queries enter the generic Assistant tool catalog", () => {

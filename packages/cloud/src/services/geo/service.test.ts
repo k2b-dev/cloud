@@ -58,7 +58,6 @@ test("all input bounds reject with structured recovery before admission or fetch
     await check(f.service.autocomplete({ text }, geoTestContext), "text");
   await check(f.service.autocomplete({ text: "Orle", limit: 6 }, geoTestContext), "limit");
   await check(f.service.geocode({ text: "x".repeat(301) }, geoTestContext), "text");
-  await check(f.service.geocode({ text: "Orle", limit: 6 }, geoTestContext), "limit");
   for (const field of ["line1", "postalCode", "city", "stateRegion", "country"])
     await check(f.service.geocode({ fields: { [field]: "x".repeat(201) } }, geoTestContext), `fields.${field}`);
   const base: GeoPlaceSearchInput = { categories: ["museum"], near: { lat: 49, lon: 12 } };
@@ -89,6 +88,11 @@ test("all input bounds reject with structured recovery before admission or fetch
 });
 test("unsupported combinations refuse without side effects", async () => {
   const f = setup();
+  // Variables model untyped callers; the strict schema must refuse the removed limit.
+  for (const limit of [1, 5, 6]) {
+    const input = { text: "Ulm", limit };
+    await expect(f.service.geocode(input, geoTestContext)).rejects.toMatchObject({ code: "GEO_UNSUPPORTED_OPTION" });
+  }
   await expect(f.service.geocode({ text: "Ulm", fields: { city: "Ulm" } }, geoTestContext)).rejects.toMatchObject({
     code: "GEO_UNSUPPORTED_OPTION",
   });
@@ -102,6 +106,7 @@ test("unsupported combinations refuse without side effects", async () => {
     ),
   ).rejects.toMatchObject({ code: "GEO_UNSUPPORTED_OPTION" });
   expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.cacheGet).not.toHaveBeenCalled();
 });
 test("Valkey admission fails closed", async () => {
   const f = setup({
@@ -220,15 +225,29 @@ test("geocode reports none, ambiguity and unique plausible candidates", async ()
   const none = setup({}, { type: "FeatureCollection", features: [] });
   await expect(none.service.geocode({ text: "Not known" }, geoTestContext)).rejects.toMatchObject({ code: "GEO_ADDRESS_NOT_FOUND" });
   const candidate = geocode.features[0]!;
+  const lowConfidence = { ...candidate, properties: { ...candidate.properties, rank: { confidence: 0.49 } } };
+  const implausible = setup({}, { ...geocode, features: [lowConfidence] });
+  await expect(implausible.service.geocode({ text: "Uncertain" }, geoTestContext)).rejects.toMatchObject({ code: "GEO_ADDRESS_NOT_FOUND" });
   const ambiguous = setup({}, { ...geocode, features: [candidate, candidate] });
   await expect(ambiguous.service.geocode({ text: "Lessingstraße" }, geoTestContext)).rejects.toMatchObject({
     code: "GEO_ADDRESS_AMBIGUOUS",
     details: { candidates: expect.arrayContaining([expect.objectContaining({ point: expect.any(Object) })]) },
   });
-  const found = setup({}, { ...geocode, features: [candidate] });
+  expect(ambiguous.cachePut).not.toHaveBeenCalled();
+  // Every supported address representation requests the full five-candidate check.
+  for (const input of [{ text: "Lessingstraße", countryCode: "DE" }, { fields: { city: "Ulm" } }]) {
+    const f = setup({}, { ...geocode, features: Array(6).fill(candidate) });
+    const error: unknown = await f.service.geocode(input, geoTestContext).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({ code: "GEO_ADDRESS_AMBIGUOUS", details: { candidates: { length: 5 } } });
+  }
+  const found = setup({}, { ...geocode, features: [lowConfidence, candidate] });
   expect(
     GeoGeocodeDataSchema.parse(await found.service.geocode({ text: "Lessingstraße" }, geoTestContext)).address.confidence,
   ).toBeGreaterThanOrEqual(0.5);
+  expect(found.cacheGet).toHaveBeenCalledWith(
+    geoCacheKey("geocode", { text: "Lessingstraße" }, geoTestContext.locale ?? "en"),
+    GeoGeocodeDataSchema,
+  );
 });
 test("along uses window on full-route distance and filters/orders corridor hits", async () => {
   const features = [0.8, 0.4, 0.6].map((lon, i) => ({

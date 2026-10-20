@@ -191,7 +191,7 @@ export class GeoapifyAdapter {
     return { suggestions: values.slice(0, input.limit ?? 5).map((p) => address(p, provenance)), provenance };
   }
   async geocode(input: GeoGeocodeInput, key: string, locale: string, signal?: AbortSignal) {
-    const params = new URLSearchParams({ limit: String(input.limit ?? 5) });
+    const params = new URLSearchParams({ limit: "5" });
     if (input.text) params.set("text", input.text);
     if (input.fields)
       for (const [field, name] of [
@@ -209,7 +209,7 @@ export class GeoapifyAdapter {
     const provenance = this.provenance();
     // No unverified uniqueness claim: all candidates with confidence >= .5 are plausible.
     const candidates = raw
-      .slice(0, input.limit ?? 5)
+      .slice(0, 5)
       .filter((p) => (p.rank?.confidence ?? 0) >= 0.5)
       .map((p) => address(p, provenance));
     return { candidates, provenance };

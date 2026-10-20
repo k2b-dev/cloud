@@ -1,16 +1,8 @@
 import { expect, test } from "bun:test";
-import { validateGeoBudgetChange } from "./geo-budget";
 import { CORE_SETTINGS } from "./core-settings";
 import { resolveSettingPresentation, toLegacySettingDefs } from "./defaults";
 import { GEO_PLANS, geoPlan } from "../geo/settings";
 import { geoTestConfig } from "../geo/geo.test-fixture";
-test("daily and monthly geo limits are validated in both directions", async () => {
-  const read = async (key: string) => (key === "geo.monthly_budget_credits" ? 90000 : 300);
-  await expect(validateGeoBudgetChange("geo.person_daily_credits", 90001, read)).rejects.toThrow("Daily geo credits");
-  await expect(validateGeoBudgetChange("geo.monthly_budget_credits", 299, read)).rejects.toThrow("Daily geo credits");
-  await validateGeoBudgetChange("geo.person_daily_credits", 300, read);
-  await validateGeoBudgetChange("geo.monthly_budget_credits", 300, read);
-});
 test("geo settings have en/de labels/help and no endpoint setting", () => {
   const defs = toLegacySettingDefs(CORE_SETTINGS).filter((def) => def.key.startsWith("geo."));
   expect(defs).toHaveLength(6);

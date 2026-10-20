@@ -16,7 +16,9 @@ people, agents, app sessions, and service accounts follow the same path.
 The Assistant discovers these Queries through the capability catalog; MCP and
 CLI clients use the same [capabilities](/en/docs/platform/capabilities).
 
-An operator must set `geo.api_key` in Core settings. All provider calls use
+An operator must set `geo.api_key` under
+**Administration → Settings → Places and addresses**. This tab also contains
+the provider plan and credit budgets. All provider calls use
 `https://api-eu.geoapify.com`. The endpoint cannot be changed. No provider key
 is sent to an application or browser. This service does not supply routes,
 map tiles, a map style, or map components.
@@ -29,7 +31,7 @@ never from Query input. Inputs are strict: unknown fields are refused.
 | Core Query | Input | Result |
 | --- | --- | --- |
 | `address.autocomplete` | `text` (3–300 characters), optional `limit` (1–5, default 5), `countryCode`, `type`, `bias` point, and `area` | `suggestions` (up to 5 addresses) and `provenance` |
-| `address.geocode` | Either `text` (1–300 characters) or `fields`; optional `countryCode` and `limit` (1–5, default 5) | One `address` and `provenance`; ambiguity returns candidates in error details |
+| `address.geocode` | Either `text` (1–300 characters) or `fields`; optional `countryCode` | One `address` and `provenance`; ambiguity returns candidates in error details |
 | `address.reverse` | `point` | One `address` and `provenance` |
 | `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `limit` (1–20, default 20) | `places` and `provenance` |
 | `geo.availability` | `{}` | `configured`, `person` and `cloud`; each balance has `exhausted` and `resetsAt` |
@@ -52,6 +54,7 @@ crosses the date line. A circle needs a positive radius in meters.
 
 Structured geocoding accepts `line1`, `postalCode`, `city`, `stateRegion`, and
 `country`, each at most 200 characters. At least one field must contain text.
+Core always requests 5 provider candidates; there is no caller-selected limit.
 A provider candidate is plausible when `rank.confidence` is at least 0.5.
 One plausible candidate is returned; several produce
 `GEO_ADDRESS_AMBIGUOUS`. Missing or lower confidence produces
@@ -154,8 +157,9 @@ Valkey caches suggestions for 7 days, geocoding/reverse for 30 days, and places
 for 24 hours. Empty suggestion/place results last one hour. Errors are never
 cached. A hit keeps the original provenance and `computedAt`.
 Cache keys hash normalized input, request language, and adapter version:
-lowercase text with collapsed whitespace, sorted categories, rounded areas,
-0.01° autocomplete bias, and reverse coordinates at five decimal places.
+lowercase text with collapsed whitespace and sorted categories. Only the
+autocomplete bias rounds to 0.01°; area, near, and reverse coordinates round
+to five decimal places. Circle radii stay exact.
 Route searches include the simplified line, window, buffer, and categories.
 A cache failure skips the cache. A Valkey admission failure refuses paid calls
 with `GEO_BUSY`.

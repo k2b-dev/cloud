@@ -114,7 +114,6 @@ export const GeoGeocodeInputSchema = z
       .optional()
       .describe("Structured address, at most 200 characters per field."),
     countryCode: z.string().optional().describe("Optional ISO alpha-2 country filter."),
-    limit: z.number().optional().describe("At most 5 candidates; default 5."),
   })
   .strict();
 export const GeoReverseInputSchema = z.object({ point: GeoPointSchema.describe("Coordinates to reverse geocode.") }).strict();

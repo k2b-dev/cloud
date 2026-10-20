@@ -4,25 +4,27 @@ import type { GeoFunction } from "../../contracts/geo";
 import { requestCacheRedis } from "../request-cache-redis";
 import type { GeoRedis } from "./bucket";
 
-export const GEO_ADAPTER_VERSION = "geoapify-v1";
+export const GEO_ADAPTER_VERSION = "geoapify-v2";
 export const GEO_MAX_JSON_BYTES = 256 * 1024;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 export const normalizeGeoInput = (input: unknown, fn: GeoFunction, path = ""): unknown => {
-  if (typeof input === "string") return path === "polyline6" ? hash(input) : input.toLowerCase().trim().replace(/\s+/g, " ");
+  const field = path.split(".").at(-1);
+  if (typeof input === "string") return field === "polyline6" ? hash(input) : input.toLowerCase().trim().replace(/\s+/g, " ");
   if (typeof input === "number") {
-    if (["lat", "lon", "west", "south", "east", "north"].includes(path)) return Number(input.toFixed(fn === "autocomplete" ? 2 : 5));
+    if (["lat", "lon", "west", "south", "east", "north"].includes(field ?? ""))
+      return Number(input.toFixed(fn === "autocomplete" && (path === "bias.lat" || path === "bias.lon") ? 2 : 5));
     return input;
   }
   if (Array.isArray(input)) {
-    const values = input.map((value) => normalizeGeoInput(value, fn));
-    return path === "categories" ? values.sort() : values;
+    const values = input.map((value) => normalizeGeoInput(value, fn, path));
+    return field === "categories" ? values.sort() : values;
   }
   if (input && typeof input === "object")
     return Object.fromEntries(
       Object.entries(input)
         .filter(([, value]) => value !== undefined)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, value]) => [key, normalizeGeoInput(value, fn, key)]),
+        .map(([key, value]) => [key, normalizeGeoInput(value, fn, path ? `${path}.${key}` : key)]),
     );
   return input;
 };

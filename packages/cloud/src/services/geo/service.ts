@@ -198,24 +198,14 @@ export const createGeoService = (
       }
       for (const [name, field] of Object.entries(value.fields ?? {}))
         if (field !== undefined) bound(`fields.${name}`, field.length, 0, 200);
-      bound("limit", value.limit ?? 5, 1, 5, true);
       country(value.countryCode);
       if (!!value.text?.trim() === !!Object.values(value.fields ?? {}).some((v) => v?.trim())) throw new GeoError("GEO_UNSUPPORTED_OPTION");
-      return paid(
-        "geocode",
-        value,
-        context,
-        settings,
-        GeoGeocodeDataSchema,
-        async (signal) => {
-          const result = await adapter.geocode(value, settings.apiKey, context.locale ?? "en", signal);
-          if (!result.candidates.length) throw new GeoError("GEO_ADDRESS_NOT_FOUND");
-          if (result.candidates.length > 1) throw new GeoError("GEO_ADDRESS_AMBIGUOUS", { candidates: result.candidates });
-          return { address: result.candidates[0]!, provenance: result.provenance };
-        },
-        value.limit,
-        { ...value, limit: value.limit ?? 5 },
-      );
+      return paid("geocode", value, context, settings, GeoGeocodeDataSchema, async (signal) => {
+        const result = await adapter.geocode(value, settings.apiKey, context.locale ?? "en", signal);
+        if (!result.candidates.length) throw new GeoError("GEO_ADDRESS_NOT_FOUND");
+        if (result.candidates.length > 1) throw new GeoError("GEO_ADDRESS_AMBIGUOUS", { candidates: result.candidates });
+        return { address: result.candidates[0]!, provenance: result.provenance };
+      });
     },
     async reverse(input: GeoReverseInput, context: GeoContext) {
       const settings = await configured(context);

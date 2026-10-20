@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { GeoapifyAdapter } from "../services/geo/geoapify";
 import { GEO_TEST_KEY, GEO_TEST_NOW } from "../services/geo/geo.test-fixture";
+import geocode from "../services/geo/fixtures/geocode.json";
 import autocomplete from "../services/geo/fixtures/autocomplete.json";
 import { geoClient } from "./geo-client";
 const original = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
@@ -66,4 +67,23 @@ test("malformed responses fail at the shared capability boundary", async () => {
   expect(
     await geoClient.reverse({ point: { lat: 49, lon: 12 } }, { transport: async () => Response.json({ data: { address: {} } }) }),
   ).toMatchObject({ ok: false, error: { code: "INVALID_APP_RESPONSE" } });
+});
+
+test("geoClient geocode derives the address contract without a candidate limit", async () => {
+  process.env.CLOUD_CORE_INTERNAL_ORIGIN = "https://core.example.test";
+  const input: Parameters<typeof geoClient.geocode>[0] = { fields: { city: "Ulm" }, countryCode: "DE" };
+  const fixture = await new GeoapifyAdapter({ now: () => GEO_TEST_NOW, fetch: async () => Response.json(geocode) }).geocode(
+    input,
+    GEO_TEST_KEY,
+    "en",
+  );
+  const data = { address: fixture.candidates[0]!, provenance: fixture.provenance };
+  const result = await geoClient.geocode(input, {
+    transport: async (request) => {
+      expect(new URL(request.url).pathname).toBe("/api/capabilities/v1/queries/core/address.geocode");
+      expect(await request.json()).toEqual({ input });
+      return Response.json({ data });
+    },
+  });
+  expect(result).toMatchObject({ ok: true, data: { data } });
 });

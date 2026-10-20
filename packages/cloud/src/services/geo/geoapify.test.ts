@@ -149,3 +149,18 @@ test("a key containing JSON escapes cannot leak through successful provider fiel
   const service = new GeoapifyAdapter({ now: () => GEO_TEST_NOW, fetch: async () => Response.json({ ...autocomplete, secret: key }) });
   await expect(service.autocomplete({ text: "Orle" }, key, "en")).rejects.toMatchObject({ code: "GEO_PROVIDER_FAILED" });
 });
+
+test("geocode always requests five candidates regardless of extra caller input", async () => {
+  const candidate = geocode.features[0]!;
+  const service = new GeoapifyAdapter({
+    now: () => GEO_TEST_NOW,
+    fetch: async (url) => {
+      expect(url.searchParams.get("limit")).toBe("5");
+      return Response.json({ ...geocode, features: Array(6).fill(candidate) });
+    },
+  });
+  for (const limit of [undefined, 1, 2, 100]) {
+    const input = { text: "Lessingstraße", limit };
+    expect((await service.geocode(input, GEO_TEST_KEY, "en")).candidates).toHaveLength(5);
+  }
+});

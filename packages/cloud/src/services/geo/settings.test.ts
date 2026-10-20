@@ -1,4 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { redis as cacheClient } from "bun";
 import * as settingsStore from "../settings/store";
 import * as redis from "../request-cache-redis";
 import { readGeoConfig } from "./settings";
@@ -23,9 +24,18 @@ test("geo configuration uses stored-state reads and never the shared cache", asy
   expect(read).toHaveBeenCalledTimes(1);
   expect(cache).not.toHaveBeenCalled();
 });
-test("generic setting reads also keep the provider key out of Valkey", async () => {
-  spyOn(settingsStore, "readKeyState").mockResolvedValue({ stored: "readable", value: GEO_TEST_KEY });
-  const cache = spyOn(redis, "requestCacheRedis").mockRejectedValue(new Error("No cache access permitted"));
-  expect((await settingsStore.bulkRead(["geo.api_key"])).get("geo.api_key")).toBe(GEO_TEST_KEY);
-  expect(cache).not.toHaveBeenCalled();
+test("warm generic settings reads include the provider key in one cache read without Postgres", async () => {
+  const cache = spyOn(redis, "requestCacheRedis").mockResolvedValue(cacheClient);
+  const mget = spyOn(cacheClient, "mget").mockResolvedValue([JSON.stringify(GEO_TEST_KEY), JSON.stringify("Cloud")]);
+  const state = spyOn(settingsStore, "readKeyState").mockRejectedValue(new Error("No direct DB access permitted"));
+  expect(await settingsStore.bulkRead(["geo.api_key", "app.name"])).toEqual(
+    new Map([
+      ["geo.api_key", GEO_TEST_KEY],
+      ["app.name", "Cloud"],
+    ]),
+  );
+  expect(mget).toHaveBeenCalledWith("settings:geo.api_key", "settings:app.name");
+  expect(mget).toHaveBeenCalledTimes(1);
+  expect(cache).toHaveBeenCalledTimes(1);
+  expect(state).not.toHaveBeenCalled();
 });

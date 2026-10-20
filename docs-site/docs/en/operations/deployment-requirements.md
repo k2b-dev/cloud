@@ -88,7 +88,8 @@ release. See [Action contract migration](/en/docs/platform/capabilities#migrate-
 
 Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
 `api-eu.geoapify.com`. Store the Geoapify key as the secret `geo.api_key` in
-Core settings. There is no endpoint setting or new environment variable.
+**Administration → Settings → Places and addresses**. There is no endpoint
+setting or new environment variable.
 Choose `geo.plan`, then review the monthly and per-person daily credit limits.
 Core creates its durable geo ledger during startup migrations.
 

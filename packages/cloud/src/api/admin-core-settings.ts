@@ -39,8 +39,8 @@ import { GotenbergRenderError, testGotenberg } from "../services/pdf";
 import * as settings from "../services/settings";
 import { SETTINGS_MAP, validateSettingValue } from "../services/settings/defaults";
 
-import { GeoBudgetSettingError } from "../services/settings/geo-budget";
-import { orderGeoBudgetMutations, invalidateSettingsCacheForAdmin } from "../services/settings/store";
+import { assertGeoBudgetPair, GeoBudgetSettingError } from "../services/settings/geo-budget";
+import { invalidateSettingsCacheForAdmin } from "../services/settings/store";
 
 const BulkSaveSchema = z.union([
   z
@@ -470,12 +470,20 @@ const app = new Hono<AuthContext>()
         // Every settings and AI credential write runs on the transaction's own
         // connection, so a failure rolls the whole save back.
         await sql.begin(async (tx) => {
-          for (const key of await orderGeoBudgetMutations(tx, validatedValues, resets)) {
+          await assertGeoBudgetPair(tx, validatedValues, resets);
+          for (const [key, value] of Object.entries(validatedValues)) {
             try {
-              if (key in validatedValues) await settings.set(key, validatedValues[key], tx, { replaceUnreadable: replace.has(key) });
-              else await settings.remove(key, tx);
+              await settings.set(key, value, tx, { replaceUnreadable: replace.has(key) });
             } catch (error) {
               fieldErrors[key] = `Failed to save ${key}`;
+              throw error;
+            }
+          }
+          for (const key of resets) {
+            try {
+              await settings.remove(key, tx);
+            } catch (error) {
+              fieldErrors[key] = `Failed to reset ${key}`;
               throw error;
             }
           }
@@ -562,6 +570,7 @@ const app = new Hono<AuthContext>()
 
     try {
       await sql.begin(async (tx) => {
+        await assertGeoBudgetPair(tx, {}, [key]);
         await settings.remove(key, tx);
         if (key.startsWith("user.category."))
           await audit.record(
@@ -583,7 +592,7 @@ const app = new Hono<AuthContext>()
         }
       });
     } catch (error) {
-      if (error instanceof GeoBudgetSettingError) return error.getResponse();
+      if (error instanceof GeoBudgetSettingError || error instanceof settings.SettingUnreadableError) return error.getResponse();
       console.error(`[settings] failed to reset "${key}"`, error);
       return c.json({ message: "Reset failed" }, 500);
     }
