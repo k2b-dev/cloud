@@ -23,8 +23,8 @@ test("SQL highlighting escapes HTML and preserves every source character", () =>
 });
 test("SQL parameters are not highlighted inside literals, identifiers, comments or casts", () => {
   const source = "SELECT ':no', `:no`, x::String -- :no\r :no\n, :yes";
-  expect(highlightSql(source).match(/class="cd-a"/g)).toHaveLength(1);
-  expect(highlightSql(source)).toContain('<span class="cd-a">:yes</span>');
+  expect(highlightSql(source).match(/class="cd-a cd-param"/g)).toHaveLength(1);
+  expect(highlightSql(source)).toContain('<span class="cd-a cd-param">:yes</span>');
 });
 
 test("multiline SQL tokens produce balanced highlighting on each display line", () => {

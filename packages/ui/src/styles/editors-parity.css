@@ -681,3 +681,54 @@
   color: var(--k2b-danger-text);
   background: var(--k2b-danger-surface);
 }
+
+/* Embedded editors inherit their host's code metrics and shared focus surface. */
+.k2b-ui .k2b-autocomplete[data-variant="embedded"],
+.k2b-ui .k2b-autocomplete[data-variant="embedded"]:hover,
+.k2b-ui .k2b-autocomplete[data-variant="embedded"]:focus-within {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.k2b-ui .k2b-autocomplete[data-variant="embedded"]
+  :is(.k2b-autocomplete__input, .k2b-autocomplete__preview, .k2b-autocomplete__placeholder) {
+  padding: 4px 18px 10px !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+}
+.k2b-ui .k2b-autocomplete[data-variant="embedded"][data-line-numbers="true"]
+  :is(.k2b-autocomplete__input, .k2b-autocomplete__preview, .k2b-autocomplete__placeholder) {
+  left: 44px !important;
+  width: calc(100% - 44px) !important;
+  padding-left: 8px !important;
+}
+.k2b-ui .k2b-autocomplete[data-variant="embedded"] .k2b-autocomplete__gutter {
+  z-index: 0;
+  width: 100%;
+  padding: 4px 0 10px;
+  font-size: inherit;
+  line-height: inherit;
+  background: transparent;
+}
+.k2b-ui .k2b-autocomplete[data-variant="embedded"] .k2b-autocomplete__gutter > div {
+  position: relative;
+  padding-right: calc(100% - 38px);
+}
+.k2b-ui .k2b-autocomplete[data-variant="embedded"] .k2b-autocomplete__gutter [data-marked="true"] {
+  background: linear-gradient(to right, transparent 44px, var(--k2b-danger-surface) 44px);
+}
+.k2b-ui .k2b-autocomplete[data-variant="embedded"] .k2b-autocomplete__gutter [data-marked="true"]::after {
+  position: absolute;
+  inset: 0 auto 0 44px;
+  width: 2px;
+  background: var(--k2b-danger-500);
+  content: "";
+}
+@media (pointer: coarse) {
+  .k2b-ui .k2b-autocomplete[data-variant="embedded"]
+    :is(.k2b-autocomplete__input, .k2b-autocomplete__preview, .k2b-autocomplete__placeholder),
+  .k2b-ui .k2b-autocomplete[data-variant="embedded"] .k2b-autocomplete__gutter {
+    font-size: max(1rem, 16px) !important;
+  }
+}

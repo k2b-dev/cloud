@@ -9,9 +9,12 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "calm-states.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { AppOverview, Placeholder } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppOverview, Placeholder, Skeleton } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 render(() => createComponent(AppOverview.EmptyState, {title: 'Nothing here yet'}), document.getElementById('overview'));
 render(() => createComponent(Placeholder, {surface: 'paper', title: 'No matches', state: 'no-results'}), document.getElementById('workspace'));
+const skeletonHost = document.createElement('div');
+skeletonHost.id = 'skeleton'; document.body.append(skeletonHost);
+render(() => createComponent(Skeleton, {class:'h-10 w-full'}), skeletonHost);
 window.retries = 0;
 render(() => createComponent(Placeholder, {state: 'error', title: 'Could not load', onRetry: () => { window.retries++; document.body.dataset.retries = String(window.retries); }}), document.getElementById('error'));
 `;
@@ -63,3 +66,33 @@ for (const theme of ["light", "dark"])
       await page.context().close();
     }
   });
+
+test("decorative Skeleton keeps geometry with reduced motion and both themes", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.setContent(
+      `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui"><div id="overview"></div><div id="workspace"></div><div id="error"></div></body></html>`,
+    );
+    await page.addScriptTag({ content: script });
+    const skeleton = page.locator(".k2b-skeleton");
+    const before = await skeleton.boundingBox();
+    for (const theme of ["light", "dark"]) {
+      await page.locator("body").evaluate((body, theme) => (body.dataset.theme = theme), theme);
+      const normal = await skeleton.evaluate((e) => ({
+        image: getComputedStyle(e).backgroundImage,
+        duration: getComputedStyle(e).animationDuration,
+        radius: getComputedStyle(e).borderRadius,
+      }));
+      expect(normal.image).toContain("linear-gradient");
+      expect(normal.duration).toBe("1.6s");
+      expect(normal.radius).toBe("8px");
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      expect(await skeleton.evaluate((e) => getComputedStyle(e).animationName)).toBe("none");
+      expect(await skeleton.boundingBox()).toEqual(before);
+      expect(await skeleton.getAttribute("aria-hidden")).toBe("true");
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+    }
+  } finally {
+    await page.close();
+  }
+});

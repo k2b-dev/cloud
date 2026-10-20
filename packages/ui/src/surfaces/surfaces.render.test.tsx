@@ -25,6 +25,7 @@ const { ProgressRing } = await import("./ProgressRing");
 const { StatCell } = await import("./StatCell");
 const { StatGrid } = await import("./StatGrid");
 const { StatusBadge } = await import("./StatusBadge");
+const { Skeleton } = await import("./Skeleton");
 const { Tag } = await import("./Tag");
 
 const stylesDir = resolve(import.meta.dir, "../styles");
@@ -44,16 +45,19 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
   });
 
   test("renders a quiet padding-free paper with opt-in elevation and interaction", () => {
-    const section = renderToString(() => (
-      <Paper as="section" class="project-summary">
-        Summary
-      </Paper>
-    ));
-    const link = renderToString(() => (
-      <Paper as="a" href="/projects" elevated interactive aria-label="Projects">
-        Open
-      </Paper>
-    ));
+    const section = renderToString(() =>
+      createComponent(Paper<"section">, { as: "section", class: "project-summary", children: "Summary" }),
+    );
+    const link = renderToString(() =>
+      createComponent(Paper<"a">, {
+        as: "a",
+        href: "/projects",
+        elevated: true,
+        interactive: true,
+        "aria-label": "Projects",
+        children: "Open",
+      }),
+    );
     const rule = parityCss.match(/\.k2b-ui \.k2b-paper \{[^}]*\}/)?.[0] ?? "";
 
     expect(section).toContain("<section");
@@ -610,4 +614,11 @@ test("load errors append a localized Try again button after the owner's action",
   }
   const idle = renderToString(() => createComponent(Placeholder, { onRetry: () => {} }));
   expect(idle).not.toContain("Try again");
+});
+
+test("Skeleton only renders caller-sized decorative geometry", () => {
+  const html = renderToString(() => createComponent(Skeleton, { class: "h-10 w-full" }));
+  expect(html).toContain('class="k2b-skeleton h-10 w-full"');
+  expect(html).toContain('aria-hidden="true"');
+  expect(html).not.toMatch(/role=|aria-live|tabindex|button/);
 });

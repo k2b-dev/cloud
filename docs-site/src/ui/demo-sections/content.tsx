@@ -1,6 +1,7 @@
 import {
   announce,
   Button,
+  Chart,
   CodeDisplay,
   DataTable,
   type DataTableColumn,
@@ -1768,6 +1769,28 @@ const demos: DemoSection = {
   charts: (props) => (
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
+      <DemoCard
+        id="line-top-legend"
+        chip={{ kind: "component", name: "Chart", from: "@k2b/ui" }}
+        description="A wrapping line legend shares the chart's total height with its plot."
+        code={`<Chart kind="line" legend legendPlacement="top-start" style={{height:"18rem"}} series={[{label:"Orders",data:[{x:1,y:12},{x:2,y:18}]}]} />`}
+      >
+        <Chart
+          kind="line"
+          legend
+          legendPlacement="top-start"
+          style={{ height: "18rem" }}
+          series={[
+            {
+              label: "Orders",
+              data: [
+                { x: 1, y: 12 },
+                { x: 2, y: 18 },
+              ],
+            },
+          ]}
+        />
+      </DemoCard>
     </DemoGrid>
   ),
   tables: () => (

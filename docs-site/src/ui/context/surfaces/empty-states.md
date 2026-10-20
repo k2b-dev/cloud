@@ -149,3 +149,21 @@ browser code; an island owns any callback-based action.
   action={{ label: "Back to applications", href: "/apps" }}
 />
 ```
+
+
+## Decorative loading shapes
+
+Use `Skeleton` from `@k2b/ui` when the surrounding surface already provides
+one loading status and you need to preserve known content dimensions.
+Its only prop is `class?: string`; use sizing classes for the shape. Do not
+suggest a result count you do not know. `Skeleton` is decorative
+(`aria-hidden`), never focusable, and creates no status or announcement.
+The caller owns the accessible loading message and completion or recovery.
+Its shimmer stops under reduced motion; server and client render the same shape.
+
+```tsx
+<div aria-busy="true">
+  <p role="status">Loading results…</p>
+  <Skeleton class="h-10 w-full" />
+</div>
+```

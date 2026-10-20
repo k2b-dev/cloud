@@ -329,3 +329,97 @@ test("autocomplete editor SSR includes initial textarea text and escaped highlig
   expect(html).toContain('class="k2b-autocomplete__preview" aria-hidden="true">SELECT');
   expect(html).not.toContain("<tag>");
 });
+
+test("embedded and compact inputs preserve their values and error semantics in server HTML", () => {
+  const editor = renderToString(() =>
+    createComponent(AutocompleteEditor, {
+      value: "SELECT '<safe>'",
+      variant: "embedded",
+      readOnly: true,
+      "aria-label": "Query",
+      lineNumbers: true,
+      markedLine: 1,
+    }),
+  );
+  expect(editor).toContain('data-variant="embedded"');
+  expect(editor).toMatch(/<textarea\b[^>]*\sreadonly(?:\s|=|>)/i);
+  expect(editor).toContain("&lt;safe&gt;");
+  expect(editor).toContain('aria-label="Query"');
+  const value = renderToString(() =>
+    createComponent(TextInput, {
+      variant: "compact",
+      value: "Europe",
+      prefix: ":region",
+      "aria-label": "Region",
+      error: "Enter a region",
+    }),
+  );
+  expect(value).toContain('data-variant="compact"');
+  expect(value).toContain('value="Europe"');
+  expect(value).toContain('aria-invalid="true"');
+  expect(value).toContain('class="k2b-field__error"');
+  expect(value).toContain("Enter a region");
+  expect(value).not.toContain("k2b-input-shell__icon");
+});
+
+test("native textarea SSR preserves initial text including leading newlines", () => {
+  for (const value of ["Europe", "\n<tag>\nEurope", ""]) {
+    const html = renderToString(() => createComponent(TextInput, { value, multiline: true }));
+    const escaped = value.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
+    expect(html).toContain(`>\n${escaped}</textarea>`);
+  }
+});
+
+test("native external errors keep descriptions and invalid state while Markdown retains inline errors", () => {
+  for (const multiline of [false, true]) {
+    const html = renderToString(() =>
+      createComponent(TextInput, {
+        id: "region",
+        value: "",
+        label: "Region",
+        description: "Choose a region",
+        "aria-describedby": "context",
+        required: true,
+        multiline,
+        error: "Enter a region",
+        externalErrorId: "123:problem",
+      }),
+    );
+    expect(html).toContain('aria-labelledby="region-label"');
+    expect(html).toContain('aria-describedby="context region-description 123:problem"');
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain('aria-required="true"');
+    expect(html).toContain('data-invalid="true"');
+    expect(html).not.toContain('class="k2b-field__error"');
+    expect(html).not.toContain("externalErrorId");
+  }
+  for (const externalErrorId of [undefined, "", "two ids", "tab\tid", "line\nid", "return\rid", "form\fid"]) {
+    const html = renderToString(() =>
+      createComponent(TextInput, {
+        id: "region",
+        value: "",
+        variant: "compact",
+        error: "Enter a region",
+        externalErrorId,
+      }),
+    );
+    expect(html).toContain('aria-describedby="region-error"');
+    expect(html).toContain('class="k2b-field__error"');
+    expect(html).toContain("Enter a region");
+  }
+  const corrected = renderToString(() => createComponent(TextInput, { value: "Europe", externalErrorId: "123:problem" }));
+  expect(corrected).not.toContain("aria-invalid=");
+  expect(corrected).not.toContain("123:problem");
+  const markdown = renderToString(() =>
+    createComponent(TextInput, {
+      id: "notes",
+      value: "",
+      markdown: true,
+      error: "Enter notes",
+      externalErrorId: "123:problem",
+    }),
+  );
+  expect(markdown).toContain('class="k2b-field__error"');
+  expect(markdown).toContain("Enter notes");
+  expect(markdown).not.toContain("123:problem");
+});

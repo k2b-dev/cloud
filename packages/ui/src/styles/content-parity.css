@@ -3852,8 +3852,7 @@
 
 /* Code and documentation */
 
-/* Syntax palette for CodeDisplay / DocCode. These are code-chrome colours
-   (a syntax theme), not app theming — same values Cloud ships. */
+/* Scoped syntax palette shared by CodeDisplay, DocCode and highlighted editors. */
 .k2b-ui {
   --k2b-code-comment: #71717a;
   --k2b-code-string: #1e3a8a;
@@ -3900,6 +3899,10 @@
 .k2b-ui .cd-md-ref,
 .k2b-ui .cd-md-link {
   color: var(--k2b-code-number);
+}
+
+.k2b-ui .cd-param {
+  color: var(--k2b-code-parameter, var(--k2b-code-number));
 }
 
 .k2b-ui .cd-k {

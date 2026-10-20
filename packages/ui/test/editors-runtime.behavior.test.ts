@@ -220,3 +220,75 @@ describe("completion editor runtime behavior", () => {
     dom.cleanup();
   });
 });
+
+test("read-only autocomplete cancels suggestions and keeps selection, controlled updates and submit", async () => {
+  const dom = createDomTestHarness();
+  installEditorDomSupport(dom);
+  const { AutocompleteEditor } = await import("../src/inputs/AutocompleteEditor");
+  const [value, setValue] = createSignal("");
+  const [readOnly, setReadOnly] = createSignal(false);
+  let submitted = 0;
+  let resolveSuggestion: ((value: readonly { text: string }[]) => void) | undefined;
+  let requestSignal: AbortSignal | undefined;
+  const dispose = render(
+    () =>
+      createComponent(AutocompleteEditor, {
+        value,
+        get readOnly() {
+          return readOnly();
+        },
+        onValueChange: setValue,
+        onSubmit: () => {
+          submitted++;
+        },
+        completions: [
+          {
+            trigger: "@",
+            dropdown: true,
+            suggest: (_query, _context, signal) => {
+              requestSignal = signal;
+              return new Promise<readonly { text: string }[]>((resolve) => {
+                resolveSuggestion = resolve;
+              });
+            },
+          },
+        ],
+      }),
+    dom.root,
+  );
+  try {
+    const input = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
+    input.focus();
+    input.value = "@a";
+    input.setSelectionRange(2, 2);
+    const edit = new Event("input", { bubbles: true });
+    Object.defineProperty(edit, "inputType", { value: "insertText" });
+    input.dispatchEvent(edit);
+    expect(requestSignal).toBeDefined();
+    setReadOnly(true);
+    await Promise.resolve();
+    expect(input.readOnly).toBeTrue();
+    expect(requestSignal!.aborted).toBeTrue();
+    resolveSuggestion!([{ text: "@alice" }]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(dom.root.querySelector('[role="option"]')).toBeNull();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true }));
+    expect(value()).toBe("@a");
+    input.setSelectionRange(0, 2);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(2);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+    expect(submitted).toBe(1);
+    setValue("external update");
+    await Promise.resolve();
+    expect(input.value).toBe("external update");
+    setReadOnly(false);
+    await Promise.resolve();
+    expect(input.readOnly).toBeFalse();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

@@ -272,7 +272,7 @@ export const highlightSql = (code: string): string => {
     } else if (c === ":" && code[i - 1] !== ":" && !/[A-Za-z0-9_]/.test(code[i - 1] ?? "") && /[A-Za-z_]/.test(code[i + 1] ?? "")) {
       i += 2;
       while (/[A-Za-z0-9_]/.test(code[i] ?? "")) i++;
-      out += token("cd-a", code.slice(start, i));
+      out += token("cd-a cd-param", code.slice(start, i));
     } else if (/[A-Za-z_]/.test(c)) {
       i++;
       while (/[A-Za-z0-9_]/.test(code[i] ?? "")) i++;

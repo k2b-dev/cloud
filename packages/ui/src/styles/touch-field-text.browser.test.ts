@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { transformAsync } from "@babel/core";
+import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
+import solid from "babel-preset-solid";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -165,3 +168,323 @@ describe("@k2b/ui field text on a phone", () => {
     30_000,
   );
 });
+
+test.each([false, true])(
+  "compact values keep their 26 px shell and readable text (touch=%s)",
+  async (touch) => {
+    const tab = await browser.newPage({ viewport: { width: 390, height: 664 }, isMobile: touch, hasTouch: touch });
+    try {
+      const markup = renderToString(() =>
+        createComponent(TextInput, {
+          variant: "compact",
+          value: "Europe",
+          prefix: ":region",
+          "aria-label": "Region",
+          monospace: true,
+        }),
+      );
+      await tab.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui">${markup}</body></html>`,
+      );
+      const input = tab.getByRole("textbox", { name: "Region", exact: true });
+      const measureCompact = () =>
+        input.evaluate((element) => {
+          const shell = element.parentElement!;
+          const box = element.getBoundingClientRect();
+          return {
+            shellHeight: shell.getBoundingClientRect().height,
+            inputHeight: box.height,
+            fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+            lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+            iconCount: shell.querySelectorAll(".k2b-input-shell__icon").length,
+          };
+        });
+      const before = await measureCompact();
+      expect(before.shellHeight).toBe(26);
+      expect(before.inputHeight).toBe(20);
+      expect(before.lineHeight).toBe(20);
+      expect(before.fontSize).toBe(touch ? 16 : 12);
+      expect(before.iconCount).toBe(0);
+      await input.focus();
+      expect(await measureCompact()).toEqual(before);
+      expect(await input.inputValue()).toBe("Europe");
+    } finally {
+      await tab.close();
+    }
+  },
+  30_000,
+);
+
+test("embedded code keeps its overlay and gutter aligned at the touch font size", async () => {
+  const tab = await browser.newPage(phone);
+  try {
+    const markup = renderToString(() =>
+      createComponent(AutocompleteEditor, {
+        variant: "embedded",
+        fill: true,
+        lineNumbers: true,
+        markedLine: 2,
+        value: "SELECT region\nFROM events",
+        "aria-label": "Query",
+        highlight: (text) => text,
+      }),
+    );
+    await tab.setContent(
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><div style="height:232px;font-size:13px;line-height:20px">${markup}</div></body></html>`,
+    );
+    const metrics = await tab.locator('[data-variant="embedded"]').evaluate((element) => {
+      const measureLayer = (selector: string) => {
+        const node = element.querySelector<HTMLElement>(selector)!;
+        const style = getComputedStyle(node);
+        const box = node.getBoundingClientRect();
+        return { font: Number.parseFloat(style.fontSize), line: Number.parseFloat(style.lineHeight), height: box.height };
+      };
+      return {
+        input: measureLayer(".k2b-autocomplete__input"),
+        overlay: measureLayer(".k2b-autocomplete__preview"),
+        gutter: measureLayer(".k2b-autocomplete__gutter"),
+        height: element.getBoundingClientRect().height,
+      };
+    });
+    expect(metrics.height).toBe(232);
+    expect(metrics.input.font).toBeGreaterThanOrEqual(16);
+    expect(metrics.input).toEqual(metrics.overlay);
+    expect(metrics.gutter.font).toBe(metrics.input.font);
+    expect(metrics.gutter.line).toBe(metrics.input.line);
+    expect(metrics.input.line).toBe(20);
+  } finally {
+    await tab.close();
+  }
+}, 30_000);
+
+test.each([false, true])(
+  "compact errors stay visible inline or at an explicit external target (touch=%s)",
+  async (touch) => {
+    const tab = await browser.newPage({ viewport: { width: 390, height: 664 }, isMobile: touch, hasTouch: touch });
+    try {
+      const inline = renderToString(() =>
+        createComponent(TextInput, {
+          id: "inline-region",
+          value: "",
+          variant: "compact",
+          "aria-label": "Inline region",
+          error: "Enter a region.",
+        }),
+      );
+      const external = renderToString(() =>
+        createComponent(TextInput, {
+          id: "external-region",
+          value: "",
+          variant: "compact",
+          "aria-label": "External region",
+          error: "Choose a known region.",
+          externalErrorId: "123:problem",
+        }),
+      );
+      await tab.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui">${inline}${external}<p id="123:problem" role="status">Choose a known region.</p></body></html>`,
+      );
+      const inlineInput = tab.getByRole("textbox", { name: "Inline region", exact: true });
+      const externalInput = tab.getByRole("textbox", { name: "External region", exact: true });
+      expect(await tab.locator(".k2b-field__error").count()).toBe(1);
+      expect(await tab.locator(".k2b-field__error").isVisible()).toBeTrue();
+      expect(await inlineInput.getAttribute("aria-describedby")).toBe("inline-region-error");
+      expect(await externalInput.getAttribute("aria-describedby")).toBe("123:problem");
+      expect(await tab.getByRole("status").isVisible()).toBeTrue();
+      for (const input of [inlineInput, externalInput]) {
+        expect(await input.getAttribute("aria-invalid")).toBe("true");
+        expect(await input.evaluate((element) => element.parentElement!.getBoundingClientRect().height)).toBe(26);
+        expect(await input.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBe(touch ? 16 : 12);
+        const before = await input.evaluate((element) => element.parentElement!.getBoundingClientRect().toJSON());
+        await input.focus();
+        expect(await input.evaluate((element) => element.parentElement!.getBoundingClientRect().toJSON())).toEqual(before);
+      }
+    } finally {
+      await tab.close();
+    }
+  },
+  30_000,
+);
+
+// Keep the first SSR DOM: the existing static style cases and happy-dom runtime
+// tests cannot establish that hydration reuses a field or its generated error ID.
+test("native external errors retain their SSR nodes, IDs, focus and selection through first hydration", async () => {
+  const ui = resolve(import.meta.dir, "../..");
+  const fixturePath = resolve(import.meta.dir, "text-error-hydration.fixture.tsx");
+  const fixture = (entry: string) => `
+import { createSignal, createUniqueId } from "solid-js";
+import { TextInput } from ${JSON.stringify(entry)};
+function ErrorField(props: { multiline: boolean }) {
+  const id = createUniqueId();
+  const [error, setError] = createSignal<string | undefined>("Enter a region.");
+  const [target, setTarget] = createSignal<string | undefined>("123:" + id);
+  let ref: HTMLInputElement | undefined;
+  return <section data-mode={props.multiline ? "textarea" : "input"}>
+    <TextInput variant="compact" label="Region" description="Choose a known region."
+      value="Europe" multiline={props.multiline} error={error} externalErrorId={target()}
+      ref={(node) => { ref = node; node.dataset.refBound = "true"; }} />
+    <p id={target()} hidden={!target() || !error()} role="status">{error()}</p>
+    <button data-action="other" onClick={() => { setTarget("456:" + id); setError("Use a known region."); }}>Other error</button>
+    <button data-action="inline" onClick={() => setTarget(undefined)}>Inline error</button>
+    <button data-action="correct" onClick={() => setError(undefined)}>Correct</button>
+    <button data-action="check-ref" onClick={() => { if (ref) ref.dataset.refChecked = "true"; }}>Check ref</button>
+  </section>;
+}
+export function Fixture() { return <><ErrorField multiline={false} /><ErrorField multiline={true} /></>; }
+`;
+  const bundle = async (server: boolean) => {
+    const entry = resolve(import.meta.dir, server ? "text-error-hydration.server.ts" : "text-error-hydration.client.ts");
+    const build = await Bun.build({
+      entrypoints: [entry],
+      files: {
+        [entry]: server
+          ? `
+import { createComponent } from "solid-js";
+import { renderToString, generateHydrationScript } from "solid-js/web";
+import { Fixture } from "./text-error-hydration.fixture";
+export const markup = renderToString(() => createComponent(Fixture, {}));
+export const hydrationScript = generateHydrationScript();
+`
+          : `
+import { createComponent } from "solid-js";
+import { hydrate } from "solid-js/web";
+import { Fixture } from "./text-error-hydration.fixture";
+hydrate(() => createComponent(Fixture, {}), document.getElementById("app"));
+document.body.dataset.hydrated = "true";
+`,
+      },
+      target: server ? "node" : "browser",
+      format: server ? "esm" : "iife",
+      conditions: server ? ["node"] : ["browser"],
+      plugins: [
+        {
+          name: "text-error-hydration",
+          setup(builder) {
+            builder.onResolve({ filter: /text-error-hydration\.fixture$/ }, () => ({ path: fixturePath, namespace: "error-fixture" }));
+            builder.onLoad({ filter: /\.tsx$/, namespace: "error-fixture" }, async ({ path }) => {
+              const result = await transformAsync(fixture(resolve(ui, server ? "src/inputs/TextInput.tsx" : "dist/browser/index.js")), {
+                filename: path,
+                babelrc: false,
+                configFile: false,
+                presets: [typescript, [solid, { generate: server ? "ssr" : "dom", hydratable: true }]],
+              });
+              if (!result?.code) throw new Error("Could not compile error hydration fixture");
+              return { contents: result.code, loader: "js", resolveDir: import.meta.dir };
+            });
+            if (server)
+              builder.onLoad({ filter: /\.tsx$/, namespace: "file" }, async ({ path }) => {
+                const result = await transformAsync(await Bun.file(path).text(), {
+                  filename: path,
+                  babelrc: false,
+                  configFile: false,
+                  presets: [typescript, [solid, { generate: "ssr", hydratable: true }]],
+                });
+                if (!result?.code) throw new Error(`Could not compile ${path}`);
+                return { contents: result.code, loader: "js" };
+              });
+          },
+        },
+      ],
+    });
+    if (!build.success) throw new AggregateError(build.logs, "Could not bundle error hydration fixture");
+    return build.outputs[0]!.text();
+  };
+  const serverPath = resolve(root, "text-error-hydration.mjs");
+  writeFileSync(serverPath, await bundle(true));
+  const { markup, hydrationScript }: { markup: string; hydrationScript: string } = await import(serverPath);
+  const script = await bundle(false);
+  const tab = await browser.newPage(phone);
+  const errors: string[] = [];
+  tab.on("pageerror", (error) => errors.push(error.message));
+  tab.on("console", (message) => {
+    if ((message.type() === "warning" || message.type() === "error") && /hydrat/i.test(message.text())) errors.push(message.text());
+  });
+  try {
+    await tab.setContent(
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><main id="app">${markup}</main>${hydrationScript}</body></html>`,
+    );
+    const controls = tab.locator("input,textarea");
+    expect(await controls.count()).toBe(2);
+    expect(await controls.first().inputValue()).toBe("Europe");
+    expect(await controls.last().inputValue()).toBe("Europe");
+    const before = await controls.evaluateAll((elements) =>
+      elements.map((element) => {
+        element.setAttribute("data-ssr-node", "preserved");
+        return { id: element.id, describedBy: element.getAttribute("aria-describedby"), box: element.getBoundingClientRect().toJSON() };
+      }),
+    );
+    for (const section of [tab.locator('[data-mode="input"]'), tab.locator('[data-mode="textarea"]')]) {
+      const input = section.locator("input,textarea");
+      const target = (await input.getAttribute("aria-describedby"))!.split(" ").at(-1)!;
+      expect(await tab.locator(`[id="${target}"]`).innerText()).toBe("Enter a region.");
+      expect(await tab.locator(`[id="${target}"]`).isVisible()).toBeTrue();
+    }
+    expect(await tab.locator(".k2b-field__error").count()).toBe(0);
+    await controls.last().focus();
+    await controls.last().evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(1, 4));
+    expect(await controls.last().evaluate((element: HTMLTextAreaElement) => [element.selectionStart, element.selectionEnd])).toEqual([
+      1, 4,
+    ]);
+    await tab.addScriptTag({ content: script });
+    await tab.waitForSelector('body[data-hydrated="true"]');
+    expect(errors).toEqual([]);
+    const after = await controls.evaluateAll((elements) =>
+      elements.map((element) => ({
+        id: element.id,
+        describedBy: element.getAttribute("aria-describedby"),
+        box: element.getBoundingClientRect().toJSON(),
+      })),
+    );
+    expect(after).toEqual(before);
+    expect(
+      await controls.evaluateAll((elements) =>
+        elements.every(
+          (element) => element.getAttribute("data-ssr-node") === "preserved" && element.getAttribute("data-ref-bound") === "true",
+        ),
+      ),
+    ).toBeTrue();
+    expect(
+      await controls
+        .last()
+        .evaluate((element: HTMLTextAreaElement) => [element === document.activeElement, element.selectionStart, element.selectionEnd]),
+    ).toEqual([true, 1, 4]);
+    for (const mode of ["input", "textarea"]) {
+      const section = tab.locator(`[data-mode="${mode}"]`);
+      const input = section.locator("input,textarea");
+      await input.focus();
+      await input.evaluate((element: HTMLInputElement | HTMLTextAreaElement) => element.setSelectionRange(1, 4));
+      for (const action of ["other", "inline", "correct"]) {
+        await section.locator(`[data-action="${action}"]`).dispatchEvent("click");
+        expect(await input.getAttribute("data-ssr-node")).toBe("preserved");
+        expect(await input.inputValue()).toBe("Europe");
+        expect(
+          await input.evaluate((element: HTMLInputElement | HTMLTextAreaElement) => [
+            element === document.activeElement,
+            element.selectionStart,
+            element.selectionEnd,
+          ]),
+        ).toEqual([true, 1, 4]);
+        const describedBy = (await input.getAttribute("aria-describedby"))!.split(" ");
+        if (action === "other") {
+          expect(describedBy.at(-1)).toMatch(/^456:/);
+          expect(await section.getByRole("status").innerText()).toBe("Use a known region.");
+          expect(await section.getByRole("status").isVisible()).toBeTrue();
+          expect(await section.locator(".k2b-field__error").count()).toBe(0);
+        } else if (action === "inline") {
+          expect(describedBy.at(-1)).toBe(`${await input.getAttribute("id")}-error`);
+          expect(await section.locator(".k2b-field__error").innerText()).toBe("Use a known region.");
+          expect(await section.locator(".k2b-field__error").isVisible()).toBeTrue();
+        } else {
+          expect(describedBy).toHaveLength(1);
+          expect(await input.getAttribute("aria-invalid")).toBeNull();
+          expect(await section.locator(".k2b-field__error").count()).toBe(0);
+        }
+      }
+      await section.locator('[data-action="check-ref"]').dispatchEvent("click");
+      expect(await input.getAttribute("data-ref-checked")).toBe("true");
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await tab.close();
+  }
+}, 60_000);

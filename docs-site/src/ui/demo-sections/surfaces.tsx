@@ -23,6 +23,7 @@ import {
   type ResourceCardState,
   SegmentedControl,
   Select,
+  Skeleton,
   StatCell,
   StatGrid,
   StatusBadge,
@@ -238,9 +239,10 @@ const EmptyDemo = () => (
     chip={[
       { kind: "component", name: "Placeholder", from: "@k2b/ui" },
       { kind: "component", name: "NotFoundState", from: "@k2b/ui" },
+      { kind: "component", name: "Skeleton", from: "@k2b/ui" },
     ]}
     description="Empty icons sit in soft chips of the app color; loading, error, and inline icons stay plain. The examples name each non-default layout choice. NotFoundState handles a route-level dead end."
-    code={`import { Button, NotFoundState, Placeholder } from "@k2b/ui";
+    code={`import { Button, NotFoundState, Placeholder, Skeleton } from "@k2b/ui";
 
 <Placeholder
   surface="paper"
@@ -253,9 +255,14 @@ const EmptyDemo = () => (
 <Placeholder surface="paper" state="loading" variant="panel" title="Loading projects" description="Fetching the latest projects." />
 <Placeholder surface="paper" state="error" align="left" title="Projects unavailable" description="Reload the page to try again." />
 <NotFoundState code="404" title="Project not found" description="It may have been moved." action={{ label: "All projects", href: "/projects" }} />
-<Placeholder surface="paper" variant="inline" align="left" icon="ti ti-file-text" description="No notes yet" />`}
+<Placeholder surface="paper" variant="inline" align="left" icon="ti ti-file-text" description="No notes yet" />
+<div aria-busy="true"><p role="status">Loading results…</p><Skeleton class="h-10 w-full" /></div>`}
   >
     <div class="ui-demo-form-grid">
+      <div aria-busy="true">
+        <p role="status">Loading results…</p>
+        <Skeleton class="h-10 w-full" />
+      </div>
       <Placeholder
         surface="paper"
         title="No projects"
