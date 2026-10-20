@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
+import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 import { mailTagSearch } from "../search-url";
 
 setDefaultTimeout(20_000);
@@ -1080,7 +1080,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
 
-      for (const width of [1920, 1440, 834, 390]) {
+      for (const width of [1920, 1440, 834]) {
         test(`persistent Details: default, close, resize and reload at ${width}`, async () => {
           const page = await open(`${boxPath}?conversation=Conv01&shell=1&persist-details=1`, width, 900);
           try {
@@ -1157,8 +1157,92 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           } finally {
             await close(page);
           }
+        }, 30_000); // Several reloads include font/island readiness in both engines.
+      }
+      for (const theme of ["light", "dark"]) {
+        test(`phone pane head: reader Details, persistence and Back in ${theme}`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&persist-details=1&theme=${theme}`, 390, 844);
+          try {
+            const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
+            const shared = page.locator(".mail-workspace [data-app-workspace-detail-toggle]");
+            const reader = page.locator(".mail-reader-toolbar [data-mail-details-trigger]");
+            const aside = page.locator(".k2b-app-workspace__detail");
+            expect(await head.isVisible()).toBe(false);
+            expect(await shared.isVisible()).toBe(false);
+            const serverFrame: Frame = JSON.parse((await page.locator("html").getAttribute("data-server-geometry"))!);
+            const hydratedFrame: Frame = JSON.parse((await page.locator("html").getAttribute("data-hydrated-geometry"))!);
+            for (const frame of [serverFrame, hydratedFrame])
+              expect(frame.find((part) => part.part === "k2b-app-workspace__head")?.height).toBe(0);
+            expect(
+              await page.locator(".mail-workspace").evaluate((root) => {
+                const content = root.querySelector(":scope > .k2b-app-workspace__content")!;
+                return content.getBoundingClientRect().top - root.getBoundingClientRect().top - root.clientTop;
+              }),
+            ).toBe(0);
+            expect(await reader.isVisible()).toBe(true);
+            expect(await aside.getAttribute("hidden")).not.toBeNull();
+            const shots = screenshots;
+            if (shots) {
+              mkdirSync(resolve(shots, browserName), { recursive: true });
+              await page.screenshot({ path: resolve(shots, browserName, `f6-reader-${theme}-390.png`) });
+            }
+            await reader.focus();
+            await page.keyboard.press("Enter");
+            await settled(page);
+            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+            expect(await reader.getAttribute("aria-expanded")).toBe("true");
+            await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
+            await settled(page);
+            expect(await reader.evaluate((element) => element === document.activeElement)).toBe(true);
+            expect(await reader.getAttribute("aria-expanded")).toBe("false");
+            expect(await shared.isVisible()).toBe(false);
+            await page.waitForFunction((expected) => {
+              const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
+              return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === expected;
+            }, false);
+            const closedCookie = await storedCookie(page, "cloud_mail_workspace");
+            expect(JSON.parse(decodeURIComponent(closedCookie!.value)).detailsOpen).toBe(false);
+            await page.reload();
+            await ready(page);
+            expect(await aside.getAttribute("hidden")).not.toBeNull();
+            await reader.click();
+            await settled(page);
+            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+            await page.waitForFunction((expected) => {
+              const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
+              return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === expected;
+            }, true);
+            const openCookie = await storedCookie(page, "cloud_mail_workspace");
+            expect(JSON.parse(decodeURIComponent(openCookie!.value)).detailsOpen).toBe(true);
+            await page.reload();
+            await ready(page);
+            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+            await page.keyboard.press("Escape");
+            await settled(page);
+            expect(await reader.evaluate((element) => element === document.activeElement)).toBe(true);
+            expect(await aside.getAttribute("hidden")).not.toBeNull();
+            await page.locator(".mail-reader-back").click();
+            await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
+            await settled(page);
+            expect(await head.isVisible()).toBe(true);
+            expect(await shared.isVisible()).toBe(true);
+            expect(await shared.isDisabled()).toBe(true);
+            if (shots) await page.screenshot({ path: resolve(shots, browserName, `f6-list-${theme}-390.png`) });
+            await page.goBack();
+            await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+            await settled(page);
+            expect(await head.isVisible()).toBe(false);
+            expect(await reader.isVisible()).toBe(true);
+            await page.setViewportSize({ width: 834, height: 1194 });
+            await settled(page);
+            expect(await head.isVisible()).toBe(true);
+            expect(await shared.isVisible()).toBe(true);
+          } finally {
+            await close(page);
+          }
         });
       }
+
       test("persistent Details: conversation Back keeps the same closed preference", async () => {
         const page = await open(`${boxPath}?conversation=Conv01&shell=1&persist-details=1`, 834, 900);
         try {

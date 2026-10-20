@@ -123,6 +123,8 @@ const navTreeItemSlot = (value: unknown): value is NavTreeItemSlot =>
   Boolean(value && typeof value === "object" && "kind" in value && (value as NavTreeItemSlot).kind === NAV_TREE_ITEM);
 
 export type AppWorkspaceHeadProps = {
+  /** Below 48rem, show this head only with this active Main region. Unsplit Mains keep their head. */
+  mobilePane?: string;
   /** View tabs, usually a ViewTabs. */
   views?: JSX.Element;
   /** Filter chips, usually FilterChip elements. */
@@ -2176,6 +2178,16 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
   const resolvedCount = children(() => props.head?.count);
   // A nested workspace is part of a page that already shows its title.
   const trail = props.nested ? () => undefined : usePageTrail();
+  // Main already publishes the active region in SSR and on each selection.
+  // Scope both sides to this workspace, including transparent island hosts;
+  // a nested Main must never decide whether its parent's head is visible.
+  const mobilePane = () =>
+    props.head?.mobilePane === undefined ? undefined : assertStableUiId(props.head.mobilePane, "AppWorkspace.Head mobilePane");
+  const mobilePaneRule = (pane: string) => {
+    const main = `.k2b-app-workspace__main.has-panes:not([data-workspace-levels]) > [data-workspace-mobile-active="true"]:not([data-workspace-main-region="${pane}"])`;
+    const host = `.k2b-ui .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane="${pane}"]):has(> .k2b-app-workspace__content > ${main}, > .k2b-app-workspace__content > :is(solid-island, solid-client) > ${main})`;
+    return `@media not all and (min-width:48rem){${host} > .k2b-app-workspace__head,${host} > .k2b-app-workspace__content > .k2b-app-workspace__detail-toggle,${host} > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail-toggle{display:none}}`;
+  };
   const resetContent = () => filters().reset;
   const primaryContent = () => (
     <>
@@ -2188,7 +2200,9 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
       class="k2b-app-workspace__head"
       data-trail={trail()?.ancestors.length ? "up" : trail() ? "title" : undefined}
       data-row={props.head ? "" : undefined}
+      data-workspace-head-pane={mobilePane()}
     >
+      <Show when={mobilePane()}>{(pane) => <style innerHTML={mobilePaneRule(pane())} />}</Show>
       <div class="k2b-app-workspace__head-lead">
         <IconButton
           class="k2b-app-workspace__head-toggle"

@@ -2376,7 +2376,10 @@ function MailWorkspaceView(props: {
       if (disposed) return;
       const target = open
         ? document.querySelector<HTMLElement>("[data-mail-details-heading]")
-        : document.querySelector<HTMLElement>(".mail-workspace [data-app-workspace-detail-toggle]");
+        : [
+            document.querySelector<HTMLElement>(".mail-workspace [data-app-workspace-detail-toggle]"),
+            document.querySelector<HTMLElement>(".mail-workspace [data-mail-details-trigger]"),
+          ].find((element) => element && element.getClientRects().length > 0);
       target?.focus({ preventScroll: true });
     });
     focusFrames.add(frame);
@@ -2484,6 +2487,7 @@ function MailWorkspaceView(props: {
         }}
       />
       <AppWorkspace.Head
+        mobilePane="conversations"
         views={
           currentTab() !== null ? (
             <MailboxViewTabs
