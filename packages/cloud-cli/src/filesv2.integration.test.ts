@@ -86,6 +86,7 @@ async function serveTransfer(listener: RequestListener) {
 
 const area = { enabled: true, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" };
 const configuration = {
+  activityRetentionDays: 730,
   url: "https://files.example.test",
   cloud: { ...area, autoCreate: false, autoArchive: true },
   freeipa: { ...area, enabled: false, root: "freeipa" },

@@ -2,6 +2,9 @@ import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { prepareNoTransformRouterTest } from "../../../scripts/fixtures/no-transform";
 
 prepareNoTransformRouterTest();
+const storeService = await import("./store/service");
+const configured = spyOn(storeService, "pulseStoreConfigured").mockResolvedValue(true);
+afterAll(() => configured.mockRestore());
 
 const { pulseService } = await import("./service");
 const missing = spyOn(pulseService.dashboard, "publicSnapshot").mockResolvedValue({

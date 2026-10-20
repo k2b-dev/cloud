@@ -4,6 +4,7 @@ import { AGGREGATIONS, EVENT_AGGREGATIONS, METRIC_TYPES, PANEL_VISUALS, SOURCE_K
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
 import { MAX_QUERY_TEXT_LENGTH } from "../query-dsl";
 import { type QueryTimeRange, resolveQueryTimeRange, validateEventBucket } from "../query-dsl/time-window";
+import { BaseStoreStatusSchema } from "../store/admin-schemas";
 import {
   jsonBytes,
   PULSE_EXTERNAL_INGEST_MAX_BYTES,
@@ -143,6 +144,7 @@ export const UpdateBaseSchema = z
     rawRetentionDays: z.number().int().min(1).max(3650).optional(),
     rollupRetentionDays: z.number().int().min(1).max(3650).optional(),
     sensitiveRetentionHours: z.number().int().min(1).max(8760).optional(),
+    confirmShorterRetention: z.boolean().optional(),
   })
   .strict();
 
@@ -577,6 +579,7 @@ export const ResourceStateQuerySchema = z.strictObject({
 export const MessageSchema = z.object({ message: z.string() });
 
 export const BaseSchema = z.object({
+  store: BaseStoreStatusSchema,
   id: PulseShortIdSchema,
   name: z.string(),
   description: z.string().nullable(),

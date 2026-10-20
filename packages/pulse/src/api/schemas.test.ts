@@ -123,6 +123,23 @@ describe("Pulse public resource IDs", () => {
       BaseSchema.safeParse({
         id: "Base01",
         name: "Operations",
+        store: {
+          state: "active",
+          operation: null,
+          errorCode: null,
+          errorAt: null,
+          writeBlockReason: null,
+          profile: "normal",
+          limits: {
+            valuesPerMinute: 2000,
+            bytesPerMinute: 5242880,
+            storageBytes: 5000000000,
+            maxSeries: 50000,
+            maxEventKinds: 2000,
+            maxStateKeys: 2000,
+          },
+          usage: null,
+        },
         description: null,
         rawRetentionDays: 30,
         rollupRetentionDays: 365,

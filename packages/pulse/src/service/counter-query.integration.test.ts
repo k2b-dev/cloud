@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch } from "./ingest-writer";
 import { queryMetricData } from "./query-execution";
 
@@ -18,6 +19,7 @@ describe("observed counter pairs", () => {
       const baseId = crypto.randomUUID(),
         sourceId = crypto.randomUUID();
       await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Counter proof')`;
+      await seedActiveBaseStore(baseId);
       await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Probe')`;
       const anchor = Math.floor(Date.now() / 3600000) * 3600000 - 7200000;
       const write = async (name: string, values: number[], seconds: number[], resource: string) =>

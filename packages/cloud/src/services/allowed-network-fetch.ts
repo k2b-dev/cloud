@@ -28,7 +28,12 @@ export const createAllowedNetworkFetch =
     const addresses = await new Promise<Awaited<ReturnType<typeof resolveAllowedNetworkAddresses>>>((resolve, reject) => {
       const abort = () => reject(signal.reason);
       signal.addEventListener("abort", abort, { once: true });
-      (deps.resolve ?? resolveAllowedNetworkAddresses)(url.hostname, allowlist, deps.lookup)
+      (deps.resolve ?? resolveAllowedNetworkAddresses)(
+        url.hostname,
+        allowlist,
+        deps.lookup,
+        Number(url.port || (url.protocol === "https:" ? 443 : 80)),
+      )
         .then(resolve, reject)
         .finally(() => signal.removeEventListener("abort", abort));
       if (signal.aborted) abort();

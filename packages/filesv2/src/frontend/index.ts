@@ -3,6 +3,7 @@ import { AccountIdentityError } from "@k2b/cloud/services";
 import { FilegateError } from "@k2b/filegate";
 import { Hono } from "hono";
 import { ssr } from "../config";
+import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
 import adminPage from "./admin";
 import filesPage from "./page";
@@ -25,7 +26,7 @@ export default new Hono<AuthContext>()
   .get("/app/filesv2/ref/:id", auth.requireRole("user", ssr.access), async (c) => {
     try {
       // A stable ref opens wherever the file is now; a path ref where it was named.
-      const { base, entry } = await filesService.entryById(c.get("actor"), c.req.param("id"));
+      const { base, entry } = await filesService.entryById(requestCall(c), c.req.param("id"));
       const path = entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/");
       return c.redirect(filesUrl(base.id, path, undefined, entry.directory ? undefined : entry.path));
     } catch (error) {

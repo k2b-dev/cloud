@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-16
+updated: 2026-10-19
 ---
 
 # Configuration reference
@@ -86,15 +86,7 @@ Declared in `packages/notebooks/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks that notebook S3 snapshots may upload to, for example `minio,10.20.0.0/16`; unset allows only public storage. An entry covers every port on that host or range; `/0` entries and other invalid entries stop Notebooks at startup. |
-
-## Application: pulse
-
-Declared in `packages/pulse/src/env.ts`.
-
-| Variable | Type | Scope | Default | Required | Description |
-| --- | --- | --- | --- | --- | --- |
-| `PULSE_SCRAPE_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks that Pulse metrics sources may scrape, for example `prometheus,10.20.0.0/16`; unset allows only public endpoints. An entry covers every port on that host or range; `/0` entries and other invalid entries stop Pulse at startup. |
+| `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks that notebook S3 snapshots may upload to, for example `minio,10.20.0.0/16`; unset allows only public storage. Bare entries cover every port; host:port and [ipv6]:port restrict a host or IP to one port; `/0` entries and other invalid entries stop Notebooks at startup. |
 
 ## Application: pwa-auth
 

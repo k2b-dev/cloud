@@ -1,8 +1,12 @@
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
 import { installBaseline } from "./schema";
+import { installBaseStores } from "./store/migration";
 
-const MIGRATIONS = [{ version: 1, name: "baseline", up: installBaseline }];
+const MIGRATIONS = [
+  { version: 1, name: "baseline", up: installBaseline },
+  { version: 2, name: "base_stores", up: installBaseStores },
+];
 
 export const migrate = async (): Promise<void> => {
   await sql.begin(async (tx) => {

@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { MetricQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { queryMetricData } from "./query-execution";
 
 const runDbSmoke = testInfra.database !== undefined;
@@ -19,6 +20,7 @@ describe("Pulse grouped metric query Postgres smoke", () => {
     const baseId = crypto.randomUUID();
     const sourceId = crypto.randomUUID();
     await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Metric query smoke')`;
+    await seedActiveBaseStore(baseId);
     await sql`
       INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
       VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'http_ingest'::pulse.source_kind, 'Metric query source')

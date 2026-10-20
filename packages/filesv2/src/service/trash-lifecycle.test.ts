@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RequestActor } from "@k2b/cloud/server";
 import { FilegateError, type Node, type TransferState } from "@k2b/filegate";
+import { testCall } from "../../test/files-call";
 import type { BaseSummary } from "../contracts";
 import type { TrashRow, trash } from "../data/trash";
 import { normalizeSelection, runFileBatch } from "./batches";
@@ -204,7 +205,7 @@ function fixture() {
 describe("recoverable trash lifecycle", () => {
   test("records intent before moving to a UUID target, preserving the user-facing name", async () => {
     const f = fixture();
-    const result = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const result = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     expect(result.entries[0]).toMatchObject({ original: "report.txt", name: "report.txt", state: "trashed" });
     expect(f.calls.slice(0, 2)).toEqual(["intent", "move"]);
     expect([...f.rows.values()][0]!.trashed).toBe(`trash/${result.entries[0]!.id}`);
@@ -213,7 +214,7 @@ describe("recoverable trash lifecycle", () => {
   test("never moves a source whose durable intent could not be stored", async () => {
     const f = fixture();
     f.setFailInsert(true);
-    const result = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const result = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     expect(result.results[0]?.ok).toBeFalse();
     expect(f.calls).not.toContain("move");
     expect(f.nodes.has("home/alice/report.txt")).toBeTrue();
@@ -221,104 +222,114 @@ describe("recoverable trash lifecycle", () => {
   test("a lost transfer response is reconciled without another move", async () => {
     const f = fixture();
     f.setLostResponse(true);
-    const result = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const result = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     expect(result.results[0]?.ok).toBeTrue();
     expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
   });
   test("a pending transfer receipt stays unresolved even when its target already exists", async () => {
     const f = fixture();
     f.setTransferState("source_pending");
-    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     expect(removed.results).toEqual([{ path: "report.txt", ok: false, error: "transfer_pending" }]);
     const row = [...f.rows.values()][0]!;
     expect(row.state).toBe("pending");
     expect(row.error_code).toBe("transfer_pending");
     f.setTransferState("completed");
-    expect((await f.service.trash(actor, { baseId: base.id })).entries[0]).toMatchObject({ state: "pending", error: "transfer_pending" });
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "transfer_pending" });
+    expect((await f.service.trash(testCall(actor), { baseId: base.id })).entries[0]).toMatchObject({
+      state: "pending",
+      error: "transfer_pending",
+    });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id: row.id })).rejects.toMatchObject({
+      code: "transfer_pending",
+    });
     expect(row.state).toBe("pending");
   });
   test("listing after restart repairs a move whose database completion failed", async () => {
     const f = fixture();
     f.setFailFinish(true);
-    await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     expect([...f.rows.values()][0]?.state).toBe("pending");
     f.setFailFinish(false);
-    const result = await f.service.trash(actor, { baseId: base.id });
+    const result = await f.service.trash(testCall(actor), { baseId: base.id });
     expect(result.entries[0]?.state).toBe("trashed");
     expect([...f.rows.values()][0]?.state).toBe("trashed");
     expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
   });
   test("restore records its intent and recovers a lost response without overwriting", async () => {
     const f = fixture();
-    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     f.setLostResponse(true);
-    const result = await f.service.restoreTrash(actor, { baseId: base.id, id: removed.entries[0]!.id, path: "restored.txt" });
+    const result = await f.service.restoreTrash(testCall(actor), { baseId: base.id, id: removed.entries[0]!.id, path: "restored.txt" });
     expect(result.entry.path).toBe("restored.txt");
     expect([...f.rows.values()][0]?.state).toBe("restored");
   });
   test("a pending restore receipt is not finalized by the next listing or retry", async () => {
     const f = fixture();
-    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     const id = removed.entries[0]!.id;
     f.setTransferState("source_pending");
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id })).rejects.toMatchObject({ code: "transfer_pending" });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({ code: "transfer_pending" });
     expect([...f.rows.values()][0]?.state).toBe("restoring");
     f.setTransferState("completed");
-    expect((await f.service.trash(actor, { baseId: base.id })).entries[0]).toMatchObject({ state: "restoring", error: "transfer_pending" });
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id })).rejects.toMatchObject({ code: "transfer_pending" });
+    expect((await f.service.trash(testCall(actor), { baseId: base.id })).entries[0]).toMatchObject({
+      state: "restoring",
+      error: "transfer_pending",
+    });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({ code: "transfer_pending" });
   });
   test("an existing restore destination leaves the trash untouched", async () => {
     const f = fixture();
-    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     f.nodes.set("home/alice/report.txt", node("home/alice/report.txt"));
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id: removed.entries[0]!.id })).rejects.toMatchObject({
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id: removed.entries[0]!.id })).rejects.toMatchObject({
       code: "path_conflict",
     });
     expect([...f.rows.values()][0]?.state).toBe("trashed");
   });
   test("completed restores replay only while the freshly authorized destination still matches", async () => {
     const f = fixture();
-    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     const id = removed.entries[0]!.id;
-    await f.service.restoreTrash(actor, { baseId: base.id, id });
-    expect((await f.service.restoreTrash(actor, { baseId: base.id, id })).entry.path).toBe("report.txt");
+    await f.service.restoreTrash(testCall(actor), { baseId: base.id, id });
+    expect((await f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).entry.path).toBe("report.txt");
     expect(f.calls.filter((call) => call === "move")).toHaveLength(2);
     f.nodes.set("home/alice/report.txt", { ...node("home/alice/report.txt"), size: 9 });
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id })).rejects.toMatchObject({ code: "source_changed" });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({ code: "source_changed" });
     f.denied.add("home/alice/report.txt");
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id })).rejects.toMatchObject({ code: "permission_denied" });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({ code: "permission_denied" });
   });
   test("journal snapshots with a Filegate 6.1 node id still recover when Filegate 7 omits the id", async () => {
     const f = fixture();
     f.setFailFinish(true);
-    await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     f.setFailFinish(false);
     const row = [...f.rows.values()][0]!;
     row.snapshot = { ...row.snapshot!, id: "6c0f4a6e-9a43-4a8e-9d0c-6f3c1f7b2a10" };
-    expect((await f.service.trash(actor, { baseId: base.id })).entries[0]).toMatchObject({ state: "trashed" });
-    await f.service.restoreTrash(actor, { baseId: base.id, id: row.id });
+    expect((await f.service.trash(testCall(actor), { baseId: base.id })).entries[0]).toMatchObject({ state: "trashed" });
+    await f.service.restoreTrash(testCall(actor), { baseId: base.id, id: row.id });
     row.snapshot = { ...row.snapshot!, id: "6c0f4a6e-9a43-4a8e-9d0c-6f3c1f7b2a10" };
-    expect((await f.service.restoreTrash(actor, { baseId: base.id, id: row.id })).entry.path).toBe("report.txt");
+    expect((await f.service.restoreTrash(testCall(actor), { baseId: base.id, id: row.id })).entry.path).toBe("report.txt");
     f.nodes.set("home/alice/report.txt", { ...node("home/alice/report.txt"), id: "0b6f8f55-2d0e-4b6a-8f7e-3c2a1d9e4b21" });
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "source_changed" });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id: row.id })).rejects.toMatchObject({
+      code: "source_changed",
+    });
   });
   test("a restored file is recovered after the completion write failed", async () => {
     const f = fixture();
-    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     const id = removed.entries[0]!.id;
     f.setFailFinish(true);
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id, path: "recovered.txt" })).rejects.toThrow();
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "recovered.txt" })).rejects.toThrow();
     f.setFailFinish(false);
-    expect((await f.service.restoreTrash(actor, { baseId: base.id, id })).entry.path).toBe("recovered.txt");
+    expect((await f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).entry.path).toBe("recovered.txt");
     expect(f.calls.filter((call) => call === "move")).toHaveLength(2);
   });
   test("journal records cannot act on a different file server with matching root names", async () => {
     const f = fixture();
-    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     const row = [...f.rows.values()][0]!;
     row.server_url = "http://other-filegate:4000";
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id: removed.entries[0]!.id })).rejects.toMatchObject({
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id: removed.entries[0]!.id })).rejects.toMatchObject({
       code: "binding_changed",
     });
     expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
@@ -327,14 +338,16 @@ describe("recoverable trash lifecycle", () => {
     const f = fixture();
     f.nodes.set("home/alice/trash", node("home/alice/trash", true));
     f.nodes.set("home/alice/trash/manual.txt", node("home/alice/trash/manual.txt"));
-    const first = await f.service.trash(actor, { baseId: base.id });
-    const listed = await f.service.trash(actor, { baseId: base.id, after: first.next! });
+    const first = await f.service.trash(testCall(actor), { baseId: base.id });
+    const listed = await f.service.trash(testCall(actor), { baseId: base.id, after: first.next! });
     expect(listed.entries[0]).toMatchObject({ original: null, deletedAt: null, name: "manual.txt" });
     const id = listed.entries[0]!.id;
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id })).rejects.toMatchObject({ code: "restore_destination_required" });
-    const restored = await f.service.restoreTrash(actor, { baseId: base.id, id, path: "manual.txt" });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({
+      code: "restore_destination_required",
+    });
+    const restored = await f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "manual.txt" });
     expect(restored.entry.path).toBe("manual.txt");
-    expect((await f.service.restoreTrash(actor, { baseId: base.id, id })).entry.path).toBe("manual.txt");
+    expect((await f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).entry.path).toBe("manual.txt");
     expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
   });
   test("rechecks location identity after taking the root lock", async () => {
@@ -342,14 +355,14 @@ describe("recoverable trash lifecycle", () => {
     f.setBeforeLock(async () => {
       f.setServerUrl("http://other-filegate:4000");
     });
-    const result = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const result = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     expect(result.results).toEqual([{ path: "report.txt", ok: false, error: "binding_changed" }]);
     expect(f.calls).not.toContain("move");
   });
   test("reconciliation rereads state under the root lock instead of overwriting a concurrent restore", async () => {
     const f = fixture();
     f.setFailFinish(true);
-    await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     f.setFailFinish(false);
     const row = [...f.rows.values()][0]!;
     f.setBeforeLock(async () => {
@@ -359,7 +372,7 @@ describe("recoverable trash lifecycle", () => {
       f.nodes.set("home/alice/report.txt", node("home/alice/report.txt"));
       f.nodes.delete(`home/alice/${row.trashed}`);
     });
-    const result = await f.service.trash(actor, { baseId: base.id });
+    const result = await f.service.trash(testCall(actor), { baseId: base.id });
     expect(result.entries).toEqual([]);
     expect(row.state).toBe("restored");
     expect(row.error_code).toBeNull();
@@ -369,67 +382,77 @@ describe("recoverable trash lifecycle", () => {
     f.nodes.set("home/alice/trash", node("home/alice/trash", true));
     const after = Buffer.from(JSON.stringify({ phase: "filesystem", after: "a".repeat(8192) })).toString("base64url");
     expect(after.length).toBeGreaterThan(8192);
-    await expect(f.service.trash(actor, { baseId: base.id, after })).resolves.toMatchObject({ entries: [], next: null });
-    await expect(f.service.trash(actor, { baseId: base.id, after: "a".repeat(16385) })).rejects.toMatchObject({ code: "invalid_cursor" });
+    await expect(f.service.trash(testCall(actor), { baseId: base.id, after })).resolves.toMatchObject({ entries: [], next: null });
+    await expect(f.service.trash(testCall(actor), { baseId: base.id, after: "a".repeat(16385) })).rejects.toMatchObject({
+      code: "invalid_cursor",
+    });
   });
   test("filesystem-only entries are individually checked and cannot bypass the reserved subtree", async () => {
     const f = fixture();
     f.nodes.set("home/alice/trash", node("home/alice/trash", true));
     f.nodes.set("home/alice/trash/secret.txt", node("home/alice/trash/secret.txt"));
     f.denied.add("home/alice/trash/secret.txt");
-    const first = await f.service.trash(actor, { baseId: base.id });
-    expect((await f.service.trash(actor, { baseId: base.id, after: first.next! })).entries).toEqual([]);
+    const first = await f.service.trash(testCall(actor), { baseId: base.id });
+    expect((await f.service.trash(testCall(actor), { baseId: base.id, after: first.next! })).entries).toEqual([]);
     const id = `fs:${Buffer.from("report.txt").toString("base64url")}`;
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id, path: "copy.txt" })).rejects.toMatchObject({ code: "invalid_path" });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "copy.txt" })).rejects.toMatchObject({
+      code: "invalid_path",
+    });
   });
   test("unknown outcomes remain pending; missing source and destination never become success", async () => {
     const f = fixture();
     f.setFailFinish(true);
-    await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     f.setFailFinish(false);
     const row = [...f.rows.values()][0]!;
     f.nodes.delete(`home/alice/${row.trashed}`);
-    await expect(f.service.restoreTrash(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "operation_unresolved" });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id: row.id })).rejects.toMatchObject({
+      code: "operation_unresolved",
+    });
     expect(row.state).toBe("pending");
     expect(row.error_code).toBe("operation_unresolved");
-    const listed = await f.service.trash(actor, { baseId: base.id });
+    const listed = await f.service.trash(testCall(actor), { baseId: base.id });
     expect(listed.entries[0]).toMatchObject({ state: "pending", error: "operation_unresolved" });
   });
   test("a single entry for review follows the listing's disclosure rules and changes nothing", async () => {
     const f = fixture();
-    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     const row = [...f.rows.values()][0]!;
     const calls = f.calls.length;
-    await expect(f.service.trashEntry(actor, { baseId: base.id, id: removed.entries[0]!.id })).resolves.toMatchObject({
+    await expect(f.service.trashEntry(testCall(actor), { baseId: base.id, id: removed.entries[0]!.id })).resolves.toMatchObject({
       name: "report.txt",
       original: "report.txt",
     });
     f.nodes.set("home/alice/trash/manual.txt", node("home/alice/trash/manual.txt"));
     const manual = `fs:${Buffer.from("trash/manual.txt").toString("base64url")}`;
-    await expect(f.service.trashEntry(actor, { baseId: base.id, id: manual })).resolves.toMatchObject({
+    await expect(f.service.trashEntry(testCall(actor), { baseId: base.id, id: manual })).resolves.toMatchObject({
       name: "manual.txt",
       original: null,
     });
     f.denied.add(`home/alice/${row.trashed}`);
-    await expect(f.service.trashEntry(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "permission_denied" });
+    await expect(f.service.trashEntry(testCall(actor), { baseId: base.id, id: row.id })).rejects.toMatchObject({
+      code: "permission_denied",
+    });
     row.server_url = "http://other-filegate:4000";
-    await expect(f.service.trashEntry(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "not_found" });
-    await expect(f.service.trashEntry(actor, { baseId: base.id, id: crypto.randomUUID() })).rejects.toMatchObject({ code: "not_found" });
+    await expect(f.service.trashEntry(testCall(actor), { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "not_found" });
+    await expect(f.service.trashEntry(testCall(actor), { baseId: base.id, id: crypto.randomUUID() })).rejects.toMatchObject({
+      code: "not_found",
+    });
     expect(f.calls).toHaveLength(calls);
     expect(row.state).toBe("trashed");
   });
   test("filesystem-only pages have a cursor and never repeat registered UUID trash targets", async () => {
     const f = fixture();
-    await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     for (let i = 0; i < 57; i++) {
       const path = `home/alice/trash/manual-${String(i).padStart(2, "0")}.txt`;
       f.nodes.set(path, node(path));
     }
-    const first = await f.service.trash(actor, { baseId: base.id });
+    const first = await f.service.trash(testCall(actor), { baseId: base.id });
     expect(first.entries).toHaveLength(1);
-    const second = await f.service.trash(actor, { baseId: base.id, after: first.next! });
+    const second = await f.service.trash(testCall(actor), { baseId: base.id, after: first.next! });
     expect(second.next).not.toBeNull();
-    const third = await f.service.trash(actor, { baseId: base.id, after: second.next! });
+    const third = await f.service.trash(testCall(actor), { baseId: base.id, after: second.next! });
     expect(third.next).toBeNull();
     expect([...second.entries, ...third.entries]).toHaveLength(57);
     expect([...second.entries, ...third.entries].every((entry) => entry.original === null)).toBeTrue();

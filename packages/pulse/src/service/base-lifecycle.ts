@@ -1,61 +1,20 @@
 import { lazySync } from "@k2b/cloud";
-import { logger, trace } from "@k2b/cloud/services";
-import type { JobContext, Worker } from "@k2b/sync";
+import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
+import { BASE_SCHEMA_VERSIONS, LATEST_BASE_SCHEMA_VERSION } from "../store/base-schema";
+import { BaseOperationSuperseded, BaseStoreError, baseStore, loadStoreRow, type StoreRow, storeErrorCode } from "../store/base-store";
+import { acceptCheckpoint, insertCheckpoint, prepareCheckpoint } from "../store/maintenance";
+import { pulseStoreConfigured } from "../store/service";
 
 const BASE_DELETE_BATCH_SIZE = 50_000;
-const log = logger("pulse:base-lifecycle");
-
-type BaseDeletionBatch = {
-  phase: string;
-  deletedRows: number;
-  done: boolean;
-};
 
 type BaseJobInput = {
   baseId: string;
   publicBaseId: string;
 };
 
-const recordBaseDeletionProgress = async (params: {
-  baseId: string;
-  phase: string;
-  deletedRows: number;
-  status?: "queued" | "deleting" | "failed";
-  errorMessage?: string | null;
-}): Promise<void> => {
-  await sql`
-    INSERT INTO pulse.base_deletions (
-      base_id,
-      status,
-      phase,
-      deleted_rows,
-      last_batch_rows,
-      error_message,
-      updated_at
-    )
-    VALUES (
-      ${params.baseId}::uuid,
-      ${params.status ?? "deleting"},
-      ${params.phase},
-      ${params.deletedRows},
-      ${params.deletedRows},
-      ${params.errorMessage ?? null},
-      now()
-    )
-    ON CONFLICT (base_id)
-    DO UPDATE SET
-      status = EXCLUDED.status,
-      phase = EXCLUDED.phase,
-      deleted_rows = pulse.base_deletions.deleted_rows + EXCLUDED.deleted_rows,
-      last_batch_rows = EXCLUDED.last_batch_rows,
-      error_message = EXCLUDED.error_message,
-      updated_at = now()
-  `;
-};
-
-const deleteMetricSamplesChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteMetricSamplesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT series_id, ts
       FROM pulse.metric_samples
@@ -69,8 +28,8 @@ const deleteMetricSamplesChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteMetricRollupsChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteMetricRollupsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT series_id, bucket
       FROM pulse.metric_rollups_hourly
@@ -84,8 +43,8 @@ const deleteMetricRollupsChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteStateChangesChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteStateChangesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.state_changes
@@ -99,8 +58,8 @@ const deleteStateChangesChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteEventsChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteEventsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT id, ts
       FROM pulse.events
@@ -114,8 +73,8 @@ const deleteEventsChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteCurrentStatesChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteCurrentStatesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.states_current
@@ -129,8 +88,8 @@ const deleteCurrentStatesChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteMetricSeriesDimensionsChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteMetricSeriesDimensionsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT dims.series_id, dims.key
       FROM pulse.metric_series_dimensions dims
@@ -146,8 +105,8 @@ const deleteMetricSeriesDimensionsChunk = async (baseId: string): Promise<number
   return result.count ?? 0;
 };
 
-const deleteSourceScrapesChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteSourceScrapesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.source_scrapes
@@ -161,8 +120,8 @@ const deleteSourceScrapesChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteIngestIdempotencyChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteIngestIdempotencyChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT item.source_id, item.idempotency_key
       FROM pulse.ingest_idempotency item
@@ -178,8 +137,8 @@ const deleteIngestIdempotencyChunk = async (baseId: string): Promise<number> => 
   return result.count ?? 0;
 };
 
-const deleteMetricSeriesChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteMetricSeriesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.metric_series
@@ -193,8 +152,8 @@ const deleteMetricSeriesChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteMetricDefsChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteMetricDefsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.metric_defs
@@ -208,8 +167,8 @@ const deleteMetricDefsChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteSignalFieldsChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteSignalFieldsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.signal_fields
@@ -223,8 +182,8 @@ const deleteSignalFieldsChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteObservedResourcesChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteObservedResourcesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.observed_resources
@@ -238,8 +197,8 @@ const deleteObservedResourcesChunk = async (baseId: string): Promise<number> => 
   return result.count ?? 0;
 };
 
-const deleteSavedQueriesChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteSavedQueriesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.saved_queries
@@ -253,8 +212,8 @@ const deleteSavedQueriesChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteDashboardsChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteDashboardsChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.dashboards
@@ -268,8 +227,8 @@ const deleteDashboardsChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteSourcesChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteSourcesChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT ctid
       FROM pulse.sources
@@ -283,8 +242,8 @@ const deleteSourcesChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteBaseAccessChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`
+const deleteBaseAccessChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`
     WITH victim AS (
       SELECT access_id
       FROM pulse.base_access
@@ -298,13 +257,13 @@ const deleteBaseAccessChunk = async (baseId: string): Promise<number> => {
   return result.count ?? 0;
 };
 
-const deleteMetricHoursChunk = async (baseId: string): Promise<number> => {
-  const result = await sql`WITH victim AS(SELECT hour FROM pulse.metric_hours WHERE base_id=${baseId}::uuid LIMIT ${BASE_DELETE_BATCH_SIZE})
+const deleteMetricHoursChunk = async (baseId: string, db: typeof sql = sql): Promise<number> => {
+  const result = await db`WITH victim AS(SELECT hour FROM pulse.metric_hours WHERE base_id=${baseId}::uuid LIMIT ${BASE_DELETE_BATCH_SIZE})
  DELETE FROM pulse.metric_hours h USING victim WHERE h.base_id=${baseId}::uuid AND h.hour=victim.hour`;
   return result.count ?? 0;
 };
 
-const BASE_DELETE_STEPS: Array<{ phase: string; run: (baseId: string) => Promise<number> }> = [
+const BASE_DELETE_STEPS: Array<{ phase: string; run: (baseId: string, db: typeof sql) => Promise<number> }> = [
   { phase: "metric_samples", run: deleteMetricSamplesChunk },
   { phase: "metric_rollups_hourly", run: deleteMetricRollupsChunk },
   { phase: "metric_hours", run: deleteMetricHoursChunk },
@@ -321,10 +280,9 @@ const BASE_DELETE_STEPS: Array<{ phase: string; run: (baseId: string) => Promise
   { phase: "saved_queries", run: deleteSavedQueriesChunk },
   { phase: "dashboards", run: deleteDashboardsChunk },
   { phase: "sources", run: deleteSourcesChunk },
-  { phase: "access", run: deleteBaseAccessChunk },
 ];
 
-const BASE_DATA_CLEAR_STEPS: Array<{ phase: string; run: (baseId: string) => Promise<number> }> = [
+const BASE_DATA_CLEAR_STEPS: Array<{ phase: string; run: (baseId: string, db: typeof sql) => Promise<number> }> = [
   { phase: "metric_samples", run: deleteMetricSamplesChunk },
   { phase: "metric_rollups_hourly", run: deleteMetricRollupsChunk },
   { phase: "metric_hours", run: deleteMetricHoursChunk },
@@ -340,264 +298,109 @@ const BASE_DATA_CLEAR_STEPS: Array<{ phase: string; run: (baseId: string) => Pro
   { phase: "observed_resources", run: deleteObservedResourcesChunk },
 ];
 
-const recordBaseDataClearProgress = async (params: {
-  baseId: string;
-  phase: string;
-  deletedRows: number;
-  status?: "queued" | "clearing" | "failed" | "completed";
-  errorMessage?: string | null;
-}): Promise<void> => {
-  await sql`
-    INSERT INTO pulse.base_data_clears (
-      base_id,
-      status,
-      phase,
-      deleted_rows,
-      last_batch_rows,
-      error_message,
-      updated_at
-    )
-    VALUES (
-      ${params.baseId}::uuid,
-      ${params.status ?? "clearing"},
-      ${params.phase},
-      ${params.deletedRows},
-      ${params.deletedRows},
-      ${params.errorMessage ?? null},
-      now()
-    )
-    ON CONFLICT (base_id)
-    DO UPDATE SET
-      status = EXCLUDED.status,
-      phase = EXCLUDED.phase,
-      deleted_rows = pulse.base_data_clears.deleted_rows + EXCLUDED.deleted_rows,
-      last_batch_rows = EXCLUDED.last_batch_rows,
-      error_message = EXCLUDED.error_message,
-      updated_at = now()
-  `;
-};
-
-export const purgeBaseDeletionBatch = async (baseId: string): Promise<BaseDeletionBatch> => {
-  await sql`
-    UPDATE pulse.base_deletions
-    SET status = 'deleting', phase = 'deleting', updated_at = now()
-    WHERE base_id = ${baseId}::uuid
-  `;
-
-  for (const step of BASE_DELETE_STEPS) {
-    const deletedRows = await step.run(baseId);
-    if (deletedRows > 0) {
-      await recordBaseDeletionProgress({ baseId, phase: step.phase, deletedRows });
-      return { phase: step.phase, deletedRows, done: false };
+export const createBaseLifecycle =
+  (store = baseStore) =>
+  async (baseId: string): Promise<{ done: boolean }> => {
+    const initial = await loadStoreRow(baseId);
+    if (!initial || initial.state === "failed") return { done: true };
+    const operation = initial.state === "active" ? "reconcile" : initial.operation;
+    if (!operation) return { done: true };
+    const step = (name: string, run: (row: StoreRow, db: typeof sql) => Promise<void>) =>
+      store.step(baseId, operation, name, run, operation === "reconcile" ? undefined : initial.updated_at_version);
+    try {
+      if (operation === "delete") {
+        await step("drop_reader", store.dropReader);
+        let work = false;
+        for (const batch of BASE_DELETE_STEPS) {
+          await step(`postgres:${batch.phase}`, async (_row, db) => {
+            work = (await batch.run(baseId, db)) > 0;
+          });
+          if (work) return { done: false };
+        }
+        await step("drop_database", store.dropDatabase);
+        await step("access", async (_row, db) => {
+          work = (await deleteBaseAccessChunk(baseId, db)) > 0;
+        });
+        if (work) return { done: false };
+        await step("base", async (_row, db) => {
+          await db`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
+        });
+        return { done: true };
+      }
+      if (operation === "clear") {
+        for (const batch of BASE_DATA_CLEAR_STEPS) {
+          let work = false;
+          await step(`postgres:${batch.phase}`, async (_row, db) => {
+            work = (await batch.run(baseId, db)) > 0;
+          });
+          if (work) return { done: false };
+        }
+      }
+      await step("password", store.password);
+      if (operation !== "reconcile") await step("database", store.database);
+      for (const _version of BASE_SCHEMA_VERSIONS) await step("schema", store.schema);
+      await step("ttl", store.ttl);
+      await step("reader", store.reader);
+      await step("grants", store.grants);
+      if (operation === "clear") await step("truncate", store.truncate);
+      if (operation !== "reconcile") {
+        await step("checkpoint_pending", prepareCheckpoint);
+        await step("checkpoint_insert", async (row) => insertCheckpoint(row, store));
+        await step("checkpoint_accept", async (row, db) => acceptCheckpoint(row, db, store.clock));
+      }
+      await step("active", async (_row, db) => {
+        await db`UPDATE pulse.base_stores SET state='active',operation=NULL,attempts=0,last_error=NULL,last_error_at=NULL,reconcile_needed=CASE WHEN updated_at::text=${initial.updated_at_version} THEN false ELSE reconcile_needed END,
+        write_block_reason=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_block_reason END,
+        write_blocked_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_blocked_at END,updated_at=now() WHERE base_id=${baseId}::uuid`;
+        if (operation === "clear") {
+          await db`UPDATE pulse.bases SET data_clear_completed_at=now(),data_clear_failed_at=NULL,data_clear_error=NULL WHERE id=${baseId}::uuid`;
+          await db`UPDATE pulse.sources SET last_seen_at=NULL,last_error=NULL,last_error_at=NULL WHERE base_id=${baseId}::uuid`;
+        }
+      });
+      return { done: true };
+    } catch (error) {
+      if (error instanceof BaseOperationSuperseded) return { done: false };
+      const code = storeErrorCode(error);
+      await sql`UPDATE pulse.base_stores SET attempts=attempts+1,last_error=${code},last_error_at=now(),
+      state=CASE WHEN attempts+1>=5 AND state<>'active' THEN 'failed' ELSE state END,updated_at=now()
+      WHERE base_id=${baseId}::uuid AND state=${initial.state} AND operation IS NOT DISTINCT FROM ${initial.operation} AND (${operation === "reconcile"} OR updated_at::text=${initial.updated_at_version})`;
+      throw new BaseStoreError(code);
     }
-  }
-
-  const finalDelete = await sql`
-    DELETE FROM pulse.bases
-    WHERE id = ${baseId}::uuid
-  `;
-  return { phase: "base", deletedRows: finalDelete.count ?? 0, done: true };
-};
-
-export const purgeBaseDataClearBatch = async (baseId: string): Promise<BaseDeletionBatch> => {
-  const [base] = await sql<{ data_clear_completed_at: Date | string | null }[]>`
-    SELECT data_clear_completed_at
-    FROM pulse.bases
-    WHERE id = ${baseId}::uuid
-  `;
-  if (!base) return { phase: "base", deletedRows: 0, done: true };
-  if (base.data_clear_completed_at) return { phase: "completed", deletedRows: 0, done: true };
-
-  await sql`
-    UPDATE pulse.base_data_clears
-    SET status = 'clearing', phase = 'clearing', updated_at = now()
-    WHERE base_id = ${baseId}::uuid
-  `;
-
-  for (const step of BASE_DATA_CLEAR_STEPS) {
-    const deletedRows = await step.run(baseId);
-    if (deletedRows > 0) {
-      await recordBaseDataClearProgress({ baseId, phase: step.phase, deletedRows });
-      return { phase: step.phase, deletedRows, done: false };
-    }
-  }
-
-  await sql.begin(async (tx) => {
-    await tx`
-      UPDATE pulse.sources
-      SET last_seen_at = NULL,
-          last_error = NULL,
-          last_error_at = NULL,
-          updated_at = now()
-      WHERE base_id = ${baseId}::uuid
-    `;
-    await tx`
-      UPDATE pulse.bases
-      SET data_clear_completed_at = now(),
-          data_clear_failed_at = NULL,
-          data_clear_error = NULL,
-          updated_at = now()
-      WHERE id = ${baseId}::uuid
-    `;
-    await tx`
-      UPDATE pulse.base_data_clears
-      SET status = 'completed',
-          phase = 'completed',
-          last_batch_rows = 0,
-          error_message = NULL,
-          completed_at = now(),
-          updated_at = now()
-      WHERE base_id = ${baseId}::uuid
-    `;
-  });
-
-  return { phase: "completed", deletedRows: 0, done: true };
-};
-
-const baseDeletionJob = lazySync((sync) =>
+  };
+export const runBaseLifecycle = createBaseLifecycle();
+const lifecycleJob = lazySync((sync) =>
   sync.job<BaseJobInput>({
-    id: "pulse:base-delete",
-    delivery: { ackWaitMs: 2 * 60_000, maxAttempts: 10, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+    id: "pulse:base-lifecycle",
+    delivery: { ackWaitMs: 300_000, maxAttempts: 5, backoffMs: [5_000, 10_000, 20_000, 40_000] },
   }),
 );
-let baseDeletionJobWorker: Worker | undefined;
-const baseDeletionJobError = async ({ context, error }: { context: JobContext<BaseJobInput>; error: Error }) => {
-  const message = error instanceof Error ? error.message : "Pulse base deletion failed";
-  const failed = context.attempt >= 10;
-  await sql`
-        UPDATE pulse.base_deletions
-        SET status = ${failed ? "failed" : "deleting"},
-            error_message = ${message},
-            updated_at = now()
-        WHERE base_id = ${context.input.baseId}::uuid
-      `;
-  await sql`
-        UPDATE pulse.bases
-        SET deletion_failed_at = CASE WHEN ${failed} THEN now() ELSE deletion_failed_at END,
-            deletion_error = ${message},
-            updated_at = now()
-        WHERE id = ${context.input.baseId}::uuid
-      `;
-  if (failed)
-    log.error("Pulse base deletion exhausted retries", {
-      baseId: context.input.publicBaseId,
-      error: message,
-      failureCount: context.failureCount,
-    });
-
-  return failed ? { action: "dead_letter" as const, reason: message } : { action: "retry" as const };
+let worker: Worker | undefined;
+export const submitBaseLifecycleJob = async (baseId: string, publicBaseId: string) => {
+  await lifecycleJob().submit({ key: `base:${baseId}`, coalesce: true, input: { baseId, publicBaseId } });
 };
-const baseDataClearJob = lazySync((sync) =>
-  sync.job<BaseJobInput>({
-    id: "pulse:base-data-clear",
-    delivery: { ackWaitMs: 2 * 60_000, maxAttempts: 10, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
-  }),
-);
-let baseDataClearJobWorker: Worker | undefined;
-const baseDataClearJobError = async ({ context, error }: { context: JobContext<BaseJobInput>; error: Error }) => {
-  const message = error instanceof Error ? error.message : "Pulse data clear failed";
-  const failed = context.attempt >= 10;
-  await sql`
-        UPDATE pulse.base_data_clears
-        SET status = ${failed ? "failed" : "clearing"},
-            error_message = ${message},
-            updated_at = now()
-        WHERE base_id = ${context.input.baseId}::uuid
-      `;
-  await sql`
-        UPDATE pulse.bases
-        SET data_clear_failed_at = CASE WHEN ${failed} THEN now() ELSE data_clear_failed_at END,
-            data_clear_error = ${message},
-            updated_at = now()
-        WHERE id = ${context.input.baseId}::uuid
-      `;
-  if (failed)
-    log.error("Pulse data clear exhausted retries", {
-      baseId: context.input.publicBaseId,
-      error: message,
-      failureCount: context.failureCount,
-    });
-
-  return failed ? { action: "dead_letter" as const, reason: message } : { action: "retry" as const };
-};
-export const startPulseBaseJobs = async (): Promise<void> => {
-  baseDeletionJobWorker ??= await baseDeletionJob().process({ onError: baseDeletionJobError }, async (context) => {
-    const result = await trace.withSpan(
-      {
-        spanKey: trace.syncSpanKey("job", "pulse:base-delete", context.jobId),
-        name: "Pulse base deletion",
-        source: "pulse:base-delete",
-        appId: "pulse",
-        category: "job",
-        attributes: { "cloud.pulse.base_id": context.input.publicBaseId },
+export const startPulseBaseJobs = async (run = runBaseLifecycle) => {
+  worker ??= await lifecycleJob().process(
+    {
+      onError: async ({ context }) => {
+        const row = await loadStoreRow(context.input.baseId);
+        return row?.state === "failed" ? { action: "dead_letter", reason: "STORE_LIFECYCLE_FAILED" } : { action: "retry" };
       },
-      () => purgeBaseDeletionBatch(context.input.baseId),
-      { summarize: (result) => result },
-    );
-    if (!result.done) context.resubmit();
-  });
-  baseDataClearJobWorker ??= await baseDataClearJob().process({ onError: baseDataClearJobError }, async (context) => {
-    const result = await trace.withSpan(
-      {
-        spanKey: trace.syncSpanKey("job", "pulse:base-data-clear", context.jobId),
-        name: "Pulse base data clear",
-        source: "pulse:base-data-clear",
-        appId: "pulse",
-        category: "job",
-        attributes: { "cloud.pulse.base_id": context.input.publicBaseId },
-      },
-      () => purgeBaseDataClearBatch(context.input.baseId),
-      { summarize: (result) => result },
-    );
-    if (!result.done) context.resubmit();
-  });
+    },
+    async (context) => {
+      if (!(await run(context.input.baseId)).done) context.resubmit();
+    },
+  );
 };
-
-export const submitBaseDeletionJob = async (baseId: string, publicBaseId: string): Promise<void> => {
-  await baseDeletionJob().submit({
-    key: `base:${baseId}`,
-    coalesce: true,
-    input: { baseId, publicBaseId },
-  });
+export const stopPulseBaseJobs = async () => {
+  await worker?.drain();
+  worker = undefined;
 };
-
-export const submitBaseDataClearJob = async (baseId: string, publicBaseId: string): Promise<void> => {
-  await baseDataClearJob().submit({
-    key: `base:${baseId}`,
-    coalesce: true,
-    input: { baseId, publicBaseId },
-  });
-};
-
-export const resumePulseBaseDeletionJobs = async (): Promise<void> => {
-  const rows = await sql<{ base_id: string; public_base_id: string }[]>`
-    SELECT deletion.base_id, base.short_id AS public_base_id
-    FROM pulse.base_deletions deletion
-    JOIN pulse.bases base ON base.id = deletion.base_id
-    WHERE deletion.status IN ('queued', 'deleting')
-    ORDER BY deletion.updated_at ASC
-    LIMIT 100
-  `;
-  for (const row of rows) await submitBaseDeletionJob(row.base_id, row.public_base_id);
-};
-
-export const resumePulseBaseDataClearJobs = async (): Promise<void> => {
-  const rows = await sql<{ base_id: string; public_base_id: string }[]>`
-    SELECT clear.base_id, base.short_id AS public_base_id
-    FROM pulse.base_data_clears clear
-    JOIN pulse.bases base ON base.id = clear.base_id
-    WHERE clear.status IN ('queued', 'clearing')
-    ORDER BY clear.updated_at ASC
-    LIMIT 100
-  `;
-  for (const row of rows) await submitBaseDataClearJob(row.base_id, row.public_base_id);
-};
-
-export const stopPulseBaseDeletionJob = async (): Promise<void> => {
-  await baseDeletionJobWorker?.stop();
-  baseDeletionJobWorker = undefined;
-};
-export const stopPulseBaseDataClearJob = async (): Promise<void> => {
-  await baseDataClearJobWorker?.stop();
-  baseDataClearJobWorker = undefined;
+export const resumePulseBaseJobs = async () => {
+  if (!(await pulseStoreConfigured())) return;
+  const rows = await sql<
+    { base_id: string; short_id: string }[]
+  >`SELECT s.base_id,b.short_id FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id
+    WHERE s.state IN ('provisioning','clearing','deleting') OR (s.state='active' AND (s.reconcile_needed OR s.schema_version<${LATEST_BASE_SCHEMA_VERSION}))
+    ORDER BY s.updated_at,s.base_id LIMIT 50`;
+  for (const row of rows) await submitBaseLifecycleJob(row.base_id, row.short_id);
 };

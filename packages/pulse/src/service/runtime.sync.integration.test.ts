@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { settingsFixture } from "../store/settings.test-fixture";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 
 const syncTest = testFor("database", "nats");
 syncTest(
@@ -61,11 +63,17 @@ syncTest(
       }
       throw Error("Runtime proof timed out");
     };
-    const previousTargets = process.env.PULSE_SCRAPE_ALLOWED_TARGETS;
-    process.env.PULSE_SCRAPE_ALLOWED_TARGETS = "127.0.0.0/8";
+    const settings = settingsFixture();
+    settings.values["pulse.clickhouse_connection"] = JSON.stringify({
+      url: "http://127.0.0.1:1",
+      user: "fixture",
+      password: "fixture-password",
+    });
     bindProcessSync(sync);
     try {
       await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${baseShort},'Runtime proof')`;
+      await seedActiveBaseStore(baseId);
+      await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${baseId}::uuid,'127.0.0.1')`;
       await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name,endpoint_url,scrape_interval_seconds)
     VALUES(${sourceId}::uuid,${sourceShort},${baseId}::uuid,'metrics','Exporter',${`http://127.0.0.1:${exporter.port}`},NULL)`;
       // Sequences survive rollback: exactly the first sample write fails at the real DB seam.
@@ -82,6 +90,8 @@ syncTest(
         delivery: { maxAttempts: 3, backoffMs: [60000, 120000] },
       });
       for (const id of ["pulse:metrics:scrape-due", "pulse:rollup:hourly", "pulse:retention"]) await scheduler.pause({ id });
+      const stores = sync.scheduler({ id: "pulse:stores", delivery: { maxAttempts: 3, backoffMs: [10000, 30000] } });
+      for (const id of ["pulse:base-lifecycle:sweep", "pulse:base-usage:slot", "pulse:base-checkpoint:slot"]) await stores.pause({ id });
       const job = sync.job<{
         baseId: string;
         publicBaseId: string;
@@ -171,8 +181,7 @@ syncTest(
       await pulseRuntime.stop();
       await sync.drain({ timeoutMs: 5000 });
       unbindProcessSync();
-      if (previousTargets === undefined) delete process.env.PULSE_SCRAPE_ALLOWED_TARGETS;
-      else process.env.PULSE_SCRAPE_ALLOWED_TARGETS = previousTargets;
+      settings.restore();
       exporter.stop(true);
       await sql.unsafe(`DROP TRIGGER IF EXISTS ${trigger} ON pulse.metric_samples`);
       await sql.unsafe(`DROP FUNCTION IF EXISTS ${fn}()`);

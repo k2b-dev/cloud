@@ -1,6 +1,7 @@
 import { documentNavigate } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
+  announce,
   Button,
   dialogCore,
   IconButton,
@@ -8,6 +9,7 @@ import {
   PanelDialog,
   panelDialogOptions,
   prompts,
+  type ToastHandle,
   Tooltip,
   toast,
   useLocale,
@@ -82,9 +84,12 @@ export default function ContactsBulkActions(props: {
   const locale = useLocale();
   const t = () => resultsMessages.resolve([locale()]).t;
   const [preparing, setPreparing] = createSignal(false);
+  const [reconciling, setReconciling] = createSignal(false);
   let disposed = false;
+  const notices = new Set<ToastHandle>();
 
-  const runMutation = mutations.create<BulkResult, BulkIntent>({
+  const runMutation = mutations.create<BulkResult, BulkIntent, BulkIntent>({
+    onBefore: (intent) => intent,
     mutation: async (intent, { abortSignal }) => {
       if (intent.action === "tags") {
         const response = await apiClient.books[":bookId"].contacts.bulk.tags.$post(
@@ -138,31 +143,57 @@ export default function ContactsBulkActions(props: {
         return;
       }
 
-      if (result.action === "tags") {
-        toast.success(t().tagsAddedToContacts({ count: result.contactCount }));
-      } else if (result.action === "move") {
+      if (disposed) return;
+      if (result.action === "move") {
         toast.success(t().contactsMoved({ count: result.contactCount }));
-      } else {
+      } else if (result.action === "delete") {
         toast.success(t().contactsDeleted({ count: result.contactCount }));
       }
 
-      props.onClear();
+      setReconciling(true);
       void Promise.resolve()
         .then(() => props.onChanged())
+        .then(() => {
+          if (disposed) return;
+          if (result.action === "tags") announce(t().tagsAddedToContacts({ count: result.contactCount }));
+          // Clearing selection unmounts this owner; reconcile and announce before that cleanup.
+          props.onClear();
+        })
         .catch(() => {
-          documentNavigate(`${window.location.pathname}${window.location.search}`, { replace: true });
+          if (!disposed) documentNavigate(`${window.location.pathname}${window.location.search}`, { replace: true });
         });
     },
-    onError: (error) => void prompts.error(error.message),
+    onError: (error, intent) => {
+      if (disposed || !intent) return;
+      const notice = toast.error(error.message, {
+        duration: 0,
+        action: {
+          label: t().retry,
+          onClick: () => {
+            if (disposed || busy()) return;
+            notice.dismiss();
+            notices.delete(notice);
+            void runMutation.mutate(intent);
+          },
+        },
+      });
+      notices.add(notice);
+      for (const older of notices) {
+        if (notices.size <= 3) break;
+        older.dismiss();
+        notices.delete(older);
+      }
+    },
   });
 
   onCleanup(() => {
     disposed = true;
+    for (const notice of notices) notice.dismiss();
     runMutation.abort();
   });
 
   const prepare = async (action: BulkIntent["action"]) => {
-    if (preparing() || runMutation.loading()) return;
+    if (disposed || busy()) return;
     const bookId = props.bookId;
     const contactIds = [...props.selectedIds()];
     if (contactIds.length === 0) return;
@@ -221,19 +252,19 @@ export default function ContactsBulkActions(props: {
 
       if (!disposed) void runMutation.mutate({ action, bookId, contactIds });
     } catch (error) {
-      if (!disposed) void prompts.error(error instanceof Error ? error.message : t().couldNotPrepareBulkAction);
+      if (!disposed) toast.error(error instanceof Error ? error.message : t().couldNotPrepareBulkAction);
     } finally {
       if (!disposed) setPreparing(false);
     }
   };
 
   const noSelection = () => props.selectedIds().length === 0;
-  const busy = () => preparing() || runMutation.loading();
+  const busy = () => preparing() || runMutation.loading() || reconciling();
 
   return (
     <div class="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-muted)] p-2">
       <span class="mr-auto text-xs font-medium text-primary tabular-nums">{t().selectedCount({ count: props.selectedIds().length })}</span>
-      <Button variant="ghost" size="sm" onClick={props.onSelectVisible} disabled={props.visibleIds().length === 0}>
+      <Button variant="ghost" size="sm" onClick={props.onSelectVisible} disabled={busy() || props.visibleIds().length === 0}>
         {t().selectPage}
       </Button>
       <Button variant="ghost" size="sm" onClick={() => void prepare("tags")} disabled={busy() || noSelection()}>
@@ -249,7 +280,7 @@ export default function ContactsBulkActions(props: {
         <i class="ti ti-trash" /> {t().deleteAction}
       </Button>
       <Tooltip.Anchor content={t().exitSelection}>
-        <IconButton size="xs" label={t().exitSelection} onClick={props.onClear}>
+        <IconButton size="xs" label={t().exitSelection} onClick={props.onClear} disabled={busy()}>
           <i class="ti ti-x" />
         </IconButton>
       </Tooltip.Anchor>

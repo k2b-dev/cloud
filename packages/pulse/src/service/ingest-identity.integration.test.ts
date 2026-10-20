@@ -5,6 +5,7 @@ import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { PulseResourceRef } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { type CurrentStateRow, mapCurrentState } from "./telemetry-values";
 
@@ -18,6 +19,7 @@ const fixture = async () => {
   const baseId = crypto.randomUUID();
   const sources: [string, string] = [crypto.randomUUID(), crypto.randomUUID()];
   await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Identity test')`;
+  await seedActiveBaseStore(baseId);
   for (const sourceId of sources) {
     await sql`INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
       VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'http_ingest', 'Test source')`;
@@ -131,7 +133,7 @@ describe("Pulse canonical ingest", () => {
         for (const sourceId of [first.sources[0], second.sources[0], ""]) {
           expect((await ingestBatch({ baseId: first.baseId, sourceId, batch })).ok).toBe(false);
         }
-        await sql`UPDATE pulse.bases SET data_clear_started_at=now() WHERE id=${first.baseId}::uuid`;
+        await sql`UPDATE pulse.base_stores SET state='clearing',operation='clear' WHERE base_id=${first.baseId}::uuid`;
         expect((await ingestBatch({ baseId: first.baseId, sourceId: first.sources[1], batch })).ok).toBe(false);
         const [row] = await sql`SELECT count(*)::int AS count FROM pulse.metric_defs WHERE base_id=${first.baseId}::uuid`;
         expect(row?.count).toBe(0);
@@ -175,7 +177,7 @@ describe("Pulse canonical ingest", () => {
           idempotencyKey: keys[0],
         });
         expect(conflict).toMatchObject({ ok: false, error: { status: 409 } });
-        await sql`UPDATE pulse.bases SET data_clear_started_at=now(),data_clear_failed_at=now() WHERE id=${baseId}::uuid`;
+        await sql`UPDATE pulse.base_stores SET state='failed',operation='clear' WHERE base_id=${baseId}::uuid`;
         expect((await send(keys[0]!)).ok).toBe(false);
       } finally {
         await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;

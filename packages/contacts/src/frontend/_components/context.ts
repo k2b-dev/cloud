@@ -80,6 +80,7 @@ export const backFromContactDetail = () => {
 const commitSelectedContactUrl = (contactId: string | null, bookId: string | null, historyMode: ContactHistoryMode) => {
   const url = new URL(window.location.href);
   const hadSelection = url.searchParams.has("contact");
+  url.searchParams.delete("contactOutcome");
   if (contactId) {
     url.searchParams.set("contact", contactId);
   } else {

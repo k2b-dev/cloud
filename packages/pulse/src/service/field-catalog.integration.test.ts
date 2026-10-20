@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { prepareIngestBatch, writePreparedIngestBatchInTransaction } from "./ingest-bulk";
 import { ingestBatch } from "./ingest-writer";
 import { queryEventsData } from "./query-execution";
@@ -22,6 +23,7 @@ describe("Pulse field catalog Postgres smoke", () => {
       const baseId = crypto.randomUUID();
       const sourceId = crypto.randomUUID();
       await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Field catalog smoke')`;
+      await seedActiveBaseStore(baseId);
       await sql`
       INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
       VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'http_ingest'::pulse.source_kind, 'Field catalog source')

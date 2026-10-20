@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { markMetricHoursDirty, runHourlyRollup } from "./metric-rollups";
 
 const dbTest = testFor("database");
@@ -21,6 +22,7 @@ const blockedBy = async (pid: number) => {
 const fixture = async (run: (base: string, hour: Date, series: string[]) => Promise<void>) => {
   const base = crypto.randomUUID();
   await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${base}::uuid,${newShortId()},'Hour concurrency')`;
+  await seedActiveBaseStore(base);
   try {
     const [metric] = await sql`INSERT INTO pulse.metric_defs(base_id,name) VALUES(${base}::uuid,'concurrency') RETURNING id`;
     const series = [];

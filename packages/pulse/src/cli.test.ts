@@ -237,6 +237,37 @@ describe("pulse CLI", () => {
     expect(lines).toEqual([`Updated Pulse base Test (${baseId}).`]);
   });
 
+  for (const output of ["text", "json"] as const)
+    test(`shorter retention prints its preview and requires explicit confirmation (${output})`, async () => {
+      const preview = [
+        { kind: "raw", retention: 7, cutoff: "2026-10-10T12:00:00.000Z", rows: 25, bytes: 1024 },
+        { kind: "sensitive", retention: 12, cutoff: "2026-10-17T00:00:00.000Z", rows: 5, bytes: 64 },
+      ];
+      const confirmation = { code: "PULSE_RETENTION_CONFIRMATION_REQUIRED", preview };
+      const { ctx, calls, lines, tables } = createContext(
+        ["update", baseId],
+        { "raw-retention-days": "7", "sensitive-retention-hours": "12" },
+        [jsonResponse(base), jsonResponse(confirmation, 409)],
+        output,
+      );
+      await expect(pulseCli.run(ctx)).rejects.toThrow("--confirm-shorter-retention");
+      expect(calls).toHaveLength(2);
+      expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ rawRetentionDays: 7, sensitiveRetentionHours: 12 });
+      if (output === "json") expect(JSON.parse(lines[0]!)).toEqual(confirmation);
+      else expect(tables).toEqual([preview]);
+    });
+
+  test("shorter retention sends confirmation only with --confirm-shorter-retention", async () => {
+    const { ctx, calls } = createContext(["update", baseId], { "raw-retention-days": "7", "confirm-shorter-retention": true }, [
+      jsonResponse(base),
+      jsonResponse({ ...base, rawRetentionDays: 7 }),
+    ]);
+    await pulseCli.run(ctx);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ rawRetentionDays: 7, confirmShorterRetention: true });
+  });
+
   test("lists Pulse base access entries", async () => {
     const { ctx, calls, tables } = createContext(["access", "list", baseId], {}, [jsonResponse(base), jsonResponse([accessEntry])]);
 
@@ -960,4 +991,71 @@ describe("Pulse data store administration", () => {
         await unlink(path);
       }
     });
+});
+
+describe("Pulse base administration CLI", () => {
+  test.each([
+    { args: ["admin", "policy", "get"], flags: {}, path: "/api/pulse/admin/policy", method: undefined },
+    {
+      args: ["admin", "policy", "set"],
+      flags: { "max-bases": "10", "default-values-per-minute": "100" },
+      path: "/api/pulse/admin/policy",
+      method: "PUT",
+    },
+    {
+      args: ["admin", "bases", "list"],
+      flags: { limit: "3", offset: "2", query: "ops" },
+      path: "/api/pulse/admin/bases?limit=3&offset=2&q=ops",
+      method: undefined,
+    },
+    {
+      args: ["admin", "bases", "limits", "Base01"],
+      flags: { profile: "small", "storage-bytes": "2000000000" },
+      path: "/api/pulse/admin/bases/Base01/limits",
+      method: "PUT",
+    },
+    ...["retry", "recheck", "recreate"].map((action) => ({
+      args: ["admin", "bases", action, "Base01"],
+      flags: action === "recreate" ? { yes: true } : {},
+      path: `/api/pulse/admin/bases/Base01/${action}`,
+      method: "POST",
+    })),
+    { args: ["admin", "orphans", "list"], flags: {}, path: "/api/pulse/admin/orphans", method: undefined },
+    {
+      args: ["admin", "orphans", "list"],
+      flags: { limit: "3", after: "pulse_00000000000040008000000000000000" },
+      path: "/api/pulse/admin/orphans?limit=3&after=pulse_00000000000040008000000000000000",
+      method: undefined,
+    },
+    {
+      args: ["admin", "orphans", "delete", "pulse_fixture"],
+      flags: { yes: true },
+      path: "/api/pulse/admin/orphans/pulse_fixture",
+      method: "DELETE",
+    },
+    { args: ["admin", "targets", "list"], flags: { base: "Base01" }, path: "/api/pulse/admin/targets?baseId=Base01", method: undefined },
+    { args: ["admin", "targets", "add", "web-01:9100"], flags: { base: "Base01" }, path: "/api/pulse/admin/targets", method: "POST" },
+    { args: ["admin", "targets", "remove", "target-id"], flags: {}, path: "/api/pulse/admin/targets/target-id", method: "DELETE" },
+  ])("routes $args to the admin API", async ({ args, flags, path, method }) => {
+    const cleanFlags: CloudCliFlags = {};
+    for (const [key, value] of Object.entries(flags)) if (value !== undefined) cleanFlags[key] = value;
+    const { ctx, calls } = createContext([...args], cleanFlags, [jsonResponse({ ok: true })]);
+    await pulseCli.run(ctx);
+    expect(calls[0]?.path).toBe(path);
+    expect(calls[0]?.init?.method).toBe(method);
+  });
+  test.each([{ args: ["admin", "bases", "recreate", "Base01"] }, { args: ["admin", "orphans", "delete", "pulse_fixture"] }])(
+    "refuses the destructive $args without --yes",
+    async ({ args }) => {
+      const { ctx, calls } = createContext([...args], {}, [jsonResponse({ ok: true })]);
+      await expect(pulseCli.run(ctx)).rejects.toThrow("without --yes");
+      expect(calls).toHaveLength(0);
+    },
+  );
+  test("fixed admin denial names the repair path without reflecting remote messages", async () => {
+    const { ctx } = createContext(["admin", "policy", "get"], {}, [
+      jsonResponse({ code: "ACCESS_DENIED", message: "REMOTE_MUST_NOT_LEAK" }, 403),
+    ]);
+    await expect(pulseCli.run(ctx)).rejects.toThrow("ACCESS_DENIED: A Cloud admin");
+  });
 });

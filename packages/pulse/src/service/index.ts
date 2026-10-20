@@ -12,6 +12,7 @@ import {
   grantBaseAccess,
   listBaseAccess,
   listBases,
+  listDeletingBases,
   revokeBaseAccess,
   updateBase,
   updateBaseAccess,
@@ -141,6 +142,7 @@ const capabilities = async (): Promise<Result<PulseCapabilitySnapshot>> => {
 export const pulseService = {
   base: {
     list: listBases,
+    listDeleting: listDeletingBases,
     create: createBase,
     get: getBase,
     update: updateBase,

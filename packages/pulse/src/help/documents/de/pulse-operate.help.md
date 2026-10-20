@@ -18,8 +18,8 @@ Eine fehlgeschlagene Prüfung nennt den Grund und die Korrektur; die
 gespeicherte Verbindung bleibt dann unverändert.
 
 Derselbe Ablauf steht über `cld pulse admin store` bereit. Übergib Passwörter
-nur mit `--password-file` oder `--password-stdin`. Bestehende Funktionen laufen
-in dieser Version auch ohne Verbindung weiter; spätere Versionen benötigen sie.
+nur mit `--password-file` oder `--password-stdin`. Ohne Verbindung bleibt nur
+die Pulse-Verwaltung verfügbar.
 
 ## Basis regelmäßig prüfen {icon="route"}
 
@@ -44,10 +44,31 @@ in dieser Version auch ohne Verbindung weiter; spätere Versionen benötigen sie
 ## Häufige Probleme beheben {icon="lifebuoy"}
 
 :::reference
-- **Eine Metrikquelle wird abgelehnt:** Pulse ruft standardmäßig nur öffentliche Endpunkte ab. Ein Betreiber kann das interne Ziel mit `PULSE_SCRAPE_ALLOWED_TARGETS` freigeben. Versuche den Abruf danach erneut.
+- **Eine Metrikquelle wird abgelehnt:** Pulse ruft standardmäßig nur öffentliche Endpunkte ab. Ein Cloud-Admin kann Host, Host:Port oder CIDR für diese Base unter Verwaltung → Pulse → Interne Ziele freigeben. Versuche den Abruf danach erneut.
 - **Es erscheinen keine Daten:** Prüfe zuerst die Quelle. Sie muss eine erfolgreiche Aktualisierung melden, bevor Ressourcen, Signale oder Dashboards Daten anzeigen können.
 - **Eine Abfrage liefert zu viele Treffer:** Öffne das **Inventar** oder die Signalseite. Ergänze dann Filter für `source`, `resource`, `resource_type` oder `where`.
 - **Ein Diagramm ist leer:** Prüfe Zeitraum und Aggregation. Zähler brauchen meist `rate` oder `increase`. Messwerte brauchen meist `avg` oder `latest`.
 - **Zeilen wirken dupliziert:** Öffne die Ressourcen- oder Signalseite. Wiederholte Zeilen sind meist Varianten mit unterschiedlichen Ressourcen oder Dimensionen.
 - **Eine Metrik hat zu viele Varianten:** Prüfe ihre Dimensionen. Behalte stabile Gruppierungsmerkmale. Verschiebe eindeutige Identitäten oder Ereignisdetails in die Identitätsfelder, Attribute, vertraulichen Felder oder die Payload eines Ereignisses.
 :::
+
+## Eine Base wiederherstellen {icon="database"}
+
+Eine neue Base richtet ihre eigene Datenbank ein und nimmt erst im Zustand
+„Aktiv“ Änderungen an. Leeren behält Quellen, Tokens, Dashboards und Abfragen.
+Löschen widerruft zuerst Tokens, öffentliche Links und den Lese-Zugang. Eine
+Base, die gelöscht wird, bleibt auf deiner Pulse-Übersicht, bis sie weg ist. Nach
+einem Fehler setzt **Erneut versuchen** den Vorgang fort. Cloud-Admins sehen
+Zustand, Profil, Grenzen und gemessenen Speicher unter Verwaltung → Pulse →
+Bases, ohne Messdaten-Inhalte.
+
+Kürzere Aufbewahrung braucht eine Bestätigung mit Stichtag, Zeilen und geschätzten
+Bytes. Bei sensiblen Feldern zählt Pulse die Felder, die geleert werden; die
+Zeilen bleiben. Rohdaten erlauben standardmäßig 1–730 Tage (per Richtlinie bis 3.650),
+Stundenwerte 1–3.650 Tage und sensible Felder 1–8.760 Stunden. Sensible Felder
+verfallen per Spalten-TTL bei ClickHouse-Merges; aktuelle Zustände verfallen nicht.
+
+Fehlende Datenbanken oder abweichende Prüfpunkte sperren Messdaten-Schreibzugriffe.
+Solange die Sperre gilt, kannst du die Base nicht leeren. Nach passenden Sicherungen wählt ein Cloud-Admin **Erneut prüfen**. **Leer neu
+anlegen** verwirft Messdaten. Ohne Verbindung bleibt die Pulse-Verwaltung
+verfügbar; andere Cloud-Apps arbeiten weiter.

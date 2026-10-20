@@ -216,3 +216,15 @@ test("save-time policy hint refuses only known blocked targets", async () => {
   expect(await isNetworkTargetBlocked("example.test", allowlist, { resolve: () => new Promise(() => {}), timeoutMs: 1 })).toBe(false);
   expect(await isNetworkTargetBlocked("127.0.0.1", parseNetworkAllowlist(["127.0.0.1"]))).toBe(false);
 });
+
+test("restricted hosts and IPs trust exactly the supplied port; unrestricted entries trust every port", async () => {
+  const lookup = async () => [{ address: "127.0.0.1", family: 4 }];
+  for (const host of ["web.local", "127.0.0.1", "[::1]"]) {
+    const entry = host === "[::1]" ? "[::1]:9100" : `${host}:9100`;
+    const list = parseNetworkAllowlist([entry]);
+    expect((await resolveAllowedNetworkAddresses(host, list, lookup, 9100)).length).toBe(1);
+    await expect(resolveAllowedNetworkAddresses(host, list, lookup, 80)).rejects.toBeInstanceOf(NetworkTargetBlockedError);
+    await expect(resolveAllowedNetworkAddresses(host, list, lookup)).rejects.toBeInstanceOf(NetworkTargetBlockedError);
+    expect((await resolveAllowedNetworkAddresses(host, parseNetworkAllowlist([host]), lookup, 80)).length).toBe(1);
+  }
+});

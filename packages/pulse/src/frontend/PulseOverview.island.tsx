@@ -1,15 +1,50 @@
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { AppOverview, Button, LinkCard, NoticeCard, prompts, TextInput, toast } from "@k2b/ui";
+import { AppOverview, Button, LinkCard, NoticeCard, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { PulseBase, PulseCapabilitySnapshot } from "../contracts";
 import { jsonFetch } from "./http";
 import { usePulseMessages } from "./use-messages";
+import { baseStoreMessages } from "./workspace/base-store-messages";
 
 type Props = {
   bases: PulseBase[];
+  /** Bases the person administers whose deletion is still running or failed; they stay here until the deletion finishes. */
+  deletingBases?: PulseBase[];
   initialQuery: string;
   capabilities: PulseCapabilitySnapshot | null;
+};
+
+/** A base admin follows a running deletion and resumes a failed one from the overview, since the base itself is gone from the list. */
+const DeletingBaseNotice = (props: { base: PulseBase }) => {
+  const locale = useLocale();
+  const t = createMemo(() => baseStoreMessages.resolve([locale()]).t);
+  const [base, setBase] = createSignal(props.base);
+  const failed = () => base().store.state === "failed";
+  const retry = mutation.create<PulseBase, void>({
+    mutation: (_intent, { abortSignal }) =>
+      jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}/retry`, { method: "POST", signal: abortSignal }, t().retryFailed),
+    onSuccess: (next) => {
+      setBase(next);
+      toast.success(t().retryStarted);
+    },
+    onError: () => toast.error(t().retryFailed),
+  });
+  onCleanup(() => retry.abort());
+  return (
+    <NoticeCard
+      tone={failed() ? "danger" : "neutral"}
+      title={base().name}
+      meta={failed() ? t().stateFailed : t().stateDeleting}
+      detail={failed() ? t().failedDelete : t().deletingText}
+      aria-live="polite"
+    >
+      {/* The button keeps its place after a retry so the card does not change height. */}
+      <Button size="xs" variant="secondary" disabled={!failed()} loading={retry.loading()} onClick={() => void retry.mutate()}>
+        {t().retry}
+      </Button>
+    </NoticeCard>
+  );
 };
 
 const setQueryParam = (value: string) => {
@@ -129,6 +164,9 @@ export default function PulseOverview(props: Props) {
             </AppOverview.Cards>
           </Show>
         </Show>
+        <NoticeCard.Grid items={props.deletingBases ?? []} class="mt-4">
+          {(base) => <DeletingBaseNotice base={base} />}
+        </NoticeCard.Grid>
       </AppOverview.Main>
     </AppOverview>
   );

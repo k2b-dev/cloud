@@ -245,6 +245,31 @@ individually in argument order and existing names fail. Both modes report
 created and unattempted folders on failure. Commas stay literal in CLI names;
 pass siblings as separate arguments or use shell expansion.
 
+## History
+
+Files records folder creation through the web, mobile app, API and CLI, other
+apps, and agents. Each created folder has its own entry; folders created in
+one batch share a batch ID. Planning a batch or finding an existing folder
+creates no entry.
+
+| State | Meaning |
+| --- | --- |
+| `pending` | The intent is saved; the outcome is not yet confirmed. |
+| `done` | Files has evidence that the operation completed. |
+| `failed` | Files has a certain refusal that made no change. |
+| `unclear` | The response is missing; the current folder cannot prove the outcome. |
+| `not_done` | Reserved for checks that can prove no change; unused for folder creation. |
+
+Files marks an operation done only with evidence. A folder that looks right
+could have been created by someone else. Later steps extend history to other
+changes.
+
+History is kept for 365 days by default. Administrators change this under
+**Settings → History → Keep history for**, from 30 to 3,650 days; the CLI and
+API use the `activityRetentionDays` configuration key. Pending entries are
+kept until their outcome is known. See
+[Files history](/en/docs/operations/files-history) for operators.
+
 ## Public shares
 
 Both download links and upload inboxes support an optional password of 8–256
@@ -335,6 +360,10 @@ backend token stays on the server. Saved credentials are not returned to the
 browser. Settings changes remain a draft until saved. Discard returns to the
 saved configuration. Disabling an area does not delete its directories or
 assignments.
+
+**History → Keep history for** (`activityRetentionDays`) sets how long Files
+keeps its history: 365 days by default, 30 to 3,650 days allowed. A
+configuration saved before this setting existed uses the default.
 
 Filegate reports `managed` and `execution` independently for every root.
 **Managed** means that all content and namespace writes use Filegate; it enables

@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch } from "./ingest-writer";
 import { runHourlyRollup, sealExpiredMetricHour } from "./metric-rollups";
 import { queryMetricData } from "./query-execution";
@@ -14,6 +15,7 @@ dbTest(
     const baseId = crypto.randomUUID(),
       sourceId = crypto.randomUUID();
     await sql`INSERT INTO pulse.bases(id,short_id,name,retention_days) VALUES(${baseId}::uuid,${newShortId()},'Rollup proof',30)`;
+    await seedActiveBaseStore(baseId);
     await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Test')`;
     const hour = new Date(Math.floor(Date.now() / 3600000) * 3600000 - 72 * 3600000);
     const first = new Date(+hour + 60000).toISOString(),
@@ -79,6 +81,7 @@ dbTest(
     const baseId = crypto.randomUUID(),
       sourceId = crypto.randomUUID();
     await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Catalog proof')`;
+    await seedActiveBaseStore(baseId);
     await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Test')`;
     try {
       const resource = { type: "host", id: "retained" };

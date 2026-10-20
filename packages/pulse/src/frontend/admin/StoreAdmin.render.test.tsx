@@ -24,7 +24,7 @@ const render = (initial: StoreConfig, locale = "en") =>
   );
 test("without a connection the first frame shows the three operator steps and the connection form", () => {
   const html = render({ configured: false, url: "", user: "pulse_service", passwordSet: false });
-  expect(html).toContain("Not set up yet");
+  expect(html).toContain("Pulse needs a data store");
   expect(html).toContain("Start ClickHouse 26.9 or newer");
   expect(html).toContain("Run the setup script once as the ClickHouse admin");
   expect(html).toContain("Enter the address and the service user here");
@@ -39,7 +39,7 @@ test("with a connection the first frame shows the saved address and a pending st
   expect(html).toContain("http://fixture.invalid:8123");
   expect(html).toContain("Verschlüsselt gespeichert");
   expect(html).toContain("Ändern");
-  expect(html).not.toContain("Noch nicht eingerichtet");
+  expect(html).not.toContain("Pulse braucht einen Datenspeicher");
   expect(html).not.toContain('type="password"');
 });
 test("admin catalog is complete in German", () => expect(storeMessages.check()).toEqual([]));

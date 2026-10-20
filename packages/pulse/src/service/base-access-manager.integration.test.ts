@@ -5,6 +5,7 @@ import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { grantBaseAccess, revokeBaseAccess, updateBaseAccess } from "./base-management";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 
 const suite = databaseSuite();
 const created = { bases: [] as string[], users: [] as string[], groups: [] as string[] };
@@ -21,6 +22,7 @@ afterEach(async () => {
 const insertBase = async (): Promise<string> => {
   const id = crypto.randomUUID();
   await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${id}::uuid, ${newShortId()}, 'Pulse last manager')`;
+  await seedActiveBaseStore(id);
   created.bases.push(id);
   return id;
 };

@@ -1,3 +1,4 @@
+import type { BaseStoreStatus } from "./store/admin-contracts";
 export const SOURCE_KINDS = ["metrics", "http_ingest"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
@@ -16,6 +17,7 @@ export type PanelVisual = (typeof PANEL_VISUALS)[number];
 export type DashboardRefreshInterval = 1 | 5 | 10 | 60;
 
 export type PulseBase = {
+  store: BaseStoreStatus;
   id: string;
   name: string;
   description: string | null;
