@@ -385,6 +385,8 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
               policy ?? undefined,
               locale || undefined,
             );
+            // The card's language, so the title and the question never mix languages.
+            recipientLocale = card.locale;
             question = card.questionText.slice(0, 400);
             reason = card.reason.text.slice(0, 500);
           }

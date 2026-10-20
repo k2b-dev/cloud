@@ -486,7 +486,8 @@ characters. Register one driver per ID. Keep the returned cleanup function and
 call it when the deployment integration stops.
 
 Core's **Pending approvals** notification shows the newest waiting request's
-plain Assistant question and reason in the originating turn's language. Email
+plain Assistant question and reason in the question's language, the same
+language as its approval card. Email
 adds the link to the approvals page. Existing events without those fields
 keep the general notice. See [Pending approvals notification](/en/docs/identity/approvals#pending-approvals-notification)
 for eligibility and bundling.

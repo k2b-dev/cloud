@@ -117,25 +117,30 @@ export const cloudToolReview = (name: string, args: unknown, locale: string): Ca
     }
     if (name === "web_extract" || name === "fetch_file") {
       if (typeof input.url !== "string" || !input.url.trim()) return null;
-      const url = new URL(input.url);
+      const href = input.url;
+      const url = new URL(href);
       if (!url.host) return null;
-      const review = (address: string) =>
+      const label = language === "de" ? "Adresse" : "Address";
+      const review = (rows: { label: string; value: string }[]) =>
         actionReview(
           { locale: language, sentence: sentence[name] },
           { site: { kind: "place", title: url.host } },
-          { preview: { kind: "fields", rows: [{ label: language === "de" ? "Adresse" : "Address", value: address }] } },
+          { preview: { kind: "fields", rows } },
         );
-      // The address row holds at most 2,000 characters. An address whose encoded form is longer shows as written,
-      // and only if even that does not fit is it cut in the middle; the question asks either way.
-      for (const address of [input.url, readableAddress(input.url)])
+      // One address row holds at most 2,000 characters. An address whose encoded form is longer shows as written;
+      // if even that does not fit, the encoded address continues over numbered rows, so every character stays visible.
+      for (const address of [href, readableAddress(href)])
         if (address && address.length <= ADDRESS_MAX) {
           try {
-            return review(address);
+            return review([{ label, value: address }]);
           } catch {
             // Try the next form.
           }
         }
-      return review(`${input.url.slice(0, ADDRESS_MAX / 2 - 1)}…${input.url.slice(-(ADDRESS_MAX / 2))}`);
+      const parts = Array.from({ length: Math.ceil(href.length / ADDRESS_MAX) }, (_, index) =>
+        href.slice(index * ADDRESS_MAX, (index + 1) * ADDRESS_MAX),
+      );
+      return review(parts.map((value, index) => ({ label: `${label} ${index + 1}/${parts.length}`, value })));
     }
     if (name === "write_file") {
       if (typeof input.path !== "string" || !input.path.trim()) return null;

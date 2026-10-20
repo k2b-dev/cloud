@@ -83,17 +83,17 @@ describe("Firecrawl AI tools", () => {
       });
       if (!review) throw new Error("Expected a review");
       expect(review.ask).toBe("sends");
-      return review.preview?.kind === "fields" ? review.preview.rows[0]?.value : undefined;
+      return review.preview?.kind === "fields" ? review.preview.rows : [];
     };
     // Shown as written when its encoded form is too long, so the person still reads the whole address.
     const umlauts = new URL(`https://example.com/${"ä".repeat(400)}`).href;
     expect(umlauts.length).toBeGreaterThan(2_000);
-    expect(await ask(umlauts)).toBe(`https://example.com/${"ä".repeat(400)}`);
-    // A written form with characters a review may not carry is cut in the middle instead, never dropped.
+    expect(await ask(umlauts)).toEqual([{ label: "Address", value: `https://example.com/${"ä".repeat(400)}` }]);
+    // A written form with characters a review may not carry continues over numbered rows, every character kept.
     const hidden = new URL(`https://example.com/?q=${"\u202e".repeat(250)}`).href;
-    const shown = await ask(hidden);
-    expect(shown?.length).toBe(2_000);
-    expect(shown?.startsWith("https://example.com/?q=%E2%80%AE")).toBe(true);
+    const rows = await ask(hidden);
+    expect(rows.map((row) => row.label)).toEqual(["Address 1/2", "Address 2/2"]);
+    expect(rows.map((row) => row.value).join("")).toBe(hidden);
   });
   test("rejects non-public URLs before extraction", () => {
     expect(() => assertPublicHttpUrl("ftp://example.com/file")).toThrow("http or https");

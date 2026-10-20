@@ -45,9 +45,10 @@ test("historical malformed inputs do not throw and long file names respect slot 
     expect(cloudToolReview(name, {}, "en")).toBeNull();
   }
   expect(cloudToolReview("web_extract", { url: "bad URL" }, "en")).toBeNull();
-  // An address longer than the address row is cut in the middle, so the question still asks.
-  const long = cloudToolReview("web_extract", { url: `https://example.com/${"x".repeat(2000)}` }, "en");
-  expect(long?.preview?.kind === "fields" && long.preview.rows[0]?.value.length).toBe(2000);
+  // An address longer than one address row continues over numbered rows, so the question asks with all of it.
+  const address = `https://example.com/${"x".repeat(2000)}`;
+  const long = cloudToolReview("web_extract", { url: address }, "en");
+  expect(long?.preview?.kind === "fields" && long.preview.rows.map((row) => row.value).join("")).toBe(address);
   expect(cloudToolReview("write_file", { path: `/reports/${"x".repeat(250)}` }, "en")?.slots).toEqual({
     file: { kind: "object", title: "x".repeat(200) },
   });
