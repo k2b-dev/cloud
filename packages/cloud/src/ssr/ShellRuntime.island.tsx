@@ -135,7 +135,7 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
   if (props.workspace) {
     onMount(() => {
       const appId = props.workspace?.appId;
-      onCleanup(
+      const install = () =>
         installAppWorkspaceController({
           readState: () => readAppWorkspaceLayoutCookie(document.cookie, appId),
           writeState: (state) => {
@@ -143,8 +143,18 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
             const secure = window.location.protocol === "https:" ? "; Secure" : "";
             document.cookie = `${appWorkspaceCookieName(appId)}=${serializeAppWorkspaceLayoutState(state)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
           },
-        }),
-      );
+        });
+      let dispose = install();
+      // The controller reads the saved layout once; a swapped page may carry sizes another tab saved since.
+      const swapped = () => {
+        dispose();
+        dispose = install();
+      };
+      window.addEventListener("ssr:nav-swapped", swapped);
+      onCleanup(() => {
+        window.removeEventListener("ssr:nav-swapped", swapped);
+        dispose();
+      });
     });
   }
   if (props.pageTrail) {
