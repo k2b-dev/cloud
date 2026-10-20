@@ -18,6 +18,8 @@ type SwapState = {
   shown: Entry;
   stopRestore: () => void;
   scroll: Map<string, ScrollSnapshot>;
+  /** Counts history pushes through the wrapper: a newer entry supersedes a pending traversal even without markers. */
+  pushes: number;
   decide: (event: PopStateEvent) => "page" | "nav";
   /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
   headBase: string;
@@ -58,7 +60,7 @@ const recover = (href: string, replace: boolean): void => {
 type Entry = { page?: string; position: number; scroll?: ScrollSnapshot };
 type Marker = Entry & { page: string };
 /** `key` is the Navigation API entry key: it tells entries apart even when neither carries a marker. */
-type Traversal = { href: string; entry: Entry; key?: string };
+type Traversal = { href: string; entry: Entry; key?: string; pushes: number };
 const historyKey = Symbol.for("@k2b/ssr/nav-history");
 type HistoryWrites = { push: History["pushState"]; replace: History["replaceState"] };
 const plain = (value: unknown): value is Record<string, unknown> =>
@@ -142,6 +144,7 @@ const patchHistory = (): HistoryWrites => {
     if (stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);
     const entry = { page: state.currentPage, position: departing.position + 1 };
     writes.push.call(history, mergeMarker(value, entry), ...args);
+    state.pushes++;
     remember(state, shown, snapshot);
     state.currentEntry = entry;
     state.shown = entry;
@@ -149,7 +152,10 @@ const patchHistory = (): HistoryWrites => {
   history.replaceState = (value: unknown, ...args: [unused: string, url?: string | URL | null]) => {
     const state = shared[swapKey];
     if (!state || state.document !== document) return writes.replace.call(history, value, ...args);
-    const entry = marker(history.state) ?? { page: state.currentPage, position: state.currentEntry.position };
+    // An unmarked entry keeps the page nav tracks for it: none while a traversal to it has not committed.
+    const { page, position } = marker(history.state) ?? state.currentEntry;
+    if (page === undefined) return writes.replace.call(history, value, ...args);
+    const entry = { ...marker(history.state), page, position };
     writes.replace.call(history, mergeMarker(value, entry), ...args);
     state.currentEntry = entry;
     if (entryKey(entry) === entryKey(state.shown)) state.shown = entry;
@@ -161,6 +167,7 @@ const stillCurrent = (state: SwapState, traversal: Traversal): boolean => {
   return (
     window.location.href === traversal.href &&
     window.navigation?.currentEntry?.key === traversal.key &&
+    state.pushes === traversal.pushes &&
     entry?.page === traversal.entry.page &&
     (entry === undefined || entry.position === traversal.entry.position)
   );
@@ -265,6 +272,7 @@ export function installPageSwap(): () => void {
     shown: initial ?? { position: basePosition() },
     stopRestore,
     scroll: loadScroll(),
+    pushes: 0,
     decide: (event) => decide(event),
     // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
     headBase: timing?.name || window.location.href,
@@ -385,7 +393,7 @@ export function installPageSwap(): () => void {
   };
   const traverse = (entry: Entry): void => {
     state.currentEntry = entry;
-    void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key });
+    void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key, pushes: state.pushes });
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
   const decide = (event: PopStateEvent): "page" | "nav" => {

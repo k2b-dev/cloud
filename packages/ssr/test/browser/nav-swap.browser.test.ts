@@ -1763,6 +1763,36 @@ test("a newer unmarked entry at the same URL drops a traversal to an unmarked en
   }
 });
 
+test("a same-URL replace during a traversal to an unmarked entry keeps it unmarked and lets it commit", async () => {
+  install();
+  const shownPage = window.history.state[markerKey].page;
+  const requests = deferredFetch(true);
+  arrive(null, "/app/new");
+  window.history.replaceState({ island: 1 }, "");
+  expect(window.history.state).toEqual({ island: 1 });
+  const done = swapped("new");
+  requests[0]!.resolve(response());
+  await done;
+  expect(window.history.state.island).toBe(1);
+  expect(window.history.state[markerKey].page).not.toBe(shownPage);
+});
+
+test("without the Navigation API a newer unmarked push at the same URL drops a traversal to an unmarked entry", async () => {
+  install();
+  const requests = deferredFetch(true);
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  arrive(null, "/app/new");
+  window.history.pushState([], "", "/app/new");
+  const result = response();
+  const read = spyOn(result, "text");
+  requests[0]!.resolve(result);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(read).not.toHaveBeenCalled();
+  expect(document.title).toBe("old");
+  expect(reload).not.toHaveBeenCalled();
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;
