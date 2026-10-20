@@ -294,6 +294,9 @@ Keep scrollRestoration manual for the whole installation and restore the
 previous value on uninstall. The setting belongs to each entry, and pushes copy
 it, so entries created while installed stay manual after uninstall; uninstall
 is a teardown path, not a way to hand a running page back to the browser.
+Entries written before install keep the browser's own restoration: on a Back
+onto one, Chromium may scroll the still-shown column before the swap commits,
+so that page's last snapshot can be off. Install before islands write history.
 In a swap host, the loader mounts islands outside the column first, so an
 installer outside the column precedes column islands that write history;
 column entry fetches start through modulepreload while outside imports settle.
