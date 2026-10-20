@@ -17,5 +17,7 @@ test("MapAttribution server-renders three named links separated by middle dots",
   const html = renderToString(() => createComponent(MapAttribution, {}));
   const links = [...html.matchAll(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)];
   expect(links.map((match) => ({ href: match[1], label: match[2] }))).toEqual([...mapAttribution]);
-  expect(html.replace(/<!--.*?-->|<[^>]+>/g, "")).toBe("© OpenStreetMap · © OpenMapTiles · Geoapify");
+  // Read the text nodes between tags instead of stripping markup, which reads like an HTML sanitizer.
+  const text = [...`>${html}<`.matchAll(/>([^<]*)</g)].map((match) => match[1]).join("");
+  expect(text).toBe("© OpenStreetMap · © OpenMapTiles · Geoapify");
 });
