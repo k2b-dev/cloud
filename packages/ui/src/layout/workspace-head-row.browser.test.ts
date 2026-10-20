@@ -393,6 +393,32 @@ test("phone views stay at the top while Main scrolls and the primary is a named 
   }
 });
 
+for (const actions of [true, false]) {
+  for (const width of [320, 390]) {
+    test(`phone root views keep their row with actions=${actions} at ${width}px`, async () => {
+      const page = await load({ head: { root: true, actions } }, width);
+      try {
+        const assertRows = async () => {
+          const views = await rect(page, ".k2b-app-workspace__head-views");
+          const filters = await rect(page, ".k2b-app-workspace__head-filters");
+          const current = await rect(page, '.k2b-view-tabs [aria-current="page"]');
+          expect(filters.y).toBeGreaterThanOrEqual(views.y + views.height);
+          expect(current.x).toBeGreaterThanOrEqual(views.x);
+          expect(current.x + current.width).toBeLessThanOrEqual(views.x + views.width);
+        };
+        await assertRows();
+        const before = await page.evaluate(headGeometry);
+        await page.evaluate(() => window.mountHead());
+        await workspaceFrames(page);
+        expect(await page.evaluate(headGeometry)).toEqual(before);
+        await assertRows();
+      } finally {
+        await page.close();
+      }
+    });
+  }
+}
+
 test("keyboard order follows views, chips, Reset, secondary, primary with unclipped rings", async () => {
   const page = await load({ head: { items: 3 } });
   try {

@@ -648,7 +648,7 @@ const StackedOverviewDemo = () => {
     <DemoCard
       id="workspace-stacked-overview"
       chip={{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }}
-      description="An overview's objects become scrolling chips below 64 rem. All opens the complete sidebar, including Archive and footer actions. Select a notebook to change the current chip."
+      description="An overview's objects become scrolling chips below 64 rem. All opens the complete sidebar, including Archive and footer actions. On phones the objects precede the view tabs; the host supplies the surface behind the object row. Select a notebook to change the current chip."
       code={`<AppWorkspace flat resizable={false} mobileSurface="flush">
   <AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
     <AppWorkspace.SidebarDesktop>
@@ -669,6 +669,7 @@ const StackedOverviewDemo = () => {
       </AppWorkspace.SidebarFooter>
     </AppWorkspace.SidebarDesktop>
   </AppWorkspace.Sidebar>
+  <AppWorkspace.Head views={<ViewTabs label="Views" current="all" items={[{ id: "all", label: "All", href: "#all" }]} />} />
   <AppWorkspace.Content><AppWorkspace.Main>…</AppWorkspace.Main></AppWorkspace.Content>
 </AppWorkspace>`}
     >
@@ -709,6 +710,7 @@ const StackedOverviewDemo = () => {
               </AppWorkspace.SidebarFooter>
             </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
+          <AppWorkspace.Head views={<ViewTabs label="Views" current="all" items={[{ id: "all", label: "All", href: "#all" }]} />} />
           <AppWorkspace.Content>
             <AppWorkspace.Main>
               <div class="ui-workspace-demo__body">

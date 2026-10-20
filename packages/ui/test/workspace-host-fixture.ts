@@ -38,6 +38,7 @@ export type FixtureOptions = {
     mainHeading?: boolean;
     /** A page at the app's root: the trail has no page above it. */
     root?: boolean;
+    actions?: boolean;
     longLabels?: boolean;
     /** Also render a detail of this width beside the head row. */
     detail?: AppWorkspaceDetailWidth;
@@ -115,6 +116,7 @@ export function workspaceTree(
           : undefined,
       count: "12 results",
       get actions() {
+        if (props.head?.actions === false) return undefined;
         return createComponent(IconButton, {
           label: "Search",
           size: "sm",
@@ -124,7 +126,7 @@ export function workspaceTree(
           },
         });
       },
-      primary: { label: "New task", icon: "ti ti-plus", href: "?new=task" },
+      primary: props.head?.actions === false ? undefined : { label: "New task", icon: "ti ti-plus", href: "?new=task" },
     });
   };
   const tree = () =>

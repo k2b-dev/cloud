@@ -2218,7 +2218,9 @@ html {
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
-    flex: 1 1 0;
+    /* Reserve one control before distributing the row. A zero basis can
+       otherwise collapse the strip beside the full-width filter row. */
+    flex: 1 1 var(--k2b-workspace-head-line);
     margin-inline-start: -1rem;
   }
 
@@ -2229,7 +2231,9 @@ html {
 
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
     order: 2;
-    flex: 1 1 100%;
+    /* Include the two negative edge margins in the row's outer width. */
+    flex: 1 1 calc(100% + 2rem);
+    max-width: calc(100% + 2rem);
     margin-inline: -1rem;
   }
 
@@ -2492,6 +2496,18 @@ html {
 /* "All" opens a chip row's complete sidebar; it exists only while the row does. */
 .k2b-ui .k2b-app-workspace__sidebar-all {
   display: none;
+}
+
+/* On a phone, an outer flush workspace puts its objects before the head's
+   views. The host supplies the surface around this row; tablet and contained
+   workspaces retain their existing order and frame. */
+@media not all and (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *):has(
+    > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]),
+    > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden])
+  ) {
+    grid-template-areas: "mobile" "head" "content" "drawer";
+  }
 }
 
 /* A stacked sidebar is an overview's object list. Until the sidebar gets its

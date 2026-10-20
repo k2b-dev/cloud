@@ -144,3 +144,28 @@ for (const available of [true, false]) {
     expect(html).toMatch(/<aside[^>]*hidden/);
   });
 }
+
+for (const explicit of [true, false]) {
+  test(`object navigation retains SSR reading order with ${explicit ? "explicit" : "fallback"} head`, () => {
+    const markup = renderToString(() =>
+      createComponent(AppWorkspace, {
+        mobileSurface: "flush",
+        get children() {
+          return [
+            createComponent(AppWorkspace.Sidebar, { label: "Objects", mobile: "stacked", children: "Object links" }),
+            explicit ? createComponent(AppWorkspace.Head, { views: "View links" }) : null,
+            createComponent(AppWorkspace.Content, { children: "Work content" }),
+          ];
+        },
+      }),
+    );
+    expect(markup.match(/class="k2b-app-workspace__head[" ]/g)?.length).toBe(1);
+    const nav = markup.indexOf('aria-label="Objects"');
+    const head = markup.indexOf('class="k2b-app-workspace__head"');
+    const content = markup.indexOf('class="k2b-app-workspace__content');
+    if (explicit) expect(nav).toBeLessThan(head);
+    else expect(head).toBeLessThan(nav);
+    expect(nav).toBeLessThan(content);
+    expect(head).toBeLessThan(content);
+  });
+}

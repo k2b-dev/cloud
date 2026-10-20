@@ -428,6 +428,62 @@ solid-island {
   }
 }
 
+/* Phone overviews: object navigation sits on the shell before the card.
+   Only an outer flush workspace with visible stacked navigation hands the
+   host's paint to its head/content tracks. The pseudo-element is the first
+   grid item, behind the existing regions, without a new stacking context:
+   the fixed primary action can still sit above the app bar. */
+/* Negated min-width queries keep the exact boundary after CSS compilation;
+   fractional max-width approximations can round back up to 768 px. */
+@media not all and (min-width: 768px) {
+  @media not all and (min-width: 48rem) {
+    .cloud-app-canvas[data-layout-authenticated] .layout-content-main:has(
+      .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *, [hidden], [hidden] *)
+        > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]),
+      .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *, [hidden], [hidden] *)
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden])
+    ) {
+      padding-bottom: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+
+      & .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *) {
+        --k2b-workspace-inset-bottom: var(--cloud-tab-bar-space);
+
+        &::before {
+          content: "";
+          grid-column: 1 / -1;
+          grid-row: head-start / -1;
+          min-height: 0;
+          pointer-events: none;
+          border-top: 1px solid transparent;
+          border-radius: 1.75rem 1.75rem 0 0;
+          background: var(--k2b-surface);
+          box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+        }
+
+        & > .k2b-app-workspace__head {
+          border-radius: 1.75rem 1.75rem 0 0;
+          background: transparent;
+        }
+
+        /* Cloud's page title hides the automatic head on phones. With no
+           explicit head, Content itself owns the card's rounded clip. */
+        &:not(:has(> .k2b-app-workspace__head[data-row])) > .k2b-app-workspace__content {
+          border-radius: 1.75rem 1.75rem 0 0;
+        }
+      }
+    }
+
+    .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main
+      .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *)::before {
+      border-top-color: var(--k2b-border);
+    }
+  }
+}
+
 /* The bar and the room it takes switch with `md`, as the header and the rail
    do, so Home stays reachable also where a larger default font size moves
    that switch above 768 px. */

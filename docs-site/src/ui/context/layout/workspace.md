@@ -83,9 +83,10 @@ Grids table is the reference for tables.
 
 ### Compose the head row
 
-Place `AppWorkspace.Head` as a **direct child** of `AppWorkspace`, in any
-position. It is a slot: the workspace renders its parts in the existing head,
-leaving the other children in order. Individual parts may be islands. Give
+Place `AppWorkspace.Head` as a **direct child** of `AppWorkspace`, after the
+sidebar and before `Content`. Its existing head renders at that position, so
+object navigation precedes view controls in both reading and keyboard order.
+Callers without an explicit slot retain the automatic head. Individual parts may be islands. Give
 the chips `showValue`, keep secondary actions quiet, and put the one filled
 action in `primary`.
 
@@ -1634,3 +1635,9 @@ On Cloud pages with `WorkspaceNavigation`, the phone header shows **Name ⌄**
 in place of the plain title. It opens the same app menu sheet as the app-menu
 button, so a hidden sidebar's navigation stays reachable. Pages without
 workspace navigation keep the plain title. Nothing changes from 48 rem.
+
+On phones, an outer workspace with `mobileSurface="flush"` places a visible
+stacked object row before the head. The host can show its shell surface behind
+that row; view tabs, filters and work content belong to the card below it.
+Tablet layouts and contained or nested workspaces retain their existing frame.
+The server and the first client render use the same region order.

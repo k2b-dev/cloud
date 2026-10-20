@@ -2325,11 +2325,17 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
     const slots = createMemo(() => flatten(resolved()));
     // Same props object, same memo value: a sibling change must not rebuild the head's slots.
     const head = createMemo(() => slots().find(headSlot)?.props);
-    const content = () => slots().filter((value) => !headSlot(value)) as JSX.Element;
+    // Keep one head instance at the explicit slot's position. Object links
+    // before it must also precede its view controls in SSR and keyboard order.
+    // Callers without a slot retain the automatic leading head.
+    const renderedHead = <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />;
     return (
       <>
-        <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />
-        {content()}
+        {
+          (head()
+            ? slots().map((value) => (headSlot(value) ? (value.props === head() ? renderedHead : null) : value))
+            : [renderedHead, ...slots()]) as JSX.Element
+        }
       </>
     );
   };
