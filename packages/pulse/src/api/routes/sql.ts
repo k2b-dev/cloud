@@ -111,7 +111,7 @@ const routes = new Hono<AuthContext>()
     async (c) => {
       const result = await savedQueries.remove({
         ...identity(c),
-        queryId: c.req.param("queryId"),
+        queryId: c.req.param("queryId")!,
         expectedRevision: c.req.valid("json").expectedRevision,
         idempotencyKey: c.req.header("idempotency-key"),
       });
