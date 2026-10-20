@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type axeCore from "axe-core";
 import type { Browser, BrowserContextOptions, Locator } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 declare global {
   interface Window {
@@ -146,12 +146,12 @@ describe("RichSelect shipped browser contract", () => {
     const { page, close } = await open({ viewport: { width: 1440, height: 900 } });
     try {
       const trigger = page.getByRole("combobox", { name: "Move card" });
+      await settled(page);
       const triggerBefore = await box(trigger);
       await trigger.click();
       const popover = page.locator(".k2b-rich-select__popover:popover-open");
       await popover.waitFor({ state: "visible" });
-      // Positioning and the ResizeObserver run after the open handler.
-      await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+      await settled(page);
       const list = page.getByRole("listbox");
       const preview = popover.locator(".k2b-rich-select__preview");
       const initial = [await box(popover), await box(list), await box(preview)];
@@ -165,13 +165,16 @@ describe("RichSelect shipped browser contract", () => {
       await unchanged(labels[0]!);
       for (let index = 1; index <= labels.length; index++) {
         await page.keyboard.press("ArrowDown");
+        await settled(page);
         await unchanged(labels[index % labels.length]!);
       }
       for (let index = labels.length - 1; index >= 0; index--) {
         await page.getByRole("option").nth(index).hover();
+        await settled(page);
         await unchanged(labels[index]!);
       }
       await page.keyboard.press("Escape");
+      await settled(page);
       expect(await trigger.getAttribute("aria-expanded")).toBe("false");
       expect(await trigger.evaluate((element) => document.activeElement === element)).toBe(true);
       expect(await box(trigger)).toEqual(triggerBefore);
@@ -233,6 +236,9 @@ describe("RichSelect shipped browser contract", () => {
       await sheet.waitFor({ state: "hidden" });
       await page.waitForFunction(() => document.querySelector('[role="combobox"]')?.getAttribute("aria-expanded") === "false");
       expect(await trigger.innerText()).toContain("Marketing · Review");
+      // dialogCore returns focus in a frame after closing; its history promise
+      // (and therefore the committed value/aria-expanded) can finish first.
+      await page.waitForFunction(() => document.querySelector('[role="combobox"]') === document.activeElement);
       expect(await trigger.evaluate((element) => element === document.activeElement)).toBe(true);
     } finally {
       await close();
