@@ -59,7 +59,7 @@ suite("SQL executes only through bounded read profiles", () => {
       });
       expect(result.rows[0]).toEqual([
         "'); DROP TABLE x; --",
-        String(Date.parse("2026-10-25T01:30:00Z")),
+        Date.parse("2026-10-25T01:30:00Z"),
         1209600,
         -1.5,
         "2026-10-25 00:00:00.000",

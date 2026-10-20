@@ -9,6 +9,7 @@ import { READ_VIEWS } from "./base-schema";
 import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "./base-store.test-fixture";
 import { clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
 import { READ_LIMITS, READ_PROFILES } from "./setup-sql";
+import { SQL_HELPER_VIEWS } from "./sql-helpers";
 import { quoteIdentifier as q } from "./validation";
 
 const suite = suiteFor("database", "clickhouse");
@@ -123,7 +124,10 @@ suite("Pulse read users hold the tenant boundary over HTTP", () => {
             const metadata = await run(
               `SELECT DISTINCT ${system === "tables" ? "name" : "table"} AS table_name FROM system.${system} WHERE database='${base.database}'`,
             );
-            expect(metadata.map((r) => r.table_name).sort()).toEqual([...READ_VIEWS].sort());
+            // system.columns cannot list parameterized views: their columns depend on the arguments.
+            const listed =
+              system === "tables" ? READ_VIEWS : READ_VIEWS.filter((view) => !(SQL_HELPER_VIEWS as readonly string[]).includes(view));
+            expect(metadata.map((r) => r.table_name).sort()).toEqual([...listed].sort());
           }
           await refused(() => run("SELECT number FROM numbers(10001)", { wait_end_of_query: 1 }), [396]);
           await refused(() => run("SELECT materialize(repeat('x',5000)) FROM numbers(1000)", { wait_end_of_query: 1 }), [396]);

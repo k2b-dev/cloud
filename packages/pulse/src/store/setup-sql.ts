@@ -81,7 +81,8 @@ GRANT SELECT ON ${databases} TO ${who} WITH GRANT OPTION;
 -- Storage accounting and free-space checks, limited to these two system tables.
 GRANT SELECT ON system.parts TO ${who};
 GRANT SELECT ON system.disks TO ${who};
--- Cancel Pulse queries. Dedicated instance required.
+-- Cancel Pulse queries; KILL QUERY WHERE reads system.processes. Dedicated instance required.
+GRANT SELECT ON system.processes TO ${who};
 GRANT KILL QUERY ON *.* TO ${who};
 `;
 };
