@@ -131,7 +131,8 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
     if (!user) throw new Error("Missing fixture user");
     // Only the external credential proofs are stubbed. The HTTP handlers,
     // issuance, signed sessions, family lookup and consent enforcement are real.
-    const ipa = spyOn(authFlows.ipa, "login").mockResolvedValue({ ok: true, userId, user });
+    const [account] = await sql<Array<{ auth_epoch: string | number }>>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
+    const ipa = spyOn(authFlows.ipa, "login").mockResolvedValue({ ok: true, userId, user, authEpoch: Number(account!.auth_epoch) });
     const email = spyOn(authFlows.magicLink, "verify").mockResolvedValue({
       ok: true,
       userId,

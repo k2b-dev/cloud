@@ -28,6 +28,14 @@ An existing passkey keeps working while your account type is allowed. If your ac
 - Use the link from the most recent recovery message. Older or used links can stop working.
 - If the expected sign-in method is missing, ask an administrator to check your account provider.
 
+## Change your password {icon="shield-lock"}
+
+For a FreeIPA account, open **Sign-in** in your account, choose **Change password**, and enter your current password. Cloud then signs you out everywhere else: in other browsers, in the mobile app, in the command line, and in connected apps. Run `cld login` again to reconnect the command line.
+
+This browser stays signed in. Your paired sign-in devices stay paired. API keys and passkeys keep working.
+
+Setting a new password on the sign-in page, for example with a reset link or after an expired password, also signs you out everywhere else. If Cloud cannot sign out your other sign-ins, it says so. After an expired password, choose **Try again** before you continue. After a reset link, request a new reset link.
+
 ## Pair a sign-in app {icon="device-mobile"}
 
 Your administrator must enable and configure app sign-in first. If **Sign-in** shows **Enabled — setup required**, the administrator still has to finish the app configuration. Use your existing sign-in method until then.
@@ -89,7 +97,7 @@ By default, Cloud sends the notice by email. Without an email address, it sends 
 If you cannot use any paired device, ask an administrator to revoke the old device and help pair a replacement. Ask an administrator as well when a device you do not recognize denies your removal requests. Administrator-assisted pairing and removal do not need approval on a paired device.
 
 :::warning A password reset also revokes your paired devices
-When you reset your password with **Reset password** on the sign-in page, Cloud revokes all your paired devices. Any other sign-out from all sessions of your account does the same. Pair your devices again afterwards.
+When you reset your password with **Reset password** on the sign-in page, Cloud revokes all your paired devices. Any other sign-out from all sessions of your account does the same. Pair your devices again afterwards. Changing your password under **Sign-in** keeps your paired devices.
 :::
 
 Pairing, renaming, and revoking can ask you to confirm your identity. Sign in with the same account, without signing out first. Pairing then opens again automatically.

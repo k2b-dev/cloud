@@ -31,6 +31,7 @@ import { getFreeIpaConfig } from "../freeipa-config";
 import { type LogEntry, logger, logging } from "../logging";
 import { isUniqueViolation } from "../postgres";
 import { providers } from "../providers";
+import { session } from "../session";
 import { get as getSetting } from "../settings";
 import { type AccountsActor, canMutateManagedGroup, hasOnlySelfUpdateFields, isAdminActor, isSelfTarget } from "./authz";
 import { listDuplicateEmails } from "./duplicate-emails";
@@ -838,7 +839,12 @@ export const accountsAppService = {
      * admin app is UI only and must not dispatch on provider or speak to
      * FreeIPA directly.
      */
-    changeOwnPassword: async (config: { user: User; currentPassword: string; newPassword: string }): Promise<Result<void>> => {
+    changeOwnPassword: async (config: {
+      user: User;
+      currentPassword: string;
+      newPassword: string;
+      keep?: { sid: string; authEpoch: number } | null;
+    }): Promise<Result<{ kept: { token: string; expiresAt: Date } | null }>> => {
       const actor = { userId: config.user.id, uid: config.user.uid, roles: config.user.roles, provider: config.user.provider };
       if (!(await getFreeIpaConfig()).enabled) {
         const result = fail(err.badInput("FreeIPA is disabled."));
@@ -875,8 +881,22 @@ export const accountsAppService = {
         uid: config.user.uid,
         newPassword: config.newPassword,
       });
-      const serviceResult = result.ok ? ok(undefined) : fail(toServiceError(result.status, result.error));
-      return recordCompletedMutation({
+      let serviceResult: Result<{ kept: { token: string; expiresAt: Date } | null }>;
+      if (!result.ok) {
+        serviceResult = fail(toServiceError(result.status, result.error));
+      } else {
+        try {
+          serviceResult = ok(await session.endOtherSignIns(config.user.id, { keep: config.keep, reason: "password_change" }));
+        } catch {
+          serviceResult = fail({
+            code: "SIGN_OUT_OTHERS_FAILED",
+            status: 500,
+            message: "Password changed. Signing out your other sign-ins did not work.",
+          });
+        }
+      }
+      const record = result.ok ? audit.recordResultAfterSideEffect : audit.recordResult;
+      return record({
         action: "accounts.user.change_own_password",
         actor: auditActor(actor),
         target: userTarget(config.user),

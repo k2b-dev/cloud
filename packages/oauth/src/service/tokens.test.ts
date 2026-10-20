@@ -2684,6 +2684,39 @@ suite("OAuth account epochs", () => {
       }
     }));
 
+  test("a password change ends refresh families and access tokens and keeps only the chosen browser", () =>
+    withFrozenTime(async () => {
+      const f = await epochFixture();
+      try {
+        const grant = await f.authorize();
+        const issued = await f.token({
+          grant_type: "authorization_code",
+          code: grant.code,
+          code_verifier: grant.verifier,
+          redirect_uri: f.redirectUri,
+        });
+        expect(issued.status).toBe(200);
+        const original = await issued.json();
+        const browser = await createTestSession(f.userId);
+        const sid = String(jose.decodeJwt(browser).sid);
+        const { kept } = await session.endOtherSignIns(f.userId, {
+          keep: { sid, authEpoch: Number(jose.decodeJwt(browser).auth_epoch) },
+          reason: "password_change",
+        });
+        const ended = await f.token({ grant_type: "refresh_token", refresh_token: original.refresh_token });
+        expect(ended.status).toBe(400);
+        expect(await ended.json()).toMatchObject({ error: "invalid_grant" });
+        expect((await actorProbe().request("/probe", { headers: { Authorization: `Bearer ${original.access_token}` } })).status).toBe(401);
+        if (!kept) throw new Error("Missing kept browser after password change");
+        expect(await session.authenticate(kept.token)).toMatchObject({
+          data: { sid: String(jose.decodeJwt(kept.token).sid), userId: f.userId, kind: "web" },
+        });
+        expect((await session.authenticate(browser)) === null).toBe(true);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
   test("migration ends legacy families in batches once and user tokens require an epoch", () =>
     withFrozenTime(async () => {
       const f = await epochFixture();
