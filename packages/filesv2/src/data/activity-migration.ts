@@ -36,8 +36,11 @@ export async function migrateActivity(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_after ON filesv2.activity(base_after_id, started_at DESC) WHERE base_after_id IS NOT NULL`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_item ON filesv2.activity(item_id) WHERE item_id IS NOT NULL`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_item_after ON filesv2.activity(item_after_id) WHERE item_after_id IS NOT NULL`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_path_before ON filesv2.activity(root, path_before text_pattern_ops)`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_path_after ON filesv2.activity(root, path_after text_pattern_ops)`.simple();
+  // Paths may reach 4096 characters, more than a B-tree entry holds (about 2.7 KB). The first 400 characters
+  // (at most 1.6 KB, plus a root of at most 128 characters) still serve prefix lookups; a query repeats the
+  // left(...) expression next to its condition on the full path.
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_path_before ON filesv2.activity(root, left(path_before, 400) text_pattern_ops)`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_path_after ON filesv2.activity(root, left(path_after, 400) text_pattern_ops)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_next_check ON filesv2.activity(next_check_at) WHERE state IN ('pending','unclear')`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_started ON filesv2.activity(started_at)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_name ON filesv2.activity USING gin (name gin_trgm_ops)`.simple();

@@ -364,6 +364,21 @@ suite("Files activity with real storage", () => {
     expect((await row(id)).actor_user_id).toBeNull();
     expect((await row(id)).state).toBe("pending");
   });
+  test("a path as long as Files accepts fits the history indexes", async () => {
+    // Noncompressible segments: a full-path B-tree key of this size exceeds PostgreSQL's entry limit.
+    const segments = Array.from({ length: 21 }, () => Buffer.from(crypto.getRandomValues(new Uint8Array(150))).toString("base64url"));
+    const path = `${home}/${segments.join("/")}`.slice(0, 4096);
+    expect(path.length).toBe(4096);
+    const name = path.split("/").at(-1)!;
+    await fileAction(
+      testCall(actor),
+      { ...intent(name), pathBefore: path, pathAfter: path },
+      async () => ({ id: null }),
+      async () => undefined,
+    );
+    const [stored] = await sql<{ state: string; path_after: string }[]>`SELECT state,path_after FROM filesv2.activity`;
+    expect(stored).toEqual({ state: "done", path_after: path });
+  });
   test("web mkdir records one done row with actor, path, and request context", async () => {
     const call = { ...testCall(actor), requestId: "web-request" };
     await service.mkdir(call, { baseId: baseId(), path: "web-folder" });
