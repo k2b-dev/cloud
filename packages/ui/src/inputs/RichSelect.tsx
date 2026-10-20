@@ -193,20 +193,13 @@ function RichSelectState(props: {
   );
 }
 
-function RichSelectPreview(props: {
-  item: RichSelectItem;
-  render: (item: RichSelectItem) => JSX.Element;
-  id?: string;
-  showTitle?: boolean;
-}): JSX.Element {
+function RichSelectPreview(props: { item: RichSelectItem; render: (item: RichSelectItem) => JSX.Element; id?: string }): JSX.Element {
   return (
     <div id={props.id}>
-      <Show when={props.showTitle !== false}>
-        <h3 class="k2b-rich-select__preview-title">
-          <RichSelectVisual item={props.item} />
-          <span>{props.item.label}</span>
-        </h3>
-      </Show>
+      <h3 class="k2b-rich-select__preview-title">
+        <RichSelectVisual item={props.item} />
+        <span>{props.item.label}</span>
+      </h3>
       {props.render(props.item)}
     </div>
   );
@@ -852,21 +845,13 @@ function RichSelectSheet(sheet: {
 
   return (
     <>
-      <header class="k2b-panel-dialog__header" data-has-subtitle="false">
+      <header class="k2b-rich-select__sheet-header">
         <Show when={detail()}>
-          <button
-            ref={back}
-            type="button"
-            class="k2b-dialog__close k2b-rich-select__back"
-            aria-label={messages().back}
-            onClick={leaveDetail}
-          >
+          <button ref={back} type="button" class="k2b-dialog__close" aria-label={messages().back} onClick={leaveDetail}>
             <i class="ti ti-chevron-left" aria-hidden="true" />
           </button>
         </Show>
-        <div class="k2b-panel-dialog__heading">
-          <h2>{detail()?.label ?? sheet.title}</h2>
-        </div>
+        <h2>{detail()?.label ?? sheet.title}</h2>
         <button type="button" class="k2b-dialog__close" aria-label={messages().close} onClick={sheet.close}>
           <i class="ti ti-x" aria-hidden="true" />
         </button>
@@ -982,12 +967,13 @@ function RichSelectSheet(sheet: {
           <>
             <BottomSheet.Body>
               <div class="k2b-rich-select__preview" data-level="detail">
-                <RichSelectPreview item={item()} render={props.renderPreview!} showTitle={false} />
+                <RichSelectPreview item={item()} render={props.renderPreview!} />
               </div>
             </BottomSheet.Body>
             <BottomSheet.Footer>
               <Button
                 variant="primary"
+                size="lg"
                 class="k2b-rich-select__choose"
                 disabled={Boolean(item().disabledReason)}
                 onClick={() => choose(item())}

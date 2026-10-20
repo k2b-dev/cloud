@@ -6690,6 +6690,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 1.125rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-rich-select__preview-placeholder {
@@ -6700,6 +6702,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-rich-select__preview-placeholder > span {
   height: 0.75rem;
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-rich-select__preview-placeholder > span:first-child {
@@ -6861,8 +6864,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The phone sheet: rows at touch size, an info button beside each row when
    the picker has a preview, and the preview as a second level. */
-.k2b-ui .k2b-dialog__close.k2b-rich-select__back {
-  margin-left: -0.5rem;
+.k2b-ui .k2b-rich-select__sheet-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0 1rem;
+}
+
+.k2b-ui .k2b-rich-select__sheet-header > h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.96875rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .k2b-ui .k2b-panel-dialog__body > .k2b-rich-select__list {

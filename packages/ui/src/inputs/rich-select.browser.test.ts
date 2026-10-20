@@ -220,7 +220,10 @@ describe("RichSelect shipped browser contract", () => {
       expect(await sheet.locator(`[id="${description}"]`).innerText()).toBe("No write access");
       const info = sheet.getByRole("button", { name: "Details: Support · Backlog", exact: true });
       await info.tap();
-      expect(await sheet.getByRole("heading", { name: "Support · Backlog", exact: true }).count()).toBe(1);
+      expect(await sheet.getByRole("heading", { level: 2, name: "Support · Backlog", exact: true }).count()).toBe(1);
+      const previewTitle = sheet.getByRole("heading", { level: 3, name: "Support · Backlog", exact: true });
+      expect(await previewTitle.count()).toBe(1);
+      expect(await previewTitle.locator(".k2b-rich-select__dot").count()).toBe(1);
       expect(await page.getByRole("dialog", { name: "Support · Backlog", exact: true }).count()).toBe(1);
       expect(await sheet.locator(".k2b-rich-select__facts").innerText()).toContain("Ask a Support manager for write access");
       expect(await sheet.getByRole("button", { name: "Choose", exact: true }).isDisabled()).toBe(true);
