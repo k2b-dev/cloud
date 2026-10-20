@@ -27,6 +27,12 @@ Send problems have no view tabs. **Choose list view**, the **…** mailbox menu,
 and **Compose** are also in the head. The mailbox menu contains details,
 tools, and Settings according to your access.
 
+Assignee filters in search and saved-view summaries read **Assigned to a
+specific person**. Open the search editor to change the selected
+person; summaries do not show account IDs.
+Saved automation assignments use the same label when the person is no longer
+available in the choices.
+
 On wide screens the conversation list grows with the window from 320 to
 440 px, and the subject and messages stay in a centered reading column of at
 most 760 px. **Conversation details** stand beside the reader while the reader
