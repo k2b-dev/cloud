@@ -284,6 +284,28 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     }
   });
 
+  test("a map pin at a stop keeps its visible pixels when the stop is selected and raised", async () => {
+    const page = await browser.newPage(phone);
+    try {
+      const markup = html(() =>
+        createComponent(MapView, {
+          height: 360,
+          attribution: "Local data",
+          style: { version: 8, sources: {}, layers: [] },
+          selectedId: "start",
+          markers: [
+            { id: "start", mark: "A", label: "Start", point: { lat: 48.398, lon: 9.992 } },
+            { id: "museum", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
+            { id: "garden", mark: 2, label: "Garden", point: { lat: 48.403, lon: 9.999 } },
+          ],
+        }),
+      );
+      expect(await takenPixels(page, markup, "22rem")).toEqual({});
+    } finally {
+      await page.close();
+    }
+  });
+
   test("give a lone compact button a 44 px square without changing its visible size", async () => {
     const page = await browser.newPage(phone);
     try {

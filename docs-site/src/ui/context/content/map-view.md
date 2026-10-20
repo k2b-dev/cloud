@@ -57,7 +57,7 @@ style declares its own attribution.
 | `lines` | `{ id, points, tone? }[]` or `{ id, polyline6, tone? }[]`. Polyline precision is six decimal places, latitude first. |
 | `areas` | `{ id, polygon: { lat, lon }[], tone? }[]`. |
 | `ownLocation` | `{ point: { lat, lon }, accuracyMeters? }`; displays a dot and optional accuracy circle. |
-| `padding` | Fitting inset in pixels; defaults to `48`. Keep height and width larger than twice the padding. |
+| `padding` | Fitting inset in pixels; defaults to `64`, which keeps pins clear of the controls, notice, scale bar, and attribution. Keep height and width larger than twice the padding. |
 | `fit` | `all` (default) fits all vertices and location; `markers` fits pins, falling back to all geometry when there are no pins. |
 | `selectedId` | Controlled selection; otherwise the first marker with `selected: true` is selected. |
 | `onSelect` | Receives a marker ID from a pin click or keyboard selection. |

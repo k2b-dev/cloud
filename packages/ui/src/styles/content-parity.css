@@ -6383,10 +6383,12 @@
   .k2b-ui .k2b-map-view .maplibregl-mobile-message { display: block; }
 }
 @media (any-pointer: coarse) {
-  .k2b-ui button.k2b-map-view__pin::after { content: ""; position: absolute; inset: min(0px, calc((100% - 2.75rem) / 2)); border-radius: inherit; }
+  /* A round target of up to 2.75rem that stops before a neighbouring pin's visible mark (radius from the data). */
+  .k2b-ui button.k2b-map-view__pin::after { content: ""; position: absolute; inset: min(0px, calc(50% - var(--k2b-map-pin-hit, 1.375rem))); border-radius: 50%; }
   /* Keep the expanded hit areas off the neighbouring control's visible pixels. */
-  .k2b-ui .k2b-map-view__controls .k2b-icon-button { width: 40px; height: 40px; min-height: 40px; }
-  .k2b-ui .k2b-map-view__zoom { gap: 4px; }
+  /* The buttons keep their 32 px look; the gaps keep the 2.75rem hit areas from overlapping. */
+  .k2b-ui .k2b-map-view__zoom { gap: 12px; }
+  .k2b-ui .k2b-map-view__controls { gap: 12px; }
   /* The map controls stack vertically: the row rule that stops a later button's hit area at its start does not apply. */
   .k2b-ui .k2b-map-view__controls .k2b-button.k2b-icon-button::after { left: min(0px, calc((100% - 2.75rem) / 2)); right: min(0px, calc((100% - 2.75rem) / 2)); }
 }

@@ -321,7 +321,7 @@ for (const width of [390, 1024]) {
             });
             for (const path of document.querySelectorAll(".k2b-map-view__geometry path")) points.push(path.getBoundingClientRect());
             return points.every(
-              (p) => p.left >= root.left + 47 && p.right <= root.right - 47 && p.top >= root.top + 47 && p.bottom <= root.bottom - 47,
+              (p) => p.left >= root.left + 63 && p.right <= root.right - 63 && p.top >= root.top + 63 && p.bottom <= root.bottom - 63,
             );
           });
           expect(inside).toBe(true);

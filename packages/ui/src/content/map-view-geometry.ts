@@ -2,6 +2,8 @@ import type { MapViewFrameProps, MapViewLine, MapViewMarker, MapViewPoint } from
 
 export const MIN_SPAN = 256 / (512 * 2 ** 16);
 export const EARTH_CIRCUMFERENCE = 40075016.686;
+/** Room around the fitted geometry: clears the floating controls, the notice, the scale bar and the attribution. */
+export const DEFAULT_PADDING = 64;
 /** Phones are first-class: pin separation is decided for the narrowest common screen, then holds at every width. */
 const PHONE_WIDTH = 390;
 /**
@@ -57,7 +59,7 @@ export function unprojectPoint(x: number, y: number): MapViewPoint {
 export function mapFrame(
   geometry: Pick<MapViewFrameProps, "markers" | "lines" | "areas" | "ownLocation" | "fit">,
   height: number,
-  padding = 48,
+  padding = DEFAULT_PADDING,
 ): MapFrame | null {
   const points = (geometry.markers ?? []).map((marker) => marker.point);
   if (geometry.fit !== "markers" || !points.length) {
@@ -87,7 +89,7 @@ export function mapFrame(
   const overlapWidth = Math.max(minWidth, Math.min(referenceWidth, PHONE_WIDTH - 2 * padding));
   return { minX, minY, spanX, spanY, aspect, referenceWidth, minWidth, overlapWidth };
 }
-export function fitCamera(frame: MapFrame, width: number, padding = 48): { center: [number, number]; zoom: number } {
+export function fitCamera(frame: MapFrame, width: number, padding = DEFAULT_PADDING): { center: [number, number]; zoom: number } {
   const w = Math.max(Number.EPSILON, frame.minWidth, Math.min(width - 2 * padding, frame.referenceWidth));
   const center = unprojectPoint(frame.minX + frame.spanX / 2, frame.minY + frame.spanY / 2);
   return { center: [center.lon, center.lat], zoom: Math.log2(w / (frame.spanX * 512)) };
@@ -150,6 +152,29 @@ export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame): Map
     placed.push({ id: marker.id, x: p.x + offset.dx, y: p.y + offset.dy });
   }
   return offsets;
+}
+/**
+ * The touch hit radius of each pin in px: up to 22 px (a 44 px target), but never into a neighbour's visible mark
+ * (radius up to 14 px), measured at the same phone scale as the offsets so a tap on a visible pin always reaches it.
+ */
+export function pinHitRadii(
+  sortedMarkers: MapViewMarker[],
+  frame: MapFrame,
+  offsets: Map<string, { dx: number; dy: number }>,
+): Map<string, number> {
+  const scale = frame.overlapWidth / frame.spanX;
+  const places = sortedMarkers.map((marker) => {
+    const p = projectPoint(marker.point);
+    const o = offsets.get(marker.id) ?? { dx: 0, dy: 0 };
+    return { id: marker.id, x: (p.x - frame.minX) * scale + o.dx, y: (p.y - frame.minY) * scale + o.dy };
+  });
+  return new Map(
+    places.map((place) => {
+      let nearest = Infinity;
+      for (const other of places) if (other !== place) nearest = Math.min(nearest, Math.hypot(place.x - other.x, place.y - other.y));
+      return [place.id, Math.max(12, Math.min(22, nearest - 14))];
+    }),
+  );
 }
 export const metersPerPixel = (lat: number, zoom: number): number =>
   (EARTH_CIRCUMFERENCE * Math.cos((lat * Math.PI) / 180)) / (512 * 2 ** zoom);

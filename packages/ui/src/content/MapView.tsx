@@ -3,7 +3,17 @@ import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMoun
 import { Button, IconButton } from "../actions/Button";
 import { prefersReducedMotion } from "../motion";
 import { MapAttribution, MapGeometry, type MapScale, MapScaleBar, referenceScale, selectedMarker } from "./MapViewFrame";
-import { fitCamera, type MapFrame, mapFrame, metersPerPixel, pinOffsets, scaleBar, sortMarkers, unprojectPoint } from "./map-view-geometry";
+import {
+  DEFAULT_PADDING,
+  fitCamera,
+  type MapFrame,
+  mapFrame,
+  metersPerPixel,
+  pinOffsets,
+  scaleBar,
+  sortMarkers,
+  unprojectPoint,
+} from "./map-view-geometry";
 import { useMapViewMessages } from "./map-view-messages";
 import type { MapViewProps, MapViewStyle } from "./map-view-types";
 
@@ -26,7 +36,7 @@ function supportsWebgl(): boolean {
 /** A static server frame enhanced with a same-origin MapLibre worker only after it enters the viewport. */
 export function MapView(props: MapViewProps): JSX.Element {
   const messages = useMapViewMessages();
-  const frame = createMemo(() => mapFrame(props, props.height, props.padding ?? 48));
+  const frame = createMemo(() => mapFrame(props, props.height, props.padding ?? DEFAULT_PADDING));
   const selected = createMemo(() => selectedMarker(props.markers ?? [], props.selectedId));
   const [state, setState] = createSignal<MapState>("static");
   const [dark, setDark] = createSignal(false);
@@ -40,8 +50,8 @@ export function MapView(props: MapViewProps): JSX.Element {
     const live = liveScale();
     if (live) return live;
     const width = measuredWidth();
-    if (width === undefined) return referenceScale(f, props.padding ?? 48);
-    const camera = fitCamera(f, width, props.padding ?? 48);
+    if (width === undefined) return referenceScale(f, props.padding ?? DEFAULT_PADDING);
+    const camera = fitCamera(f, width, props.padding ?? DEFAULT_PADDING);
     const mpp = metersPerPixel(camera.center[1], camera.zoom);
     const bar = scaleBar(mpp);
     return { label: bar.label, width: `${bar.meters / mpp}px` };
@@ -97,7 +107,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   };
   const refit = () => {
     const f = frame();
-    if (map && f && !touched) map.jumpTo(fitCamera(f, root.clientWidth, props.padding ?? 48));
+    if (map && f && !touched) map.jumpTo(fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING));
     syncOverlay();
   };
   const start = async () => {
@@ -125,7 +135,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       const instance = createMap({
         container: live,
         style: currentStyle,
-        ...fitCamera(f, root.clientWidth, props.padding ?? 48),
+        ...fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING),
         attributionControl: false,
         cooperativeGestures: true,
         dragRotate: false,
@@ -282,7 +292,7 @@ export function MapView(props: MapViewProps): JSX.Element {
         {(value) => (
           <>
             <MapGeometry {...props} frame={value()} boxStyle={boxStyle()} onSelect={props.onSelect} interactive />
-            <MapScaleBar scale={scale() ?? referenceScale(value(), props.padding ?? 48)} />
+            <MapScaleBar scale={scale() ?? referenceScale(value(), props.padding ?? DEFAULT_PADDING)} />
           </>
         )}
       </Show>

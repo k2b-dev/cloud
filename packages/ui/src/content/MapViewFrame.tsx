@@ -1,10 +1,12 @@
 import { createMemo, For, type JSX, Show } from "solid-js";
 import {
+  DEFAULT_PADDING,
   EARTH_CIRCUMFERENCE,
   isStop,
   linePoints,
   type MapFrame,
   mapFrame,
+  pinHitRadii,
   pinOffsets,
   projectPoint,
   scaleBar,
@@ -62,6 +64,7 @@ export function MapGeometry(
   const messages = useMapViewMessages();
   const markers = createMemo(() => sortMarkers(props.markers ?? []));
   const offsets = createMemo(() => pinOffsets(markers(), props.frame));
+  const hitRadii = createMemo(() => pinHitRadii(markers(), props.frame, offsets()));
   // Input order decides the fallback selection, as in MapView; sorting is only for drawing and keys.
   const selected = createMemo(() => selectedMarker(props.markers ?? [], props.selectedId));
   const keydown = (event: KeyboardEvent & { currentTarget: HTMLButtonElement }, marker: MapViewMarker) => {
@@ -94,7 +97,7 @@ export function MapGeometry(
     }
   };
   return (
-    <div class="k2b-map-view__fit" style={props.boxStyle ?? frameStyle(props.frame, props.padding ?? 48)}>
+    <div class="k2b-map-view__fit" style={props.boxStyle ?? frameStyle(props.frame, props.padding ?? DEFAULT_PADDING)}>
       <svg
         class="k2b-map-view__geometry"
         viewBox={`0 0 ${mapNumber(props.frame.spanX * S)} ${mapNumber(props.frame.spanY * S)}`}
@@ -157,6 +160,7 @@ export function MapGeometry(
               ...positionStyle(marker.point, props.frame),
               "--k2b-map-pin-dx": `${mapNumber(offsets().get(marker.id)?.dx ?? 0)}px`,
               "--k2b-map-pin-dy": `${mapNumber(offsets().get(marker.id)?.dy ?? 0)}px`,
+              "--k2b-map-pin-hit": `${mapNumber(hitRadii().get(marker.id) ?? 22)}px`,
             });
             if (!props.interactive)
               return (
@@ -219,7 +223,7 @@ export function MapAttribution(props: { children?: JSX.Element }): JSX.Element {
 /** Geometry without a browser, a canvas, or a network dependency; suitable for server rendering and PDF output. */
 export function MapViewFrame(props: MapViewFrameProps): JSX.Element {
   const messages = useMapViewMessages();
-  const frame = createMemo(() => mapFrame(props, props.height, props.padding ?? 48));
+  const frame = createMemo(() => mapFrame(props, props.height, props.padding ?? DEFAULT_PADDING));
   return (
     <div
       class={`k2b-map-view${props.class ? ` ${props.class}` : ""}`}
@@ -233,7 +237,7 @@ export function MapViewFrame(props: MapViewFrameProps): JSX.Element {
         {(value) => (
           <>
             <MapGeometry {...props} frame={value()} />
-            <MapScaleBar scale={referenceScale(value(), props.padding ?? 48)} />
+            <MapScaleBar scale={referenceScale(value(), props.padding ?? DEFAULT_PADDING)} />
           </>
         )}
       </Show>

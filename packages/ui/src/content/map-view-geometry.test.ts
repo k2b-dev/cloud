@@ -39,14 +39,14 @@ describe("MapView geometry", () => {
     expect(projectPoint({ lat: 90, lon: 0 })).toEqual(projectPoint({ lat: 85.051129, lon: 0 }));
   });
   test("one point has a symmetric minimum box and empty geometry has none", () => {
-    const f = mapFrame({ markers: [marker("one")] }, 352)!;
+    const f = mapFrame({ markers: [marker("one")] }, 352, 48)!;
     expect(f.spanX).toBe(MIN_SPAN);
     expect(f.spanY).toBe(MIN_SPAN);
     expect(f.referenceWidth).toBe(256);
-    expect(fitCamera(f, 352).zoom).toBeCloseTo(16, 10);
-    expect(fitCamera(f, 352).center[0]).toBeCloseTo(10, 10);
-    expect(fitCamera(f, 352).center[1]).toBeCloseTo(48.4, 10);
-    expect(mapFrame({}, 400)).toBeNull();
+    expect(fitCamera(f, 352, 48).zoom).toBeCloseTo(16, 10);
+    expect(fitCamera(f, 352, 48).center[0]).toBeCloseTo(10, 10);
+    expect(fitCamera(f, 352, 48).center[1]).toBeCloseTo(48.4, 10);
+    expect(mapFrame({}, 400, 48)).toBeNull();
   });
   test("fits all vertices at several widths with the same width as CSS", () => {
     const markers = [marker("one", 1), marker("two", 2, 48.42, 10.04)];
@@ -69,9 +69,9 @@ describe("MapView geometry", () => {
       },
     ];
     const ownLocation = { point: { lat: 48.38, lon: 9.97 } };
-    const f = mapFrame({ markers, lines, areas, ownLocation }, 400)!;
+    const f = mapFrame({ markers, lines, areas, ownLocation }, 400, 48)!;
     for (const width of [240, 390, 768, 1024]) {
-      const camera = fitCamera(f, width);
+      const camera = fitCamera(f, width, 48);
       const center = projectPoint({ lon: camera.center[0], lat: camera.center[1] });
       const scale = 512 * 2 ** camera.zoom;
       expect(f.spanX * scale).toBeCloseTo(Math.min(width - 96, f.referenceWidth), 6);
@@ -85,9 +85,9 @@ describe("MapView geometry", () => {
         expect(y).toBeLessThanOrEqual(352 + 1e-6);
       }
     }
-    expect(mapFrame({ markers, lines, areas, ownLocation, fit: "markers" }, 400)).toEqual(mapFrame({ markers }, 400));
-    expect(mapFrame({ lines, fit: "markers" }, 400)).toEqual(mapFrame({ lines }, 400));
-    expect(mapFrame({ lines: [{ id: "encoded", polyline6: "_izlhA~rlgdF_{geC~ywl@_kwzCn`{nI" }] }, 400)).not.toBeNull();
+    expect(mapFrame({ markers, lines, areas, ownLocation, fit: "markers" }, 400, 48)).toEqual(mapFrame({ markers }, 400, 48));
+    expect(mapFrame({ lines, fit: "markers" }, 400, 48)).toEqual(mapFrame({ lines }, 400, 48));
+    expect(mapFrame({ lines: [{ id: "encoded", polyline6: "_izlhA~rlgdF_{geC~ywl@_kwzCn`{nI" }] }, 400, 48)).not.toBeNull();
   });
   test("sorts numbers, letters, plus and unmarked pins, keeping equal marks stable", () => {
     const pins = [
@@ -104,7 +104,7 @@ describe("MapView geometry", () => {
   });
   test("attaches hits top right of stops, then uses the first free deterministic candidate", () => {
     const pins = sortMarkers([marker("stop", "A"), marker("first", 1), marker("next", 2)]);
-    const f = mapFrame({ markers: pins }, 352)!;
+    const f = mapFrame({ markers: pins }, 352, 48)!;
     const offsets = pinOffsets(pins, f);
     expect(offsets.get("stop")).toEqual({ dx: 0, dy: 0 });
     expect(offsets.get("first")).toEqual({ dx: 17, dy: -17 });
@@ -115,7 +115,7 @@ describe("MapView geometry", () => {
     expect(pinOffsets(hits, f).get("one")).toEqual({ dx: 0, dy: 0 });
     expect(pinOffsets(hits, f).get("two")?.dy).toBeCloseTo(-28 / Math.sqrt(2));
     for (const width of [390, 1024]) {
-      fitCamera(f, width);
+      fitCamera(f, width, 48);
       expect(pinOffsets(pins, f)).toEqual(offsets);
     }
   });
