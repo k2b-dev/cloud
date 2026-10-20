@@ -575,6 +575,38 @@ else {
     expect(messages().at(-1)?.context).toEqual({ ...next, app: "mail", help: ["mail-help"], pageId: pageContext.pageId, seq: 2 });
   });
 
+  test("a swapped page's newer consent answer applies before its context is shared", () => {
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    expect(
+      post.mock.calls
+        .map(([data]) => data)
+        .filter(isPanelContextMessage)
+        .at(-1)?.context,
+    ).toEqual(pageContext);
+    // Another tab withdrew sharing; the next server page carries that answer, as a reload would.
+    const data = JSON.parse(document.getElementById("cloud-shell-data")?.textContent ?? "{}");
+    document.getElementById("cloud-shell-data")?.remove();
+    const root = document.createElement("div");
+    root.setAttribute("data-nav-root", "");
+    root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({
+      ...data,
+      panel: {
+        ...data.panel,
+        context: { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] },
+        consent: { provider: "fixture", allowed: false, revision: 2 },
+      },
+    })}</script>`;
+    h.canvas.prepend(root);
+    window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+    const contexts = post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
+    expect(contexts.at(-1)?.context).toBeNull();
+    expect(contexts.some((message) => message.context?.help?.includes("next-help"))).toBe(false);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
   test("cross-page nav popstate closes the phone panel sheet", () => {
     const h = setup(390);
     h.open();

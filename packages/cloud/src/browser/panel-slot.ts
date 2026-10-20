@@ -83,7 +83,14 @@ export function installPanelSlot(): () => void {
     if (nextRoot === pageRoot) return;
     pageRoot = nextRoot;
     pageUnsent = true;
-    base = readShellData()?.panel?.context ?? null;
+    const arriving = readShellData()?.panel;
+    // The arriving page carries the server's current consent answer, as a reload would; a newer revision wins.
+    const consent = arriving?.consent;
+    if (consent && consent.revision > (revisions.get(consent.provider) ?? 0)) {
+      answers.set(consent.provider, consent.allowed);
+      revisions.set(consent.provider, consent.revision);
+    }
+    base = arriving?.context ?? null;
     if (base) {
       documentPageId ??= base.pageId;
       context = { ...base, pageId: documentPageId, seq: ++lastSeq };
@@ -722,9 +729,9 @@ export function installPanelSlot(): () => void {
     collectContext();
     if (pageUnsent) {
       pageUnsent = false;
-      if (context) sendContext();
+      if (context && allowed()) sendContext();
       else stopSharing();
-    }
+    } else if (provider.consent && !allowed()) stopSharing();
     update();
   };
   collectContext();

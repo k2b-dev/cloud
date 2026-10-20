@@ -97,6 +97,41 @@ else {
     }
   });
 
+  test("a later swap ends the return restore of the page it replaced", async () => {
+    const tab = open();
+    const stop = installPageTrailRuntime(labels);
+    try {
+      tab.visit("/app/things/42", ["/app/things"]);
+      sessionStorage.setItem(
+        "cloud:page-trail",
+        JSON.stringify({
+          visits: [{ url: "/app/things", regions: [{ key: "@main", top: 120, left: 0 }] }],
+          returning: { url: "/app/things", from: "/app/things/42" },
+        }),
+      );
+      const column = (link: string) => {
+        const root = document.createElement("div");
+        root.setAttribute("data-nav-root", "");
+        // The returning page renders its rows late, so the restore keeps retrying.
+        root.innerHTML = `<main class="layout-content-main">${link}</main>`;
+        return root;
+      };
+      const returned = column("");
+      document.body.append(returned);
+      tab.visit("/app/things");
+      window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: returned } }));
+      const next = column('<a href="/app/things/42">42</a>');
+      returned.replaceWith(next);
+      tab.visit("/app/other");
+      await frames();
+      expect(next.querySelector("main")?.scrollTop).toBe(0);
+      expect(next.querySelector("[data-page-trail-recent]")).toBeNull();
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
   test("going up from a page never leads back to it or to another page below the parent", () => {
     const tab = open();
     try {

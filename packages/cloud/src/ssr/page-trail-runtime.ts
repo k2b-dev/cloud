@@ -212,7 +212,10 @@ const restoreReturn = (visit: Visit | undefined, from: URL) => {
   const pending = new Map((visit?.regions ?? []).map((region) => [region.key, region]));
   let marked: HTMLElement | null = null;
   let frames = 0;
+  // A page swap that replaces this column ends its restore; the next page is not the one returned to.
+  const column = document.querySelector("[data-nav-root]");
   const step = () => {
+    if (column && !column.isConnected) return;
     for (const [key, region] of pending) {
       // A region is restored once both axes hold; content that renders late can still widen or lengthen it.
       if (key === "@window") {
