@@ -1,4 +1,5 @@
 import { markdownInfoBlocks, markdownLinkReference, renderMarkdownLink } from "@k2b/ui";
+import { decodeHTML } from "entities";
 import { Marked, Renderer, type Tokens } from "marked";
 import postcss from "postcss";
 import {
@@ -165,6 +166,161 @@ a.k2b-reference { padding: .05em .3em; border-radius: .3em; background: #eeeff2;
 .k2b-reference__icon, .k2b-text-link__external { display: none; }
 `;
 
+/**
+ * Break-anywhere lowers table column width to one character, splitting even
+ * short numbers. Cells keep words whole; long runs get explicit break points.
+ */
+const TABLE_CELL_PRINT_CSS = `
+th, td { overflow-wrap: break-word; word-break: normal; }
+`;
+
+// Up to 20 characters covers nearly every real word, including German
+// compounds and IBAN-like values below that length. Longer URLs, code, hashes
+// or paths need a 10-character step: even nine columns fit the document
+// preset's narrowest row (about 90 table characters). A 20-character step
+// clipped six columns of long inline code that fitted before this protection.
+const MAX_WHOLE_CELL_RUN = 20;
+const CELL_RUN_BREAK_STEP = 10;
+
+// References (including semicolonless ones) and literal code points are raw
+// pieces. Decode for whitespace and grapheme boundaries, but preserve spelling.
+// Limit names to 32 characters, the longest HTML reference name.
+const CHARACTER_REFERENCE = /&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]{0,31});?/gu;
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+const runUnits = (pieces: { raw: string; decoded: string }[]): string[] => {
+  const decoded = pieces.map((piece) => piece.decoded).join("");
+  const ends = new Set(Array.from(GRAPHEMES.segment(decoded), ({ index, segment }) => index + segment.length));
+  const units: string[] = [];
+  let at = 0;
+  let unit = "";
+  // A boundary must end both a grapheme and a raw piece, even if it decodes
+  // to several graphemes (such as &ampx or an unknown reference-like name).
+  for (const piece of pieces) {
+    unit += piece.raw;
+    at += piece.decoded.length;
+    if (ends.has(at)) {
+      units.push(unit);
+      unit = "";
+    }
+  }
+  return units;
+};
+
+// Inline formatting does not end a run: `aaa**bbb**ccc` prints one unbroken
+// word. Any other element, such as <br>, <wbr>, an image, a span, or a
+// block, starts a new run, so a short value beside it never breaks.
+const INLINE_FORMATTING = new Set([
+  "a",
+  "b",
+  "code",
+  "del",
+  "em",
+  "i",
+  "ins",
+  "kbd",
+  "mark",
+  "s",
+  "samp",
+  "small",
+  "strong",
+  "sub",
+  "sup",
+  "u",
+  "var",
+]);
+
+// Graphics and formulas keep their own layout. In raw-text and RCDATA elements
+// a <wbr> would be literal text, not markup.
+const SKIPPED_IN_CELLS = new Set([
+  "svg",
+  "math",
+  "style",
+  "script",
+  "textarea",
+  "title",
+  "xmp",
+  "iframe",
+  "noembed",
+  "noframes",
+  "noscript",
+]);
+
+const breakLongCellRuns = (html: string): string => {
+  let skippedDepth = 0;
+  let buffer = "";
+  // Units of the run that the previous text node in the cell ended with.
+  let carried = 0;
+  const pieces = new RegExp(`(${CHARACTER_REFERENCE.source})|.`, "gsu");
+  const breakText = (text: string): string => {
+    let output = "";
+    let run: { raw: string; decoded: string }[] = [];
+    const flushRun = () => {
+      const units = runUnits(run);
+      run = [];
+      const start = carried;
+      carried += units.length;
+      // A run that continues in a later text node is counted when it gets
+      // there; earlier nodes stay as written, so at most 30 units stay whole.
+      if (carried <= MAX_WHOLE_CELL_RUN) {
+        output += units.join("");
+        return;
+      }
+      output += units
+        .map((unit, index) => ((start + index) % CELL_RUN_BREAK_STEP === 0 && start + index > 0 ? `<wbr>${unit}` : unit))
+        .join("");
+    };
+    for (const [raw, reference] of text.matchAll(pieces)) {
+      const decoded = reference === undefined ? raw : decodeHTML(raw);
+      // Literal and referenced whitespace end runs, except no-break characters.
+      if (/^[^\S\u00a0\u2007\u202f\ufeff]+$/u.test(decoded)) {
+        flushRun();
+        carried = 0;
+        output += raw;
+      } else {
+        run.push({ raw, decoded });
+      }
+    }
+    flushRun();
+    return output;
+  };
+
+  return new HTMLRewriter()
+    .on("td *, th *", {
+      element(element) {
+        if (INLINE_FORMATTING.has(element.tagName)) return;
+        carried = 0;
+        // Void elements and self-closing foreign elements have no end tag. HTML
+        // ignores the self-closing flag elsewhere: <textarea/> still opens raw text.
+        if (!element.canHaveContent) return;
+        const skipped = SKIPPED_IN_CELLS.has(element.tagName);
+        if (skipped) skippedDepth += 1;
+        // One end tag handler per element: a second registration would replace this one.
+        element.onEndTag(() => {
+          carried = 0;
+          if (skipped) skippedDepth -= 1;
+        });
+      },
+    })
+    .on("td, th", {
+      element() {
+        carried = 0;
+      },
+      text(chunk) {
+        if (skippedDepth) return;
+        // HTMLRewriter may split one text node (even an entity) into chunks.
+        buffer += chunk.text;
+        if (chunk.lastInTextNode) {
+          chunk.replace(breakText(buffer), { html: true });
+          buffer = "";
+        } else {
+          chunk.remove();
+        }
+      },
+    })
+    .transform(html);
+};
+
 const byteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
 
 const escapeHtml = (value: string): string =>
@@ -258,7 +414,9 @@ export const buildPresetPdfHtml = (input: BuildPresetPdfHtmlInput): string => {
   const suppliedCustomCss = input.customCss?.trim() ?? "";
   const customCss = suppliedCustomCss ? validateCustomCss(input.customCss ?? "") : "";
   const presetCss = templateId ? TEMPLATE_CSS[templateId] : customCss ? "" : TEMPLATE_CSS.document;
-  const baseCss = [presetCss, INFO_BLOCK_PRINT_CSS, LINK_PRINT_CSS, input.css ? styleText(input.css) : ""].filter(Boolean).join("\n");
+  const baseCss = [presetCss, INFO_BLOCK_PRINT_CSS, LINK_PRINT_CSS, TABLE_CELL_PRINT_CSS, input.css ? styleText(input.css) : ""]
+    .filter(Boolean)
+    .join("\n");
   const stylesheet = `${baseCss}${baseCss && customCss ? `\n/* Custom CSS overrides */\n` : ""}${customCss}`;
   return `<!doctype html>
 <html lang="en">
@@ -268,7 +426,7 @@ export const buildPresetPdfHtml = (input: BuildPresetPdfHtmlInput): string => {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src 'none'; font-src 'none'; form-action 'none'; frame-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; style-src 'unsafe-inline'">
 <style>${stylesheet}</style>
 </head>
-<body><main class="markdown-document">${input.html}</main></body>
+<body><main class="markdown-document">${breakLongCellRuns(input.html)}</main></body>
 </html>`;
 };
 
