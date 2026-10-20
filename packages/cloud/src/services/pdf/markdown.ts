@@ -181,20 +181,39 @@ th, td { overflow-wrap: break-word; word-break: normal; }
 const MAX_WHOLE_CELL_RUN = 20;
 const CELL_RUN_BREAK_STEP = 10;
 
+// Count references, even without a semicolon, as one unit without decoding or
+// splitting them; &nbsp; is not whitespace. A name is at most 32 characters,
+// the longest HTML reference name, so over-matching text such as &foo keeps
+// only a short piece unbroken. A bare & remains one unit.
+const CHARACTER_REFERENCE = /&(?:#[xX][0-9a-fA-F]{1,8}|#[0-9]{1,8}|[A-Za-z][A-Za-z0-9]{0,31});?/gu;
+// Other text counts in graphemes, so a break never separates an accent or a
+// joined emoji from its base character.
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+const runUnits = (run: string): string[] => {
+  const units: string[] = [];
+  let at = 0;
+  const graphemes = (text: string) => {
+    for (const { segment } of GRAPHEMES.segment(text)) units.push(segment);
+  };
+  for (const match of run.matchAll(CHARACTER_REFERENCE)) {
+    graphemes(run.slice(at, match.index));
+    units.push(match[0]);
+    at = match.index + match[0].length;
+  }
+  graphemes(run.slice(at));
+  return units;
+};
+
 const breakLongCellRuns = (html: string): string => {
   let skippedDepth = 0;
   let buffer = "";
-  // Count references, even without a semicolon, as one unit without decoding
-  // or splitting them; &nbsp; is not whitespace. A name is at most 32
-  // characters, the longest HTML reference name, so over-matching text such
-  // as &foo keeps only a short piece unbroken. A bare & remains one unit.
-  const units = /&(?:#[xX][0-9a-fA-F]{1,8}|#[0-9]{1,8}|[A-Za-z][A-Za-z0-9]{0,31});?|[\s\S]/gu;
   const breakText = (text: string): string =>
     // A raw no-break space joins a run: it is no line break opportunity.
     text.replace(/(?:\S|[\u00a0\u2007\u202f\ufeff])+/gu, (run) => {
-      const runUnits = Array.from(run.matchAll(units), ([unit]) => unit);
-      if (runUnits.length <= MAX_WHOLE_CELL_RUN) return run;
-      return runUnits.map((unit, index) => (index > 0 && index % CELL_RUN_BREAK_STEP === 0 ? `<wbr>${unit}` : unit)).join("");
+      const units = runUnits(run);
+      if (units.length <= MAX_WHOLE_CELL_RUN) return run;
+      return units.map((unit, index) => (index > 0 && index % CELL_RUN_BREAK_STEP === 0 ? `<wbr>${unit}` : unit)).join("");
     });
 
   return new HTMLRewriter()

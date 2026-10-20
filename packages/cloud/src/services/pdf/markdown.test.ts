@@ -118,6 +118,16 @@ describe("Markdown PDF renderer", () => {
     expect(html).toContain(`<td>&${a(41)}<wbr>${a(10)}<wbr>${a(10)}<wbr>${a(10)}<wbr>${a(9)};</td>`);
   });
 
+  test("never breaks inside a grapheme such as an accented letter or a joined emoji", () => {
+    const accent = "e\u0301";
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    const html = buildPresetPdfHtml({
+      html: `<table><tr><td>${"a".repeat(9)}${accent}${"b".repeat(12)}</td><td>${family.repeat(21)}</td></tr></table>`,
+    });
+    expect(html).toContain(`<td>${"a".repeat(9)}${accent}<wbr>${"b".repeat(10)}<wbr>${"b".repeat(2)}</td>`);
+    expect(html).toContain(`<td>${family.repeat(10)}<wbr>${family.repeat(10)}<wbr>${family}</td>`);
+  });
+
   test("treats a raw no-break space as part of the run", () => {
     const html = buildPresetPdfHtml({ html: `<table><tr><td>${"a".repeat(10)}\u00a0${"b".repeat(10)}</td></tr></table>` });
     expect(html).toContain(`<td>${"a".repeat(10)}<wbr>\u00a0${"b".repeat(9)}<wbr>b</td>`);
