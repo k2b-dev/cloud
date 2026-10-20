@@ -49,7 +49,11 @@ killed and restarted.
 
 While the only Mail replica restarts, Mail pages and API requests return
 **Bad Gateway** until it is ready again. Where availability matters, run at
-least **two Mail replicas**.
+least **two Mail replicas** from the release that contains the registry fix
+for [#1561](https://github.com/k2b-dev/cloud/issues/1561) and the Mail memory
+bound from [#1571](https://github.com/k2b-dev/cloud/pull/1571), each with the
+memory limit above. The number of replicas is your decision; see
+[Scaling and shutdown](/en/docs/operations/scaling-and-shutdown#what-scales-horizontally-what-must-stay-single-and-why).
 
 ## Prepare for browser confirmation of new access
 
@@ -346,8 +350,10 @@ and ephemeral host credential. This is process isolation within one
 capability-free application container, not a separate VM per user; the
 residual risk of an unsandboxed renderer inside that container is accepted and
 tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
-Chromium into a dedicated sidecar. Keep one Assistant replica for now; lost
-hosts are not replayed. Studio previews continue running in the user's browser.
+Chromium into a dedicated sidecar. Keep one Assistant replica for now: Code
+Mode hosts and their approval waits live in the Assistant process, so a poll or
+an approval that reaches another replica marks the call lost. Lost hosts are not
+replayed. Studio previews continue running in the user's browser.
 
 ## Select applications and feature dependencies
 
