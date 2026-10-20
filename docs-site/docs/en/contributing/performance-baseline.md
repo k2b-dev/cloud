@@ -676,6 +676,77 @@ WebKit keeps the context's cache. JavaScript and styles that only the next
 page needs, such as compose, still load from the network. These are local
 emulations in a container, not measurements on real phones.
 
+### Recorded mailbox-switch results
+
+On 20 October 2026, five samples per engine and profile compared document
+navigation on `c4b305b9d` with the in-place mailbox-switch checkpoint
+`d9137b4bd`. Both mailboxes used the default fixture above, with seeds
+20261001 and 20261002 and matching fixture digests between runs.
+Playwright was 1.64.1, Chromium 156.0.8078.4, and WebKit 27.2.
+
+These are observations from a busy shared host with 24 logical CPUs, **not
+isolated performance results**. The one-minute load average was 29.9 → 32.7
+for the Chromium before run, 16.4 → 25.7 for the earlier WebKit before run,
+and 32.2 → 24.1 after. Possible overlap with another lane's heavy work was
+still being checked when this checkpoint was recorded. Absolute times and
+percentage changes therefore need that qualification.
+
+Each cell is median (min–max), in milliseconds:
+
+| Engine | Profile | Before | After |
+| --- | --- | ---: | ---: |
+| Chromium | Desktop | 1,436.9 (1,240–1,949.9) | 639.5 (605.9–675.7) |
+| Chromium | Phone, CPU/network throttled | 6,127.8 (5,878.6–6,500.2) | 2,539.3 (2,227.4–2,590.2) |
+| WebKit | Desktop | 4,755 (3,874–6,565) | 1,874 (1,682–4,409) |
+| WebKit | Phone viewport, unthrottled | 4,142 (3,906–4,707) | 1,394 (1,115–2,282) |
+
+The Chromium phone median fell by about 59%. The desktop target of less
+than 300 ms was **not met** in either engine. WebKit's phone row changes the
+viewport and input mode only; it is not comparable to Chromium's throttled
+phone profile.
+
+The main request changed from an uncompressed document of about 470 KB to
+one uncompressed `workspace-route` response of about 57 KB. Chromium's
+median server/transfer times changed from 333.5/5.2 to 168.7/1.1 ms on
+desktop and from 278.3/2,348.8 to 179.5/278.7 ms on the phone. Independent
+warm server scenarios measured B's workspace route at 209.3 → 189.0 ms and
+B's SSR document at 306.3 → 290.0 ms. The interaction improvement therefore
+also removes document transfer and client work; it does not establish a
+large server-side speedup.
+
+The extra Chromium traces, excluded from the five timing samples, give this
+disjoint main-thread breakdown. All values are milliseconds:
+
+| Profile / version | Elapsed | Busy | Island mount | Style/layout | JS execution | Parse/compile | Other |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop before | 1,354.6 | 1,095.8 | 565.2 | 317.8 | 33.0 | 13.3 | 166.4 |
+| Desktop after | 699.7 | 583.9 | 0 | 236.7 | 26.1 | 0 | 321.1 |
+| Phone before | 6,916.8 | 6,575.0 | 2,201.4 | 2,896.8 | 286.8 | 81.2 | 1,108.8 |
+| Phone after | 2,308.6 | 2,020.3 | 0 | 597.0 | 123.9 | 0 | 1,299.4 |
+
+The after trace has no new SSR island mount: the outer island stays mounted
+and recreates its mailbox content inside Solid. Zero in that column does
+not mean rendering is free; its work remains in the other categories.
+The list already fetches 50 rows and uses `content-visibility: auto` for
+offscreen rows. These traces do not isolate a further row-window change as
+the next fix.
+
+The before WebKit samples come from
+`.local/mail-perf/2026-10-20T16-49-52.806Z/result.json`. That run's Chromium
+profiles failed because cached responses reported negative body sizes;
+their results are excluded. Only Chromium was repeated in
+`.local/mail-perf/sol-before-20261020/result.json`, reusing the same before
+application bundles with the measurement-size correction. The after run is
+`.local/mail-perf/sol-after-20261020/result.json`, built from its recorded
+clean checkpoint. All four after profiles completed five samples, with no
+server, browser, or cleanup errors.
+
+This checkpoint is not ready to ship: nonzero list scroll still needs the
+shared SSR history owner to restore the destination after asynchronous
+mailbox content commits, including rapid Back/Forward reversal. The existing
+browser guards cover retained document/sidebar identity and mailbox URL
+parity, but do not yet prove that scroll contract.
+
 ### Rank bottlenecks
 
 After a run, rank candidate bottlenecks against its result:
