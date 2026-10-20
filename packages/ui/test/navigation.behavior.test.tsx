@@ -4,6 +4,57 @@ import { delegateEvents, render } from "solid-js/web";
 import { createNavigation, type NavigationItem } from "../src/layout/navigation-model";
 import { createDomTestHarness } from "./dom";
 
+test("container context updates in place without selecting or disabling a destination", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const [current, setCurrent] = createSignal("project");
+  const actions: string[] = [];
+  const navigation = createNavigation({
+    items: () => [
+      {
+        id: "project",
+        label: "Project",
+        href: "/project",
+        context: current() === "project",
+        children: [{ id: "work", label: "Work", href: "/project/work", active: current() === "project" }],
+      },
+      { id: "other", label: "Other", action: "other", context: current() === "other" },
+      { id: "help", label: "Help", href: "/help" },
+    ],
+    onAction: (action) => {
+      actions.push(action);
+      setCurrent(action);
+    },
+  });
+  delegateEvents(["click"], dom.document);
+  const dispose = render(() => <Navigation navigation={navigation} label="Projects" />, dom.root);
+  try {
+    const project = dom.root.querySelector<HTMLAnchorElement>('a[href="/project"]')!;
+    const work = dom.root.querySelector<HTMLAnchorElement>('a[href="/project/work"]')!;
+    const other = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((row) => row.textContent === "Other")!;
+    const help = dom.root.querySelector<HTMLAnchorElement>('a[href="/help"]')!;
+    expect(project.parentElement!.dataset.context).toBe("true");
+    expect(project.hasAttribute("aria-current")).toBe(false);
+    expect(work.getAttribute("aria-current")).toBe("page");
+    expect(work.parentElement!.hasAttribute("data-context")).toBe(false);
+    expect(help.parentElement!.hasAttribute("data-context")).toBe(false);
+    expect(other.parentElement!.dataset.context).toBe("false");
+    expect(other.disabled).toBe(false);
+    other.focus();
+    other.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(actions).toEqual(["other"]);
+    expect(project.parentElement!.dataset.context).toBe("false");
+    expect(other.parentElement!.dataset.context).toBe("true");
+    expect(dom.document.activeElement).toBe(other);
+    expect(work.hasAttribute("aria-current")).toBe(false);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 describe("Navigation", () => {
   test("keeps row focus across snapshots and performs actions only after host dismissal", async () => {
     const dom = createDomTestHarness();

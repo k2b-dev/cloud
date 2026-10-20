@@ -674,6 +674,7 @@ export default function MailSidebar(
       navigation: props.onOpenMailbox ? "enhanced" : undefined,
       scroll: props.onOpenMailbox ? "preserve" : undefined,
       active: Boolean(open) && !placeActive(),
+      context: Boolean(open),
       badge: stats(mailbox.id).needsAction || undefined,
       ...(open ? { children: folderEntries(open), defaultExpanded: true } : {}),
     };

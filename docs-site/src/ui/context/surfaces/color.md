@@ -29,6 +29,18 @@ Text uses strong contrast: darker secondary text, stronger level steps,
 slightly larger secondary sizes, and tighter titles. The exact roles, sizes,
 and contrast floors are in [Ink hierarchy](/en/ui/surfaces/utilities#ink-hierarchy).
 
+Keep the current container and its destinations easy to distinguish from
+other selectable containers: use strong ink for the current container and
+readable secondary ink for the others' names and icons. Preserve status
+colors and active destination fills. Do not fade an entire navigation subtree
+or make another container look disabled. [Navigation's optional context
+marker](/en/ui/layout/navigation#container-context) expresses this without
+changing callers that omit it.
+
+Content weight also carries meaning. In a mail list, read senders and subjects
+use regular weight; unread rows add semibold type and the unread marker.
+Selection keeps its fill independently of unread emphasis.
+
 ## Selection color
 
 Selection marks where the person is or what they picked. Three optional host

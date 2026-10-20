@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
@@ -315,6 +315,70 @@ const clickTab = async (page: Page, href: string) => {
 /** The shell tests. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`mailbox context contrast ${theme} ${width}: folder selection and keyboard switch stay independent`, async () => {
+          const page = await open(`${boxPath}?folder=Inbox1&navigation=1&theme=${theme}`, width);
+          const appearance = (locator: Locator) =>
+            locator.evaluate((element) => {
+              const style = getComputedStyle(element);
+              const probe = document.createElement("span");
+              probe.style.color = "var(--k2b-text-secondary)";
+              element.append(probe);
+              const secondary = getComputedStyle(probe).color;
+              probe.remove();
+              return { color: style.color, secondary, weight: style.fontWeight };
+            });
+          try {
+            for (const part of ["sender", "subject"]) {
+              const read = page.locator(`.mail-list-entry:not(.mail-list-entry-unread) .mail-row-${part}`).first();
+              const unread = page.locator(`.mail-list-entry-unread .mail-row-${part}`).first();
+              expect((await appearance(read)).weight).toBe("400");
+              expect((await appearance(unread)).weight).toBe("600");
+            }
+            const phone = width === 390;
+            if (phone) await page.getByRole("button", { name: "Open mailbox navigation", exact: true }).tap();
+            const navigation = phone ? page.locator("dialog .k2b-navigation") : sidebar(page);
+            await navigation.waitFor({ state: "visible" });
+            const current = phone ? navigation.locator(`a[href="${boxPath}"]`) : navigation.locator('[data-mailbox="Box001"] a').first();
+            const other = phone
+              ? navigation.locator('a[href="/app/mail/Box002"]')
+              : navigation.locator('[data-mailbox="Box002"] a').first();
+            const label = phone ? ".k2b-navigation__copy > span" : ".k2b-app-workspace__sidebar-item-label";
+            const currentInk = await appearance(current.locator(label));
+            const otherInk = await appearance(other.locator(label));
+            expect(currentInk.weight).toBe("600");
+            expect(otherInk.weight).toBe("400");
+            expect(otherInk.color).toBe(otherInk.secondary);
+            expect(otherInk.color).not.toBe(currentInk.color);
+            expect(await current.getAttribute("aria-current")).toBeNull();
+            expect(await other.getAttribute("aria-disabled")).toBeNull();
+            const folder = navigation.locator(`a[href="${boxPath}?folder=Inbox1"]`);
+            expect(await folder.getAttribute("aria-current")).toBe("page");
+            if (phone) {
+              expect(await current.locator("..").getAttribute("data-context")).toBe("true");
+              expect(await other.locator("..").getAttribute("data-context")).toBe("false");
+              const focus = navigation.locator('a[href="/app/mail"]');
+              expect(await focus.locator("..").getAttribute("data-context")).toBeNull();
+              expect((await appearance(focus.locator(label))).color).toBe(currentInk.color);
+            }
+            if (screenshots) {
+              mkdirSync(resolve(screenshots), { recursive: true });
+              await page.screenshot({ path: join(resolve(screenshots), `mailbox-context-${theme}-${width}.png`) });
+            }
+            // A quieter selectable mailbox keeps native keyboard activation, also in the real phone sheet.
+            await other.focus();
+            await page.keyboard.press("Enter");
+            await page.waitForURL(new URL("/app/mail/Box002", server.url).href);
+            await ready(page);
+            await page.getByText("Example dispatch: Example request 1", { exact: true }).waitFor({ state: "visible" });
+            if (phone) await navigation.waitFor({ state: "hidden" });
+            else expect(await sidebar(page).locator('[data-mailbox="Box002"]').getAttribute("data-open")).toBe("true");
+          } finally {
+            await close(page);
+          }
+        });
+
     test("Focus and mailbox share the ordered navigation; switching mailbox takes one link", async () => {
       let label: string | null = null;
       let rows: string[] = [];

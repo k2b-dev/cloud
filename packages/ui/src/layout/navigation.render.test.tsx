@@ -31,4 +31,27 @@ describe("Navigation rendering", () => {
     expect(html).toMatch(/<nav[^>]*><ul /);
     expect(html).toContain('href="/inbox"');
   });
+
+  test("container context is explicit and independent of the current destination", () => {
+    const navigation = createNavigation({
+      items: () => [
+        {
+          id: "projects",
+          label: "Projects",
+          href: "/projects",
+          context: true,
+          children: [{ id: "work", label: "Work", href: "/projects/work", active: true }],
+        },
+        { id: "other", label: "Other", href: "/other", context: false },
+        { id: "help", label: "Help", href: "/help" },
+      ],
+    });
+    const html = renderToString(() => createComponent(Navigation, { navigation, label: "Workspace" }));
+    expect(html).toContain('data-context="true"');
+    expect(html).toContain('data-context="false"');
+    expect(html.match(/data-context=/g)).toHaveLength(2);
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(/<a\b[^>]*aria-current="page"[^>]*>/.exec(html)?.[0]).toContain('href="/projects/work"');
+    expect(html).not.toContain("aria-disabled");
+  });
 });
