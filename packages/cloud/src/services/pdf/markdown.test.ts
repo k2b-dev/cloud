@@ -120,7 +120,19 @@ describe("Markdown PDF renderer", () => {
   });
 
   test("counts each character reference as one non-whitespace unit without splitting it", () => {
-    for (const entity of ["&amp;", "&#160;", "&#xA0;", "&nbsp;", "&#65", "&amp", "&#x41", "&#X41", "&foo"]) {
+    for (const entity of [
+      "&amp;",
+      "&#160;",
+      "&#xA0;",
+      "&nbsp;",
+      "&#65",
+      "&amp",
+      "&#x41",
+      "&#X41",
+      "&foo",
+      "&#00000000065;",
+      "&#x0000000041",
+    ]) {
       const prefix = "a".repeat(9);
       const html = buildPresetPdfHtml({
         html: `<table><tr><td>${prefix}${entity}${"!".repeat(10)} ${prefix}${entity}${"!".repeat(11)} ${prefix}b${entity}${"!".repeat(10)}</td></tr></table>`,

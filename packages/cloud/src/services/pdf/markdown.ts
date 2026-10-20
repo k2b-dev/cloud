@@ -182,10 +182,11 @@ const MAX_WHOLE_CELL_RUN = 20;
 const CELL_RUN_BREAK_STEP = 10;
 
 // Count references, even without a semicolon, as one unit without decoding or
-// splitting them; &nbsp; is not whitespace. A name is at most 32 characters,
-// the longest HTML reference name, so over-matching text such as &foo keeps
-// only a short piece unbroken. A bare & remains one unit.
-const CHARACTER_REFERENCE = /&(?:#[xX][0-9a-fA-F]{1,8}|#[0-9]{1,8}|[A-Za-z][A-Za-z0-9]{0,31});?/gu;
+// splitting them; &nbsp; is not whitespace. Numeric references keep all their
+// digits, leading zeros included. A name is at most 32 characters, the longest
+// HTML reference name, so over-matching text such as &foo keeps only a short
+// piece unbroken. A bare & remains one unit.
+const CHARACTER_REFERENCE = /&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]{0,31});?/gu;
 // Other text counts in graphemes, so a break never separates an accent or a
 // joined emoji from its base character.
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
