@@ -1,33 +1,133 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser, errors } from "playwright";
-import { browserName, launchBrowser, settled } from "../test/browser";
+import { browserName, launchBrowser, pageErrors, settled } from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
   await import("./browser-recovery.browser-suite");
 } else {
   let browser: Browser;
   let server: ReturnType<typeof Bun.serve>;
-  beforeAll(async () => {
-    server = Bun.serve({
+  // Another origin for cross-origin requests: same address, another port.
+  let other: ReturnType<typeof Bun.serve>;
+  const serve = () =>
+    Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch(request) {
+      async fetch(request) {
         const path = new URL(request.url).pathname;
         if (path === "/hang" || path === "/never") return new Promise<Response>(() => {});
+        // The next document takes a moment, so the page that a navigation leaves keeps waiting for it.
+        if (path === "/next") await Bun.sleep(500);
         return new Response(path === "/stalled" ? '<!doctype html><img src="/never">' : "<!doctype html><p>Start</p>", {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       },
     });
+  beforeAll(async () => {
+    server = serve();
+    other = serve();
     browser = await launchBrowser();
   });
   afterAll(async () => {
     try {
       await browser?.close();
     } finally {
-      await server?.stop(true);
+      await Promise.all([server?.stop(true), other?.stop(true)]);
     }
   });
+
+  // A stream that opens again once when it fails, as a live chat does: a navigation cancels the first request, and
+  // WebKit refuses the second, which starts while the page waits for the next document (#1579).
+  const reconnectingStream = (url: string) => {
+    void fetch(url).catch(() => fetch(url).catch(() => {}));
+  };
+
+  test("pageErrors() ignores only WebKit's report of a same-origin load that a test's navigation refused", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const errors = pageErrors(page);
+      const reported: string[] = [];
+      page.on("pageerror", (error) => reported.push(`${error.name}:/${error.message}`));
+      const hang = new URL("/hang", server.url).href;
+      const refused = `Fetch API cannot load ${hang} due to access control checks.`;
+      await page.goto(new URL("/start", server.url).href);
+      await page.evaluate(reconnectingStream, hang);
+      await page.goto(new URL("/next", server.url).href);
+      expect(errors).toEqual([]);
+      // WebKit did report the refusal, so a plain pageerror listener fails here.
+      expect(reported).toEqual(browserName === "webkit" ? [refused] : []);
+
+      // The same refusal during a navigation the page starts itself is reported.
+      await page.evaluate(reconnectingStream, hang);
+      await page.evaluate(() => setTimeout(() => location.assign("/next?again")));
+      await page.waitForURL(new URL("/next?again", server.url).href);
+      expect(errors).toEqual(browserName === "webkit" ? [refused] : []);
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  test("pageErrors() reports an unhandled rejection of a failed fetch, also during a test's navigation", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const errors = pageErrors(page);
+      await page.route("**/fails", (route) => route.abort());
+      await page.goto(new URL("/start", server.url).href);
+      const first = page.waitForEvent("pageerror");
+      await page.evaluate(() => {
+        void fetch("/fails");
+      });
+      await first;
+      const failed = browserName === "webkit" ? "Unhandled Promise Rejection: TypeError: Load failed" : "TypeError: Failed to fetch";
+      expect(errors).toEqual([failed]);
+
+      // WebKit rejects the refused second request unhandled; Chromium leaves both requests open until the page goes.
+      const hang = new URL("/hang", server.url).href;
+      await page.evaluate((url) => {
+        void fetch(url).catch(() => fetch(url));
+      }, hang);
+      await page.goto(new URL("/next", server.url).href);
+      expect(errors).toEqual(browserName === "webkit" ? [failed, failed] : [failed]);
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  test("pageErrors() reports an access-control failure without a navigation and one for another origin during it", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const errors = pageErrors(page);
+      await page.goto(new URL("/start", server.url).href);
+      // The other origin answers without CORS headers.
+      const blocked = new URL("/start", other.url).href;
+      const reported = browserName === "webkit" ? page.waitForEvent("pageerror") : undefined;
+      await page.evaluate(
+        (url) =>
+          fetch(url).then(
+            () => "loaded",
+            () => "blocked",
+          ),
+        blocked,
+      );
+      await reported;
+      const otherHang = new URL("/hang", other.url).href;
+      await page.evaluate(reconnectingStream, otherHang);
+      await page.goto(new URL("/next", server.url).href);
+      expect(errors).toEqual(
+        browserName === "webkit"
+          ? [
+              `Fetch API cannot load ${blocked} due to access control checks.`,
+              `Fetch API cannot load ${otherHang} due to access control checks.`,
+            ]
+          : [],
+      );
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
 
   test("settled() waits for transitions and animations to end", async () => {
     const context = await browser.newContext();
