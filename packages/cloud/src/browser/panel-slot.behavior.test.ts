@@ -838,7 +838,14 @@ else {
       oldScript.remove();
       const root = document.createElement("div");
       root.setAttribute("data-nav-root", "");
-      root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ ...data, panel: { ...data.panel, context } })}</script><button data-cloud-panel-toggle>Panel</button>`;
+      const arriving = document.createElement("script");
+      arriving.id = "cloud-shell-data";
+      arriving.type = "application/json";
+      arriving.textContent = JSON.stringify({ ...data, panel: { ...data.panel, context } });
+      const toggle = document.createElement("button");
+      toggle.setAttribute("data-cloud-panel-toggle", "");
+      toggle.textContent = "Panel";
+      root.append(arriving, toggle);
       const old = document.querySelector("[data-nav-root]");
       if (old) old.replaceWith(root);
       else h.canvas.prepend(root);
@@ -879,14 +886,18 @@ else {
     document.getElementById("cloud-shell-data")?.remove();
     const root = document.createElement("div");
     root.setAttribute("data-nav-root", "");
-    root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({
+    const arriving = document.createElement("script");
+    arriving.id = "cloud-shell-data";
+    arriving.type = "application/json";
+    arriving.textContent = JSON.stringify({
       ...data,
       panel: {
         ...data.panel,
         context: { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] },
         consent: { provider: "fixture", allowed: false, revision: 2 },
       },
-    })}</script>`;
+    });
+    root.append(arriving);
     h.canvas.prepend(root);
     window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
     const contexts = post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
