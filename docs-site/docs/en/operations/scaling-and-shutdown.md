@@ -10,15 +10,85 @@ updated: 2026-10-20
 
 # Scaling and shutdown
 
-Cloud can run multiple replicas behind one stable service address.
+Cloud can run multiple replicas behind one stable service address. Cloud
+registers one logical entry per application ID, and the gateway routes to that
+service address.
 
-The orchestrator distributes traffic between replicas. Cloud registers one
-logical entry per application ID and routes to that service address.
+Each gateway process sticks to one resolved address per service name. Behind
+Docker Compose DNS with several A records, one gateway sends all its traffic to
+one replica; the other replicas get traffic only from other gateway processes.
+A per-connection balancer, such as a Kubernetes ClusterIP service through
+kube-proxy, is expected to spread connections between replicas. Cloud has
+measured the Docker Compose behavior, not the ClusterIP behavior. When the
+replica a gateway uses stops, the gateway's next requests reach another
+replica.
 
 The nightly [scale acceptance](/en/docs/contributing/testing#scale-acceptance)
 runs Core, Mail, Chat, and Notebooks with two replicas each in a disposable
 stack. It checks live updates, draft leases, and delivery after one replica is
-killed.
+killed. Run it locally with Docker:
+
+```bash
+bun run --cwd packages/ui build
+bun --no-env-file scripts/scale-acceptance.ts
+```
+
+## What scales horizontally, what must stay single and why
+
+Every application can run several replicas, except Assistant. The table names
+what coordinates the replicas of each application and which per-process limits
+grow with the replica count.
+
+| Application | Several replicas | Coordinated by | Per-process limits that multiply |
+|---|---|---|---|
+| Gateway (`gateway`) | Yes | No registry entry; each process builds its route table from the shared registry. Give each replica its own `GATEWAY_INSTANCE_ID` or `HOSTNAME`, or their operations snapshots overwrite each other | None |
+| Core (`core`) | Yes | NATS schedulers and keyed jobs with Postgres claims for AI turns, outgoing mail and notifications | 8 AI turn workers, 8 SMTP send workers, 4 notification workers, 2 chat PDF conversions |
+| Accounts (`accounts`) | Yes | Postgres draft rows and recipient claims | None |
+| API Docs (`api-docs`) | Yes | Specs built per request from the shared registry | None |
+| Assistant (`assistant`) | **No, one replica** | Code Mode hosts and their approval waits live in the Assistant process ([#47](https://github.com/k2b-dev/cloud/issues/47)) | +1 Postgres connection per replica |
+| Capabilities (`capabilities`) | Yes | Catalog read from the shared registry and cached for 30 seconds | None |
+| Chat (`chat`) | Yes | Postgres outbox to a NATS live topic; NATS scheduler for maintenance | None |
+| Contacts (`contacts`) | Yes | Postgres outbox to a NATS live topic; NATS scheduler for retention | None |
+| Dashboard (`dashboard`) | Yes | Postgres rows per person | None |
+| FAQ (`faq`) | Yes | Postgres only | None |
+| Files (`filesv2`) | Yes | NATS mutexes and Postgres reservations for operations and uploads | 4 uploads |
+| Gateway operations (`gateway-ops`) | Yes | NATS scheduler and slot-keyed jobs; one durable NATS consumer for telemetry | Metrics collected by every replica |
+| Grids (`grids`) | Yes | Postgres outbox claims, NATS mutexes and schedulers | 10 workflow slots, a query pool of 12 Postgres connections, +4 Postgres connections for number series |
+| Hosts (`ipa-hosts`) | Yes | NATS scheduler and slot-keyed sync job | None |
+| Mail (`mail`) | Yes | NATS lease for IMAP IDLE, NATS draft leases, NATS jobs and Postgres claims | 4 provider jobs per kind, 2 workflow slots |
+| Notebooks (`notebooks`) | Yes | Shared NATS document log; snapshot job partitioned by note | 2 PDF conversions |
+| OAuth (`oauth`) | Yes | Valkey consent state; Postgres consumes codes and refresh tokens atomically | None |
+| Proxy Auth (`proxy-auth`) | Yes | Postgres reads per verification; Valkey return state | None |
+| Pulse (`pulse`) | Yes | NATS scheduler and keyed scrape jobs; Postgres lock per source | Scrape, rollup and retention workers |
+| Mobile app (`pwa`) | Yes | Core's Postgres pairing locks | None |
+| Quotes (`quotes`) | Yes | Valkey cache | None |
+| Spaces (`spaces`) | Yes | Postgres locks and outbox; Valkey link previews | None |
+| Tools (`tools`) | Yes | Postgres rows for webhook endpoints | 2 PDF conversions |
+| Venues (`venue`) | Yes | NATS scheduler for shift notices | None |
+| Weather (`weather`) | Yes | Valkey forecast cache | None |
+
+Keep **one Assistant replica** for now. Code Mode hosts and their approval
+waits live in the Assistant process, so a poll or an approval that reaches
+another replica marks the call lost. Durable Code Mode ownership is tracked in
+[#47](https://github.com/k2b-dev/cloud/issues/47).
+
+A per-process limit protects one process, not the service behind it. With
+several replicas, Gotenberg, Filegate, the SMTP relay, model providers and
+Postgres see the limit once per replica: two Core replicas run up to 16 AI
+turns and 16 SMTP sessions. Size those services for the replica count. A
+shared budget is tracked in
+[#1626](https://github.com/k2b-dev/cloud/issues/1626). Live updates allow 16
+sockets per viewer on each replica. Workflow slots also count per replica; see
+[Emit events and start runs](/en/docs/automation/emit-events-and-start-runs).
+
+Where availability matters, run at least **two Mail replicas** from the release
+that contains the registry fix for
+[#1561](https://github.com/k2b-dev/cloud/issues/1561) and the Mail memory bound
+from [#1571](https://github.com/k2b-dev/cloud/pull/1571). While a single Mail
+replica restarts, for example after an out-of-memory kill
+([#1549](https://github.com/k2b-dev/cloud/issues/1549)), Mail pages and API
+requests return **Bad Gateway**. The number of replicas in production is your
+decision.
 
 ## Scale stateless request handling
 
@@ -61,6 +131,31 @@ count.
 
 During a rolling deployment, old and new instances may both receive traffic.
 Keep database changes backward-compatible until the rollout completes.
+
+## Roll out replicas
+
+Stopping one replica no longer removes the application's routes while another
+replica runs; see [Application registration](#application-registration).
+Replicas of one application can boot together: setup runs on one replica at a
+time, and the later ones wait for it; see
+[Use lifecycle hooks](#use-lifecycle-hooks).
+
+A stopping process does not drain HTTP yet. On `SIGTERM` it runs its stop
+hooks, stops Sync, and exits while its HTTP server still accepts requests, and
+its readiness still reports ready. Requests that reach it during this time can
+fail when they need NATS. Requests in flight and open SSE streams are cut at
+exit: the gateway answers such a request with `502` and `Retry-After: 3`, and
+live sockets close and reconnect. Graceful HTTP shutdown is tracked in
+[#1625](https://github.com/k2b-dev/cloud/issues/1625).
+
+Until then:
+
+- drain at the ingress: take the replica out of the service before it receives
+  `SIGTERM`, for example with a Kubernetes `preStop` delay that is longer than
+  the endpoint update. This stops new connections; connections a gateway
+  already holds can still reach the replica until it exits;
+- size the termination window; see
+  [Set the termination window](#set-the-termination-window).
 
 ## Use lifecycle hooks
 
