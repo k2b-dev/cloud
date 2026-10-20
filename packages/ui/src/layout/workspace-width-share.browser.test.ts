@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import {
   clientFixture,
   type FixtureOptions,
@@ -123,10 +123,12 @@ for (const width of [1376, 1456, 1536, 1600, 1856, 2496, 952, 1462]) {
   test(`${width}px: workspace share has identical server, attached, reload and client frames`, async () => {
     const { page, options } = await load(width);
     try {
+      // settled: the server frame before JS is the subject.
       const server = await page.evaluate(frame);
       expectedFrame(server, width);
       await page.addScriptTag({ content: controller });
       await workspaceFrames(page);
+      // settled: the frame two frames after this step is the subject.
       sameFrame(await page.evaluate(frame), server);
       expect(
         await page
@@ -134,14 +136,17 @@ for (const width of [1376, 1456, 1536, 1600, 1856, 2496, 952, 1462]) {
           .evaluate((root) => (root as HTMLElement).style.getPropertyValue("--k2b-workspace-pane-navigation-width")),
       ).toBe("");
       await page.reload();
+      // settled: the reloaded server frame is the subject.
       sameFrame(await page.evaluate(frame), server);
       await page.evaluate((options) => {
         document.body.dataset.options = JSON.stringify(options);
         document.getElementById("app")!.innerHTML = "";
       }, options);
       await page.addScriptTag({ content: script });
+      // settled: the client-rendered first frame is the subject.
       sameFrame(await page.evaluate(frame), server);
       await workspaceFrames(page);
+      // settled: the frame two frames after this step is the subject.
       sameFrame(await page.evaluate(frame), server);
       const handle = page.locator('[data-app-workspace-resize="pane"]');
       expect(Math.abs(Number(await handle.getAttribute("aria-valuenow")) - server.pane.width)).toBeLessThanOrEqual(0.5);
@@ -155,12 +160,14 @@ for (const sidebar of [176, 360]) {
   test(`1600px: a stored ${sidebar}px sidebar moves the share Detail threshold before JS`, async () => {
     const { page } = await load(1600, sidebar);
     try {
+      // settled: the server frame before JS is the subject.
       const server = await page.evaluate(frame);
       expectedFrame(server, 1600);
       expect(server.sidebar).toBe(sidebar);
       expect(server.column).toBe(sidebar === 176);
       await page.addScriptTag({ content: controller });
       await workspaceFrames(page);
+      // settled: the frame two frames after this step is the subject.
       sameFrame(await page.evaluate(frame), server);
     } finally {
       await page.close();
@@ -172,10 +179,12 @@ for (const width of [1456, 1600]) {
   test(`${width}px: numeric Main minimum retains its fixed threshold`, async () => {
     const { page } = await load(width, 240, 760);
     try {
+      // settled: the server frame before JS is the subject.
       const server = await page.evaluate(frame);
       expectedFrame(server, width, 760);
       await page.addScriptTag({ content: controller });
       await workspaceFrames(page);
+      // settled: the frame two frames after this step is the subject.
       sameFrame(await page.evaluate(frame), server);
     } finally {
       await page.close();
@@ -193,16 +202,16 @@ test("share default resets on double-click after a keyboard resize; limits resol
     expect(Number(await sidebar.getAttribute("aria-valuemax"))).toBeLessThanOrEqual(1600 - 2 - 828);
     await pane.focus();
     await page.keyboard.press("ArrowRight");
-    await workspaceFrames(page);
+    await settled(page);
     expect((await page.evaluate(frame)).pane.width).toBeGreaterThan(388);
     await pane.dblclick();
-    await workspaceFrames(page);
+    await settled(page);
     expect((await page.evaluate(frame)).pane.width).toBeCloseTo(388, 0);
     // The default follows the workspace again, rather than keeping a reset px width.
     await page.locator("#app").evaluate((app) => {
       app.parentElement!.style.width = "1600px";
     });
-    await workspaceFrames(page);
+    await settled(page);
     expectedFrame(await page.evaluate(frame), 1536);
   } finally {
     await page.close();
@@ -212,10 +221,12 @@ test("share default resets on double-click after a keyboard resize; limits resol
 test("island-wrapped Main inherits the resolved workspace width", async () => {
   const { page } = await load(1456, 240, mainMin, true);
   try {
+    // settled: the server frame before JS is the subject.
     const server = await page.evaluate(frame);
     expectedFrame(server, 1456);
     await page.addScriptTag({ content: controller });
     await workspaceFrames(page);
+    // settled: the frame two frames after this step is the subject.
     sameFrame(await page.evaluate(frame), server);
   } finally {
     await page.close();
@@ -229,6 +240,7 @@ for (const [width, sidebar] of [
   test(`${width}px: the host bound agrees in padding, grid and inherited width`, async () => {
     const { page } = await load(width, sidebar);
     try {
+      // settled: the server frame before JS is the subject.
       const server = await page.evaluate(frame);
       expect(Math.abs(server.root.width - width)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(server.workspaceWidth - width)).toBeLessThanOrEqual(0.5);
@@ -237,6 +249,7 @@ for (const [width, sidebar] of [
       expect(server.sidebar).toBe(0);
       await page.addScriptTag({ content: controller });
       await workspaceFrames(page);
+      // settled: the frame two frames after this step is the subject.
       sameFrame(await page.evaluate(frame), server);
     } finally {
       await page.close();

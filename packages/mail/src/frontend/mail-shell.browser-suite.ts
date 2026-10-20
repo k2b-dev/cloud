@@ -999,31 +999,25 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             ["&list=hidden", [834, 900]],
             ["&shell=1&sidebar=240&panel=416", [1024, 1100, 1194, 1280, 1366]],
           ] as const) {
-            // One page per case; container queries follow each resize at once.
+            // One page per case, resized through its widths.
             const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}&locale=${locale}${extra}`, widths[0], 900);
             try {
               for (const width of widths) {
                 await page.setViewportSize({ width, height: 900 });
-                const result = await page.evaluate(
-                  () =>
-                    new Promise<{ reader: number; outside: string[]; details: boolean }>((resolve) =>
-                      requestAnimationFrame(() =>
-                        requestAnimationFrame(() => {
-                          const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
-                          const bar = document.querySelector(".mail-reader-toolbar")!;
-                          const outside = [...bar.querySelectorAll<HTMLElement>("button, a")]
-                            .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden")
-                            .filter((element) => {
-                              const box = element.getBoundingClientRect();
-                              return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
-                            })
-                            .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
-                          const details = bar.querySelector<HTMLElement>("[data-mail-details-trigger]")!.getClientRects().length > 0;
-                          resolve({ reader: Math.round(reader.width), outside, details });
-                        }),
-                      ),
-                    ),
-                );
+                await settled(page);
+                const result = await page.evaluate(() => {
+                  const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
+                  const bar = document.querySelector(".mail-reader-toolbar")!;
+                  const outside = [...bar.querySelectorAll<HTMLElement>("button, a")]
+                    .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden")
+                    .filter((element) => {
+                      const box = element.getBoundingClientRect();
+                      return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
+                    })
+                    .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
+                  const details = bar.querySelector<HTMLElement>("[data-mail-details-trigger]")!.getClientRects().length > 0;
+                  return { reader: Math.round(reader.width), outside, details };
+                });
                 readers.push(result.reader);
                 if (result.outside.length || !result.details)
                   misfits.push(`${locale} ${width}${extra} (reader ${result.reader}): ${result.outside.join(", ") || "no Details"}`);

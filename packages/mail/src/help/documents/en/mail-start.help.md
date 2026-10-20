@@ -86,7 +86,7 @@ The center list shows one row per conversation: the sender and the time, the sub
 
 **Reply**, **Reply all**, and **Forward** start the reader's toolbar, followed by the actions you chose with **… > Customize toolbar**. When the reader gets narrow, Reply all and Forward show only their icons, then move into **…** with the actions that no longer fit. **…** always lists every action.
 
-Choose **Conversation details** to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. The details stand next to the reader while it keeps enough room. Otherwise they wait behind **Details** and open over the reader's end with one click. To get more reading space, hide the conversation list.
+Choose **Conversation details** to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. The details stand next to the reader while it keeps enough room. Otherwise they wait behind **Details**: choose it, and they open over the reader's end. To get more reading space, hide the conversation list.
 
 Next to a composer, the conversation history contains only messages. Operational activity does not distract you while you write.
 

@@ -85,7 +85,7 @@ Die mittlere Liste zeigt eine Zeile pro Unterhaltung: Absender und Zeit, den Bet
 
 **Antworten**, **Allen antworten** und **Weiterleiten** stehen am Anfang der Werkzeugleiste des Lesebereichs, danach die Aktionen, die du mit **… > Werkzeugleiste anpassen** gewählt hast. Wird der Lesebereich schmal, zeigen Allen antworten und Weiterleiten nur noch ihr Symbol und wandern dann mit den Aktionen, die nicht mehr passen, unter **…**. **…** enthält immer jede Aktion.
 
-Wähle **Unterhaltungsdetails**, um Teamkontext, lokale Tags, Zuständigkeit, Kommentare, Erinnerungen und die längere Liste der letzten Aktivitäten zu öffnen. Die Details stehen neben dem Lesebereich, solange er genug Platz behält. Sonst warten sie hinter **Details** und öffnen sich mit einem Klick über dem Ende des Lesebereichs. Wenn du mehr Platz zum Lesen brauchst, blende die Unterhaltungsliste aus.
+Wähle **Unterhaltungsdetails**, um Teamkontext, lokale Tags, Zuständigkeit, Kommentare, Erinnerungen und die längere Liste der letzten Aktivitäten zu öffnen. Die Details stehen neben dem Lesebereich, solange er genug Platz behält. Sonst warten sie hinter **Details**: Wähle es, und sie öffnen sich über dem Ende des Lesebereichs. Wenn du mehr Platz zum Lesen brauchst, blende die Unterhaltungsliste aus.
 
 Neben einem Editor enthält der Unterhaltungsverlauf nur Nachrichten. Betriebliche Aktivitäten lenken dich beim Schreiben nicht ab.
 
