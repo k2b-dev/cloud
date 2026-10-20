@@ -153,7 +153,9 @@ export const navigate = (href: string, options: EnhancedNavigateOptions = {}): v
     else {
       const shared: SharedSwap = globalThis;
       const swap = shared[swapKey];
-      if (swap && snapshot) swap.departure = snapshot;
+      // Manual scrolling only skips the arrival scroll; a supplied snapshot still records the departure.
+      const departure = options.scrollSnapshot ?? snapshot;
+      if (swap && departure) swap.departure = departure;
       try {
         window.history.pushState(state, "", target);
       } finally {

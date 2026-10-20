@@ -1807,18 +1807,21 @@ test("navigate(replace) that cancels a pending traversal gives the entry to the 
   expect(window.history.state[markerKey]).toEqual({ page: b.page, position: a1[markerKey].position });
 });
 
-test("a navigate() push records the departure scroll it captured before the island changed the page", () => {
-  install();
-  const departing = window.history.state;
-  let y = 0;
-  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
-  const scrollSnapshot = { window: { x: 0, y: 900 }, regions: [] };
-  // Shorter content already clamped the window before the push.
-  navigate("/app/old?tab=short", { scrollSnapshot, scroll: "preserve", viewTransition: false });
-  y = 0;
-  arrive(departing);
-  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 900);
-});
+test.each(["preserve", "manual"] as const)(
+  "a navigate() push with scroll %s records the departure scroll captured before the island changed the page",
+  (scroll) => {
+    install();
+    const departing = window.history.state;
+    let y = 0;
+    Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+    const scrollSnapshot = { window: { x: 0, y: 900 }, regions: [] };
+    // Shorter content already clamped the window before the push.
+    navigate("/app/old?tab=short", { scrollSnapshot, scroll, viewTransition: false });
+    y = 0;
+    arrive(departing);
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 900);
+  },
+);
 
 test("a non-plain replace during a traversal fetch still lets the traversal commit", async () => {
   install();
