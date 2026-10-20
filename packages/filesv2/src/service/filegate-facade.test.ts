@@ -94,6 +94,16 @@ test("named pending migration allows the existing write", async () => {
   await pendingMigration("files.ensure_trash", () => f.client.root("cloud").mkdir("home/alice/trash"));
   expect(f.requests()).toBe(1);
 });
+test("pending version comments allow updateVersion but refuse remove before transport", async () => {
+  const f = fixture();
+  const root = f.client.root("cloud");
+  await pendingMigration("files.version_comment", async () => {
+    await expect(root.remove("home/alice/new")).rejects.toMatchObject({ code: "activity_scope_mismatch", status: 500 });
+    expect(f.requests()).toBe(0);
+    await root.updateVersion("home/alice/new", "version", { pinned: false });
+  });
+  expect(f.requests()).toBe(1);
+});
 test.each(["home/alice/new", "home/alice", "home"])("folder intent permits target or ancestor %s", async (path) => {
   const f = fixture();
   await inActivity(() => f.client.as({ uid: 1, gid: 1 }).root("cloud").as({ uid: 1, gid: 1 }).mkdir(path));

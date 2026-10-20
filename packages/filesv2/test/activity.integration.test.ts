@@ -532,4 +532,40 @@ suite("Files activity with real storage", () => {
     ).rejects.toBe(original);
     expect((await sql<Row[]>`SELECT * FROM filesv2.activity WHERE name='fabricated'`)[0]!.state).toBe("pending");
   });
+  test.each(["unclear", "done", "failed", "not_done"] as const)(
+    "a certain mkdir refusal replaces only a nonterminal %s outcome",
+    async (state) => {
+      let requests = 0;
+      const transport: typeof fetch = Object.assign(
+        async () => {
+          requests++;
+          return Response.json({ error: "path_conflict", message: "exists" }, { status: 409 });
+        },
+        { preconnect: fetch.preconnect },
+      );
+      const refusing = connectFilegate(config, transport);
+      let id = "";
+      let before: Row | undefined;
+      await expect(
+        fileAction(
+          testCall(actor),
+          intent(`refused-${state}`),
+          async () => {
+            const scope = currentScope();
+            if (scope?.kind !== "activity") throw new Error("missing activity");
+            id = scope.id;
+            // Simulate recovery (or a terminal result) arriving before the owner's refusal.
+            await sql`UPDATE filesv2.activity SET state=${state},started_at=${now},heartbeat_at=${now},next_check_at=${now},finished_at=${state === "unclear" ? null : now} WHERE id=${id}::uuid`;
+            before = await row(id);
+            return refusing.root("cloud").mkdir(`${home}/refused-${state}`);
+          },
+          async () => {},
+        ),
+      ).rejects.toMatchObject({ status: 409, code: "path_conflict" });
+      expect(requests).toBe(1);
+      const after = await row(id);
+      if (state === "unclear") expect(after).toMatchObject({ state: "failed", error_code: "path_conflict" });
+      else expect(after).toEqual(before);
+    },
+  );
 });

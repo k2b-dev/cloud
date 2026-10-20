@@ -69,6 +69,34 @@ export const PENDING_MIGRATION = [
   "lifecycle.admin_delete_version",
 ] as const;
 export type PendingMigrationKey = (typeof PENDING_MIGRATION)[number];
+export type Mutation =
+  | "mkdir"
+  | "put"
+  | "createSession"
+  | "commitSession"
+  | "abortSession"
+  | "transfer"
+  | "restore"
+  | "copyVersion"
+  | "updateVersion"
+  | "deleteVersion"
+  | "remove";
+export const PENDING_MIGRATION_METHODS: Record<PendingMigrationKey, readonly Mutation[]> = {
+  "files.upload_session": ["createSession", "commitSession", "abortSession"],
+  "files.write_bytes": ["put"],
+  "files.rename": ["transfer"],
+  "files.move": ["transfer"],
+  "files.copy": ["transfer"],
+  "files.ensure_trash": ["mkdir"],
+  "files.version_comment": ["updateVersion"],
+  "files.version_restore": ["restore"],
+  "files.version_restore_copy": ["copyVersion"],
+  "files.version_delete": ["deleteVersion"],
+  "trash.transfer": ["transfer"],
+  "sharing.inbox_session": ["createSession", "commitSession", "abortSession"],
+  "lifecycle.operation": ["mkdir", "transfer", "remove"],
+  "lifecycle.admin_delete_version": ["deleteVersion"],
+};
 export type GuardScope =
   | { kind: "activity"; id: string; intent: Intent; closed: boolean; sent: number; refused: unknown }
   | { kind: "pending"; key: PendingMigrationKey }
@@ -126,7 +154,7 @@ export async function fileAction<T>(
   } catch (error) {
     if (certainNoChange(scope, error)) {
       try {
-        await sql`UPDATE filesv2.activity SET state='failed',finished_at=now(),error_code=${error instanceof FilesError ? error.code : error instanceof FilegateError ? filegateErrorCode(error) : "operation_unresolved"} WHERE id=${id}::uuid AND state='pending'`;
+        await sql`UPDATE filesv2.activity SET state='failed',finished_at=now(),error_code=${error instanceof FilesError ? error.code : error instanceof FilegateError ? filegateErrorCode(error) : "operation_unresolved"} WHERE id=${id}::uuid AND state IN ('pending','unclear')`;
       } catch (failure) {
         log.error("Activity failure could not be recorded", { id, error: failure });
       }
@@ -154,10 +182,10 @@ type RecoveryRow = {
   server_url: string;
   root: string;
   path_after: string | null;
-  started_at: Date;
+  final: boolean;
 };
 export async function recoverActivity(input: {
-  now: Date;
+  now?: Date;
   connect: (config: Config) => FilesFilegate;
   config: Config | null;
   signal?: AbortSignal;
@@ -166,8 +194,9 @@ export async function recoverActivity(input: {
   input.signal?.throwIfAborted();
   const rows = await sql<
     RecoveryRow[]
-  >`UPDATE filesv2.activity SET next_check_at=${input.now}::timestamptz + CASE checks WHEN 0 THEN interval '1 minute' WHEN 1 THEN interval '5 minutes' WHEN 2 THEN interval '30 minutes' ELSE interval '6 hours' END,checks=checks+1
-    WHERE id IN (SELECT id FROM filesv2.activity WHERE state IN ('pending','unclear') AND next_check_at<=${input.now} AND heartbeat_at<${input.now}::timestamptz-interval '60 seconds' ORDER BY next_check_at LIMIT 50 FOR UPDATE SKIP LOCKED) RETURNING *`;
+  >`UPDATE filesv2.activity SET next_check_at=coalesce(${input.now ?? null}::timestamptz, now()) + CASE checks WHEN 0 THEN interval '1 minute' WHEN 1 THEN interval '5 minutes' WHEN 2 THEN interval '30 minutes' ELSE interval '6 hours' END,checks=checks+1
+    WHERE id IN (SELECT id FROM filesv2.activity WHERE state IN ('pending','unclear') AND next_check_at<=coalesce(${input.now ?? null}::timestamptz, now()) AND heartbeat_at<coalesce(${input.now ?? null}::timestamptz, now())-interval '60 seconds' ORDER BY next_check_at LIMIT 50 FOR UPDATE SKIP LOCKED)
+    RETURNING *, started_at <= coalesce(${input.now ?? null}::timestamptz, now()) - interval '7 days' AS final`;
   let checked = 0;
   for (const row of rows) {
     input.signal?.throwIfAborted();
@@ -183,19 +212,18 @@ export async function recoverActivity(input: {
       }
     }
     // folder.create: only its response proves completion. Appearance may come from another writer.
-    const final = row.started_at.getTime() <= input.now.getTime() - 7 * 86_400_000;
     await sql`UPDATE filesv2.activity SET state='unclear',
-      next_check_at=CASE WHEN ${final} THEN 'infinity'::timestamptz ELSE next_check_at END,
-      detail=detail || ${{ observed_after: observed, ...(final ? { final: true } : {}) }}::jsonb
+      next_check_at=CASE WHEN ${row.final} THEN 'infinity'::timestamptz ELSE next_check_at END,
+      detail=detail || ${{ observed_after: observed, ...(row.final ? { final: true } : {}) }}::jsonb
       WHERE id=${row.id}::uuid AND state=${row.state}`;
     checked++;
   }
   return { checked };
 }
 
-export async function purgeActivity(input: { now: Date; retentionDays: number }): Promise<{ purged: number }> {
+export async function purgeActivity(input: { now?: Date; retentionDays: number }): Promise<{ purged: number }> {
   // Pending entries never expire here; each later PR adds its own journal predicate.
   const rows = await sql<{ id: string }[]>`DELETE FROM filesv2.activity WHERE id IN
-    (SELECT id FROM filesv2.activity WHERE started_at<${input.now}::timestamptz-${input.retentionDays}*interval '1 day' AND state<>'pending' ORDER BY started_at LIMIT 10000) RETURNING id`;
+    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' ORDER BY started_at LIMIT 10000) RETURNING id`;
   return { purged: rows.length };
 }

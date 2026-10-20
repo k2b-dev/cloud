@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { PENDING_MIGRATION, type PendingMigrationKey } from "./activity";
+import { join } from "node:path";
+import { PENDING_MIGRATION, PENDING_MIGRATION_METHODS, type PendingMigrationKey } from "./activity";
 import { createFilesService } from "./index";
 import { createTemplateService } from "./templates";
 
@@ -126,6 +127,27 @@ const frozen = [
 function addedKeys(keys: readonly string[]): string[] {
   return keys.filter((key) => !frozen.some((known) => known === key));
 }
+const frozenCallSites: Readonly<Record<string, number>> = {
+  "files.upload_session": 3,
+  "files.write_bytes": 1,
+  "files.rename": 1,
+  "files.move": 1,
+  "files.copy": 1,
+  "files.ensure_trash": 1,
+  "files.version_comment": 1,
+  "files.version_restore": 1,
+  "files.version_restore_copy": 1,
+  "files.version_delete": 1,
+  "trash.transfer": 1,
+  "sharing.inbox_session": 3,
+  "lifecycle.operation": 1,
+  "lifecycle.admin_delete_version": 1,
+} satisfies Record<(typeof frozen)[number], number>;
+function grownCallSites(counts: Readonly<Record<string, number>>): string[] {
+  return Object.entries(counts)
+    .filter(([key, count]) => !Object.hasOwn(frozenCallSites, key) || count > (frozenCallSites[key] ?? 0))
+    .map(([key]) => key);
+}
 
 function dummyService() {
   const unused = (): never => {
@@ -162,4 +184,31 @@ test("the migration allowlist can only shrink", () => {
   expect(addedKeys(PENDING_MIGRATION)).toEqual([]);
   expect(addedKeys([...PENDING_MIGRATION, "fake.new_write"])).toEqual(["fake.new_write"]);
   expect(addedKeys(PENDING_MIGRATION.slice(1))).toEqual([]);
+});
+test("pending migration methods cover exactly the migration keys and are non-empty", () => {
+  expect(Object.keys(PENDING_MIGRATION_METHODS).sort()).toEqual([...PENDING_MIGRATION].sort());
+  for (const methods of Object.values(PENDING_MIGRATION_METHODS)) expect(methods.length).toBeGreaterThan(0);
+});
+test("pending migration call sites can only shrink", async () => {
+  const sourceRoot = join(import.meta.dir, "..");
+  const counts: Record<string, number> = {};
+  let calls = 0;
+  for await (const path of new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: sourceRoot, onlyFiles: true })) {
+    if (/\.(?:test|spec)\.tsx?$/.test(path)) continue;
+    const source = await Bun.file(join(sourceRoot, path)).text();
+    // A computed key would hide a call site from the count below.
+    calls += source.match(/\bpendingMigration\s*\(/g)?.length ?? 0;
+    for (const match of source.matchAll(/\bpendingMigration\s*\(\s*["']([^"']+)["']/g)) {
+      const key = match[1];
+      if (key) counts[key] = (counts[key] ?? 0) + 1;
+    }
+  }
+  expect(grownCallSites(counts)).toEqual([]);
+  expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(calls);
+});
+test("call site comparison reports growth and unknown keys but permits shrinking", () => {
+  expect(grownCallSites({ ...frozenCallSites, "files.version_comment": 2 })).toEqual(["files.version_comment"]);
+  expect(grownCallSites({ ...frozenCallSites, "fake.new_write": 1 })).toEqual(["fake.new_write"]);
+  expect(grownCallSites({ ...frozenCallSites, "files.version_comment": 0 })).toEqual([]);
+  expect(grownCallSites({})).toEqual([]);
 });

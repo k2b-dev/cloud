@@ -1,5 +1,5 @@
 import { Filegate, FilegateError, type RootClient } from "@k2b/filegate";
-import { type ActivityAction, currentScope, type Intent } from "./activity";
+import { type ActivityAction, currentScope, type Intent, type Mutation, PENDING_MIGRATION_METHODS } from "./activity";
 import { FilesError } from "./errors";
 
 /** Tree operations walk whole roots; upload commits copy all received bytes. */
@@ -26,18 +26,6 @@ export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch 
   );
 }
 
-type Mutation =
-  | "mkdir"
-  | "put"
-  | "createSession"
-  | "commitSession"
-  | "abortSession"
-  | "transfer"
-  | "restore"
-  | "copyVersion"
-  | "updateVersion"
-  | "deleteVersion"
-  | "remove";
 const actionRules: Record<ActivityAction, (intent: Intent, method: Mutation, path: string) => boolean> = {
   "folder.create": (intent, method, path) =>
     method === "mkdir" && !!intent.pathAfter && (path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`)),
@@ -97,6 +85,8 @@ export class FilesRoot {
   async #mutate<T>(method: Mutation, path: string, run: () => Promise<T>): Promise<T> {
     const scope = currentScope();
     if (!scope || (scope.kind === "activity" && scope.closed)) throw new FilesError("activity_scope_missing", 500);
+    if (scope.kind === "pending" && !PENDING_MIGRATION_METHODS[scope.key].includes(method))
+      throw new FilesError("activity_scope_mismatch", 500);
     if (scope.kind === "exception" && !(["mkdir", "remove"].includes(method) && path.split("/").at(-1)?.startsWith(".filesv2-owner-")))
       throw new FilesError("activity_scope_mismatch", 500);
     if (scope.kind === "activity") {

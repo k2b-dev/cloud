@@ -17,7 +17,8 @@ changes.
 
 An independently committed `pending` row precedes the Filegate write. Only a
 successful response and committed finish mark it `done`. A certain refusal
-with no change marks it `failed`. A missing response remains `pending` until
+with no change marks it `failed`, also when recovery already recorded
+`unclear`. A missing response remains `pending` until
 recovery records `unclear`. Finding the expected folder cannot prove who
 created it. `not_done` is reserved for checks that can prove no change; folder
 recovery never uses it.
@@ -41,7 +42,8 @@ storage binding must not erase its history.
 A running write renews its heartbeat every 10 seconds. Maintenance claims at
 most 50 due entries whose heartbeat is more than 60 seconds old, skipping
 locked rows. Rechecks wait 1 minute, 5 minutes, 30 minutes, then 6 hours between
-attempts.
+attempts. Staleness, the seven-day limit, and retention use the database
+clock, so clock drift on an app host cannot make a running write look stale.
 
 For folder creation, a recheck records only what storage currently shows in
 `detail.observed_after`. Unreadable configuration or unavailable storage gives
@@ -62,7 +64,8 @@ matching the server, root, action, and path. Missing, closed, or mismatched
 scopes fail before a request is sent.
 
 Unconverted writes use named `PENDING_MIGRATION` entries. That list may only
-shrink. A separate `lifecycle.probe` exception permits only owner-probe folder
+shrink. Each entry permits only its listed facade methods, and the number of
+places that use an entry may only shrink as well. A separate `lifecycle.probe` exception permits only owner-probe folder
 creation and removal. Statistics refresh and index rebuild change derived
 metadata and need no user-data history entry.
 

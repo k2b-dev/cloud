@@ -805,7 +805,6 @@ export function createFilesService(
     return deps.identities.self(actor);
   }
   async function maintainActivity(input: { now?: Date; signal?: AbortSignal; heartbeat?: () => Promise<void> }) {
-    const now = input.now ?? new Date();
     const config = await deps.readConfiguration().then(
       (value) => (value.unreadable ? null : value),
       (error: unknown) => {
@@ -815,7 +814,7 @@ export function createFilesService(
     );
     // Without a readable configuration recovery still ends dead entries, but nothing is purged.
     const activityChecked = await recoverActivity({
-      now,
+      now: input.now,
       connect: deps.connect,
       config,
       signal: input.signal,
@@ -828,7 +827,7 @@ export function createFilesService(
       },
     );
     const activityPurged = config
-      ? await purgeActivity({ now, retentionDays: config.activityRetentionDays }).then(
+      ? await purgeActivity({ now: input.now, retentionDays: config.activityRetentionDays }).then(
           (result) => result.purged,
           (error: unknown) => {
             maintenanceLog.error("History retention failed", { error });
