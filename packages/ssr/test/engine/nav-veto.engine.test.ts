@@ -31,12 +31,16 @@ const response = (label: string) => new Response(html(label), { headers: { "cont
 beforeAll(async () => {
   root = makeTempRoot(".ssr-veto-engine-");
   const nav = JSON.stringify(resolve(import.meta.dir, "../../src/nav.ts"));
+  const dialog = JSON.stringify(resolve(import.meta.dir, "../../../ui/src/feedback/dialog-core.ts"));
   const shell = join(root, "Shell.island.tsx");
   const column = join(root, "Column.island.tsx");
   writeFileSync(
     shell,
     `import { onMount, onCleanup } from "solid-js";
     import { installPageSwap, swapPage, onBeforeLeave, listenPopState } from ${nav};
+    // Loaded before nav installs, as a shared chunk would be: dialog-core then hides its own Back from nav.
+    import { dialogCore } from ${dialog};
+    window.dialogCore = dialogCore;
     const count = key => { const d = document.documentElement.dataset; d[key] = String(Number(d[key] ?? 0) + 1); };
     export default function Shell() {
       onBeforeLeave(event => { count("shellChecks"); event.preventDefault(); });
@@ -73,7 +77,8 @@ beforeAll(async () => {
         if (d.throw === "yes") throw new Error("broken leave check");
       });
       onMount(() => onBeforeLeave(() => count("laterChecks")));
-      return <section><b data-state>{props.label}:{value()}</b><button id="edit" onClick={() => setValue(value() + 1)}>Edit</button></section>;
+      return <section><b data-state>{props.label}:{value()}</b><button id="edit" onClick={() => setValue(value() + 1)}>Edit</button>
+        <button id="dialog" onClick={() => void window.dialogCore.open(() => <p>Transient dialog</p>, { history: true, ariaLabel: "History dialog" })}>Dialog</button></section>;
     }`,
   );
   shellId = islandIdFromFile(shell, root);
@@ -358,5 +363,30 @@ test(`${browserName}: vetoed Back aborts a held swap and its late response never
       ["/app/C", 1],
       ["/app/B", 1],
     ]);
+  });
+});
+
+test(`${browserName}: after a dialog closed with its own Back, a vetoed Back rolls back to the page entry`, async () => {
+  await inPage(async (page) => {
+    await page.click("#B");
+    await column(page, "B");
+    const before = await marker(page);
+    await page.click("#dialog");
+    await page.locator("dialog[open]").waitFor();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(
+      (position) => !document.querySelector("dialog[open]") && history.state?.["@k2b/ssr/nav"]?.position === position,
+      before.position,
+    );
+    await dirty(page);
+    const observed = await page.evaluate(() => Number(document.documentElement.dataset.observedPops ?? 0));
+    await page.evaluate(() => history.back());
+    await rollback(page, "B", before.position, observed + 2);
+    await column(page, "B");
+    expect(await marker(page)).toEqual(before);
+    expect(await page.evaluate(() => document.documentElement.dataset.lastDelta)).toBe("-1");
+    await dirty(page, false);
+    await page.evaluate(() => history.back());
+    await column(page, "A");
   });
 });

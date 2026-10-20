@@ -323,7 +323,7 @@ sibling identity, actual dialog-core disposal, raw history writes, listener
 suppression, and window/region scroll in both directions. The real-engine veto
 suite covers clicks, programmatic swaps, Back/Forward rollback, listener suppression, owner
 disposal, shell scoping, throwing checks, first-veto ordering, rapid Back-Back,
-and veto plus abort. Happy DOM covers registration, cleanup, element-less
+veto plus abort, and a veto after a dialog closed with its own Back. Happy DOM covers registration, cleanup, element-less
 checks, rollback failure recovery, and veto without fetch; unit tests cover
 the SSR-safe public export.
 
@@ -348,11 +348,14 @@ values are ignored. Async dialogs veto first, then clear dirty state and
 retry with `swapPage(event.url.href)` or `history.go(event.delta)`.
 
 For a vetoable traversal, arrived position is the Navigation API index or the
-validated arriving marker position; shown position is `state.shown.position`.
+validated arriving marker position; the shown position comes from the same
+departure-derived shown entry as the scroll snapshot, so a dialog-only Back that
+dialog-core hid from nav does not skew the delta or the target, and a veto
+re-tracks that entry.
 An unknown or zero delta is not vetoable. Veto keeps the tracked entry and
 column, clears departure, stops immediate propagation, memoizes `"nav"`, and
 never dispatches `ssr:nav-popstate`. Roll back to the absolute
-`navigation.entries()[state.shown.position].key` with `traverseTo`, after
+`navigation.entries()[shown.position].key` with `traverseTo`, after
 checking the index, or use `history.go(-delta)`. The target must be absolute:
 Chromium runs a second Back that was queued before the rollback first, so a
 relative `history.go()` would land on a cross-page entry with the old column

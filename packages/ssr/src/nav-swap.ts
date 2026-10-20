@@ -433,9 +433,12 @@ export function installPageSwap(): () => void {
     departure = undefined;
     return "nav";
   };
-  const rollback = (delta: number): void => {
-    const target = navigation?.entries()[state.shown.position];
-    const pending = { position: state.shown.position, key: target?.key };
+  const rollback = (delta: number, shown: Entry): void => {
+    // A dialog-only traversal that another owner hid from nav can leave the tracked entry on a retired one.
+    state.currentEntry = shown;
+    state.shown = shown;
+    const target = navigation?.entries()[shown.position];
+    const pending = { position: shown.position, key: target?.key };
     state.rollback = pending;
     const failed = (): void => {
       if (state.rollback !== pending) return;
@@ -543,13 +546,14 @@ export function installPageSwap(): () => void {
       return "page";
     }
     const arrived = navigation?.currentEntry?.index ?? entry?.position;
-    const delta = arrived === undefined ? undefined : arrived - state.shown.position;
+    // The departure says which entry was shown, also after a traversal that another history owner hid from nav.
+    const delta = arrived === undefined ? undefined : arrived - shown.position;
     const context = shellContext(document);
     const url = new URL(window.location.href);
     // An unknown or zero delta cannot be rolled back, so it cannot be vetoed.
     if (delta && context && inScope(url, context.scope) && !allowsLeave(context.root, url, delta)) {
       absorb(event);
-      rollback(delta);
+      rollback(delta, shown);
       return "nav";
     }
     claim(event, entry ?? { position: basePosition() });
