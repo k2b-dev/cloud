@@ -213,7 +213,7 @@ function SystemPromptPanel() {
       </Show>
       <Show when={prompt()?.prompt}>
         {(value) => (
-          <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
+          <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 font-mono text-[11px] leading-relaxed text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900">
             {value()}
           </pre>
         )}

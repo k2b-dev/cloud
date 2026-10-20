@@ -3,7 +3,7 @@ title: Sign-in locations
 navTitle: Sign-in locations
 section: Operations
 order: 1146
-description: Understand the bundled sign-in location snapshot, updates, proxy requirements, and privacy limits.
+description: Manage bundled and uploaded sign-in location databases, updates, proxy requirements, and privacy limits.
 tags: [operations, identity, privacy]
 updated: 2026-10-19
 ---
@@ -12,11 +12,13 @@ updated: 2026-10-19
 
 Core includes a server module and a bundled database snapshot that describe a
 sign-in request by browser, operating system, approximate place, and network
-operator. Successful browser sign-ins now use this module to remember browsers
+operator. Successful browser sign-ins use this module to remember browsers
 and countries. Paired apps can request browser sign-in context through the
 [signed app approval API](./app-approval.md#read-browser-sign-in-context).
 Cloud Login displays it when the Cloud announces support; see
 [Read the request details](/en/docs/accounts/app-sign-in#read-the-request-details).
+Administrators can inspect and replace the databases on the admin page, through
+the admin API, and with the CLI.
 
 ## Bundled snapshot and updates
 
@@ -27,25 +29,72 @@ uncompressed. The image build takes the gzip files (about 65 MB compressed)
 from Cloud's image mirror and checks their checksums.
 
 Upgrade Cloud to update the bundled snapshot: each release carries the snapshot
-pinned at build time. Uploading your own `.mmdb` files through administration
-will follow in a later release. There is no GeoIP environment variable and no
-automatic download at runtime.
+pinned at build time. You can also replace either database with your own upload
+until you reset it. There is no GeoIP environment variable and no automatic
+download at runtime.
 
-Without these files, as in development, tests, or custom images, the module
-returns no place or network name. Browser and operating system descriptions
-still work. When first used, it logs each missing or invalid database once;
+Without a bundled file or an upload for a type, as in development, tests, or
+custom images, the module returns no place or network name for that type.
+Browser and operating system descriptions still work. When first used, it logs each missing or invalid database once;
 sign-ins load the module when they describe the request. A lookup failure also
 returns no details from the affected database and logs once.
 Core maps the files through Bun, which needs write access to open them,
 although Core never writes to them. With a read-only root filesystem, such as
-`readOnlyRootFilesystem` or `docker run --read-only`, Core therefore returns no
-place or network details and logs each database's failure once.
+`readOnlyRootFilesystem` or `docker run --read-only`, bundled lookups therefore
+return no place or network details and log each database's failure once.
+Uploaded databases do not need filesystem write access.
 
 The databases are © DB-IP.com, licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/):
 [IP Geolocation by DB-IP](https://db-ip.com). They are decompressed from gzip
-and otherwise unmodified. A later administration page will show this attribution;
-any page that displays or uses database results must link to DB-IP.com.
+and otherwise unmodified. The admin page shows this attribution while any
+active database is from DB-IP. Any page that displays or uses DB-IP database
+results must link to DB-IP.com.
+
+## Use your own database
+
+Open **Admin → Settings → Sign-in → Sign-in locations** to inspect the source
+and build date of each database, upload a replacement, or reset it to the
+bundled snapshot. The page shows a hint when active data is older than 183 days,
+about six months. The build date comes from the file, not the upload date.
+
+Upload a City or ASN database in MaxMind DB format with an IPv6 search tree.
+DB-IP Lite and MaxMind GeoLite2 databases work. Follow the database provider's
+licence; GeoLite2's EULA requires regular updates. Files can be raw `.mmdb` or
+`.mmdb.gz`; Cloud detects gzip from the file contents.
+
+The limits are **192 MiB unpacked** and **128 MiB per request body**. A reverse
+proxy may set a lower request limit: upload the `.gz` file in that case. The
+CLI compresses raw files while sending them:
+
+```bash
+cld admin geoip status --json
+cld admin geoip upload ./dbip-city-lite.mmdb.gz
+cld admin geoip reset city --yes
+```
+
+Use `reset asn --yes` to reset only ASN, or `reset --yes` to reset both types.
+Both the page and CLI use the same administrator API. An OAuth token also needs
+the `read` scope to show the status and `write` to upload or reset; `admin`
+allows both. One upload runs at a time per Core process; if another is
+running, wait briefly and retry. Invalid or oversized files leave the previous
+database active. A record that needs more than 32 KiB to decode gives no place
+or network name, and Core logs that once. The upload check samples about a
+thousand addresses and refuses the file when one of them reaches such a record.
+DB-IP Lite records need less than 1 KiB.
+Cancelling an upload in the page stops it before it is saved.
+
+Uploads are stored in Postgres (`geoip.databases`), so database backups
+include them. Each type has one current upload, which replaces the bundled file
+until reset. Every Core instance checks for changes on lookups about once a
+minute and switches to the replacement. A restarted Core also starts a refresh without delaying
+startup. Uploads and resets have audit entries with the type, build date,
+checksum, size, and administrator; file contents are not included in the audit.
+
+An uploaded database is held in each Core process's memory, using about its
+unpacked file size. The bundled snapshot is memory-mapped. A type uses one
+reader at a time. Plan memory for the upload and for other instances reloading
+it; uploads do not change the server's request-body limit.
 
 ## Privacy and accuracy
 

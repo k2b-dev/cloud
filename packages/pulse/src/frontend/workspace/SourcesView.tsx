@@ -38,7 +38,7 @@ const renderSourceStatusCell = (source: PulseSource, t: Messages, variant: "chip
 
 const renderSourceTitleCell = (source: PulseSource, t: Messages, newest: string): JSX.Element => (
   <div class="flex min-w-0 items-center gap-2">
-    <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+    <span class="k2b-icon-tile h-8 w-8 text-secondary" aria-hidden="true">
       <i class={`${sourceKindIcon(source.kind)} text-base`} />
     </span>
     <div class="min-w-0">

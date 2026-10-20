@@ -760,7 +760,12 @@ export const createLoadedAiCapabilityTools = (input: {
   locale?: string;
   review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReviewData | null>;
   authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
-  onReview?: (callId: string, review: CapabilityActionReviewData, approval: CapabilityActionManifest["approval"]) => void;
+  onReview?: (
+    callId: string,
+    review: CapabilityActionReviewData,
+    approval: CapabilityActionManifest["approval"],
+    entry: AiCapabilityCatalogEntry,
+  ) => void | Promise<void>;
   execute: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
 }): AiRuntimeTool[] => {
   const byName = new Map(input.catalog.map((entry) => [entry.name, entry]));
@@ -771,7 +776,7 @@ export const createLoadedAiCapabilityTools = (input: {
       defineAiTool({
         name: entry.providerName,
         canonicalName: entry.name,
-        description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
+        description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL. Never retry IDEMPOTENCY_UNCERTAIN or IDEMPOTENCY_IN_PROGRESS. After ACTION_NOT_DONE, ask the person before trying again. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
         inputSchema: aiCapabilityInputSchema(
           offersApprovalReason(entry) ? withApprovalReason(entry.operation.inputSchema) : entry.operation.inputSchema,
         ),
@@ -785,7 +790,7 @@ export const createLoadedAiCapabilityTools = (input: {
         if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
           if (review && context.callId)
-            input.onReview?.(context.callId, review, "approval" in entry.operation ? entry.operation.approval : undefined);
+            await input.onReview?.(context.callId, review, "approval" in entry.operation ? entry.operation.approval : undefined, entry);
           // Text-only readers such as the CLI read what the card shows: the app's sentence, its review, and the model's reason.
           const locale = input.locale ?? DEFAULT_LOCALE;
           const message = capabilityApprovalText({
@@ -882,7 +887,12 @@ export const createAiToolResolver =
     execute?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
     review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReviewData | null>;
     authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
-    onReview?: (callId: string, review: CapabilityActionReviewData, approval: CapabilityActionManifest["approval"]) => void;
+    onReview?: (
+      callId: string,
+      review: CapabilityActionReviewData,
+      approval: CapabilityActionManifest["approval"],
+      entry: AiCapabilityCatalogEntry,
+    ) => void | Promise<void>;
     onPrepared?: (snapshot: {
       prepared: PreparedAiTools;
       presentations: Map<string, AiToolPresentation>;

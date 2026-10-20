@@ -636,7 +636,7 @@ const HelpShell = (props: {
         {(topic) => (
           <li>
             <button type="button" class="help-start-row focus-ui" data-help-topic={topic.id} onClick={() => openTopic(topic.id)}>
-              <span class="help-topic-icon help-start-row-icon app-accent-text" aria-hidden="true">
+              <span class="help-topic-icon k2b-icon-tile help-start-row-icon app-accent-text" aria-hidden="true">
                 <i class={iconClass(topic.icon)} />
               </span>
               <span class="help-article-link-copy">
@@ -658,7 +658,7 @@ const HelpShell = (props: {
         {(topic) => (
           <li>
             <button type="button" class="help-start-tile focus-ui" data-help-topic={topic.id} onClick={() => openTopic(topic.id)}>
-              <span class="help-topic-icon help-start-tile-icon app-accent-text" aria-hidden="true">
+              <span class="help-topic-icon k2b-icon-tile help-start-tile-icon app-accent-text" aria-hidden="true">
                 <i class={iconClass(topic.icon)} />
               </span>
               <span class="help-start-tile-title">{topic.title}</span>
@@ -704,7 +704,7 @@ const HelpShell = (props: {
                 {(link) => (
                   <li>
                     <a class="help-article-related-link app-accent-scope focus-ui" href={link.url} style={appAccentStyle(link.accent)}>
-                      <span class="help-topic-icon help-article-related-icon app-accent-text" aria-hidden="true">
+                      <span class="help-topic-icon k2b-icon-tile help-article-related-icon app-accent-text" aria-hidden="true">
                         <i class={iconClass(link.icon)} />
                       </span>
                       <ArticleLinkTitle link={link} />

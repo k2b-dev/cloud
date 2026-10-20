@@ -5,6 +5,8 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
   APP_APPROVAL_LIMITS,
+  AppDeviceChangeLookupSchema,
+  AppDeviceChangeReferenceSchema,
   AppDeviceMutationSchema,
   AppDeviceRequestSchema,
   AppLoginReferenceSchema,
@@ -25,6 +27,7 @@ import {
   type createAppApprovalService,
 } from "../services/app-approval";
 import { type NewBrowserSignInNotifier, readBrowserCookie } from "../services/known-browsers";
+import { SessionAppDeviceInactiveError, SessionEpochChangedError } from "../services/session";
 import { appNameIn } from "../ssr/runtime";
 import { createDeviceActions } from "./app-approval-actions";
 
@@ -105,7 +108,19 @@ export const createAppApprovalRoutes = (
     )
     .post("/manage/devices/update", v("json", AppDeviceMutationSchema), async (c) => {
       const input = c.req.valid("json");
-      await service.mutateDevice(await actor(c), input.deviceId, input.operation === "rename" ? input.name : undefined);
+      const result = await service.mutateDevice(
+        await actor(c),
+        input.deviceId,
+        input.operation === "rename" ? input.name : undefined,
+        input.operation === "revoke" ? input.endSessions : undefined,
+      );
+      return result ? c.json(result) : c.body(null, 204);
+    })
+    .post("/manage/device-changes/status", v("json", AppDeviceChangeLookupSchema), async (c) => {
+      return c.json(await service.findRemoval(await actor(c), c.req.valid("json")));
+    })
+    .post("/manage/device-changes/cancel", v("json", AppDeviceChangeReferenceSchema), async (c) => {
+      await service.cancelChange(await actor(c), c.req.valid("json").changeId);
       return c.body(null, 204);
     })
     .post(
@@ -157,8 +172,20 @@ export const createAppApprovalRoutes = (
       v("json", AppLoginReferenceSchema),
       async (c) => {
         const input = c.req.valid("json");
-        const { userId, deviceName } = await service.consumeLogin(input.requestId, input.browserSecret);
-        await auth.session.create(c, userId, { method: "cloud_login", device: deviceName, notify: options.notify });
+        const { userId, authEpoch, deviceId, deviceName } = await service.consumeLogin(input.requestId, input.browserSecret);
+        try {
+          await auth.session.create(c, userId, {
+            method: "cloud_login",
+            device: deviceName,
+            notify: options.notify,
+            authEpoch,
+            appDeviceId: deviceId,
+          });
+        } catch (error) {
+          if (error instanceof SessionEpochChangedError || error instanceof SessionAppDeviceInactiveError)
+            throw new AppApprovalError("CONFLICT", 409);
+          throw error;
+        }
         return c.body(null, 204);
       },
     );

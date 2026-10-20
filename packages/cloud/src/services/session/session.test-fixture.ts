@@ -1,3 +1,4 @@
+import { afterAll } from "bun:test";
 import { sql } from "bun";
 import { Hono } from "hono";
 import type { NewBrowserSignInNotifier } from "../known-browsers";
@@ -34,4 +35,31 @@ export const createTestAppSession = async (userId: string): Promise<{ token: str
   const body = (await (await app.request("/issue", { method: "POST" })).json()) as { token?: unknown };
   if (typeof body.token !== "string") throw new Error("App session fixture did not return a token");
   return { token: body.token, deviceId };
+};
+
+const browserSignInFixtures: string[] = [];
+afterAll(async () => {
+  for (const sid of browserSignInFixtures) {
+    await sql`DELETE FROM auth.session_families WHERE sid = ${sid}::uuid`;
+    await sql`DELETE FROM auth.signing_keys WHERE kid = ${sid}`;
+  }
+});
+
+/** Durable web-session evidence for service tests; no signed token or running authority is needed. */
+export const createTestBrowserSignIn = async (userId: string): Promise<{ userId: string; sid: string }> => {
+  const sid = crypto.randomUUID();
+  await sql.begin(async (tx) => {
+    await tx`INSERT INTO auth.signing_keys
+      (purpose, state, kid, public_jwk, encrypted_private_jwk, encryption_key_id,
+       activate_at, activated_at, sign_until, retired_at, verify_until)
+      VALUES ('session', 'retired', ${sid}, '{}'::jsonb, 'test', 'test',
+        now() - interval '2 days', now() - interval '2 days', now() - interval '1 day',
+        now() - interval '1 day', now() - interval '1 hour')`;
+    const [row] = await tx`INSERT INTO auth.session_families (sid, user_id, auth_epoch, signing_kid, issued_at, expires_at)
+      SELECT ${sid}::uuid, id, auth_epoch, ${sid}, now(), now() + interval '1 hour'
+      FROM auth.users WHERE id = ${userId}::uuid RETURNING sid`;
+    if (!row) throw new Error("Browser session fixture user was not found");
+  });
+  browserSignInFixtures.push(sid);
+  return { userId, sid };
 };

@@ -229,6 +229,10 @@ export const accountMessages = i18n.define({
       copyBaseUrl: "Copy base URL",
       createKey: "Create key",
       apiKeyCreateFailed: "Failed to create API key.",
+      confirmIdentity: "Confirm identity",
+      apiKeyReauthenticate: "Creating an API key needs a sign-in from the last 10 minutes. Sign in again, then create the key.",
+      passkeyReauthenticate: "Adding a passkey needs a sign-in from the last 10 minutes. Sign in again, then add the passkey.",
+      browserSignInRequired: "Create API keys and passkeys in Cloud in the browser.",
       apiKeyCreated: "API key created",
       apiKeyRevokeFailed: "Failed to revoke API key.",
       createApiKey: "Create API key",
@@ -679,6 +683,12 @@ export const accountMessages = i18n.define({
       copyBaseUrl: "Base-URL kopieren",
       createKey: "Schlüssel erstellen",
       apiKeyCreateFailed: "Der API-Schlüssel konnte nicht erstellt werden.",
+      confirmIdentity: "Identität bestätigen",
+      apiKeyReauthenticate:
+        "Zum Erstellen eines API-Schlüssels brauchst du eine Anmeldung aus den letzten 10 Minuten. Melde dich erneut an und erstelle den Schlüssel dann.",
+      passkeyReauthenticate:
+        "Zum Hinzufügen eines Passkeys brauchst du eine Anmeldung aus den letzten 10 Minuten. Melde dich erneut an und füge den Passkey dann hinzu.",
+      browserSignInRequired: "API-Schlüssel und Passkeys legst du in Cloud im Browser an.",
       apiKeyCreated: "API-Schlüssel erstellt",
       apiKeyRevokeFailed: "Der API-Schlüssel konnte nicht widerrufen werden.",
       createApiKey: "API-Schlüssel erstellen",

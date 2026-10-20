@@ -1,5 +1,8 @@
 import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
+import { z } from "zod";
+import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
+import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
@@ -1349,6 +1352,61 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return submitted;
   };
 
+  const checkAction = async (requestInput: { turnId: string; callId: string }): Promise<AiActionCheck> => {
+    const conversationId = activeConversationId();
+    if (!conversationId) throw new Error("No active conversation.");
+    const check = z
+      .object({
+        state: z.enum(["checking", "done", "not_done", "pending", "failed"]),
+        receipt: CapabilityActionReceiptSchema.optional(),
+        at: z.iso.datetime().optional(),
+      })
+      .strict()
+      .parse(
+        await request<unknown>(
+          `/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(requestInput.turnId)}/calls/${encodeURIComponent(requestInput.callId)}/check`,
+          { method: "POST" },
+          "Failed to check the Action outcome",
+        ),
+      );
+    const projection = isActiveConversation(conversationId) ? state : cache.get(conversationId);
+    let effective = check;
+    if (projection) {
+      const storedMessage = projection.messages.find(
+        (message) =>
+          message.loopId === requestInput.turnId &&
+          message.message.role === "assistant" &&
+          message.message.content.some((block) => block.type === "tool_call" && block.id === requestInput.callId),
+      );
+      const liveBlock =
+        projection.activeTurn?.turnId === requestInput.turnId
+          ? projection.activeTurn.blocks.find((block) => block.kind === "tool" && block.callId === requestInput.callId)
+          : undefined;
+      effective = preferredActionCheck(storedMessage?.meta?.toolChecks?.[requestInput.callId], effective);
+      effective = preferredActionCheck(liveBlock?.kind === "tool" ? liveBlock.check : undefined, effective);
+      const messages = projection.messages.map((message) =>
+        message.loopId === requestInput.turnId &&
+        message.message.role === "assistant" &&
+        message.message.content.some((block) => block.type === "tool_call" && block.id === requestInput.callId)
+          ? { ...message, meta: { ...message.meta, toolChecks: { ...message.meta?.toolChecks, [requestInput.callId]: effective } } }
+          : message,
+      );
+      const activeTurn =
+        projection.activeTurn?.turnId === requestInput.turnId
+          ? {
+              ...projection.activeTurn,
+              blocks: projection.activeTurn.blocks.map((block) =>
+                block.kind === "tool" && block.callId === requestInput.callId ? { ...block, check: effective } : block,
+              ),
+            }
+          : projection.activeTurn;
+      const next = { ...projection, messages, activeTurn };
+      cache.set(conversationId, next);
+      if (isActiveConversation(conversationId)) setState(reconcile(next));
+    }
+    return effective;
+  };
+
   const submitFrontendToolResult = async (request: { turnId: string; callId: string }, result: unknown) => {
     const conversationId = activeConversationId();
     if (!conversationId) return false;
@@ -1412,6 +1470,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     clearMessageFeedback,
     submitTurnAction,
     respondToApproval,
+    checkAction,
     submitFrontendToolResult,
     fileContentUrl,
   };

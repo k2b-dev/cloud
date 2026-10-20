@@ -4,7 +4,7 @@ import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { OverviewWorkSchema } from "../overview-contracts";
 import { dashboardSnapshot } from "./items";
-import { loadOverviewWork, loadSpaceOverviewStats } from "./overview";
+import { loadOverviewWork, loadSpaceOverviewStats, loadSpacesSidebar } from "./overview";
 
 testFor("database")("selected overview views preserve counts, filters and access revocation", async () => {
   const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
@@ -40,6 +40,20 @@ testFor("database")("selected overview views preserve counts, filters and access
         );
       expect(selected.items.some((item) => item.spaceName === "Accessible overview fixture")).toBe(true);
     }
+    const sidebar = await loadSpacesSidebar({
+      ...params,
+      cookieHeader: `settings-app-spaces=${encodeURIComponent(JSON.stringify({ version: 2, pinnedSpaceIds: ["Pin001"], spaces: {} }))}`,
+      myWorkCount: 7,
+    });
+    const accessibleSidebar = sidebar.spaces.find((space) => space.name === "Accessible overview fixture");
+    expect(accessibleSidebar).toBeDefined();
+    expect(Object.keys(accessibleSidebar!).sort()).toEqual(["color", "description", "id", "name", "openItemCount"]);
+    expect(accessibleSidebar?.openItemCount).toBe(2);
+    expect(accessibleSidebar?.id).not.toBe(spaceIds[0]);
+    expect(sidebar.spaces.some((space) => space.name === "Private overview fixture")).toBe(false);
+    expect(sidebar.pinnedSpaceIds).toEqual(["Pin001"]);
+    expect(sidebar.myWorkCount).toBe(7);
+    expect((await loadSpacesSidebar(params)).myWorkCount).toBe(full.assignedToMeCount);
     await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
     for (const view of ["mine", "today", "upcoming"] as const) {
       const selected = await loadOverviewWork({ ...params, view });
@@ -71,13 +85,11 @@ testFor("database")("computes sidebar stats for several Spaces in one query", as
         (${newShortId()}, ${busy}::uuid, ${open!.id}::uuid, 'Open two', NULL),
         (${newShortId()}, ${busy}::uuid, ${open!.id}::uuid, 'Completed', CURRENT_TIMESTAMP),
         (${newShortId()}, ${busy}::uuid, ${done!.id}::uuid, 'In done column', NULL)`;
-    await sql`INSERT INTO spaces.activity_events (space_id, actor_kind, action, last_occurred_at)
-      VALUES (${busy}::uuid, 'system', 'space.updated', '2026-03-01T10:00:00Z'), (${busy}::uuid, 'system', 'space.updated', '2026-02-01T10:00:00Z')`;
 
     const byId = new Map((await loadSpaceOverviewStats({ spaceIds })).map((stats) => [stats.spaceId, stats]));
     expect(byId.size).toBe(2);
-    expect(byId.get(busy)).toEqual({ spaceId: busy, openItemCount: 2, lastActivityAt: "2026-03-01T10:00:00.000Z" });
-    expect(byId.get(quiet)).toEqual({ spaceId: quiet, openItemCount: 0, lastActivityAt: "2026-01-01T10:00:00.000Z" });
+    expect(byId.get(busy)).toEqual({ spaceId: busy, openItemCount: 2 });
+    expect(byId.get(quiet)).toEqual({ spaceId: quiet, openItemCount: 0 });
     expect(await loadSpaceOverviewStats({ spaceIds: [] })).toEqual([]);
   } finally {
     for (const id of spaceIds) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;

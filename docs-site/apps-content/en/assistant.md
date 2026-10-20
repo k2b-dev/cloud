@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-12
+updated: 2026-10-19
 ---
 
 # Assistant
@@ -211,11 +211,14 @@ available when the work continues later.
 - Start a chat from a suggested task or write your own request. Before the first
   message, optionally choose a Project below the composer to use its shared
   context.
-- Attach source files or Cloud resources when the answer must use material
-  beyond the message. **Attach files** takes files from this device or, when
-  Cloud apps offer files, a copy from one of them, such as Files; **Choose
-  resource** links the resource itself. Files and screenshots can also be
-  dropped or pasted directly into the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
+- Choose **+** to open the same list as `/`, with a search field on top.
+  **Attach file** takes files from this device or, when Cloud apps offer files,
+  a copy from one of them, such as Files. **Insert from Cloud** inserts a
+  reference at the text caret; the model receives the same resource as an
+  attachment. **Search this chat** searches messages in the open chat.
+  Escape, **+** again, Back on a phone, or an outside press closes the list.
+  An outside press only closes it and does not activate the control underneath.
+  Files and screenshots can also be dropped or pasted directly into the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
   **Show in text field** moves a bounded text attachment back into the draft.
   You can attach up to 16 items.
 - Ask Assistant to read supported PDF, Office, OpenDocument, RTF, EPUB, or CSV
@@ -376,11 +379,19 @@ personalization, and guidance for better requests. Developers can read
 Assistant adopts.
 
 Open **Assistant settings → Approvals** to review Actions previously accepted with
-**Always approve**. Revoking an entry makes Assistant ask again on the next
+**Always approve**. The browser no longer offers that choice; earlier choices
+still apply until the next major release. Revoking an entry makes Assistant ask again on the next
 matching call. Sending email, deleting data, open-world effects, and other
 Actions with the default approval policy continue to require confirmation every
 time. Code Mode source and execution tools run without confirmation within the
 user's existing permissions; they do not implicitly grant sharing or app deletion.
+
+Approval questions show a sentence with chips, Cloud's reason, a preview, and
+two answers naming the deed and target. Where allowed, **Yes, and don't ask
+again in this chat** remembers the reviewed scope for that chat. The card keeps
+its review after reload. If an outcome is unknown, **Check again** runs only
+the app's outcome check, never the Action; it is available after a pending or
+failed check. Without a check, no repeat button is offered.
 
 ## Use Assistant from the terminal
 

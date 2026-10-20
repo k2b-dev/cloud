@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { oauthTokens, serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -213,7 +214,11 @@ suite("Mail REST access for service-account credentials", () => {
     expect(await preferences(token)).toEqual({ pinnedMailboxIds: [], hiddenMailboxIds: [mailboxShortId] });
     // The owner's overview is the owner's own; a personal API key acts as the owner.
     expect(await preferences("owner-session")).toEqual({ pinnedMailboxIds: [], hiddenMailboxIds: [] });
-    const personal = await serviceAccountCredentials.createUserApiToken({ user: owner, name: `personal preferences ${suffix}` });
+    const personal = await serviceAccountCredentials.createUserApiToken({
+      user: owner,
+      browserSignIn: await createTestBrowserSignIn(owner.id),
+      name: `personal preferences ${suffix}`,
+    });
     if (!personal.ok) throw new Error(personal.error.message);
     expect(
       (await call(personal.data.token, `/mailboxes/${mailboxShortId}/preference`, { method: "PATCH", body: { pinned: true } })).status,
@@ -240,7 +245,11 @@ suite("Mail REST access for service-account credentials", () => {
     expect((await createTag("owner-session")).status).toBe(200);
 
     // A personal key is minted without scopes and acts as its user.
-    const personal = await serviceAccountCredentials.createUserApiToken({ user: owner, name: `personal ${suffix}` });
+    const personal = await serviceAccountCredentials.createUserApiToken({
+      user: owner,
+      browserSignIn: await createTestBrowserSignIn(owner.id),
+      name: `personal ${suffix}`,
+    });
     if (!personal.ok) throw new Error(personal.error.message);
     expect(personal.data.credential.scopes).toEqual([]);
     expect(await listedPermission(personal.data.token)).toBe("admin");

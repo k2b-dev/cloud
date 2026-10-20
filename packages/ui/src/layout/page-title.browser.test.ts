@@ -11,6 +11,7 @@ const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "page-title.fixture.ts");
 const fixture = `
+import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import { AppWorkspace, followPageTrail, installPageTitleController, LocaleProvider, PageTitle, setPageTrail } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
@@ -19,9 +20,10 @@ const levels = ["Projects for the new community centre", "2026 budget year with 
 window.publish = (depth) =>
   setPageTrail({ title: depth ? levels[depth - 1] : "Overview", ancestors: levels.slice(0, Math.max(0, depth - 1)).map((title, index) => ({ title, href: "#level-" + index })) });
 window.publish(Number(params.get("depth") ?? 0));
-const ownDepth = Number(params.get("depth") ?? levels.length);
+const [ownDepth, setOwnDepth] = createSignal(Number(params.get("depth") ?? levels.length));
+window.setOwnDepth = (depth) => { window.publish(depth); setOwnDepth(depth); };
 const own = () =>
-  createComponent(PageTitle, { trail: { title: "Entry", ancestors: levels.slice(0, ownDepth).map((title, index) => ({ title, href: "#level-" + index })) }, subtitle: "2:15 h" });
+  createComponent(PageTitle, { get trail() { return { title: "Entry", ancestors: levels.slice(0, ownDepth()).map((title, index) => ({ title, href: "#level-" + index })) }; }, subtitle: "2:15 h" });
 // A host that installs the document's controller after a title installed its own, as an island may mount first.
 window.installDocumentController = () => installPageTitleController(document);
 window.followPageTrail = () => followPageTrail(document);
@@ -63,8 +65,9 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (width: number, params = "") => {
-  const page = await browser.newPage({ viewport: { width, height: 700 } });
+// Loads the fixture into a new page, or as a new document into a page of the same width.
+const load = async (width: number, params = "", into?: Page) => {
+  const page = into ?? (await browser.newPage({ viewport: { width, height: 700 } }));
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>` +
       `<body class="k2b-ui" style="margin:0"><header style="display:flex"></header><div id="app" style="height:40rem"></div></body></html>`,
@@ -151,9 +154,10 @@ describe("PageTitle without a host", () => {
   });
 
   test("an app's own title collapses its path by itself and names the menu in the page's language", async () => {
-    for (const locale of ["en", "de"] as const) {
-      const page = await load(1180, `own=640&locale=${locale}`);
-      try {
+    const page = await browser.newPage({ viewport: { width: 1180, height: 700 } });
+    try {
+      for (const locale of ["en", "de"] as const) {
+        await load(1180, `own=640&locale=${locale}`, page);
         const shape = await read(page);
         expect(shape.crumbs[0]).toBe("Projects for the new community centre");
         expect(shape.crumbs).toContain("…");
@@ -174,9 +178,9 @@ describe("PageTitle without a host", () => {
         await settle(page);
         expect((await read(page)).crumbs).not.toContain("…");
         expect(await page.locator(".k2b-page-title__menu").evaluate((menu) => menu.matches(":popover-open"))).toBe(false);
-      } finally {
-        await page.close();
       }
+    } finally {
+      await page.close();
     }
   });
 
@@ -221,16 +225,20 @@ describe("PageTitle without a host", () => {
       [390, 32],
       [1180, 36],
     ] as const) {
-      const heights: number[] = [];
-      for (const depth of [0, 1, 3]) {
-        const page = await load(width, `own=${width - 40}&depth=${depth}`);
-        try {
+      const page = await load(width, `own=${width - 40}&depth=0`);
+      try {
+        const heights: number[] = [];
+        for (const depth of [0, 1, 3]) {
+          if (depth !== 0) {
+            await page.evaluate((depth) => (window as unknown as { setOwnDepth: (depth: number) => void }).setOwnDepth(depth), depth);
+            await settle(page);
+          }
           heights.push(await page.evaluate(() => Math.round(document.querySelector("header")!.getBoundingClientRect().height)));
-        } finally {
-          await page.close();
         }
+        expect({ width, heights }).toEqual({ width, heights: [height, height, height] });
+      } finally {
+        await page.close();
       }
-      expect({ width, heights }).toEqual({ width, heights: [height, height, height] });
     }
   });
 });

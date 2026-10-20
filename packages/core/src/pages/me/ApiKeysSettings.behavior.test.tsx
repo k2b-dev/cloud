@@ -186,4 +186,77 @@ else {
       dom.cleanup();
     }
   });
+
+  test("an old sign-in asks to confirm identity and returns to the open create dialog", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/me/developer");
+    const assign = spyOn(dom.window.location, "assign").mockImplementation(() => undefined);
+    const fetch = mockFetch((method, path) => {
+      if (method === "POST" && path === "/api/me/api-keys")
+        return Response.json({ code: "REAUTHENTICATE", message: "Sign in again to confirm it is you." }, { status: 403 });
+    });
+    const dispose = mount(dom, null);
+    try {
+      button(dom, "Add")!.click();
+      await waitFor(() => Boolean(button(dom, "Create key")), "create dialog");
+      submitName(dom, credential.name);
+      await waitFor(() => dialogText(dom).includes("needs a sign-in from the last 10 minutes"), "confirm identity dialog");
+      expect(dialogText(dom)).not.toContain("Failed to create API key.");
+      button(dom, "Confirm identity")!.click();
+      await waitFor(() => assign.mock.calls.length === 1, "sign-in navigation");
+      const target = new URL(String(assign.mock.calls[0]![0]), "http://localhost/");
+      expect(target.pathname).toBe("/auth/login");
+      expect(target.searchParams.get("redirectTo")).toBe("/me/developer?create=api-key&reauthenticate=1");
+      // What the person entered waits in this tab for the way back.
+      expect(JSON.parse(dom.window.sessionStorage.getItem("k2b:confirm-identity:create=api-key") ?? "null")).toMatchObject({
+        name: credential.name,
+      });
+    } finally {
+      modules!.ui.dialogCore.close();
+      dispose();
+      fetch.restore();
+      assign.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("coming back from the sign-in opens the create dialog once and cleans the address", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/me/developer?create=api-key&reauthenticate=1");
+    dom.window.sessionStorage.setItem("k2b:confirm-identity:create=api-key", JSON.stringify({ name: "Laptop sync", expiresAt: null }));
+    const dispose = mount(dom, null);
+    try {
+      await waitFor(() => Boolean(button(dom, "Create key")), "reopened create dialog");
+      expect(dom.window.location.pathname + dom.window.location.search).toBe("/me/developer");
+      expect(dom.document.querySelector<HTMLInputElement>('dialog input[placeholder="e.g. Desktop sync"]')?.value).toBe("Laptop sync");
+      expect(dom.window.sessionStorage.getItem("k2b:confirm-identity:create=api-key")).toBeNull();
+    } finally {
+      modules!.ui.dialogCore.close();
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("another credential is told to create keys in the browser", async () => {
+    const dom = createDomTestHarness();
+    const fetch = mockFetch((method, path) => {
+      if (method === "POST" && path === "/api/me/api-keys") return Response.json({ code: "BROWSER_SIGN_IN_REQUIRED" }, { status: 403 });
+    });
+    const dispose = mount(dom, null);
+    try {
+      button(dom, "Add")!.click();
+      await waitFor(() => Boolean(button(dom, "Create key")), "create dialog");
+      submitName(dom, credential.name);
+      await waitFor(
+        () => dom.document.body.textContent?.includes("Create API keys and passkeys in Cloud in the browser.") ?? false,
+        "message",
+      );
+      expect(button(dom, "Confirm identity")).toBeUndefined();
+    } finally {
+      modules!.ui.dialogCore.close();
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+    }
+  });
 }

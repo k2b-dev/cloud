@@ -1,18 +1,31 @@
 import { retry } from "@k2b/sync/retry";
-import type { AcquiredDraftLease } from "../../contracts";
+import { type AcquiredDraftLease, DRAFT_LEASE_ERROR_CODES } from "../../contracts";
 
-export type DraftLeaseHeartbeatResult = { kind: "ok"; lease: AcquiredDraftLease } | { kind: "rejected" } | { kind: "unavailable" };
+/** Classifies transport data only; server messages never become collaboration UI. */
+export const classifyDraftLeaseAnswer = (status?: number, body?: unknown): "ok" | "held" | "not-owned" | "unavailable" | "failed" => {
+  if (status === undefined || status >= 500 || [408, 429, 401].includes(status)) return "unavailable";
+  if (status >= 200 && status < 300) return "ok";
+  const code = typeof body === "object" && body !== null && "code" in body ? body.code : undefined;
+  if (status === 409) {
+    if (code === DRAFT_LEASE_ERROR_CODES.HELD) return "held";
+    if (code === DRAFT_LEASE_ERROR_CODES.NOT_OWNED) return "not-owned";
+    if (code === DRAFT_LEASE_ERROR_CODES.BUSY) return "unavailable";
+  }
+  return "failed";
+};
 
-export const recoverDraftLeaseHeartbeat = (options: {
-  heartbeat: () => Promise<DraftLeaseHeartbeatResult>;
+export type DraftLeaseResult = { kind: "ok"; lease: AcquiredDraftLease } | { kind: "held" | "not-owned" | "unavailable" | "failed" };
+
+export const recoverDraftLeaseRequest = <T extends { kind: string }>(options: {
+  run: () => Promise<T>;
   signal: AbortSignal;
   maxAttempts?: number;
   retryBaseMs?: number;
   retryMaxMs?: number;
   retryJitter?: number;
-}): Promise<DraftLeaseHeartbeatResult> =>
+}): Promise<T> =>
   retry({
-    run: options.heartbeat,
+    run: options.run,
     signal: options.signal,
     after: ({ ctx }) => {
       if (ctx.data?.kind !== "unavailable" || ctx.attempt >= (options.maxAttempts ?? 3)) return;

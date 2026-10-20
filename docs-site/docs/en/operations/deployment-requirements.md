@@ -27,6 +27,54 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Size Mail for large messages
+
+Each Mail process loads message bodies and extracts attachment text within one
+processing budget of **256 MiB**. Mail estimates the memory of each message or
+attachment from its size before it starts. Work waits in arrival order until it
+fits. A message or attachment larger than the budget runs alone. Mail never
+skips a message because of the budget. Large messages can take longer to
+appear, and the server answers pages and API requests while they wait. A body
+that a workflow or a person opens waits in the same order as background work,
+so it can take longer to load while large messages are processed.
+
+The budget comes on top of the process's own memory. A running Mail process
+uses about 350–450 MiB. One large message can need more than the budget on
+its own: about six times its size plus forty times the size of its HTML part.
+A 40 MiB message with 6 MiB of HTML needs about 500 MiB.
+
+Give Mail a container memory limit of at least **1.5 GiB**. With 1 GiB, a
+burst of large messages can still exceed the limit, and the container is
+killed and restarted.
+
+While the only Mail replica restarts, Mail pages and API requests return
+**Bad Gateway** until it is ready again. Where availability matters, run at
+least **two Mail replicas**.
+
+## Prepare for browser confirmation of new access
+
+Deploy updated Core and OAuth together: start Core first, then OAuth, as in
+[Start the new release and verify it](#start-the-new-release-and-verify-it).
+OAuth adds the database columns that Core reads for the confirmation, so new
+OAuth sign-ins fail until updated OAuth has started. New OAuth refresh families
+require confirmation from a browser sign-in in the last ten minutes, or a terminal
+Cloud Login approval bound to the exact grant. Existing refresh rotation keeps
+working without another browser sign-in. The browser flow of `cld login` always
+shows consent.
+Ensure the normal browser sign-in methods remain available for confirmation.
+
+People must create personal API keys and passkeys in the browser. Automation
+that created personal API keys using OAuth tokens or API keys now receives
+`403 BROWSER_SIGN_IN_REQUIRED`; create those keys in `/me/developer` instead.
+An older browser sign-in receives `403 REAUTHENTICATE` and requires signing in
+again. Resource and standalone service-account keys are unchanged.
+
+New browser-confirmed OAuth access sends a **New access** notice with email and
+browser delivery recommended. Keep the installation timezone and outgoing mail
+configured. Failed notice preparation is retried by Core maintenance in batches
+of at most 100 families; a notice failure does not fail a completed sign-in.
+See [the migration steps](/en/docs/reference/deprecations-and-migrations#confirm-new-personal-access-in-a-browser).
+
 ## Upgrade Core and Action callers before applications use typed Action reviews
 
 Applications built with this release may declare Action policies and return
@@ -1133,6 +1181,11 @@ An installation with a large backlog drains it over time. PostgreSQL reuses
 the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
 See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
 
+### Assistant approval choices
+
+**Always approve** is no longer offered on Assistant questions; choices made
+earlier still apply until the next major release.
+
 ### Record why routines stop
 
 This release gives every paused routine and every routine that needs its owner
@@ -1223,6 +1276,16 @@ No configuration change is needed. The slash menu offers the same Commands in
 **Open in apps**, except those of its own app. Both surfaces require Commands
 that accept an empty input. The target page still checks access.
 
+### Index the messages people sent for Recent
+
+The slash menu's **Recent** section reads the newest messages a person sent.
+The first Core start builds the partial index `idx_ai_messages_sent_by_person`
+on `ai.messages`, covering only people's own chat messages. It needs no
+configuration change. Like the other `ai.messages` indexes, Core builds it
+during its migration: writes to `ai.messages` wait until it is done, so on an
+installation with a large chat history the first start takes longer. A
+rollback keeps the index; an earlier Core ignores it.
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and
@@ -1270,16 +1333,19 @@ Notebook, or application-schema upgrade checks.
    checks Core's authority before its migrations. Check every service's private
    readiness and its registered public route; gateway health alone is not enough.
    The supplied Compose orders OAuth after Core, but does not impose that order
-   on every other application. Core signs device-authorization grants, so an
-   OAuth release with device sign-in needs Core from the same release; with an
-   older Core, device sign-in fails with `server_error` while other flows keep
-   working.
+   on every other application. Core and OAuth must run the same new release;
+   OAuth sign-ins and refreshes fail until both are updated. Update every
+   application built on `@k2b/cloud` to enforce the live account-epoch check.
 3. Sign in again with the installation's normal account method. Check logout
    and re-login, an authorized app page, global search, a dashboard widget, and
    a Notebook edit that survives reconnect and reload. If OAuth is used, test an
    existing client's authorization and refresh flow through the real HTTPS
    ingress. Old browser sessions and old OAuth access/ID tokens are rejected;
-   client registrations, client secrets, and refresh grants are retained.
+   client registrations and client secrets are retained. Existing OAuth sign-ins
+   of people end once, including their refresh grants and unredeemed codes.
+   Run `cld login` again and reconnect MCP clients and other apps. See
+   [OAuth sign-ins end once on upgrade](/en/docs/reference/deprecations-and-migrations#oauth-sign-ins-end-once-on-upgrade)
+   for rolling-update behavior.
 4. Check startup logs and the
    [JSON metadata repairs](/en/docs/operations/repair-jsonb-containers). Those
    repairs run on startup; no blanket manual repair or database reset is needed.

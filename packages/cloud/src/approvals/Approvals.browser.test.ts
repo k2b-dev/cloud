@@ -8,10 +8,10 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import type { ApprovalPage, PendingApproval } from "../contracts/approvals";
 
-// Whether a receipt keeps the row's height depends on the real layout engine, at desktop and phone widths.
+// How a question card sits on the page and collapses to its outcome line depends on the real layout engine, at desktop and phone widths.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-approvals-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
@@ -124,30 +124,21 @@ const open = async (width: number, locale: string, layout: "list" | "band"): Pro
   return tab;
 };
 
-/** Swaps every row's decision for the receipt markup the component renders after a decision, and reports row heights. */
-const decideInPlace = (tab: Page, selector: string) =>
-  tab.evaluate((rowSelector) => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>(rowSelector));
-    const before = rows.map((row) => row.getBoundingClientRect().height);
-    for (const row of rows) {
-      const actions = row.querySelector<HTMLElement>(".cloud-approval__actions")!;
-      actions.removeAttribute("inert");
-      actions.innerHTML = '<span class="cloud-approval__receipt" data-outcome="approved"><i class="ti ti-check"></i>Approved</span>';
-      row.dataset.decided = "true";
-    }
-    return { before, after: rows.map((row) => row.getBoundingClientRect().height) };
-  }, selector);
-
 describe("Approvals layout", () => {
   for (const width of [1280, 700, 390]) {
-    test(`${width} px: a decided row keeps its height, and nothing overflows`, async () => {
+    test(`${width} px: each request is the chat's question card, and nothing overflows`, async () => {
       const tab = await open(width, "en", "list");
       try {
+        await settled(tab);
         const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow).toBe(0);
-        const heights = await decideInPlace(tab, "article.cloud-approval");
-        expect(heights.before).toHaveLength(2);
-        expect(heights.after).toEqual(heights.before);
+        expect(await tab.locator("article.cloud-approval .k2b-chat-decision__card").count()).toBe(2);
+        // The answers are the shared 44 px buttons; there is no icon column and no box around the card.
+        const answer = (await tab.locator("article.cloud-approval .k2b-chat-decision__answer").first().boundingBox())!;
+        expect(answer.height).toBeGreaterThanOrEqual(44);
+        const card = tab.locator("article.cloud-approval .k2b-chat-decision__card").first();
+        expect(await card.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(await tab.locator("article.cloud-approval .cloud-approval__icon").count()).toBe(0);
       } finally {
         await tab.close();
       }
@@ -156,7 +147,18 @@ describe("Approvals layout", () => {
     test(`${width} px: a band keeps its height as a receipt`, async () => {
       const tab = await open(width, "de", "band");
       try {
-        const heights = await decideInPlace(tab, "article.cloud-approval-band");
+        await settled(tab);
+        const heights = await tab.evaluate(() => {
+          const rows = Array.from(document.querySelectorAll<HTMLElement>("article.cloud-approval-band"));
+          const before = rows.map((row) => row.getBoundingClientRect().height);
+          for (const row of rows) {
+            const actions = row.querySelector<HTMLElement>(".cloud-approval__actions")!;
+            actions.removeAttribute("inert");
+            actions.innerHTML = '<span class="cloud-approval__receipt" data-outcome="approved"><i class="ti ti-check"></i>Approved</span>';
+            row.dataset.decided = "true";
+          }
+          return { before, after: rows.map((row) => row.getBoundingClientRect().height) };
+        });
         expect(heights.after).toEqual(heights.before);
       } finally {
         await tab.close();
@@ -164,18 +166,24 @@ describe("Approvals layout", () => {
     });
   }
 
-  test("390 px: the decision shares the row's width", async () => {
+  test("390 px: the two answers share the row or each takes all of it", async () => {
     const tab = await open(390, "en", "list");
     try {
+      await settled(tab);
       const widths = await tab.evaluate(() => {
         const row = document.querySelector<HTMLElement>("article.cloud-approval")!;
-        const actions = row.querySelector<HTMLElement>(".cloud-approval__actions")!;
+        const answers = Array.from(row.querySelectorAll<HTMLElement>(".k2b-chat-decision__answer")).map((node) =>
+          node.getBoundingClientRect(),
+        );
         return {
-          actions: actions.getBoundingClientRect().width,
-          main: row.querySelector(".cloud-approval__main")!.getBoundingClientRect().width,
+          row: row.querySelector(".k2b-chat-decision__answers")!.getBoundingClientRect().width,
+          answers: answers.map((box) => box.width),
+          top: answers.map((box) => box.top),
         };
       });
-      expect(widths.actions).toBe(widths.main);
+      // Either both share one row, or a long answer takes the whole row; never one narrow button beside a gap.
+      if (widths.top[0] === widths.top[1]) expect(widths.answers[0]! + widths.answers[1]!).toBeGreaterThan(widths.row - 12);
+      else for (const width of widths.answers) expect(width).toBeGreaterThan(widths.row - 1);
     } finally {
       await tab.close();
     }
@@ -213,49 +221,58 @@ describe("Approvals in a browser", () => {
     await tab.evaluate(() => document.fonts.ready);
     return { tab, close: () => context.close() };
   };
-  const rowHeights = (tab: Page) =>
-    tab.evaluate(() => Array.from(document.querySelectorAll("article.cloud-approval")).map((row) => row.getBoundingClientRect().height));
 
   for (const width of [1280, 390]) {
-    test(`${width} px: approving turns the row into a receipt at the same height`, async () => {
+    test(`${width} px: an answer collapses the card at once to its outcome line, after the answers armed`, async () => {
       const decided: string[] = [];
       const { tab, close } = await live(width, page.items, decided);
       try {
-        await tab.locator("article.cloud-approval").first().waitFor();
-        const before = await rowHeights(tab);
-        // The buttons arm after half a second; a click before that does nothing.
-        await tab.locator("article.cloud-approval").first().getByRole("button", { name: "Approve", exact: true }).click({ force: true });
+        const first = tab.locator("article.cloud-approval").first();
+        await first.waitFor();
+        const top = (await first.boundingBox())!.y;
+        const confirm = first.locator(".k2b-chat-decision__answer").first();
+        // The answers arm after half a second; a click before that does nothing.
+        await confirm.click({ force: true });
         expect(decided).toEqual([]);
         await tab.waitForTimeout(600);
-        await tab.locator("article.cloud-approval").first().getByRole("button", { name: "Approve", exact: true }).click();
+        await confirm.click();
         await tab.locator("article.cloud-approval[data-decided]").waitFor();
         expect(decided).toEqual([page.items[0]!.id]);
-        expect(await rowHeights(tab)).toEqual(before);
-        expect(await tab.locator("article.cloud-approval").first().textContent()).toContain("Approved");
+        expect(await first.locator(".k2b-chat-decision__card").count()).toBe(0);
+        expect(await first.locator('.k2b-chat-outcome__text[data-current="true"]').textContent()).toContain("Approved.");
+        expect(await tab.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
+        // The row keeps its place; only what follows moves up, by the answer the person gave.
+        expect((await first.boundingBox())!.y).toBe(top);
       } finally {
         await close();
       }
     });
 
-    test(`${width} px: Details shows the whole review and decides from the panel; a rejection keeps the row height`, async () => {
+    test(`${width} px: Details on a band opens the same card in a panel and decides from there`, async () => {
       const decided: string[] = [];
-      const { tab, close } = await live(width, page.items, decided);
+      const { tab, close } = await live(width, page.items, decided, "band");
       try {
-        await tab.locator("article.cloud-approval").first().waitFor();
-        const before = await rowHeights(tab);
-        await tab.locator("article.cloud-approval").nth(1).getByRole("button", { name: "Details" }).click();
+        const band = tab.locator("article.cloud-approval-band").nth(1);
+        await band.waitFor();
+        const before = (await band.boundingBox())!.height;
+        await tab.waitForTimeout(600);
+        await band.getByRole("button", { name: "Details" }).click();
         const panel = tab.getByRole("dialog");
         await panel.waitFor();
         expect(await panel.textContent()).toContain("This approval applies to exactly this Action.");
         expect(await panel.textContent()).toContain("If you have questions, reach out to Alex or to me directly.");
+        expect(await panel.locator(".k2b-chat-decision__sentence").textContent()).toBe("Sends the draft after the undo window.");
+        // The panel's answers arm late too, so a quick follow-up click cannot decide the request that just opened.
+        await panel.getByRole("button", { name: "Don't run", exact: true }).click({ force: true });
+        expect(decided).toEqual([]);
+        // fixed wait: the panel's answers arm half a second after it opens.
         await tab.waitForTimeout(600);
-        await panel.getByRole("button", { name: "Reject", exact: true }).click();
-        await tab.locator("article.cloud-approval[data-decided]").waitFor();
+        await panel.getByRole("button", { name: "Don't run", exact: true }).click();
+        await tab.locator("article.cloud-approval-band[data-decided]").waitFor();
         expect(decided).toEqual([page.items[1]!.id]);
         expect(await tab.getByRole("dialog").count()).toBe(0);
-        expect(await tab.locator("article.cloud-approval").nth(1).textContent()).toContain("Rejected");
-        expect(await tab.locator("article.cloud-approval").nth(1).getAttribute("data-decided")).toBe("rejected");
-        expect(await rowHeights(tab)).toEqual(before);
+        expect(await band.getAttribute("data-decided")).toBe("rejected");
+        expect((await band.boundingBox())!.height).toBe(before);
       } finally {
         await close();
       }

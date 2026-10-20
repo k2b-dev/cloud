@@ -25,6 +25,34 @@ declare global {
   }
 }
 
+function TimelineWidthFixture() {
+  return (
+    <div style={{ width: document.documentElement.dataset.timelineWidth === "wide" ? "60rem" : "22rem", height: "600px" }}>
+      <Chat label="Width test">
+        <Chat.Timeline
+          scrollFade={false}
+          items={[
+            {
+              kind: "message",
+              id: "question",
+              role: "assistant",
+              content: (
+                <Chat.Decision
+                  state="open"
+                  sentence="Create these tasks?"
+                  reason={{ text: "You asked to review them first." }}
+                  confirm={{ label: "Create tasks", onSelect: () => {} }}
+                  decline={{ label: "Keep draft", onSelect: () => {} }}
+                />
+              ),
+            },
+          ]}
+        />
+      </Chat>
+    </div>
+  );
+}
+
 function Fixture() {
   const [state, setState] = createSignal<ChatDecisionState>("open");
   const [current, setCurrent] = createSignal("running");
@@ -222,4 +250,7 @@ function Fixture() {
     </main>
   );
 }
-render(() => <Fixture />, document.getElementById("root")!);
+render(
+  () => (document.documentElement.hasAttribute("data-timeline-width") ? <TimelineWidthFixture /> : <Fixture />),
+  document.getElementById("root")!,
+);

@@ -96,7 +96,7 @@ beforeAll(async () => {
   const css = await styles.outputs[0]!.text();
   const response = await pages.request("/help/apps/spaces");
   markup = (await response.text())
-    .replace(/<script type="module">[^<]*solid-island[^<]*<\/script>/g, "")
+    .replace(/<script type="module"[^>]*>[^<]*solid-island[^<]*<\/script>/g, "")
     .replace("</head>", `<style>${css}</style></head>`);
   browser = await launchBrowser();
 }, 60_000);

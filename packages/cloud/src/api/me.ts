@@ -4,7 +4,8 @@
  * third-party management lives in the accounts admin app.
  */
 
-import { err, fail, ok } from "@k2b/stdlib";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { sql } from "bun";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import { describeRoute } from "hono-openapi";
@@ -52,8 +53,10 @@ import {
   webauthn,
 } from "../services";
 import { MandatePolicyV1Schema } from "../services/mandates";
+import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "../services/session/recent";
 import { coreSettings } from "../services/settings/api";
 
+import { lastingAccessApiMessages } from "./lasting-access-messages";
 import { createMePanelConsentRoutes } from "./me-panel-consent";
 import { createMeRailRoutes } from "./me-rail";
 import { createMeWebVitalsRoutes } from "./me-web-vitals";
@@ -69,19 +72,10 @@ const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
 const webOnly = (c: Context) => c.json(APP_SESSION_FORBIDDEN, 403);
 
 /**
- * Guards the endpoints that manage how the account is authenticated: passkeys,
- * API keys, the password, and account deletion.
- *
- * `auth.requireUser()` is not enough for these. A personal API key acts as
- * its user, so it passes that check — and could then enrol a passkey, which is
- * a full account takeover, or mint further keys that outlive the revocation of
- * the one that was leaked. No scope in the vocabulary means "may add an
- * authenticator", so a credential must not reach these endpoints at all.
- *
- * A credential may still *read* its account's passkeys and keys; only the
- * mutations are gated. Browser sessions and user-issued OAuth access tokens
- * both resolve to a `user` actor and are unaffected. The mobile app's session
- * is rejected too: whatever it created would outlive removing the phone.
+ * Guards passkey and key removal, password changes, and account deletion.
+ * Browser sessions and user OAuth actors may perform these actions; personal
+ * API keys and mobile app sessions may not. Adding keys and sign-in methods
+ * requires a confirmed browser sign-in through the separate creation gate.
  */
 const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => {
   if (c.get("actor")?.kind !== "user") {
@@ -96,6 +90,27 @@ const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => 
   if (auth.isAppSession(c)) return webOnly(c);
   return next();
 });
+
+const requireBrowserSignIn = createMiddleware<AuthContext>(async (c, next) => {
+  if (!(await auth.browserSignIn(c))) {
+    return c.json(
+      { code: "BROWSER_SIGN_IN_REQUIRED", message: lastingAccessApiMessages.resolve([getLocale(c)]).t.browserSignInRequired },
+      403,
+    );
+  }
+  return next();
+});
+
+const lastingAccessMessage = (c: Context<AuthContext>, code: "REAUTHENTICATE" | "FORBIDDEN") => {
+  const { t } = lastingAccessApiMessages.resolve([getLocale(c)]);
+  return code === "REAUTHENTICATE" ? t.reauthenticate : t.forbidden;
+};
+
+/** The creation services fail with these codes only when the browser sign-in does not confirm the write. */
+const localizeLastingAccessResult = <T>(c: Context<AuthContext>, result: Result<T>): Result<T> =>
+  !result.ok && (result.error.code === "REAUTHENTICATE" || result.error.code === "FORBIDDEN")
+    ? fail({ ...result.error, message: lastingAccessMessage(c, result.error.code) })
+    : result;
 
 const ExtendAccountResponseSchema = z.object({
   message: z.string(),
@@ -544,7 +559,7 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/passkeys/registration/start",
-    requireDirectUserActor,
+    requireBrowserSignIn,
     describeRoute({
       tags: ["Me"],
       summary: "Start passkey registration",
@@ -553,15 +568,28 @@ const app = new Hono<AuthContext>()
       responses: {
         200: jsonResponse(z.unknown(), "Passkey registration options"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Not permitted for API keys or other credentials"),
+        403: jsonResponse(ErrorResponseSchema, "Confirmed browser sign-in required (BROWSER_SIGN_IN_REQUIRED or REAUTHENTICATE)"),
       },
     }),
-    async (c) => respond(c, webauthn.beginRegistration({ user: c.get("user") })),
+    async (c) => {
+      const signIn = await auth.browserSignIn(c);
+      if (!signIn) throw new Error("Browser sign-in gate was not applied");
+      try {
+        await requireConfirmedBrowserSignIn(sql, signIn, (code) => {
+          throw new ConfirmedBrowserSignInError(code);
+        });
+      } catch (error) {
+        if (error instanceof ConfirmedBrowserSignInError)
+          return c.json({ code: error.code, message: lastingAccessMessage(c, error.code) }, 403);
+        throw error;
+      }
+      return respond(c, webauthn.beginRegistration({ user: c.get("user") }));
+    },
   )
 
   .post(
     "/passkeys/registration/verify",
-    requireDirectUserActor,
+    requireBrowserSignIn,
     describeRoute({
       tags: ["Me"],
       summary: "Verify passkey registration",
@@ -571,20 +599,26 @@ const app = new Hono<AuthContext>()
         201: jsonResponse(WebAuthnPasskeySchema, "Passkey created"),
         400: jsonResponse(ErrorResponseSchema, "Passkey registration failed"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Not permitted for API keys or other credentials"),
+        403: jsonResponse(ErrorResponseSchema, "Confirmed browser sign-in required (BROWSER_SIGN_IN_REQUIRED or REAUTHENTICATE)"),
       },
     }),
     v("json", CreateWebAuthnPasskeySchema),
     async (c) =>
       respond(
         c,
-        () => {
+        async () => {
           const data = c.req.valid("json");
-          return webauthn.finishRegistration({
-            user: c.get("user"),
-            name: data.name,
-            response: data.response as never,
-          });
+          const browserSignIn = await auth.browserSignIn(c);
+          if (!browserSignIn) throw new Error("Browser sign-in gate was not applied");
+          return localizeLastingAccessResult(
+            c,
+            await webauthn.finishRegistration({
+              browserSignIn,
+              user: c.get("user"),
+              name: data.name,
+              response: data.response as never,
+            }),
+          );
         },
         201,
       ),
@@ -615,7 +649,7 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/api-keys",
-    requireDirectUserActor,
+    requireBrowserSignIn,
     describeRoute({
       tags: ["Me"],
       summary: "Create current user API key",
@@ -626,7 +660,10 @@ const app = new Hono<AuthContext>()
         201: jsonResponse(CreateUserApiKeyResponseSchema, "API key created"),
         400: jsonResponse(ErrorResponseSchema, "Failed to create API key"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Credential not permitted or models-only API turned off"),
+        403: jsonResponse(
+          ErrorResponseSchema,
+          "Confirmed browser sign-in required (BROWSER_SIGN_IN_REQUIRED or REAUTHENTICATE), or models-only API turned off",
+        ),
       },
     }),
     v("json", CreateUserApiKeySchema),
@@ -642,12 +679,18 @@ const app = new Hono<AuthContext>()
                 "Models-only API keys are turned off. An administrator can turn on the OpenAI-compatible API in the AI settings.",
               ),
             );
-          return serviceAccountCredentials.createUserApiToken({
-            access: data.access,
-            user,
-            name: data.name,
-            expiresAt: data.expiresAt ?? null,
-          });
+          const browserSignIn = await auth.browserSignIn(c);
+          if (!browserSignIn) throw new Error("Browser sign-in gate was not applied");
+          return localizeLastingAccessResult(
+            c,
+            await serviceAccountCredentials.createUserApiToken({
+              browserSignIn,
+              access: data.access,
+              user,
+              name: data.name,
+              expiresAt: data.expiresAt ?? null,
+            }),
+          );
         },
         201,
       ),

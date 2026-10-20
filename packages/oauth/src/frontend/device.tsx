@@ -1,9 +1,12 @@
 /** @jsxImportSource solid-js */
 
-import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, auth, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { get } from "@k2b/cloud/services";
+import { createLoginRedirectUrl, publicCloudOrigin } from "@k2b/cloud/shared";
 import type { Context } from "hono";
 import { ssr } from "../config";
 import { oauth } from "../service/oauth";
+import { isConfirmedBrowserSignIn } from "../service/sign-in";
 import { AuthorizationPage } from "./_components/AuthorizationPage";
 import { DeviceApproval, type DeviceApprovalView, deviceResultTitle } from "./_components/DeviceApproval";
 import { oauthMessages } from "./messages";
@@ -54,6 +57,13 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
     return { kind: "result", outcome: "blocked", message: t.deviceNoAccess };
   }
 
+  const issuer = publicCloudOrigin(await get<string>("app.url"));
+  const reauthenticateHref =
+    pending.scopes.includes("offline_access") && !(await isConfirmedBrowserSignIn(await auth.browserSignIn(c)))
+      ? createLoginRedirectUrl(
+          `${issuer}/oauth/device?user_code=${encodeURIComponent(oauth.device.formatUserCode(userCode))}&reauthenticate=1`,
+        )
+      : null;
   const request = await oauth.device.createConfirmation({ deviceAuthorizationId: pending.id, userId: user.id });
   return {
     kind: "confirm",
@@ -61,6 +71,7 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
     code: oauth.device.formatUserCode(userCode),
     client: { name: client.name, clientId: client.clientId },
     scopes: pending.scopes,
+    reauthenticateHref,
   };
 };
 

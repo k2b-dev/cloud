@@ -131,6 +131,9 @@ const load = async () => {
 const RecordsView = isServer ? undefined : await load();
 ```
 
+A browser test has the same 5 s budget for its pages, documents, and scans;
+see [Test in Chromium and WebKit](#test-in-chromium-and-webkit).
+
 Solid attaches its delegated event listeners, such as the one for `click`, to
 the document that exists while a module evaluates, here the temporary one. A
 test that clicks therefore calls `delegateEvents(["click"], dom.document)` for
@@ -149,10 +152,26 @@ In browser tests, fixtures stamp their data from a fixed clock, and each
 context gets an init script that replaces the page's `Date` with one that
 starts at that clock and flows from there. The Chat harness starts at
 `chatTestNow`, exposes its flowing clock as `harness.now()`, and pins pages
-with `pinPageClock` in `ChatWorkspace.browser.test.ts`. Do not use
-Playwright's `clock` for this: even `setSystemTime` replaces timers,
-animation frames, and `performance`, and the Chat read-state tests then
-failed in WebKit. Use `performance.now()` for durations and deadlines.
+with `pinPageClock` in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`.
+A page built with `setContent` keeps the window of its blank page, so the
+continuous month test in `@k2b/ui` runs the same function with
+`page.evaluate` before `setContent`. Use `performance.now()` for durations
+and deadlines.
+
+Do not pin the date with Playwright's `clock`. `setFixedTime` and
+`setSystemTime` also install its fake clock, which replaces timers,
+animation frames, and `performance`. Scroll- and frame-driven UI then runs
+on a timer instead of the page's rendering, so a test sees state that lags
+only in the test. The Chat read-state tests failed in WebKit this way, and so
+did the continuous month title
+([#1139](https://github.com/k2b-dev/cloud/issues/1139)).
+
+The `test-clock` check flags `.clock.setFixedTime(` and
+`.clock.setSystemTime(` calls on a page or context. A line comment
+`// playwright clock: <reason>` on the same line or directly above allows a
+pin in a test whose subject is fake timers. The reason must be non-empty.
+`clock.install()`, `runFor`, and `fastForward` stay allowed for deliberate
+timer control, and `setSystemTime` from `bun:test` is not a finding.
 
 Measure browser timing on the browser's clock. Playwright events such as
 `request` reach the test process late under load, so tests that assert a browser
@@ -174,7 +193,22 @@ when findings are gone.
 A test waits for the state it needs: poll with a deadline, await an event,
 a recorded close, or a log. A fixed sleep assumes the state arrived and is
 still there. The live-routes slow-client test waits for the server's `1013`
-close before it resumes the client.
+close before it resumes the client. A test about the moment before a debounce
+or delay fires acts in the same task as the trigger, as the Notebooks Timeline
+scroll-restore test does, because a check after a real-time wait that the delay
+has not fired yet fails on a slow runner. Wait for the state you assert, not
+for a step before it: the continuous month test waits until the grid rests at
+the week and the header names the month, because the view names the month in
+an animation frame after the scroll event.
+
+A live region that a component fills after a timer is read with a bounded
+wait, such as `waitForFunction` on its text, never once after `settled()`.
+`settled()` waits for fonts, animations, and frames, not for timers. The
+outcome line of `ChatOutcome` in `@k2b/ui` empties its `role="status"` region
+and fills it 40 ms later, so that the same words spoken again are announced.
+The answering case in `action-question.browser.test.ts` holds the fixture's
+answer, waits until the status names the pending line, and only then releases
+the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
 
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
 with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
@@ -294,6 +328,21 @@ or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
 and a Back to a graph page in a third. The cause was a collapsed receive
 queue on the CI runner's kernel; see
 [When a page never fires load](#when-a-page-never-fires-load).
+
+States that a test sets with `setContent`, a fixture call, or another change
+inside the page share one page per test. Open the page at the start of the
+test, change the state inside it, and close the page at the end. Each new page
+and each new document has a fixed cost. On a busy machine, a WebKit page takes
+about 300 ms to open. Each `setContent` parses an inlined `dist/styles.css`
+(857 KB) again, and each document runs its `addScriptTag` bundle again. These
+costs fit the 5 s test timeout on an idle machine, but not under three heavy
+slots ([#1485](https://github.com/k2b-dev/cloud/issues/1485),
+[#1497](https://github.com/k2b-dev/cloud/issues/1497)). When many states use
+one stylesheet, load it once and replace the body for each state, as `show()`
+does in `packages/ui/src/styles/touch-targets.browser.test.ts`. An exhaustive
+check, such as a tap on every pixel, looks only where its result can change,
+and a test compares it with the full check; see `takenPixels` in the same
+file.
 
 When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
 times out, the error appends a navigation diagnosis. It names the call and how long it
@@ -756,8 +805,10 @@ bun run test --integration
 ```
 
 `--integration` first prepares the test database by running Core setup and every application migration (idempotent, a few seconds), then runs only the integration files, one fresh global per file. `--shard <n>/<total>` splits
-the suites across parallel jobs, which is how the gate runs them; `--exclude <name>`
-leaves out suites whose name or path matches, and `--filter <name>` keeps only those.
+the suites across parallel jobs, balanced by measured suite time, which is how
+the gate runs them. `--max-minutes <m>` fails a run that takes longer than m
+minutes. `--exclude <name>` leaves out suites whose name or path matches, and
+`--filter <name>` keeps only those.
 
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right
@@ -857,6 +908,17 @@ Gotenberg. Path-filtered jobs, such as the Grids certification, the WebKit
 browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
+
+Unit and WebKit tests run in five shards each, balanced by
+`scripts/test-weights.json`: measured seconds per suite, longest first. An
+unknown suite counts as the median of its table. Each shard prints its
+predicted and actual time. It fails with an annotation when it runs longer
+than 20 of its 30 minutes, even when every suite passed. To refresh the weights,
+run `bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest
+green merge-queue runs. Add a shard when the printed slowest shard exceeds
+15 minutes. One third of the job limit stays in reserve because setup and
+GitHub's job finalization count against it. Finalization took up to about
+5 minutes during a GitHub Actions incident.
 
 The `packed` job packs `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with
 `npm pack`, using the same file list as `npm publish`. It installs them in a
@@ -1051,7 +1113,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in three shards with `bun run test --browser`, against
+them again in WebKit in five shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

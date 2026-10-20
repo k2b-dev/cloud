@@ -8,6 +8,7 @@ import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } 
 import { imapSmtpConnector } from "./connectors";
 import { EndpointPolicyError } from "./connectors/endpoint-policy";
 import { logDatabaseFailure } from "./database-errors";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import { isTemporaryLoginFailure, providerErrorDetail } from "./provider-errors";
 import { providerBusy, recordProviderReachable, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
@@ -247,10 +248,12 @@ export const createProviderConnection = async (params: {
           },
           tx,
         );
+        await enqueueMailInvalidation(tx, { mailboxId: row.owner_mailbox_id });
         await assertLeaseActive();
         return ok({ connection, verification: verification.data });
       });
     });
+    if (barrier.acquired && barrier.value.ok) mailLive.wake();
     return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry connection creation shortly"));
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
@@ -558,6 +561,7 @@ export const replaceProviderConnection = async (params: {
           },
           tx,
         );
+        await enqueueMailInvalidation(tx, { mailboxId: row.owner_mailbox_id });
         await assertLeaseActive();
         return ok({ connection, verification: verification.data });
       });
@@ -565,6 +569,7 @@ export const replaceProviderConnection = async (params: {
     if (!barrier.acquired) return fail(providerBusy("Provider work is still running; retry credential replacement shortly"));
     // The provider answered the new connection's verification, so a pause after the old one timed out
     // does not hold back the verification and syncs that follow.
+    if (barrier.value.ok) mailLive.wake();
     if (barrier.value.ok) await Promise.all(resourceIds.map((resourceId) => recordProviderReachable(resourceId)));
     return barrier.value;
   } catch (error) {
@@ -653,10 +658,12 @@ export const revokeProviderConnection = async (context: MailRequestContext, conn
           },
           tx,
         );
+        await enqueueMailInvalidation(tx, { mailboxId: row.owner_mailbox_id });
         await assertLeaseActive();
         return ok();
       }),
     );
+    if (barrier.acquired && barrier.value.ok) mailLive.wake();
     return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry revocation shortly"));
   } catch {
     return fail(err.internal("Failed to revoke provider connection"));

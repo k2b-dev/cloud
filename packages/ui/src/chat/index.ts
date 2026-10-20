@@ -7,7 +7,7 @@ export type { ChatTask, ChatTasksProps } from "./ChatTasks";
 
 import { ChatComposer } from "./ChatComposer";
 import { ChatDecision, ChatMark, ChatOutcome, ChatPreview } from "./ChatDecision";
-import { ChatActivity, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
+import { ChatActivity, ChatActivityToggle, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
 import { ChatTimeline } from "./ChatTimeline";
 
@@ -28,14 +28,16 @@ export type {
   ChatDecisionProps,
   ChatMarkProps,
   ChatOutcomeProps,
+  ChatPreviewExcerptProps,
   ChatPreviewHeaderProps,
   ChatPreviewLineProps,
   ChatPreviewPeopleProps,
   ChatPreviewProps,
   ChatPreviewReadMoreProps,
+  ChatPreviewShowAllProps,
   ChatPreviewTitleProps,
 } from "./ChatDecision";
-export type { ChatActivityProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
+export type { ChatActivityProps, ChatActivityToggleProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";
 export type { ChatActivityItem, ChatMessageItem, ChatTimelineItem, ChatTimelineProps } from "./ChatTimeline";
@@ -72,7 +74,7 @@ export const Chat = Object.assign(ChatRoot, {
   Tasks: ChatTasks,
   Timeline: ChatTimeline,
   Message: ChatMessage,
-  Activity: ChatActivity,
+  Activity: Object.assign(ChatActivity, { Toggle: ChatActivityToggle }),
   Composer: ChatComposer,
   ContextUsage: ChatContextUsage,
   ContextPopup: ChatContextPopup,

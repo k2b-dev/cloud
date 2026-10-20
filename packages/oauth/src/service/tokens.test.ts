@@ -1,12 +1,14 @@
-import { beforeAll, expect, spyOn, test } from "bun:test";
+import { beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createMcpRoutes } from "@k2b/cloud/api";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
+import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
 import { sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
+import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -17,6 +19,16 @@ import { migrate } from "../migrate";
 import oauthRoutes from "../oauth";
 import { oauthService } from "../service";
 import { oauth } from "./oauth";
+
+const withFrozenTime = async (run: () => Promise<void>) => {
+  const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
+  setSystemTime(clock!.now);
+  try {
+    await run();
+  } finally {
+    setSystemTime();
+  }
+};
 
 const suite = databaseSuite();
 
@@ -44,12 +56,41 @@ const adminActor = (id: string) => ({ id, uid: `oauth-admin-${id}`, provider: "l
 
 const createSessionToken = createTestSession;
 
+const currentEpoch = async (userId: string): Promise<number> => {
+  const [user] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
+  if (!user) throw new Error("Missing test user");
+  return Number(user.auth_epoch);
+};
+
+const activeRefreshFamily = async (params: Omit<Parameters<typeof oauth.refreshTokens.reserve>[0], "authEpoch">) => {
+  const reserved = await oauth.refreshTokens.reserve({ ...params, authEpoch: await currentEpoch(params.userId) });
+  await sql`UPDATE oauth.refresh_token_families SET status = 'active' WHERE id = ${reserved.familyId}::uuid`;
+  return reserved;
+};
+
 // Exercise real code consumption and Core issuance, never a test-only signing bypass.
-const createGrantedTokens = async (params: Omit<Parameters<typeof oauth.tokens.createTokens>[0], "authorityGrant" | "login">) => {
+const createAuthorizationCode = async (params: Parameters<typeof oauth.codes.create>[0]): Promise<string> => {
+  if (!params.scopes.includes("offline_access")) return oauth.codes.create(params);
+  const token = await createTestSession(params.userId);
+  const authenticated = await session.authenticate(token);
+  if (!authenticated) throw new Error("Missing test browser session");
+  return sql.begin((db) =>
+    oauth.codes.create({
+      ...params,
+      db,
+      browserSignIn: { userId: params.userId, sid: authenticated.data.sid },
+    }),
+  );
+};
+
+const createGrantedTokens = async (
+  params: Omit<Parameters<typeof oauth.tokens.createTokens>[0], "authorityGrant" | "login" | "authEpoch">,
+) => {
   const redirectUri = params.client.redirectUris[0]!;
-  const code = await oauth.codes.create({
+  const code = await createAuthorizationCode({
     clientId: params.client.clientId,
     userId: params.userId,
+    authEpoch: await currentEpoch(params.userId),
     redirectUri,
     scopes: params.scopes ?? params.client.scopes,
     resource: params.resource ?? undefined,
@@ -61,12 +102,13 @@ const createGrantedTokens = async (params: Omit<Parameters<typeof oauth.tokens.c
     redirectUri,
     resource: params.resource ?? undefined,
   });
-  if (!consumed) throw new Error("Test authorization code was rejected");
+  if (!consumed || consumed.authEpoch === null) throw new Error("Test authorization code was rejected");
   return oauth.tokens.createTokens({
     login: { lifetimeSeconds: oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS },
     ...params,
     audiences: consumed.audiences,
     authorityGrant: consumed.authorityGrant,
+    authEpoch: consumed.authEpoch,
   });
 };
 
@@ -235,9 +277,10 @@ suite("OAuth resource access tokens", () => {
       if (!created.ok) return;
       clientId = created.data.id;
 
-      const code = await oauth.codes.create({
+      const code = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: created.data.scopes,
       });
@@ -307,9 +350,10 @@ suite("OAuth resource access tokens", () => {
         });
       };
 
-      const scopedCode = await oauth.codes.create({
+      const scopedCode = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: ["write"],
       });
@@ -317,9 +361,10 @@ suite("OAuth resource access tokens", () => {
       expect(await (await exchange(scopedCode)).json()).toMatchObject({ error: "invalid_grant" });
 
       await oauth.clients.update({ id: clientId, data: { scopes: ["openid", "write"] }, actor: adminActor(userId) });
-      const resourceCode = await oauth.codes.create({
+      const resourceCode = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: ["openid"],
         resource: oldResource,
@@ -357,9 +402,10 @@ suite("OAuth resource access tokens", () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
       clientId = created.data.id;
-      const code = await oauth.codes.create({
+      const code = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: ["openid", "offline_access"],
       });
@@ -390,9 +436,10 @@ suite("OAuth resource access tokens", () => {
       const refreshed = await exchange({ grant_type: "refresh_token", refresh_token: issued.refresh_token });
       expect(refreshed.status).toBe(200);
       expect(jose.decodeJwt(((await refreshed.json()) as { access_token: string }).access_token).aud).toEqual(expected);
-      const widerCode = await oauth.codes.create({
+      const widerCode = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: ["openid", "offline_access"],
       });
@@ -491,9 +538,10 @@ suite("OAuth resource access tokens", () => {
         });
         if (!created.ok) throw new Error("Client setup failed");
         clientId = created.data.id;
-        const code = await oauth.codes.create({
+        const code = await createAuthorizationCode({
           clientId: created.data.clientId,
           userId,
+          authEpoch: await currentEpoch(userId),
           redirectUri: "https://client.example.test/callback",
           scopes: created.data.scopes,
         });
@@ -577,9 +625,10 @@ suite("OAuth resource access tokens", () => {
       if (!created.ok) return;
       clientId = created.data.id;
 
-      const code = await oauth.codes.create({
+      const code = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: created.data.scopes,
       });
@@ -683,7 +732,7 @@ suite("OAuth resource access tokens", () => {
       clientId = created.data.id;
 
       const createGrant = () =>
-        oauth.refreshTokens.create({
+        activeRefreshFamily({
           expiresAt: new Date(Date.now() + oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
           userId,
           client: created.data,
@@ -1493,9 +1542,10 @@ suite("OAuth resource access tokens", () => {
       ).rejects.toBeInstanceOf(oauth.tokens.OAuthAuthorityGrantRejectedError);
       expect(authorityCalls).toBe(0);
 
-      const code = await oauth.codes.create({
+      const code = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: ["openid"],
       });
@@ -1513,7 +1563,7 @@ suite("OAuth resource access tokens", () => {
       expect(codeResponse.status).toBe(400);
       expect(await codeResponse.json()).toMatchObject({ error: "invalid_grant" });
 
-      const rejectedRefresh = await oauth.refreshTokens.create({
+      const rejectedRefresh = await activeRefreshFamily({
         expiresAt: new Date(Date.now() + oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
         userId,
         client: created.data,
@@ -1539,7 +1589,7 @@ suite("OAuth resource access tokens", () => {
       `;
       expect(releasedFamily?.status).toBe("active");
 
-      const unknownRefresh = await oauth.refreshTokens.create({
+      const unknownRefresh = await activeRefreshFamily({
         expiresAt: new Date(Date.now() + oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
         userId,
         client: created.data,
@@ -1635,7 +1685,7 @@ suite("OAuth resource access tokens", () => {
     }
   });
 
-  test("expired accounts cannot authorize or refresh and failed refreshes do not rotate", async () => {
+  test("expired accounts cannot authorize or refresh, failed refreshes do not rotate, and expiry ends earlier sign-ins", async () => {
     const userId = await insertUser();
     const sessionToken = await createSessionToken(userId);
     let clientId: string | null = null;
@@ -1668,18 +1718,6 @@ suite("OAuth resource access tokens", () => {
       expect(issued.refreshToken).toBeTruthy();
 
       await sql`UPDATE auth.users SET account_expires = now() - INTERVAL '1 minute' WHERE id = ${userId}::uuid`;
-      const authorize = await oauthRoutes.request(
-        `/oauth/authorize?${new URLSearchParams({
-          client_id: created.data.clientId,
-          redirect_uri: "https://client.example.test/callback",
-          response_type: "code",
-          scope: "openid read",
-        })}`,
-        { headers: { cookie: `session_token=${sessionToken}` }, redirect: "manual" },
-      );
-      expect(authorize.status).toBe(302);
-      expect(authorize.headers.get("location")).toStartWith("/auth/login?");
-
       const refresh = () =>
         oauthRoutes.request("/oauth/token", {
           method: "POST",
@@ -1696,7 +1734,37 @@ suite("OAuth resource access tokens", () => {
       expect(await denied.json()).toMatchObject({ error: "invalid_grant" });
 
       await sql`UPDATE auth.users SET account_expires = NULL WHERE id = ${userId}::uuid`;
-      expect((await refresh()).status).toBe(200);
+      const rotated = await refresh();
+      expect(rotated.status).toBe(200);
+      const current = String(((await rotated.json()) as { refresh_token: string }).refresh_token);
+
+      // A request of the expired account signs it out everywhere, which also ends its OAuth sign-ins.
+      await sql`UPDATE auth.users SET account_expires = now() - INTERVAL '1 minute' WHERE id = ${userId}::uuid`;
+      const authorize = await oauthRoutes.request(
+        `/oauth/authorize?${new URLSearchParams({
+          client_id: created.data.clientId,
+          redirect_uri: "https://client.example.test/callback",
+          response_type: "code",
+          scope: "openid read",
+        })}`,
+        { headers: { cookie: `session_token=${sessionToken}` }, redirect: "manual" },
+      );
+      expect(authorize.status).toBe(302);
+      expect(authorize.headers.get("location")).toStartWith("/auth/login?");
+
+      await sql`UPDATE auth.users SET account_expires = NULL WHERE id = ${userId}::uuid`;
+      const ended = await oauthRoutes.request("/oauth/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: created.data.clientId,
+          client_secret: created.data.clientSecret,
+          refresh_token: current,
+        }),
+      });
+      expect(ended.status).toBe(400);
+      expect(await ended.json()).toMatchObject({ error: "invalid_grant" });
     } finally {
       await auth.session.revoke(sessionToken);
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
@@ -1818,9 +1886,10 @@ suite("OAuth resource access tokens", () => {
       if (!created.ok) return;
       clientId = created.data.id;
 
-      const code = await oauth.codes.create({
+      const code = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: created.data.scopes,
       });
@@ -2017,9 +2086,10 @@ suite("OAuth resource access tokens", () => {
       if (!created.ok) return;
       clientId = created.data.id;
 
-      const code = await oauth.codes.create({
+      const code = await createAuthorizationCode({
         clientId: created.data.clientId,
         userId,
+        authEpoch: await currentEpoch(userId),
         redirectUri: "https://client.example.test/callback",
         scopes: created.data.scopes,
       });
@@ -2350,6 +2420,373 @@ suite("OAuth resource access tokens", () => {
       await sql`DELETE FROM auth.users WHERE id IN (${adminId}::uuid, ${delegatedId}::uuid)`;
     }
   });
+});
+
+const epochFixture = async (kind: "cli" | "managed" | "dynamic" = "managed") => {
+  const userId = await insertUser();
+  const scopes: OAuthScope[] = ["openid", "offline_access"];
+  const redirectUri = kind === "cli" ? "http://127.0.0.1:54321/callback" : "https://client.example.test/callback";
+  const resource = kind === "dynamic" ? "http://localhost:3000/api/mcp" : undefined;
+  let client: OAuthClient;
+  let clientSecret: string | undefined;
+  if (kind === "cli") {
+    const seeded = await oauth.clients.getByClientId({ clientId: "cloud-cli" });
+    if (!seeded) throw new Error("Missing CLI client");
+    client = seeded;
+  } else if (kind === "dynamic") {
+    client = await oauth.clients.registerDynamic({ name: `Epoch consent ${crypto.randomUUID()}`, redirectUris: [redirectUri], scopes });
+  } else {
+    const created = await oauth.clients.create({
+      actor: adminActor(userId),
+      data: {
+        name: `Epoch client ${crypto.randomUUID()}`,
+        redirectUris: [redirectUri],
+        scopes,
+        audiences: ["cloud"],
+        allowedProfiles: ["user"],
+        accessMode: "profiles",
+        allowedUserIds: [],
+        allowedGroupIds: [],
+        isPublic: false,
+      },
+    });
+    if (!created.ok) throw new Error("Client setup failed");
+    client = created.data;
+    clientSecret = created.data.clientSecret;
+  }
+  return {
+    userId,
+    client,
+    scopes,
+    resource,
+    redirectUri,
+    authEpoch: await currentEpoch(userId),
+    authorize: async () => {
+      const verifier = "e".repeat(64);
+      const challenge = Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))).toString("base64url");
+      const cookie = `session_token=${await createTestSession(userId)}`;
+      let response = await oauthRoutes.request(
+        `/oauth/authorize?${new URLSearchParams({
+          client_id: client.clientId,
+          redirect_uri: redirectUri,
+          response_type: "code",
+          scope: scopes.join(" "),
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+          ...(resource ? { resource } : {}),
+        })}`,
+        { headers: { cookie, "x-forwarded-for": uniqueCallerAddress() } },
+      );
+      expect(response.status).toBe(302);
+      if (kind === "dynamic" || kind === "cli") {
+        const request = new URL(response.headers.get("location")!, "http://localhost:3000").searchParams.get("request");
+        if (!request) throw new Error("Missing consent request");
+        response = await consentActionRoutes().request("/oauth/consent", {
+          method: "POST",
+          headers: { cookie, origin: "http://localhost:3000", "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ request, decision: "approve" }),
+        });
+        expect(response.status).toBe(302);
+      }
+      const code = new URL(response.headers.get("location")!).searchParams.get("code");
+      if (!code) throw new Error("Missing authorization code");
+      return { code, verifier };
+    },
+    token: (values: Record<string, string>) =>
+      oauthRoutes.request("/oauth/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": uniqueCallerAddress() },
+        body: new URLSearchParams({ client_id: client.clientId, ...(clientSecret ? { client_secret: clientSecret } : {}), ...values }),
+      }),
+    cleanup: async () => {
+      if (kind !== "cli") await sql`DELETE FROM oauth.clients WHERE client_id = ${client.clientId}`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    },
+  };
+};
+
+suite("OAuth account epochs", () => {
+  beforeAll(async () => {
+    await migrate();
+  });
+
+  for (const kind of ["cli", "managed", "dynamic"] as const) {
+    test(`${kind} authorization cannot be exchanged after signing out everywhere`, () =>
+      withFrozenTime(async () => {
+        const f = await epochFixture(kind);
+        try {
+          const grant = await f.authorize();
+          const [stored] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM oauth.codes WHERE code = ${grant.code}`;
+          expect(Number(stored!.auth_epoch)).toBe(f.authEpoch);
+          await session.revokeAllForUser(f.userId);
+          const response = await f.token({
+            grant_type: "authorization_code",
+            code: grant.code,
+            code_verifier: grant.verifier,
+            redirect_uri: f.redirectUri,
+            ...(f.resource ? { resource: f.resource } : {}),
+          });
+          expect(response.status).toBe(400);
+          expect(await response.json()).toMatchObject({ error: "invalid_grant" });
+          expect(
+            await sql`SELECT id FROM oauth.refresh_token_families WHERE user_id = ${f.userId}::uuid AND status = 'active'`,
+          ).toHaveLength(0);
+        } finally {
+          await f.cleanup();
+        }
+      }));
+  }
+
+  for (const outcome of ["rejected", "unavailable", "lost_response"] as const) {
+    test(`initial issuance revokes its reservation when authority is ${outcome}`, () =>
+      withFrozenTime(async () => {
+        const f = await epochFixture();
+        const originalFetch = globalThis.fetch;
+        try {
+          const grant = await f.authorize();
+          const consumed = await oauth.codes.consume({
+            code: grant.code,
+            clientId: f.client.clientId,
+            redirectUri: f.redirectUri,
+            codeVerifier: grant.verifier,
+          });
+          if (!consumed || consumed.authEpoch === null) throw new Error("Missing consumed grant");
+          let familyId: string | undefined;
+          const observed: { grants: unknown[]; reservation: unknown; authEpoch: number }[] = [];
+          globalThis.fetch = Object.assign(
+            async (_input: RequestInfo | URL, init?: RequestInit) => {
+              const body = z
+                .object({ tokens: z.array(z.object({ grant: z.object({ familyId: z.uuid() }).passthrough() })).length(2) })
+                .parse(JSON.parse(String(init?.body)));
+              familyId = body.tokens[0]!.grant.familyId;
+              const [reserved] = await sql<{ status: string; auth_epoch: string | number; generation: number; token_status: string }[]>`
+                SELECT family.status, family.auth_epoch, token.generation, token.status AS token_status
+                FROM oauth.refresh_token_families family JOIN oauth.refresh_tokens token ON token.family_id = family.id
+                WHERE family.id = ${familyId}::uuid
+              `;
+              observed.push({
+                grants: body.tokens.map((token) => token.grant),
+                reservation: reserved,
+                authEpoch: Number(reserved?.auth_epoch),
+              });
+              if (outcome === "lost_response") {
+                // The revocation must also cover a family Core activated before the response was lost.
+                await sql`UPDATE oauth.refresh_token_families SET status = 'active' WHERE id = ${familyId!}::uuid`;
+                throw new Error("Authority response unavailable");
+              }
+              return new Response(null, { status: outcome === "rejected" ? 403 : 503 });
+            },
+            { preconnect: originalFetch.preconnect },
+          );
+          await expect(
+            oauth.tokens.createTokens({
+              userId: f.userId,
+              client: f.client,
+              authEpoch: consumed.authEpoch,
+              scopes: consumed.scopes,
+              audiences: consumed.audiences,
+              authorityGrant: consumed.authorityGrant,
+              issueRefreshToken: true,
+              login: { lifetimeSeconds: 600 },
+            }),
+          ).rejects.toThrow();
+          expect(familyId).toBeDefined();
+          expect(observed).toHaveLength(1);
+          expect(observed[0]).toMatchObject({
+            reservation: { status: "reserved", generation: 1, token_status: "active" },
+            authEpoch: f.authEpoch,
+          });
+          expect(observed[0]!.grants[1]).toEqual(observed[0]!.grants[0]);
+          const [ended] = await sql<{ status: string; revoked_reason: string | null; token_status: string }[]>`
+          SELECT family.status, family.revoked_reason, token.status AS token_status
+          FROM oauth.refresh_token_families family JOIN oauth.refresh_tokens token ON token.family_id = family.id
+          WHERE family.id = ${familyId!}::uuid
+        `;
+          expect(ended).toMatchObject({ status: "revoked", revoked_reason: "authority_issuance_failed", token_status: "revoked" });
+        } finally {
+          globalThis.fetch = originalFetch;
+          await f.cleanup();
+        }
+      }));
+  }
+
+  test("a consumed code cannot issue after its epoch changes and its family is cleaned up", () =>
+    withFrozenTime(async () => {
+      const f = await epochFixture();
+      try {
+        const grant = await f.authorize();
+        const consumed = await oauth.codes.consume({
+          code: grant.code,
+          clientId: f.client.clientId,
+          client: f.client,
+          redirectUri: f.redirectUri,
+          codeVerifier: grant.verifier,
+        });
+        if (!consumed || consumed.authEpoch === null) throw new Error("Missing consumed grant");
+        await session.revokeAllForUser(f.userId);
+        await expect(
+          oauth.tokens.createTokens({
+            userId: f.userId,
+            client: f.client,
+            scopes: consumed.scopes,
+            audiences: consumed.audiences,
+            authorityGrant: consumed.authorityGrant,
+            authEpoch: consumed.authEpoch,
+            issueRefreshToken: true,
+            login: { lifetimeSeconds: oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS },
+          }),
+        ).rejects.toBeInstanceOf(oauth.tokens.OAuthAuthorityGrantRejectedError);
+        const families = await sql<{ id: string; status: string; revoked_reason: string | null; token_status: string }[]>`
+        SELECT family.id, family.status, family.revoked_reason, token.status AS token_status
+        FROM oauth.refresh_token_families family JOIN oauth.refresh_tokens token ON token.family_id = family.id
+        WHERE family.user_id = ${f.userId}::uuid
+      `;
+        expect(families).toHaveLength(1);
+        expect(families[0]).toMatchObject({ status: "revoked", revoked_reason: "authority_issuance_failed", token_status: "revoked" });
+        const [code] = await sql<
+          { authority_issued_at: Date | null }[]
+        >`SELECT authority_issued_at FROM oauth.codes WHERE code = ${grant.code}`;
+        expect(code?.authority_issued_at).toBeNull();
+        await sql`UPDATE oauth.refresh_token_families SET created_at = now() - interval '10 minutes', revoked_at = now() - interval '2 days'
+        WHERE user_id = ${f.userId}::uuid`;
+        expect(await oauth.refreshTokens.cleanup()).toBeGreaterThanOrEqual(1);
+        expect(await sql`SELECT id FROM oauth.refresh_token_families WHERE user_id = ${f.userId}::uuid`).toHaveLength(0);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("current families rotate with the current epoch and stop rotating after sign-out", () =>
+    withFrozenTime(async () => {
+      const f = await epochFixture();
+      try {
+        const grant = await f.authorize();
+        const issued = await f.token({
+          grant_type: "authorization_code",
+          code: grant.code,
+          code_verifier: grant.verifier,
+          redirect_uri: f.redirectUri,
+        });
+        expect(issued.status).toBe(200);
+        const original = await issued.json();
+        expect(jose.decodeJwt(original.access_token).auth_epoch).toBe(f.authEpoch);
+        const response = await f.token({ grant_type: "refresh_token", refresh_token: original.refresh_token });
+        expect(response.status).toBe(200);
+        const rotated = await response.json();
+        expect(rotated.refresh_token).not.toBe(original.refresh_token);
+        expect(jose.decodeJwt(rotated.access_token).auth_epoch).toBe(f.authEpoch);
+        await session.revokeAllForUser(f.userId);
+        const ended = await f.token({ grant_type: "refresh_token", refresh_token: rotated.refresh_token });
+        expect(ended.status).toBe(400);
+        expect(await ended.json()).toMatchObject({ error: "invalid_grant" });
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("migration ends legacy families in batches once and user tokens require an epoch", () =>
+    withFrozenTime(async () => {
+      const f = await epochFixture();
+      try {
+        await sql`
+        WITH families AS (
+          INSERT INTO oauth.refresh_token_families (client_id, user_id, scopes, audiences, auth_epoch, status, expires_at)
+          SELECT ${f.client.clientId}, ${f.userId}::uuid, ARRAY['offline_access'], ARRAY['cloud', ${f.client.clientId}], NULL, 'active', now() + interval '1 day'
+          FROM generate_series(1, 1001) RETURNING id
+        )
+        INSERT INTO oauth.refresh_tokens (family_id, token_prefix, secret_hash, generation, status, expires_at)
+        SELECT id, replace(id::text, '-', ''), 'unused', 1, 'active', now() + interval '1 day' FROM families
+      `;
+        await sql`
+          INSERT INTO oauth.refresh_tokens (family_id, token_prefix, secret_hash, generation, status, expires_at)
+          SELECT id, ${crypto.randomUUID()}, 'unused', 2, 'issuing', now() + interval '1 day'
+          FROM oauth.refresh_token_families WHERE user_id = ${f.userId}::uuid LIMIT 1
+        `;
+        await migrate();
+        const snapshot = () => sql<{ state: string }[]>`
+        SELECT json_build_object('id', family.id, 'status', family.status, 'revoked_at', family.revoked_at,
+          'reason', family.revoked_reason, 'token_status', token.status)::text AS state
+        FROM oauth.refresh_token_families family JOIN oauth.refresh_tokens token ON token.family_id = family.id
+        WHERE family.user_id = ${f.userId}::uuid ORDER BY family.id
+      `;
+        const first = await snapshot();
+        expect(first).toHaveLength(1002);
+        for (const row of first)
+          expect(JSON.parse(row.state)).toMatchObject({ status: "revoked", reason: "auth_epoch_migration", token_status: "revoked" });
+        await migrate();
+        expect(await snapshot()).toEqual(first);
+        // Use the common actor path directly so this assertion needs no separate signer.
+        expect(
+          await oauthTokens.resolveOAuthTokenActor({ token_use: "access", client_id: f.client.clientId, id: f.userId, sub: f.userId }, []),
+        ).toBeNull();
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("cleanup revokes earlier epochs and deletes only aged reservations", () =>
+    withFrozenTime(async () => {
+      const f = await epochFixture();
+      try {
+        const params = {
+          userId: f.userId,
+          authEpoch: f.authEpoch,
+          client: f.client,
+          scopes: f.scopes,
+          expiresAt: new Date(Date.now() + 3600_000),
+          audiences: ["cloud", f.client.clientId],
+        };
+        const stale = await oauth.refreshTokens.reserve(params);
+        const abandoned = await oauth.refreshTokens.reserve(params);
+        const fresh = await oauth.refreshTokens.reserve(params);
+        await sql`UPDATE oauth.refresh_token_families SET status = 'active' WHERE id = ${stale.familyId}::uuid`;
+        await sql`UPDATE oauth.refresh_token_families SET created_at = now() - interval '10 minutes' WHERE id = ${abandoned.familyId}::uuid`;
+        await session.revokeAllForUser(f.userId);
+        expect(await oauth.refreshTokens.cleanup()).toBeGreaterThanOrEqual(1);
+        const rows = await sql<{ id: string; status: string; revoked_reason: string | null; token_status: string }[]>`
+        SELECT family.id, family.status, family.revoked_reason, token.status AS token_status
+        FROM oauth.refresh_token_families family JOIN oauth.refresh_tokens token ON token.family_id = family.id
+        WHERE family.user_id = ${f.userId}::uuid ORDER BY family.id
+      `;
+        expect(rows).toHaveLength(2);
+        expect(rows.find((row) => row.id === stale.familyId)).toMatchObject({
+          status: "revoked",
+          revoked_reason: "auth_epoch_changed",
+          token_status: "revoked",
+        });
+        expect(rows.find((row) => row.id === fresh.familyId)).toMatchObject({
+          status: "reserved",
+          revoked_reason: null,
+          token_status: "active",
+        });
+        expect((await oauth.refreshTokens.rotate(fresh.refreshToken, f.client)).ok).toBe(false);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("codes without an epoch are not consumed", () =>
+    withFrozenTime(async () => {
+      const f = await epochFixture();
+      try {
+        const grant = await f.authorize();
+        await sql`UPDATE oauth.codes SET auth_epoch = NULL WHERE code = ${grant.code}`;
+        expect(
+          await oauth.codes.consume({
+            code: grant.code,
+            clientId: f.client.clientId,
+            redirectUri: f.redirectUri,
+            codeVerifier: grant.verifier,
+          }),
+        ).toBeNull();
+        const [row] = await sql<
+          { used: boolean; authority_nonce: string | null }[]
+        >`SELECT used, authority_nonce FROM oauth.codes WHERE code = ${grant.code}`;
+        expect(row).toMatchObject({ used: false, authority_nonce: null });
+      } finally {
+        await f.cleanup();
+      }
+    }));
 });
 
 test("OAuth JWKS revalidates weak ETags without database access", async () => {

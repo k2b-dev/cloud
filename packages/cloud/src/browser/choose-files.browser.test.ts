@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import { type CapabilityInvocationResult, type CapabilityQueryDefinition, defineCapabilities } from "../contracts/capabilities";
 import {
@@ -13,6 +13,7 @@ import {
   FileProviderListInputSchema,
   FileProviderReadInputSchema,
 } from "../contracts/file-provider";
+import { appAccentStyle } from "../ssr/app-appearance";
 
 // User activation for the device dialog, focus, full-screen geometry, and whether a state change moves the frame
 // depend on a real engine, so this runs the real chooser in a browser against invented provider answers.
@@ -400,6 +401,61 @@ describe("choosing files in a browser", () => {
     } finally {
       catalogGate = undefined;
       await close();
+    }
+  }, 30_000);
+
+  test("a picked provider file uses the opener app's ink and keeps its row geometry, in light and dark", async () => {
+    catalogApps = [drive];
+    for (const dark of [false, true]) {
+      const { page, close } = await open(desktop, "?max=100");
+      try {
+        await page.evaluate((dark) => {
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.classList.toggle("light", !dark);
+        }, dark);
+        // The page shell renders `<body class="k2b-ui app-accent-scope" style="…">` for an app page.
+        await page.evaluate((style) => {
+          document.body.classList.add("app-accent-scope");
+          document.body.style.cssText = style ?? "";
+        }, appAccentStyle("#0f766e"));
+        await attach(page);
+        await page.keyboard.press("ArrowDown");
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.querySelectorAll('dialog [role="gridcell"]').length === 3);
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.querySelectorAll('dialog [role="gridcell"]').length === 5);
+        expect(await rowNames(page)).toEqual(["Reports", "notes.txt", "todo.txt", "plan.txt", "huge.zip"]);
+        await page.keyboard.press("ArrowDown");
+        expect(await focusedRow(page)).toContain("notes.txt");
+        const fileRow = rows(page).nth(1);
+        await settled(page);
+        const before = await fileRow.boundingBox();
+        expect(before).not.toBeNull();
+        await page.keyboard.press("Space");
+        const icon = fileRow.locator('.cloud-file-chooser__icon[data-selected="true"]');
+        await icon.waitFor({ state: "attached" });
+        expect(await fileRow.getAttribute("aria-selected")).toBe("true");
+        expect(await fileRow.boundingBox()).toEqual(before);
+        const colors = await icon.evaluate((element) => {
+          const probe = document.createElement("span");
+          probe.style.cssText = "position:absolute;visibility:hidden;color:var(--ui-app-accent-text)";
+          document.body.append(probe);
+          const appInk = getComputedStyle(probe).color;
+          // Outside the body scope, the probe reads the `:root` default.
+          document.documentElement.append(probe);
+          const defaultInk = getComputedStyle(probe).color;
+          document.body.append(probe);
+          probe.style.color = "var(--k2b-action)";
+          const actionInk = getComputedStyle(probe).color;
+          probe.remove();
+          return { selectedInk: getComputedStyle(element).color, appInk, defaultInk, actionInk };
+        });
+        expect(colors.selectedInk).toBe(colors.appInk);
+        expect(colors.selectedInk).not.toBe(colors.defaultInk);
+        expect(colors.selectedInk).not.toBe(colors.actionInk);
+      } finally {
+        await close();
+      }
     }
   }, 30_000);
 

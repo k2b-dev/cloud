@@ -354,7 +354,7 @@ export default function MailConversationContext(props: {
                                 leading={
                                   <Show
                                     when={contactOpening() || createParticipantContact.loading()}
-                                    fallback={<i class="ti ti-user-plus text-[var(--app-accent)]" aria-hidden="true" />}
+                                    fallback={<i class="ti ti-user-plus app-accent-text" aria-hidden="true" />}
                                   >
                                     <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
                                   </Show>

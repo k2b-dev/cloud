@@ -4,7 +4,8 @@ import * as settings from "@k2b/cloud/services/settings";
 import { type SQL, sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
-import { authenticateOAuthBroker, oauthBrokerBearer } from "./identity-oauth-issuance";
+import type { CoreNotificationSender } from "../notifications";
+import { authenticateOAuthBroker, notifyOAuthNewAccessFamily, oauthBrokerBearer } from "./identity-oauth-issuance";
 
 const Scope = z.string().regex(/^[a-z][a-z0-9_:.-]{0,39}$/);
 const RequestSchema = z
@@ -58,13 +59,14 @@ export const terminalLogins: AppTerminalLogins = {
     const [row] = await tx<{ id: string; scopes: string[]; client_pk: string; name: string }[]>`
       UPDATE oauth.device_authorizations d
       SET status=${input.decision === "approve" ? "approved" : "denied"},user_id=${input.user.id}::uuid,decided_at=now(),
+        auth_epoch=l.auth_epoch,
         login_lifetime_seconds=CASE WHEN ${deny} THEN d.login_lifetime_seconds ELSE l.lifetime_seconds END
       FROM oauth.clients c, auth.app_logins l
       WHERE d.id=${input.deviceAuthorizationId}::uuid AND d.client_id=${input.clientId}
         AND d.status='pending' AND d.expires_at > clock_timestamp()
         AND c.client_id=d.client_id
         AND l.device_authorization_id=d.id AND l.kind='terminal' AND l.client_id=d.client_id
-        AND l.user_id=${input.user.id}::uuid AND l.state='pending'
+        AND l.user_id=${input.user.id}::uuid AND l.state='pending' AND l.auth_epoch=${input.user.auth_epoch}::bigint
         AND (${deny} OR (c.is_public AND c.allow_device_grant
           AND d.scopes @> l.scopes AND l.scopes @> d.scopes AND d.scopes <@ c.scopes AND NOT ('admin'=ANY(d.scopes))
           AND (d.login_lifetime_seconds IS NULL OR l.lifetime_seconds<=d.login_lifetime_seconds)))
@@ -147,6 +149,37 @@ export const cleanupTerminalLogins = async (db: SQL = sql): Promise<void> => {
     SELECT l.id FROM auth.app_logins l WHERE l.kind='terminal' AND l.state='approved' AND l.expires_at < now()
       AND NOT EXISTS (SELECT 1 FROM oauth.device_authorizations d WHERE d.id=l.device_authorization_id)
     ORDER BY l.expires_at LIMIT 100 FOR UPDATE OF l SKIP LOCKED)`;
+};
+
+/**
+ * OAuth is optional; catch up a bounded page of activated families after delivery failures. A family
+ * revoked or expired since then still gets its notice while OAuth keeps the row.
+ */
+export const notifyPendingOAuthNewAccess = async (notify: CoreNotificationSender["sendOAuthNewAccess"], signal?: AbortSignal) => {
+  if (signal?.aborted) return;
+  const [schema] = await sql`
+    SELECT to_regclass('oauth.refresh_token_families') IS NOT NULL
+      AND EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema='oauth' AND table_name='refresh_token_families' AND column_name='notified_at') AS installed`;
+  if (!schema?.installed || signal?.aborted) return;
+  const rows = await sql<{ id: string; user_id: string; client_id: string; client_name: string; created_at: Date }[]>`
+    SELECT f.id, f.user_id, f.client_id, c.name AS client_name, f.created_at
+    FROM oauth.refresh_token_families f JOIN oauth.clients c ON c.client_id=f.client_id
+    WHERE f.notified_at IS NULL AND f.status <> 'reserved'
+    ORDER BY f.created_at, f.id LIMIT 100`;
+  for (const row of rows) {
+    if (signal?.aborted) return;
+    await notifyOAuthNewAccessFamily(
+      {
+        familyId: row.id,
+        userId: row.user_id,
+        kind: row.client_id === "cloud-cli" ? "command_line" : "app",
+        clientName: row.client_name,
+        createdAt: row.created_at.toISOString(),
+      },
+      notify,
+    );
+  }
 };
 
 export default createIdentityOAuthDeviceApprovalRoutes();

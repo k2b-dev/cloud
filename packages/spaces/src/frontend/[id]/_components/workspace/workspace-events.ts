@@ -2,6 +2,43 @@ export const SPACES_DETAIL_NAVIGATION_EVENT = "spaces-detail-navigation";
 export const SPACES_DETAIL_STEP_EVENT = "spaces-detail-step";
 export const SPACES_DETAIL_STATE_EVENT = "spaces-detail-state";
 export const SPACES_DATA_INVALIDATED_EVENT = "spaces-data-invalidated";
+export const SPACES_ROUTE_FILTER_EVENT = "spaces-route-filter";
+export const SPACES_ROUTE_FILTER_REQUEST_EVENT = "spaces-route-filter-request";
+const SPACES_FILTER_CHANGE_EVENT = "spaces-filter-change";
+
+export type SpacesRouteFilterState = {
+  view: "list" | "table" | "kanban";
+  source: string;
+  requestedSource: string;
+  busy: boolean;
+  searchReset: number;
+  total?: number;
+};
+export type SpacesFilterChange = { href: string; resetSearch?: boolean };
+
+export const requestSpacesFilterChange = (change: SpacesFilterChange) => {
+  window.dispatchEvent(new CustomEvent<SpacesFilterChange>(SPACES_FILTER_CHANGE_EVENT, { detail: change }));
+};
+
+export const publishSpacesRouteFilter = (state: SpacesRouteFilterState) => {
+  window.dispatchEvent(new CustomEvent<SpacesRouteFilterState>(SPACES_ROUTE_FILTER_EVENT, { detail: state }));
+};
+
+/** The route keeps ownership of loading, history and recovery; the head only requests changes. */
+export const subscribeToSpacesFilterChanges = (open: (href: string) => void, resetSearch: () => void, publish: () => void) => {
+  const onChange = (event: Event) => {
+    if (!(event instanceof CustomEvent)) return;
+    const change: SpacesFilterChange = event.detail;
+    open(change.href);
+    if (change.resetSearch) resetSearch();
+  };
+  window.addEventListener(SPACES_FILTER_CHANGE_EVENT, onChange);
+  window.addEventListener(SPACES_ROUTE_FILTER_REQUEST_EVENT, publish);
+  return () => {
+    window.removeEventListener(SPACES_FILTER_CHANGE_EVENT, onChange);
+    window.removeEventListener(SPACES_ROUTE_FILTER_REQUEST_EVENT, publish);
+  };
+};
 
 export type SpacesDetailNavigation = {
   href: string;

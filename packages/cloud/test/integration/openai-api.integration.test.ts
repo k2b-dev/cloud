@@ -16,6 +16,7 @@ import type { AuthContext } from "../../src/server";
 import { accounts } from "../../src/services/accounts";
 import { serviceAccountCredentials } from "../../src/services/service-account-credentials";
 import { session } from "../../src/services/session";
+import { createTestBrowserSignIn } from "../../src/services/session/session.test-fixture";
 import { coreSettings } from "../../src/services/settings/api";
 
 const suite = databaseSuite();
@@ -64,8 +65,17 @@ suite("models-only API identity and inference boundaries", () => {
       const user = await accounts.users.get({ id });
       if (!user) throw new Error("User fixture missing");
       await coreSettings.set("ai.openai_api_enabled", true);
-      const models = await serviceAccountCredentials.createUserApiToken({ user, name: "Models only", access: "models" });
-      const full = await serviceAccountCredentials.createUserApiToken({ user, name: "Full" });
+      const models = await serviceAccountCredentials.createUserApiToken({
+        browserSignIn: await createTestBrowserSignIn(user.id),
+        user,
+        name: "Models only",
+        access: "models",
+      });
+      const full = await serviceAccountCredentials.createUserApiToken({
+        browserSignIn: await createTestBrowserSignIn(user.id),
+        user,
+        name: "Full",
+      });
       if (!models.ok || !full.ok) throw new Error("Key fixtures failed");
       expect(models.data.credential.scopes).toEqual(["ai:inference"]);
       expect(full.data.credential.scopes).toEqual([]);

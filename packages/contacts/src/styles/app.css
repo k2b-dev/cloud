@@ -5,11 +5,9 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The avatar is a round app chip: the app ink on the navigation fill of an active chip. The initials are text, and
+   the icon-tile share of the ink would leave them below 4.5:1; app-color.ts checks the ink against this fill. */
 .contact-avatar {
-  background: color-mix(in srgb, var(--app-accent) 10%, var(--ui-surface-muted));
-  color: color-mix(in srgb, var(--app-accent) 76%, var(--color-zinc-900));
-}
-
-.dark .contact-avatar {
-  color: color-mix(in srgb, var(--app-accent) 56%, white);
+  background: var(--ui-app-selected-nav);
+  color: var(--ui-app-accent-text);
 }

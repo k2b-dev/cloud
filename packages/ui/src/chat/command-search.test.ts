@@ -112,6 +112,55 @@ describe("section list model", () => {
     expect(names(model({ sections: undefined, commands }).rows)).toEqual(commands.map((entry) => entry.name));
     expect(names(model({ query: "rech", sections: undefined, commands }).rows)).toEqual(["Rechnungen", "Neue Rechnung", "Abrechnung"]);
   });
+  test("a recent match moves one step up the ladder of its section and leads its rank; the overview keeps order", () => {
+    const commands = [
+      command("Neue Rechnung", { section: "first" }),
+      command("Abrechnung", { section: "first", recent: true }),
+      command("Rechnungen", { section: "first" }),
+      command("Rechnung prüfen", { section: "second", recent: true }),
+      command("Rechnung senden", { section: "second" }),
+    ];
+    expect(names(model({ commands }).rows)).toEqual(commands.map((entry) => entry.name));
+    // Contains (2) moves above a word start (1) but stays below a title start (0); an equal title start leads.
+    expect(names(model({ query: "rech", commands }).rows)).toEqual([
+      "Rechnungen",
+      "Abrechnung",
+      "Neue Rechnung",
+      "Rechnung prüfen",
+      "Rechnung senden",
+    ]);
+    // A recent row that does not match stays out like any other.
+    expect(names(model({ query: "neu", commands }).rows)).toEqual(["Neue Rechnung"]);
+  });
+  test("an overview-only section shows only without search text and leaves its keys to other sections", () => {
+    const input = {
+      sections: [{ id: "recent", label: "Recent", overviewOnly: true }, ...sections],
+      commands: [command("Q3 plan", { id: "note", section: "recent" }), command("Rechnungen", { section: "second" })],
+      searchResults: [command("Q3 plan", { id: "note", section: "first", recent: true })],
+    };
+    const overview = model(input);
+    // The same key from a later section stays out of the overview: each entry appears once.
+    expect(overview.groups.map((group) => group.section?.id)).toEqual(["recent", "second"]);
+    expect(overview.groups[0]?.rows[0]?.server).toBe(false);
+    const search = model({ ...input, query: "q3" });
+    expect(search.groups.map((group) => group.section?.id)).toEqual(["first"]);
+    expect(search.rows.map((row) => [row.command.name, row.server])).toEqual([["Q3 plan", true]]);
+    const scoped = model({ ...input, query: "note q3", scopes });
+    expect(scoped.groups.map((group) => group.scopeTitle)).toEqual(["Notizen"]);
+  });
+  test("a hidden section also hides its loading state, so Nothing found is not held back", () => {
+    const sections = [
+      { id: "recent", label: "Recent", overviewOnly: true, pending: true, searched: true },
+      { id: "files", label: "Files", searchOnly: true, pending: true, searched: true },
+    ];
+    const search = model({ sections, query: "xylo", searching: true });
+    expect(search.groups.map((group) => group.section?.id)).toEqual(["files"]);
+    const settled = model({ sections: [sections[0]!], query: "xylo" });
+    expect(settled.groups).toEqual([]);
+    expect(settled.empty).toBe(true);
+    const overview = model({ sections, searching: true });
+    expect(overview.groups.map((group) => [group.section?.id, group.pendingRows])).toEqual([["recent", 3]]);
+  });
   test("deduplicates by key: first section wins, then static over server; unknown sections trail", () => {
     const commands = [command("Later", { id: "same", section: "second" }), command("Static", { id: "local", section: "first" })];
     const searchResults = [command("Earlier", { id: "same", section: "first" }), command("Server", { id: "local", section: "first" })];

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { audit, encryptSecret, serviceAccountCredentials, toPgTextArray } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAIL_ACTION_OUTCOME_TTL_MS, MAX_CONVERSATION_ACTION_MESSAGES } from "../command-outcomes";
@@ -381,7 +382,11 @@ suite("mail conversation action undo", () => {
   test("Undo uses a refreshed personal API key instead of the original command's revoked credential", async () => {
     const personalContext = async (): Promise<MailRequestContext> => {
       if (context.actor.kind !== "user") throw new Error("The test context must be a user");
-      const created = await serviceAccountCredentials.createUserApiToken({ user: context.actor.user, name: `Undo ${suffix}` });
+      const created = await serviceAccountCredentials.createUserApiToken({
+        user: context.actor.user,
+        browserSignIn: await createTestBrowserSignIn(context.actor.user.id),
+        name: `Undo ${suffix}`,
+      });
       if (!created.ok) throw new Error(created.error.message);
       const authenticated = await serviceAccountCredentials.authenticateApiToken(created.data.token);
       if (!authenticated?.delegatedUser) throw new Error("The personal API key did not authenticate as its user");
@@ -459,6 +464,7 @@ suite("mail conversation action undo", () => {
     if (context.actor.kind !== "user") throw new Error("The test context must be a user");
     const created = await serviceAccountCredentials.createUserApiToken({
       user: context.actor.user,
+      browserSignIn: await createTestBrowserSignIn(context.actor.user.id),
       name: `Missing undo credential ${suffix}`,
     });
     if (!created.ok) throw new Error(created.error.message);

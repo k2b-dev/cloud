@@ -72,6 +72,45 @@ Moving a metrics endpoint to another origin removes its bearer token unless a
 replacement is supplied. Collectors can use an `Idempotency-Key` from the first
 attempt for safe batch retries; see [Pulse](/en/apps/pulse#send-a-batch-with-http-ingest).
 
+## Confirm new personal access in a browser
+
+Creating personal API keys and passkeys now requires a browser sign-in from
+the last ten minutes. OAuth access tokens, API keys, background mandates, and
+mobile app sessions receive `403 BROWSER_SIGN_IN_REQUIRED` for those writes.
+An older browser sign-in receives `403 REAUTHENTICATE`.
+
+Automation that created personal API keys using an OAuth token or another API
+key must stop doing so. Create the key in **Developer → API keys**
+(`/me/developer`) after signing in again in the browser, then provide it to the
+integration through its credential store. Resource and standalone
+service-account keys keep their existing rules.
+
+The browser flow of `cld login` now always shows consent. New OAuth refresh families
+require recent browser confirmation; terminal Cloud Login approvals must match
+the exact grant. Existing refresh rotation stays unchanged. A **New access**
+notice tells the person about each new browser-confirmed OAuth sign-in.
+
+Deploy updated Core and OAuth together so their confirmation checks and schema
+agree: start Core first, then OAuth. OAuth adds the columns Core reads, so new
+OAuth sign-ins fail until updated OAuth has started. See
+[OAuth clients and flows](/en/docs/identity/oauth#confirm-new-access).
+
+## OAuth sign-ins end once on upgrade
+
+Every existing OAuth sign-in of a person ends once with this upgrade. Run
+`cld login` again and reconnect MCP clients and other applications.
+Client-credentials tokens are unaffected.
+
+Update applications built on `@k2b/cloud` to the released package so they enforce
+the live account-epoch check. Start updated Core and OAuth together: OAuth
+sign-ins and refreshes fail until both run the new release. During a rolling
+update, older application versions still accept access tokens of signed-out
+accounts until those tokens expire, at most one hour after issuance.
+
+After the upgrade, signing an account out everywhere also ends its OAuth
+sign-ins and rejects their access tokens at the next request. See
+[OAuth clients and flows](/en/docs/identity/oauth#validate-access-tokens).
+
 ## Action policies and per-call reviews replace approval and catalog sentences
 
 Action `approval`, `CapabilityActionReview`, and `presentation.sentences`
@@ -2008,8 +2047,9 @@ for preparation, startup order, verification, and rollback. The contract below
 defines what changes for sessions and OAuth clients.
 
 This is a coordinated hard cut, not a rolling compatibility release. All
-Cloud users must sign in again. Existing OAuth clients, refresh grants, API
-credentials, and background mandates retain their separate lifecycles.
+Cloud users must sign in again. OAuth client registrations and secrets, API
+keys, and background mandates are retained. OAuth sign-ins also
+[end once on upgrade](#oauth-sign-ins-end-once-on-upgrade).
 
 1. Back up PostgreSQL and the Core identity-key encryption key. Drain old Core
    and application replicas, including background workers, before migration.
@@ -2049,12 +2089,13 @@ Include every OAuth replica in the maintenance window. Configure the same
 `CLOUD_OAUTH_BROKER_SECRET` exclusively on Core and OAuth, start updated Core,
 then start updated OAuth. Its migration drops only the obsolete `oauth.keys` and
 `oauth.issuance_state` tables and the old code-audience compatibility trigger.
-Client registrations, client secrets, authorization codes and refresh families
-are retained. Existing code snapshots are backfilled where needed.
+Client registrations and client secrets are retained. Older authorization codes
+cannot be redeemed, and refresh families without an epoch are revoked; see
+[OAuth sign-ins end once on upgrade](#oauth-sign-ins-end-once-on-upgrade).
 
 Old OAuth access and ID tokens are no longer supported by the updated Cloud.
-Clients with a valid refresh grant can obtain Core-issued tokens; others need
-another authorization. No supported OAuth grant type, PKCE, dynamic
+Clients need another authorization to obtain Core-issued tokens. No supported
+OAuth grant type, PKCE, dynamic
 registration, consent or resource-binding feature is removed. Clients using
 discovery do not need a new client ID or secret. A client that manually pins
 signing keys must load Core's keys from the unchanged public JWKS URL. An

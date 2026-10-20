@@ -39,33 +39,37 @@ import { loadPendingApprovals } from "@k2b/cloud/server";
 
 ## Presentation
 
-A list row shows the app's sentence as its title, the owning app, the chat it
-waits in as a link, and how long ago Cloud asked. Below follow the review's
-message and fields and the first long field, cut after three lines. The foot
-names the level ("Asks every time" for `confirm`) and the expiry, then
-**Details**, **Reject**, and **Approve**. **Details** opens a panel with the
-whole review, its links, and the same decision.
+Each request is the same question card as the Assistant chat (card v4): one
+sentence, Cloud's reason line, the thing itself, and two answers that name the
+deed and target. A new review gives the app's sentence with chips and its
+preview. An older review shows its message as the question, every detail as a
+row, and Markdown as one block; a request without a review asks its sentence.
+Above the card, one quiet line names the owning app, links the chat it waits
+in, and says how long ago Cloud asked and when the request expires.
 
-Rows are set apart by space, not by lines or boxes. A decided row stays in
-place at its height: its content dims and the buttons turn into a receipt.
-Only an approval turns the icon into a green check. A rejection shows a
-neutral cross. When another tab or channel decided first, or the request
-expired or was withdrawn, the row shows an info icon, the receipt **Already
-decided elsewhere** or **Expired or withdrawn**, and the note "Your decision
-was not applied". The list changes only when it loads again. With more than
-one open request, **Reject all** asks once and rejects them one after another.
-There is no "approve all".
+An answer collapses the card at once to one outcome line in its place, with
+the focus on that line; what follows moves up by the answer the person gave.
+**Approved.** says that the chat it came from carries the Action out. A
+rejection reads as the app's rejected sentence and "You declined.". When
+another tab or channel decided first, or the request expired or was withdrawn,
+the line says **Already decided elsewhere** or **Expired or withdrawn** in a
+neutral tone. A decision that did not go through says so and offers **Answer
+again**, which brings the question back. The list changes only when it loads
+again. With more than one open request, **Reject all** asks once and rejects
+them one after another. There is no "approve all".
 
 **Show more** loads the next 20 requests below the rows already shown. If
 that fails, the rows stay, an error appears next to the button, and the
 button becomes **Try again**.
 
-The approve buttons arm half a second after a row appears, so a click meant
-for the page cannot approve it. Remember options (**Approve for this chat**,
-**Always approve**) appear only on `standard` requests that offer them.
+The answers arm half a second after a row appears, so a click meant for the
+page cannot approve it. The quiet **Yes, and don't ask again in this chat**
+link appears only on `standard` requests that offer remembering for the chat.
+**Always approve** is no longer offered; choices made earlier still apply.
 
 The band shows each request as one tinted row with its title, the chat, and
-the decision. It renders nothing when the loaded page has no requests.
+**Details**, **Reject**, and **Approve**. **Details** opens the same question
+card in a panel. The band renders nothing when the loaded page has no requests.
 
 The empty list says "Nothing is waiting for you." When `app` or `link` is set
 and other apps have open requests, a line links to the Core page.
@@ -84,9 +88,10 @@ count. An app does not need a `nav.badge` route for that.
 
 ## Accessibility
 
-Each row is an `article` named after its title. Receipts and errors replace
-the buttons in the same place, and a failed decision says so in the row's foot
-as an alert. A failed **Show more** is announced as an alert, and focus stays
+Each row is an `article` named after its question. The card is a group named
+by its sentence and described by its reason. The outcome line takes the focus
+after an answer and announces itself through a polite live region; in a band, a
+failed decision says so in the row's foot as an alert. A failed **Show more** is announced as an alert, and focus stays
 on the button that retries it. The navigation count tells screen readers how many requests wait,
 in the inherited locale.
 

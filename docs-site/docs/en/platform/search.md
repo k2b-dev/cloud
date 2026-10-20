@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-10-11
+updated: 2026-10-19
 ---
 
 # Universal search
@@ -482,6 +482,15 @@ once someone types their word. The translated title names the row; the tag,
 aliases, title, and app name are search words. Translate tag titles in
 `presentation.translations` under `searchTags`. Write aliases in German and
 English, for example `"tabelle"` and `"table"`, because aliases are not translated.
+
+Name a tag that stands for one kind of resource after that Resource Type's
+local ID, for example the tag `note` for `notebooks.note` and `contact` for
+`contacts.contact`. A narrowed slash list such as `/notiz q3` then also lists
+the person's recently sent references of that type above its search row.
+References of other types appear only in unscoped search. Assistant maps its
+own `studio-app` tag to `assistant.artifact`. Tags that filter rather than
+name a type, such as `urgent`, never match. Spaces' `task` tag finds
+`spaces.item` resources, so recent tasks appear only in unscoped search.
 
 Use `cloudInsertMenu` from `@k2b/cloud/browser/composer-insert` to build the
 rows, scopes, and fallback for `Chat.Composer`. Enter opens the resource picker

@@ -1,12 +1,23 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
+import { sql } from "bun";
+import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
+import { compileReviewFixture, outcomeCheckCases } from "../_internal/capability-review.test-fixture";
 import type { dispatchCapability } from "../api/capabilities";
+import * as executionStore from "../capabilities/executions";
 import { defineCapabilities } from "../contracts/capabilities";
 import * as categoryPolicy from "../services/account-category-policy";
 import { buildAiCapabilityCatalog } from "./capabilities";
-import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
+import {
+  AiCapabilityExecutionError,
+  aiCapabilityCheckResult,
+  checkAiCapability,
+  executeAiCapability,
+  resolveAiCapabilityActor,
+  reviewAiCapability,
+} from "./capability-execution";
 import type { AiConversation } from "./types";
 
 afterEach(() => mock.restore());
@@ -315,6 +326,47 @@ describe("AI capability authority", () => {
     }
   });
 
+  test.each(["registry unavailable", "not registered", "upstream 503", "upstream 504", "upstream 500"])(
+    "tracks whether the app was attempted: %s",
+    async (failure) => {
+      spyOn(executionStore, "recordCapabilityExecution").mockResolvedValue(crypto.randomUUID());
+      const current = user("11111111-1111-4111-8111-111111111111");
+      const registered = app();
+      // Avoid idempotency storage: this test exercises the dispatch boundary itself.
+      registered.manifest.actions[0]!.idempotency = "none";
+      const upstream = failure.startsWith("upstream");
+      const status = upstream ? Number(failure.slice(-3)) : 503;
+      const fetch = mock(async () => Response.json({ code: "APP_UNAVAILABLE", message: "Unavailable" }, { status }));
+      const { privateKey } = await generateKeyPair("RS256");
+      await expect(
+        executeAiCapability({
+          conversationId: "conversation-1",
+          authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+          entry: buildAiCapabilityCatalog([registered])[0]!,
+          args: { title: "Test" },
+          context: {
+            signal: new AbortController().signal,
+            requestApproval: async () => true,
+            requestClientTool: async <T>() => undefined as T,
+          },
+          dependencies: {
+            getCapability: async () => {
+              if (failure === "registry unavailable") throw new Error("Registry offline");
+              return upstream ? registered : null;
+            },
+            withActiveSigner: async (_purpose, callback) =>
+              callback(
+                { kid: "test", key: privateKey, issuer: "https://cloud.example.test", signUntil: new Date("2099-01-01T00:00:00Z") },
+                sql,
+              ),
+            fetch,
+          },
+        }),
+      ).rejects.toMatchObject({ code: "APP_UNAVAILABLE", status, dispatched: upstream });
+      expect(fetch).toHaveBeenCalledTimes(upstream ? 1 : 0);
+    },
+  );
+
   test("surfaces bounded validation issue paths without rejected values", async () => {
     const current = user("11111111-1111-4111-8111-111111111111");
     await expect(
@@ -342,6 +394,93 @@ describe("AI capability authority", () => {
       }),
     ).rejects.toThrow(
       "VALIDATION_FAILED: Capability input did not match the registered schema Input issues: mailboxId: Must be a stable 6-character resource ID",
+    );
+  });
+});
+
+describe("Action outcome checks", () => {
+  test.each(outcomeCheckCases())("validates the check Query response: $name", async ({ result, valid }) => {
+    const compiled = compileReviewFixture();
+    const catalog = buildAiCapabilityCatalog([{ ...app(), manifest: compiled.manifest }]);
+    const entry = catalog.find((entry) => entry.kind === "action")!;
+    const current = user("11111111-1111-4111-8111-111111111111");
+    const dispatch = mock<typeof dispatchCapability>(async (input) => {
+      expect(input).toMatchObject({
+        kind: "queries",
+        capabilityId: "check",
+        appId: "demo",
+        origin: "assistant",
+        review: false,
+        input: { id: "original" },
+      });
+      expect(input.authority?.actor).toEqual({ kind: "user", user: current });
+      expect(input.request.headers.get("x-cloud-locale")).toBe("de");
+      expect(input.request.headers.has("idempotency-key")).toBe(false);
+      return Response.json(result);
+    });
+    const checked = await checkAiCapability({
+      conversationId: "conversation-1",
+      entry,
+      catalog,
+      check: { query: "check", input: { id: "original" } },
+      authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+      locale: "de",
+      context: { callId: "send", signal: new AbortController().signal },
+      dependencies: { dispatch },
+    });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(checked.state === (valid ? result.data.outcome : "failed")).toBe(true);
+    expect(checked.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test("a failed check runs once and cannot dispatch an Action", async () => {
+    const catalog = buildAiCapabilityCatalog([{ ...app(), manifest: compileReviewFixture().manifest }]);
+    const entry = catalog.find((entry) => entry.kind === "action")!;
+    const current = user("11111111-1111-4111-8111-111111111111");
+    const dispatch = mock<typeof dispatchCapability>(async () => {
+      throw new Error("Lost check response");
+    });
+    const checked = await checkAiCapability({
+      conversationId: "conversation-1",
+      entry,
+      catalog,
+      check: { query: "check", input: { id: "original" } },
+      authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+      context: { signal: new AbortController().signal },
+      dependencies: { dispatch },
+    });
+    expect(checked.state).toBe("failed");
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(() => aiCapabilityCheckResult(checked)).toThrow("ACTION_OUTCOME_UNKNOWN");
+    dispatch.mockClear();
+    expect(
+      (
+        await checkAiCapability({
+          conversationId: "c",
+          entry,
+          catalog,
+          check: { query: "send", input: {} },
+          authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+          context: { signal: new AbortController().signal },
+          dependencies: { dispatch },
+        })
+      ).state,
+    ).toBe("failed");
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  test("only done returns success; all other outcomes prohibit blind Action retries", () => {
+    expect(aiCapabilityCheckResult({ state: "done", receipt: { text: "Queued" } })).toEqual({
+      data: null,
+      receipt: { text: "Queued" },
+      outcomeCheck: "done",
+      message: "The app's check confirmed the Action happened. Do not run it again.",
+    });
+    expect(() => aiCapabilityCheckResult({ state: "not_done" })).toThrow(
+      "ACTION_NOT_DONE: The app's check confirmed nothing happened. Ask the person before trying again.",
+    );
+    expect(() => aiCapabilityCheckResult({ state: "pending" })).toThrow(
+      "ACTION_OUTCOME_UNKNOWN: The app does not know the outcome yet. Do not retry the Action.",
     );
   });
 });

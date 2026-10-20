@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createAiOpenAiRoutes, createCoreApiRouter } from "@k2b/cloud/api";
-import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
+import { accounts, serviceAccountCredentials, session } from "@k2b/cloud/services";
 import { coreSettings } from "@k2b/cloud/services/settings/api";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -20,8 +20,16 @@ databaseSuite()("Core OpenAI API mount order", () => {
       const user = await accounts.users.get({ id });
       if (!user) throw new Error("User fixture missing");
       await coreSettings.set("ai.openai_api_enabled", true);
-      const models = await serviceAccountCredentials.createUserApiToken({ user, name: "Models", access: "models" });
-      const full = await serviceAccountCredentials.createUserApiToken({ user, name: "Full" });
+      const issue = new Hono().post("/issue", async (c) =>
+        c.json({ token: await session.create(c, id, { method: "password", notify: null }) }),
+      );
+      expect((await issue.request("/issue", { method: "POST" })).status).toBe(200);
+      const [family] = await sql<{ sid: string }[]>`SELECT sid FROM auth.session_families WHERE user_id=${id}::uuid`;
+      if (!family) throw new Error("Browser sign-in fixture missing");
+      const sid = family.sid;
+      const browserSignIn = { userId: id, sid };
+      const models = await serviceAccountCredentials.createUserApiToken({ user, browserSignIn, name: "Models", access: "models" });
+      const full = await serviceAccountCredentials.createUserApiToken({ user, browserSignIn, name: "Full" });
       if (!models.ok || !full.ok) throw new Error("Key fixtures failed");
       const { api } = createCoreApiRouter({
         notifications: { sendMagicLink: unused, sendIpaLoginHint: unused, sendPasswordReset: unused, sendNewBrowserSignIn: async () => {} },

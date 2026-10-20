@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // How far the field grows, whether it ever collapses to be measured, and whether anything moves are results of layout
 // in a real engine. The composer sits under a VirtualFeed, as in a conversation, inside a size container.
@@ -43,6 +43,15 @@ if (options.viewportHeight) {
   }
   document.body.append(header, feedButton);
 }
+if (options.tabBar) {
+  const bar = document.createElement("nav");
+  bar.id = "tab-bar";
+  const button = document.createElement("button");
+  button.textContent = "Cloud tab";
+  button.addEventListener("click", () => window.outsideClicks.native++);
+  bar.append(button);
+  document.body.append(bar);
+}
 let resolveSearch;
 let searches = 0;
 window.fixture = { setHint, setDictation, setDraft,
@@ -71,6 +80,7 @@ render(
             },
           }),
           createComponent(Chat.Composer, {
+            addOpensCommands: options.add ? true : undefined,
             variant: options.mode === "slash" ? "default" : "conversation",
             commandSections: options.sections ? [{ id: "local", label: "Local commands" }, { id: "remote", label: "Results", searched: true }] : undefined,
             commands: options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
@@ -145,6 +155,8 @@ const height = 800;
 const open = async (
   options: {
     mode?: "slash";
+    add?: boolean;
+    tabBar?: boolean;
     sections?: boolean;
     /** Places the composer at the screen bottom, including in phone landscape. */
     viewportHeight?: boolean;
@@ -178,6 +190,15 @@ html, body { margin: 0; height: 100%; }
 #outside-header { position: fixed; top: 4px; left: 12px; }
 #outside-header button, #outside-feed { height: 24px; padding: 0 8px; }
 #outside-feed { position: fixed; top: 36px; right: 12px; }
+${
+  options.tabBar
+    ? `
+#app { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem + 3.875rem + 0.75rem); }
+#tab-bar { position: fixed; bottom: 0; left: 0; right: 0; height: calc(env(safe-area-inset-bottom, 0px) + 0.5rem + 3.875rem + 0.75rem); }
+#tab-bar button { height: 3.875rem; width: 100%; }
+`
+    : ""
+}
 .row { margin: 0; padding: 6px 12px; font: 14px/20px sans-serif; }
 </style></head>` +
     `<body class="k2b-ui${options.dark ? " k2b-dark" : ""}" style="background:var(--k2b-surface)"><div id="app"></div></body></html>`;
@@ -645,7 +666,13 @@ const phones: { name: string; context: BrowserContextOptions }[] = [
 const finishListAnimation = async (page: Page) => {
   await frames(page, 2);
   await page.locator(".k2b-chat-composer__commands").evaluate(async (element) => {
-    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    const panel = element.closest("[data-search]") ?? element;
+    await Promise.all(
+      panel
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.timeline === document.timeline)
+        .map((animation) => animation.finished),
+    );
   });
 };
 
@@ -962,6 +989,194 @@ describe(`slash command phone sheet in ${browserName}`, () => {
       await page.locator("#outside-header button").click();
       expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
       expect(await outsideClicks(page)).toEqual({ native: 1, onclick: 1 });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+});
+
+/** The search and top option stay anchored while Plus filters a panel of held height. */
+const plusBoxes = (page: Page) =>
+  page.evaluate(() => {
+    const box = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return [rect.x, rect.y, rect.width, rect.height].map(Math.round);
+    };
+    return {
+      composer: box(".k2b-chat-composer"),
+      search: box('input[role="combobox"]'),
+      option: box('[role="option"]'),
+      panel: box(".k2b-chat-composer-accessory[data-commands]"),
+    };
+  });
+
+/** The assistant composer and its field, which opening the list from Plus must not move. */
+const composerBoxes = (page: Page) =>
+  page.evaluate(() =>
+    [".k2b-chat-composer", "textarea", '[aria-haspopup="listbox"]'].map((selector) => {
+      const rect = document.querySelector(selector)!.getBoundingClientRect();
+      return [rect.x, rect.y, rect.width, rect.height].map(Math.round);
+    }),
+  );
+
+describe(`Plus command list in ${browserName}`, () => {
+  for (const width of [1440, 390]) {
+    const context = width === 390 ? phones[0]!.context : {};
+    for (const tabBar of [false, true]) {
+      test(`Plus focuses search above the composer at ${width}px (tab bar=${tabBar})`, async () => {
+        const page = await open({ mode: "slash", add: true, width, viewportHeight: true, tabBar }, context);
+        try {
+          const field = page.locator("textarea").first();
+          const before = await composerBoxes(page);
+          const plus = page.getByRole("button", { name: "Add", exact: true });
+          if (width === 390) await plus.tap();
+          else await plus.click();
+          await finishListAnimation(page);
+          await settled(page);
+          expect(await composerBoxes(page)).toEqual(before);
+          expect(await page.getByRole("combobox", { name: "Search entries" }).evaluate((el) => el === document.activeElement)).toBe(true);
+          expect(await field.getAttribute("role")).toBeNull();
+          const boxes = await page.evaluate(() => {
+            const panel = document.querySelector(".k2b-chat-composer-accessory[data-commands]")!.getBoundingClientRect();
+            const composer = document.querySelector(".k2b-chat-composer")!.getBoundingClientRect();
+            const search = document.querySelector('input[role="combobox"]')!.getBoundingClientRect();
+            const bar = document.querySelector("#tab-bar")?.getBoundingClientRect();
+            const viewport = visualViewport;
+            return {
+              panelBottom: panel.bottom,
+              composerTop: composer.top,
+              composerBottom: composer.bottom,
+              searchTop: search.top,
+              searchBottom: search.bottom,
+              barTop: bar?.top,
+              viewportTop: viewport?.offsetTop ?? 0,
+              viewportBottom: (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight),
+            };
+          });
+          expect(Math.abs(boxes.panelBottom - (boxes.composerTop - (width === 390 ? 0 : 8)))).toBeLessThanOrEqual(1);
+          expect(boxes.searchTop).toBeGreaterThanOrEqual(boxes.viewportTop);
+          expect(boxes.searchBottom).toBeLessThanOrEqual(Math.min(boxes.composerTop, boxes.viewportBottom));
+          if (tabBar) {
+            expect(boxes.composerBottom).toBeLessThanOrEqual(boxes.barTop! + 1);
+            expect(boxes.panelBottom).toBeLessThanOrEqual(boxes.barTop!);
+          }
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+    }
+
+    test(`Plus keeps the composer, search and first option still while typing and resolving at ${width}px`, async () => {
+      const page = await open({ mode: "slash", add: true, width, viewportHeight: true }, context);
+      try {
+        const plus = page.getByRole("button", { name: "Add", exact: true });
+        if (width === 390) await plus.tap();
+        else await plus.click();
+        await finishListAnimation(page);
+        await settled(page);
+        await page.waitForFunction(() => fixture.searchCount() === 1);
+        const search = page.getByRole("combobox", { name: "Search entries" });
+        const before = await plusBoxes(page);
+        for (const character of ["q", "u"]) {
+          const count = await page.evaluate(() => fixture.searchCount());
+          await search.press(character);
+          await page.waitForFunction((count) => fixture.searchCount() > count, count);
+          await settled(page);
+          expect(await plusBoxes(page)).toEqual(before);
+          await page.evaluate(() => fixture.resolveSearch([{ id: "server", name: "Query server", description: "Loaded result" }]));
+          await page.getByRole("option").filter({ hasText: "Loaded result" }).waitFor();
+          await settled(page);
+          expect(await plusBoxes(page)).toEqual(before);
+        }
+        // The option is absent when no rows match; the panel and search keep their original boxes throughout.
+        for (const character of ["z", "z", "z"]) {
+          const count = await page.evaluate(() => fixture.searchCount());
+          await search.press(character);
+          await page.waitForFunction((count) => fixture.searchCount() > count, count);
+          await page.evaluate(() => fixture.resolveSearch([]));
+          await settled(page);
+          const boxes = await plusBoxes(page);
+          expect(boxes.composer).toEqual(before.composer);
+          expect(boxes.search).toEqual(before.search);
+          expect(boxes.panel).toEqual(before.panel);
+        }
+        await page.getByText("Nothing found for “quzzz”", { exact: true }).waitFor();
+        expect(await page.getByRole("option").count()).toBe(0);
+        await search.fill("");
+        await settled(page);
+        expect(await plusBoxes(page)).toEqual(before);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
+  for (const target of ["#outside-header button", "#outside-feed", "#tab-bar button"]) {
+    test(`a phone tap on ${target} closes only Plus and restores textarea focus`, async () => {
+      const page = await open({ mode: "slash", add: true, tabBar: true, viewportHeight: true }, phones[0]!.context);
+      try {
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const field = page.locator("textarea").first();
+        await field.fill("Hello world");
+        await field.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(1, 5));
+        await page.getByRole("button", { name: "Add", exact: true }).tap();
+        await finishListAnimation(page);
+        await settled(page);
+        const button = page.locator(target);
+        expect(
+          await button.evaluate((el) => {
+            const rect = el.getBoundingClientRect();
+            return el.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+          }),
+        ).toBe(true);
+        await button.tap();
+        expect(await page.getByRole("listbox").count()).toBe(0);
+        expect(await outsideClicks(page)).toEqual({ native: 0, onclick: 0 });
+        expect(await field.evaluate((el) => el === document.activeElement)).toBe(true);
+        expect(await field.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([1, 5]);
+        expect(await field.inputValue()).toBe("Hello world");
+        await expectPageHistory(page);
+        await button.tap();
+        expect(await outsideClicks(page)).toEqual({ native: 1, onclick: target === "#tab-bar button" ? 0 : 1 });
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
+  test("phone Back closes Plus first and the next Back navigates normally", async () => {
+    const page = await open({ mode: "slash", add: true, tabBar: true, viewportHeight: true }, phones[0]!.context);
+    try {
+      await page.evaluate(() => {
+        history.replaceState({ previous: 1 }, "", "#previous");
+        history.pushState({ sentinel: 1 }, "", "#current");
+        window.pops = [];
+        window.addEventListener("popstate", () => window.pops.push(location.hash));
+      });
+      const url = page.url();
+      const length = await page.evaluate(() => history.length);
+      const field = page.locator("textarea").first();
+      await field.fill("Hello world");
+      await field.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(5, 5));
+      await page.getByRole("button", { name: "Add", exact: true }).tap();
+      await finishListAnimation(page);
+      await settled(page);
+      expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+      expect(await page.evaluate(() => history.length)).toBe(length + 1);
+      await page.evaluate(() => history.back());
+      await page.waitForFunction(() => !document.querySelector('[role="listbox"]'));
+      await expectPageHistory(page);
+      expect(page.url()).toBe(url);
+      expect(await page.evaluate(() => window.pops)).toEqual([]);
+      expect(await field.evaluate((el) => el === document.activeElement)).toBe(true);
+      expect(await field.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([5, 5]);
+      expect(await field.inputValue()).toBe("Hello world");
+      await page.evaluate(() => history.back());
+      await page.waitForFunction(() => history.state?.previous === 1);
+      expect(new URL(page.url()).hash).toBe("#previous");
+      expect(await page.evaluate(() => window.pops)).toEqual(["#previous"]);
     } finally {
       await page.close();
     }

@@ -98,7 +98,7 @@ export default function ItemsTable(props: Props) {
   ];
 
   return (
-    <DataTable.Panel class="flex min-h-0 flex-col overflow-hidden [view-transition-name:spaces-items-table]">
+    <div class="flex min-h-0 flex-col overflow-hidden [view-transition-name:spaces-items-table]">
       <DataTable
         rows={props.items}
         columns={tableColumns}
@@ -231,6 +231,6 @@ export default function ItemsTable(props: Props) {
           return "";
         }}
       />
-    </DataTable.Panel>
+    </div>
   );
 }

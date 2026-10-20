@@ -90,6 +90,24 @@ afterAll(async () => {
 const GRID = ".k2b-calendar-month[data-continuous]";
 const cell = (key: string) => `[data-calendar-day-key="${key}"]`;
 const title = (page: Page) => page.locator(".k2b-calendar-header__title > span").first().textContent();
+/**
+ * Starts the page's wall clock at `at` and lets it flow from there. Only `Date` changes: Playwright's `clock` also replaces
+ * timers, animation frames, and `performance`, and the month title then lagged behind the scroll in WebKit (#1139).
+ */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now();
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0) super(RealDate.now() + offset);
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset;
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
 const open = async (motion: "reduce" | "no-preference" = "reduce", tablet = false) => {
   const page = await browser.newPage({
     viewport: tablet ? { width: 820, height: 1180 } : { width: 1280, height: 800 },
@@ -99,7 +117,8 @@ const open = async (motion: "reduce" | "no-preference" = "reduce", tablet = fals
     timezoneId: "Europe/Berlin",
     reducedMotion: motion,
   });
-  await page.clock.setFixedTime(new Date("2026-10-09T08:00:00Z"));
+  // setContent writes into this same window, so the pin holds for the fixture.
+  await page.evaluate(pinPageClock, Date.parse("2026-10-09T08:00:00Z"));
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style><style>body{margin:0}#host{height:100vh;display:flex;flex-direction:column}#host>*{flex:1}</style></head><body class="k2b-ui"><div id="host"></div><script>${script}</script></body></html>`,
   );
@@ -120,15 +139,36 @@ const scrollRow = async (page: Page, week: string, fraction = 0) => {
   );
   await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 };
-const atWeek = async (page: Page, week: string) => {
-  await page.waitForFunction((key) => {
-    const grid = document.querySelector(".k2b-calendar-month")!;
-    const row = grid.querySelector<HTMLElement>(`[data-week-key="${key}"]`);
-    return (
-      row &&
-      Math.abs(grid.scrollTop - Number(row.style.getPropertyValue("--k2b-calendar-week-index")) * row.getBoundingClientRect().height) <= 1
+/** Waits until the grid rests with `week` on top and, when given, the header names `month`; otherwise reports what it shows. */
+const atWeek = async (page: Page, week: string, month?: string) => {
+  const rests = await page
+    .waitForFunction(
+      ({ key, month }) => {
+        const grid = document.querySelector(".k2b-calendar-month")!;
+        const row = grid.querySelector<HTMLElement>(`[data-week-key="${key}"]`);
+        const top =
+          !!row &&
+          Math.abs(grid.scrollTop - Number(row.style.getPropertyValue("--k2b-calendar-week-index")) * row.getBoundingClientRect().height) <=
+            1;
+        return top && (month === null || document.querySelector(".k2b-calendar-header__title > span")?.textContent === month);
+      },
+      { key: week, month: month ?? null },
+      { timeout: 10_000 },
+    )
+    .then(
+      () => true,
+      () => false,
     );
-  }, week);
+  if (rests) return;
+  const shown = await page.locator(GRID).evaluate((grid) => {
+    const top = Array.from(grid.querySelectorAll<HTMLElement>("[data-week-key]")).find(
+      (row) =>
+        Math.abs(grid.scrollTop - Number(row.style.getPropertyValue("--k2b-calendar-week-index")) * row.getBoundingClientRect().height) <=
+        1,
+    );
+    return { week: top?.dataset.weekKey ?? null, title: document.querySelector(".k2b-calendar-header__title > span")?.textContent ?? null };
+  });
+  expect(shown).toEqual({ week, title: month ?? shown.title });
 };
 /** Week keys not at their week's place in the track, and the track's height against the height its declared weeks need. */
 const placement = (page: Page) =>
@@ -223,8 +263,7 @@ describe(`continuous month in ${browserName}`, () => {
     const page = await open("no-preference");
     try {
       await page.getByRole("button", { name: "Next", exact: true }).click();
-      await atWeek(page, "2026-10-26");
-      expect(await title(page)).toBe("November 2026");
+      await atWeek(page, "2026-10-26", "November 2026");
       await page.getByRole("button", { name: "Previous", exact: true }).click();
       await atWeek(page, "2026-09-28");
       await page.evaluate(() => window.monthFixture.setRange("2026-08-31", "2027-04-12"));
@@ -235,8 +274,7 @@ describe(`continuous month in ${browserName}`, () => {
           button.click();
         }
       });
-      await atWeek(page, "2026-12-28");
-      expect(await title(page)).toBe("January 2027");
+      await atWeek(page, "2026-12-28", "January 2027");
     } finally {
       await page.close();
     }
@@ -252,8 +290,7 @@ describe(`continuous month in ${browserName}`, () => {
       // The glide away from October also passed the last weeks, so both ends wait for their weeks.
       expect(await page.evaluate(() => window.monthFixture.loads.filter((edge) => edge === "earlier").length)).toBe(1);
       await page.evaluate(() => window.monthFixture.release());
-      await atWeek(page, "2026-07-27");
-      expect(await title(page)).toBe("August 2026");
+      await atWeek(page, "2026-07-27", "August 2026");
     } finally {
       await page.close();
     }
@@ -270,8 +307,7 @@ describe(`continuous month in ${browserName}`, () => {
       // The weeks arrive once the glide is on its way.
       await page.waitForFunction((from) => document.querySelector(".k2b-calendar-month")!.scrollTop > from + 20, start);
       expect(await page.evaluate(() => window.monthFixture.release())).toBe(1);
-      await atWeek(page, "2026-10-26");
-      expect(await title(page)).toBe("November 2026");
+      await atWeek(page, "2026-10-26", "November 2026");
     } finally {
       await page.close();
     }

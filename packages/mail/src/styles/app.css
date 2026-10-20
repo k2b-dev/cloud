@@ -29,14 +29,12 @@
     background: var(--ui-hover);
   }
 
+  /* The open row and the checked rows share the app row fill; the checkbox carries the checked state. */
   .mail-list-entry-active,
-  .mail-list-entry-active:hover {
-    background: color-mix(in srgb, var(--app-accent) 11%, var(--ui-surface));
-  }
-
+  .mail-list-entry-active:hover,
   .mail-list-entry-selected,
   .mail-list-entry-selected:hover {
-    background: color-mix(in srgb, var(--app-accent) 16%, var(--ui-surface));
+    background: var(--k2b-row-selected);
   }
 
   /* A row an action takes out of the list closes its gap from its measured height, so the rows below slide up
@@ -284,11 +282,11 @@
   }
 
   .mail-focus-row.is-selected {
-    background: color-mix(in srgb, var(--app-accent) 8%, var(--ui-surface));
+    background: var(--k2b-row-selected);
   }
 
   .mail-focus-row:focus-visible {
-    outline: 2px solid var(--app-accent);
+    outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
     outline-offset: 2px;
   }
 
@@ -788,7 +786,7 @@
 
 .k2b-ui .mail-search-summary > i {
   flex: none;
-  color: var(--app-accent);
+  color: var(--ui-app-accent-text);
 }
 
 .k2b-ui .mail-search-summary__text {
@@ -903,15 +901,10 @@
   text-overflow: ellipsis;
 }
 
-/* The stored summary: an accent-tinted inset well, three lines at most. */
+/* The stored summary: flat text in the card, three lines at most. The padding keeps the card height of the earlier well. */
 .k2b-ui .mail-quick-look__summary {
   flex: none;
   padding: 0.4375rem 0.625rem;
-  border-radius: var(--k2b-radius-control);
-  background: color-mix(in srgb, var(--app-accent) 6%, var(--k2b-surface));
-  box-shadow:
-    inset 0 1px 2px rgb(22 38 29 / 0.08),
-    inset 0 0 0 1px color-mix(in srgb, var(--app-accent) 13%, transparent);
 }
 
 .k2b-ui .mail-quick-look__summary p {

@@ -52,6 +52,9 @@ const notificationMessages = i18n.define({
       deviceTitle: "New sign-in device linked",
       deviceBody: ({ name, assisted }: { name: string; assisted: boolean }) =>
         `The device “${name}” can now approve Cloud sign-ins.${assisted ? " An administrator helped link it." : ""} If this was not you, contact your administrator and revoke the device.`,
+      accessCommandTitle: "New access for the command line",
+      accessAppTitle: ({ app }: { app: string }) => `${app} has access to your account`,
+      accessBody: ({ time }: { time: string }) => `New access was confirmed on ${time}. If this was not you, contact your administrator.`,
       signInCode: "Sign-in code",
       signInBody: "Enter this code or open the link in this email to sign in. Both work once.",
       signInSubject: ({ appName }: { appName: string }) => `Sign-in code for ${appName}`,
@@ -100,6 +103,9 @@ const notificationMessages = i18n.define({
       deviceTitle: "Neues Anmeldegerät gekoppelt",
       deviceBody: ({ name, assisted }) =>
         `Das Gerät „${name}“ kann jetzt Cloud-Anmeldungen bestätigen.${assisted ? " Ein Administrator hat die Kopplung unterstützt." : ""} Falls du das nicht warst, kontaktiere deinen Administrator und widerrufe das Gerät.`,
+      accessCommandTitle: "Neuer Zugang für die Kommandozeile",
+      accessAppTitle: ({ app }) => `${app} hat Zugriff auf dein Konto`,
+      accessBody: ({ time }) => `Neuer Zugang wurde am ${time} bestätigt. Falls du das nicht warst, wende dich an die Administration.`,
       signInCode: "Anmeldecode",
       signInBody: "Melde dich mit diesem Code oder über den Link in dieser E-Mail an. Beides funktioniert einmalig.",
       signInSubject: ({ appName }) => `Anmeldecode für ${appName}`,
@@ -239,7 +245,35 @@ const newBrowserEmail = async (data: NewBrowserData, locale: string) => {
   };
 };
 
+export type OAuthNewAccessNotice = {
+  familyId: string;
+  userId: string;
+  kind: "command_line" | "app";
+  clientName: string;
+  createdAt: string;
+};
+
+const accessTitle = (data: { kind: "command_line" | "app"; clientName: string }, locale: string) =>
+  data.kind === "command_line" ? text(locale).accessCommandTitle : text(locale).accessAppTitle({ app: data.clientName });
+
 export const NOTIFICATIONS = {
+  oauthNewAccess: notification({
+    recipient: "user",
+    label: "New access",
+    description: "Notice when a new application or command line access is confirmed.",
+    presentation: presentation("Neuer Zugang", "Hinweis, wenn ein neuer Zugang für eine Anwendung oder die Kommandozeile bestätigt wird."),
+    delivery: { recommended: ["email", "browser"] },
+    data: z.object({ kind: z.enum(["command_line", "app"]), clientName: z.string(), createdAt: z.string().datetime() }),
+    render: async (data, { locale }) => ({
+      title: accessTitle(data, locale),
+      body: text(locale).accessBody({ time: await installationTime(data.createdAt, locale) }),
+      targetHref: "/me/security",
+    }),
+    email: async (data, { locale }) => ({
+      subject: accessTitle(data, locale),
+      content: `${text(locale).accessBody({ time: await installationTime(data.createdAt, locale) })} ${await absoluteUrl("/me/security")}`,
+    }),
+  }),
   newBrowserSignIn: notification({
     recipient: "user",
     label: "New sign-in from a new browser",
@@ -404,11 +438,23 @@ const fingerprint = (value: string): string => createHash("sha256").update(value
 
 export type CoreNotificationSender = AuthNotificationSender &
   AccountLifecycleNotificationSender & {
+    sendOAuthNewAccess: (notice: OAuthNewAccessNotice) => Promise<unknown>;
     sendDeviceEnrollment: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>;
     sendAppDevicePaired: (notice: PwaDevicePairedNotice) => Promise<unknown>;
   };
 
 export const createCoreNotificationSender = (definitions: CoreNotificationDescriptors): CoreNotificationSender => ({
+  sendOAuthNewAccess: async ({ familyId, userId, kind, clientName, createdAt }) => {
+    const result = await notifications.send(definitions.oauthNewAccess, {
+      recipient: { userId },
+      data: { kind, clientName, createdAt },
+      idempotencyKey: `oauth-new-access:${familyId}`,
+      locale: await configuredLocale(),
+    });
+    if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
+      throw new Error("The new-access notice could not be prepared");
+    return result;
+  },
   sendDeviceEnrollment: async ({ deviceId, userId, name, assisted }) =>
     notifications.send(definitions.deviceEnrollment, {
       recipient: { userId },

@@ -26,11 +26,44 @@ Cloud has three client origins:
   7591 and authorized through explicit user consent.
 
 The first-party `cld` command uses Cloud's protected `cloud-cli` registration
-for login, refresh, and logout. `cld login --device` uses the same
+for login, refresh, and logout. Every browser `cld login` opens a consent page,
+even when the person is already signed in. `cld login --device` uses the same
 registration through the device authorization grant. `cld login --user`
 starts that grant with `login_hint`, and `cld login --ttl` sends `ttl`. `cld`
 does not dynamically register or accept an alternate OAuth client ID. Dynamic registration is for clients without a prior
 relationship with the Cloud instance.
+
+## Confirm new access
+
+Creating a refresh-token family with `offline_access` requires a browser
+sign-in from the last ten minutes. Cloud checks that sign-in inside the
+transaction that records the authorization, and Core requires that recorded
+confirmation before activating the family. OAuth tokens, API keys, and mobile
+app sessions do not count as browser confirmation. Access-token-only grants
+and rotation of an existing refresh family keep their existing behavior.
+
+On consent and device pages, an older session asks the person to confirm their
+identity first. Denying a request remains available without signing in again.
+Managed clients requesting `offline_access` return through
+`/auth/login?redirectTo=…`: the return URL keeps the same authorization request
+and adds `reauthenticate=1`. After signing in with the same account, the person
+returns to that request. This confirmation does not sign out the existing
+session. Managed requests without `offline_access` keep their normal flow.
+
+A terminal Cloud Login approval also counts as confirmation when it is consumed
+in the issuance transaction and matches this exact device grant: client,
+scopes, stored login lifetime, and person. The refresh family cannot outlive
+that stored lifetime. A missing confirmation or a mismatched approval returns
+`invalid_grant`; clients must start a new sign-in. `cld` says to run `cld login`
+again and confirm in the browser.
+
+Each new browser-confirmed refresh family sends a **New access** notice to the
+person, with email and browser delivery recommended. It names the command line
+for `cloud-cli`, or the application for other clients, and shows the time in
+the installation timezone. If the access was not yours, contact your
+administrator. The notice links to `/me/security`. Existing families and
+refresh rotation do not send this notice. Terminal Cloud Login approval itself
+confirms the access; that path does not send this additional notice.
 
 ## Authorization-code flow
 
@@ -118,8 +151,9 @@ audience later does not widen an existing grant.
 
 The OpenID Connect UserInfo endpoint accepts only user access tokens that
 contain `openid`, were issued for the requesting client, and still refer to an
-active account and registered client. ID tokens and resource-only access tokens
-are rejected.
+active account and registered client. It applies the same live account-epoch
+check as Cloud applications. ID tokens and resource-only access tokens are
+rejected.
 
 The OpenID Connect `sub` claim is the immutable Cloud user UUID. Human-readable
 account names remain available through `uid`; changing a login name does not
@@ -248,7 +282,7 @@ client_id=<client-id>
 | `slow_down` | Polled within five seconds of the previous poll | Add five seconds to the interval |
 | `access_denied` | The person denied the request | Stop |
 | `expired_token` | The ten minutes passed | Start again |
-| `invalid_grant` | Unknown code, another client's code, or already redeemed | Stop |
+| `invalid_grant` | Unknown code, another client's code, already redeemed, or missing grant confirmation | Start a new sign-in and confirm in the browser |
 
 After approval, the next poll returns the same token response as the
 authorization-code flow, including a rotating refresh token when
@@ -303,7 +337,8 @@ the browser. It expires after five minutes.
 
 Poll `/oauth/token` with the normal device-code grant. The same errors apply:
 `authorization_pending`, `slow_down`, `access_denied`, `expired_token`, and
-`invalid_grant` on replay. Unknown, ambiguous and unpaired accounts get the
+`invalid_grant` on replay or when the account was signed out everywhere after
+approval. Unknown, ambiguous and unpaired accounts get the
 same start response and remain pending until expiry. No account lookup result
 is exposed to the client.
 
@@ -461,12 +496,26 @@ Applications do not import `oauthTokens` or verify JWTs. Apply
 `auth.requireRole("authenticated")`, then read `actor` and `accessSubject` from
 the request context.
 
+User access tokens carry an `auth_epoch` claim matching the account's current
+authentication epoch. Applications and `/oauth/userinfo` check it on every
+request; tokens with a missing or invalid claim, or a different epoch, are
+rejected. ID tokens and client-credentials tokens do not carry this claim.
+
+Signing an account out everywhere ends its OAuth sign-ins: refresh families,
+authorization codes and device codes approved but not yet redeemed (in the
+browser or in Cloud Login), and already issued user access tokens. This
+includes a password reset by link, an administrator signing the account out
+everywhere, account expiry, and directory synchronization that ends the
+account's sessions. The next refresh or code
+exchange returns `invalid_grant`; access tokens stop working on the next
+request. Signing out of one browser ends only that browser session.
+
 Access tokens expire after at most one hour, and never after the login ends.
 Core owns signing-key rotation and publishes public keys for their verification
-lifetime. Revoking a refresh grant or signing out an OAuth client prevents future
-refreshes but does not revoke an already issued access token. That token can
-remain valid until its expiry. Current-client validation and domain
-authorization still apply on each request.
+lifetime. Revoking an individual refresh grant or signing out an OAuth client
+prevents future refreshes; its already issued access token can remain valid
+until expiry. Current-client validation and domain authorization still apply
+on each request.
 
 Core signs OAuth tokens. The OAuth application owns the public protocol,
 clients, consent, authorization codes, refresh grants and discovery. Core and

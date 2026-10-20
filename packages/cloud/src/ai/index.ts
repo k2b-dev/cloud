@@ -420,6 +420,7 @@ export type {
   AiProjectPromptSnapshot,
   AiProviderId,
   AiPublicModelProfile,
+  AiRecentResource,
   AiResolvedModel,
   AiRuntimeTool,
   AiSettingsError,

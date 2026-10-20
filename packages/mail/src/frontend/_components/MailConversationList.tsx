@@ -414,7 +414,7 @@ export default function MailConversationList(props: {
               <Tooltip.Anchor content={messages().searchFilters}>
                 <IconButton
                   type="button"
-                  class={structuredSummary() ? "text-[var(--app-accent)]" : undefined}
+                  class={structuredSummary() ? "app-accent-text" : undefined}
                   label={messages().searchFilters}
                   aria-pressed={Boolean(structuredSummary())}
                   aria-busy={searchBuilderLoading() ? "true" : undefined}

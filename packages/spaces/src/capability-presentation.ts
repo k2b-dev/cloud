@@ -45,11 +45,11 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
       },
       types: {
         comment: {
-          title: "Space Kommentar",
+          title: "Space-Kommentar",
           description: "Ein vom Benutzer verfasster Kommentar, der an ein Space-Element angehängt ist.",
         },
         item: {
-          title: "Space Artikel",
+          title: "Aufgabe oder Termin",
           description: "Eine Aufgabe oder ein Ereignis innerhalb eines Raums.",
         },
         space: {

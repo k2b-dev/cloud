@@ -17,17 +17,17 @@ const rangeUrl = (url: URL, range: TelemetryRange): string => {
 
 import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatRatio as fmtRatio, formatDateTime } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { type AppRuntimeStatus, buildAppRuntimeStatuses } from "../app-runtime-status";
 import { ssr } from "../config";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
 import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../observability/telemetry/service";
 import { listRegisteredAppStatus, type RegisteredAppStatus } from "../registered-apps";
+import { AppIcon } from "./AppIcon";
+import RangeTabs from "./RangeTabs";
 import RemoveRegisteredAppButton from "./RemoveRegisteredAppButton.island";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-const APP_ICON_CLASSES = "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400";
 
 const timeAgo = (ts: number, t: GatewayOpsMessages) => {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -44,7 +44,7 @@ const fmtUptime = (ms: number, locale: string) => {
 };
 
 const Check = () => <i class="ti ti-check text-emerald-500 text-xs" />;
-const Dash = () => <i class="ti ti-minus text-zinc-300 dark:text-zinc-600 text-xs" />;
+const Dash = () => <i class="ti ti-minus text-dimmed text-xs" />;
 
 type GatewayAppRow = RegisteredAppStatus & {
   traffic: { count: number; totalMs: number; errors: number } | undefined;
@@ -215,19 +215,12 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{isRoutesPage ? t.gatewayRoutesDescription : t.gatewayAppsDescription}</p>
         </div>
 
-        <nav class="flex flex-wrap items-center gap-1" aria-label={t.trafficWindow}>
-          <span class="mr-1 text-[10px] text-dimmed">{t.trafficWindow}</span>
-          {TELEMETRY_RANGE_KEYS.map((option) => (
-            <ButtonLink
-              href={rangeUrl(url, option)}
-              variant={option === range ? "primary" : "secondary"}
-              size="sm"
-              aria-current={option === range ? "true" : undefined}
-            >
-              {option}
-            </ButtonLink>
-          ))}
-        </nav>
+        <RangeTabs
+          caption={t.trafficWindow}
+          label={t.trafficWindow}
+          current={range}
+          items={TELEMETRY_RANGE_KEYS.map((option) => ({ id: option, href: rangeUrl(url, option) }))}
+        />
 
         {/* ── Stats — see skills/cloud-app/references/frontend.md § Stats ── */}
         <StatGrid columns={6}>
@@ -303,9 +296,7 @@ export default ssr<AuthContext>(async (c) => {
                 if (col.id === "app") {
                   return (
                     <div class="flex items-center gap-2">
-                      <div class={`w-6 h-6 rounded grid place-items-center shrink-0 ${APP_ICON_CLASSES}`}>
-                        <i class={`${app.icon} text-[10px]`} />
-                      </div>
+                      <AppIcon icon={app.icon} accent={app.appearance?.accent} />
                       <span class="font-medium text-primary text-xs">{app.name}</span>
                       <code class="text-[9px] text-dimmed">{app.id}</code>
                     </div>

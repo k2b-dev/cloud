@@ -141,9 +141,7 @@ export default function MetricsTokens(props: Props) {
           surface="plain"
           renderCell={({ row: token, col, value, render }) => {
             if (col.id === "scope")
-              return (
-                <span class="tag bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{token.scopes.join(", ") || "-"}</span>
-              );
+              return <span class="tag bg-[var(--ui-surface-muted)] text-secondary">{token.scopes.join(", ") || "-"}</span>;
             if (col.id === "expires") return formatDate(token.expiresAt, { locale: locale(), timeZone: props.timeZone });
             if (col.id === "lastUsed") return formatDate(token.lastUsedAt, { locale: locale(), timeZone: props.timeZone });
             if (col.id === "action")

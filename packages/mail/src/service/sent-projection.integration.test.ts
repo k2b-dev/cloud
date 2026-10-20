@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import type { FetchMessageObject, MessageAddressObject } from "imapflow";
 import { type AddressObject, simpleParser } from "mailparser";
@@ -1087,7 +1088,11 @@ suite("mail sent message projection", () => {
   /** A Mail request made with the user's personal API key, resolved the way the auth middleware resolves it. */
   const personalKeyContext = async (): Promise<MailRequestContext> => {
     if (context.actor.kind !== "user") throw new Error("The test context must be a user");
-    const created = await serviceAccountCredentials.createUserApiToken({ user: context.actor.user, name: `Mail CLI ${suffix}` });
+    const created = await serviceAccountCredentials.createUserApiToken({
+      user: context.actor.user,
+      browserSignIn: await createTestBrowserSignIn(context.actor.user.id),
+      name: `Mail CLI ${suffix}`,
+    });
     if (!created.ok) throw new Error(created.error.message);
     const authenticated = await serviceAccountCredentials.authenticateApiToken(created.data.token);
     if (!authenticated?.delegatedUser) throw new Error("The personal API key did not authenticate as its user");

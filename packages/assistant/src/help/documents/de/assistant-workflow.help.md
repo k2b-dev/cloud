@@ -29,7 +29,7 @@ Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Cha
 - **Kontext:** Das Projekt mit Anweisungen, Wissen, Dateien und Referenzen, die Skills, die der Chat verwendet hat, was aus ihm gemerkt wurde, seine Routinen und Secrets. Ein Projekt-Chat enthält seinen geerbten Projektkontext ohne Aktionen zur Projektbearbeitung.
 - **Suchen:** Über die Suchschaltfläche im Kopf der Seitenleiste findest du Ergebnisse, Dateien und Quellen dieses Chats. Escape schließt die Suche.
 - **Chatdateien löschen:** Zeige auf einen Upload, eine Sprachaufnahme oder eine Arbeitsdatei oder erreiche sie mit der Tab-Taste und wähle rechts das Papierkorbsymbol; bei einem Ergebnis nutzt du sein Menü. Auf Touch-Geräten ist das Symbol immer sichtbar. Nach deiner Bestätigung entfernt der Assistent die Datei aus diesem Chat und schließt ihren geöffneten Tab. Frühere Nachrichten bleiben erhalten, ihre Verweise öffnen die Datei aber nicht mehr. Projektdateien verwaltest du auf der Projektseite.
-- **Cloud-Ressourcen:** Hänge über das Plus-Menü eine unterstützte Cloud-Ressource an, ohne ihren Inhalt in den Chat zu kopieren. Ein Chat, der aus Mail oder einer anderen Anwendung geöffnet wurde, kann bereits eine oder mehrere Ressourcen enthalten. Ressourcenlinks öffnen die zuständige Anwendung in einem neuen Tab. Jeder Lesezugriff und jede Aktion prüft weiterhin deine aktuelle Berechtigung in dieser Anwendung.
+- **Cloud-Ressourcen:** Wähle **+ → Aus Cloud einfügen**, um einen Verweis auf eine unterstützte Cloud-Ressource an der Textposition einzufügen. Das Modell erhält dieselbe Ressource wie bei einem Anhang, ohne ihren Inhalt in den Chat zu kopieren. Ein Chat, der aus Mail oder einer anderen Anwendung geöffnet wurde, kann bereits eine oder mehrere Ressourcen enthalten. Ressourcenlinks öffnen die zuständige Anwendung in einem neuen Tab. Jeder Lesezugriff und jede Aktion prüft weiterhin deine aktuelle Berechtigung in dieser Anwendung.
 Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Als Nutzung zählen eine gesendete Nachricht, ein Lauf und das Wiederöffnen; Öffnen und Lesen markieren einen Chat nur als gelesen, und automatische Metadatenänderungen zählen ebenfalls nicht. Laufende Chats und Chats, die auf eine Bestätigung warten, bleiben aktiv. **Chat wieder öffnen** hält einen Chat aktiv, bis du ihn erneut als fertig markierst. Die Sidebar zeigt alle aktiven Chats und direkt darunter **Fertig** mit dem Zugang zu **Alle Chats**.
 
 - **Abschließen oder fortsetzen:** Markiere einen Chat als fertig, um ihn unter **Fertig** abzulegen. Stoppe vorher eine laufende Antwort. Öffne ihn wieder oder sende eine neue Nachricht; Dateien, Apps und Anheftung bleiben erhalten.
@@ -51,7 +51,26 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 :::info Freigaben und Client-Aktionen
 Entscheide über eine Freigabe in der Karte im Chat oder öffne **Freigaben** oberhalb von **Studio**, um alle wartenden Anfragen zu sehen. Du findest sie auch unter **Mein Konto → Freigaben**. Für Anfragen, die außerhalb einer angemeldeten Browsersitzung gestartet wurden, öffnet die Benachrichtigung **Wartende Freigaben** diese Kontoliste.
 
-Manche Anfragen benötigen eine Freigabe oder das Ergebnis eines Frontend-Tools. Beantworte diese Aufforderungen in der Nachrichtenliste, damit die Anfrage fortgesetzt werden kann. Eine Freigabe gilt einmal und nur für das, was die Aufforderung zeigt. Ändert sich das, bevor die Aktion ausgeführt wird, etwa weil ein Entwurf einen anderen Empfänger hat, fragt der Assistent erneut. Begrenzte, wiederholbare Aktionen bieten im Menü der Freigabeschaltfläche **Für diesen Chat freigeben** und **Immer freigeben** an; eine Chat-Freigabe endet, wenn du den Chat löschst. Löschen, Senden, Teilen und andere folgenreiche Aktionen erfordern weiterhin jedes Mal eine Freigabe. Wenn Code eine Website liest, bietet das Menü **Diese Website für diesen Chat erlauben** an: Weitere Abrufe genau dieser Website fragen dann nicht mehr, und jeder zeigt seine vollständige Adresse mit **Entziehen**. Solche Freigaben stehen unter **Secrets & Freigaben** im Kontext des Chats.
+Jede Frage zeigt einen Satz mit Chips für Personen und Dinge, Clouds Grund für
+die Rückfrage und eine Vorschau der Änderung. Zwei Schaltflächen nennen die
+Handlung und ihr Ziel: eine stimmt zu, die andere lehnt ab. Die Freigabe gilt
+einmal für das, was die Karte zeigt. Ändert sich das vor der Ausführung, fragt
+der Assistent erneut. Nach dem Neuladen bleiben Satz und Vorschau erhalten.
+
+Wo angeboten, merkt sich der dezente Link **Ja, und in diesem Chat nicht mehr
+fragen** diese Freigabe bis zum Löschen des Chats. **Immer freigeben** wird
+nicht mehr angeboten; frühere Entscheidungen gelten bis zur nächsten
+Hauptversion weiter. Chat-Freigaben stehen unter **Secrets & Freigaben**. Wenn
+Code eine Website liest, merkt sich **Ja, und diese Website in diesem Chat
+erlauben** genau diese Website. Jeder weitere Abruf zeigt seine vollständige Adresse und
+**Entziehen**.
+
+Eine Ergebniszeile zeigt: läuft, erledigt, abgelehnt, nicht ausgeführt oder
+unbekannt. Bietet die App eine Ergebnisprüfung an, führt der Assistent sie nach
+einer verlorenen Antwort einmal aus. Ein bekanntes Ergebnis schließt die Karte
+ab; bei einer offenen oder fehlgeschlagenen Prüfung bleibt der Ausgang
+unbekannt. **Noch einmal prüfen** prüft nur das Ergebnis und wiederholt nie die
+Aktion. Ohne Ergebnisprüfung gibt es keine Schaltfläche zum Wiederholen.
 :::
 
 ## Assistent mit Chat-Kontext {icon="message-forward"}
@@ -100,7 +119,15 @@ erreichbar.
 
 ## Slash-Befehle und Kontext auswählen {icon="command"}
 
-Tippe `/` an einer Wortgrenze im Eingabefeld, auch mitten im Text. Suche nach
+Wähle **+**, um die Befehlsliste mit einem Suchfeld darüber zu öffnen.
+**Datei anhängen** öffnet die Dateiauswahl, **In diesem Chat suchen** durchsucht
+die Nachrichten des geöffneten Chats. Escape, **+** erneut, Zurück auf dem
+Handy oder ein Druck außerhalb schließt die Liste. Ein Druck außerhalb
+schließt sie nur und löst das Bedienelement darunter nicht aus. Das Textfeld
+erhält Fokus und Auswahl zurück.
+
+Tippe `/` an einer Wortgrenze im Eingabefeld, auch mitten im Text, um dieselbe
+Liste zu öffnen. Suche nach
 einem Namen oder grenze mit `/skill`, `/app`, `/file` oder `/project` ein.
 Pfeiltasten und Enter oder Tab wählen einen Treffer aus; Escape schließt die
 Vorschläge und erhält deinen Entwurf. Die Vorschläge ersetzen vorübergehend

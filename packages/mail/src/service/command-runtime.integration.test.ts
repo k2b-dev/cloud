@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
@@ -828,7 +829,11 @@ suite("mail command runtime provider safety", () => {
     try {
       if (adminContext.actor.kind !== "user") throw new Error("The test context must be a user");
       // A personal API key is minted without scopes and acts with its user's mailbox access.
-      const created = await serviceAccountCredentials.createUserApiToken({ user: adminContext.actor.user, name: `Mail CLI ${suffix}` });
+      const created = await serviceAccountCredentials.createUserApiToken({
+        user: adminContext.actor.user,
+        browserSignIn: await createTestBrowserSignIn(adminContext.actor.user.id),
+        name: `Mail CLI ${suffix}`,
+      });
       if (!created.ok) throw new Error(created.error.message);
       const authenticated = await serviceAccountCredentials.authenticateApiToken(created.data.token);
       if (!authenticated?.delegatedUser) throw new Error("The personal API key did not authenticate as its user");

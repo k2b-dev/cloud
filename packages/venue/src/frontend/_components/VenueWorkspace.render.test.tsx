@@ -642,7 +642,7 @@ describe("Venue feedback evaluation", () => {
 
     expect(cell).not.toBe("");
     expect(cell.match(/ti ti-star text-sm text-amber-500/g)).toHaveLength(4);
-    expect(cell.match(/ti ti-star text-sm text-zinc-300/g)).toHaveLength(1);
+    expect(cell.match(/ti ti-star text-sm text-dimmed/g)).toHaveLength(1);
     expect(text(cell)).toContain("4/5");
     // A class the font lacks renders nothing: `ti-star-filled` left the rating cells empty.
     const shipped = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css")), "utf8");

@@ -116,7 +116,7 @@ document.documentElement.dataset.panelProviderMounted = "true";
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
       const embedded = path.endsWith("/panel");
       const markup = (await response.text())
-        .replace(/<script type="module">[^<]*solid-island[^<]*<\/script>/g, "")
+        .replace(/<script type="module"[^>]*>[^<]*solid-island[^<]*<\/script>/g, "")
         .replace(
           "</head>",
           `<style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>`,

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import type {} from "../../test/chat-decision.browser-harness";
 
 let browser: Browser;
@@ -43,10 +43,10 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width = 1440, dark = false) => {
+const open = async (width = 1440, dark = false, timelineWidth?: "narrow" | "wide") => {
   const page = await browser.newPage({ viewport: { width, height: 1100 } });
   await page.setContent(
-    `<!doctype html><html><head><style>${css}
+    `<!doctype html><html${timelineWidth ? ` data-timeline-width="${timelineWidth}"` : ""}><head><style>${css}
       html { font-size:16px; } body { margin:0; font-family:Arial,sans-serif; }
       main { max-width:720px; margin:24px; }
     </style></head><body class="k2b-ui${dark ? " k2b-dark" : ""}"><div id="root"></div></body></html>`,
@@ -325,3 +325,23 @@ test("a reopen that passes through sending still returns the focus to the senten
     await page.close();
   }
 });
+
+for (const timelineWidth of ["narrow", "wide"] as const)
+  test(`a ${timelineWidth} timeline owns decision typography and answer growth on a 1440px window`, async () => {
+    const page = await open(1440, false, timelineWidth);
+    try {
+      await settled(page);
+      const metrics = await page.evaluate(() => ({
+        window: window.innerWidth,
+        timeline: document.querySelector(".k2b-chat-timeline")!.getBoundingClientRect().width,
+        sentence: getComputedStyle(document.querySelector(".k2b-chat-decision__sentence")!).fontSize,
+        answers: Array.from(document.querySelectorAll(".k2b-chat-decision__answer")).map((e) => getComputedStyle(e).flexGrow),
+      }));
+      expect(metrics.window).toBe(1440);
+      expect(metrics.timeline).toBe((timelineWidth === "narrow" ? 22 : 60) * 16);
+      expect(metrics.sentence).toBe(timelineWidth === "narrow" ? "17px" : "18px");
+      expect(metrics.answers).toEqual(timelineWidth === "narrow" ? ["1", "1"] : ["0", "0"]);
+    } finally {
+      await page.close();
+    }
+  });

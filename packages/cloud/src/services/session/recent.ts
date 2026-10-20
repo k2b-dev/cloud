@@ -11,6 +11,15 @@ export type EligibleAccount = {
   account_expires: Date | null;
 };
 
+/** New personal access requires a browser sign-in from the last ten minutes. */
+export const LASTING_ACCESS_SIGN_IN_SECONDS = 600;
+
+export class ConfirmedBrowserSignInError extends Error {
+  constructor(readonly code: "REAUTHENTICATE" | "FORBIDDEN") {
+    super(code === "REAUTHENTICATE" ? "Sign in again to confirm it is you." : "This account cannot create new access.");
+  }
+}
+
 type Reject = (code: "REAUTHENTICATE" | "FORBIDDEN") => never;
 
 /** The account exists, has not expired and its category is enabled. */
@@ -40,3 +49,7 @@ export const requireRecentWebSession = async (
   if (!row) return reject("REAUTHENTICATE");
   return requireEligibleAccount(tx, actor.userId, reject);
 };
+
+/** Checks the browser session inside the transaction that creates personal access. */
+export const requireConfirmedBrowserSignIn = (tx: SQL, signIn: { userId: string; sid: string }, reject: Reject): Promise<EligibleAccount> =>
+  requireRecentWebSession(tx, signIn, LASTING_ACCESS_SIGN_IN_SECONDS, reject);

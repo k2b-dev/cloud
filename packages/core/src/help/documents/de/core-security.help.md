@@ -41,7 +41,8 @@ Der Link gilt fünf Minuten. Teile ihn nicht außerhalb dieser Einrichtung.
 2. Scanne den QR-Code oder kopiere den Kopplungslink in die App.
 3. Kehre zu Cloud zurück und vergleiche die sechsstelligen Codes.
 4. Wähle **Codes stimmen überein — Gerät koppeln** nur, wenn die Codes übereinstimmen.
-5. Lass die App geöffnet, bis sie die Kopplung bestätigt.
+5. Hast du auf dieser Cloud schon ein gekoppeltes Gerät, öffne dort die App und bestätige die Kopplung.
+6. Lass die neue App geöffnet, bis sie die Kopplung bestätigt.
 :::
 
 ## Mit der App anmelden {icon="device-mobile"}
@@ -83,15 +84,29 @@ Cloud sendet die Benachrichtigung standardmäßig per E-Mail. Ohne E-Mail-Adress
 
 ## Gekoppelte Geräte prüfen und widerrufen {icon="device-mobile"}
 
-**Gekoppelte Geräte** zeigt für jedes Gerät den Namen, das Kopplungsdatum, die letzte Nutzung und ob die Administration bei der Kopplung geholfen hat. Benenne ein Gerät um oder widerrufe ein Gerät, das du nicht mehr kontrollierst. Ein widerrufenes Gerät kann keine neuen Anmeldungen bestätigen, bestehende Sitzungen bleiben aber angemeldet. Diese Funktionen bleiben auch bei ausgeschalteter App-Anmeldung verfügbar.
+**Gekoppelte Geräte** zeigt für jedes Gerät den Namen, das Kopplungsdatum, die letzte Nutzung und ob die Administration bei der Kopplung geholfen hat. Benenne ein Gerät um oder widerrufe ein Gerät, das du nicht mehr kontrollierst. Zum Widerrufen brauchst du die Bestätigung in der App auf einem gekoppelten Gerät. Das Gerät, das du widerrufst, kann das bestätigen, aber nicht ablehnen. Bis dahin bleibt das Gerät aktiv. Du kannst auch die Anmeldungen beenden, die dieses Gerät bestätigt hat. Diese Auswahl ist voreingestellt. Deine anfragende Sitzung, Anmeldungen anderer Geräte und Sitzungen ohne Gerätezuordnung bleiben angemeldet. Sitzungen von vor diesem Update haben keine Gerätezuordnung. Ein widerrufenes Gerät kann keine neuen Anmeldungen bestätigen. Bei ausgeschalteter App-Anmeldung kannst du Geräte weiter umbenennen; widerrufen kann sie dann die Administration.
 
-Hast du dein Gerät verloren und kannst dich nicht anmelden, bitte die Administration, es zu widerrufen.
+Kannst du keines deiner gekoppelten Geräte nutzen, bitte die Administration, das alte Gerät zu widerrufen und dir beim Koppeln eines Ersatzgeräts zu helfen. Wende dich auch an die Administration, wenn ein Gerät, das du nicht kennst, deine Anfragen zum Widerrufen ablehnt. Dafür braucht die Administration keine Bestätigung auf einem gekoppelten Gerät.
 
 :::warning Das Zurücksetzen des Passworts widerruft auch deine gekoppelten Geräte
 Setzt du dein Passwort mit **Passwort zurücksetzen** auf der Anmeldeseite zurück, widerruft Cloud alle deine gekoppelten Geräte. Jede andere Abmeldung deines Kontos auf allen Geräten wirkt genauso. Kopple deine Geräte danach neu.
 :::
 
 Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität verlangen. Melde dich mit demselben Konto an, ohne dich vorher abzumelden. Die Kopplung öffnet sich danach automatisch wieder.
+
+## Neuen Zugang bestätigen {icon="shield-lock"}
+
+Lege persönliche API-Schlüssel unter **Entwicklung → API-Schlüssel** und
+Passkeys unter **Anmeldung → Passkeys** im Browser an. Deine Browser-Anmeldung
+muss aus den letzten zehn Minuten stammen. Bittet Cloud dich, deine Identität zu
+bestätigen, melde dich mit demselben Konto erneut an, ohne dich vorher
+abzumelden. Der Dialog öffnet sich danach wieder.
+
+Verbindest du die Kommandozeile über den Browser-Ablauf von `cld login`, fragt
+Cloud immer nach deiner Zustimmung. Andere Apps mit dauerhaftem Zugang brauchen
+dieselbe aktuelle Bestätigung. Eine Benachrichtigung über den neuen Zugang nennt die
+Kommandozeile oder App und den Zeitpunkt. Warst du das nicht, wende dich
+an die Administration.
 
 ## Konto schützen {icon="shield-lock"}
 

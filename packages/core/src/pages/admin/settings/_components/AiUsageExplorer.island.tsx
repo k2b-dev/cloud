@@ -26,6 +26,7 @@ import {
   Pagination,
   PanelDialog,
   panelDialogWideOptions,
+  SegmentedControl,
   Select,
   StatCell,
   StatGrid,
@@ -530,23 +531,17 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       </Show>
       <Show when={q().view === "comparisons"}>
         <p class="text-xs text-dimmed">{t().comparisonHelp}</p>
-        <div class="flex gap-2">
-          <Button
+        <div class="max-w-xs">
+          <SegmentedControl<"users" | "models">
             size="sm"
-            variant={comparison() === "users" ? "primary" : "secondary"}
-            aria-pressed={comparison() === "users"}
-            onClick={() => setComparison("users")}
-          >
-            {t().usersTitle}
-          </Button>
-          <Button
-            size="sm"
-            variant={comparison() === "models" ? "primary" : "secondary"}
-            aria-pressed={comparison() === "models"}
-            onClick={() => setComparison("models")}
-          >
-            {t().models}
-          </Button>
+            ariaLabel={t().compareBy}
+            options={[
+              { value: "users", label: t().usersTitle },
+              { value: "models", label: t().models },
+            ]}
+            value={comparison}
+            onValueChange={setComparison}
+          />
         </div>
         {groupTable(comparison(), comparison() === "users" ? t().usersTitle : t().models)}
       </Show>
