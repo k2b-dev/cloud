@@ -19,7 +19,7 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
 import { type AuthContext, accessRevision } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
-import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
+import { approvalReviewDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -1105,6 +1105,64 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(await aiToolAudit.capabilityConversation(requestId, owner.user.id)).toBeNull();
   });
 
+  test("background script capabilities reuse one scoped review and never invoke or save refused calls", async () => {
+    const applet = await artifacts.create({ title: "Routine capability", source }, owner);
+    const manifest = compileCapabilityManifest(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        actions: {
+          write: {
+            title: "Write item",
+            description: "Write a test item",
+            input: z.object({}).strict(),
+            data: z.unknown(),
+            approval: "rememberable",
+            idempotency: "required",
+            destructive: false,
+            openWorld: false,
+            review: async () => ok({ message: "Write item?", approvalScope: "items:one" }),
+            run: async () => ok({ data: {} }),
+          },
+        },
+      }),
+    );
+    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { appId: "demo", appName: "Demo", appDescription: "", appIcon: "ti ti-app-window", manifest },
+    });
+    const authorize = spyOn(aiChatTasks, "authorizeCapability").mockResolvedValue();
+    const marker = spyOn(aiChatTasks, "markNeedsApproval").mockResolvedValue();
+    const review = spyOn(capabilityClient, "reviewCapabilityAction").mockResolvedValue({ ok: true, data: { message: "Write item?" } });
+    const invoke = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { written: true } } });
+    const task = { turnId: crypto.randomUUID(), mandate: { id: crypto.randomUUID(), revision: 1 } };
+    const request = () => ({ id: crypto.randomUUID(), name: "demo.write", input: {}, artifactId: applet.id });
+    try {
+      const refused = request();
+      await expect(runtimeCapabilities.prepare(refused, owner, { locale: "en" }, task)).rejects.toMatchObject({ code: "NEEDS_APPROVAL" });
+      expect(invoke).not.toHaveBeenCalled();
+      expect(await sql`SELECT id FROM assistant.capability_calls WHERE id = ${refused.id}::uuid`).toHaveLength(0);
+      review.mockClear();
+      review.mockResolvedValue({ ok: true, data: { message: "Write item?", approvalScope: "items:one" } });
+      expect(await runtimeCapabilities.prepare(request(), owner, { locale: "en" }, task)).toMatchObject({ status: "completed" });
+      expect(review).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledTimes(1);
+      review.mockClear();
+      invoke.mockClear();
+      manifest.actions[0]!.approval = "none";
+      expect(await runtimeCapabilities.prepare(request(), owner, { locale: "en" }, task)).toMatchObject({ status: "completed" });
+      expect(review).not.toHaveBeenCalled();
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(marker).toHaveBeenCalledTimes(1);
+    } finally {
+      catalog.mockRestore();
+      authorize.mockRestore();
+      marker.mockRestore();
+      review.mockRestore();
+      invoke.mockRestore();
+    }
+  });
+
   test("script capabilities require real approval, remember scopes and never execute twice", async () => {
     const applet = await artifacts.create({ title: "Capability app", source }, owner);
     const definitions = defineCapabilities({
@@ -1147,6 +1205,34 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       return (await approvals.get(call.approval_id))!;
     };
     try {
+      const typedReview = {
+        locale: "en",
+        sentence: { action: "Write item", running: "Writing item", done: "Wrote item", confirm: "Write item", decline: "Do not write" },
+        slots: {},
+      };
+      catalog.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          appId: "demo",
+          appName: "Demo",
+          appDescription: "",
+          appIcon: "ti ti-app-window",
+          manifest: { ...manifest, policies: { write: { ask: "cannot_undo" } } },
+        },
+      });
+      review.mockResolvedValueOnce({ ok: true, data: typedReview });
+      const typed = request();
+      expect(await runtimeCapabilities.prepare(typed, owner, caller)).toMatchObject({
+        status: "approval",
+        review: { ...typedReview, ask: "cannot_undo" },
+      });
+      expect((await approvalFor(typed.id)).details).toEqual(typedReview);
+      expect((await approvalFor(typed.id)).reviewDigest).toBe(approvalReviewDigest(typedReview));
+      const [saved] = await sql<
+        { prepared: { review: unknown } }[]
+      >`SELECT prepared FROM assistant.capability_calls WHERE id=${typed.id}::uuid`;
+      expect(saved?.prepared.review).toEqual(typedReview);
+      await runtimeCapabilities.resolve(typed.id, { approved: false }, owner, caller);
       const denied = request();
       // The card gets the Action's wording in the caller's locale, as a chat call of the same Action would.
       expect(await runtimeCapabilities.prepare(denied, owner, caller)).toMatchObject({
@@ -1662,6 +1748,21 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(execute).not.toHaveBeenCalled();
       conversation.mockResolvedValue(checkConversation(conversationId, owner.user.id));
       expect(await runtimeCapabilities.check(checkInput, owner, {})).toEqual({ data: { private: true } });
+      const byShortId = spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(
+        checkConversation(conversationId, owner.user.id),
+      );
+      try {
+        expect(await runtimeCapabilities.check({ ...checkInput, conversationId: "abc234" }, owner, {})).toEqual({
+          data: { private: true },
+        });
+      } finally {
+        byShortId.mockRestore();
+      }
+      // The call log keeps the internal chat UUID, whichever public form the client sent.
+      expect(
+        await sql<{ conversation_id: string }[]>`SELECT DISTINCT conversation_id FROM assistant.capability_calls
+          WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}) AND conversation_id IS NOT NULL`,
+      ).toEqual([{ conversation_id: conversationId }]);
       execute.mockClear();
       conversation.mockRestore();
       const read = request("consent.read");

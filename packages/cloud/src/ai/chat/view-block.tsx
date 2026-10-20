@@ -39,8 +39,11 @@ import { ReferenceText } from "./reference-text";
 const VISIBLE_ROWS = 100;
 /** Rows the viewport shows before it scrolls; it reserves their height from the first frame. */
 const VIEWPORT_ROWS = 8;
-/** A compact row: 12px text on a 16px line, 6px padding above and below, a 1px line. */
-const ROW_REM = 1.8125;
+/** A compact DataTable row and its totals row, and the quieter header row above them. */
+const ROW_REM = 2.5;
+const HEADER_REM = 2.125;
+/** DataTable draws a hairline between rows only above this many columns. */
+const HAIRLINE_ABOVE_COLUMNS = 8;
 
 /** Loads a view file with the viewer's access and validates it again: a file is untrusted whoever wrote it. */
 async function loadView(url: string, path: string, signal: AbortSignal): Promise<CloudAiView | null> {
@@ -75,9 +78,16 @@ type ChartSummary = Extract<CloudAiViewSummary, { view: "chart" }>;
 type GroupSummary = Extract<CloudAiViewSummary, { view: "group" }>;
 type ExplorerSummary = Extract<CloudAiViewSummary, { view: "explorer" }>;
 
-/** The header row, the rows up to the viewport's, and the totals row when there is one. */
-const tableHeight = (summary: TableSummary) =>
-  `${(Math.max(1, Math.min(summary.rows, VIEWPORT_ROWS)) + 1 + Number(summary.footer)) * ROW_REM}rem`;
+/**
+ * The header row, the rows up to the viewport's, and the totals row when there is one, inside the paper's 1px frame.
+ * Wide tables add a 1px hairline after each visible body row with a following body row; the footer adds none.
+ */
+const tableHeight = (summary: TableSummary) => {
+  const bodyRows = Math.max(1, Math.min(summary.rows, VIEWPORT_ROWS));
+  const rows = bodyRows + Number(summary.footer);
+  const lines = summary.columns > HAIRLINE_ABOVE_COLUMNS ? bodyRows - 1 + Number(summary.rows > VIEWPORT_ROWS) : 0;
+  return `calc(${HEADER_REM + rows * ROW_REM}rem + ${2 + lines}px)`;
+};
 
 /**
  * A table view: title, Copy data and a sortable table in a viewport whose height follows the row count of its

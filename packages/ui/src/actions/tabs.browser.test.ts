@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser } from "../../test/browser";
+import { launchBrowser } from "../../test/browser";
 
 // Scroll overflow depends on layout, which happy-dom does not model, so a real
 // engine renders the shipped stylesheet.
@@ -51,7 +51,7 @@ const html = () =>
 
 describe("@k2b/ui tab list scrolling", () => {
   for (const options of Object.values(viewports)) {
-    test(`at ${options.viewport.width} px the list scrolls only sideways and keeps the selected underline whole`, async () => {
+    test(`at ${options.viewport.width} px the list scrolls only sideways and keeps the selected control whole`, async () => {
       const page = await browser.newPage(options);
       try {
         await page.setContent(html());
@@ -66,7 +66,7 @@ describe("@k2b/ui tab list scrolling", () => {
               scrollbar: style.scrollbarWidth,
               verticalOverflow: list.scrollHeight - list.clientHeight,
               scrollsSideways: list.scrollWidth > list.clientWidth,
-              underlineCut: Math.max(0, selected.bottom - clipBottom),
+              selectionCut: Math.max(0, selected.bottom - clipBottom),
             };
           }),
         );
@@ -79,7 +79,7 @@ describe("@k2b/ui tab list scrolling", () => {
               verticalOverflow: 0,
               // Twenty-four tabs overflow both widths; three fit on a phone too.
               scrollsSideways: count === 24,
-              underlineCut: 0,
+              selectionCut: 0,
             })),
           ),
         );
@@ -89,38 +89,27 @@ describe("@k2b/ui tab list scrolling", () => {
     });
   }
 
-  test("in forced colours the line baseline stays drawn in CanvasText and the tabs stay forced", async () => {
+  test("forced colours keep the soft baseline and mark selection without changing geometry", async () => {
     const page = await browser.newPage(viewports.desktop);
     try {
       await page.emulateMedia({ forcedColors: "active" });
       await page.setContent(html());
-      const measured = await page.evaluate(() => {
-        const probe = document.body.appendChild(document.createElement("i"));
-        probe.style.color = "CanvasText";
-        const canvasText = getComputedStyle(probe).color;
-        probe.style.color = "var(--k2b-action)";
-        const action = getComputedStyle(probe).color;
-        probe.style.color = "var(--k2b-text)";
-        const text = getComputedStyle(probe).color;
-        const named = (value: string) => value.replaceAll(canvasText, "CanvasText").replaceAll(action, "action").replaceAll(text, "text");
-        return Array.from(document.querySelectorAll<HTMLElement>(".k2b-tabs__list")).map((list) => ({
-          list: list.getAttribute("aria-label"),
-          baseline: named(getComputedStyle(list).boxShadow),
-          selectedUnderline: named(getComputedStyle(list.querySelector('[aria-selected="true"]')!).borderBottomColor),
-        }));
-      });
-      expect(measured).toEqual(
-        ["line", "pill"].flatMap((variant) =>
-          [3, 24].map((count) => ({
-            list: `${variant} with ${count} tabs`,
-            baseline: variant === "line" ? "CanvasText 0px -1px 0px 0px inset" : "none",
-            // WebKit matches `forced-colors: active` under emulation but has no forced colours mode that repaints
-            // author colours, so only Chromium can show that the tabs stay forced. WebKit keeps the author colours:
-            // the line's action underline and the current colour of the borderless pill.
-            selectedUnderline: browserName === "chromium" ? "CanvasText" : variant === "line" ? "action" : "text",
-          })),
-        ),
+      const measured = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".k2b-tabs__list")).map((list) => {
+          const selected = getComputedStyle(list.querySelector('[aria-selected="true"]')!);
+          return {
+            baseline: getComputedStyle(list).boxShadow,
+            underlineWidth: selected.borderBottomWidth,
+            selection: selected.textDecorationLine,
+          };
+        }),
       );
+      expect(measured).toHaveLength(4);
+      for (const item of measured) {
+        expect(item.baseline).toBe("none");
+        expect(item.underlineWidth).toBe("0px");
+        expect(item.selection).toContain("underline");
+      }
     } finally {
       await page.close();
     }

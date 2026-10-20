@@ -272,7 +272,7 @@ export function SignupDialog(props: {
                                     when={ownAssignment(slot)}
                                     fallback={
                                       <span
-                                        class={`tag ${slot.full ? "bg-zinc-100 text-dimmed dark:bg-zinc-800" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
+                                        class={`tag ${slot.full ? "bg-[var(--ui-surface-muted)] text-dimmed" : "bg-[var(--k2b-info-surface)] text-[var(--k2b-info-text)]"}`}
                                       >
                                         {slot.full ? t().full : t().openSpots}
                                       </span>

@@ -63,6 +63,7 @@ for (const locale of ["en", "de"])
     const response = await server.request("/app/fixture/panel", { headers: { "Accept-Language": locale, Cookie: "theme=dark" } });
     const html = await response.text();
     expect(response.status).toBe(200);
+    expect(response.headers.get("referrer-policy")).toBe("same-origin");
     expect(html).toContain("<title>Fixture lookup</title>");
     expect(html).toContain(`lang="${locale}" class="dark"`);
     expect(html).toMatch(/class="cloud-panel-page" data-cloud-panel-page(?:="")? data-panel-provider="fixture"/);
@@ -99,3 +100,26 @@ for (const query of ["noPanel=1", "missing=1"])
     const html = await (await server.request(`/app/fixture/panel?${query}`)).text();
     expect(runtimeProps(html)).toEqual({ provider: query === "missing=1" ? undefined : "fixture", scope: undefined });
   });
+
+test("PanelLayout embeds exactly the validated first URL context, escaping script content", async () => {
+  const { withPanelContext } = await import("../contracts/panel-context");
+  const { readPanelContext } = await import("./panel-context");
+  const context = {
+    v: 1 as const,
+    seq: 0,
+    pageId: "11111111-1111-4111-8111-111111111111",
+    app: "mail",
+    scope: { type: "mail.mailbox", id: "</script>" },
+  };
+  const path = withPanelContext("/app/fixture/panel?base=1", context);
+  const response = await server.request(path);
+  const html = await response.text();
+  const embedded = html.match(/<script id="cloud-panel-context" type="application\/json">([^<]*)<\/script>/)?.[1];
+  expect(embedded).toBeDefined();
+  expect(JSON.parse(embedded!)).toEqual(context);
+  expect(embedded).not.toContain("</script>");
+  expect(readPanelContext({ req: { raw: { url: `https://cloud.test${path}` } } })).toEqual(context);
+  expect(readPanelContext({ req: { raw: { url: "invalid" } } })).toBeNull();
+  const forged = await (await server.request("/app/fixture/panel?cloud_panel_context=%7B%22token%22:%22secret%22%7D")).text();
+  expect(forged).toContain('id="cloud-panel-context" type="application/json">null</script>');
+});

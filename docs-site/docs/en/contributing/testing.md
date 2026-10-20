@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-18
+updated: 2026-10-20
 ---
 
 # Testing
@@ -23,8 +23,8 @@ bun run test
 
 `bun run check` verifies dependencies, import boundaries, package cycles,
 service API contracts, localization, capability presentation, CSS
-architecture, formatting, the application set, the CI gate's job list, and
-every package typecheck. A package typecheck covers its
+architecture, formatting, fixture short IDs, the application set, the CI gate's
+job list, and every package typecheck. A package typecheck covers its
 `scripts/` as well as `src/`, so a package's build, smoke, and verification
 scripts break the gate when they drift from the code they drive. The only
 exceptions are scripts a package excludes by name in its `tsconfig.json` and
@@ -131,6 +131,9 @@ const load = async () => {
 const RecordsView = isServer ? undefined : await load();
 ```
 
+A browser test has the same 5 s budget for its pages, documents, and scans;
+see [Test in Chromium and WebKit](#test-in-chromium-and-webkit).
+
 Solid attaches its delegated event listeners, such as the one for `click`, to
 the document that exists while a module evaluates, here the temporary one. A
 test that clicks therefore calls `delegateEvents(["click"], dom.document)` for
@@ -149,10 +152,33 @@ In browser tests, fixtures stamp their data from a fixed clock, and each
 context gets an init script that replaces the page's `Date` with one that
 starts at that clock and flows from there. The Chat harness starts at
 `chatTestNow`, exposes its flowing clock as `harness.now()`, and pins pages
-with `pinPageClock` in `ChatWorkspace.browser.test.ts`. Do not use
-Playwright's `clock` for this: even `setSystemTime` replaces timers,
-animation frames, and `performance`, and the Chat read-state tests then
-failed in WebKit. Use `performance.now()` for durations and deadlines.
+with `pinPageClock` in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`.
+A page built with `setContent` keeps the window of its blank page, so the
+continuous month test in `@k2b/ui` runs the same function with
+`page.evaluate` before `setContent`. Use `performance.now()` for durations
+and deadlines.
+
+Do not pin the date with Playwright's `clock`. `setFixedTime` and
+`setSystemTime` also install its fake clock, which replaces timers,
+animation frames, and `performance`. Scroll- and frame-driven UI then runs
+on a timer instead of the page's rendering, so a test sees state that lags
+only in the test. The Chat read-state tests failed in WebKit this way, and so
+did the continuous month title
+([#1139](https://github.com/k2b-dev/cloud/issues/1139)).
+
+The `test-clock` check flags `.clock.setFixedTime(` and
+`.clock.setSystemTime(` calls on a page or context. A line comment
+`// playwright clock: <reason>` on the same line or directly above allows a
+pin in a test whose subject is fake timers. The reason must be non-empty.
+`clock.install()`, `runFor`, and `fastForward` stay allowed for deliberate
+timer control, and `setSystemTime` from `bun:test` is not a finding.
+
+Measure browser timing on the browser's clock. Playwright events such as
+`request` reach the test process late under load, so tests that assert a browser
+throttle or delay record `performance.now()` in the page, as the Chat read-state
+tests do with `chatReadStarts` in an init script that wraps fetch. Wait for
+browser-side windows with a timer inside the page. The `test-clock` check also
+rejects clock reads inside Playwright event listeners.
 
 The `test-clock` check rejects new `new Date()` and `Date.now()` reads in UI
 tests, fixtures, harnesses, and suites. A line comment
@@ -167,7 +193,22 @@ when findings are gone.
 A test waits for the state it needs: poll with a deadline, await an event,
 a recorded close, or a log. A fixed sleep assumes the state arrived and is
 still there. The live-routes slow-client test waits for the server's `1013`
-close before it resumes the client.
+close before it resumes the client. A test about the moment before a debounce
+or delay fires acts in the same task as the trigger, as the Notebooks Timeline
+scroll-restore test does, because a check after a real-time wait that the delay
+has not fired yet fails on a slow runner. Wait for the state you assert, not
+for a step before it: the continuous month test waits until the grid rests at
+the week and the header names the month, because the view names the month in
+an animation frame after the scroll event.
+
+A live region that a component fills after a timer is read with a bounded
+wait, such as `waitForFunction` on its text, never once after `settled()`.
+`settled()` waits for fonts, animations, and frames, not for timers. The
+outcome line of `ChatOutcome` in `@k2b/ui` empties its `role="status"` region
+and fills it 40 ms later, so that the same words spoken again are announced.
+The answering case in `action-question.browser.test.ts` holds the fixture's
+answer, waits until the status names the pending line, and only then releases
+the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
 
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
 with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
@@ -176,6 +217,59 @@ whose duration is the subject of the test. The reason must be non-empty.
 Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
 only decrease; `bun scripts/check.ts test-waits --fix` lowers counts and
 removes entries when findings are gone.
+
+Scroll-driven animations, such as the navigation label fade in `@k2b/ui`,
+keep running and never finish. Before waiting for page animations to stop or
+awaiting their `finished` promises, select only the document timeline with
+`document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+Apply the same filter to element calls with `{ subtree: true }`, which can
+include navigation labels. The `animation-settle` check requires an actual
+`.timeline` property access in the surrounding statement of document-wide and
+subtree calls in tests, browser suites, and browser harnesses, or a leading
+`// animation-settle: all timelines` comment (optionally followed by a reason)
+for deliberate inspection of all timelines.
+
+Before a test reads styles or geometry after an action, it awaits
+`settled(page)` from `packages/ui/test/browser.ts` or waits for its own
+condition. `settled()` waits for fonts, for the running finite animations on
+the document timeline, and then for two frames. It does not wait for infinite,
+scroll-driven, or paused animations, because they never finish. When the page
+starts new finite animations in that time, `settled()` throws and names them:
+a page that keeps animating is not settled, and the test must wait for its own
+condition. `settled()` does not change media emulation. Tests that are not
+about motion pass `reducedMotion: "reduce"` to `newPage()` or `newContext()`.
+See `open()` in `packages/oauth/src/frontend/authorization-page.browser.test.ts`
+([#1476](https://github.com/k2b-dev/cloud/issues/1476),
+[#1499](https://github.com/k2b-dev/cloud/issues/1499)).
+
+The `settle-reads` check flags a style or geometry read that follows an action
+with no settle in between. It checks `*.browser.test.ts`, `*.browser-suite.ts`,
+and `*.browser-harness.tsx` files. A read is `boundingBox()`, or an
+`evaluate()` or `evaluateAll()` callback that uses `getComputedStyle`,
+`getBoundingClientRect`, `getClientRects`, `checkVisibility`, or
+`elementFromPoint`. Actions are navigation, `setContent`, clicks, key presses,
+hover, fill, focus, `dispatchEvent`, mouse, keyboard, and touchscreen calls,
+`emulateMedia`, `setViewportSize`, and `newPage`. Settles are `settled()`,
+`waitForFunction`, `expect.poll`, locator `waitFor`, `keptThrough`, and
+`mostAtOnce`, when the test awaits them. The check reads each function body in source order, nested
+blocks included. A call to a named helper in the same file counts as what the
+helper does: a read before its first action or settle, and its last action or
+settle. A helper whose return type names `Page` counts as an action unless it
+ends in a settle.
+
+Known findings live in `scripts/checks/settle-reads.baseline`. Its counts can
+only decrease; `bun scripts/check.ts settle-reads --fix` lowers counts and
+removes entries when findings are gone. A line comment `// settled: <reason>`
+on the same line or directly above allows a read whose subject is the first
+frame or the unsettled moment, such as a read of the server-rendered frame.
+The reason must be non-empty. On a read inside a helper, it also covers the
+helper's callers.
+
+The `cookie-store` check rejects direct `cookies()` reads in tests, browser
+suites, and browser harnesses. Use `storedCookie(page, name)` for cookies that
+page scripts write; see [Engine differences](#engine-differences). A leading
+`// cookie-store: <reason>` line comment allows a deliberate store read, such
+as an HttpOnly cookie set by a server response. The reason must be non-empty.
 
 ## Test in Chromium and WebKit
 
@@ -213,6 +307,20 @@ reports after the timeout names what it waited for, not the cleanup in
 kept across tests closes with its browser.
 `packages/ui/test/browser.browser.test.ts` guards this recovery.
 
+`browser.close()` from `launchBrowser()` is bounded. It asks the browser to
+exit and waits up to 2 s, then kills its process group and waits up to 2 s until
+every process is gone. This keeps `afterAll` inside Bun's 5 s hook timeout
+even when exit hangs, so the next file never starts beside a browser still
+shutting down ([#1473](https://github.com/k2b-dev/cloud/issues/1473)). A
+browser from `TEST_BROWSER_ENDPOINT` runs elsewhere and only gets the 2 s
+graceful close.
+A close that needed the kill and a launch still pending after 4 s print a
+`launchBrowser:` line with their durations next to the failure. A failed
+launch carries its duration in the error. A process group still alive after
+the kill fails the hook with those timings.
+`packages/ui/test/browser.browser.test.ts` guards a hung close and the next
+launch.
+
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
 or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
@@ -220,6 +328,21 @@ or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
 and a Back to a graph page in a third. The cause was a collapsed receive
 queue on the CI runner's kernel; see
 [When a page never fires load](#when-a-page-never-fires-load).
+
+States that a test sets with `setContent`, a fixture call, or another change
+inside the page share one page per test. Open the page at the start of the
+test, change the state inside it, and close the page at the end. Each new page
+and each new document has a fixed cost. On a busy machine, a WebKit page takes
+about 300 ms to open. Each `setContent` parses an inlined `dist/styles.css`
+(857 KB) again, and each document runs its `addScriptTag` bundle again. These
+costs fit the 5 s test timeout on an idle machine, but not under three heavy
+slots ([#1485](https://github.com/k2b-dev/cloud/issues/1485),
+[#1497](https://github.com/k2b-dev/cloud/issues/1497)). When many states use
+one stylesheet, load it once and replace the body for each state, as `show()`
+does in `packages/ui/src/styles/touch-targets.browser.test.ts`. An exhaustive
+check, such as a tap on every pixel, looks only where its result can change,
+and a test compares it with the full check; see `takenPixels` in the same
+file.
 
 When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
 times out, the error appends a navigation diagnosis. It names the call and how long it
@@ -280,6 +403,38 @@ that a mutation keeps an element and its height. Never read `boundingBox()`
 right after a change: it does not wait and returns `null` for an element that
 a refresh is replacing. See the claim test in
 `packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts`.
+
+Use `mostAtOnce(page, selector, change)` from `packages/ui/test/browser.ts` to
+check that Undo or a refresh never shows an entity twice and ends with exactly
+one. Scope a locator that reads the entity to its row, not to the page. Await
+Playwright calls and read their values: `expect(await box.isChecked())`.
+In Playwright tests, never use `expect(promise).resolves` or `.rejects`.
+Besides hiding the reason for a rejection, Bun's matcher waits in a nested
+event loop that runs Playwright's channel messages out of order and can close
+the browser connection. This shows as `Cannot find object to "message": jsonPipe@…`
+and a next test that fails within milliseconds
+([#1502](https://github.com/k2b-dev/cloud/issues/1502)). The `browser-test-promises`
+check enforces this rule. Await promises directly and assert on their values;
+for an expected rejection, capture the reason and assert on it.
+See the tray Undo test in
+`packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
+
+Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
+and assert `expect(errors).toEqual([])`; new tests do not register a
+`pageerror` listener of their own. While a page waits for its next document,
+WebKit refuses every load that the page starts, such as a stream that opens
+again after the navigation cancelled it. It logs the refusal as
+`Fetch API cannot load <url> due to access control checks.`, also for a
+same-origin request whose promise is handled
+([playwright#43120](https://github.com/microsoft/playwright/issues/43120)).
+Playwright reports that log as a page error, so a test that navigates fails at
+random. `pageErrors()` ignores only that report, only in WebKit, only for a URL
+with the origin of the page, and only while a `goto`, `reload`, `goBack`, or
+`goForward` of the test runs. It reports everything else: a real CORS failure,
+which names another origin, an unhandled rejection, a refusal during a
+navigation that the page starts itself, such as after a click, and every other
+error. `packages/ui/test/browser.browser.test.ts` guards these cases in
+Chromium and WebKit.
 
 ### Run WebKit locally
 
@@ -446,12 +601,27 @@ branch:
   or longer before it lifts as stopped, so the list stops without a fling.
   It moves about as far as the finger did, give or take a few pixels, so
   assert a bound rather than an exact scroll position.
+- `Input.dispatchTouchEvent` returns once the browser has passed the touch on,
+  not once the page has handled it. With the page's main thread busy, the call
+  returns while the page still has to dispatch the touch and its pointer
+  events. Before a test reads what a touch changed, it waits for the page's own
+  record of that touch: a one-shot capture listener for the last event, such
+  as `touchend` or `touchcancel`, installed before the touch is sent, then
+  `page.waitForFunction` for that record. `swipe()` in
+  `signature-input.browser.test.ts` does this.
 - WebKit matches `forced-colors: active` under emulation but has no forced
   colours mode that repaints author colours.
 - WebKit does not support `reading-flow` yet, so focus and VoiceOver keep the
   source order where a grid or flex layout shows elements in another order.
   Put elements in the source in the order they are shown, in every layout,
   so that a focus order test expects the same order in both engines.
+- WebKit stores a `document.cookie` write in its network process
+  asynchronously, so `context.cookies()` right after a key or click can still
+  return the previous value ([#1496](https://github.com/k2b-dev/cloud/issues/1496)).
+  Read cookies that page scripts write with `storedCookie(page, name)` from
+  `packages/ui/test/browser.ts`. It waits until the browser store agrees with
+  the document and returns the full cookie with its attributes. The
+  `cookie-store` check enforces this.
 - Playwright's WebKit draws overlay scrollbars that reserve no gutter.
 - Playwright's WebKit ignores the charset of a routed response. A page that a
   test serves names it with `<meta charset="utf-8">`, as every Cloud page
@@ -460,11 +630,18 @@ branch:
   wider than the screen. Measure sideways overflow against
   `document.documentElement.clientWidth`.
 - Playwright can read and type into a page before its first frame, and WebKit
-  can hold that frame back while a page loads. A dialog places its initial
-  focus in the next frame after it opens; until then, keys go to the element
-  the browser focused first. A test that types into a dialog right after it
-  opens first waits for the dialog's content and then for one frame:
+  can hold that frame back while a page loads or the machine is busy. A dialog
+  places its initial focus in the next frame after it opens; until then, keys
+  go to the element the browser focused first, which is the content's
+  `autofocus` element or else its first focusable element. A test that types
+  into a dialog right after it opens first waits for the dialog's content and
+  then for one frame:
   `await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))`.
+  Waiting for the content alone is not a frame: a test that read focus after
+  it failed in WebKit CI (#1456). Where keys must reach the target at once, as
+  in the Notebooks attachment preview, the target carries `autofocus`, and the
+  test reads focus in the same `page.evaluate` that opens the dialog, before
+  any frame can pass.
 - Neither engine shows a PDF in a frame. Chromium's headless shell reports
   `navigator.pdfViewerEnabled === false`, so `PdfPreview` shows its
   missing-viewer hint instead of the frame, and an automatic preview requests
@@ -521,10 +698,11 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6380` (no database index) |
 | `CLOUD_TEST_FILEGATE_URL` | `http://127.0.0.1:4000` |
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
+| `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
 
 The ports are the development stack's defaults. If you moved them with
-`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, or `CLOUD_DEV_NATS_PORT`
+`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, `CLOUD_DEV_NATS_PORT`, or `CLOUD_DEV_CLICKHOUSE_PORT`
 ([Change host ports](/en/docs/operations/monorepo-development#change-host-ports)),
 use the same ports here.
 
@@ -537,6 +715,26 @@ removed, because unset is the off switch for those clients. `DATABASE_URL` and
 and `redis` handles would otherwise dial `localhost`, so an ungated test that
 reaches for them fails with a connection error instead of touching the stack
 configured in `.env`.
+
+`CLOUD_TEST_CLICKHOUSE_URL` is an **admin URL**, including URL-encoded userinfo,
+for example `http://cloud_ci:cloud_ci@127.0.0.1:8123` for the throwaway CI service.
+It has no runtime alias: Pulse gets its store connection from app settings.
+The gate checks `/ping` within three seconds. An unset target skips ClickHouse
+suites; a configured but unusable target fails loudly. Diagnostics redact URL
+passwords for every infrastructure kind.
+
+ClickHouse tests use one `pulsetest_<8 hex>_` prefix per process. Generated
+setup SQL grants the service user only that database wildcard. When loaded with
+a configured target, `scripts/fixtures/test-clickhouse.ts` registers its own
+`afterAll` hook to remove exactly that prefix's databases, users, settings
+profiles, roles, quotas and row policies. Cleanup validates the prefix
+before dropping anything and leaves objects outside it alone. Use a dedicated
+test instance: checks deliberately probe instance-wide admin privileges and
+create temporary users. CI and nightly provide ClickHouse 26.9.19.9 for these
+suites. See [development setup](/en/docs/operations/monorepo-development#connect-pulse-to-development-clickhouse)
+for local credentials. Installation tests in `pulse/src/migrate.integration.test.ts`
+keep their own disposable Postgres database and run in the integration runner's
+one-file process, as the previous schema test did.
 
 Run integration tests through `bun run test`: it exports those runtime
 variables into every test process before Bun starts, which is the only moment
@@ -624,8 +822,10 @@ bun run test --integration
 ```
 
 `--integration` first prepares the test database by running Core setup and every application migration (idempotent, a few seconds), then runs only the integration files, one fresh global per file. `--shard <n>/<total>` splits
-the suites across parallel jobs, which is how the gate runs them; `--exclude <name>`
-leaves out suites whose name or path matches, and `--filter <name>` keeps only those.
+the suites across parallel jobs, balanced by measured suite time, which is how
+the gate runs them. `--max-minutes <m>` fails a run that takes longer than m
+minutes. `--exclude <name>` leaves out suites whose name or path matches, and
+`--filter <name>` keeps only those.
 
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right
@@ -639,6 +839,12 @@ suite's `describe`; Bun runs it when the suite ends.
 A new integration test needs no configuration of its own: import nothing
 special, use the resolved runtime variables, and name the file
 `*.integration.test.ts`.
+
+bun:test does not stop a timed-out test body. An integration test ends the
+work it starts: teardown cancels and awaits every sync, job, or loop the test
+started before it restores shared stand-ins. A stand-in shared by several
+tests routes calls to the test that owns them and rejects calls from an ended
+test; see `packages/mail/src/service/remote-changes-fixture.ts`.
 
 Keep a test that needs one of these targets out of the Playwright suites
 (`*.browser.test.ts`): the nightly browser job sets no `CLOUD_TEST_*`
@@ -705,6 +911,18 @@ Give each caller its own address, for example from `uniqueCallerAddress()` in
 range `2001:db8::/32`. Reuse one address only when the test exercises the
 limit itself.
 
+### Fixture short IDs
+
+Raw fixture inserts bypass the service's collision retry. Take short IDs from
+`testShortId()` in `scripts/fixtures/test-short-id`, passing the column's
+length when it differs from the default six characters. Its counter is
+deterministic per process; the `o` mark never appears in `readableId()` output,
+so fixture IDs stay apart from service-generated IDs.
+
+Never cut a random UUID or `Math.random()` to short-ID length: the small space
+repeats and fails a unique index at random. `bun run check` flags this with the
+`test-short-ids` rule.
+
 ## Request cache checks
 
 The request-cache suites modify global settings and cache keys, so they run
@@ -719,6 +937,17 @@ Gotenberg. Path-filtered jobs, such as the Grids certification, the WebKit
 browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
+
+Unit and WebKit tests run in five shards each, balanced by
+`scripts/test-weights.json`: measured seconds per suite, longest first. An
+unknown suite counts as the median of its table. Each shard prints its
+predicted and actual time. It fails with an annotation when it runs longer
+than 20 of its 30 minutes, even when every suite passed. To refresh the weights,
+run `bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest
+green merge-queue runs. Add a shard when the printed slowest shard exceeds
+15 minutes. One third of the job limit stays in reserve because setup and
+GitHub's job finalization count against it. Finalization took up to about
+5 minutes during a GitHub Actions incident.
 
 The `packed` job packs `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with
 `npm pack`, using the same file list as `npm publish`. It installs them in a
@@ -815,6 +1044,62 @@ described under [Where CI images come from](#where-ci-images-come-from). The
 image's publisher deletes its date tags after about eight months, so move the
 pin to a newer tag before that.
 
+### Scale acceptance
+
+The nightly `scale-acceptance` job runs `scripts/scale-acceptance.ts`. It boots
+one gateway and two replicas each of Core, Mail, Chat, and Notebooks from
+`compose.prod.yml` and the test overlay `compose.scale-test.yml`, in its own
+Compose project with its own PostgreSQL, NATS, Valkey, and SMTP sink. It never
+uses the development stack or `.env`, and it removes every container, volume,
+and built image tag when it ends, also after a failure or a signal.
+
+The gateway and all Core replicas start together. Once Core is ready, all
+replicas of Mail, Chat, and Notebooks start together. After readiness, the
+harness inspects every application container and requires `RestartCount` to
+be zero, reporting the container name and count on failure.
+
+Steps pin requests to one replica through its own published port, except the
+Mail and Chat steps that explicitly use the gateway:
+
+- a Chat message posted on replica A reaches a live socket on replica B;
+- a Notebooks Yjs update sent through replica A reaches a client on replica B;
+- one durable outgoing mail is delivered once while two Core replicas run;
+- Mail compose opens through the gateway; acquiring again on B with the same editor returns A's lease;
+- six Mail autosaves alternate between A and B without lost revisions or recovery copies;
+- Mail heartbeats on B keep the lease while eight concurrent saves run on A;
+- reloading Mail compose releases on one pod and acquires on the other;
+- a Mail takeover on B reaches the old editor live on A and rejects its old token;
+- a Mail attachment upload starts on A, resumes and finishes on B, and downloads intact on A;
+- sending a Mail draft on B removes its editing lease everywhere;
+- Mail A restarts gracefully while editing continues through B and the gateway;
+  every routing gap fails the run, with request samples kept as evidence;
+- Chat A stops gracefully and is removed, then a surge adds replacements, which
+  must be ready with `RestartCount` 0, before the last original Chat replica
+  stops. Gateway requests continue for at least
+  70 seconds after each stop. Registry gaps fail the run. Upstream-unavailable
+  502s and network errors during a stop and its next five seconds are counted
+  separately as `p4InFlight` (RISK P4); every other failure fails the run;
+- Core is killed with SIGKILL while it sends a mail, and the other Core
+  replica delivers it exactly once after recovery, which takes about five
+  minutes.
+
+At the end, the run fails unless both replicas of every app are different
+running containers and each served at least one step, except for the explicitly
+killed Core and retired Chat containers. Retirement never excuses an unserved
+replica. The Chat stop and surge scenario adds at least 140 seconds. The suite
+runs nightly, not on pull requests, because it builds five images. Run it
+locally with Docker:
+
+```bash
+bun run --cwd packages/ui build
+bun --no-env-file scripts/scale-acceptance.ts
+```
+
+The script takes a heavy slot itself. Add `--image-tag <tag>` to use published
+images instead of building them. `--replicas 1` is the negative control: every
+step reaches the only container of each app, and the final check fails because
+replica B is replica A.
+
 ### Where CI images come from
 
 No workflow pulls from Docker Hub: its limit for anonymous pulls failed CI runs.
@@ -843,6 +1128,13 @@ stop the others. The same workflow, `mirror-images.yml`, also runs weekly and
 on demand. A new package created by the first copy must be public; if the
 check reports that it is not, change its visibility in the package settings on
 GitHub once.
+
+The Core image's DB-IP snapshot is the one mirror entry that is not a Docker
+Hub image: `ghcr.io/k2b-dev/mirror/dbip-lite:<YYYY-MM>`. It is referenced by
+tag and pinned by the gzip checksums in the Dockerfile. `.github/mirror-images.sh`
+copies it from DB-IP while DB-IP still serves that month. It holds only data
+and is pushed for `linux/amd64`; the Dockerfile takes that manifest with
+`FROM --platform=linux/amd64`, so arm64 release builds resolve it too.
 
 The `mirror-images` check fails when a workflow or Dockerfile would pull a
 Docker Hub image directly, including through BuildKit's default SBOM generator,
@@ -906,7 +1198,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in three shards with `bun run test --browser`, against
+them again in WebKit in five shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

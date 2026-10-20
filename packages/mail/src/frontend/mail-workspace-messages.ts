@@ -148,6 +148,11 @@ export const mailWorkspaceMessages = i18n.define({
       failureNotApplied: "The mail server did not make the change.",
       tryAgain: "Try again",
       mailboxDetailsFailed: "Could not load the mailbox details",
+      // Compose from the mailbox uses the compose page's copy (mail-composer-messages), word for word.
+      preparingMessage: "Preparing message...",
+      draftCreateFailed: "Could not create draft",
+      localMessageFailed: "The browser could not keep this message locally. Free some site storage and try again.",
+      startMessageFailed: "Could not start message",
     },
     de: {
       selectConversationActivity: "Wähle eine Unterhaltung aus, um ihre Aktivitäten zu laden",
@@ -296,6 +301,11 @@ export const mailWorkspaceMessages = i18n.define({
       failureNotApplied: "Der Mailserver hat die Änderung nicht vorgenommen.",
       tryAgain: "Erneut versuchen",
       mailboxDetailsFailed: "Die Postfachdetails konnten nicht geladen werden",
+      preparingMessage: "Nachricht wird vorbereitet…",
+      draftCreateFailed: "Der Entwurf konnte nicht erstellt werden",
+      localMessageFailed:
+        "Der Browser konnte die Nachricht nicht lokal speichern. Gib Speicherplatz für diese Website frei und versuche es erneut.",
+      startMessageFailed: "Die neue Nachricht konnte nicht vorbereitet werden",
     },
   },
 });

@@ -4,6 +4,9 @@
 data. They do not depend on Cloud storage, routes, permissions, or mutation
 APIs.
 
+Selected `FileGrid` items and `FileTree` rows take the row selection fill
+without changing text weight or geometry; see [Colors and selection](/en/ui/surfaces/color).
+
 ## Use file components
 
 Use `FileBrowserPanel` for the ready tree-and-preview composition over a

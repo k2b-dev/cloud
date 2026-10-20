@@ -1,9 +1,9 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
-import { requestContactDirectory } from "../../../../contact-directory-settings";
 import type { MailRequestContext } from "../../../../service";
 import { loadMailWorkflowsWorkspace } from "../../../../service/automation-workspace";
+import { requestContactDirectory } from "../../../../service/contact-directory";
 import MailWorkflowsPage from "../../../MailWorkflowsPage.island";
 import { mailPageMessages } from "../../../pages-messages";
 import { projectAutomationWorkspace, resolveSsrMailboxId } from "../../../ssr-public-boundary";
@@ -25,6 +25,7 @@ export default ssr<AuthContext>(async (c) => {
   const result = await loadMailWorkflowsWorkspace(context, mailboxId);
   if (!result.ok) return ssr.error(c, result.error.status);
   const data = await projectAutomationWorkspace(result.data);
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
@@ -39,12 +40,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.breadcrumbWorkflows },
       ]}
     >
-      <MailWorkflowsPage
-        data={data}
-        currentUserEmail={user.mail}
-        contactDirectory={requestContactDirectory(c)}
-        openNew={c.req.query("new") === "1"}
-      />
+      <MailWorkflowsPage data={data} currentUserEmail={user.mail} contactDirectory={directory} openNew={c.req.query("new") === "1"} />
     </Layout>
   );
 });

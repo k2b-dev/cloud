@@ -64,7 +64,7 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
             />
           </SettingsModal.Tab>
           <SettingsModal.Tab id="features" title={t().viewBehavior} icon="ti ti-toggle-right" description={t().viewBehaviorDescription}>
-            <FeaturesSection notebook={notebook()} isAdmin={props.isAdmin} onNotebookChange={setNotebook} />
+            <FeaturesSection notebook={notebook()} isAdmin={props.isAdmin} onNotebookChange={setNotebook} host={props.host} />
           </SettingsModal.Tab>
         </SettingsModal.Group>
 

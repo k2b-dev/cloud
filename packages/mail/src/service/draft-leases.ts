@@ -3,7 +3,13 @@ import { accounts } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Lock } from "@k2b/sync";
 import { sql } from "bun";
-import type { AcquiredDraftLease, DraftLease, DraftLeaseHolder } from "../contracts";
+import {
+  type AcquiredDraftLease,
+  DRAFT_LEASE_ERROR_CODES,
+  type DraftLease,
+  type DraftLeaseErrorCode,
+  type DraftLeaseHolder,
+} from "../contracts";
 import { requireDraftAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { mailLive } from "./live";
@@ -15,6 +21,8 @@ export const DRAFT_LEASE_HEARTBEAT_INTERVAL_MS = 10_000;
 type DraftLeaseEntry = {
   holder: DraftLeaseHolder;
   token: string;
+  /** Chosen by one editor instance so a retried acquire whose answer was lost gets its own lease back. */
+  editorId?: string;
   lock: { resource: string; ownerToken: string; fence: string; expiresAt: string };
   acquiredAt: number;
 };
@@ -44,11 +52,11 @@ const stateMutex = lazySync((sync) =>
   }),
 );
 
-const conflict = (message: string): Result<never> => fail({ code: "CONFLICT", message, status: 409 });
+const leaseError = (code: DraftLeaseErrorCode, message: string): Result<never> => fail({ code, message, status: 409 });
 
 const withLeaseState = async <T>(draftId: string, operation: () => Promise<Result<T>>): Promise<Result<T>> => {
   const result = await stateMutex().withLock({ resource: draftId, ttlMs: DRAFT_LEASE_STATE_TTL_MS }, operation);
-  return result ?? conflict("Draft lease state is being updated; retry the request");
+  return result ?? leaseError(DRAFT_LEASE_ERROR_CODES.BUSY, "Draft lease state is being updated; retry the request");
 };
 
 const holderFromContext = (context: MailRequestContext): DraftLeaseHolder => {
@@ -166,6 +174,7 @@ export const acquireDraftLease = async (params: {
   mailboxId: string;
   draftId: string;
   takeover?: boolean;
+  editorId?: string;
 }): Promise<Result<AcquiredDraftLease>> => {
   const holder = holderFromContext(params.context);
   const draft = await resolveAuthorizedDraft({ ...params, permission: "write" });
@@ -173,8 +182,13 @@ export const acquireDraftLease = async (params: {
   return withLeaseState(draft.data, async () => {
     const current = await currentValidEntry(params.mailboxId, draft.data);
     if (current) {
+      // Only the same holder and the same editor instance get the token back; another tab still has to ask.
+      if (params.editorId && current.value.editorId === params.editorId && sameHolder(current.value.holder, holder)) {
+        return ok({ ...mapLease(current), token: current.value.token });
+      }
       if (!params.takeover) {
-        return conflict(
+        return leaseError(
+          DRAFT_LEASE_ERROR_CODES.HELD,
           sameHolder(current.value.holder, holder)
             ? "This draft is already being edited in another session"
             : `This draft is being edited by ${current.value.holder.displayName}`,
@@ -184,7 +198,7 @@ export const acquireDraftLease = async (params: {
     }
 
     const lock = await leaseMutex().acquire({ resource: draft.data, ttlMs: DRAFT_LEASE_TTL_MS });
-    if (!lock) return conflict("Another collaborator acquired the draft lease");
+    if (!lock) return leaseError(DRAFT_LEASE_ERROR_CODES.BUSY, "Another collaborator acquired the draft lease");
     const token = crypto.randomUUID();
     const acquiredAt = Date.now();
     let stored = false;
@@ -192,7 +206,7 @@ export const acquireDraftLease = async (params: {
       const entry = await leaseStore().upsert({
         tenantId: draft.data,
         key: "lease",
-        value: { holder, token, lock: storeLock(lock), acquiredAt },
+        value: { holder, token, ...(params.editorId ? { editorId: params.editorId } : {}), lock: storeLock(lock), acquiredAt },
       });
       stored = true;
       if (current) {
@@ -244,7 +258,7 @@ export const requireDraftLeaseAvailable = async (params: {
       const current = await currentValidEntry(params.mailboxId, params.draftId);
       if (!current || sameHolder(current.value.holder, holder)) return ok();
       return fail({
-        code: "DRAFT_LEASE_HELD",
+        code: DRAFT_LEASE_ERROR_CODES.HELD,
         message: `This draft is being edited by ${current.value.holder.displayName}`,
         status: 409 as const,
       });
@@ -271,7 +285,7 @@ export const withOwnedDraftLease = async <T>(params: {
   const holder = holderFromContext(params.context);
   return withLeaseState(draft.data, async () => {
     const lease = await ownedEntry(draft.data, holder, params.token);
-    if (!lease) return conflict("Draft lease is no longer owned by this session");
+    if (!lease) return leaseError(DRAFT_LEASE_ERROR_CODES.NOT_OWNED, "Draft lease is no longer owned by this session");
     return params.operation();
   });
 };
@@ -287,11 +301,11 @@ export const heartbeatDraftLease = async (params: {
   const holder = holderFromContext(params.context);
   return withLeaseState(draft.data, async () => {
     const lease = await ownedEntry(draft.data, holder, params.token);
-    if (!lease) return conflict("Draft lease is no longer owned by this session");
+    if (!lease) return leaseError(DRAFT_LEASE_ERROR_CODES.NOT_OWNED, "Draft lease is no longer owned by this session");
     const lock = restoreLock(lease.lock);
     if (!(await leaseMutex().extend(lock, { ttlMs: DRAFT_LEASE_TTL_MS }))) {
       await leaseStore().delete({ tenantId: draft.data, key: "lease" });
-      return conflict("Draft lease expired");
+      return leaseError(DRAFT_LEASE_ERROR_CODES.NOT_OWNED, "Draft lease expired");
     }
     lease.lock = storeLock(lock);
     const entry = await leaseStore().upsert({ tenantId: draft.data, key: "lease", value: lease });
@@ -310,7 +324,7 @@ export const releaseDraftLease = async (params: {
   const holder = holderFromContext(params.context);
   return withLeaseState(draft.data, async () => {
     const lease = await ownedEntry(draft.data, holder, params.token);
-    if (!lease) return conflict("Draft lease is no longer owned by this session");
+    if (!lease) return leaseError(DRAFT_LEASE_ERROR_CODES.NOT_OWNED, "Draft lease is no longer owned by this session");
     await removeEntry(draft.data, lease);
     return ok();
   });

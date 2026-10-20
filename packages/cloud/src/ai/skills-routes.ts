@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { localizedAppName } from "../ssr/runtime";
 import { aiProjects } from "./projects";
 import {
@@ -63,6 +64,8 @@ type AiSkillsRouteDependencies = {
 
 const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
   new Hono<AuthContext>()
+    // The list combines skills from separate grants; the writer of one can rename it next to another skill's text.
+    .use("*", noTransform())
     .onError((error, c) => {
       if (error instanceof AiSkillAppForbiddenError) return respond(c, fail(err.forbidden(error.message)));
       if (error instanceof HTTPException) return error.getResponse();

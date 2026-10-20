@@ -104,7 +104,7 @@ export default ssr<AuthContext>(async (c) => {
                       class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                         client.isPublic
                           ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                          : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                          : "bg-[var(--ui-surface-muted)] text-secondary"
                       }`}
                     >
                       {client.isPublic ? t.public : t.confidential}

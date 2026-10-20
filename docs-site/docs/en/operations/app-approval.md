@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-10-18
+updated: 2026-10-20
 ---
 
 # Integrate an authenticator website
@@ -44,7 +44,10 @@ copy its pairing link into the authenticator, or choose **Open app on this
 device**. All three paths transfer the Cloud URL and the same short-lived
 pairing secret. Keep the Cloud page open, compare the six-digit codes shown
 in Cloud and the authenticator, then explicitly confirm that they match.
-Leave the authenticator open until it confirms completion.
+If this account already has an active paired device on this Cloud, open Cloud
+Login on that device and approve the new pairing. The first device pairs as
+soon as the codes are confirmed. Leave the new authenticator open until it
+confirms completion.
 
 Administrators with assisted pairing enabled start from **Accounts → Users →
 the user → Pair sign-in app**. The pairing page names the target account and
@@ -60,7 +63,9 @@ Pairing reloads retain only the pairing ID and expiry in tab-scoped session
 storage, scoped to the initiating and target users. No pairing secret or
 transfer link is stored. A pairing already received by the app can be resumed;
 otherwise cancel it and start again. Closing the page does not cancel the
-server request; unconfirmed pairings expire after five minutes.
+server request; unconfirmed pairings expire after five minutes. A request for approval gives
+the paired device five minutes to decide and extends the pairing to cover that
+time.
 
 Use the public browser SDK for an independent PWA:
 
@@ -177,7 +182,11 @@ extra fields and private JWK material are rejected.
    explicitly confirms through `POST /manage/pairings/confirm` with
    `{pairingId, comparison}`. Only the same initiating user **and session family**
    can confirm. Assisted pairing rechecks admin authority and the pairing
-   setting. A claim alone creates no usable device.
+   setting. The response is `{deviceId, approval}`. `approval` is `null` for the
+   first device and administrator-assisted pairing. For a further device it is
+   `{state:"pending", expiresAt}`: a paired active device of the same account
+   and Cloud must approve before enrollment. Reconfirming while pending returns
+   the same approval. A claim alone creates no usable device.
 5. The authenticator polls `POST /pairings/result` with `{pairingId, secret, publicKey}`
    until `state` is `confirmed`. The response includes `deviceId` and, while
    claimed, `comparison` so a lost claim response can be recovered. Discard the
@@ -192,6 +201,93 @@ revocation instead. Enrollment creates an audit entry and a durable user
 notification, including whether an administrator assisted. Email is a required
 delivery channel; failures remain visible in notification operations. Delivery
 failure does not roll back enrollment.
+
+### Approve device changes
+
+`GET /info` lists `"device-changes"` in `features`. A supporting authenticator
+asks for these requests with the signed command
+`{operation:"inbox", accept:["device-changes"]}`. The response adds `changes`
+and `moreChanges` to the existing `{logins, actions, moreActions, pollAfterSeconds}` inbox.
+Without `accept`, the signing bytes and JSON keys keep their original form.
+The SDK exposes `client.deviceChanges` and
+`client.inbox(device, signal, {accept:["device-changes"]})`; it sends only
+accepted features advertised by the Cloud. `client.pairingResult` lets the
+server apply the extended deadline even after the original link expires;
+claiming still requires an unexpired link.
+
+`changes` contains at most five pending requests, oldest first. Each has
+`{changeId, kind, device:{id,name}, endSessions, createdAt, expiresAt}`. `kind`
+is `pair` or `revoke`. Names are single-line plain text, at most 80 Unicode
+code points; after normalization they may be empty. Pairing always has
+`endSessions:false`. A request is shown and can be decided only while the
+browser session that started it remains active. The 8 KiB inbox budget keeps
+every login. It trims Action summaries first and then the newest device
+changes; a trimmed change stays pending and appears once the inbox has room.
+`moreChanges` counts these omitted changes (0–5) and is present exactly when
+`changes` is present. Do not treat an absent change as decided while
+`moreChanges` is positive.
+
+After the person reviews the request, call
+`client.decideChange(device, change, "approve" | "deny", signal)` or send:
+
+```json
+{"operation":"change","changeId":"<UUID>","kind":"pair","targetId":"<device UUID>","endSessions":false,"decision":"approve"}
+```
+
+The signed command binds the request ID, kind, target device ID, session
+choice and decision exactly as shown. It returns `{state:"approved"}` or
+`{state:"denied"}`. Any active paired device of that account on this Cloud
+whose latest inbox opted in to `device-changes` can decide; any other device
+gets 409. The device being removed can approve its own removal; its `deny`
+returns 409 and leaves the request pending for the other devices. A changed,
+expired, cancelled or already decided request returns 409. Approval enrolls or revokes the device;
+denial and expiry leave it unchanged. Enrollment uses the same audit and
+required email notification path as the first pairing.
+
+The initiating browser polls `POST /manage/pairings/status` with
+`{pairingId}`. Its response adds `approval`, either `null` or
+`{state,expiresAt}`. States are `pending`, `approved`, `denied`, `cancelled`
+and `expired`. While approval is pending, the pairing remains `claimed` for
+both the browser and `/pairings/result`. Approval makes it `confirmed`;
+denial makes it `cancelled`. The browser can read a pairing's approval status for one minute after expiry,
+including `expired` for an undecided request. The new device can also read a
+confirmed or cancelled result during that minute. Nothing can be approved
+after expiry.
+Cancelling the pairing also cancels its pending device change.
+
+For a removal, the browser polls `POST /manage/device-changes/status` with
+`{changeId}` and receives `{changeId,state,expiresAt}`. A decided or expired
+request stays readable for one minute after expiry. A reload resumes the saved
+reference during that minute and reads Cloud's result. After that the route
+answers 404, and the result is unknown to the browser, so Cloud's own dialog
+says so and offers to check again. After a lost answer it
+sends `{deviceId}` instead and gets this session's newest removal of that
+device, or 404. That 404 does not prove that no request exists: a send that
+Cloud still holds can commit later. Cloud's own dialog keeps the saved device
+reference until it expires and looks again on the next reload. Sending the same removal again from the same session returns
+the pending request instead of a second one; a changed `endSessions` choice
+replaces it. It can cancel a pending request
+through `POST /manage/device-changes/cancel` with the same body (204).
+Both routes require the requesting account and session family; another session
+of the same account receives 404. They do not require a recent sign-in. Once a
+pairing has a device-change request, its initiating browser can also follow or
+cancel it without another recent-sign-in check. Starting and confirming a
+pairing still require recent authentication.
+
+Older authenticator apps do not opt in and cannot show these requests, so a
+browser's pending request expires unless a supporting paired app decides it.
+People without a usable paired device need the administrator path: revoke the
+old device through Accounts or `cld accounts users devices revoke`, then use
+administrator-assisted pairing when enabled. Operators can configure that
+path through the existing `cld admin app-sign-in config` commands described in
+[Set up app sign-in](/en/docs/accounts/app-sign-in#configure-from-the-cli).
+Administrator-assisted pairing and administrator revocation remain immediate.
+
+Device changes record `auth.app.device_change.request`,
+`auth.app.device_change.approve` or `auth.app.device_change.deny`. Each entry
+targets the device and includes `changeId`, `kind` and the session choice as
+`endSignIns`; approval also records the number of ended sessions. Enrollment and revocation retain
+their `auth.app.device.enroll` and `auth.app.device.revoke` entries.
 
 ### Copy a pairing link without a camera
 
@@ -265,7 +361,7 @@ The authenticator sends signed commands to `POST /device`:
 
 | Command | Result |
 | --- | --- |
-| `{operation:"pending"}` | `{requests, pollAfterSeconds}` for this device's account and Cloud only. Each request contains `requestId`, `challenge`, `comparison`, `createdAt`, `expiresAt`. |
+| `{operation:"pending", accept?: ["login-context"]}` | `{requests, pollAfterSeconds}` for this device's account and Cloud only. Each request contains `requestId`, `challenge`, `comparison`, `createdAt`, `expiresAt`. Signed opt-in adds `context` as described below. |
 | `{operation:"decide", requestId, challenge, comparison, decision:"approve"}` | `{state:"approved"}`. With `decision:"deny"`, returns `{state:"denied"}`. |
 | `{operation:"revoke"}` | `{state:"revoked"}` for the signing device only. |
 | `{operation:"push", token}` | `{state:"updated"}`. Stores the authenticator's opaque push token (43 URL-safe characters) for this device; a new token replaces the old one. Clouds without this command answer 400. |
@@ -296,6 +392,78 @@ after the previous one started. Once approved, call
 `POST /login/complete` with that body. Success is HTTP 204 with the normal
 HttpOnly Cloud session cookie, never a token in JSON. Completion is atomic and
 one-use. A lost response or failed session issuance requires a new login.
+
+## Read browser sign-in context
+
+Cloud announces `"login-context"` in `/info.features`. The SDK exposes this as
+`client.loginContext`. An app opts in only when it can show the context:
+
+```ts
+const pending = await client.pending(device, signal, { accept: ["login-context"] });
+const inbox = await client.inbox(device, signal, {
+  accept: ["terminal-logins", "login-context"],
+});
+```
+
+Both commands sign `accept`. The SDK filters the list against `/info.features`
+and omits the key when nothing matches. `APP_APPROVAL_PENDING_ACCEPT` contains
+only `login-context`; `terminal-logins` is inbox-only, so `pending` drops it
+from the list instead of failing. `APP_APPROVAL_ACCEPT`
+contains both. Without `login-context`, neither response includes a `context`
+key. Updating the SDK alone does not opt in.
+
+With opt-in, each browser sign-in carries this strict `AppLoginContext`:
+
+| Field | Meaning |
+| --- | --- |
+| `level` | `info`, `hint`, or `warn`, computed by Core. The app displays it and never derives its own. |
+| `browser` | `firefox`, `chrome`, `safari`, `edge`, `samsung`, `opera`, or `other`. |
+| `os` | `windows`, `macos`, `mac-or-ipad`, `ios`, `android`, `linux`, `chromeos`, or `other`. `mac-or-ipad` means the browser cannot distinguish the two. |
+| `country` | Uppercase ISO 3166-1 alpha-2 code, or `null` when unknown. |
+| `city`, `network` | Plain text, each at most 96 UTF-8 bytes, or `null`. `network` names the network operator; it never labels a VPN or data center. |
+| `history` | `null` during the installation's 14-day introduction phase. Cloud makes no known/new claim then. Otherwise the object below. |
+| `history.knownSince` | This browser's first successful sign-in for this account inside its current remembered period, or `null` if unknown. |
+| `history.newCountry` | Core has a country for the request, `geoip_since` is set, and this account has no successful sign-in from that country inside the 90-day window. |
+| `history.countriesSince` | `geoip_since` when less than 90 days ago, otherwise `null`. A shorter history can be shown as “since {date}”. |
+| `sameNetwork` | Optional literal `true`. The browser request and phone share the full IPv4 address or IPv6 /64. Absence makes no claim. |
+
+Dates use UTC ISO date-times. Browser recognition uses the browser cookie
+(S1); countries use successful sign-ins inside the last 90 days (S6).
+Core applies this level table:
+
+| Browser and country history | Level |
+| --- | --- |
+| Introduction phase | `info`, with `history: null` |
+| Known browser; country seen or no country/GeoIP | `info` |
+| Known browser; new country | `hint` |
+| New browser; country seen or no country/GeoIP | `hint` |
+| New browser; new country; account has no countries in the window | `hint` |
+| New browser; new country; account already has countries in the window | `warn` |
+
+Browser/OS descriptions (S2), network operator (S4), and the same-network hint
+(S5) never change the level. The shorter `countriesSince` window does not
+change it either. See [Sign-in locations](./sign-in-locations.md) for accuracy,
+address pseudonyms, storage, and retention.
+
+Terminal sign-ins never carry context. Push never carries it. The waiting
+browser's `/login/start`, `/login/status`, and `/login/complete` responses stay
+unchanged, and `/login/start` sets no cookie. Context is a snapshot of the
+start request; it is not recomputed while the phone polls.
+
+An opted-in browser request can lack context if it started before the upgrade
+or the response budget forced it out. Cloud first drops Actions from the end
+of the inbox and adds them to `moreActions`. If needed, it then drops context
+from the last login backwards. It never drops a login. `pending` uses the same
+context trim order. Both responses stay within 8 KiB. Keep `context` optional
+when you parse a response, and treat a missing context as no claim about the
+browser.
+
+| App and Cloud combination | Browser context behavior |
+| --- | --- |
+| Old app, old Cloud | Original signed commands and response bytes. |
+| Old app, new Cloud | No opt-in; original response bytes, with no `context` key. |
+| New app, old Cloud | SDK omits unsupported `accept`; original command body and signing bytes. |
+| New app, new Cloud | Signed `login-context` opt-in returns browser context. |
 
 ## Approve a terminal sign-in
 
@@ -357,7 +525,11 @@ is active and belongs to the account, and that the account's authentication
 epoch still matches. As with browser completion, app approval must still be
 enabled, and the request and device must belong to the current issuer.
 Revocation, signing out everywhere, disabling app approval or changing the
-issuer between approval and issuance prevents tokens. Approved terminal evidence
+issuer between approval and issuance prevents tokens. Approve and Deny both
+record the request's authentication epoch on the linked OAuth grant. After the
+account is signed out everywhere, an earlier approval cannot be redeemed, and
+the terminal receives `invalid_grant`; a denial still reaches it as
+`access_denied`. Approved terminal evidence
 stays until issuance consumes it or the linked OAuth authorization row is deleted,
 even when that row has expired. Existing browser approvals of OAuth device grants
 keep their current behavior.
@@ -392,10 +564,11 @@ Send the following signed commands to `POST /device`:
 
 | Command | Result |
 | --- | --- |
-| `{operation:"inbox", accept?: ["terminal-logins"]}` | `{logins, actions, moreActions, pollAfterSeconds}`. Without `accept`, `logins` has the same fields as the `pending` list. Opt-in adds terminal consent fields; see below. `actions` contains up to five newest open Action summaries of the device's account. `moreActions` counts other open requests. |
+| `{operation:"inbox", accept?: string[]}` | `{logins, actions, moreActions, pollAfterSeconds}`. Without `accept`, `logins` has the same fields as the `pending` list. Opt-in adds terminal consent or browser context fields as requested. `device-changes` adds `changes` and `moreChanges`; see [Approve device changes](#approve-device-changes). `actions` contains up to five newest open Action summaries of the device's account. `moreActions` counts other open requests. |
 | `{operation:"action", actionId}` | The full device view of one open request. |
 | `{operation:"act", actionId, digest, decision:"approve"}` | `{state:"approved"}`. With `decision:"deny"`, returns `{state:"denied"}`. |
 
+`accept` lists any of `terminal-logins`, `login-context` and `device-changes`.
 `inbox` without `accept` has no signature appendix. With `accept`, append
 the capability list as one nested array. For `action`, append `[actionId]` to the
 device proof array. For `act`, append `[actionId, digest, decision]`.
@@ -434,16 +607,57 @@ remembers an approval.
 | Detail label (`labelChars`) | 40 |
 | Detail value (`valueChars`) | 300 |
 
+Cloud derives the device text from the same Action question card as the chat
+and approvals page. `sentence` is the plain question (up to 280 characters),
+`message` is its reason line (up to 500), and `details` contains up to eight
+preview rows. People include their addresses, such as
+`Lea Berg <lea.berg@example.com>`.
+
+The row labels follow the question's language. The main labels are:
+
+| Preview | German / English labels |
+| --- | --- |
+| Message | Von / From, An / To, Cc, Bcc, Betreff / Subject, Senden am / Send at, Warnung / Warning, Anhänge / Attachments, Text |
+| Event | Titel / Title, Wann / When, Bis / Until, Wo / Where, Mit / With, Wiederholung / Repeats, Text |
+| Task | Titel / Title, Ort / Place, Fällig / Due, Zuständig / Assignees, Status, Checkliste / Checklist, Tags, Text |
+| File | Name, Ordner / Folder, Größe / Size, Ziel / To |
+| Page | Titel / Title, Ort / Place, Text, Neu / Added, Entfernt / Removed |
+| Rule | Startet / Starts, Text, Darf / May, Hinweis / Note when the rule cannot see the chat |
+| Fields | The app's labels; previous values add `(vorher)` / `(before)` |
+
+Rows appear only when the preview supplies their value. A title or file name
+that the question already says gets no row of its own. Consequences follow the preview as Folge / Also,
+Neu / Added, or Entfernt / Removed. Rule permission changes use
+Darf (neu) / May (added) and Darf (entfernt) / May (removed).
+Legacy reviews keep their literal question and detail rows; Markdown becomes
+one Text row. Without a review, Cloud asks the first sentence line as a
+question, removes its leading registry app name, and uses later
+`Label: value` lines as rows. Its reason is `app_asks`. A legacy row without
+a label gets the label Hinweis / Note, because every device detail needs one.
+
 Cloud replaces control characters and line or paragraph separators with a
 space, removes format characters (including bidi overrides), collapses
-whitespace, and trims every text. It removes a leading registry app name
-from the first sentence line when text follows it. A valid review supplies
-its message and ordered details. Without a review, later `Label: value`
-lines become details and the other lines become the message.
-Cuts end in `…` within the field limit and set `truncated: true`.
+whitespace, and trims every text. Block rows become one line.
+Cuts end in `…` within the field limit and set `truncated: true`. Omitted
+rows, an incomplete preview, additional recipients or attachments also set it.
 If the full JSON still exceeds 8 KiB in UTF-8, Cloud drops details from the
-end, then shortens the message. Show that the request was shortened and that
-the complete request is available in Cloud.
+end, then shortens the message.
+
+A question whose review names no reason takes it from the Action's declared
+policy, as the approvals page does. Dates and times stay typed rows, an event's
+end too, so the device shows them in its own time zone. A truncated question
+is browser-only when its reason or the Action's declared policy is `sends`,
+even when the call names another reason. An incomplete question also stays in
+the browser when Cloud cannot read the declared policy, including when the
+app is not registered. A browser-only question is absent from
+the device inbox and detail endpoint and triggers no device push. It still
+counts in `moreActions`. The person decides in Cloud, where the full message
+is visible. To fill the inbox past such questions, one inbox call reads at
+most the newest 100 open requests. Other truncated questions remain available on the device; show
+that their complete content is available in Cloud.
+
+The device protocol and `cloud-action-v1` digest do not change. Existing
+authenticators need no release for this mapping.
 
 The digest is unpadded base64url of SHA-256 over UTF-8 of this exact JSON
 array, without extra whitespace:
@@ -475,7 +689,10 @@ A device with a push token gets at most one sign-in wake-up in 30 seconds
 while its previously woken request is pending and unexpired. A new sign-in
 can wake it sooner after that request is decided or expires. Browser and
 terminal requests share this rule. Terminal requests wake only devices whose
-latest inbox opted in to `terminal-logins`. Cloud Login allows 30 sign-in
+latest inbox opted in to `terminal-logins`, and device-change requests only
+devices whose latest inbox opted in to `device-changes`. A withdrawn or
+replaced device-change request still holds the 30-second window; only a
+decision or its expiry frees it early. Cloud Login allows 30 sign-in
 wake-ups per token per five minutes.
 
 After the login request commits, Core claims eligible devices atomically and
@@ -537,22 +754,30 @@ every call, including polls. Times are Unix seconds. Sign:
 ["cloud-app-approval-v1","device",issuer,deviceId,jti,issuedAt,expiresAt,operation]
 ```
 
+For `change`, append `changeId,kind,targetId,endSessions,decision` in that order:
+`[...,"change",changeId,kind,targetId,endSessions,decision]`.
+
 For `decide`, append `requestId, challenge, comparison, decision` to the array.
 For `push`, append `token`.
 For `action`, append `actionId`; for `act`, append `actionId, digest, decision`.
-For `inbox` with `accept`, append the whole list as **one nested array**:
+For `pending` or `inbox` with `accept`, append the whole list as **one nested array**:
 
 ```text
 ["cloud-app-approval-v1","device",issuer,deviceId,jti,issuedAt,expiresAt,"inbox",["terminal-logins"]]
 ```
 
+For example, the context-only pending proof ends with
+`"pending",["login-context"]]`.
 Without `accept`, the signing bytes stay unchanged and there is no appendix.
 `accept` must be non-empty and unique, with at most eight entries from
-`APP_APPROVAL_ACCEPT`. Unknown entries are rejected.
+`APP_APPROVAL_ACCEPT` (`terminal-logins`, `login-context` and `device-changes`) for `inbox`.
+For `pending`, use only `APP_APPROVAL_PENDING_ACCEPT` (`login-context`).
+Unknown entries are rejected.
 All operation parameters are covered. Public `@k2b/cloud/contracts`
 exports include `appDeviceProofMessage`, `appPairingProofMessage`, request/response schemas
 and `APP_APPROVAL_PROTOCOL`, `APP_APPROVAL_PATH`, `APP_APPROVAL_LIMITS`,
-`APP_APPROVAL_FEATURES`, `APP_APPROVAL_ACCEPT`, `AppTerminalLogin`, `APP_ACTION_LIMITS`, and the Action schemas and
+`APP_APPROVAL_FEATURES`, `APP_APPROVAL_ACCEPT`, `APP_APPROVAL_PENDING_ACCEPT`,
+`AppLoginContextSchema`, `AppLoginContext`, `AppTerminalLogin`, `APP_ACTION_LIMITS`, and the Action schemas and
 digest helpers. These helpers hold no credentials and make no network calls.
 
 The compile-checked signing example is
@@ -615,9 +840,17 @@ checks both when an approval is used, before the Action runs.
 including revoked ones, as `{items,nextCursor}`. Items contain
 `id,name,createdAt,lastUsedAt,revokedAt,assisted`.
 `POST /manage/devices/update` accepts either
-`{operation:"rename",deviceId,name}` or `{operation:"revoke",deviceId}`.
-Both require recent authentication and ownership. Management remains available
-when app approval is disabled.
+`{operation:"rename",deviceId,name}` (204) or
+`{operation:"revoke",deviceId,endSessions}` (200). `endSessions` defaults to
+`true`. Removal returns `{state:"pending",changeId,expiresAt}` until a paired
+device approves it; the target stays active while waiting. An already revoked
+device returns `{state:"revoked"}` without another request. With `endSessions`,
+approval also ends the browser sign-ins approved by that device, except the
+requesting session. Other devices' sign-ins and sessions with no device link
+stay signed in. Both mutations require recent authentication and ownership.
+Listing and renaming remain available when app approval is disabled or its
+setup is incomplete. Removal then answers `503` with `UNAVAILABLE`, because no
+paired device can approve it; an administrator revokes the device instead.
 
 ### Revoke a device for someone else
 
@@ -660,9 +893,17 @@ To replace a lost device, revoke it and then pair a new one with
 ### What revocation ends
 
 Revocation before completion prevents even an approved request from being used.
-Completion's database commit is the authorization boundary: later revocation
-does not cancel issuance already authorized or existing sessions. Those
-sessions end when they expire or when the account is signed out everywhere.
+Login completion records the approving device on the new browser session
+family and checks that the device is still active at issuance. Browser removal
+can end those linked sessions on approval, except the requesting session.
+Families issued before this update have no device link and stay signed in.
+Administrator revocation and a device's own signed `revoke` command leave
+existing sessions signed in until expiry or sign-out everywhere.
+Signing the account out everywhere or removing the approving device also ends
+an approval that completion consumed but has not yet turned into a session:
+completion answers HTTP 409 with code `CONFLICT`, and the browser starts a new
+login. Signing out everywhere also ends existing sessions and OAuth sign-ins,
+including user access tokens at their next request.
 
 When Cloud signs an account out everywhere, it also revokes every paired
 device of that account, including devices paired while the Cloud used another

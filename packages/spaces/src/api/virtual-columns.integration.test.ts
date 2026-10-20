@@ -1,5 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -75,7 +76,11 @@ suite("Spaces automatic Kanban columns", () => {
         await grant(space!.id, { userId: id }, permission);
         const loaded = await accounts.users.get({ id });
         if (!loaded) throw new Error("Missing fixture user");
-        const token = await serviceAccountCredentials.createUserApiToken({ user: loaded, name: `${name} key` });
+        const token = await serviceAccountCredentials.createUserApiToken({
+          user: loaded,
+          browserSignIn: await createTestBrowserSignIn(loaded.id),
+          name: `${name} key`,
+        });
         if (!token.ok) throw new Error(token.error.message);
         return caller(token.data.token);
       };
@@ -222,7 +227,7 @@ suite("Spaces automatic Kanban columns", () => {
 
   test("a reorder or switch that races a switch-off never brings the automatic column back", async () => {
     const [space] = await sql<{ id: string }[]>`
-      INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, ${`Race ${crypto.randomUUID().slice(0, 8)}`}) RETURNING id`;
+      INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, ${`Race ${crypto.randomUUID()}`}) RETURNING id`;
     const spaceId = space!.id;
     try {
       const statuses: string[] = [];

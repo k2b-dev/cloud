@@ -30,7 +30,7 @@ Der Filterdialog kann diese Felder durchsuchen:
 
 Wähle **Mindestens eine Bedingung**, damit mindestens ein ausgefülltes Feld passen muss. Wähle **Alle Bedingungen**, damit jedes ausgefüllte Feld passen muss. Suchfilter bleiben in der Seiten-URL. Ein Neuladen oder eine geteilte URL behält deshalb das aktuelle Ergebnis.
 
-Eine Suche merkt sich die Ansicht, in der du sie gestartet hast, etwa **Handlungsbedarf** oder einen Ordner. Um die Suche zu beenden, wähle **Leeren** im Suchfeld, lösche den Text, drücke Esc oder wähle **Suche zurücksetzen**. Mail kehrt dann zu dieser Ansicht zurück und öffnet die Unterhaltung, die vorher offen war. Die URL behält die Ausgangsansicht. Ein Neuladen oder Zurück behält sie deshalb auch.
+Eine Suche merkt sich die Ansicht, in der du sie gestartet hast, etwa **Handlungsbedarf** oder einen Ordner. Um die Suche zu beenden, wähle **Leeren** im Suchfeld, lösche den Text, drücke Esc oder entferne den Chip **Suche** im Kopfbereich. **Zurücksetzen** entfernt ebenfalls die Filter. Mail kehrt dann zu dieser Ansicht zurück und öffnet die Unterhaltung, die vorher offen war. Die URL behält die Ausgangsansicht. Ein Neuladen oder Zurück behält sie deshalb auch.
 
 Anbieter-Schlüsselwörter sind erweiterte synchronisierte Metadaten, kein normales System zum Kennzeichnen. Vorhandene Such-URLs mit Schlüsselwörtern funktionieren weiter, und du kannst sie weiter bearbeiten. Neue Filter nutzen für Kennzeichnungen, die Menschen lesen, lokale Tags.
 
@@ -42,20 +42,20 @@ Passt erkannter Anhangstext, nennt das Ergebnis den Anhang und zeigt einen kurze
 
 ## Nachverfolgung, Zuweisung und Ordner gezielt nutzen {icon="layout-list"}
 
-Die eingebauten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes geschieht. **Zuweisung** zeigt, wer zuständig ist. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
+Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zuständig ist. Unter **Mehr** findest du Später, Erledigt, Letzte Aktivität, Aufbewahrt und gespeicherte Ansichten. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
 
-| Abschnitt | Ansicht | Inhalt |
+| Ort | Ansicht | Inhalt |
 | --- | --- | --- |
-| Nachverfolgung | Handlungsbedarf | Unterhaltungen, die das Team prüfen oder bearbeiten muss |
-| Nachverfolgung | Wartet auf Antwort | Unterhaltungen, bei denen eine bestätigte Antwort des Teams auf eine andere Person wartet. Neue eingehende E-Mails verschieben sie zu Handlungsbedarf. |
-| Nachverfolgung | Später | Unterhaltungen, die bis zum gewählten Zeitpunkt ausgeblendet sind. Zu diesem Zeitpunkt erscheinen sie mit demselben nächsten Schritt wieder. Neue eingehende E-Mails zeigen sie sofort. |
-| Nachverfolgung | Erledigt | Als erledigt markierte Unterhaltungen |
-| Zuweisung | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
-| Zuweisung | Nicht zugewiesen | Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann, zum Beispiel weil die zugewiesenen Personen keinen Zugriff mehr haben |
-| E-Mail / Mehr | Alle E-Mails | E-Mails aus allen Anbieterordnern außer Papierkorb, Spam und Ordnern, deren E-Mails im Ordner bleiben |
-| Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
-| Mehr | Aufbewahrt | Vor dem Löschen geschützte Unterhaltungen aus jedem Ordner |
-| E-Mail | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
+| Kopfbereich | Handlungsbedarf | Unterhaltungen, die das Team prüfen oder bearbeiten muss |
+| Kopfbereich | Wartet auf Antwort | Unterhaltungen, bei denen eine bestätigte Antwort des Teams auf eine andere Person wartet. Neue eingehende E-Mails verschieben sie zu Handlungsbedarf. |
+| Kopfbereich → Mehr | Später | Unterhaltungen, die bis zum gewählten Zeitpunkt ausgeblendet sind. Zu diesem Zeitpunkt erscheinen sie mit demselben nächsten Schritt wieder. Neue eingehende E-Mails zeigen sie sofort. |
+| Kopfbereich → Mehr | Erledigt | Als erledigt markierte Unterhaltungen |
+| Kopfbereich | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
+| Kopfbereich | Nicht zugewiesen | Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann, zum Beispiel weil die zugewiesenen Personen keinen Zugriff mehr haben |
+| Kopfbereich | Alle | E-Mails aus allen Anbieterordnern außer Papierkorb, Spam und Ordnern, deren E-Mails im Ordner bleiben |
+| Kopfbereich → Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
+| Kopfbereich → Mehr | Aufbewahrt | Vor dem Löschen geschützte Unterhaltungen aus jedem Ordner |
+| Seitenleiste → geöffnetes Postfach | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
 
 Anbieterordner sind eine andere Ebene. Verschiebst du eine Unterhaltung in Archiv, Papierkorb, Spam oder einen anderen Anbieterordner, verschiebt sich auch die E-Mail beim Anbieter. Andere Programme können das zeigen. Markierst du eine Unterhaltung als **Erledigt**, ändert sich nur der Status der Nachverfolgung in Cloud. Die E-Mail wird weder archiviert noch verschoben oder als gelesen markiert. Der Posteingang beim Anbieter bleibt unverändert.
 
@@ -75,7 +75,7 @@ Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder e
 
 So setzt Mail den nächsten Schritt:
 
-- Neue eingehende E-Mails setzen die Unterhaltung auf **Handlungsbedarf** und entfernen sie aus **Später**. Wenn du eine Unterhaltung als **Erledigt** markierst oder eine Zeit für **Später anzeigen** setzt, gilt das auch für die Nachrichten, die Mail noch lädt. Eine Automatisierung, die **Erledigt** oder **Wartet auf Antwort** setzt, gilt nur für die Nachricht, die sie gestartet hat. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**.
+- Neue eingehende E-Mails setzen die Unterhaltung auf **Handlungsbedarf** und entfernen sie aus **Später**, sobald Mail sie geladen hat oder das Laden endgültig aufgibt. Gibt Mail auf, zeigt der Lesebereich bei dieser Nachricht **Der Nachrichteninhalt konnte nicht synchronisiert werden**. Wenn du eine Unterhaltung als **Erledigt** markierst oder eine Zeit für **Später anzeigen** setzt, gilt das auch für die Nachrichten, die Mail noch lädt. Eine Automatisierung, die **Erledigt** oder **Wartet auf Antwort** setzt, gilt nur für die Nachricht, die sie gestartet hat. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**.
 - Eine menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, aber erst, wenn Mail die Zustellung bestätigt.
 - Eine neue Nachricht, die du in Cloud schreibst, beginnt eine Unterhaltung in **Wartet auf Antwort**. Das gilt auch für eine Nachricht, die Mail aus einem anderen E-Mail-Programm in deinem Ordner Gesendet findet.
 - E-Mails von deiner eigenen Adresse, die im Posteingang ankommen, beginnen in **Handlungsbedarf**. Ein Beispiel ist ein Kontaktformular, das im Namen deines Postfachs sendet.
@@ -133,7 +133,7 @@ Die Unterhaltungsdetails zeigen außerdem einen kleinen Abschnitt **Verwandte E-
 
 Öffnest du eine ungelesene Unterhaltung, markiert Mail sie als gelesen. Über **Weitere Unterhaltungsaktionen** markierst du sie wieder als ungelesen, fügst eine Fahne hinzu oder entfernst sie oder druckst die Unterhaltung. Eine Unterhaltung, die du als ungelesen markierst, bleibt in bereits geöffneten Tabs ungelesen, bis du ihre Zeile erneut öffnest. Eine Live-Aktualisierung allein markiert sie nicht als gelesen.
 
-Standardmäßig zeigt Mail die HTML-Fassung einer Nachricht und passt ihre Farben an den dunklen Modus an: Helle Hintergründe werden dunkel, Text bleibt lesbar und Bilder behalten ihre Originalfarben. Um eine einzelne Nachricht zu ändern, öffne ihre Aktionen und wähle **Als reinen Text anzeigen**, **Als HTML anzeigen** oder im dunklen Modus **Originalfarben anzeigen**. Um in diesem Browser einen festen Modus zu nutzen, wähle **Einstellungen → Lesen → Standardformat für Nachrichten**; **HTML mit Originalfarben** zeigt immer die Farben des Absenders.
+Standardmäßig zeigt Mail die HTML-Fassung einer Nachricht und passt ihre Farben an den dunklen Modus an: Helle Hintergründe werden dunkel, Text bleibt lesbar und Bilder behalten ihre Originalfarben. Um eine einzelne Nachricht zu ändern, öffne ihre Aktionen und wähle **Als reinen Text anzeigen**, **Als HTML anzeigen** oder im dunklen Modus **Originalfarben anzeigen**. Um in diesem Browser einen festen Modus zu nutzen, wähle **… → Einstellungen → Lesen → Standardformat für Nachrichten**; **HTML mit Originalfarben** zeigt immer die Farben des Absenders.
 
 HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-, Abstands- und Tabellenstilen. Skripte, Formulare, eingebettete Objekte, externe Stylesheets und andere aktive Inhalte werden entfernt. Externe Bilder bleiben zusätzlich blockiert, bis du sie lädst.
 
@@ -207,7 +207,7 @@ Bei älteren oder teilweise synchronisierten Nachrichten kann Mail den lesbaren 
 
 ## Mailinglisten verwalten {icon="news"}
 
-Mail erkennt Mailinglisten an den standardisierten Listenangaben in empfangenen Nachrichten. Alle, die das Postfach ansehen können, öffnen **Postfachwerkzeuge → Mailinglisten**. Die Seite zeigt jede erkannte Liste, ihr aktuelles Volumen, ihre neueste Nachricht und die Aktionen, die die Liste anbietet.
+Mail erkennt Mailinglisten an den standardisierten Listenangaben in empfangenen Nachrichten. Alle, die das Postfach ansehen können, öffnen **… → Mailinglisten**. Die Seite zeigt jede erkannte Liste, ihr aktuelles Volumen, ihre neueste Nachricht und die Aktionen, die die Liste anbietet.
 
 Welche Aktionen verfügbar sind, hängt von den Angaben des Absenders ab. Abmelde- und Aufräumaktionen brauchen Zugriff **Bearbeiten** oder **Verwalten**. Mit Zugriff **Ansehen** prüfst du Listen und folgst ihren Archiv- oder Schreiblinks.
 
@@ -228,7 +228,7 @@ Empfangene Anhänge bleiben bei der Nachricht, die sie gebracht hat. Wähle eine
 
 **Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einem Dialog. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, wird diese Überschrift zum Titel, darunter stehen Dateiname und Größe. Der Kopf des Dialogs enthält **Anhang herunterladen**, bei Text, CSV und JSON auch **Kopieren**. Auf dem Smartphone füllt die Vorschau den Bildschirm.
 
-Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link für einen Anhang. Mail zeigt die URL nur beim Erstellen des Links. Du kannst ihn mit einem Passwort, einem Ablaufzeitpunkt und einer Grenze für Download-Sitzungen schützen. Um vorhandene Links zu prüfen oder zu widerrufen, öffne **Postfachwerkzeuge → Freigabelinks**.
+Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link für einen Anhang. Mail zeigt die URL nur beim Erstellen des Links. Du kannst ihn mit einem Passwort, einem Ablaufzeitpunkt und einer Grenze für Download-Sitzungen schützen. Um vorhandene Links zu prüfen oder zu widerrufen, öffne **… → Freigabelinks**.
 
 ## Externe Bilder steuern {icon="photo-shield"}
 
@@ -240,7 +240,7 @@ Enthält eine Nachricht blockierte Bilder, wähle:
 - **Für diesen Absender immer laden**, um Bilder in künftigen Nachrichten genau dieser Adresse zu erlauben.
 - **Für diese Domain immer laden**, um Bilder von jeder Adresse dieser Domain zu erlauben. Nutze diese breitere Option nur für eine Domain, der du vertraust.
 
-Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **Postfachwerkzeuge → Externe Bilder**.
+Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **… → Externe Bilder**.
 
 Mail lädt erlaubte Bilder über seinen geschützten Bilddienst, dein Browser bekommt die Bildadresse also nie. Der externe Server kann trotzdem erfahren, dass jemand sein Bild angefordert hat. Lass Bilder bei unbekannten oder verdächtigen Absendern blockiert.
 
@@ -256,13 +256,13 @@ Mehr zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustelloptionen findest
 
 ## Wiederverwendbare Ansichten und lokale Tags erstellen {icon="layout-list"}
 
-Öffne **Einstellungen → Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zugewiesener Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt. Ein Filter für Unterhaltungen ohne zugewiesene Person funktioniert wie **Nicht zugewiesen**: Er findet auch Unterhaltungen, deren zugewiesene Personen sie nicht mehr bearbeiten können.
+Öffne **… → Einstellungen → Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zugewiesener Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt. Ein Filter für Unterhaltungen ohne zugewiesene Person funktioniert wie **Nicht zugewiesen**: Er findet auch Unterhaltungen, deren zugewiesene Personen sie nicht mehr bearbeiten können.
 
 - **Nur für mich** erstellt eine private Ansicht.
 - **Alle Personen mit Postfachzugriff** erstellt eine Postfachansicht und braucht Zugriff **Bearbeiten**.
 - Die Sichtbarkeit kannst du nach dem Erstellen nicht ändern. Erstelle eine neue Ansicht, wenn du eine andere Sichtbarkeit brauchst.
 
-Lokale Tags sind Kennzeichnungen im Postfach für Menschen, Suche und Automatisierungen. Wähle einen Tag unter **Tags** in der linken Navigation, um alle passenden Unterhaltungen zu öffnen. Lokale Tags sind keine IMAP-Ordner und keine Anbieter-Schlüsselwörter, und andere Programme zeigen sie nicht.
+Lokale Tags sind Kennzeichnungen im Postfach für Menschen, Suche und Automatisierungen. Wähle einen Tag über den Chip **Tag** im Kopfbereich, um alle passenden Unterhaltungen zu öffnen. Lokale Tags sind keine IMAP-Ordner und keine Anbieter-Schlüsselwörter, und andere Programme zeigen sie nicht.
 
 :::warning Ein gelöschter lokaler Tag verschwindet überall
 Mail entfernt einen gelöschten lokalen Tag aus jeder Unterhaltung im Postfach. Gespeicherte Ansichten und Suchlinks, die nach einem gelöschten Tag oder Ordner filtern, finden für diese Bedingung keine Unterhaltungen.

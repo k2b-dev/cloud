@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
-import { type AppTerminalLogins, appApproval, readAppApprovalConfig, toPgUuidArray } from "@k2b/cloud/services";
+import { type AppTerminalLogins, appApproval, oauthTokens, readAppApprovalConfig, toPgUuidArray } from "@k2b/cloud/services";
+import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
 import { redis, sql } from "bun";
@@ -17,6 +18,16 @@ import { migrate } from "./migrate";
 import oauthRoutes from "./oauth";
 import { oauth } from "./service/oauth";
 import { issueOAuthTokenBatch, OAuthAuthorityGrantRejectedError } from "./service/token-authority";
+
+const withFrozenTime = async (run: () => Promise<void>) => {
+  const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
+  setSystemTime(clock!.now);
+  try {
+    await run();
+  } finally {
+    setSystemTime();
+  }
+};
 
 const suite = suiteFor("database", "valkey", "nats");
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
@@ -162,6 +173,110 @@ const expectTokensEndBy = (tokens: Record<string, unknown>, endsAt: Date) => {
 };
 
 suite("OAuth device authorization grant", () => {
+  test("signing out everywhere ends device refresh and access tokens on the next request", () =>
+    withFrozenTime(async () => {
+      const who = await person();
+      const started = await startDevice({ scope: "openid offline_access" });
+      const [user] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${who.userId}::uuid`;
+      const authEpoch = Number(user!.auth_epoch);
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+      const issued = await poll(started.device_code);
+      expect(issued.status).toBe(200);
+      const accessToken = String(issued.body.access_token);
+      expect(jose.decodeJwt(accessToken).auth_epoch).toBe(authEpoch);
+      expect(await oauthTokens.verifyAccessToken(accessToken, ["cloud", "cloud-cli"])).toMatchObject({
+        kind: "user",
+        user: { id: who.userId },
+      });
+      expect((await oauthRoutes.request("/oauth/userinfo", { headers: { authorization: `Bearer ${accessToken}` } })).status).toBe(200);
+      await session.revokeAllForUser(who.userId);
+      const refresh = await oauthRoutes.request(
+        "/oauth/token",
+        form({
+          grant_type: "refresh_token",
+          client_id: "cloud-cli",
+          refresh_token: String(issued.body.refresh_token),
+        }),
+      );
+      expect(refresh.status).toBe(400);
+      expect(await refresh.json()).toMatchObject({ error: "invalid_grant" });
+      expect(await oauthTokens.verifyAccessToken(accessToken, ["cloud", "cloud-cli"])).toBeNull();
+      expect((await oauthRoutes.request("/oauth/userinfo", { headers: { authorization: `Bearer ${accessToken}` } })).status).toBe(401);
+    }));
+
+  test("password changes end OAuth sign-ins while keeping the reissued browser session", () =>
+    withFrozenTime(async () => {
+      const who = await person();
+      const oldBrowserToken = who.cookie.slice("session_token=".length);
+      const browser = await session.authenticate(oldBrowserToken);
+      if (!browser) throw new Error("Missing browser session");
+      const started = await startDevice({ scope: "openid offline_access" });
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+      const issued = await poll(started.device_code);
+      expect(issued.status).toBe(200);
+      const accessToken = String(issued.body.access_token);
+      expect((await oauthTokens.verifyAccessToken(accessToken, ["cloud", "cloud-cli"])) !== null).toBe(true);
+      const { kept } = await session.endOtherSignIns(who.userId, {
+        keep: { sid: browser.data.sid, authEpoch: browser.data.authEpoch },
+        reason: "password_change",
+      });
+      if (!kept) throw new Error("Browser family was not kept");
+      const refresh = await oauthRoutes.request(
+        "/oauth/token",
+        form({
+          grant_type: "refresh_token",
+          client_id: "cloud-cli",
+          refresh_token: String(issued.body.refresh_token),
+        }),
+      );
+      expect(refresh.status).toBe(400);
+      expect(await refresh.json()).toMatchObject({ error: "invalid_grant" });
+      expect((await oauthTokens.verifyAccessToken(accessToken, ["cloud", "cloud-cli"])) === null).toBe(true);
+      expect((await oauthRoutes.request("/oauth/userinfo", { headers: { authorization: `Bearer ${accessToken}` } })).status).toBe(401);
+      expect((await session.authenticate(oldBrowserToken)) === null).toBe(true);
+      const keptSid = String(jose.decodeJwt(kept.token).sid);
+      expect(keptSid === browser.data.sid).toBe(false);
+      expect(await session.authenticate(kept.token)).toMatchObject({ data: { sid: keptSid, userId: who.userId } });
+    }));
+
+  test("approved device codes without an epoch stay unconsumed", () =>
+    withFrozenTime(async () => {
+      const who = await person();
+      const started = await startDevice({ scope: "openid offline_access" });
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+      await sql`UPDATE oauth.device_authorizations SET auth_epoch = NULL WHERE device_code_hash = ${sha256(started.device_code)}`;
+      const result = await poll(started.device_code);
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({ error: "invalid_grant" });
+      const [row] = await sql<{ status: string; authority_nonce: string | null }[]>`
+      SELECT status, authority_nonce FROM oauth.device_authorizations WHERE device_code_hash = ${sha256(started.device_code)}
+    `;
+      expect(row).toEqual({ status: "approved", authority_nonce: null });
+      expect(await sql`SELECT id FROM oauth.refresh_token_families WHERE user_id = ${who.userId}::uuid`).toHaveLength(0);
+    }));
+
+  test("a denial answers access_denied only with the deciding epoch", () =>
+    withFrozenTime(async () => {
+      const who = await person();
+      const started = await startDevice();
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "deny");
+      // Every decision path, the Cloud Login one included, must record its epoch on deny as well.
+      await sql`UPDATE oauth.device_authorizations SET auth_epoch = NULL WHERE device_code_hash = ${sha256(started.device_code)}`;
+      expect(await poll(started.device_code)).toMatchObject({ status: 400, body: { error: "invalid_grant" } });
+    }));
+
+  test("signing out everywhere ends an approved device code before polling", () =>
+    withFrozenTime(async () => {
+      const who = await person();
+      const started = await startDevice({ scope: "openid offline_access" });
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+      await session.revokeAllForUser(who.userId);
+      const result = await poll(started.device_code);
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({ error: "invalid_grant" });
+      expect(await sql`SELECT id FROM oauth.refresh_token_families WHERE user_id = ${who.userId}::uuid`).toHaveLength(0);
+    }));
+
   beforeAll(async () => {
     await migrate();
   });
@@ -811,6 +926,26 @@ suite("OAuth device authorization grant", () => {
       expect(await poll(expired.device_code)).toMatchObject({ status: 400, body: { error: "expired_token" } });
     });
 
+    test("a Cloud Login approval carries the account epoch and ends when it moves before polling", async () => {
+      const who = await paired();
+      const [user] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id=${who.userId}::uuid`;
+      const signedIn = await start(who.uid);
+      await waitForPush(signedIn.id);
+      await who.decide(signedIn.id, "approve");
+      const tokens = await poll(signedIn.device_code);
+      expect(tokens.status).toBe(200);
+      expect(jose.decodeJwt(String(tokens.body.access_token)).auth_epoch).toBe(Number(user!.auth_epoch));
+      const stale = await start(who.uid);
+      await waitForPush(stale.id);
+      await who.decide(stale.id, "approve");
+      await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${who.userId}::uuid`;
+      expect(await poll(stale.device_code)).toMatchObject({ status: 400, body: { error: "invalid_grant" } });
+      const [row] = await sql<{ status: string }[]>`SELECT status FROM oauth.device_authorizations WHERE id=${stale.id}::uuid`;
+      expect(row?.status).toBe("approved");
+      // Only the first sign-in's family exists; the refused grant activated nothing.
+      expect(await sql`SELECT id FROM oauth.refresh_token_families WHERE user_id=${who.userId}::uuid AND status='active'`).toHaveLength(1);
+    });
+
     test("unknown, ambiguous and unpaired accounts answer identically and expire without a push", async () => {
       const real = await paired();
       const started = await start(real.uid);
@@ -913,12 +1048,15 @@ suite("OAuth device authorization grant", () => {
       expect(await oauth.device.getPending(started.id)).toBeNull();
       const confirmation = await oauth.device.createConfirmation({ deviceAuthorizationId: started.id, userId: who.userId });
       expect(await decide(who, confirmation, "approve")).toBe("/oauth/device?result=expired");
+      const [user] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id=${who.userId}::uuid`;
       for (const decision of ["approve", "deny"] as const) {
         expect(
           await oauth.device.decide({
             id: started.id,
+            browserSignIn: { userId: who.userId, sid: crypto.randomUUID() },
             client,
             actor: { userId: who.userId, uid: who.uid, provider: "local", roles: [] },
+            authEpoch: Number(user!.auth_epoch),
             decision,
           }),
         ).toBe(false);

@@ -381,7 +381,7 @@ describe("mailHelp", () => {
     expect(admin).toContain("Refresh storage snapshot** queues a background reconciliation");
     expect(admin).toContain("continue to show the last completed snapshot until that job finishes");
     expect(admin).toContain("cld mail admin mailbox access list|grant|set|revoke");
-    expect(work).toContain("Mailbox tools → Shared links");
+    expect(work).toContain("… → Shared links");
   });
 
   test("documents the permission-safe message inspector and exact source export", () => {
@@ -442,7 +442,7 @@ describe("mailHelp", () => {
     expect(work).toContain("Find all from this sender");
     expect(work).not.toContain("Mark all as read");
     expect(work).toContain("Manage unsubscribe");
-    expect(work).toContain("Mailbox tools → Mailing lists");
+    expect(work).toContain("… → Mailing lists");
     expect(work).toContain("Everyone who can view the mailbox");
     expect(work).toContain("Unsubscribe and cleanup actions require **Edit** or **Manage** access");
     expect(work).toContain("Use as new message");
@@ -456,10 +456,10 @@ describe("mailHelp", () => {
     const automation = mailHelp.getMarkdown("mail-automation");
     const work = mailHelp.getMarkdown("mail-work");
 
-    expect(start).toContain("**Mailbox tools** for synchronization, health, automations");
+    expect(start).toContain("**…** for mailbox details, synchronization, health, automations");
     expect(start).not.toContain("- **Automations** for");
-    expect(admin).toContain("Open **Mailbox tools → Automations**");
-    expect(automation).toContain("Open **Mailbox tools → Automations**");
+    expect(admin).toContain("Open **… → Automations**");
+    expect(automation).toContain("Open **… → Automations**");
     expect(work).not.toContain("List help");
     expect(work).not.toContain("advertised help");
     expect(work).toContain("**List archive** opens the archive advertised by the list");

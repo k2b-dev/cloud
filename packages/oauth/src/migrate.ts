@@ -190,6 +190,8 @@ export const migrate = async (): Promise<void> => {
     `.simple();
     await tx`ALTER TABLE oauth.codes ALTER COLUMN audiences SET NOT NULL`.simple();
   });
+  await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS auth_epoch BIGINT`.simple();
+  await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS confirmed_sid UUID, ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS authority_nonce UUID`.simple();
   await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS authority_issued_at TIMESTAMPTZ`.simple();
   await sql`
@@ -224,8 +226,33 @@ export const migrate = async (): Promise<void> => {
       last_used_at TIMESTAMPTZ,
       revoked_at TIMESTAMPTZ,
       revoked_reason TEXT,
-      CONSTRAINT oauth_refresh_token_families_status_check CHECK (status IN ('active', 'revoked'))
+      CONSTRAINT oauth_refresh_token_families_status_check CHECK (status IN ('active', 'reserved', 'revoked'))
     )
+  `.simple();
+  await sql`ALTER TABLE oauth.refresh_token_families ADD COLUMN IF NOT EXISTS auth_epoch BIGINT`.simple();
+  // Existing families count as notified. Reservations start notified too; Core clears it on activation.
+  await sql.begin(async (tx) => {
+    await tx`ALTER TABLE oauth.refresh_token_families ADD COLUMN IF NOT EXISTS notified_at TIMESTAMPTZ DEFAULT now()`.simple();
+    await tx`ALTER TABLE oauth.refresh_token_families ALTER COLUMN notified_at DROP DEFAULT`.simple();
+  });
+  await sql`CREATE INDEX IF NOT EXISTS oauth_refresh_token_families_unnotified
+    ON oauth.refresh_token_families(created_at) WHERE notified_at IS NULL`.simple();
+  // One statement replaces the check, so replicas that start together never see it missing.
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'oauth_refresh_token_families_status_check'
+          AND conrelid = 'oauth.refresh_token_families'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%reserved%'
+      ) THEN
+        ALTER TABLE oauth.refresh_token_families
+          DROP CONSTRAINT IF EXISTS oauth_refresh_token_families_status_check,
+          ADD CONSTRAINT oauth_refresh_token_families_status_check CHECK (status IN ('active', 'reserved', 'revoked'));
+      END IF;
+    END $$
   `.simple();
   await sql`
     ALTER TABLE oauth.refresh_token_families
@@ -291,6 +318,27 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_expires
     ON oauth.refresh_tokens(expires_at)
   `.simple();
+  // End existing person sign-ins once; each statement bounds both family and token work.
+  for (;;) {
+    const [batch] = await sql<{ count: number }[]>`
+      WITH legacy AS (
+        SELECT id FROM oauth.refresh_token_families
+        WHERE status = 'active' AND auth_epoch IS NULL
+        LIMIT 1000 FOR UPDATE SKIP LOCKED
+      ), revoked AS (
+        UPDATE oauth.refresh_token_families f
+        SET status = 'revoked', revoked_at = COALESCE(f.revoked_at, now()), revoked_reason = 'auth_epoch_migration'
+        FROM legacy WHERE f.id = legacy.id
+        RETURNING f.id
+      ), tokens AS (
+        UPDATE oauth.refresh_tokens token
+        SET status = 'revoked', revoked_at = COALESCE(token.revoked_at, now())
+        FROM revoked WHERE token.family_id = revoked.id AND token.status IN ('active', 'issuing')
+      )
+      SELECT count(*)::integer AS count FROM revoked
+    `;
+    if (!batch?.count) break;
+  }
   await sql`
     UPDATE oauth.refresh_tokens token
     SET status = 'revoked',
@@ -357,6 +405,8 @@ export const migrate = async (): Promise<void> => {
     ALTER TABLE oauth.device_authorizations
     ADD COLUMN IF NOT EXISTS app_approval BOOLEAN NOT NULL DEFAULT false
   `.simple();
+  await sql`ALTER TABLE oauth.device_authorizations ADD COLUMN IF NOT EXISTS auth_epoch BIGINT`.simple();
+  await sql`ALTER TABLE oauth.device_authorizations ADD COLUMN IF NOT EXISTS confirmed_sid UUID, ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ`.simple();
   console.log("  ✓ oauth.device_authorizations table");
 
   await sql`

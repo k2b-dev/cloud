@@ -6,7 +6,9 @@ import {
   createSignal,
   createUniqueId,
   For,
+  Index,
   type JSX,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -77,6 +79,15 @@ export type ChatCommandContext = {
  */
 export type ChatCommandResult = void | "cancelled" | { done: string } | { mention: ChatAttachment };
 
+/** The draft as a successful `open` leaves it: without the `/…` token, with its references moved along. Save this one. */
+export type ChatCommandDraft = { value: string; mentions: readonly ChatMention[] };
+
+/**
+ * How an `open` row ends: on success (`void`) the token leaves as for an action; `"cancelled"` changes nothing; `failed`
+ * keeps the list open and the draft unchanged, and its text replaces the row's description until the row runs again.
+ */
+export type ChatCommandOpenResult = void | "cancelled" | { failed: string };
+
 /** A fixed place in the slash list. Sections keep the given order, also while searching. */
 export type ChatCommandSection = {
   id: string;
@@ -85,6 +96,20 @@ export type ChatCommandSection = {
   searched?: boolean;
   /** Only while searching or narrowed: absent from the overview (empty query), including its loading placeholder. */
   searchOnly?: boolean;
+  /** Only in the overview (empty query, no scope): absent while searching or narrowed, such as recently used rows. */
+  overviewOnly?: boolean;
+  /**
+   * Its local rows are fixed when the list opens: a row that arrives while the list is open waits for the next opening,
+   * so a section above others whose rows load in the background never pushes a visible row down. Rows that go away
+   * still leave at once.
+   */
+  fixedWhileOpen?: boolean;
+  /**
+   * Local rows still on their way, such as Commands from a catalog: the section ends with placeholder rows, three in
+   * the overview and one while searching, and its heading shows a spinner. Make it the last section, so rows that
+   * arrive only fill the end of the list and no visible row moves.
+   */
+  pending?: boolean;
 };
 /** First-word narrowing; Tab writes `words[0]` followed by a space. */
 export type ChatCommandScope = { id: string; title: string; words: readonly string[] };
@@ -106,8 +131,15 @@ export type ChatCommand = {
   selected?: boolean;
   /** Retry discovery in a new opening, retaining the token and currently displayed rows. */
   searchAgain?: boolean;
+  /** Stays in every search of its section, after the matches, such as a row that retries loading the section. */
+  persistent?: boolean;
   /** Application name, searchable but not displayed. */
   app?: string;
+  /**
+   * Used recently by this person. While searching, a matching row moves one step up the ranking ladder of its section
+   * and comes before rows of equal rank. The overview keeps consumer order.
+   */
+  recent?: boolean;
   /** Stable row key for option ids, marking and de-duplication. Defaults to `name`. */
   id?: string;
   name: string;
@@ -121,6 +153,16 @@ export type ChatCommand = {
   busyLabel?: string;
   /** Failures restore an unchanged draft and appear once in the status line, without calling `onError`. */
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
+  /**
+   * Leaves the composer, such as opening another app. Runs with the token and the list in place: the row shows
+   * `busyLabel` (default "Opening …") with a spinner instead of its description, and editing waits. A rejection ends like
+   * an action's: the token stays, the list closes and the status line names the reason. Closing the list, such as with
+   * Escape, cancels: `signal` aborts and the row ends at once. `signal` also aborts when the opening ends any other way
+   * than by success, so the opener can save the draft with its token again. A new `draftKey` cancels too, unless the
+   * opener calls `follow()` right before changing it itself: that next change keeps the opening, moves its busy line
+   * to the status line, and Escape still cancels. See `ChatCommandOpenResult`.
+   */
+  open?: (draft: ChatCommandDraft, signal: AbortSignal, follow: () => void) => Promise<ChatCommandOpenResult>;
   /** Selecting a reference inserts its display name and retains its opaque payload. */
   mention?: ChatAttachment;
   /**
@@ -163,7 +205,16 @@ export type ChatComposerProps = {
   fileSelection?: ChatFileSelection;
   /** Handle non-file clipboard content. Pasted files already use `fileSelection`. */
   onPaste?: ChatPasteHandler;
+  /** The add menu's entries after "Attach files". Not shown with `addOpensCommands`. */
   menuActions?: readonly ChatAction[];
+  /**
+   * "+" opens the slash list with a search field on top instead of the add menu, for keyboards where "/" is hard to
+   * reach, such as a phone's. The search field filters, narrows and chooses as typing after "/" does, and a reference
+   * lands where the field's caret was when "+" was pressed. Escape, "+" again, Back on a phone or a press outside
+   * closes the list without acting on what lies below, and the field gets its focus and selection back. `menuActions`
+   * do not show then: offer them as `commands`, and file selection as a row with `attachFiles`.
+   */
+  addOpensCommands?: boolean;
   models?: readonly ChatModelOption[];
   selectedModelId?: string | null;
   onModelChange?: (modelId: string) => void;
@@ -304,6 +355,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     return `${commandListId}-c${commandIds.get(key)}`;
   };
   const [closedAt, setClosedAt] = createSignal<number>();
+  /** The list opened from "+": the field's selection when "+" was pressed, and the search field's text. */
+  const [addSearch, setAddSearch] = createSignal<{ start: number; end: number }>();
+  const [addQuery, setAddQuery] = createSignal("");
+  let addSearchRef: HTMLInputElement | undefined;
+  let addButtonRef: HTMLButtonElement | undefined;
+  let addComposing = false;
+  /** The `open` row running now, and why `open` rows failed in this opening, by row key. */
+  const [openingRow, setOpeningRow] = createSignal<string>();
+  const [openFailures, setOpenFailures] = createSignal<Readonly<Record<string, string>>>({});
+  /** Cancels the `open` row running now; `key` follows announced draft moves, `label` is its busy line. */
+  let openingRun: { controller: AbortController; key: unknown; label: string; follow: boolean; moved: boolean } | undefined;
   // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
   let inputStart: number | undefined;
   let inputEnd: number | undefined;
@@ -415,7 +477,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     return token && index ? suggestEmoji(index, token.query, emojiSuggestionLimit) : [];
   });
   const emojiOpen = () => emojiMatches().length > 0;
-  const caretCommandToken = createMemo(() => chatCommandQuery(props.value, caret(), selectionEnd()));
+  // From "+", the search field's text is the query of an empty token at the field's stored caret.
+  const caretCommandToken = createMemo(() => {
+    const search = addSearch();
+    if (!search) return chatCommandQuery(props.value, caret(), selectionEnd());
+    const at = Math.min(search.end, props.value.length);
+    return { start: at, end: at, query: addQuery() };
+  });
   const caretCommandStart = createMemo(() => caretCommandToken()?.start);
   // Retained server rows belong to one `/`: they go when it does or when another `/` starts.
   createEffect(() => {
@@ -430,6 +498,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
   const commandQuery = createMemo(() => {
     const token = caretCommandToken();
+    if (addSearch()) return token;
     return dismissed() || composing() || token?.start === closedAt() ? null : token;
   });
   const openingStart = createMemo(() => commandQuery()?.start);
@@ -437,6 +506,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     props.draftKey;
     const start = openingStart();
     if (start !== undefined) setCommandOpening((opening) => opening + 1);
+  });
+  // A failed `open` row says so for the rest of its list opening.
+  createEffect(() => {
+    props.draftKey;
+    commandOpening();
+    setOpenFailures({});
   });
   const parsedCommandQuery = createMemo(() => parseChatCommandQuery(commandQuery()?.query ?? "", props.commandScopes ?? []));
   const commandFallbackRow = createMemo(() => {
@@ -450,7 +525,25 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setSearchResults([]);
     setSearchResultsQuery(undefined);
   });
-  const localCommands = createMemo(() => props.commands ?? []);
+  // Rows of a `fixedWhileOpen` section are the ones it had when this `/` opened the list; later ones wait for the next
+  // `/`. A retry row starts another opening in the same open list, so it does not count.
+  const fixedCommandKeys = createMemo(() => {
+    props.draftKey;
+    if (openingStart() === undefined) return undefined;
+    return untrack(() => {
+      const fixed = new Set((props.commandSections ?? []).filter((section) => section.fixedWhileOpen).map((section) => section.id));
+      return fixed.size
+        ? new Set((props.commands ?? []).filter((command) => fixed.has(command.section ?? "")).map(chatCommandKey))
+        : undefined;
+    });
+  });
+  const localCommands = createMemo(() => {
+    const commands = props.commands ?? [];
+    const keys = fixedCommandKeys();
+    if (!keys) return commands;
+    const fixed = new Set((props.commandSections ?? []).filter((section) => section.fixedWhileOpen).map((section) => section.id));
+    return commands.filter((command) => !fixed.has(command.section ?? "") || keys.has(chatCommandKey(command)));
+  });
   const commandModel = createMemo(() =>
     chatCommandListModel({
       query: commandQuery()?.query ?? "",
@@ -477,12 +570,95 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
   const commandsOpen = () =>
     Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands || commandFallbackRow()));
-  const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly());
+  // Rows that arrive for a pending section never move a visible row of the overview: until the person types, the list
+  // keeps the height it had with its placeholders and scrolls what does not fit. A list below its maximum height grows
+  // upward from the field, so a change of height alone would move its first row. While searching, the rows arrive
+  // with the search's own answer, which changes the list anyway.
+  // From "+", the whole panel keeps the height it opened with instead.
+  const commandsPending = createMemo(
+    () =>
+      commandsOpen() &&
+      !addSearch() &&
+      !parsedCommandQuery().scope &&
+      !parsedCommandQuery().query.trim() &&
+      commandModel().groups.some((group) => group.pendingRows > 0),
+  );
+  // Typing, another opening or closing the list lets it size itself again.
+  const commandListSizeKey = createMemo(() => (commandsOpen() ? `${commandOpening()}\u0000${caretCommandToken()?.query}` : undefined));
+  // The list's height with its placeholders, for the size key it was measured under.
+  let pendingList: { height: number; key: string | undefined } | undefined;
+  createEffect(() => {
+    const list = commandListRef;
+    if (!commandsPending() || !list || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      pendingList = { height: list.getBoundingClientRect().height, key: untrack(commandListSizeKey) };
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    onCleanup(() => observer.disconnect());
+  });
+  createEffect(
+    on(commandsPending, (pending, wasPending) => {
+      const held = pendingList;
+      pendingList = undefined;
+      // Only rows arriving hold the list; the person's typing or closing it does not.
+      if (pending || !wasPending || !held || held.key !== commandListSizeKey() || !commandListRef?.isConnected) return;
+      commandListRef.style.height = `${held.height}px`;
+      commandListRef.setAttribute("data-held", "");
+    }),
+  );
+  createEffect(
+    on(
+      commandListSizeKey,
+      () => {
+        commandListRef?.style.removeProperty("height");
+        commandListRef?.removeAttribute("data-held");
+      },
+      { defer: true },
+    ),
+  );
+  // Escape, a press outside, or moving the caret away closes the list; while an `open` row runs, that cancels it, so
+  // nothing opens after the person backed out. Success ends the opening and closes the list in one step. A new draft
+  // cancels too, unless the opener announced that next move with `follow()`: its busy line moves to the status line,
+  // and Escape still cancels there. Any later unannounced draft change cancels.
+  createEffect(() => {
+    const draftKey = props.draftKey;
+    const open = commandsOpen();
+    const row = openingRow();
+    const run = openingRun;
+    if (!run || row === undefined) return;
+    if (draftKey !== run.key) {
+      if (run.follow) {
+        run.follow = false;
+        run.key = draftKey;
+        run.moved = true;
+        showCommandStatus({ tone: "busy", text: run.label });
+      } else run.controller.abort();
+      return;
+    }
+    if (!open && !run.moved) run.controller.abort();
+  });
+  onCleanup(() => openingRun?.controller.abort());
+  // An `open` row gives the sheet's Back entry up first, so it never races the navigation it starts.
+  const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly() && openingRow() === undefined);
   createEffect(() => {
     if (!commandSheetHeld()) return;
-    onCleanup(holdDialogHistory(() => setClosedAt(commandQuery()?.start)));
+    onCleanup(holdDialogHistory(() => closeCommandList()));
   });
   const suggestionsOpen = () => commandsOpen() || emojiOpen();
+  const fieldOwnsList = () => suggestionsOpen() && !addSearch();
+  // From "+", the panel keeps the height it opened with while the person types or rows arrive, so neither the search
+  // field nor the first row moves; what does not fit scrolls. The space above the field still bounds it.
+  const addPanelOpen = createMemo(() => addSearch() !== undefined && commandsOpen());
+  createEffect(() => {
+    const accessory = addPanelOpen() ? commandListRef?.parentElement : undefined;
+    if (!accessory) return;
+    const frame = requestAnimationFrame(() =>
+      accessory.style.setProperty("--k2b-chat-command-held", `${accessory.getBoundingClientRect().height}px`),
+    );
+    onCleanup(() => cancelAnimationFrame(frame));
+  });
   createEffect(() => {
     if (!suggestionsOpen()) return;
     let disposed = false;
@@ -507,10 +683,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       const left = Math.max(0, column?.left ?? 0);
       const right = Math.min(page, column?.right ?? page);
       const slot = accessory.parentElement!.getBoundingClientRect();
-      const bottom = accessory.getBoundingClientRect().bottom;
-      commandListRef.style.setProperty("--k2b-chat-command-space", `${Math.max(40, bottom - top - 8)}px`);
+      // From its place in the slot, not its box: the sheet opened from "+" rises into place, and a box measured during
+      // that animation would include its offset.
+      const bottom = slot.bottom - (Number.parseFloat(window.getComputedStyle(accessory).bottom) || 0);
+      // On the accessory, so a panel opened from "+" is bounded as a whole, with its search field.
+      accessory.style.setProperty("--k2b-chat-command-space", `${Math.max(40, bottom - top - 8)}px`);
       // Only a list that reaches the screen's top edge keeps clear of a notch or the status bar.
-      commandListRef.style.setProperty("--k2b-chat-command-safe-top", top === viewportTop ? "env(safe-area-inset-top, 0px)" : "0px");
+      accessory.style.setProperty("--k2b-chat-command-safe-top", top === viewportTop ? "env(safe-area-inset-top, 0px)" : "0px");
       accessory.style.setProperty("--k2b-chat-command-reach-left", `${Math.max(0, slot.left - left)}px`);
       accessory.style.setProperty("--k2b-chat-command-reach-right", `${Math.max(0, right - slot.right)}px`);
     };
@@ -528,11 +707,27 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   // A press outside the command list and the field closes the list, as Escape does; the text stays. With a mouse or a
   // trackpad the press then acts as usual. On a touch-only device a tap outside the composer closes only the list: it
   // reaches nothing beneath, and the field keeps focus, so the keyboard stays open.
+  // A list opened from "+" is a menu: any press outside it closes only the list, with every pointer, and the field gets
+  // its focus back. "+" itself toggles with its click; a press in the field closes the list and lands there as usual.
   createEffect(() => {
     if (!commandsOpen()) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target;
-      if (!(target instanceof Node) || commandListRef?.contains(target) || textareaRef?.parentElement?.contains(target)) return;
+      if (!(target instanceof Node) || commandListRef?.parentElement?.contains(target)) return;
+      if (addSearch()) {
+        if (addButtonRef?.contains(target) && !addButtonRef.disabled) return;
+        if (textareaRef?.parentElement?.contains(target)) {
+          // The field takes the focus before the search field goes, so a phone keeps its keyboard; the press itself
+          // then places the caret.
+          textareaRef.focus({ preventScroll: true });
+          endAddSearch(false);
+          return;
+        }
+        swallowTap(event);
+        endAddSearch(true);
+        return;
+      }
+      if (textareaRef?.parentElement?.contains(target)) return;
       setClosedAt(commandQuery()?.start);
       if (isTouchOnly() && !shellRef?.contains(target)) swallowTap(event);
     };
@@ -583,9 +778,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     });
   });
   let settledEmpty: { start: number; query: string } | undefined;
+  // A space after "Nothing found" ends the `/…` as plain text; a search field opened from "+" just keeps its text.
   createEffect(() => {
     const token = commandQuery();
-    if (!token || parsedCommandQuery().scope || searchError()) {
+    if (!token || addSearch() || parsedCommandQuery().scope || searchError()) {
       settledEmpty = undefined;
       return;
     }
@@ -626,6 +822,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       history.length = 0;
       historyIndex = -1;
       finishModelSelection(null);
+      endAddSearch(false);
       setDismissed(true);
       setClosedAt(undefined);
       setSearchResults([]);
@@ -672,6 +869,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setDismissed(false);
   };
   const restoreHistory = (direction: -1 | 1) => {
+    // A field that only stays enabled to keep focus, while an `open` row runs, is not edited by undo either.
+    if (editBlocked()) return;
     record();
     const next = history[historyIndex + direction];
     if (!next) return;
@@ -689,6 +888,43 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setCaret(textareaRef?.selectionStart ?? props.value.length);
       setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
     });
+  };
+  /** Closes the list opened from "+"; `refocus` gives the field its focus and the selection it had when "+" was pressed. */
+  const endAddSearch = (refocus: boolean) => {
+    const search = addSearch();
+    if (!search) return;
+    addComposing = false;
+    batch(() => {
+      setAddSearch(undefined);
+      setAddQuery("");
+    });
+    if (!refocus || !textareaRef) return;
+    const length = textareaRef.value.length;
+    textareaRef.focus();
+    textareaRef.setSelectionRange(Math.min(search.start, length), Math.min(search.end, length));
+    syncCaret();
+  };
+  /** Escape, Back, a press outside: the list closes and the text stays. */
+  const closeCommandList = (refocus = true) => {
+    if (addSearch()) endAddSearch(refocus);
+    else setClosedAt(commandQuery()?.start);
+  };
+  const toggleAddSearch = () => {
+    if (addSearch()) {
+      endAddSearch(true);
+      return;
+    }
+    if (blocked() || !textareaRef) return;
+    const start = textareaRef.selectionStart;
+    const end = textareaRef.selectionEnd;
+    batch(() => {
+      // Emoji suggestions for a `:shortcode` at the caret give way; they would hold the list closed.
+      setDismissed(true);
+      setAddQuery("");
+      setAddSearch({ start, end });
+    });
+    // Within the press, so a phone opens its keyboard for the search field.
+    addSearchRef?.focus();
   };
   const selectedCommand = createMemo(() => {
     const rows = commandMatches();
@@ -713,6 +949,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const canSubmit = () => !submitting() && submittable();
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
+  /** "+" opens the slash list, as long as there is one; otherwise it stays the add menu. */
+  const addOpensCommands = () => Boolean(props.addOpensCommands && (props.commands?.length || props.searchCommands));
   const hasContextUsage = () => {
     if (props.contextPopupAction) return true;
     const context = props.contextUsage;
@@ -875,7 +1113,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
    * key or click that chose the row, because the device's file dialog needs that activation. Closing the selection
    * without a file brings the token back, unless the draft changed meanwhile.
    */
-  const attachFilesFromCommand = (token: { start: number; end: number }) => {
+  const attachFilesFromCommand = (token: { start: number; end: number }, selection?: { start: number; end: number }) => {
     if (!canSelectFiles()) return;
     const key = props.draftKey;
     const previous = snapshot();
@@ -891,7 +1129,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       history.splice(0, history.length, ...previousHistory.entries);
       historyIndex = previousHistory.index;
       queueMicrotask(() => {
-        textareaRef?.setSelectionRange(token.end, token.end);
+        textareaRef?.setSelectionRange(selection?.start ?? token.end, selection?.end ?? token.end);
         syncCaret();
         focus();
       });
@@ -925,7 +1163,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setSubmitting(true);
     try {
       if (isTouchOnly()) {
-        if (commandSheetHeld()) setClosedAt(commandQuery()?.start);
+        if (commandSheetHeld()) closeCommandList(false);
         // The sheet's Back entry leaves first, so a submit handler that navigates finds the history settled.
         await dialogHistorySettled();
         // A draft that another one replaced, or that may no longer go out, is not sent and keeps its text.
@@ -981,6 +1219,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const word = scope?.words[0];
     const token = commandQuery();
     if (!word || !token || !textareaRef) return false;
+    if (addSearch()) {
+      setAddQuery(`${word} `);
+      return true;
+    }
     replaceTextareaRange(textareaRef, token.start + 1, token.end, `${word} `);
     syncCaret();
     return true;
@@ -988,6 +1230,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const executeCommand = async (command: ChatCommand, tab = false) => {
     const token = commandQuery();
     const heldHistory = commandSheetHeld();
+    const addSelection = addSearch();
+    const fromAdd = addSelection !== undefined;
     if (!token || blocked()) return;
     if (command.disabled || command.reason) {
       // A new object each time, so choosing the same row again inserts and announces its reason again.
@@ -1001,16 +1245,29 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     }
     if (command.scope && (tab || (!command.action && !command.mention && !command.attachFiles)) && narrowCommand(command)) return;
     if (command.attachFiles) {
-      attachFilesFromCommand(token);
+      if (!canSelectFiles()) return;
+      // The field has the focus before the selection opens, so closing it without a file comes back there.
+      endAddSearch(true);
+      attachFilesFromCommand(token, addSelection);
       return;
     }
+    if (command.open) {
+      await openFromCommand(command, command.open, token);
+      return;
+    }
+    // The field has the focus again before an action opens a dialog, so the dialog gives it back there.
+    endAddSearch(true);
+    // From "+" a reference joins the text at the caret, apart from a word right before it.
+    const lead = (value: string) => (fromAdd && token.start > 0 && !/\s/.test(value[token.start - 1] ?? "") ? " " : "");
     const previous = snapshot();
     const key = props.draftKey;
-    const replacement = command.mention ? command.mention.name + " " : "";
+    const replacement = command.mention ? lead(props.value) + command.mention.name + " " : "";
     const nextValue = props.value.slice(0, token.start) + replacement + props.value.slice(token.end);
     const nextMentions = reconcileChatMentions(props.value, nextValue, mentions());
-    if (command.mention)
-      nextMentions.push({ start: token.start, end: token.start + command.mention.name.length, attachment: command.mention });
+    if (command.mention) {
+      const start = token.start + lead(props.value).length;
+      nextMentions.push({ start, end: start + command.mention.name.length, attachment: command.mention });
+    }
     // A cancelled or failed command leaves no undo step behind: restoring puts the history back as well.
     const previousHistory = { entries: [...history], index: historyIndex };
     edit(nextValue, nextMentions);
@@ -1054,13 +1311,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           restore();
           restored = false;
           const name = result.mention.name;
-          const withMention = previous.value.slice(0, token.start) + name + " " + previous.value.slice(token.end);
+          const start = token.start + lead(previous.value).length;
+          const withMention = previous.value.slice(0, token.start) + lead(previous.value) + name + " " + previous.value.slice(token.end);
           edit(withMention, [
             ...reconcileChatMentions(previous.value, withMention, previous.mentions),
-            { start: token.start, end: token.start + name.length, attachment: result.mention },
+            { start, end: start + name.length, attachment: result.mention },
           ]);
           setDismissed(true);
-          mentioned = { value: withMention, caret: token.start + name.length + 1 };
+          mentioned = { value: withMention, caret: start + name.length + 1 };
           showCommandStatus();
         } else {
           // The pick is lost; say so, also when the draft moved to another key meanwhile (such as a new chat saved
@@ -1086,12 +1344,100 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       if (props.draftKey !== key) return;
       if (restored || props.value === nextValue || (mentioned && props.value === mentioned.value)) {
         const position = restored ? token.end : (mentioned?.caret ?? token.start + replacement.length);
-        textareaRef?.setSelectionRange(position, position);
+        textareaRef?.setSelectionRange(
+          restored && addSelection ? addSelection.start : position,
+          restored && addSelection ? addSelection.end : position,
+        );
       }
       syncCaret();
       autoResize();
       focus();
     });
+  };
+
+  /**
+   * Runs an `open` row with the token and the list in place. Success removes the token in one undo step; `failed`
+   * stays in the row while the list is still there, otherwise the status line says it, so it never ends in silence.
+   */
+  const openFromCommand = async (command: ChatCommand, open: NonNullable<ChatCommand["open"]>, token: { start: number; end: number }) => {
+    const key = props.draftKey;
+    const row = chatCommandKey(command);
+    const value = props.value;
+    const nextValue = value.slice(0, token.start) + value.slice(token.end);
+    const nextMentions = reconcileChatMentions(value, nextValue, mentions());
+    // Still the same draft and `/…`, so the row is where the person chose it.
+    const inPlace = () => !disposed && props.draftKey === key && props.value === value && commandQuery()?.start === token.start;
+    const heldHistory = commandSheetHeld();
+    // Closing the list or leaving the composer cancels the opening; the row ends at once, without waiting for it.
+    const controller = new AbortController();
+    const run = { controller, key, label: command.busyLabel ?? chatMessages().commandOpening, follow: false, moved: false };
+    openingRun = run;
+    const cancelled = new Promise<"cancelled">((resolve) =>
+      controller.signal.addEventListener("abort", () => resolve("cancelled"), { once: true }),
+    );
+    setOpenFailures(({ [row]: _, ...rest }) => rest);
+    setOpeningRow(row);
+    setExecuting(true);
+    // An opening that ends without leaving, by failure, rejection or cancelling, also aborts `signal`, so the opener
+    // can put back what it saved without the token.
+    const finish = (left = false) => {
+      if (!left) controller.abort();
+      if (openingRun === run) openingRun = undefined;
+      if (commandStatus()?.tone === "busy") showCommandStatus();
+      setOpeningRow(undefined);
+      setExecuting(false);
+    };
+    let result: ChatCommandOpenResult;
+    try {
+      if (heldHistory) {
+        await dialogHistorySettled();
+        if (!inPlace()) {
+          finish();
+          return;
+        }
+      }
+      result = await Promise.race([
+        open({ value: nextValue, mentions: nextMentions }, controller.signal, () => {
+          run.follow = true;
+        }),
+        cancelled,
+      ]);
+    } catch (error) {
+      finish();
+      if (disposed) {
+        props.onError?.(error);
+        return;
+      }
+      if (inPlace()) closeCommandList();
+      showCommandStatus({ tone: "error", text: error instanceof Error && error.message ? error.message : chatMessages().commandFailed });
+      return;
+    }
+    if (!result) {
+      // Success: the token leaves and the list closes in the same step that ends the opening, so a phone sheet never
+      // takes its Back entry again while the page navigates.
+      batch(() => {
+        if (!disposed && props.draftKey === key && props.value === value) {
+          edit(nextValue, nextMentions);
+          setDismissed(true);
+        }
+        endAddSearch(!disposed && props.draftKey === key);
+        finish(true);
+      });
+      queueMicrotask(() => {
+        if (disposed || props.draftKey !== key || props.value !== nextValue) return;
+        textareaRef?.setSelectionRange(token.start, token.start);
+        syncCaret();
+        autoResize();
+      });
+      return;
+    }
+    finish();
+    if (result === "cancelled") return;
+    if (inPlace()) {
+      setOpenFailures((failures) => ({ ...failures, [row]: result.failed }));
+      setAnnouncement({ text: result.failed });
+    } else if (disposed) props.onError?.(new Error(result.failed));
+    else showCommandStatus({ tone: "error", text: result.failed });
   };
 
   /** Replaces `start`–`end` with the emoji through the editing path, so the browser's undo restores the shortcode. */
@@ -1135,9 +1481,68 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     );
   };
 
+  /** Moving through and choosing in the command list, from the field or from the search field opened by "+". */
+  const commandListKey = (event: KeyboardEvent): boolean => {
+    if (!commandsOpen()) return false;
+    const matches = commandMatches();
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      const index = matches.indexOf(selectedCommand()!);
+      const next = matches[nextChatCommandIndex(index, matches.length, event.key === "ArrowUp" ? -1 : 1)];
+      setActiveCommandKey(next ? chatCommandKey(next) : undefined);
+      setCommandMoved(true);
+      setAnnouncement(undefined);
+      return true;
+    }
+    // Ctrl/⌘+Enter sends, also while suggestions are open.
+    const plain = !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
+    if (plain && (event.key === "Tab" || event.key === "Enter") && matches.length > 0) {
+      event.preventDefault();
+      const command = selectedCommand();
+      // A server row answering an earlier query may no longer match; wait for fresh results. Local rows match now.
+      const row = commandModel().rows.find((row) => chatCommandKey(row.command) === selectedCommandKey());
+      const staleServerRow =
+        row?.server && (searchResultsQuery() !== commandQuery()?.query || searchResultsScope() !== parsedCommandQuery().scope?.id);
+      if (staleServerRow) return true;
+      if (command) void executeCommand(command, event.key === "Tab");
+      return true;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeCommandList();
+      return true;
+    }
+    return false;
+  };
+
+  const onAddSearchKeyDown = (event: KeyboardEvent) => {
+    // Nothing chooses while an input method composes, as in the field.
+    if (event.isComposing || event.keyCode === 229 || addComposing) return;
+    if (event.key === "Escape" && openingRun) {
+      event.preventDefault();
+      openingRun.controller.abort();
+      endAddSearch(true);
+      return;
+    }
+    if (commandListKey(event)) return;
+    // Ctrl/⌘+Enter sends from the search field as from the field, with the list closed first.
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      endAddSearch(true);
+      void submit();
+    }
+  };
+
   const onKeyDown = (event: KeyboardEvent) => {
     // WebKit ends the composition before the keydown of the Enter that confirms it; that keydown keeps keyCode 229.
     if (event.isComposing || event.keyCode === 229 || composing()) return;
+    // Escape cancels a running `open` row, also once its list is gone because the draft moved to a new chat.
+    if (event.key === "Escape" && openingRun) {
+      event.preventDefault();
+      openingRun.controller.abort();
+      if (commandsOpen()) closeCommandList();
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
       restoreHistory(event.shiftKey ? 1 : -1);
@@ -1162,39 +1567,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         return;
       }
     }
-    const matches = commandMatches();
-    if (commandsOpen()) {
-      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-        event.preventDefault();
-        const index = matches.indexOf(selectedCommand()!);
-        const next = matches[nextChatCommandIndex(index, matches.length, event.key === "ArrowUp" ? -1 : 1)];
-        setActiveCommandKey(next ? chatCommandKey(next) : undefined);
-        setCommandMoved(true);
-        setAnnouncement(undefined);
-        return;
-      }
-      // Ctrl/⌘+Enter sends, also while suggestions are open.
-      const plain = !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
-      if (plain && (event.key === "Tab" || event.key === "Enter") && matches.length > 0) {
-        event.preventDefault();
-        const command = selectedCommand();
-        // A server row answering an earlier query may no longer match; wait for fresh results. Local rows match now.
-        const row = commandModel().rows.find((row) => chatCommandKey(row.command) === selectedCommandKey());
-        const staleServerRow =
-          row?.server && (searchResultsQuery() !== commandQuery()?.query || searchResultsScope() !== parsedCommandQuery().scope?.id);
-        if (staleServerRow) return;
-        if (command) void executeCommand(command, event.key === "Tab");
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setClosedAt(commandQuery()?.start);
-        return;
-      }
-    }
+    if (commandListKey(event)) return;
     const format = props.formatting && textareaRef ? formatShortcut(event) : undefined;
     if (format && textareaRef) {
       event.preventDefault();
+      if (editBlocked()) return;
       format.run(textareaRef);
       return;
     }
@@ -1295,8 +1672,33 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     </Dropdown.Root>
   );
 
+  /** "+" as the way to the slash list on keyboards without a handy "/". */
+  const addSearchButton = (extraClass = "") => (
+    <Tooltip.Trigger
+      ref={addButtonRef}
+      type="button"
+      class={`k2b-chat-composer__icon-action${extraClass}`}
+      aria-label={chatMessages().addMenu}
+      aria-haspopup="listbox"
+      aria-expanded={addSearch() !== undefined}
+      aria-controls={addSearch() ? commandListId : undefined}
+      content={chatMessages().addMenu}
+      disabled={blocked()}
+      // The field keeps its focus and selection until the search field takes over, and a phone its keyboard.
+      onMouseDown={keepFieldFocus}
+      onClick={toggleAddSearch}
+    >
+      <i class={addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-plus"} aria-hidden="true" />
+    </Tooltip.Trigger>
+  );
+
   /** The conversation's attach button opens the file choice directly; other actions turn it into the add menu. */
   const attachControl = () => (
+    <Show when={!addOpensCommands()} fallback={addSearchButton(" k2b-chat-composer__attach")}>
+      {attachChoice()}
+    </Show>
+  );
+  const attachChoice = () => (
     <Show
       when={props.menuActions?.length}
       fallback={
@@ -1543,19 +1945,28 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
         rows={1}
         value={props.value}
-        disabled={editBlocked()}
+        // An `open` row keeps the field focused, so the list stays, and only read-only while it runs.
+        disabled={editBlocked() && openingRow() === undefined}
+        readOnly={openingRow() !== undefined}
         enterkeyhint={conversation() ? "enter" : undefined}
         placeholder={
           props.placeholder ??
           (running() ? chatMessages().addGuidance : conversation() ? chatMessages().writeConversationMessage : chatMessages().writeMessage)
         }
         aria-label={props.inputLabel ?? messages().message}
-        role={suggestionsOpen() ? "combobox" : undefined}
-        aria-autocomplete={suggestionsOpen() ? "list" : undefined}
-        aria-controls={suggestionsOpen() ? commandListId : undefined}
-        aria-expanded={suggestionsOpen() ? "true" : undefined}
+        // A list opened from "+" belongs to its search field.
+        role={fieldOwnsList() ? "combobox" : undefined}
+        aria-autocomplete={fieldOwnsList() ? "list" : undefined}
+        aria-controls={fieldOwnsList() ? commandListId : undefined}
+        aria-expanded={fieldOwnsList() ? "true" : undefined}
         aria-activedescendant={
-          emojiOpen() ? `${commandListId}-${selectedCommandIndex()}` : selectedCommand() ? commandOptionId(selectedCommand()!) : undefined
+          !fieldOwnsList()
+            ? undefined
+            : emojiOpen()
+              ? `${commandListId}-${selectedCommandIndex()}`
+              : selectedCommand()
+                ? commandOptionId(selectedCommand()!)
+                : undefined
         }
         onInput={(event) => {
           batch(() => {
@@ -1567,6 +1978,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           if (input.inputType === "insertText" && input.data === ":") queueMicrotask(completeShortcode);
         }}
         onPaste={(event) => {
+          // Read-only while an `open` row runs: nothing may join the draft after it was saved.
+          if (editBlocked()) {
+            event.preventDefault();
+            return;
+          }
           const clipboardData = event.clipboardData;
           if (canSelectFiles() && clipboardData?.files.length) {
             event.preventDefault();
@@ -1612,6 +2028,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const renderCommandRow = (command: ChatCommand) => {
     const highlight = () => commandRowMap().get(command)?.highlight;
     const title = () => command.label ?? command.name;
+    const opening = () => openingRow() === chatCommandKey(command);
+    const failure = () => openFailures()[chatCommandKey(command)];
     return (
       <button
         class="k2b-chat-composer__command"
@@ -1621,6 +2039,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         tabIndex={-1}
         aria-selected={selectedCommand() === command}
         aria-disabled={Boolean(command.disabled || command.reason)}
+        aria-busy={opening() ? "true" : undefined}
         aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
         data-reason={command.reason ? "true" : undefined}
         data-active={selectedCommand() === command ? "true" : undefined}
@@ -1643,8 +2062,24 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               )}
             </Show>
           </strong>
-          <Show when={command.reason ?? command.description}>
-            <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>{command.reason ?? command.description}</small>
+          <Show
+            when={command.open && !command.reason}
+            fallback={
+              <Show when={command.reason ?? command.description}>
+                <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>
+                  {command.reason ?? command.description}
+                </small>
+              </Show>
+            }
+          >
+            {/* The busy line shares the description's place, so the row keeps its height while it opens. */}
+            <span class="k2b-chat-composer__command-detail" data-state={opening() ? "busy" : failure() ? "failed" : undefined}>
+              <small aria-hidden={opening() ? "true" : undefined}>{failure() ?? command.description}</small>
+              <small aria-hidden={opening() ? undefined : "true"}>
+                <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+                {command.busyLabel ?? chatMessages().commandOpening}
+              </small>
+            </span>
           </Show>
         </span>
         <Show when={command.selected}>
@@ -1698,7 +2133,53 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </div>
           </Show>
           <Show when={commandsOpen()}>
-            <div class="k2b-chat-composer-accessory" data-commands="">
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: the search field inside is the keyboard target; a press elsewhere in the panel only keeps the focus there. */}
+            <div
+              class="k2b-chat-composer-accessory"
+              data-commands=""
+              data-search={addSearch() ? "" : undefined}
+              onMouseDown={(event) => {
+                if (addSearch() && event.target !== addSearchRef) event.preventDefault();
+              }}
+            >
+              <Show when={addSearch()}>
+                <label class="k2b-chat-composer__command-search">
+                  <i class="ti ti-search" aria-hidden="true" />
+                  <input
+                    ref={addSearchRef}
+                    type="text"
+                    role="combobox"
+                    value={addQuery()}
+                    placeholder={chatMessages().commandSearch}
+                    aria-label={chatMessages().commandSearchLabel}
+                    aria-autocomplete="list"
+                    aria-controls={commandListId}
+                    aria-expanded="true"
+                    aria-activedescendant={selectedCommand() ? commandOptionId(selectedCommand()!) : undefined}
+                    autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck={false}
+                    // Read-only while an `open` row runs, as the field is.
+                    readOnly={openingRow() !== undefined}
+                    onInput={(event) => setAddQuery(event.currentTarget.value)}
+                    onKeyDown={onAddSearchKeyDown}
+                    onCompositionStart={() => {
+                      addComposing = true;
+                    }}
+                    onCompositionEnd={() => {
+                      addComposing = false;
+                    }}
+                    onFocusOut={(event) => {
+                      const next = event.relatedTarget;
+                      if (next instanceof Node && commandListRef?.parentElement?.contains(next)) return;
+                      // Focus that leaves another way, such as with Shift+Tab, closes the list and stays where it went.
+                      queueMicrotask(() => {
+                        if (addSearch() && document.activeElement !== addSearchRef) endAddSearch(false);
+                      });
+                    }}
+                  />
+                </label>
+              </Show>
               <div
                 ref={commandListRef}
                 id={commandListId}
@@ -1723,15 +2204,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                             </Show>
                           </div>
                           <For each={rows()}>{renderCommandRow}</For>
-                          <Show when={group()?.placeholder}>
-                            <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">
-                              <span />
-                              <span>
+                          <Index each={Array.from({ length: Math.max(group()?.placeholder ? 1 : 0, group()?.pendingRows ?? 0) })}>
+                            {() => (
+                              <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">
                                 <span />
-                                <span />
-                              </span>
-                            </div>
-                          </Show>
+                                <span>
+                                  <span />
+                                  <span />
+                                </span>
+                              </div>
+                            )}
+                          </Index>
                         </div>
                       </Show>
                     );
@@ -1752,7 +2235,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     <i class="ti ti-alert-circle" /> {messages().error}
                   </div>
                 </Show>
-                <Show when={!searching() && !searchError() && foundCommandCount() === 0}>
+                <Show
+                  when={
+                    !searching() && !searchError() && foundCommandCount() === 0 && !commandModel().groups.some((group) => group.pendingRows)
+                  }
+                >
                   <div role="status">
                     {!parsedCommandQuery().query.trim()
                       ? messages().noResults
@@ -1898,7 +2385,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     <>
                       <div class="k2b-chat-composer__tools">
                         {props.footerTools}
-                        <Show when={hasAddMenu()}>{addMenu("ti ti-plus")}</Show>
+                        <Show when={addOpensCommands()} fallback={<Show when={hasAddMenu()}>{addMenu("ti ti-plus")}</Show>}>
+                          {addSearchButton()}
+                        </Show>
                         {fileInput()}
                         {formatToggle()}
                         {emojiButton()}

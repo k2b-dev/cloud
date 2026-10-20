@@ -246,3 +246,16 @@ export {
   resolveAllowedNetworkAddresses,
 } from "./network-security";
 export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
+
+export { geoip } from "./geoip";
+export {
+  knownBrowsers,
+  KNOWN_BROWSER_LIMITS,
+  SIGN_IN_METHODS,
+  type SignInMethod,
+  type NewBrowserSignInNotice,
+  type NewBrowserSignInNotifier,
+} from "./known-browsers";
+export { LASTING_ACCESS_SIGN_IN_SECONDS, requireConfirmedBrowserSignIn } from "./session/recent";
+
+export { deviceOffersApproval } from "./approvals/device";

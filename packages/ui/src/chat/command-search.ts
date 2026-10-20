@@ -83,7 +83,15 @@ export function parseChatCommandQuery(query: string, scopes: readonly ChatComman
 }
 
 export type ChatCommandRow = { command: ChatCommand; server: boolean; highlight?: readonly [number, number] };
-type Group = { section?: ChatCommandSection; scopeTitle?: string; rows: ChatCommandRow[]; loading: boolean; placeholder: boolean };
+type Group = {
+  section?: ChatCommandSection;
+  scopeTitle?: string;
+  rows: ChatCommandRow[];
+  loading: boolean;
+  placeholder: boolean;
+  /** Placeholder rows of a `pending` section, after its rows: three in the overview, one while searching. */
+  pendingRows: number;
+};
 
 export function chatCommandListModel(input: {
   query: string;
@@ -101,15 +109,21 @@ export function chatCommandListModel(input: {
   const query = foldChatSearchText(rawQuery).trim();
   const overview = !scope && !query;
   const groups: Group[] = scope
-    ? [{ scopeTitle: scope.title, rows: [], loading: input.searching, placeholder: false }]
+    ? [{ scopeTitle: scope.title, rows: [], loading: input.searching, placeholder: false, pendingRows: 0 }]
     : [
-        ...(input.sections ?? []).map((section) => ({
-          section,
-          rows: [],
-          loading: Boolean(section.searched && input.searching && !(overview && section.searchOnly)),
-          placeholder: false,
-        })),
-        { rows: [], loading: !input.sections?.length && input.searching, placeholder: false },
+        ...(input.sections ?? []).map((section) => {
+          // A section hidden for this query also hides its loading state.
+          const hidden = overview ? section.searchOnly : section.overviewOnly;
+          const pendingRows = section.pending && !hidden ? (overview ? 3 : 1) : 0;
+          return {
+            section,
+            rows: [],
+            loading: Boolean(pendingRows || (section.searched && input.searching && !hidden)),
+            placeholder: false,
+            pendingRows,
+          };
+        }),
+        { rows: [], loading: !input.sections?.length && input.searching, placeholder: false, pendingRows: 0 },
       ];
   const bySection = new Map(groups.map((group, index) => [group.section?.id, index]));
   const buckets: { command: ChatCommand; server: boolean }[][] = groups.map(() => []);
@@ -124,25 +138,30 @@ export function chatCommandListModel(input: {
   }
   const seen = new Set<string>();
   for (const [index, group] of groups.entries()) {
-    // A search-only section is absent from the overview, rows and placeholder included.
-    if (overview && group.section?.searchOnly) continue;
+    // A search-only section is absent from the overview, rows and placeholder included; an overview-only one while searching.
+    if (overview ? group.section?.searchOnly : group.section?.overviewOnly) continue;
     const ranked: (ChatCommandRow & { rank: number })[] = [];
     for (const { command, server } of buckets[index]!) {
       const key = chatCommandKey(command);
       if (seen.has(key)) continue;
       if (overview && command.hiddenUntilSearch) continue;
       const match = rankPrepared(prepare(command), query);
-      if (!overview && !match && !(server && input.searchResultsFresh)) continue;
+      if (!overview && !match && !command.persistent && !(server && input.searchResultsFresh)) continue;
       seen.add(key);
-      ranked.push({ command, server, highlight: match?.highlight, rank: match?.rank ?? Infinity });
+      // A recent match moves one step up the ladder and leads its rank.
+      const rank = (match?.rank ?? Infinity) - (command.recent && match ? 1.5 : 0);
+      ranked.push({ command, server, highlight: match?.highlight, rank });
     }
     if (!overview) ranked.sort((a, b) => a.rank - b.rank);
     group.rows = ranked.map(({ command, server, highlight }) => ({ command, server, highlight }));
     group.placeholder =
-      group.loading && group.rows.length === 0 && Boolean(scope || !input.searchSettled || buckets[index]!.some((entry) => entry.server));
+      !group.pendingRows &&
+      group.loading &&
+      group.rows.length === 0 &&
+      Boolean(scope || !input.searchSettled || buckets[index]!.some((entry) => entry.server));
   }
   // A section without rows has no heading, also in the overview; a scope always shows its title.
-  const visible = groups.filter((group) => scope || group.rows.length || group.placeholder);
+  const visible = groups.filter((group) => scope || group.rows.length || group.placeholder || group.pendingRows);
   const matches = visible.flatMap((group) => group.rows);
   // The fallback is no match: unscoped it ends the list after "Nothing found"; in a scope it is the scope's last row.
   const fallback =
@@ -152,7 +171,8 @@ export function chatCommandListModel(input: {
     scope,
     groups: visible,
     rows: fallback ? [...matches, fallback] : matches,
-    empty: matches.length === 0 && !input.searching,
+    // Rows still on their way may match, so "Nothing found" waits for them.
+    empty: matches.length === 0 && !input.searching && !visible.some((group) => group.pendingRows),
     fallback: scope ? undefined : fallback,
   };
 }

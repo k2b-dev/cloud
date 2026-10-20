@@ -77,6 +77,10 @@ const opened: [string, string][] = [
     "search prompt",
     `<div class="k2b-prompt-search"><label class="k2b-prompt-search__input"><i class="ti ti-search"></i><input type="search" placeholder="Search"></label></div>`,
   ],
+  [
+    "slash list search",
+    `<label class="k2b-chat-composer__command-search"><i class="ti ti-search"></i><input type="text" role="combobox" placeholder="Search"></label>`,
+  ],
   ["file rename", `<input class="k2b-content-file-tree__rename" value="report.pdf">`],
   [
     "source file",

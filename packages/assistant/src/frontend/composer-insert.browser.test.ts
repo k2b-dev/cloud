@@ -244,3 +244,356 @@ describe(`Insert from the Assistant's slash list in ${browserName}`, () => {
     }
   }, 60_000);
 });
+
+const commandCatalog = {
+  protocolVersion: 2,
+  apps: [
+    {
+      appId: "spaces",
+      appName: "Spaces",
+      appIcon: "ti ti-layout-kanban",
+      appDescription: "Tasks",
+      manifest: {
+        protocolVersion: 2,
+        appId: "spaces",
+        manifestHash: "a".repeat(64),
+        types: [],
+        queries: [],
+        actions: [],
+        commands: [
+          {
+            localId: "task.compose",
+            title: "Neue Aufgabe",
+            description: "Eine Aufgabe öffnen.",
+            icon: "ti ti-checkbox",
+            keywords: ["task", "Aufgabe"],
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            path: "/app/spaces",
+          },
+        ],
+      },
+    },
+  ],
+  page: { hasMore: false },
+};
+
+describe(`App Commands in the Assistant slash list in ${browserName}`, () => {
+  test.each(views)(
+    "at $width px, delayed Commands fill the final placeholders without moving the first visible row or composer",
+    async (view) => {
+      const { page, close } = await open(view, "?commands&text=");
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let requests = 0;
+      await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
+        requests++;
+        await gate;
+        await route.fulfill({ json: commandCatalog });
+      });
+      try {
+        const requested = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/capabilities/v1/catalog");
+        await page.keyboard.type("/");
+        await requested;
+        const list = page.locator('[role="listbox"]');
+        await page.waitForFunction(() => document.querySelectorAll(".k2b-chat-composer__command-placeholder").length === 3);
+        expect(requests).toBe(1);
+        const placeholders = list.locator(".k2b-chat-composer__command-placeholder");
+        expect(await placeholders.count()).toBe(3);
+        const lastGroup = list.locator('[role="group"]').last();
+        expect(await lastGroup.locator(".k2b-chat-composer__command-heading").textContent()).toContain("In Apps öffnen");
+        expect(await lastGroup.locator(".k2b-chat-composer__command-placeholder").count()).toBe(3);
+        expect(await placeholders.last().evaluate((element) => element.nextElementSibling === null)).toBe(true);
+        const first = await box(page, '[role="listbox"] [role="option"]');
+        const composer = await box(page, ".k2b-chat-composer");
+        release();
+        await option(page, "Neue Aufgabe").waitFor({ state: "attached" });
+        expect(await placeholders.count()).toBe(0);
+        expect(await box(page, '[role="listbox"] [role="option"]')).toEqual(first);
+        expect(await box(page, ".k2b-chat-composer")).toEqual(composer);
+        expect(requests).toBe(1);
+      } finally {
+        release();
+        await close();
+      }
+    },
+    60_000,
+  );
+
+  test.each(views)(
+    "at $width px, an app Command opens in place: the field keeps focus, the row shows progress, then why it failed",
+    async (view) => {
+      const { page, close } = await open(view, "?commands&text=");
+      await page.route("**/api/capabilities/v1/catalog?*", (route) => route.fulfill({ json: commandCatalog }));
+      let answer: () => Promise<void> = async () => {};
+      const resolving = new Promise<void>((resolve) => {
+        page.route("**/api/capabilities/v1/commands/**", async (route) => {
+          resolve();
+          await new Promise<void>((done) => {
+            answer = async () => {
+              await route.fulfill({ status: 503, json: { code: "APP_UNAVAILABLE", message: "Spaces is unavailable" } });
+              done();
+            };
+          });
+        });
+      });
+      try {
+        await page.keyboard.type("/neue auf");
+        const row = option(page, "Neue Aufgabe");
+        await row.waitFor();
+        const before = await box(page, '[role="listbox"] [role="option"]');
+        await page.keyboard.press("Enter");
+        await resolving;
+        // A disabled field would lose focus and close the list; it stays focused and the row says it is opening.
+        await expect(row.getAttribute("aria-busy")).resolves.toBe("true");
+        expect(await row.textContent()).toContain("Wird geöffnet …");
+        expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
+        expect(await box(page, '[role="listbox"] [role="option"]')).toEqual(before);
+        await answer();
+        await page.waitForFunction(() =>
+          document.querySelector('[role="listbox"]')?.textContent?.includes("Spaces ist gerade nicht erreichbar."),
+        );
+        expect(await page.locator("textarea").inputValue()).toBe("/neue auf");
+        expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
+      } finally {
+        await close();
+      }
+    },
+    60_000,
+  );
+
+  test.each(views)(
+    "at $width px, the persistent error row retries exactly one catalog load",
+    async (view) => {
+      const { page, close } = await open(view, "?commands&text=");
+      let requests = 0;
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
+        requests++;
+        if (requests === 1) await route.fulfill({ status: 503, json: { message: "Offline" } });
+        else {
+          await gate;
+          await route.fulfill({ json: commandCatalog });
+        }
+      });
+      try {
+        await page.keyboard.type("/");
+        const retry = option(page, "Befehle aus Apps konnten nicht geladen werden");
+        await retry.waitFor();
+        // A persistent retry remains reachable even for a query with no match.
+        await page.keyboard.type("zzzz");
+        await retry.waitFor();
+        expect(requests).toBe(1);
+        const retried = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/capabilities/v1/catalog");
+        await retry.click();
+        await retried;
+        await page.waitForFunction(() => document.querySelectorAll(".k2b-chat-composer__command-placeholder").length > 0);
+        expect(requests).toBe(2);
+        release();
+        await page.keyboard.press("Escape");
+        await page.locator("textarea").fill("/");
+        await option(page, "Neue Aufgabe").waitFor({ state: "attached" });
+        expect(requests).toBe(2);
+      } finally {
+        release();
+        await close();
+      }
+    },
+    60_000,
+  );
+});
+
+// Checked recent references as the server answers them, in recency order; the overview shows the four sent most often.
+const recentNote = (id: string, title: string, preview: string, count: number) => ({
+  ref: { type: "notebooks.note", id },
+  title,
+  icon: "ti ti-file-text",
+  kind: "Notiz",
+  preview,
+  appName: "Notebooks",
+  count,
+});
+const recentResources = [
+  recentNote("n1", "Q3-Planung", "Vertrieb", 3),
+  {
+    ref: { type: "core.ai.skill", id: "Skill1" },
+    title: "Rechnungen abgleichen",
+    icon: "ti ti-sparkles",
+    kind: "Skill",
+    preview: "Gleicht Rechnungen mit Kontoauszügen ab.",
+    appName: "Assistent",
+    count: 2,
+  },
+  {
+    ref: { type: "contacts.contact", id: "c1" },
+    title: "Mara Beispiel",
+    icon: "ti ti-address-book",
+    kind: "Kontakt",
+    preview: "Müller GmbH",
+    appName: "Kontakte",
+    count: 2,
+  },
+  recentNote("n2", "Retro Q3", "Produkt", 1),
+  recentNote("n6", "Angebot Müller – Notizen", "Vertrieb", 1),
+];
+const skillSummary = (shortId: string, name: string, description: string) => ({
+  id: `id-${shortId}`,
+  shortId,
+  name,
+  description,
+  permission: "read",
+  enabled: true,
+  revision: 1,
+  source: null,
+  manualOnly: false,
+  referenceCount: 0,
+  createdAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: "2026-10-01T12:00:00.000Z",
+});
+const skillList = [
+  skillSummary("Skill1", "Rechnungen abgleichen", "Gleicht Rechnungen mit Kontoauszügen ab."),
+  skillSummary("Skill2", "Rechnung schreiben", "Schreibt eine Rechnung aus einem Angebot."),
+  skillSummary("Skill3", "Protokoll", "Fasst ein Gespräch als Protokoll zusammen."),
+  skillSummary("Skill4", "Übersetzen", "Übersetzt Texte ins Deutsche oder Englische."),
+  skillSummary("Skill5", "Wochenbericht", "Schreibt den Bericht der Woche."),
+];
+
+/** The Assistant's slash list with Skills, routines and the recent references; `hold` keeps the recent answer back. */
+const openWithRecent = async (view: View, options: { hold?: Promise<void>; text?: string } = {}) => {
+  const context = await browser.newContext({
+    viewport: { width: view.width, height: view.height },
+    isMobile: view.touch,
+    hasTouch: view.touch,
+    reducedMotion: "reduce",
+  });
+  let recentRequests = 0;
+  await context.route("**/api/ai/resources/recent", async (route) => {
+    recentRequests++;
+    await options.hold;
+    await route.fulfill({ json: { resources: recentResources } });
+  });
+  await context.route("**/api/ai/skills**", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const query = (params.get("q") ?? "").toLowerCase();
+    return route.fulfill({
+      json: { skills: params.has("name") ? [] : skillList.filter((skill) => skill.name.toLowerCase().includes(query)) },
+    });
+  });
+  await context.route("**/api/ai/tasks**", (route) => route.fulfill({ json: [] }));
+  const page = await context.newPage();
+  await page.goto(`http://127.0.0.1:${server.port}/?recent&text=${encodeURIComponent(options.text ?? "")}`);
+  const field = page.locator("textarea").first();
+  await field.waitFor();
+  await field.focus();
+  await page.keyboard.press("End");
+  return { page, field, requests: () => recentRequests, close: () => context.close() };
+};
+const headings = (page: Page) => page.locator(".k2b-chat-composer__command-heading").allTextContents();
+
+describe(`Recent references in the Assistant's slash list in ${browserName}`, () => {
+  test.each(views)(
+    "at $width px, Recent leads the overview at once, shows four with kind and place, and a choice inserts the reference",
+    async (view) => {
+      const { page, close } = await openWithRecent(view);
+      try {
+        await page.waitForFunction(() => (window as unknown as { harness: { recentLoaded: () => boolean } }).harness.recentLoaded());
+        const composer = await box(page, ".k2b-chat-composer");
+        await page.keyboard.type("/");
+        await option(page, "Q3-Planung").waitFor();
+        // Recent is there in the first frame of this opening, above Insert; it never arrives later.
+        expect((await headings(page))[0]).toBe("Zuletzt");
+        const recentGroup = page.locator('[role="listbox"] [role="group"]').first();
+        expect(await recentGroup.locator('[role="option"] strong').allTextContents()).toEqual([
+          "Q3-Planung",
+          "Rechnungen abgleichen",
+          "Mara Beispiel",
+          "Retro Q3",
+        ]);
+        expect(await option(page, "Q3-Planung").textContent()).toContain("Notiz · Vertrieb");
+        await option(page, "Protokoll").waitFor();
+        // Each entry once: the recent Skill does not repeat under Skills.
+        expect(await page.locator('[role="listbox"] [role="option"]', { hasText: "Rechnungen abgleichen" }).count()).toBe(1);
+        expect(await box(page, ".k2b-chat-composer")).toEqual(composer);
+
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.querySelector("textarea")?.value === "Q3-Planung ");
+        expect(await page.locator(".k2b-chat-composer__mention").allTextContents()).toEqual(["Q3-Planung"]);
+        expect(await box(page, ".k2b-chat-composer")).toEqual(composer);
+      } finally {
+        await close();
+      }
+    },
+    60_000,
+  );
+
+  test.each(views)(
+    "at $width px, a late answer moves no visible row and no composer; only the next opening shows Recent",
+    async (view) => {
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const { page, close, requests } = await openWithRecent(view, { hold });
+      try {
+        await page.keyboard.type("/");
+        await option(page, "Protokoll").waitFor();
+        expect((await headings(page))[0]).toBe("Einfügen");
+        const first = await box(page, '[role="listbox"] [role="option"]');
+        const composer = await box(page, ".k2b-chat-composer");
+        release();
+        await page.waitForFunction(() => (window as unknown as { harness: { recentLoaded: () => boolean } }).harness.recentLoaded());
+        // Two frames after the answer: nothing was inserted above the rows the person sees.
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        expect((await headings(page))[0]).toBe("Einfügen");
+        expect(await box(page, '[role="listbox"] [role="option"]')).toEqual(first);
+        expect(await box(page, ".k2b-chat-composer")).toEqual(composer);
+        expect(await page.locator('[role="listbox"]').getByText("Q3-Planung").count()).toBe(0);
+
+        await page.keyboard.press("Escape");
+        await page.keyboard.type(" /");
+        await option(page, "Q3-Planung").waitFor();
+        expect((await headings(page))[0]).toBe("Zuletzt");
+        expect(await box(page, ".k2b-chat-composer")).toEqual(composer);
+        expect(requests()).toBe(1);
+      } finally {
+        release();
+        await close();
+      }
+    },
+    60_000,
+  );
+
+  test.each(views)(
+    "at $width px, typing ranks recent references first in their section and /notiz q3 lists recent notes above the search row",
+    async (view) => {
+      const { page, close } = await openWithRecent(view);
+      try {
+        await page.waitForFunction(() => (window as unknown as { harness: { recentLoaded: () => boolean } }).harness.recentLoaded());
+        await page.keyboard.type("/rech");
+        await option(page, "Rechnung schreiben").waitFor();
+        expect(await headings(page)).not.toContain("Zuletzt");
+        const skills = page.locator('[role="listbox"] [role="group"]', { hasText: "Skills" });
+        expect(await skills.locator('[role="option"] strong').allTextContents()).toEqual(["Rechnungen abgleichen", "Rechnung schreiben"]);
+
+        await page.keyboard.press("Control+a");
+        await page.keyboard.press("Backspace");
+        await page.keyboard.type("/notiz q3");
+        await option(page, "„q3“ in Notizen suchen").waitFor();
+        await option(page, "Retro Q3").waitFor();
+        expect(await headings(page)).toEqual(["Notizen aus Notebooks"]);
+        expect(await page.locator('[role="listbox"] [role="option"] strong').allTextContents()).toEqual([
+          "Q3-Planung",
+          "Retro Q3",
+          "„q3“ in Notizen suchen",
+        ]);
+      } finally {
+        await close();
+      }
+    },
+    60_000,
+  );
+});

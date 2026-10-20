@@ -15,6 +15,7 @@ type MockServerState = {
   meCalls: number;
   failFirstMe?: boolean;
   tokenResponse?: unknown;
+  tokenStatus?: number;
   tokenDelayMs?: number;
   appsCalls?: number;
   appsSearch?: string | null;
@@ -119,6 +120,7 @@ const startMockServer = (state: MockServerState) =>
             scope: "openid",
             refresh_token: grantType === "authorization_code" ? "login-refresh" : "new-refresh",
           },
+          { status: state.tokenStatus ?? 200 },
         );
       }
 
@@ -792,10 +794,47 @@ describe("cloud CLI OAuth session handling", () => {
         if (detail) expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
         else expect(html).not.toContain("<code>");
         expect(await proc.exited).toBe(1);
-        expect(await stderrPromise).toContain(detail ?? error);
+        expect(await stderrPromise).toContain(error === "access_denied" ? "Sign-in was denied in the browser." : (detail ?? error));
         await stdoutPromise;
         expect(state.authorizationCodeCalls).toBe(0);
       } finally {
+        server.stop(true);
+      }
+    });
+  }
+
+  for (const locale of ["en", "de"]) {
+    test(`a refused code exchange asks for browser confirmation in ${locale}`, async () => {
+      const state: MockServerState = {
+        refreshCalls: 0,
+        authorizationCodeCalls: 0,
+        revokeCalls: 0,
+        meCalls: 0,
+        tokenResponse: { error: "invalid_grant" },
+        tokenStatus: 400,
+      };
+      const server = startMockServer(state);
+      const dir = await createTempDir();
+      const configPath = join(dir, "config.json");
+      const proc = startCli(configPath, ["--locale", locale, "login", "--server", `http://127.0.0.1:${server.port}`, "--no-open"]);
+      try {
+        const stderrPromise = new Response(proc.stderr).text();
+        const callbackUrl = await readLoginCallbackUrl(proc.stdout, locale);
+        const stdoutPromise = proc.stdout.pipeTo(new WritableStream());
+        callbackUrl.searchParams.set("code", "test-code");
+        expect((await fetch(callbackUrl)).status).toBe(200);
+        expect(await proc.exited).toBe(1);
+        expect(await stderrPromise).toContain(
+          locale === "de"
+            ? "Führe `cld login` erneut aus und bestätige die Anmeldung im Browser."
+            : "Run `cld login` again and confirm the sign-in in the browser.",
+        );
+        await stdoutPromise;
+        expect(state.authorizationCodeCalls).toBe(1);
+        expect(await Bun.file(configPath).exists()).toBe(false);
+      } finally {
+        proc.kill();
+        await proc.exited;
         server.stop(true);
       }
     });

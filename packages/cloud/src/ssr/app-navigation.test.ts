@@ -172,8 +172,8 @@ describe("visiblePanelProviders", () => {
   });
   test("uses id to break label ties and returns only the small provider projection", () => {
     expect(visiblePanelProviders([panelApp("b", "Same"), panelApp("a", "Same")], user, "en")).toEqual([
-      { id: "a", label: "Same", icon: "ti ti-box", href: "/app/a/panel" },
-      { id: "b", label: "Same", icon: "ti ti-box", href: "/app/b/panel" },
+      { id: "a", appName: "a", consent: true, label: "Same", icon: "ti ti-box", href: "/app/a/panel" },
+      { id: "b", appName: "b", consent: true, label: "Same", icon: "ti ti-box", href: "/app/b/panel" },
     ]);
   });
 });

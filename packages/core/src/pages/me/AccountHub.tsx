@@ -91,7 +91,9 @@ export default function AccountHub(props: {
               href={section.href}
               aria-current={active ? "page" : undefined}
               class={`flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-3 text-xs font-medium no-underline transition-colors ${
-                active ? "bg-[var(--ui-selected)] text-primary" : "text-secondary hover:bg-[var(--ui-hover)] hover:text-primary"
+                active
+                  ? "bg-[var(--ui-app-selected-nav)] text-[var(--ui-app-accent-text)]"
+                  : "text-secondary hover:bg-[var(--ui-hover)] hover:text-primary"
               }`}
             >
               <i class={section.icon} aria-hidden="true" />

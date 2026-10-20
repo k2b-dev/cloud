@@ -1,5 +1,5 @@
 import { sql } from "bun";
-import { CapabilityActionReviewSchema } from "../contracts/capabilities";
+import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMessageQueue } from "./message-queue";
@@ -403,6 +403,15 @@ export const migrateCloudAi = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_loop_seq
     ON ai.messages(conversation_id, loop_id, seq ASC)
     WHERE loop_id IS NOT NULL
+  `.simple();
+  // "Recent" in the slash menu reads the newest messages a person sent in each of their latest chats. Without it the
+  // read walks every Assistant and tool row of those chats. The predicate matches the store query word for word.
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_messages_sent_by_person
+    ON ai.messages(conversation_id, seq DESC) INCLUDE (created_at, id)
+    WHERE role = 'user' AND kind = 'message'
+      AND NOT (COALESCE(meta, '{}'::jsonb) ? 'scheduledTask')
+      AND NOT (COALESCE(meta, '{}'::jsonb) ? 'agentMessage')
   `.simple();
 
   // Optional pg_textsearch ranking. Native weighted FTS above is always the
@@ -2288,6 +2297,21 @@ export const migrateCloudAi = async (): Promise<void> => {
     AFTER UPDATE OF status, error, completed_at, cancel_requested_at ON ai.turns
     FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list,conversation-detail')
   `.simple();
+  // Only questions for the person change the list of open questions; browser tool calls come and go per turn.
+  await sql`DROP TRIGGER IF EXISTS ai_live_pending_actions_changed ON ai.pending_actions`.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_live_pending_actions_removed ON ai.pending_actions`.simple();
+  await sql`
+    CREATE TRIGGER ai_live_pending_actions_changed
+    AFTER INSERT OR UPDATE OF status ON ai.pending_actions
+    FOR EACH ROW WHEN (NEW.kind IN ('approval', 'custom_approval'))
+    EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')
+  `.simple();
+  await sql`
+    CREATE TRIGGER ai_live_pending_actions_removed
+    AFTER DELETE ON ai.pending_actions
+    FOR EACH ROW WHEN (OLD.kind IN ('approval', 'custom_approval'))
+    EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')
+  `.simple();
   await sql`DROP TRIGGER IF EXISTS ai_live_chat_tasks_changed ON ai.chat_tasks`.simple();
   await sql`
     CREATE TRIGGER ai_live_chat_tasks_changed AFTER INSERT OR UPDATE OR DELETE ON ai.chat_tasks
@@ -2667,7 +2691,7 @@ const backfillApprovalRequests = async (): Promise<void> => {
             WHERE r.requester_kind='assistant_turn' AND r.requester_ref=a.turn_id::text || '/' || a.call_id)
         ORDER BY a.created_at, a.id LIMIT 200 FOR UPDATE OF a SKIP LOCKED`;
       for (const row of rows) {
-        const review = CapabilityActionReviewSchema.safeParse(row.review == null ? null : decoded(row.review));
+        const review = CapabilityActionReviewDataSchema.safeParse(row.review == null ? null : decoded(row.review));
         // request computes both canonical digests; preserve the original wait deadline, including expiry.
         const record = await approvals.request(
           {

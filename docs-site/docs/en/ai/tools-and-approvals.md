@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-12
+updated: 2026-10-20
 ---
 
 # Tools and approvals
@@ -24,6 +24,11 @@ Applications can also restrict launched conversations through
 [`allowedTools`](/en/docs/ai/chat-runtime-and-streaming). The stored ceiling applies
 to later turns and forks as well as initial discovery. Action approval and domain
 permissions still apply to every permitted operation.
+
+Applications can declare [Action policies, per-call reviews, and receipts](/en/docs/platform/capabilities#describe-each-call-with-policy-and-typed-slots).
+In this release, silent policies keep the rememberable-approval behavior;
+asking policies ask every time. Upgrade Core, Assistant, and Capabilities
+before apps return the new shapes.
 
 ## Define a server tool
 
@@ -124,7 +129,8 @@ app Capability Actions use the fixed AI Core policy described below.
 The default is `once`.
 
 Remembered approval is scoped to the actor, tool, and declared approval scope.
-The person remembers it either for the current chat, the default, or always. A
+The browser offers remembering for the current chat where allowed. Earlier
+**Always approve** choices still apply until the next major release. A
 chat approval ends when the chat is deleted. Only use a shared scope when every
 call covered by it has the same consequence.
 
@@ -553,7 +559,7 @@ AI Core treats capability operation kinds as the approval boundary:
 | --- | --- |
 | Query | Execute without interactive approval |
 | Action without `approval` | Require fresh approval for that call; it cannot be granted to a routine |
-| Action with `approval: "rememberable"` | Offer one-time approval, **Approve for this chat**, or **Always approve** for the app-owned review scope |
+| Action with `approval: "rememberable"` | Offer one-time approval or **Yes, and don't ask again in this chat** for the app-owned review scope |
 
 Capability manifests describe objective Action properties such as `openWorld`,
 `destructive`, idempotency, and the optional availability of a review. AI Core
@@ -565,13 +571,9 @@ presentation metadata. A review that returns no `approvalScope` for particular
 arguments makes that call ask every time, for example a copy into another
 storage base.
 
-For example, the single-file and atomic multi-file Assistant Skill reference
-Actions offer **Always approve** in the split-button menu after their
-full-content review. That choice applies to later writes through the same
-Action across all Skills the current user can edit. Every write still rechecks
-Skill access, validates the complete Markdown files, and enforces the expected
-revision. A multi-file write validates the whole batch first and advances the
-revision once; deleting a reference continues to require a fresh approval.
+The browser no longer offers **Always approve**. Choices made earlier still
+apply until the next major release. A remembered choice never bypasses current
+resource permissions or the Action's validation.
 
 This approval confirms the user's intent for one model-requested call. It is
 not application authorization. After approval, the owning app validates the
@@ -592,13 +594,28 @@ An Action may publish the fixed optional
 After the model requests such an Action, AI Core resolves the review with the
 current user and the same arguments before presenting the approval.
 
-The review is UI-only. Cloud renders its bounded message and details as escaped
-plain text, with same-origin links in the approval footer. It is never added to
-model context or returned as a tool result.
-The app name, icon, Action title, and risk treatment continue to come from the
-live registry and manifest. Once presented, the resolved review is stored with
-the pending action and active-turn snapshot; reconnecting or reopening the chat
-must render that same snapshot rather than recomputing or degrading it.
+The question shows one sentence with typed chips from the review, Cloud's
+reason line, the thing being changed, and two answers naming the deed and its
+target. Cloud derives the reason from the review's `ask` or declared policy;
+the model's `approvalReason` is no longer shown. Legacy reviews and Actions
+without a policy use `app_asks`. Legacy question text and every detail remain
+readable without treating the text as a new template.
+
+| Reason code | Why Cloud asks |
+| --- | --- |
+| `sends` | This leaves Cloud |
+| `deletes` | This cannot be brought back |
+| `cannot_undo` | This cannot be set back |
+| `involves_people` | This involves or notifies other people |
+| `changes_access` | Who can see this changes |
+| `keeps_working` | This keeps acting without the person |
+| `sensitive` | This concerns payments, invoices, addresses, or sign-in data |
+| `app_asks` | The app asks every time |
+
+The review is display data, not model context or a tool result. Cloud stores it
+on the tool-call message before showing the question, including calls an earlier
+approval lets through. Reloads keep the same sentence, slots, and preview even
+after the app changes. Scheduled turns keep the review in their run transcript.
 Execution is different: after approval, AI Core resolves the review once more
 and runs the Action only when it equals the snapshot; otherwise it asks again.
 
@@ -611,6 +628,37 @@ A review does not alter arguments, grant permission, record consent, or replace
 an app-owned safety workflow. For example, a domain fingerprint or optimistic
 revision required by an Action remains part of the Action input and is enforced
 again by the owning app.
+
+### Read an Action outcome
+
+The same card keeps one outcome line:
+
+| Outcome | Meaning |
+| --- | --- |
+| Running | Cloud dispatched the call |
+| Done | The app returned success, or its check confirmed the effect; the receipt states only what is certain |
+| Rejected | The person declined |
+| Not run | Cloud or the app confirmed nothing happened |
+| Unknown | Cloud has no usable answer after dispatch |
+
+Only an app's answer about the request itself (a 4xx) proves that an Action did
+not happen. A lost response, a timeout, a cancellation, or a server-side failure
+after dispatch (`ACTION_OUTCOME_UNKNOWN`, `IDEMPOTENCY_UNCERTAIN`,
+`IDEMPOTENCY_IN_PROGRESS`, or any 5xx or 499) leaves the outcome unknown, and
+the model gets `ACTION_OUTCOME_UNKNOWN`. A failure before Cloud sent anything
+to the app, such as an unavailable registry, keeps its own code and reads as
+failed. A call that was still running when its turn ended without a stop is
+unknown too; when Cloud had sent it and its review has a check, **Check again**
+starts that check. When a new review supplies
+`check: { query, input }`, Cloud then runs that app's Query once. `done` shows the receipt and settles the call;
+`not_done` shows not run and tells the model to ask before trying again.
+`pending` keeps the unknown line. An unavailable or invalid check also keeps
+that line. **Check again** runs only the Query once per press for a pending or
+failed check, with the person's current access; concurrent presses conflict.
+It never repeats the Action. A result that check settles also reaches the
+Assistant in later turns, so it knows the call happened or did not. Without a
+check, the card can link the object but
+offers no repeat button. Background checks follow the same rules and never ask.
 
 ### Approvals from an editor
 
@@ -634,26 +682,28 @@ rules, and decision channels.
 The stream exposes pending actions. The shared controller provides:
 
 - `respondToApproval({ turnId, callId }, { approved, remember })`;
-- `submitFrontendToolResult({ turnId, callId }, result)`.
+- `submitFrontendToolResult({ turnId, callId }, result)`;
+- `checkAction({ turnId, callId })`, returning the latest outcome check.
 
-Show the tool name, requested inputs, and consequence before approval. The
-primary action uses a split button; its **Details** item toggles the complete
-validated arguments for technical verification. Do not require ordinary users
-to read that raw representation: every value needed for an informed decision
-belongs directly in the review card. Approving once stays the primary action.
-When the owning Action supplies a reusable scope, the menu offers
-**Approve for this chat** first and **Always approve** after it
-(`remember: "chat"` or `remember: "always"`). A pending approval carries
-`allowChat` and `allowAlways`; for a website it also carries `website`, the
-exact origin a chat approval would allow.
-When a Capability review is available, show it instead of making the user
-interpret opaque IDs in the raw arguments. Review details default to the
-compact `inline` presentation; `display: "block"` gives long plain-text values
-their own bounded section. Apps can mark canonical `YYYY-MM-DD` values as
-`date` and RFC 3339 instants as `date-time`; the shared UI renders them for the
-viewer without changing the persisted value. These hints never enable HTML or
-Markdown rendering, and semantic review links remain clickable same-origin
-links.
+Use the shared question card for the sentence, reason, preview, two answers,
+and outcome. Where remembering for this chat is allowed, show the quiet
+**Yes, and don't ask again in this chat** link (`remember: "chat"`). A chat
+choice ends when the chat is deleted. The API still accepts `remember: "always"`
+and applies earlier choices, but the browser no longer offers it. A pending
+approval retains `allowChat` and `allowAlways`; a website request also carries
+`website`, its exact origin.
+
+Wire `onCheckAction` to `checkAction` and propagate failures so the card can
+show recovery. Core serves
+`POST /api/ai/conversations/:conversationId/turns/:turnId/calls/:callId/check`
+for the conversation owner in a signed-in browser session; API keys and other
+clients get `403`. Unknown calls return `404`. Calls without a check, and a
+second press while one check runs, return `409`. The executor and a person's
+press claim the check with one conditional write, so only one runs at a time and
+a settled result is never replaced; a claim whose worker stopped goes stale after
+a minute and can be checked again. A settled check answers again
+with its stored result without running the Query, so a client whose response
+got lost can recover. The response is `{ state, receipt?, at }`.
 
 The owning app sets this policy in its manifest. Users and administrators
 cannot loosen it; a user can only remember an approval where the Action offers
@@ -743,7 +793,11 @@ address must match one of these as a whole; a host and path that only appear
 inside a longer address do not count. A message another chat sent counts as
 none of these. Any other address, such as one the model built from other data
 or found in a mail, shows an approval card with the full URL and the same
-website choice as an HTTP request. A refused read fetches nothing. A routine
+website choice as an HTTP request. Cloud tools use per-call reviews for their
+question and outcome wording, just like app Actions. A web read names the
+site in its question, keeps the full address in an Address preview row, and
+uses the `sends` reason with the explanations about address provenance and
+sending the full address to the website. A refused read fetches nothing. A routine
 cannot ask, so such a read fails there; its own prompt counts as the
 person's message.
 

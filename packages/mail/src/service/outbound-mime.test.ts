@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import { simpleParser } from "mailparser";
+import { renderComposeContent } from "./compose-renderer";
 import { buildMimeSource, buildMimeStream, measureMimeStream, outboundDraftSnapshotSchema, outboundRecipients } from "./outbound-mime";
 
 describe("outbound MIME", () => {
@@ -296,4 +297,93 @@ describe("outbound MIME", () => {
     expect(parsed.html).toContain("Hello Ada");
     expect(parsed.html).not.toContain("actor.display_name");
   });
+});
+
+test("remote content in mail: a frozen logo is a related inline part with the same CID as HTML", async () => {
+  const content = Buffer.from("frozen logo bytes");
+  const contentId = "logo.00000000-0000-4000-8000-000000000001@example.test";
+  const rendered = renderComposeContent({
+    body: "Hello",
+    format: "markdown",
+    customCss: "",
+    context: {
+      actor: { display_name: "Ada", email: "ada@example.test" },
+      mailbox: { name: "Support", description: "" },
+      sender: { display_name: "Support", email: "support@example.test", reply_to: "" },
+      message: { subject: "Inline logo", to: ["reader@example.test"], cc: [] },
+    },
+    renderLiquid: true,
+    signature: "{{ mailbox.logo }}",
+    logo: {
+      src: `cid:${contentId}`,
+      altText: "Support",
+      displayWidth: 200,
+      pixelWidth: 1200,
+      pixelHeight: 400,
+      byteLength: content.length,
+    },
+  });
+  expect(rendered.ok).toBe(true);
+  if (!rendered.ok) return;
+  const snapshot = outboundDraftSnapshotSchema.parse({
+    revision: 1,
+    from: { name: "Support", address: "support@example.test" },
+    replyTo: null,
+    envelopeFrom: null,
+    to: [{ address: "reader@example.test", name: null }],
+    cc: [],
+    bcc: [],
+    subject: "Inline logo",
+    body: "Hello",
+    format: "markdown",
+    renderedHtml: rendered.data.html,
+    renderedText: rendered.data.text,
+    inlineLogo: {
+      versionId: "00000000-0000-4000-8000-000000000001",
+      sha256: "a".repeat(64),
+      contentType: "image/png",
+      byteLength: content.length,
+      contentId,
+    },
+  });
+  const source = await buildMimeSource({
+    snapshot,
+    inlineLogoContent: content,
+    messageId: "<inline@example.test>",
+    date: new Date("2026-01-02T03:04:05.000Z"),
+  });
+  const mime = source.toString();
+  expect(mime).toContain("multipart/related");
+  expect(mime).toContain(`Content-ID: <${contentId}>`);
+  expect(mime).toContain("Content-Disposition: inline");
+  expect(mime).not.toMatch(/src=["']https?:/i);
+  const parsed = await simpleParser(source, { skipImageLinks: true });
+  expect(parsed.html).toContain(`<img src="cid:${contentId}" alt="Support" width="200" height="67"`);
+  expect(parsed.html).not.toMatch(/src=["']https?:/i);
+  expect(parsed.attachments).toHaveLength(1);
+  expect(parsed.attachments[0]).toMatchObject({
+    contentId: `<${contentId}>`,
+    contentDisposition: "inline",
+    contentType: "image/png",
+    content,
+  });
+  expect(
+    await measureMimeStream({
+      snapshot,
+      inlineLogoContent: content,
+      messageId: "<inline@example.test>",
+      date: new Date("2026-01-02T03:04:05.000Z"),
+      openAttachment: () => {
+        throw new Error("No ordinary attachments");
+      },
+    }),
+  ).toBe(source.byteLength);
+  await expect(
+    buildMimeSource({ snapshot, messageId: "<missing@example.test>", date: new Date("2026-01-02T03:04:05.000Z") }),
+  ).rejects.toMatchObject({ code: "INLINE_LOGO_UNAVAILABLE" });
+  const plain = outboundDraftSnapshotSchema.parse({ ...snapshot, format: "plain", renderedHtml: null });
+  const plainMime = await simpleParser(
+    await buildMimeSource({ snapshot: plain, messageId: "<plain@example.test>", date: new Date("2026-01-02T03:04:05.000Z") }),
+  );
+  expect(plainMime.attachments).toHaveLength(0);
 });

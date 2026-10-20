@@ -10,8 +10,8 @@ const uuid = () => crypto.randomUUID();
 const jsonb = (value: unknown) => JSON.stringify(value);
 
 const initializePulseSchema = async () => {
-  const { initializeSchema } = await import("../schema");
-  await initializeSchema();
+  const { migrate } = await import("../migrate");
+  await migrate();
 };
 
 type RetentionPolicy = {

@@ -1,5 +1,8 @@
-import { describe, expect, spyOn, test } from "bun:test";
-import { coreSettings } from "@k2b/cloud/services";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
+import { coreSettings, SIGN_IN_METHODS } from "@k2b/cloud/services";
+import { prepareNotificationEmail } from "@k2b/cloud/services/notifications/email-frame";
+import * as settings from "@k2b/cloud/services/settings";
+import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { app } from "./config";
 
 describe("Core notification definitions", () => {
@@ -72,4 +75,183 @@ test("pending approval notifications are browser-recommended, localized, and ope
   } finally {
     url.mockRestore();
   }
+});
+
+test("new-access notices are user-bound and localize command line and application access", async () => {
+  const notice = app.notifications.oauthNewAccess;
+  expect(notice.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+  expect(notice.recipient).toBe("user");
+  expect(Object.keys(notice.data.shape).sort()).toEqual(["clientName", "createdAt", "kind"]);
+  const setting = spyOn(settings, "get").mockResolvedValue("Europe/Berlin");
+  try {
+    const data = { kind: "command_line" as const, clientName: "Cloud CLI", createdAt: "2026-10-06T12:03:00.000Z" };
+    for (const [locale, title] of [
+      ["en", "New access for the command line"],
+      ["de", "Neuer Zugang für die Kommandozeile"],
+    ] as const) {
+      const rendered = await notice.render(data, { locale: locale! });
+      expect(rendered.title).toBe(title);
+      expect(rendered.targetHref).toBe("/me/security");
+      expect(rendered.body).toContain("14:03");
+      expect(rendered.body).toContain("(Europe/Berlin)");
+      setting.mockResolvedValueOnce("Europe/Berlin").mockResolvedValueOnce("https://cloud.example.test/");
+      const email = await notice.email!(data, { locale: locale! });
+      expect(email.subject).toBe(title);
+      expect(email.content).toBe(`${rendered.body} https://cloud.example.test/me/security`);
+    }
+    expect((await notice.render({ ...data, kind: "app", clientName: "Notes" }, { locale: "en" })).title).toBe(
+      "Notes has access to your account",
+    );
+    expect((await notice.render({ ...data, kind: "app", clientName: "Notizen" }, { locale: "de" })).title).toBe(
+      "Notizen hat Zugriff auf dein Konto",
+    );
+  } finally {
+    setting.mockRestore();
+  }
+});
+
+describe("new-browser sign-in notice", () => {
+  const now = new Date("2026-10-16T07:14:00.000Z");
+  const data = {
+    browser: "chrome" as const,
+    os: "macos" as const,
+    country: "AT",
+    city: "Wien",
+    signedInAt: now.toISOString(),
+    method: "password" as const,
+    device: null,
+    firstName: "Jana",
+  };
+  const definition = app.notifications.newBrowserSignIn;
+  let restore: () => void;
+  beforeEach(() => {
+    setSystemTime(now);
+    const get = spyOn(settingsStore, "readKey").mockImplementation(async (key: string) => {
+      const values: Record<string, unknown> = {
+        "app.timezone": "Europe/Vienna",
+        "app.url": "https://cloud.example.test/",
+        "app.name": "Cloud",
+        "app.logo": "",
+      };
+      if (!(key in values)) throw new Error(`Unexpected fixture setting: ${key}`);
+      return values[key];
+    });
+    restore = () => get.mockRestore();
+  });
+  afterEach(() => {
+    restore();
+    setSystemTime();
+  });
+
+  test("is user-bound and optional, email first with browser fallback", () => {
+    expect(definition.id).toBe("core.newBrowserSignIn");
+    expect(definition.recipient).toBe("user");
+    expect(definition.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+    // Cloud bounds the greeting name to 100 characters before the handoff.
+    expect(definition.data.safeParse({ ...data, firstName: "J".repeat(100) }).success).toBe(true);
+  });
+
+  for (const locale of ["de", "en"] as const) {
+    test(`${locale}: full snapshot, with place confined to email`, async () => {
+      const de = locale === "de";
+      const title = de ? "Neue Anmeldung aus einem neuen Browser" : "New sign-in from a new browser";
+      const time = de ? "16. Okt. 2026, 09:14 (Europe/Vienna)" : "Oct 16, 2026, 09:14 (Europe/Vienna)";
+      const browser = de ? "Chrome auf macOS" : "Chrome on macOS";
+      const rendered = await definition.render(data, { locale });
+      expect(rendered).toEqual({ title, body: `${browser} · ${time}`, preview: `${browser} · ${time}`, targetHref: "/me/security" });
+      expect(JSON.stringify(rendered)).not.toMatch(/Wien|Austria|Österreich/);
+      const email = await definition.email!(data, { locale });
+      expect(email.subject).toBe(title);
+      const html = email.rawHtml!;
+      for (const part of [
+        de ? "Hallo Jana," : "Hi Jana,",
+        de
+          ? "dein Konto wurde gerade in einem Browser angemeldet, den Cloud noch nicht kannte."
+          : "Your account was just signed in from a browser Cloud did not know yet.",
+        browser,
+        time,
+        de ? "Ungefähr Wien, Österreich" : "Approximately Wien, Austria",
+        de ? "Passwort" : "Password",
+        de ? "Warst du das? Dann musst du nichts tun." : "Was this you? Then you don&#39;t need to do anything.",
+        de
+          ? "Falls du das nicht warst, prüfe unter <strong>Konto\u00a0› Anmeldung</strong> deine gekoppelten Geräte und wende dich an die Administration."
+          : "If this wasn't you, check your paired devices under <strong>Account\u00a0› Sign-in</strong> and contact your administrator.",
+        de ? "Anmeldung öffnen" : "Open sign-in",
+        de
+          ? "Diese Benachrichtigung kommt einmal pro neuem Browser. Du kannst sie unter Konto\u00a0› Benachrichtigungen abschalten."
+          : "You get this notice once per new browser. You can turn it off under Account\u00a0› Notifications.",
+        de ? "Ortsangaben sind ungefähr." : "Locations are approximate.",
+        'href="https://cloud.example.test/me/security"',
+      ])
+        expect(html).toContain(part);
+    });
+
+    test(`${locale}: no GeoIP omits the entire location row and qualifier`, async () => {
+      const html = (await definition.email!({ ...data, country: null, city: null, firstName: null }, { locale })).rawHtml!;
+      expect(html).toContain(locale === "de" ? ">Hallo,</p>" : ">Hi,</p>");
+      expect(html).not.toMatch(/Ungefähr|Approximately|Ortsangaben|Locations are approximate|>Ort<|>Location</);
+      const countryOnly = (await definition.email!({ ...data, city: null }, { locale })).rawHtml!;
+      expect(countryOnly).toContain(locale === "de" ? "Ungefähr Österreich" : "Approximately Austria");
+    });
+
+    test(`${locale}: all seven sign-in methods and escaped Cloud Login device`, async () => {
+      const methods =
+        locale === "de"
+          ? [
+              "Passwort",
+              "Passkey",
+              "E-Mail-Code",
+              "Cloud Login, bestätigt auf „Janas Telefon“",
+              "Passwort zurückgesetzt",
+              "Abgelaufenes Passwort geändert",
+              "Admin-Notfallzugang",
+            ]
+          : [
+              "Password",
+              "Passkey",
+              "Email code",
+              "Cloud Login, approved on “Janas Telefon”",
+              "Password reset",
+              "Expired password changed",
+              "Emergency admin access",
+            ];
+      for (const [index, method] of SIGN_IN_METHODS.entries()) {
+        expect((await definition.email!({ ...data, method, device: "Janas Telefon" }, { locale })).rawHtml).toContain(methods[index]!);
+      }
+      const malicious = `<Jana's "Phone">`;
+      const email = await definition.email!(
+        { ...data, method: "cloud_login", device: malicious, firstName: malicious, city: malicious },
+        { locale },
+      );
+      expect(email.rawHtml).toContain("&lt;Jana&#39;s &quot;Phone&quot;&gt;");
+      expect(email.rawHtml).not.toContain(malicious);
+      const noDevice = (await definition.email!({ ...data, method: "cloud_login" }, { locale })).rawHtml!;
+      expect(noDevice).toContain(">Cloud Login</td>");
+    });
+  }
+
+  test("the email frame preserves the inset table, action href and inline styles", async () => {
+    const email = await definition.email!(data, { locale: "en" });
+    const prepared = await prepareNotificationEmail(email);
+    expect(prepared.html).toContain('<table style="border:0;width:100%"');
+    // The plain-text part keeps one line per detail and names the link target.
+    expect(prepared.text).toContain("Browser: Chrome on macOS\nLocation: Approximately Wien, Austria\n");
+    expect(prepared.text).toContain("Open sign-in: https://cloud.example.test/me/security");
+    expect(prepared.text).not.toContain("<strong>");
+    expect(prepared.html).toContain('href="https://cloud.example.test/me/security"');
+    for (const style of [
+      "background:#f4f4f5",
+      "border-radius:10px",
+      "padding:12px 16px",
+      "white-space:nowrap",
+      "font-weight:600",
+      "display:inline-block",
+      "background:#1d4ed8",
+      "color:#ffffff",
+      "padding:10px 18px",
+      "border-radius:8px",
+      "text-decoration:none",
+    ])
+      expect(prepared.html).toContain(style);
+  });
 });

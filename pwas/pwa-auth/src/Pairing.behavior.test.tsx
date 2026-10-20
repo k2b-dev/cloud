@@ -35,6 +35,7 @@ const auth: Authenticator = {
     throw new Error("No action in this test");
   },
   act: noop,
+  decideChange: noop,
   decide: noop,
   revoke: noop,
   syncPush: noop,

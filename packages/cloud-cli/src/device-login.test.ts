@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-type PollAnswer = "authorization_pending" | "slow_down" | "access_denied" | "expired_token" | "approve";
+type PollAnswer = "authorization_pending" | "slow_down" | "access_denied" | "expired_token" | "invalid_grant" | "approve";
 
 type DeviceServerState = {
   starts: URLSearchParams[];
@@ -96,6 +96,7 @@ describe("cld login --device", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe(
         [
+          "Confirm this sign-in in the browser. If your browser sign-in is older than 10 minutes, Cloud asks you to sign in again first.",
           `Open ${origin}/oauth/device and enter the code: WDJB-MJHT`,
           `(or open ${origin}/oauth/device?user_code=WDJB-MJHT)`,
           "Waiting for approval…",
@@ -132,6 +133,8 @@ describe("cld login --device", () => {
       const result = await runCli(config, ["--locale", "de", "login", "--server", origin, "--device"]);
       expect(result.exitCode).toBe(0);
       expect(state.locales).toEqual(["de"]);
+      expect(result.stdout).toContain("Bestätige diese Anmeldung im Browser.");
+      expect(result.stdout).toContain("älter als 10 Minuten");
       expect(result.stdout).toContain(`Öffne ${origin}/oauth/device und gib den Code ein: WDJB-MJHT`);
       expect(result.stdout).toContain(`(oder öffne ${origin}/oauth/device?user_code=WDJB-MJHT)`);
       expect(result.stdout).toContain("Warte auf Bestätigung…");
@@ -176,6 +179,26 @@ describe("cld login --device", () => {
       expired.server.stop(true);
     }
   });
+
+  for (const locale of ["en", "de"]) {
+    test(`an invalid grant explains browser confirmation in ${locale}`, async () => {
+      const { server, state, origin } = startDeviceServer(["invalid_grant"]);
+      const config = await configPath();
+      try {
+        const result = await runCli(config, ["--locale", locale, "login", "--server", origin, "--device"]);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(
+          locale === "de"
+            ? "Führe `cld login` erneut aus und bestätige die Anmeldung im Browser."
+            : "Run `cld login` again and confirm the sign-in in the browser.",
+        );
+        expect(state.polls).toHaveLength(1);
+        expect(await Bun.file(config).exists()).toBe(false);
+      } finally {
+        server.stop(true);
+      }
+    });
+  }
 
   test("explains when the server does not offer device sign-in", async () => {
     const { server, origin } = startDeviceServer([], { supportsDevice: false });
@@ -233,6 +256,8 @@ describe("cld login without --device", () => {
       "führe stattdessen `cld login --device` aus.",
     );
     const local = await firstLines(localDesktop);
+    expect(local).toContain("Confirm this sign-in in the browser.");
+    expect(local).toContain("older than 10 minutes");
     expect(local).toContain("Login URL:");
     expect(local).not.toContain("--device");
   });

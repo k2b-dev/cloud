@@ -11,6 +11,7 @@ import { readMailDraftSeed } from "./mail-draft-seed-store";
 
 export default function MailDraftSeedComposerPage(props: {
   mailboxId: string;
+  mailboxRecipientSuggestions?: boolean;
   currentActor: { kind: "user" | "service_account"; id: string };
   seedId: string;
   identities: SenderIdentity[];
@@ -56,6 +57,7 @@ export default function MailDraftSeedComposerPage(props: {
         {(value) => (
           <MailComposerPage
             mailboxId={props.mailboxId}
+            mailboxRecipientSuggestions={props.mailboxRecipientSuggestions}
             currentActor={props.currentActor}
             identities={props.identities}
             signatures={props.signatures}

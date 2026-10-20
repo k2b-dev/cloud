@@ -25,10 +25,11 @@ describe("performance baseline contracts", () => {
   test("defaults and page selection are stable; malformed flags fail before side effects", () => {
     expect(parseArgs([])).toEqual({
       help: false,
+      panel: false,
       keep: false,
       skipBuild: false,
       runs: 3,
-      pages: ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts"],
+      pages: ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"],
     });
     expect(
       parseArgs(["--pages", "files,document", "--runs", "1", "--skip-build", "--keep", "--out", ".local/example", "--compare", "old.json"]),
@@ -136,17 +137,19 @@ describe("performance baseline contracts", () => {
     expect(() => aggregate([Number.NaN])).toThrow();
   });
 
-  test("observation stops only after all initial wrappers, completed scripts, and 500 ms of quiet", () => {
-    expect(interactive({ initial: 2, mounted: 1, pendingScripts: 0, quietMs: 600 })).toBe(false);
-    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 1, quietMs: 600 })).toBe(false);
-    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 499 })).toBe(false);
-    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 500 })).toBe(true);
-    expect(interactive({ initial: 0, mounted: 0, pendingScripts: 0, quietMs: 500 })).toBe(true);
+  test("observation stops only after all initial wrappers, completed and timed scripts, and 500 ms of quiet", () => {
+    expect(interactive({ initial: 2, mounted: 1, pendingScripts: 0, untimedScripts: 0, quietMs: 600 })).toBe(false);
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 1, untimedScripts: 0, quietMs: 600 })).toBe(false);
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, untimedScripts: 0, quietMs: 499 })).toBe(false);
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, untimedScripts: 0, quietMs: 500 })).toBe(true);
+    expect(interactive({ initial: 0, mounted: 0, pendingScripts: 0, untimedScripts: 0, quietMs: 500 })).toBe(true);
+    // WebKit can deliver a finished script's resource entry late; TTI needs every script's entry.
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, untimedScripts: 1, quietMs: 5000 })).toBe(false);
   });
 
   test("TTI excludes the quiet window and host polling latency", () => {
     const timing = { fcp: 176, mountTimes: [200, 240], scriptUrls: [], resources: [], longtasks: [] };
-    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 762 })).toBe(true);
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, untimedScripts: 0, quietMs: 762 })).toBe(true);
     expect(timeToInteractive(timing)).toBe(240);
   });
 

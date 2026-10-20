@@ -48,8 +48,8 @@ function MobileNavigation(props: {
               value={tab}
               onValueChange={setTab}
               options={[
-                { value: "app", label: workspace()?.label || t().appMenu },
-                { value: "apps", label: t().allApps },
+                { value: "app", label: <span class="block k2b-truncate-fade">{workspace()?.label || t().appMenu}</span> },
+                { value: "apps", label: <span class="block k2b-truncate-fade">{t().allApps}</span> },
               ]}
             />
           }

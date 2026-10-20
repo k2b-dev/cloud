@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import type {} from "../../test/chat-decision.browser-harness";
 
 let browser: Browser;
@@ -43,10 +43,10 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width = 1440, dark = false) => {
+const open = async (width = 1440, dark = false, timelineWidth?: "narrow" | "wide") => {
   const page = await browser.newPage({ viewport: { width, height: 1100 } });
   await page.setContent(
-    `<!doctype html><html><head><style>${css}
+    `<!doctype html><html${timelineWidth ? ` data-timeline-width="${timelineWidth}"` : ""}><head><style>${css}
       html { font-size:16px; } body { margin:0; font-family:Arial,sans-serif; }
       main { max-width:720px; margin:24px; }
     </style></head><body class="k2b-ui${dark ? " k2b-dark" : ""}"><div id="root"></div></body></html>`,
@@ -262,6 +262,39 @@ test("marking a line later keeps its retained children in place", async () => {
   }
 });
 
+test("a focus moved to the sentence from elsewhere lights it up; a press on the sentence itself does not", async () => {
+  const page = await open();
+  try {
+    const sentence = page.locator(".k2b-chat-decision__sentence").first();
+    // On its first word, not on a chip: a chip is a link of its own.
+    await sentence.click({ position: { x: 4, y: 10 } });
+    expect(await sentence.evaluate((e) => e === document.activeElement)).toBe(true);
+    expect(await sentence.getAttribute("data-arrive")).toBeNull();
+    await page.getByRole("button", { name: "Send to Lea", exact: true }).focus();
+    // A jump from a list of waiting questions focuses the sentence by script.
+    await sentence.evaluate((e) => (e as HTMLElement).focus({ preventScroll: true }));
+    expect(await sentence.getAttribute("data-arrive")).toBe("true");
+    await sentence.evaluate((e) => e.dispatchEvent(new Event("animationend")));
+    expect(await sentence.getAttribute("data-arrive")).toBeNull();
+    // The window comes back with the sentence still focused: the browser focuses it again, which is no arrival.
+    await sentence.evaluate((e) => {
+      window.dispatchEvent(new FocusEvent("blur"));
+      e.dispatchEvent(new FocusEvent("focus"));
+    });
+    expect(await sentence.getAttribute("data-arrive")).toBeNull();
+    // A press that the browser cancels, such as a long press on touch, does not swallow the next jump.
+    await page.getByRole("button", { name: "Send to Lea", exact: true }).focus();
+    await sentence.evaluate((e) => {
+      e.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      e.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+      (e as HTMLElement).focus({ preventScroll: true });
+    });
+    expect(await sentence.getAttribute("data-arrive")).toBe("true");
+  } finally {
+    await page.close();
+  }
+});
+
 test("a reopen from elsewhere after an unrelated outcome action leaves the focus alone", async () => {
   const page = await open();
   try {
@@ -325,3 +358,23 @@ test("a reopen that passes through sending still returns the focus to the senten
     await page.close();
   }
 });
+
+for (const timelineWidth of ["narrow", "wide"] as const)
+  test(`a ${timelineWidth} timeline owns decision typography and answer growth on a 1440px window`, async () => {
+    const page = await open(1440, false, timelineWidth);
+    try {
+      await settled(page);
+      const metrics = await page.evaluate(() => ({
+        window: window.innerWidth,
+        timeline: document.querySelector(".k2b-chat-timeline")!.getBoundingClientRect().width,
+        sentence: getComputedStyle(document.querySelector(".k2b-chat-decision__sentence")!).fontSize,
+        answers: Array.from(document.querySelectorAll(".k2b-chat-decision__answer")).map((e) => getComputedStyle(e).flexGrow),
+      }));
+      expect(metrics.window).toBe(1440);
+      expect(metrics.timeline).toBe((timelineWidth === "narrow" ? 22 : 60) * 16);
+      expect(metrics.sentence).toBe(timelineWidth === "narrow" ? "17px" : "18px");
+      expect(metrics.answers).toEqual(timelineWidth === "narrow" ? ["1", "1"] : ["0", "0"]);
+    } finally {
+      await page.close();
+    }
+  });

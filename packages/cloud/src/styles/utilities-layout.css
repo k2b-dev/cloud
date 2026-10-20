@@ -319,21 +319,15 @@
   gap: 0.625rem;
 }
 
+/* The box and the app ink; the chip comes from the shared `k2b-icon-tile` on the same element. */
 .app-overview-icon {
   width: 2.5rem;
   height: 2.5rem;
-  border-radius: var(--ui-radius-control);
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 9%, var(--ui-surface)) !important;
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 80%, black) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 16%, transparent);
+  color: var(--ui-app-accent-text) !important;
 }
 
 .app-overview-icon > i {
   color: inherit !important;
-}
-
-.dark .app-overview-icon {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white) !important;
 }
 
 .app-overview-title {
@@ -507,13 +501,9 @@
 }
 
 .floating-window {
-  border: 1px solid color-mix(in srgb, var(--app-accent, var(--ui-border-strong)) 28%, var(--ui-border-strong));
+  border: 1px solid var(--ui-border-strong);
   border-radius: var(--ui-dialog-radius);
   box-shadow: var(--ui-shadow-float);
-}
-
-.dark .floating-window {
-  border-color: color-mix(in srgb, var(--app-accent, var(--ui-border-strong)) 34%, var(--ui-border-strong));
 }
 
 .panel-dialog-layout[data-surface="floating"] {

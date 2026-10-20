@@ -1,5 +1,6 @@
 import type { CompactResult, InboundEvent, Message } from "@k2b/nessi";
-import type { CapabilityActionReview } from "../contracts/capabilities";
+import type { CapabilityActionReviewData } from "../contracts/capabilities";
+import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiConversation, AiFrontendToolMode, AiStoredMessage, AiToolPresentation, AiTurnStatus } from "./types";
 
 /**
@@ -48,7 +49,7 @@ export type AiTurnBlock =
       /** Present while status is awaiting_approval. */
       approval?: {
         message?: string;
-        review?: CapabilityActionReview;
+        review?: CapabilityActionReviewData;
         allowAlways: boolean;
         /** Whether the approval can be remembered for this chat. */
         allowChat?: boolean;
@@ -66,6 +67,13 @@ export type AiTurnBlock =
       presentation?: AiToolPresentation;
       /** Requests a website approval let through without asking, in order; shown whatever the call's outcome. */
       receipts?: { method: string; url: string }[];
+      /**
+       * The call's review as Cloud stored it when the app reviewed it. It stays after the decision, so the question,
+       * its receipt, and a reload all read the same sentence.
+       */
+      review?: AiStoredActionReview;
+      /** The app's `check` after an outcome Cloud could not see. */
+      check?: AiActionCheck;
     }
   | { id: string; kind: "compaction"; status: "running" | "completed" | "skipped" | "failed"; result?: CompactResult };
 
@@ -248,6 +256,8 @@ export const buildBlocksFromMessages = (
     meta?: {
       steerId?: string;
       toolPresentations?: Record<string, AiToolPresentation>;
+      toolReviews?: Record<string, AiStoredActionReview>;
+      toolChecks?: Record<string, AiActionCheck>;
       toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
       websiteReceipts?: Record<string, Record<string, { method: string; url: string }>>;
     } | null;
@@ -275,6 +285,8 @@ export const buildBlocksFromMessages = (
             args: block.args,
             status: "running",
             presentation: meta?.toolPresentations?.[block.id],
+            review: meta?.toolReviews?.[block.id],
+            check: meta?.toolChecks?.[block.id],
             // A turn that ended before an approved call returned records the approval on the call's message, and an
             // approval it left waiting as expired.
             ...(outcome === "approved" || outcome === "expired" ? { approved: outcome === "approved" } : {}),

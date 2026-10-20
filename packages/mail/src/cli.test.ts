@@ -392,6 +392,38 @@ test("conversation context commands expose Contacts and deterministic related ma
   expect(requestedPaths).toContain(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/related?limit=3`);
 }, 20_000);
 
+test("conversation context distinguishes an absent contact directory from an unavailable one", async () => {
+  const server = withMailbox((request) => {
+    if (
+      request.method === "GET" &&
+      new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/context`
+    ) {
+      return api({
+        conversationId: CONVERSATION_ID,
+        participants: [{ email: "sender@example.test", displayName: "Sender" }],
+        contacts: { status: "absent", items: [], matchedEmails: [], nextCursor: null },
+        spaces: { status: "ready", items: [], truncated: false },
+      });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "conversation",
+    "context",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+  ]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stderr).toBe("");
+  expect(result.stdout).toContain("Contacts: no contact directory installed");
+  expect(result.stdout).not.toContain("Contacts: unavailable");
+});
+
 test("conversation drafts lists resumable work for one conversation", async () => {
   const drafts = [
     {
@@ -5883,3 +5915,55 @@ for (const name of ["done", "reopen"] as const) {
     expect(bodies).toHaveLength(4);
   });
 }
+
+test("compose logo get/set/remove support structured output and require confirmation", async () => {
+  const bytes = Buffer.from("logo bytes");
+  const logo = {
+    contentType: "image/png",
+    pixelWidth: 1,
+    pixelHeight: 1,
+    displayWidth: 250,
+    altText: "Team",
+    byteLength: bytes.length,
+    sha256: "a".repeat(64),
+    dataUrl: `data:image/png;base64,${bytes.toString("base64")}`,
+    createdAt: "2026-01-02T03:04:05.000Z",
+  };
+  const requests: Array<{ method: string; body: unknown }> = [];
+  const server = withMailbox(async (request) => {
+    if (!new URL(request.url).pathname.endsWith("/compose-logo")) return api({ message: "unexpected" }, { status: 500 });
+    requests.push({ method: request.method, body: request.method === "PUT" ? await request.json() : null });
+    return api({ logo: request.method === "DELETE" ? null : logo });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const file = join(cliHome, "logo.png");
+  await writeFile(file, bytes);
+  const run = (...args: string[]) => runCli(origin, ["--json", "mail", "compose", "logo", ...args, "--mailbox", MAILBOX_ID]);
+  const get = await run("get");
+  expect(get.exitCode).toBe(0);
+  expect(JSON.parse(get.stdout)).toEqual({ logo });
+  const set = await run("set", "--file", file, "--width", "250", "--alt", "Team");
+  expect(set.exitCode).toBe(0);
+  expect(JSON.parse(set.stdout)).toEqual({ logo });
+  const refused = await run("remove");
+  expect(refused.exitCode).not.toBe(0);
+  expect(refused.stderr + refused.stdout).toContain("--yes");
+  expect(requests).toHaveLength(2);
+  const removed = await run("remove", "--yes");
+  expect(removed.exitCode).toBe(0);
+  expect(JSON.parse(removed.stdout)).toEqual({ logo: null });
+  expect(requests).toEqual([
+    { method: "GET", body: null },
+    { method: "PUT", body: { content: bytes.toString("base64"), displayWidth: 250, altText: "Team" } },
+    { method: "DELETE", body: null },
+  ]);
+  await writeFile(file, Buffer.alloc(102401));
+  const tooLarge = await run("set", "--file", file);
+  expect(tooLarge.exitCode).not.toBe(0);
+  expect(tooLarge.stderr + tooLarge.stdout).toContain("100 KiB");
+  expect(requests).toHaveLength(3);
+  const summary = await runCli(origin, ["mail", "compose", "logo", "get", "--mailbox", MAILBOX_ID]);
+  expect(summary.exitCode).toBe(0);
+  for (const text of ["image/png", "1x1", "250", "Team", "aaaaaaaaaaaa"]) expect(summary.stdout).toContain(text);
+});

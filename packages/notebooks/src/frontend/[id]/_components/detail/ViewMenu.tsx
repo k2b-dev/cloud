@@ -1,12 +1,9 @@
-import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
+import { Dropdown, type DropdownItem, useLocale, watchAppHostWidth } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { changeFullWidth, createFullWidth } from "../full-width";
-
-/** Full width changes nothing below this width, so the option stays away there, as the command does. */
-const WIDE_SCREEN_QUERY = "(min-width: 64rem)";
 
 export type ViewMenuProps = {
   mode: "edit" | "read";
@@ -30,12 +27,9 @@ export function ViewMenu(props: ViewMenuProps) {
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const fullWidth = createFullWidth(props.fullWidth);
   const [wide, setWide] = createSignal(false);
+  let trigger: HTMLButtonElement | undefined;
   onMount(() => {
-    const query = window.matchMedia(WIDE_SCREEN_QUERY);
-    const update = () => setWide(query.matches);
-    update();
-    query.addEventListener("change", update);
-    onCleanup(() => query.removeEventListener("change", update));
+    if (trigger) onCleanup(watchAppHostWidth(trigger, 64, setWide));
   });
 
   // Choosing the mode already shown keeps the page, the editor and its unsent text as they are. Another mode goes
@@ -131,7 +125,7 @@ export function ViewMenu(props: ViewMenuProps) {
 
   return (
     <Dropdown.Root items={items()} align="end" label={t().view} phone="sheet" width="17rem" class="notebook-view-menu">
-      <Dropdown.Trigger size="sm" variant="secondary" class="notebook-view-menu__trigger">
+      <Dropdown.Trigger ref={trigger} size="sm" variant="secondary" class="notebook-view-menu__trigger">
         <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
         {t().view}
         <i class="ti ti-chevron-down notebook-view-menu__chevron" aria-hidden="true" />

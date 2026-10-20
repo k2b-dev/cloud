@@ -15,7 +15,9 @@ describe("assistantHelp", () => {
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("The sidebar at the right of a chat shows what the chat holds");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("A Project chat includes its inherited Project context");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("Resource links open their owning app in a new tab");
-    expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("Always approve");
+    expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("**Always approve** is no longer offered");
+    expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("**Check again** checks only the outcome");
+    expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain("wiederholt nie die");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Assistant works best when the request states");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Assistant settings > Skills");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Create a Skill that loads at the right time");

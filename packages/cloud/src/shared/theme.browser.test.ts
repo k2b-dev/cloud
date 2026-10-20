@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(join(tmpdir(), "cloud-theme-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -68,7 +68,7 @@ describe("theme before first paint", () => {
           const expected = preference === "light" || preference === "dark" ? preference : scheme;
           expect(await page.locator("html").getAttribute("data-first-theme")).toBe(expected);
           expect(await page.locator("html").getAttribute("class")).toBe(expected);
-          const cookie = (await context.cookies()).find((cookie) => cookie.name === "color-scheme");
+          const cookie = await storedCookie(page, "color-scheme");
           expect(cookie?.value).toBe(scheme);
           expect(cookie?.path).toBe("/");
           expect(cookie?.sameSite).toBe("Lax");
@@ -87,11 +87,11 @@ describe("live system appearance changes", () => {
         await page.emulateMedia({ colorScheme: "dark" });
         await page.waitForFunction(() => document.documentElement.dataset.themeEvents === "1");
         expect(await page.locator("html").getAttribute("class")).toBe(preference === "light" ? "light" : "dark");
-        expect((await context.cookies()).find((cookie) => cookie.name === "color-scheme")?.value).toBe("dark");
+        expect((await storedCookie(page, "color-scheme"))?.value).toBe("dark");
         await page.emulateMedia({ colorScheme: "light" });
         await page.waitForFunction(() => document.documentElement.dataset.themeEvents === "2");
         expect(await page.locator("html").getAttribute("class")).toBe(preference === "dark" ? "dark" : "light");
-        expect((await context.cookies()).find((cookie) => cookie.name === "theme")?.value).toBe(preference);
+        expect((await storedCookie(page, "theme"))?.value).toBe(preference);
       } finally {
         await context.close();
       }
@@ -107,7 +107,7 @@ describe("live system appearance changes", () => {
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       expect(await page.locator("html").getAttribute("class")).toBe("light");
       expect(await page.locator("html").getAttribute("data-theme-events")).toBeNull();
-      expect((await context.cookies()).some((cookie) => cookie.name === "color-scheme")).toBe(false);
+      expect(await storedCookie(page, "color-scheme")).toBeUndefined();
     } finally {
       await context.close();
     }

@@ -5,7 +5,7 @@ section: Companion apps
 order: 500
 description: Approve sign-ins and Actions for multiple Clouds from one installable app.
 tags: [authentication, pwa, devices]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Cloud Login
@@ -30,6 +30,21 @@ and choose the authenticator address. Use the app configured by your Cloud.
 4. When you start a sign-in, open Cloud Login or tap its notification. Compare
    the code shown in the request with the sign-in page, then approve or deny it.
 
+A browser sign-in can show the browser and system, approximate place, network
+operator, start time in your phone's time zone, and whether the browser signed
+in to this account before. Place and network rows appear only when your
+Cloud's location database knows the address. **Same internet address as this
+phone** appears only when true. During the first 14 days after the Cloud
+update, no known/new browser claim appears. Older Clouds, or requests without
+these details, show the earlier dialog with the start time.
+
+**Did you start this sign-in?** warns about a new browser in a country without
+a sign-in in Cloud's recent history, when your account already has sign-in
+countries. **Deny** is then the main button, with **Approve anyway** available.
+Known means “signed in here before”, not “safe”. Only passkeys are
+phishing-resistant; a phishing page can relay an app comparison code. See
+[Read the request details](/en/docs/accounts/app-sign-in#read-the-request-details).
+
 A terminal sign-in shows **Terminal sign-in** with the client name in the
 title, the Cloud host, the comparison code, how long the terminal stays signed
 in, and its permissions in plain words. Only approve a sign-in you started
@@ -46,6 +61,12 @@ the chat it came from. Choose **Review**, read the request, then choose
 **Approve** or **Deny**. Cloud Login decides only this one request. If more are
 waiting than the card lists, review them in Cloud under **My account →
 Approvals**.
+
+Once your account has a paired device, pairing another device or removing one
+waits for approval in Cloud Login. The request shows **Pair a device** or
+**Remove a device** with the device name. Approve only a change you started
+yourself; otherwise choose **Deny**. The device being removed can approve its
+own removal, but only another paired device can deny it.
 
 Pair each account separately. You can add another Cloud, edit account labels,
 or disconnect an account through **Manage accounts**.
@@ -79,8 +100,9 @@ Already installed it from Samsung Internet? Each browser keeps its own
 Cloud Login data, so the Chrome copy starts empty. Install Cloud Login from
 Chrome and pair each Cloud there. Then disconnect each Cloud in the old copy
 through **Manage accounts**, which also revokes that device, and uninstall
-it. If the old copy is already gone, revoke its device under
-**Sign-in → Paired devices** on your profile in that Cloud.
+it. If the old copy is already gone, remove its device under
+**Sign-in → Paired devices** on your profile in that Cloud and approve the
+removal in the Chrome copy.
 
 ## Protect and recover
 
@@ -90,7 +112,9 @@ If you set a PIN in an earlier version, enter it one last time under
 **Remove app PIN** to keep your connected Clouds.
 
 Keep another sign-in method available. If you lose your device or reset the
-app, sign in to each Cloud another way, revoke the old device, and pair again.
+app, sign in to each Cloud another way and remove the old device. Approve the
+removal on another paired device; without one, ask an administrator to remove
+it. Then pair again.
 
 The app can start offline after its first online visit. Pairing and approvals
 need a connection.

@@ -341,7 +341,7 @@ test("registered workload apps are admin-only and return no credentials", async 
   expect((await createAdminIdentityRoutes().request("/workloads")).status).toBe(401);
   const response = await createAdminIdentityRoutes(authenticateAdmin, dependencies()).request("/workloads");
   expect(response.status).toBe(200);
-  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("cache-control")).toBe("no-store, no-transform");
   expect(await response.json()).toEqual([{ id: "inventory", name: "Inventory" }]);
 });
 
@@ -363,7 +363,7 @@ test("lists app credentials across apps with bounded pagination and admin access
   );
   const response = await routes.request("/workloads/credentials?page=2&perPage=20");
   expect(response.status).toBe(200);
-  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
   expect(received).toEqual({
     pagination: { page: 2, perPage: 20 },
     filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app" },

@@ -14,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 
-export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql";
+export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql" | "clickhouse";
 
 export type InfraMapping = { test: string; runtime: string[]; unset?: string };
 
@@ -28,6 +28,7 @@ export const infraMappings: Record<InfraKind, InfraMapping> = {
   valkey: { test: "CLOUD_TEST_VALKEY_URL", runtime: ["REDIS_URL", "VALKEY_URL"], unset: "redis://127.0.0.1:1" },
   filegate: { test: "CLOUD_TEST_FILEGATE_URL", runtime: ["FILEGATE_URL", "FILESV2_TEST_FILEGATE_URL"] },
   gotenberg: { test: "CLOUD_TEST_GOTENBERG_URL", runtime: ["GOTENBERG_URL", "GRIDS_PDF_URL"] },
+  clickhouse: { test: "CLOUD_TEST_CLICKHOUSE_URL", runtime: [] },
   rsql: { test: "CLOUD_TEST_RSQL_URL", runtime: ["RSQL_URL", "RSQL_TEST_URL"] },
 };
 

@@ -1,9 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
+import { toPgTextArray } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { sql } from "bun";
-import { generateKeyPair, jwtVerify } from "jose";
+import { decodeJwt, generateKeyPair, jwtVerify } from "jose";
 import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import type { OAuthNewAccessNotice } from "../notifications";
+import { notifyPendingOAuthNewAccess } from "./identity-oauth-device-approval";
 import { createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
 
 const USER_ID = "68df7d96-aaab-420a-ab1e-62a67e44d3be";
@@ -14,6 +17,7 @@ const userAccess = {
 };
 
 const authorityState = (overrides: Record<string, unknown> = {}) => ({
+  authEpoch: 7,
   clientId: "test-client",
   clientScopes: ["openid", "profile"],
   clientAudiences: [],
@@ -143,6 +147,7 @@ describe("Core OAuth issuance authority", () => {
       id: authorityState().user?.id,
       token_use: "access",
       principal_type: "user",
+      auth_epoch: 7,
       client_id: "test-client",
       scope: "openid profile",
       exp: 1_788_224_400,
@@ -220,6 +225,7 @@ describe("Core OAuth issuance authority", () => {
       audience: "cloud",
       currentDate: new Date(1_788_220_800_000),
     });
+    expect(verified.payload.auth_epoch).toBeUndefined();
     expect(verified.payload).toMatchObject({
       sub: serviceAccountId,
       service_account_id: serviceAccountId,
@@ -271,6 +277,7 @@ describe("Core OAuth issuance authority", () => {
       audience: "cloud",
       currentDate: new Date(1_788_220_800_000),
     });
+    expect(verified.payload.auth_epoch).toBeUndefined();
     expect(verified.payload).toMatchObject({
       sub: serviceAccountId,
       principal_type: "service_account",
@@ -356,6 +363,7 @@ describe("Core OAuth issuance authority", () => {
     for (const token of body.tokens) {
       const verified = await jwtVerify(token, publicKey, { currentDate: new Date(1_788_220_800_000) });
       expect(verified.payload.exp).toBe(1_788_221_400);
+      expect(verified.payload.auth_epoch).toBe(token === body.tokens[0] ? 7 : undefined);
     }
   });
 
@@ -430,9 +438,388 @@ describe("Core OAuth issuance authority", () => {
   });
 });
 
+/** The new-access notice is sent after the response; wait for it instead of assuming an order. */
+const eventually = async (check: () => boolean | Promise<boolean>, label: string) => {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    if (await check()) return;
+    await Bun.sleep(10);
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+};
+const notifiedAt = async (familyId: string) =>
+  (await sql<{ notified_at: Date | null }[]>`SELECT notified_at FROM oauth.refresh_token_families WHERE id=${familyId}::uuid`)[0]
+    ?.notified_at ?? null;
+
+const withFrozenTime = async (run: () => Promise<void>) => {
+  const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
+  setSystemTime(clock!.now);
+  try {
+    await run();
+  } finally {
+    setSystemTime();
+  }
+};
+
 const withDatabase = databaseSuite();
 
+const epochAuthorityFixture = async (notify?: (notice: OAuthNewAccessNotice) => Promise<unknown>) => {
+  const userId = crypto.randomUUID();
+  const otherUserId = crypto.randomUUID();
+  const clientId = `epoch-${crypto.randomUUID()}`;
+  const otherClientId = `epoch-other-${crypto.randomUUID()}`;
+  const authEpoch = 5;
+  const notices: OAuthNewAccessNotice[] = [];
+  const { privateKey } = await generateKeyPair("RS256");
+  await sql`INSERT INTO auth.users (id, uid, provider, profile, auth_epoch)
+    VALUES (${userId}::uuid, ${userId}, 'local', 'user', ${authEpoch}),
+      (${otherUserId}::uuid, ${otherUserId}, 'local', 'user', ${authEpoch})`;
+  for (const id of [clientId, otherClientId]) {
+    await sql`INSERT INTO oauth.clients (name, client_id, redirect_uris, scopes, audiences)
+      VALUES (${id}, ${id}, ARRAY['https://client.example.test/callback'], ARRAY['openid', 'offline_access'], ARRAY['cloud'])`;
+  }
+  const routes = createIdentityOAuthIssuanceRoutes({
+    authenticate: () => true,
+    notifyNewAccess: async (notice) => {
+      notices.push(notice);
+      await notify?.(notice);
+    },
+    issuer: async () => "https://cloud.example.test",
+    now: () => Math.floor(Date.now() / 1000),
+    withActiveSigner: (_purpose, callback) =>
+      sql.begin((db) =>
+        callback(
+          {
+            kid: crypto.randomUUID(),
+            key: privateKey,
+            signUntil: new Date(Date.now() + 60_000),
+            issuer: "https://cloud.example.test",
+          },
+          db,
+        ),
+      ),
+  });
+  return {
+    userId,
+    otherUserId,
+    clientId,
+    otherClientId,
+    authEpoch,
+    notices,
+    code: async (scopes: string[] = ["openid", "offline_access"], epoch: number | null = authEpoch, confirmed = true) => {
+      const code = crypto.randomUUID();
+      const nonce = crypto.randomUUID();
+      await sql`INSERT INTO oauth.codes (code, client_id, user_id, auth_epoch, redirect_uri, scopes, audiences, used, authority_nonce, confirmed_at)
+        VALUES (${code}, ${clientId}, ${userId}::uuid, ${epoch}, 'https://client.example.test/callback',
+          ${toPgTextArray(scopes)}::text[], ARRAY['cloud', ${clientId}], true, ${nonce}::uuid, CASE WHEN ${confirmed} THEN now() ELSE NULL END)`;
+      return { kind: "authorization_code" as const, code, nonce };
+    },
+    reserve: async (options: { clientId?: string; userId?: string; authEpoch?: number; status?: string } = {}) => {
+      const [family] = await sql<{ id: string; expires_at: Date }[]>`
+        INSERT INTO oauth.refresh_token_families (client_id, user_id, auth_epoch, scopes, audiences, status, expires_at, notified_at)
+        VALUES (${options.clientId ?? clientId}, ${options.userId ?? userId}::uuid, ${options.authEpoch ?? authEpoch},
+          ARRAY['openid', 'offline_access'], ARRAY['cloud', ${clientId}], ${options.status ?? "reserved"}, now() + interval '2 minutes',
+          CASE WHEN ${options.status ?? "reserved"} = 'reserved' THEN now() ELSE NULL END)
+        RETURNING id, expires_at
+      `;
+      return family!;
+    },
+    issue: (grant: Record<string, unknown>, idToken = false) =>
+      routes.request("/oauth/token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tokens: [{ kind: "user_access", grant, expiresIn: 3600 }, ...(idToken ? [{ kind: "user_id", grant, expiresIn: 3600 }] : [])],
+        }),
+      }),
+    cleanup: async () => {
+      await sql`DELETE FROM oauth.clients WHERE client_id IN (${clientId}, ${otherClientId})`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherUserId}::uuid)`;
+    },
+  };
+};
+
 withDatabase("Core OAuth issuance authority database resolution", () => {
+  test.each(["authorization_code", "device_code"] as const)("new offline access needs committed confirmation evidence: %s", (kind) =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        await sql`UPDATE oauth.clients SET is_public=true,allow_device_grant=true WHERE client_id=${f.clientId}`;
+        for (const confirmed of [false, true]) {
+          const family = await f.reserve();
+          let grant: Record<string, unknown>;
+          let deviceId: string | undefined;
+          if (kind === "authorization_code") grant = await f.code(undefined, undefined, confirmed);
+          else {
+            deviceId = crypto.randomUUID();
+            const nonce = crypto.randomUUID();
+            await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,
+              expires_at,authority_nonce,auth_epoch,confirmed_at)
+              VALUES (${deviceId}::uuid,${deviceId},${deviceId},${f.clientId},ARRAY['openid','offline_access'],ARRAY['cloud',${f.clientId}],
+                'consumed',${f.userId}::uuid,now()+interval '10 minutes',${nonce}::uuid,${f.authEpoch},CASE WHEN ${confirmed} THEN now() ELSE NULL END)`;
+            grant = { kind, deviceAuthorizationId: deviceId, nonce };
+          }
+          const request = { ...grant, familyId: family.id };
+          expect((await f.issue(request)).status).toBe(confirmed ? 200 : 403);
+          if (confirmed) await eventually(async () => (await notifiedAt(family.id)) !== null, "the new-access notice");
+          const [row] = await sql`SELECT status,notified_at FROM oauth.refresh_token_families WHERE id=${family.id}::uuid`;
+          expect(row.status).toBe(confirmed ? "active" : "reserved");
+          expect(f.notices).toHaveLength(confirmed ? 1 : 0);
+          if (confirmed) {
+            expect(f.notices[0]).toMatchObject({ familyId: family.id, userId: f.userId, kind: "app", clientName: f.clientId });
+            expect((await f.issue(request)).status).toBe(403);
+            expect(f.notices).toHaveLength(1);
+          }
+        }
+      } finally {
+        await f.cleanup();
+      }
+    }),
+  );
+
+  test("a notice that never finishes does not hold the token response", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture(() => new Promise(() => undefined));
+      try {
+        const family = await f.reserve();
+        const grant = await f.code();
+        const started = performance.now();
+        expect((await f.issue({ ...grant, familyId: family.id })).status).toBe(200);
+        expect(performance.now() - started).toBeLessThan(2_000);
+        await eventually(() => f.notices.length === 1, "the notice attempt");
+        const [row] = await sql`SELECT status,notified_at FROM oauth.refresh_token_families WHERE id=${family.id}::uuid`;
+        expect(row.status).toBe("active");
+        expect(row.notified_at).toBeNull();
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("a notice failure after commit keeps the token response successful and leaves a pending notice", () =>
+    withFrozenTime(async () => {
+      let attempts = 0;
+      const f = await epochAuthorityFixture(async (notice) => {
+        const [family] = await sql`SELECT status FROM oauth.refresh_token_families WHERE id=${notice.familyId}::uuid`;
+        // This separate pool query sees the committed activation before any send occurs.
+        expect(family.status).toBe("active");
+        attempts += 1;
+        throw new Error("The new-access notice could not be prepared");
+      });
+      try {
+        const family = await f.reserve();
+        const grant = await f.code();
+        expect((await f.issue({ ...grant, familyId: family.id })).status).toBe(200);
+        await eventually(() => attempts === 1, "the failed notice attempt");
+        await Bun.sleep(50);
+        expect(attempts).toBe(1);
+        const [pending] = await sql`SELECT status,notified_at FROM oauth.refresh_token_families WHERE id=${family.id}::uuid`;
+        expect(pending.status).toBe("active");
+        expect(pending.notified_at).toBeNull();
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("rotation long after the browser confirmation needs no fresh evidence and sends no notice", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        const family = await f.reserve({ status: "active" });
+        await sql`UPDATE oauth.refresh_token_families SET created_at=now()-interval '2 days',notified_at=now()-interval '2 days'
+          WHERE id=${family.id}::uuid`;
+        const nonce = crypto.randomUUID();
+        const [token] = await sql<{ id: string }[]>`INSERT INTO oauth.refresh_tokens(family_id,token_prefix,secret_hash,generation,status,
+          expires_at,authority_nonce,authority_reserved_at,authority_scopes,authority_audiences)
+          VALUES (${family.id}::uuid,${crypto.randomUUID().replaceAll("-", "").slice(0, 24)},'unused',1,'issuing',now()+interval '2 minutes',
+            ${nonce}::uuid,now(),ARRAY['openid','offline_access'],ARRAY['cloud',${f.clientId}]) RETURNING id`;
+        expect((await f.issue({ kind: "refresh_token", tokenId: token!.id, nonce })).status).toBe(200);
+        expect(f.notices).toHaveLength(0);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("maintenance retries pending new-access notices, respects cancellation and marks only successful sends", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        const family = await f.reserve({ status: "active" });
+        let attempts = 0;
+        const notify = async (notice: OAuthNewAccessNotice) => {
+          if (notice.familyId !== family.id) throw new Error("Not this test's family");
+          attempts += 1;
+          if (attempts === 1) throw new Error("The new-access notice could not be prepared");
+        };
+        await notifyPendingOAuthNewAccess(notify, AbortSignal.abort());
+        expect(attempts).toBe(0);
+        await notifyPendingOAuthNewAccess(notify);
+        expect(attempts).toBe(1);
+        const [pending] = await sql`SELECT notified_at FROM oauth.refresh_token_families WHERE id=${family.id}::uuid`;
+        expect(pending.notified_at).toBeNull();
+        await notifyPendingOAuthNewAccess(notify);
+        expect(attempts).toBe(2);
+        const [sent] = await sql`SELECT notified_at FROM oauth.refresh_token_families WHERE id=${family.id}::uuid`;
+        expect(sent.notified_at).toBeInstanceOf(Date);
+        await notifyPendingOAuthNewAccess(notify);
+        expect(attempts).toBe(2);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("maintenance still tells about access that ended before the notice went out, but not about a reservation", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        const signedOut = await f.reserve({ status: "active" });
+        const neverActive = await f.reserve();
+        await sql`UPDATE oauth.refresh_token_families SET status='revoked',revoked_at=now(),expires_at=now()-interval '1 second'
+          WHERE id IN (${signedOut.id}::uuid, ${neverActive.id}::uuid)`;
+        const sent: string[] = [];
+        await notifyPendingOAuthNewAccess(async (notice) => {
+          if (notice.familyId !== signedOut.id && notice.familyId !== neverActive.id) throw new Error("Not this test's family");
+          sent.push(notice.familyId);
+        });
+        expect(sent).toEqual([signedOut.id]);
+        expect(await notifiedAt(signedOut.id)).toBeInstanceOf(Date);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("code epochs must match the user before the code is marked issued", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        for (const epoch of [f.authEpoch - 1, null]) {
+          const grant = await f.code(["openid"], epoch);
+          expect((await f.issue(grant)).status).toBe(403);
+          const [row] = await sql<
+            { authority_issued_at: Date | null }[]
+          >`SELECT authority_issued_at FROM oauth.codes WHERE code = ${grant.code}`;
+          expect(row?.authority_issued_at).toBeNull();
+        }
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("code issuance activates one matching reservation and caps both token expiries", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        const family = await f.reserve();
+        const grant = await f.code();
+        const response = await f.issue({ ...grant, familyId: family.id }, true);
+        expect(response.status).toBe(200);
+        const body = z.object({ tokens: z.array(z.string()) }).parse(await response.json());
+        expect(body.tokens).toHaveLength(2);
+        for (const token of body.tokens) expect(decodeJwt(token).exp).toBe(Math.floor(family.expires_at.getTime() / 1000));
+        expect(decodeJwt(body.tokens[0]!).auth_epoch).toBe(f.authEpoch);
+        expect(decodeJwt(body.tokens[1]!).auth_epoch).toBeUndefined();
+        const [row] = await sql<{ status: string }[]>`SELECT status FROM oauth.refresh_token_families WHERE id = ${family.id}::uuid`;
+        expect(row?.status).toBe("active");
+        // A fresh grant cannot activate an already active family either.
+        const second = await f.code();
+        expect((await f.issue({ ...second, familyId: family.id })).status).toBe(403);
+        const [unissued] = await sql<
+          { authority_issued_at: Date | null }[]
+        >`SELECT authority_issued_at FROM oauth.codes WHERE code = ${second.code}`;
+        expect(unissued?.authority_issued_at).toBeNull();
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  for (const mismatch of ["client", "user", "epoch", "expired"] as const) {
+    test(`code issuance refuses a reservation with a different ${mismatch}`, () =>
+      withFrozenTime(async () => {
+        const f = await epochAuthorityFixture();
+        try {
+          const family = await f.reserve({
+            ...(mismatch === "client" ? { clientId: f.otherClientId } : {}),
+            ...(mismatch === "user" ? { userId: f.otherUserId } : {}),
+            ...(mismatch === "epoch" ? { authEpoch: f.authEpoch - 1 } : {}),
+          });
+          if (mismatch === "expired")
+            await sql`UPDATE oauth.refresh_token_families SET expires_at = now() - interval '1 minute' WHERE id = ${family.id}::uuid`;
+          const grant = await f.code();
+          expect((await f.issue({ ...grant, familyId: family.id })).status).toBe(403);
+          const [row] = await sql<{ status: string }[]>`SELECT status FROM oauth.refresh_token_families WHERE id = ${family.id}::uuid`;
+          expect(row?.status).toBe("reserved");
+          const [code] = await sql<
+            { authority_issued_at: Date | null }[]
+          >`SELECT authority_issued_at FROM oauth.codes WHERE code = ${grant.code}`;
+          expect(code?.authority_issued_at).toBeNull();
+        } finally {
+          await f.cleanup();
+        }
+      }));
+  }
+
+  test("offline access requires a reservation and other code scopes exclude one", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        expect((await f.issue(await f.code())).status).toBe(403);
+        const family = await f.reserve();
+        expect((await f.issue({ ...(await f.code(["openid"])), familyId: family.id })).status).toBe(403);
+        const [row] = await sql<{ status: string }[]>`SELECT status FROM oauth.refresh_token_families WHERE id = ${family.id}::uuid`;
+        expect(row?.status).toBe("reserved");
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("issuance waits for the account row before it holds the grant, so a concurrent account deletion completes", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        const grant = await f.code(["openid"]);
+        let issued: ReturnType<typeof f.issue> | undefined;
+        await sql.begin(async (tx) => {
+          await tx`SET LOCAL lock_timeout = '5s'`;
+          const [self] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          await tx`SELECT id FROM auth.users WHERE id = ${f.userId}::uuid FOR UPDATE`;
+          issued = f.issue(grant);
+          let blocked = false;
+          for (let attempt = 0; attempt < 1_000 && !blocked; attempt += 1) {
+            const [row] = await sql<{ waiting: boolean }[]>`
+              SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ${self!.pid}::integer = ANY(pg_blocking_pids(pid))) AS waiting`;
+            blocked = row!.waiting;
+          }
+          expect(blocked).toBe(true);
+          // Account deletion cascades into the account's grants; a grant locked before the account would deadlock here.
+          await tx`DELETE FROM oauth.codes WHERE code = ${grant.code}`;
+          await tx`DELETE FROM auth.users WHERE id = ${f.userId}::uuid`;
+        });
+        expect((await issued!).status).toBe(403);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("refresh issuance refuses a family from an earlier account epoch", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      try {
+        const family = await f.reserve({ status: "active", authEpoch: f.authEpoch - 1 });
+        const nonce = crypto.randomUUID();
+        const [token] = await sql<{ id: string }[]>`
+        INSERT INTO oauth.refresh_tokens (family_id, token_prefix, secret_hash, generation, status, expires_at,
+          authority_nonce, authority_reserved_at, authority_scopes, authority_audiences)
+        VALUES (${family.id}::uuid, ${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}, 'unused', 1, 'issuing', now() + interval '2 minutes',
+          ${nonce}::uuid, now(), ARRAY['openid'], ARRAY['cloud', ${f.clientId}]) RETURNING id
+      `;
+        expect((await f.issue({ kind: "refresh_token", tokenId: token!.id, nonce })).status).toBe(403);
+        const [row] = await sql<
+          { authority_issued_at: Date | null }[]
+        >`SELECT authority_issued_at FROM oauth.refresh_tokens WHERE id = ${token!.id}::uuid`;
+        expect(row?.authority_issued_at).toBeNull();
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
   test("loads current principal and client authority in the issuance request", async () => {
     const userId = crypto.randomUUID();
     const clientId = `core-authority-${crypto.randomUUID()}`;
@@ -450,9 +837,9 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
           ARRAY['openid', 'profile'], ARRAY['cloud'], ARRAY['user'], 'profiles', 'managed', false)
       `;
       await sql`
-        INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, scopes, audiences, used, authority_nonce)
+        INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, scopes, audiences, used, authority_nonce, auth_epoch)
         VALUES (${code}, ${clientId}, ${userId}::uuid, 'https://client.example.test/callback', ARRAY['openid', 'profile'],
-          ARRAY['cloud', ${clientId}], true, ${authorityNonce}::uuid)
+          ARRAY['cloud', ${clientId}], true, ${authorityNonce}::uuid, 0)
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
         authenticate: () => true,
@@ -633,8 +1020,8 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
           ARRAY['openid'], ARRAY['cloud'], ARRAY['user'], 'profiles', 'managed', false)
       `;
       await sql`
-        INSERT INTO oauth.refresh_token_families (id, client_id, user_id, scopes, audiences, status, expires_at)
-        VALUES (${familyId}::uuid, ${clientId}, ${userId}::uuid, ARRAY['openid'], ARRAY['cloud', ${clientId}], 'active', ${familyExpiresAt})
+        INSERT INTO oauth.refresh_token_families (id, client_id, user_id, scopes, audiences, status, expires_at, auth_epoch)
+        VALUES (${familyId}::uuid, ${clientId}, ${userId}::uuid, ARRAY['openid'], ARRAY['cloud', ${clientId}], 'active', ${familyExpiresAt}, 0)
       `;
       await sql`
         INSERT INTO oauth.refresh_tokens (
@@ -739,12 +1126,13 @@ withDatabase("Core terminal approval issuance boundary", () => {
         VALUES (${userId}::uuid,${`terminal-lock-order-${userId}`},'local','user')`;
       await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
         VALUES ('Issuance lock order',${clientId},'{}',ARRAY['openid','profile'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
-      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce,auth_epoch)
         VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
-          'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+          'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid,0)`;
       await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,expires_at)
         VALUES (${otherAuthorizationId}::uuid,${otherAuthorizationId},${otherAuthorizationId},${clientId},ARRAY['openid'],ARRAY['cloud'],
           now()+interval '10 minutes')`;
+      await sql`UPDATE oauth.device_authorizations SET login_lifetime_seconds=3600 WHERE id=${authorizationId}::uuid`;
       await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
         VALUES (${deviceId}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone','{}',false)`;
       await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
@@ -810,6 +1198,7 @@ withDatabase("Core terminal approval issuance boundary", () => {
     "browser",
     "revoked",
     "epoch",
+    "login-epoch",
     "device-owner",
     "login-owner",
     "missing-device",
@@ -851,10 +1240,11 @@ withDatabase("Core terminal approval issuance boundary", () => {
           VALUES (${id}::uuid,${`terminal-issuance-${id}`},'local','user')`;
       await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
           VALUES ('Issuance test',${clientId},'{}',ARRAY['openid','profile'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
-      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce,auth_epoch)
           VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
-            'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+            'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid,0)`;
       if (scenario !== "browser") {
+        await sql`UPDATE oauth.device_authorizations SET login_lifetime_seconds=3600 WHERE id=${authorizationId}::uuid`;
         await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
             VALUES (${deviceId}::uuid,'https://cloud.example.test',${scenario === "device-owner" ? otherUser : userId}::uuid,'Phone','{}',false)`;
         await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
@@ -864,6 +1254,7 @@ withDatabase("Core terminal approval issuance boundary", () => {
             FROM auth.users u WHERE u.id=${scenario === "login-owner" ? otherUser : userId}::uuid`;
         if (scenario === "revoked") await sql`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${deviceId}::uuid`;
         if (scenario === "epoch") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
+        if (scenario === "login-epoch") await sql`UPDATE auth.app_logins SET auth_epoch=auth_epoch-1 WHERE id=${loginId}::uuid`;
         if (scenario === "missing-device") await sql`DELETE FROM auth.app_devices WHERE id=${deviceId}::uuid`;
         if (scenario === "disabled") await settings.set("user.app_approval.enabled", false);
         if (scenario === "issuer") await settings.set("app.url", "https://other-cloud.example.test");
@@ -901,4 +1292,82 @@ withDatabase("Core terminal approval issuance boundary", () => {
       for (const id of [userId, otherUser]) await sql`DELETE FROM auth.users WHERE id=${id}::uuid`;
     }
   });
+
+  test.each([
+    "changed",
+    "current",
+    "client",
+    "scopes",
+    "scopes-extra",
+    "lifetime",
+    "missing-lifetime",
+    "user",
+    "pending",
+    "denied",
+    "consumed",
+    "family-lifetime",
+  ] as const)("terminal offline access checks every binding before activating a family: %s", (epoch) =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      const deviceId = crypto.randomUUID(),
+        authorizationId = crypto.randomUUID(),
+        loginId = crypto.randomUUID(),
+        nonce = crypto.randomUUID();
+      try {
+        await sql`UPDATE oauth.clients SET is_public=true,allow_device_grant=true WHERE client_id=${f.clientId}`;
+        await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce,auth_epoch)
+          SELECT ${authorizationId}::uuid,${authorizationId},${authorizationId},${f.clientId},ARRAY['openid','offline_access'],ARRAY['cloud',${f.clientId}],
+            'consumed',u.id,now()+interval '10 minutes',${nonce}::uuid,u.auth_epoch FROM auth.users u WHERE u.id=${f.userId}::uuid`;
+        await sql`UPDATE oauth.device_authorizations SET login_lifetime_seconds=3600 WHERE id=${authorizationId}::uuid`;
+        await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
+          VALUES (${deviceId}::uuid,'https://cloud.example.test',${f.userId}::uuid,'Phone','{}',false)`;
+        await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
+          kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+          SELECT ${loginId}::uuid,'https://cloud.example.test',u.id,u.auth_epoch,'login','unusable','unusable','000123','approved',${deviceId}::uuid,
+            now()+interval '5 minutes','terminal',${authorizationId}::uuid,${f.clientId},ARRAY['openid','offline_access'],3600
+          FROM auth.users u WHERE u.id=${f.userId}::uuid`;
+        const family = await f.reserve();
+        // Existing browser evidence does not override a mismatched terminal approval.
+        if (epoch !== "current" && epoch !== "changed")
+          await sql`UPDATE oauth.device_authorizations SET confirmed_at=now() WHERE id=${authorizationId}::uuid`;
+        if (epoch === "client") await sql`UPDATE auth.app_logins SET client_id=${f.otherClientId} WHERE id=${loginId}::uuid`;
+        if (epoch === "scopes") await sql`UPDATE auth.app_logins SET scopes=ARRAY['openid'] WHERE id=${loginId}::uuid`;
+        if (epoch === "scopes-extra")
+          await sql`UPDATE auth.app_logins SET scopes=ARRAY['openid','offline_access','profile'] WHERE id=${loginId}::uuid`;
+        if (epoch === "missing-lifetime")
+          await sql`UPDATE oauth.device_authorizations SET login_lifetime_seconds=NULL WHERE id=${authorizationId}::uuid`;
+        if (epoch === "lifetime") await sql`UPDATE auth.app_logins SET lifetime_seconds=1800 WHERE id=${loginId}::uuid`;
+        if (epoch === "user") await sql`UPDATE auth.app_logins SET user_id=${f.otherUserId}::uuid WHERE id=${loginId}::uuid`;
+        if (["pending", "denied", "consumed"].includes(epoch))
+          await sql`UPDATE auth.app_logins SET state=${epoch} WHERE id=${loginId}::uuid`;
+        if (epoch === "family-lifetime")
+          await sql`UPDATE oauth.refresh_token_families SET expires_at=now()+interval '2 hours' WHERE id=${family.id}::uuid`;
+        if (epoch === "changed") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${f.userId}::uuid`;
+
+        const response = await f.issue({ kind: "device_code", deviceAuthorizationId: authorizationId, nonce, familyId: family.id });
+        const allowed = epoch === "current";
+        expect(response.status).toBe(allowed ? 200 : 403);
+        const result = await response.json();
+        if (allowed) {
+          const { tokens } = z.object({ tokens: z.array(z.string()).length(1) }).parse(result);
+          const [user] = await sql<{ auth_epoch: string }[]>`SELECT auth_epoch::text FROM auth.users WHERE id=${f.userId}::uuid`;
+          expect(decodeJwt(tokens[0]!).auth_epoch).toBe(Number(user!.auth_epoch));
+          expect(Number(user!.auth_epoch)).toBe(f.authEpoch);
+        } else expect(result).toEqual({ message: "Forbidden" });
+        const [reserved] = await sql`SELECT status,notified_at FROM oauth.refresh_token_families WHERE id=${family.id}::uuid`;
+        expect(reserved.status).toBe(allowed ? "active" : "reserved");
+        // A Cloud Login approval is the notice; a refused family stays a reservation with nothing to tell.
+        expect(reserved.notified_at).not.toBeNull();
+        expect(f.notices).toHaveLength(0);
+        const [login] = await sql`SELECT state FROM auth.app_logins WHERE id=${loginId}::uuid`;
+        expect(login.state).toBe(allowed ? "consumed" : ["pending", "denied", "consumed"].includes(epoch) ? epoch : "approved");
+        const [grant] = await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${authorizationId}::uuid`;
+        if (allowed) expect(grant.authority_issued_at).toBeInstanceOf(Date);
+        else expect(grant.authority_issued_at).toBeNull();
+      } finally {
+        await sql`DELETE FROM auth.app_logins WHERE id=${loginId}::uuid`;
+        await f.cleanup();
+      }
+    }),
+  );
 });

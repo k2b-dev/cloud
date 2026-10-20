@@ -105,6 +105,51 @@ describe("OAuth authorization pages", () => {
     expect(consent).toMatch(/Ablehnen .*Zugriff erlauben/);
   });
 
+  test("a sign-in older than 10 minutes swaps Allow for Confirm identity that returns to the same page", async () => {
+    for (const [state, returnTo] of [
+      ["confirmReauthenticate", `/oauth/device?user_code=${sample.code}&reauthenticate=1`],
+      ["consentReauthenticate", `/oauth/consent?request=${sample.request}&reauthenticate=1`],
+    ] as const) {
+      for (const [locale, hint, button] of [
+        ["en", "more than 10 minutes ago", "Confirm identity"],
+        ["de", "mehr als 10 Minuten her", "Identität bestätigen"],
+      ] as const) {
+        const html = await renderAuthorizationState(state, locale);
+        const body = text(html);
+        const context = `${state} ${locale}`;
+        expect(body, context).toContain(hint);
+        // No way to allow from here, Deny still works, and the sign-in leads back to this request.
+        expect(html, context).not.toContain('value="approve"');
+        expect(html, context).toContain('value="deny"');
+        const href =
+          /<a[^>]*data-testid="oauth-confirm-identity"[^>]*href="([^"]+)"|<a[^>]*href="([^"]+)"[^>]*data-testid="oauth-confirm-identity"/.exec(
+            html,
+          );
+        const target = new URL((href?.[1] ?? href?.[2])!.replaceAll("&amp;", "&"), "https://cloud.test");
+        expect(target.pathname, context).toBe("/auth/login");
+        expect(target.searchParams.get("redirectTo"), context).toBe(returnTo);
+        expect(body, context).toMatch(new RegExp(`${locale === "en" ? "Deny" : "Ablehnen"} .*${button}`));
+      }
+    }
+    // The device form also sends the code, so a sign-in that aged while the page was open returns here.
+    expect(await renderAuthorizationState("confirm", "en")).toContain(`<input type="hidden" name="user_code" value="${sample.code}"`);
+  });
+
+  test("cld login gets the consent page without a resource and with the own-sign-in warning", async () => {
+    for (const [locale, warning, returns] of [
+      ["en", "Only allow this if you just started the sign-in yourself", "Returns to 127.0.0.1:53682"],
+      ["de", "Erlaube das nur, wenn du die Anmeldung gerade selbst gestartet hast", "Rückkehr zu 127.0.0.1:53682"],
+    ] as const) {
+      const html = await renderAuthorizationState("consentCli", locale);
+      const body = text(html);
+      expect(body, locale).toContain(warning);
+      expect(body, locale).toContain(returns);
+      expect(body, locale).not.toMatch(/Resource https|Ressource https/);
+      expect(body, locale).not.toMatch(/unverified|nicht verifiziert/);
+      expect(html, locale).toContain('value="approve"');
+    }
+  });
+
   test("code entry is a plain GET form in both languages", async () => {
     for (const [locale, title, button] of [
       ["en", "Connect a device", "Continue"],

@@ -359,6 +359,28 @@ else {
     ),
   ];
 
+  test("hub and related article icons use shared tiles with app ink and no inline styles", async () => {
+    const reader = await setup("page", undefined, "/app/spaces/help", html, { documents: startDocuments });
+    try {
+      const expectTiles = (selector: string) => {
+        const icons = reader.dom.document.querySelectorAll(selector);
+        expect(icons.length, selector).toBeGreaterThan(0);
+        for (const icon of icons) {
+          expect(icon.classList.contains("k2b-icon-tile"), selector).toBe(true);
+          expect(icon.classList.contains("app-accent-text"), selector).toBe(true);
+          expect(icon.hasAttribute("style"), selector).toBe(false);
+        }
+      };
+      expectTiles(".help-start-tile-icon");
+      expectTiles(".help-start-row-icon");
+      reader.button("Task 9").click();
+      await until(() => !!reader.dom.document.querySelector(".help-article-related-icon"));
+      expectTiles(".help-article-related-icon");
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
   test("start: only task articles become eight ordered tiles; every remaining task follows in the overflow list", async () => {
     const reader = await setup("page", undefined, "/app/spaces/help", html, { documents: startDocuments });
     try {
@@ -545,6 +567,37 @@ else {
       await until(() => !!reader.dom.document.querySelector("[data-help-results]"));
       expect(reader.dom.document.querySelector("[data-help-search]")).not.toBeNull();
       expect(reader.dom.document.querySelector(".help-head-title, .help-head-tile, [data-help-menu]")).toBeNull();
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
+  test("modal: slash focuses search and Escape clears only a nonempty query", async () => {
+    const reader = await setup("modal", undefined, "/app/spaces");
+    try {
+      await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
+      const input = search(reader);
+      const slash = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
+      reader.dom.document.body.dispatchEvent(slash);
+      expect(slash.defaultPrevented).toBe(true);
+      expect(reader.dom.document.activeElement).toBe(input);
+      type(input, "second");
+      const composingEscape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, isComposing: true });
+      input.dispatchEvent(composingEscape);
+      expect(input.value).toBe("second");
+      expect(composingEscape.defaultPrevented).toBe(false);
+      const preventedEscape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      preventedEscape.preventDefault();
+      input.dispatchEvent(preventedEscape);
+      expect(input.value).toBe("second");
+      const escape = () => {
+        const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+        input.dispatchEvent(event);
+        return event;
+      };
+      expect(escape().defaultPrevented).toBe(true);
+      expect(input.value).toBe("");
+      expect(escape().defaultPrevented).toBe(false);
     } finally {
       await reader.cleanup();
     }

@@ -12,27 +12,41 @@ import {
 } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  AppWorkspace,
+  type AppWorkspaceWidthShare,
+  announce,
+  openSpotlightSearch,
+  Placeholder,
+  prompts,
+  type ToastHandle,
+  toast,
+  useLocale,
+} from "@k2b/ui";
+import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
-import { isAggregatedListing, mailRowLeavesListing } from "../folder-display-rules";
+import type { MailDraftSeed } from "../contracts";
+import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
+import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
-import type { MailboxPageData, MailListItem } from "../service/workspace";
+import type { MailboxListView, MailboxPageData, MailConversationDetailData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
+import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailConversationList from "./_components/MailConversationList";
-import MailConversationReader from "./_components/MailConversationReader";
+import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
-import MailSidebar from "./_components/MailSidebar";
+import MailSidebar, { type MailSidebarMailbox } from "./_components/MailSidebar";
+import { MailboxHeadFilters, MailboxViewTabs, MailListModeMenu } from "./_components/MailWorkspaceHead";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import { createMailActionQueue } from "./_components/mail-action-queue";
 import {
@@ -47,6 +61,8 @@ import {
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
+import { mailDraftSeedHref } from "./_components/mail-compose-route";
+import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import {
   emptyMailConversationSelection,
@@ -60,7 +76,7 @@ import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
 import { createRetryToasts } from "./_components/mail-feedback";
-import { onlyInFolderFolders } from "./_components/mail-folder-tree";
+import { buildVisibleMailFolderTree, flattenMailFolderTree, onlyInFolderFolders } from "./_components/mail-folder-tree";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
@@ -76,6 +92,7 @@ import {
   projectMailCounts,
   projectMailList,
 } from "./_components/mail-list-projection";
+import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
 import {
   buildMailListHref,
   buildMailSearchClearHref,
@@ -85,7 +102,11 @@ import {
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
+import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
+import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";
+import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
+import { mailboxCurrentTab, mailboxViewTabs } from "./_components/mail-view-tabs";
 import {
   decideMailAutoReadIntent,
   type MailWorkspaceActionOptions,
@@ -93,6 +114,7 @@ import {
   mailOptimisticFields,
   runMailWorkspaceAction,
 } from "./_components/mail-workspace-action-runner";
+import { composeMailListSnapshot, pickMailWorkspaceFrame } from "./_components/mail-workspace-frame";
 import { type MailWorkspacePreferences, updateMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import {
   captureMailWorkspaceRefreshError,
@@ -101,6 +123,20 @@ import {
 } from "./_components/mail-workspace-refresh";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 import { assertCursorProgress } from "./pagination";
+
+/**
+ * F2, wide windows: the list grows with the app card from 320 to 440 px (25 % of the card minus 24 px); its pane
+ * also holds the 12 px gap to the reader. A Detail is a column only while the reader beside the list keeps 440 px,
+ * so Main's minimum is the list pane plus that reader width.
+ */
+const MAIL_READER_BESIDE_DETAIL = 440;
+const MAIL_LIST_WIDTH = { share: 0.25, offset: -12, min: 332, max: 452 } satisfies AppWorkspaceWidthShare;
+const MAIL_MAIN_WITH_LIST = {
+  share: MAIL_LIST_WIDTH.share,
+  offset: MAIL_LIST_WIDTH.offset + MAIL_READER_BESIDE_DETAIL,
+  min: MAIL_LIST_WIDTH.min + MAIL_READER_BESIDE_DETAIL,
+  max: MAIL_LIST_WIDTH.max + MAIL_READER_BESIDE_DETAIL,
+} satisfies AppWorkspaceWidthShare;
 
 const rank = (permission: string): number => (permission === "admin" ? 3 : permission === "write" ? 2 : permission === "read" ? 1 : 0);
 const mailListScope = (href: string): string => {
@@ -112,7 +148,7 @@ const mailListScope = (href: string): string => {
 };
 
 /** Scheduled and Drafts page through their own lists; every other view pages through conversations. */
-const pageNextCursor = (snapshot: MailboxPageData): string | null | undefined =>
+const pageNextCursor = (snapshot: MailboxListView): string | null | undefined =>
   snapshot.scheduledMode
     ? snapshot.scheduledPage?.nextCursor
     : snapshot.draftsMode
@@ -132,6 +168,12 @@ function MailWorkspaceView(props: {
   /** `null` under Automatic: only the browser knows the device scheme, and it is read on mount. */
   initialTheme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
+  /** The mailboxes the sidebar lists, with this person's pins and hidden mailboxes. */
+  sidebar: {
+    mailboxes: MailSidebarMailbox[];
+    pinnedMailboxIds: string[];
+    hiddenMailboxIds: string[];
+  };
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
@@ -151,11 +193,9 @@ function MailWorkspaceView(props: {
   const [detailsOpening, setDetailsOpening] = createSignal(false);
   const [managementOpening, setManagementOpening] = createSignal<"health" | "links" | "remote-content" | "subscriptions" | null>(null);
   const [liveUnavailable, setLiveUnavailable] = createSignal(false);
+  /** The live subscription has applied every update the server sent, so the counts and folders shown are current. */
+  let liveCaughtUp = false;
   const activeSearch = () => data.search;
-  const activeTagId = createMemo(() => {
-    const expression = activeSearch().expression;
-    return expression?.type === "local_tag_id" ? expression.tagId : null;
-  });
   const [conversationSelection, setConversationSelection] = createSignal(emptyMailConversationSelection());
   const [selectionMode, setSelectionMode] = createSignal(false);
   const [conversationOpenIntent, setConversationOpenIntent] = createSignal(0);
@@ -258,6 +298,21 @@ function MailWorkspaceView(props: {
       scope: mailListScope(requestPath()),
     }),
   );
+  /** The folders whose messages the shown list leaves out, by the listing rule the server applies. */
+  const excludedListingFolderIds = createMemo(
+    () =>
+      new Set(
+        mailListingExcludesTrashAndJunk({
+          viewFolderId: data.folderId,
+          activeView: data.activeView,
+          hasSearch: data.search.expression !== null,
+          hasSavedView: !!data.savedViewId,
+          scheduledMode: data.scheduledMode,
+        })
+          ? data.folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
+          : [],
+      ),
+  );
   let disposed = false;
   const focusFrames = new Set<number>();
   let pendingListState = new Map<string, PendingMailListState>();
@@ -284,7 +339,7 @@ function MailWorkspaceView(props: {
     onCleanup(() => observer.disconnect());
   });
 
-  const applyPendingListState = (snapshot: MailboxPageData): MailboxPageData => {
+  const applyPendingListState = <T extends MailboxListView>(snapshot: T): T => {
     const reconciled = reconcileMailListOptimisticState(snapshot.listItems, pendingListState);
     pendingListState = reconciled.pending;
     return { ...snapshot, listItems: reconciled.items };
@@ -326,17 +381,101 @@ function MailWorkspaceView(props: {
     return await response.json();
   };
 
-  type WorkspaceRouteResult = { source: string; snapshot: MailboxPageData };
+  /** Every request path resolves against this mailbox and the browser origin; the list never carries a selection. */
+  const fetchWorkspaceList = async (
+    href: string,
+    signal: AbortSignal,
+    listMode: MailboxPageData["listMode"],
+  ): Promise<MailboxListView | null> => {
+    const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
+    if (!target) return null;
+    target.searchParams.delete("conversation");
+    target.searchParams.delete("message");
+    const response = await apiClient.mailboxes[":mailboxId"]["workspace-list"].$get(
+      {
+        param: { mailboxId },
+        query: { href: `${target.pathname}${target.search}`, listMode },
+      },
+      { init: { signal } },
+    );
+    if (!response.ok) return null;
+    return await response.json();
+  };
+
+  /**
+   * Page 1 is the whole workspace snapshot: folders, counts and the open conversation. Every later page is only its
+   * list page, so scrolling on and a live refresh of many pages do not rebuild the mailbox once per page.
+   */
+  /** `generation` is the selection generation when page 1 was requested; a later selection commit makes its selection old. */
+  type WorkspaceRouteResult = { source: string; snapshot: MailboxPageData; generation: number } | { source: string; list: MailboxListView };
+  const pageList = (page: WorkspaceRouteResult): MailboxListView => ("snapshot" in page ? page.snapshot : page.list);
   type WorkspaceTransition = {
     source: string;
     resolve: (result: "applied" | "failed" | "stale") => void;
   };
   const encodeRouteSource = (href: string, listMode: MailboxPageData["listMode"]) => JSON.stringify({ href, listMode });
   const decodeRouteSource = (source: string): { href: string; listMode: MailboxPageData["listMode"] } => JSON.parse(source);
+  /**
+   * Sources with the same list scope and list mode show the same list and differ only in the open conversation, so
+   * the list query keeps its loaded pages between them. A message selection keeps a source of its own: the snapshot
+   * loads a message's detail.
+   */
+  const routeListKey = (source: string): string => {
+    const { href, listMode } = decodeRouteSource(source);
+    const url = mailRouteUrl(href);
+    if (url.searchParams.has("message")) return source;
+    // A starting cursor is part of the list; the mailing list parameter only opens the subscription dialog.
+    url.searchParams.delete("conversation");
+    url.searchParams.delete("mailingList");
+    return JSON.stringify({ list: `${url.pathname}${url.search}`, listMode });
+  };
+  const sameRouteList = (left: string, right: string) => left === right || routeListKey(left) === routeListKey(right);
   const initialRouteSource = encodeRouteSource(props.requestPath, props.data.listMode);
   const [routeSource, setRouteSource] = createSignal(initialRouteSource);
+  const routeKey = createMemo(() => routeListKey(routeSource()));
   let committedRouteSource = initialRouteSource;
+  /**
+   * Another list without a selection loads only its list view, which also brings the mailbox, access and saved views,
+   * and keeps the folders, counts, identities and tags shown (`MailWorkspaceFrame`): live updates refresh them exactly as
+   * while the person stays in one list. The whole snapshot loads while live
+   * updates are not caught up, when the page started without a live cursor (changes before the subscription would not
+   * reach it), for a change of the list mode, and for a target that opens a conversation or message.
+   */
+  const keepsMailboxFrame = (target: { href: string; listMode: MailboxPageData["listMode"] }): boolean => {
+    if (!liveCaughtUp || liveUnavailable() || props.data.initialLiveCursor === null) return false;
+    const committed = decodeRouteSource(committedRouteSource);
+    const url = mailRouteUrl(target.href);
+    return (
+      target.listMode === committed.listMode &&
+      !url.searchParams.has("conversation") &&
+      !url.searchParams.has("message") &&
+      mailListScope(target.href) !== mailListScope(committed.href)
+    );
+  };
   let workspaceTransition: WorkspaceTransition | null = null;
+  /**
+   * Counts selection changes and navigations: a reload or a page 1 requested for an earlier generation reports itself as
+   * stale and keeps the selection shown now.
+   */
+  let routeGeneration = 0;
+  let conversationDetailRequest: AbortController | null = null;
+  /** The conversation whose detail is loading, and whether a live change touched it meanwhile. */
+  let openingConversation: { id: string; changed: boolean } | null = null;
+  /** A conversation opening in the shown list shows the same pending state as a view that loads. */
+  const [conversationOpening, setConversationOpening] = createSignal(false);
+  /** Page 1 reloads because an open row was older than its detail; auto mark-read waits until every such reload ends. */
+  const [rowRefreshes, setRowRefreshes] = createSignal(0);
+  const cancelConversationDetail = () => {
+    conversationDetailRequest?.abort();
+    finishConversationDetail();
+  };
+  const finishConversationDetail = () => {
+    conversationDetailRequest = null;
+    openingConversation = null;
+    setConversationOpening(false);
+  };
+  const touches = (conversationIds: readonly (string | null)[] | null, conversationId: string) =>
+    conversationIds === null || conversationIds.some((id) => id === null || id === conversationId);
 
   type ConversationActivityResult = { conversationId: string; items: MailActivityEvent[] };
   const activityQuery = query.create<string | null, ConversationActivityResult>({
@@ -369,20 +508,37 @@ function MailWorkspaceView(props: {
 
   const workspaceQuery = query.createInfinite<string, WorkspaceRouteResult, string>({
     source: routeSource,
-    initial: { source: initialRouteSource, pages: [{ source: initialRouteSource, snapshot: props.data }] },
-    loadPage: async (source, { cursor, abortSignal }) => {
+    // Later reloads and page loads still use the newest source, so page 1 carries the open conversation.
+    isSameSource: sameRouteList,
+    initial: { source: initialRouteSource, pages: [{ source: initialRouteSource, snapshot: props.data, generation: 0 }] },
+    loadPage: async (source, { cursor, abortSignal, cause }) => {
       const target = decodeRouteSource(source);
       const url = new URL(target.href, window.location.origin);
-      if (cursor !== undefined) url.searchParams.set("cursor", cursor);
-      const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
-      if (!snapshot) throw new Error(t().loadViewFailed);
-      const nextCursor = pageNextCursor(snapshot);
-      assertCursorProgress(cursor, nextCursor, "mailbox");
-      return { source, snapshot };
+      if (cursor === undefined) {
+        const generation = routeGeneration;
+        // A reload that also covers an invalidation, such as a live event, loads the whole snapshot.
+        if (cause.type === "source" && cause.invalidations.length === 0 && keepsMailboxFrame(target)) {
+          const list = await fetchWorkspaceList(url.toString(), abortSignal, target.listMode);
+          if (!list) throw new Error(t().loadViewFailed);
+          const shown = unwrap(data);
+          // The frame shown when the list arrives: a live refresh queued meanwhile reloads the snapshot after it. Folders
+          // and counts depend on the access scope, so a scope that changed meanwhile loads the whole snapshot.
+          if (list.access.scope === shown.access.scope)
+            return { source, snapshot: composeMailListSnapshot(pickMailWorkspaceFrame(shown), list), generation };
+        }
+        const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
+        if (!snapshot) throw new Error(t().loadViewFailed);
+        return { source, snapshot, generation };
+      }
+      url.searchParams.set("cursor", cursor);
+      const list = await fetchWorkspaceList(url.toString(), abortSignal, target.listMode);
+      if (!list) throw new Error(t().loadViewFailed);
+      assertCursorProgress(cursor, pageNextCursor(list), "mailbox");
+      return { source, list };
     },
-    getNextCursor: (page) => pageNextCursor(page.snapshot),
+    getNextCursor: (page) => pageNextCursor(pageList(page)),
   });
-  routeLoading = () => workspaceQuery.loading() || workspaceQuery.refreshing() || workspaceQuery.loadingMore();
+  routeLoading = () => workspaceQuery.loading() || workspaceQuery.refreshing() || workspaceQuery.loadingMore() || conversationOpening();
 
   const preserveCurrentDetail = (next: MailboxPageData): MailboxPageData =>
     next.selectedConversationId && next.selectedConversationId === data.selectedConversationId
@@ -399,82 +555,118 @@ function MailWorkspaceView(props: {
     const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
     if (!target) return Promise.resolve("failed");
     const source = encodeRouteSource(`${target.pathname}${target.search}`, listMode);
-    if (workspaceTransition) workspaceTransition.resolve("stale");
+    const pending = workspaceTransition;
+    if (pending) pending.resolve("stale");
     workspaceTransition = null;
     if (source === routeSource()) {
-      return workspaceQuery
-        .invalidate()
-        .then(() => "applied" as const)
-        .catch(() => "failed" as const);
+      const generation = routeGeneration;
+      return workspaceQuery.invalidate().then(
+        () => (generation === routeGeneration ? "applied" : "stale"),
+        () => "failed" as const,
+      );
+    }
+    cancelConversationDetail();
+    const generation = ++routeGeneration;
+    const previous = routeSource();
+    if (!pending && sameRouteList(source, previous)) {
+      // Another selection in the same list: the list keeps its pages, and reloading them asks for the new selection.
+      setRouteSource(source);
+      return workspaceQuery.invalidate().then(
+        () => (generation === routeGeneration ? "applied" : "stale"),
+        () => {
+          if (generation !== routeGeneration) return "stale";
+          setRouteSource(committedRouteSource);
+          return "failed";
+        },
+      );
     }
     return new Promise((resolve) => {
       workspaceTransition = { source, resolve };
       setRouteSource(source);
+      // The query keeps its pages for a source of the same list, so the transition asks for its own load.
+      if (sameRouteList(source, previous)) void workspaceQuery.invalidate().catch(() => undefined);
     });
   };
 
-  createEffect(() => {
-    const pages = workspaceQuery.pages();
-    const first = pages[0];
-    if (!first || first.source !== routeSource()) return;
-    const target = decodeRouteSource(first.source);
-    const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
-    let next = applyPendingListState(preserveCurrentDetail(first.snapshot));
-    for (const page of pages.slice(1)) {
-      const reconciled = applyPendingListState(page.snapshot);
-      if (next.scheduledMode && next.scheduledPage && reconciled.scheduledPage) {
-        const items = new Map(next.scheduledPage.items.map((item) => [item.id, item]));
-        for (const item of reconciled.scheduledPage.items) items.set(item.id, item);
-        next = {
-          ...next,
-          scheduledPage: { ...reconciled.scheduledPage, items: [...items.values()] },
-          scheduledError: reconciled.scheduledError,
-        };
-        continue;
-      }
-      if (next.draftsMode && next.draftsPage && reconciled.draftsPage) {
-        const items = new Map(next.draftsPage.items.map((item) => [item.id, item]));
-        for (const item of reconciled.draftsPage.items) items.set(item.id, item);
-        next = {
-          ...next,
-          draftsPage: { ...reconciled.draftsPage, items: [...items.values()] },
-          draftsError: reconciled.draftsError,
-        };
-        continue;
-      }
-      const merged = mergeMailCursorPage({
-        currentItems: next.listItems,
-        currentNextCursor: next.nextListCursor,
-        pageItems: reconciled.listItems,
-        pageNextCursor: reconciled.nextListCursor,
-      });
-      if (!merged.ok) continue;
-      next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
-    }
-    batch(() => {
-      committedRouteSource = first.source;
-      setRequestPath(target.href);
-      const rawItems = new Map(pages.flatMap((page) => page.snapshot.listItems.map((item) => [mailListRowKey(item), item] as const)));
-      setSnapshotItems([...rawItems.values()]);
-      setData(reconcile(next));
-      const releases = [...releasesOnNextSnapshot];
-      releasesOnNextSnapshot.clear();
-      for (const release of releases) release();
-      setConversationSelection((current) =>
-        scopeChanged
-          ? emptyMailConversationSelection()
-          : pruneMailConversationSelection(
-              current,
-              new Set(untrack(selectableRows).flatMap((item) => (item.conversationId ? [item.conversationId] : []))),
-            ),
+  // Applies a loaded page set when the pages or the shown list change; another selection of the same list does not
+  // reapply the pages, because page 1 may still carry the selection it was loaded with.
+  createEffect(
+    on([workspaceQuery.pages, routeKey], ([pages, key]) => {
+      const first = pages[0];
+      if (!first || !("snapshot" in first) || routeListKey(first.source) !== key) return;
+      const source = routeSource();
+      const target = decodeRouteSource(source);
+      // Page 1 was loaded for another conversation of this list: its list, folders and counts are current, its
+      // selection is not. Keep the open one, unless the shown list itself is still on its way.
+      const otherSelection = first.source !== source || first.generation !== routeGeneration;
+      if (otherSelection && routeListKey(committedRouteSource) !== key) return;
+      const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
+      let next = applyPendingListState(
+        // The kept detail also brought the mailbox's tags, which are newer than this page 1's.
+        otherSelection
+          ? { ...first.snapshot, ...pickMailSelection(unwrap(data)), localTags: unwrap(data).localTags }
+          : preserveCurrentDetail(first.snapshot),
       );
-      if (scopeChanged) setSelectionMode(false);
-    });
-    if (workspaceTransition?.source === first.source) {
-      workspaceTransition.resolve("applied");
-      workspaceTransition = null;
-    }
-  });
+      for (const page of pages.slice(1)) {
+        const reconciled = applyPendingListState(pageList(page));
+        if (next.scheduledMode && next.scheduledPage && reconciled.scheduledPage) {
+          const items = new Map(next.scheduledPage.items.map((item) => [item.id, item]));
+          for (const item of reconciled.scheduledPage.items) items.set(item.id, item);
+          next = {
+            ...next,
+            scheduledPage: { ...reconciled.scheduledPage, items: [...items.values()] },
+            scheduledError: reconciled.scheduledError,
+          };
+          continue;
+        }
+        if (next.draftsMode && next.draftsPage && reconciled.draftsPage) {
+          const items = new Map(next.draftsPage.items.map((item) => [item.id, item]));
+          for (const item of reconciled.draftsPage.items) items.set(item.id, item);
+          next = {
+            ...next,
+            draftsPage: { ...reconciled.draftsPage, items: [...items.values()] },
+            draftsError: reconciled.draftsError,
+          };
+          continue;
+        }
+        const merged = mergeMailCursorPage({
+          currentItems: next.listItems,
+          currentNextCursor: next.nextListCursor,
+          pageItems: reconciled.listItems,
+          pageNextCursor: reconciled.nextListCursor,
+        });
+        if (!merged.ok) continue;
+        next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
+      }
+      batch(() => {
+        // Only the page 1 of the requested selection commits its route; an older one keeps the route shown.
+        if (!otherSelection) {
+          committedRouteSource = source;
+          setRequestPath(target.href);
+        }
+        const rawItems = new Map(pages.flatMap((page) => pageList(page).listItems.map((item) => [mailListRowKey(item), item] as const)));
+        setSnapshotItems([...rawItems.values()]);
+        setData(reconcile(next));
+        const releases = [...releasesOnNextSnapshot];
+        releasesOnNextSnapshot.clear();
+        for (const release of releases) release();
+        setConversationSelection((current) =>
+          scopeChanged
+            ? emptyMailConversationSelection()
+            : pruneMailConversationSelection(
+                current,
+                new Set(untrack(selectableRows).flatMap((item) => (item.conversationId ? [item.conversationId] : []))),
+              ),
+        );
+        if (scopeChanged) setSelectionMode(false);
+      });
+      // A transition ends only with the page 1 requested for it; an older one with the same href must not end it.
+      if (!otherSelection && workspaceTransition?.source === first.source) {
+        workspaceTransition.resolve("applied");
+        workspaceTransition = null;
+      }
+    }),
+  );
 
   createEffect(() => {
     const error = workspaceQuery.error();
@@ -485,7 +677,12 @@ function MailWorkspaceView(props: {
     transition.resolve("failed");
   });
 
+  // A later head or link navigation wins over pending search text.
+  let searchControls: { cancelPending: () => void } | undefined;
   const navigateWorkspace = async (nav: LinkNavigateEvent) => {
+    searchControls?.cancelPending();
+    // A later navigation wins over a conversation still opening, also when it reloads the shown view.
+    cancelConversationDetail();
     captureSearchStart(nav.href);
     const result = await replaceWorkspaceRoute(nav.href);
     if (result === "applied") {
@@ -498,7 +695,7 @@ function MailWorkspaceView(props: {
 
   const closeConversation = async (nav: LinkNavigateEvent) => {
     const previousConversationId = data.selectedConversationId;
-    const result = await replaceWorkspaceRoute(nav.href);
+    const result = inCurrentList(nav.href) ? closeConversationInList(nav.href) : await replaceWorkspaceRoute(nav.href);
     if (result === "applied") {
       nav.push(undefined, { scroll: "preserve" });
       if (previousConversationId) focusConversation(previousConversationId, "row");
@@ -506,6 +703,7 @@ function MailWorkspaceView(props: {
   };
 
   const transitionWorkspaceHref = async (href: string, replace = false): Promise<MailWorkspaceRefreshResult> => {
+    cancelConversationDetail();
     captureSearchStart(href);
     const result = await replaceWorkspaceRoute(href);
     if (result === "applied") {
@@ -631,9 +829,11 @@ function MailWorkspaceView(props: {
    * activity stays in place.
    */
   const refreshLiveData = async (conversationIds: readonly (string | null)[] | null): Promise<void> => {
+    // A detail that is loading may have been read before this change; it reloads once it is shown.
+    if (openingConversation && touches(conversationIds, openingConversation.id)) openingConversation.changed = true;
     await whenRefreshAllowed();
     const selected = selectedConversationId();
-    const activity = selected !== null && (conversationIds === null || conversationIds.some((id) => id === null || id === selected));
+    const activity = selected !== null && touches(conversationIds, selected);
     if (activity) void activityQuery.invalidate().catch(() => undefined);
     await workspaceQuery.invalidate();
   };
@@ -695,6 +895,78 @@ function MailWorkspaceView(props: {
     return response.json();
   };
 
+  const [composeStarting, setComposeStarting] = createSignal(false);
+  let composeRequest: AbortController | null = null;
+  let composeProgress: ToastHandle | null = null;
+  const endComposeStart = () => {
+    composeRequest = null;
+    composeProgress?.dismiss();
+    composeProgress = null;
+    setComposeStarting(false);
+  };
+  /**
+   * Compose from this mailbox: prepares the draft seed here and opens its composer as the one page load, as Reply and
+   * Forward do, with the compose page's sender rule, request and return target. Without a selectable sender, `fallback`
+   * opens the compose page, which explains why. A trigger without its own pending spot (the phone menu, the command)
+   * asks for the progress toast.
+   */
+  const startCompose = async (options: { fallback: () => void; progressToast: boolean }) => {
+    if (disposed || composeStarting()) return;
+    const mailboxId = data.mailbox.id;
+    const identity = selectComposeSenderIdentity(data.identities, readMailSenderPreference(localStorage, mailboxId), true);
+    if (!identity) return options.fallback();
+    setComposeStarting(true);
+    const request = new AbortController();
+    composeRequest = request;
+    if (options.progressToast)
+      composeProgress = toast(t().preparingMessage, { progress: "indeterminate", duration: 0, iconClass: "ti ti-pencil" });
+    let seed: MailDraftSeed;
+    let store: typeof import("./_components/mail-draft-seed-store") | undefined;
+    try {
+      // The seed store is loaded on demand, as in the reader, and in parallel with the request.
+      const [response, loaded] = await Promise.all([
+        apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+          { param: { mailboxId }, json: mailComposeDraftSeedInput(identity.id) },
+          { init: { signal: request.signal } },
+        ),
+        importOnDemand(() => import("./_components/mail-draft-seed-store")),
+      ]);
+      if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
+      seed = await response.json();
+      store = loaded;
+    } catch (error) {
+      if (disposed || request.signal.aborted) return;
+      endComposeStart();
+      void prompts.error(error instanceof Error ? error.message : t().draftCreateFailed, { title: t().startMessageFailed });
+      return;
+    }
+    if (disposed) return;
+    // importOnDemand already offers a reload when the code cannot load.
+    if (!store) return endComposeStart();
+    writeMailSenderPreference(localStorage, seed.mailboxId, identity.id);
+    try {
+      store.storeMailDraftSeed(localStorage, seed);
+    } catch {
+      endComposeStart();
+      void prompts.error(t().localMessageFailed, { title: t().startMessageFailed });
+      return;
+    }
+    // Stays pending until the composer replaces this page, so another activation meanwhile starts no second seed.
+    documentNavigate(mailDraftSeedHref(seed.mailboxId, seed.id, `/app/mail/${seed.mailboxId}`));
+  };
+  onMount(() => {
+    // A page restored from the back-forward cache shows Compose ready again.
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) endComposeStart();
+    };
+    window.addEventListener("pageshow", restored);
+    onCleanup(() => window.removeEventListener("pageshow", restored));
+  });
+  onCleanup(() => {
+    composeRequest?.abort();
+    composeProgress?.dismiss();
+  });
+
   const openHealth = async () => {
     if (disposed || managementOpening()) return;
     setManagementOpening("health");
@@ -755,7 +1027,14 @@ function MailWorkspaceView(props: {
       if (currentListKey !== initialListKey) return;
       current.searchParams.delete("mailingList");
       window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
-      setRequestPath(`${current.pathname}${current.search}`);
+      const path = `${current.pathname}${current.search}`;
+      // Later reloads of this list must not bring the closed dialog's parameter back.
+      const source = encodeRouteSource(path, data.listMode);
+      if (!workspaceTransition && sameRouteList(source, committedRouteSource)) {
+        committedRouteSource = source;
+        setRouteSource(source);
+      }
+      setRequestPath(path);
     }
   };
 
@@ -781,6 +1060,9 @@ function MailWorkspaceView(props: {
         parse: (data) => parseMailLiveEvent(data),
         apply: (events) => refreshLiveData(events.map((event) => event.data.conversationId)),
         resync: () => refreshLiveData(null),
+        caughtUp: (caughtUp) => {
+          liveCaughtUp = caughtUp;
+        },
         revoked: () => void documentNavigate("/app/mail", { replace: true }),
         // A reload lets the route policy send an ended session to sign-in. A failure that survives it must not
         // reload in a loop.
@@ -796,6 +1078,19 @@ function MailWorkspaceView(props: {
       }
       void (async () => {
         const href = `${url.pathname}${url.search}`;
+        if (inCurrentList(href)) {
+          // Back and Forward between selections of the shown list open and close them like the list and the reader do.
+          const conversationId = url.searchParams.get("conversation");
+          const row = data.listItems.find((item) => item.selectionKind === "conversation" && item.conversationId === conversationId);
+          const result = conversationId
+            ? await openConversationInList(href, conversationId, row?.sourceFolderId ?? data.folderId, row?.subject ?? "")
+            : closeConversationInList(href);
+          if (!disposed && result === "failed") {
+            navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
+            toast.error(t().restoreViewFailed);
+          }
+          return;
+        }
         captureSearchStart(href);
         const result = await replaceWorkspaceRoute(href);
         if (!disposed && result === "applied") {
@@ -819,6 +1114,7 @@ function MailWorkspaceView(props: {
   onCleanup(() => {
     disposed = true;
     if (preferenceTimer) clearTimeout(preferenceTimer);
+    conversationDetailRequest?.abort();
     workspaceTransition?.resolve("stale");
     workspaceTransition = null;
     for (const frame of focusFrames) cancelAnimationFrame(frame);
@@ -831,6 +1127,7 @@ function MailWorkspaceView(props: {
   });
 
   const hasSelection = createMemo(() => Boolean(data.selectedConversationId || data.selectedMessageId));
+  const listOpen = () => !listCollapsed() || !hasSelection();
   const selectedListItem = createMemo(() =>
     selectableRows().find((item) =>
       item.selectionKind === "message" ? item.id === data.selectedMessageId : item.conversationId === data.selectedConversationId,
@@ -922,13 +1219,139 @@ function MailWorkspaceView(props: {
     if (target === "row") element?.scrollIntoView({ block: "nearest" });
   };
 
+  /**
+   * Whether `href` keeps the list that is shown and changes only the open conversation: conversation list mode, no
+   * Scheduled or Drafts list, no message selection on either side, and no other view on its way.
+   */
+  const inCurrentList = (href: string): boolean => {
+    if (workspaceTransition || data.listMode !== "conversations" || data.scheduledMode || data.draftsMode) return false;
+    const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
+    if (!target || target.searchParams.has("message") || mailRouteUrl(requestPath()).searchParams.has("message")) return false;
+    const source = encodeRouteSource(`${target.pathname}${target.search}`, data.listMode);
+    return sameRouteList(source, committedRouteSource) && sameRouteList(source, routeSource());
+  };
+
+  /** Shows `href`'s selection without touching the list: its pages, rows, folders and counts stay as they are. */
+  const commitSelectionInList = (href: string, selection: Partial<MailboxPageData>) => {
+    const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
+    if (!target) return;
+    const path = `${target.pathname}${target.search}`;
+    const source = encodeRouteSource(path, data.listMode);
+    routeGeneration++;
+    batch(() => {
+      setData(selection);
+      committedRouteSource = source;
+      setRouteSource(source);
+      setRequestPath(path);
+    });
+  };
+
+  /**
+   * Opens a conversation of the shown list by loading only its detail. `folderId` attributes each message to a
+   * folder the way the snapshot does: the row's own folder, else the list's. The latest request wins; a list change
+   * cancels it. "missing" means the conversation is gone or no longer visible.
+   */
+  const loadConversationInList = async (
+    href: string,
+    conversationId: string,
+    folderId: string | null,
+    subject: string,
+  ): Promise<"applied" | "failed" | "stale" | "missing"> => {
+    cancelConversationDetail();
+    const request = new AbortController();
+    conversationDetailRequest = request;
+    const opening = { id: conversationId, changed: false };
+    openingConversation = opening;
+    setConversationOpening(true);
+    let detail: MailConversationDetailData;
+    try {
+      const response = await apiClient.mailboxes[":mailboxId"]["workspace-detail"][":conversationId"].$get(
+        { param: { mailboxId, conversationId }, query: folderId ? { folder: folderId } : {} },
+        { init: { signal: request.signal } },
+      );
+      if (conversationDetailRequest !== request || disposed) return "stale";
+      if (!response.ok) {
+        finishConversationDetail();
+        return response.status === 404 ? "missing" : "failed";
+      }
+      detail = await response.json();
+    } catch {
+      if (conversationDetailRequest !== request || disposed) return "stale";
+      finishConversationDetail();
+      return "failed";
+    }
+    if (conversationDetailRequest !== request || disposed) return "stale";
+    finishConversationDetail();
+    if (!inCurrentList(href)) return "stale";
+    const { conversationId: _, localTags, selectedSubject, ...incoming } = detail;
+    const selection = data.selectedConversationId === conversationId ? preserveUnavailableMailDetail(data, incoming) : incoming;
+    const row = data.listItems.find((item) => item.selectionKind === "conversation" && item.conversationId === conversationId);
+    // The row is the view's own state of the conversation and decides read, flag and the actions' revision. When the
+    // detail shows it is older, page 1 reloads it as a whole, and auto mark-read waits for that row.
+    // A folder list states read and flag for its own folder only; other lists leave out their excluded folders.
+    const folderList = data.search.expression === null && !data.savedViewId ? data.folderId : null;
+    const listedFolderIds = (folderId: string | null) =>
+      folderList ? folderId === folderList : folderId === null || !excludedListingFolderIds().has(folderId);
+    // A search, also a saved view's, states unread for the folders it is limited to, as the server does.
+    const searchExpression = data.search.expression ?? data.savedViews.find((view) => view.id === data.savedViewId)?.filter.expression;
+    const searchFolderIds = searchExpression ? guaranteedMailSearchFolderIds(searchExpression) : null;
+    // The detail's placement is the row's when the list has one folder, or the row lies in one folder only.
+    const rowOlder = mailRowOlderThanDetail(
+      row,
+      selection,
+      listedFolderIds,
+      folderList !== null || row?.activeFolderIds.length === 1,
+      searchFolderIds ? new Set(searchFolderIds) : null,
+    );
+    commitSelectionInList(href, {
+      ...selection,
+      selectedConversationId: conversationId,
+      selectedMessageId: null,
+      localTags,
+      // The snapshot's rule: the latest message's subject, else the list row's.
+      selectedSubject: selectedSubject || subject,
+    });
+    // Page 1 now asks for this conversation, so reloading it brings the change the detail may have missed.
+    if (opening.changed || rowOlder) {
+      setRowRefreshes((count) => count + 1);
+      void workspaceQuery
+        .invalidate()
+        .catch((error: unknown) => {
+          // A navigation that replaced the list cancels this reload; that is not a failure.
+          if (error instanceof Error && error.name === "AbortError") return;
+          reportRefreshFailure(error instanceof Error ? error : new Error(String(error)), t().refreshMailboxFailed);
+        })
+        .finally(() => setRowRefreshes((count) => count - 1));
+    }
+    return "applied";
+  };
+
+  const openConversationInList = async (
+    href: string,
+    conversationId: string,
+    folderId: string | null,
+    subject: string,
+  ): Promise<"applied" | "failed" | "stale"> => {
+    const result = await loadConversationInList(href, conversationId, folderId, subject);
+    // A fresh load of this URL shows the list without the conversation; reloading the view does the same.
+    return result === "missing" ? await replaceWorkspaceRoute(href) : result;
+  };
+
+  const closeConversationInList = (href: string): "applied" => {
+    cancelConversationDetail();
+    commitSelectionInList(href, emptyMailSelection());
+    return "applied";
+  };
+
   const applyConversationRoute = async (
     href: string,
     item: MailListItem,
     activation: "keyboard" | "pointer",
   ): Promise<"applied" | "failed" | "stale"> => {
     if (!item.conversationId) return "failed";
-    const result = await replaceWorkspaceRoute(href);
+    const result = inCurrentList(href)
+      ? await openConversationInList(href, item.conversationId, item.sourceFolderId ?? data.folderId, item.subject)
+      : await replaceWorkspaceRoute(href);
     if (result === "applied" && activation === "keyboard") focusConversation(item.conversationId, "reader");
     return result;
   };
@@ -1926,7 +2349,7 @@ function MailWorkspaceView(props: {
   let consumedOpenIntent = -1;
   createEffect(() => {
     const intent = conversationOpenIntent();
-    const pending = structureMutationLoading();
+    const pending = structureMutationLoading() || rowRefreshes() > 0;
     const item = selectedListItem();
     const conversationId = item?.conversationId ?? data.selectedConversationId;
     const target = conversationId ? (item ? actionTargetForItem(item, "mark_read") : actionTargets("mark_read")[0]) : undefined;
@@ -1957,51 +2380,176 @@ function MailWorkspaceView(props: {
     focusFrames.add(frame);
   };
 
+  const sidebarText = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const mailboxPreferences = createMailboxPreferences(props.sidebar);
+  const mailboxMenu = createMailboxMenu(() => ({
+    mailboxId: data.mailbox.id,
+    syncEnabled: data.mailbox.syncEnabled,
+    needsConnection: mailboxNeedsConnection(data.mailbox.health),
+    canWrite: canWrite(),
+    canAdmin: canAdmin(),
+    assignedOnly: assignedOnly(),
+    managementOpening: managementOpening(),
+    settingsOpening: settingsOpening(),
+    detailsOpening: detailsOpening(),
+    onOpenDetails: () => void openDetails(),
+    onOpenHealth: () => void openHealth(),
+    onOpenSharedLinks: () => void openSharedLinks(),
+    onOpenRemoteContent: () => void openRemoteContent(),
+    onOpenSubscriptions: () => void openSubscriptions(),
+    onOpenSettings: () => void openSettings(),
+  }));
+  // Folder, view, and saved view exclude each other: a folder shows no tabs, only its chips.
+  const currentTab = createMemo(() =>
+    mailboxCurrentTab({
+      scheduledMode: data.scheduledMode,
+      draftsMode: data.draftsMode,
+      folderId: data.folderId,
+      activeView: data.query ? null : data.activeView,
+      savedViewId: data.savedViewId,
+    }),
+  );
+  // The sidebar reports when the person collapsed what holds the open place's row; the heading then names it again.
+  const [openPlaceRowHidden, setOpenPlaceRowHidden] = createSignal(false);
+  const listNamedBy = createMemo(() => {
+    if (currentTab() !== null) return "tabs";
+    if (openPlaceRowHidden()) return null;
+    if (
+      data.scheduledMode ||
+      data.draftsMode ||
+      data.activeView === "send_problems" ||
+      flattenMailFolderTree(buildVisibleMailFolderTree(data.folders)).some(({ folder }) => folder.id === data.folderId)
+    )
+      return "sidebar";
+    return null;
+  });
+  const viewTabs = createMemo(() =>
+    mailboxViewTabs({
+      mailboxId: data.mailbox.id,
+      viewCounts: listCounts().viewCounts,
+      savedViews: data.savedViews,
+      assignedOnly: assignedOnly(),
+      labels: {
+        all: sidebarText().allConversations,
+        needs_action: sidebarText().needsAction,
+        mine: sidebarText().assignedToMe,
+        waiting: sidebarText().waitingForReply,
+        unassigned: sidebarText().unassigned,
+        snoozed: sidebarText().snoozed,
+        done: sidebarText().done,
+        recently_active: sidebarText().recentActivity,
+        kept: sidebarText().kept,
+      },
+      formatCount: (count) => count.toLocaleString(locale()),
+    }),
+  );
+  /** A search narrows the list: the head offers Reset back to where the search started. */
+  const searchFiltered = () => Boolean(data.query.trim() || activeSearch().expression);
+
   return (
     <AppWorkspace mobileSurface="flush" class="mail-workspace">
       <MailSidebar
         canCreate={Boolean(props.currentUserId)}
         currentUserEmail={props.currentUserEmail}
         contactDirectory={props.contactDirectory}
-        mailboxId={data.mailbox.id}
-        mailboxName={data.mailbox.name}
-        mailboxAddress={data.receivingAddress ?? undefined}
-        syncEnabled={data.mailbox.syncEnabled}
-        needsConnection={mailboxNeedsConnection(data.mailbox.health)}
-        folders={listCounts().folders}
-        localTags={data.localTags}
-        savedViews={data.savedViews}
-        scheduledMode={data.scheduledMode}
-        scheduledCount={data.scheduledCount}
-        activeFolderId={data.folderId}
-        activeView={data.query ? null : data.activeView}
-        activeSavedViewId={data.savedViewId}
-        activeTagId={activeTagId()}
-        searchActive={activeSearch().expression !== null}
-        viewCounts={listCounts().viewCounts}
-        canWrite={canWrite()}
-        canAdmin={canAdmin()}
-        assignedOnly={assignedOnly()}
-        managementOpening={managementOpening()}
-        settingsOpening={settingsOpening()}
-        detailsOpening={detailsOpening()}
-        onOpenDetails={() => void openDetails()}
-        onOpenHealth={() => void openHealth()}
-        onOpenSharedLinks={() => void openSharedLinks()}
-        onOpenRemoteContent={() => void openRemoteContent()}
-        onOpenSubscriptions={() => void openSubscriptions()}
-        onOpenSettings={() => void openSettings()}
-        onMoveConversation={(input) => {
-          // The dragged row, not the first row of its conversation: in a message list, rows of one
-          // conversation can sit in different folders.
-          const item = selectableRows().find((candidate) => candidate.id === input.itemId);
-          const target = item ? actionTargetForItem(item, "move") : null;
-          return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
+        mailboxes={props.sidebar.mailboxes}
+        preferences={mailboxPreferences}
+        // Other mailboxes' counts require the cross-mailbox Focus read; keep mailbox opens fast.
+        counts={[]}
+        onOpenPlaceRowHiddenChange={setOpenPlaceRowHidden}
+        open={{
+          mailboxId: data.mailbox.id,
+          mailboxName: data.mailbox.name,
+          canWrite: canWrite(),
+          assignedOnly: assignedOnly(),
+          mailbox: { health: data.mailbox.health, healthReason: data.mailbox.healthReason, receivingAddress: data.receivingAddress },
+          folders: listCounts().folders,
+          scheduledMode: data.scheduledMode,
+          scheduledCount: data.scheduledCount,
+          activeFolderId: data.folderId,
+          activeView: data.query ? null : data.activeView,
+          viewCounts: listCounts().viewCounts,
+          menu: mailboxMenu,
+          onCompose: (options) => void startCompose(options),
+          onMoveConversation: (input) => {
+            // The dragged row, not the first row of its conversation: in a message list, rows of one
+            // conversation can sit in different folders.
+            const item = selectableRows().find((candidate) => candidate.id === input.itemId);
+            const target = item ? actionTargetForItem(item, "move") : null;
+            return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
+          },
+          onNavigate: navigateWorkspace,
         }}
-        onNavigate={navigateWorkspace}
+      />
+      <AppWorkspace.Head
+        views={
+          currentTab() !== null ? (
+            <MailboxViewTabs
+              items={viewTabs()}
+              current={currentTab()!}
+              onOpenHref={(href) => {
+                searchControls?.cancelPending();
+                void openWorkspaceHref(href);
+              }}
+            />
+          ) : undefined
+        }
+        filters={
+          data.scheduledMode || data.draftsMode ? undefined : (
+            <MailboxHeadFilters
+              requestUrl={requestPath()}
+              search={data.search}
+              folders={data.folders}
+              localTags={data.localTags}
+              onOpenHref={(href) => {
+                searchControls?.cancelPending();
+                void openWorkspaceHref(href);
+              }}
+            />
+          )
+        }
+        filtered={searchFiltered()}
+        resetHref={searchFiltered() ? buildMailSearchClearHref(mailRouteUrl(requestPath())) : undefined}
+        onReset={() => {
+          searchControls?.cancelPending();
+          void openWorkspaceHref(buildMailSearchClearHref(mailRouteUrl(requestPath())));
+        }}
+        actions={
+          <>
+            <Show when={!data.scheduledMode && !data.draftsMode}>
+              <MailListModeMenu listMode={data.listMode} onListModeChange={updateListMode} />
+            </Show>
+            <MailboxMenuButton menu={mailboxMenu} label={sidebarText().mailboxMenu({ name: data.mailbox.name })} />
+          </>
+        }
+        primary={
+          canWrite() && !assignedOnly()
+            ? {
+                label: sidebarText().compose,
+                icon: composeStarting() ? "ti ti-loader-2 animate-spin" : "ti ti-pencil",
+                // Modified and middle clicks, a new tab, and a page before hydration open the compose page.
+                href: `/app/mail/compose?mailbox=${data.mailbox.id}&autostart=1`,
+                onClick: (event) => {
+                  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                    return;
+                  event.preventDefault();
+                  const href = `/app/mail/compose?mailbox=${data.mailbox.id}&autostart=1`;
+                  // The spinner replaces the icon; screen readers hear the same progress.
+                  if (!composeStarting()) announce(t().preparingMessage);
+                  void startCompose({ fallback: () => documentNavigate(href), progressToast: false });
+                },
+              }
+            : undefined
+        }
       />
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="p-0" aria-busy={routeLoading()} mobilePane={hasSelection() ? "main" : "conversations"} scroll={false}>
+        <AppWorkspace.Main
+          class="p-0"
+          aria-busy={routeLoading()}
+          mobilePane={hasSelection() ? "main" : "conversations"}
+          scroll={false}
+          minWidth={data.scheduledMode || data.draftsMode ? undefined : listOpen() ? MAIL_MAIN_WITH_LIST : MAIL_READER_BESIDE_DETAIL}
+        >
           <Show
             when={data.scheduledMode || data.draftsMode}
             fallback={
@@ -2010,8 +2558,8 @@ function MailWorkspaceView(props: {
                   id="conversations"
                   label={t().conversationList}
                   scroll={false}
-                  open={!listCollapsed() || !hasSelection()}
-                  defaultSize={430}
+                  open={listOpen()}
+                  defaultSize={MAIL_LIST_WIDTH}
                   minSize={300}
                   maxSize={620}
                 >
@@ -2022,6 +2570,7 @@ function MailWorkspaceView(props: {
                     query={data.query}
                     search={data.search}
                     title={data.listTitle}
+                    namedBy={listNamedBy()}
                     items={listView().items}
                     leavingKeys={listView().leavingKeys}
                     error={data.listError}
@@ -2048,7 +2597,6 @@ function MailWorkspaceView(props: {
                     onNavigate={navigateWorkspace}
                     onNavigateItem={navigateConversation}
                     onToggleSelectionMode={toggleConversationSelectionMode}
-                    onListModeChange={updateListMode}
                     onToggleSelection={toggleConversationSelection}
                     onClearSelection={clearConversationSelection}
                     onAddTags={assignedOnly() ? undefined : addTagsToSelection}
@@ -2072,6 +2620,9 @@ function MailWorkspaceView(props: {
                           }
                     }
                     onOpenHref={openWorkspaceHref}
+                    onSearchControls={(controls) => {
+                      searchControls = controls;
+                    }}
                     onLoadMore={loadMoreConversations}
                     onRefresh={reconcileWorkspace}
                   />
@@ -2172,7 +2723,8 @@ function MailWorkspaceView(props: {
           </Show>
         </AppWorkspace.Main>
         <AppWorkspace.Detail
-          id="mail-context"
+          id={MAIL_CONTEXT_DETAIL_ID}
+          openOnChoice={false}
           open={detailsOpen() && canShowDetails()}
           onClose={() => setDetailsVisible(false)}
           width="lg"

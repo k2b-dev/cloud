@@ -16,3 +16,20 @@ test("waiting-detail fit thresholds keep Main's 20rem, each width token, and the
   }
   expect(css).toContain("--k2b-workspace-detail-inset: 0.5rem");
 });
+
+test("the sidebar shares the workspace surface and coarse pointers do not select a detail drawer", () => {
+  const sidebar = css.match(/\.k2b-ui \.k2b-app-workspace__sidebar\s*\{([^}]*)\}/)?.[1];
+  expect(sidebar).toContain("background: var(--k2b-surface);");
+  // Walk complete media blocks, including nested container rules.
+  for (const match of css.matchAll(/@media[^{}]*\(pointer: coarse\)[^{}]*\{/g)) {
+    let depth = 1;
+    let end = match.index! + match[0].length;
+    const start = end;
+    while (depth && end < css.length) {
+      if (css[end] === "{") depth++;
+      if (css[end] === "}") depth--;
+      end++;
+    }
+    expect(css.slice(start, end)).not.toContain("--k2b-workspace-detail-track: 0px");
+  }
+});

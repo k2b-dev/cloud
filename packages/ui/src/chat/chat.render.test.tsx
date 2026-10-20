@@ -816,3 +816,32 @@ test("composer context actions expose their toggle state", () => {
   expect(html).toMatch(/role="tooltip"[^>]*>Hide tasks</);
   expect(html).toContain('aria-pressed="true"');
 });
+
+test("activity toggle SSR is stable, named, and controls only its body", () => {
+  const markup = (defaultOpen = false, body = true) =>
+    renderToString(() =>
+      createComponent(Chat.Activity, {
+        get label() {
+          return createComponent(Chat.Activity.Toggle, { children: "3 of 4 tasks" });
+        },
+        defaultOpen,
+        children: body ? "Task list" : undefined,
+      }),
+    );
+  const closed = markup();
+  expect(markup()).toBe(closed);
+  expect(closed).toContain('aria-expanded="false"');
+  const bodyId = closed.match(/aria-controls="([^"]+)"/)?.[1];
+  expect(bodyId).toBeTruthy();
+  expect(closed).toMatch(new RegExp(`<div id="${bodyId}" class="k2b-chat-activity__body" hidden`));
+  expect(closed).not.toMatch(/<(details|summary)\b/);
+  const opened = markup(true);
+  expect(opened).toContain('aria-expanded="true"');
+  expect(opened.match(/<div id="[^"]+" class="k2b-chat-activity__body"[^>]*>/)?.[0]).not.toContain("hidden");
+  const summary = renderToString(() => createComponent(Chat.Activity, { label: "Worked", children: "Steps" }));
+  expect(summary).toContain("<details");
+  expect(summary).toContain("<summary");
+  const plain = markup(false, false);
+  expect(plain).toContain("3 of 4 tasks");
+  expect(plain).not.toContain("<button");
+});

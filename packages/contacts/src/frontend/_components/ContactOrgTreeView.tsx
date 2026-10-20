@@ -23,7 +23,7 @@ function ContactOrgTreeNode(props: { node: ContactTreeNode; selectedId: string; 
       <button
         type="button"
         class={`group relative flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
-          selected() ? "bg-[var(--ui-selected)] text-primary" : "text-primary hover:bg-[var(--ui-hover)]"
+          selected() ? "bg-[var(--ui-app-selected)] app-accent-text" : "text-primary hover:bg-[var(--ui-hover)]"
         }`}
         onClick={() => props.onSelect(props.node)}
         aria-current={selected() ? "true" : undefined}
@@ -32,9 +32,9 @@ function ContactOrgTreeNode(props: { node: ContactTreeNode; selectedId: string; 
           {(resolveContactName(props.node) || "?").charAt(0).toUpperCase()}
         </span>
         <span class="min-w-0 flex-1">
-          <span class="block truncate text-[13px] font-semibold leading-tight">{resolveContactName(props.node)}</span>
+          <span class="block k2b-truncate-fade text-[13px] font-semibold leading-tight">{resolveContactName(props.node)}</span>
           <Show when={nodeMeta(props.node)}>
-            <span class="block truncate text-[11px] leading-tight text-dimmed">{nodeMeta(props.node)}</span>
+            <span class="block k2b-truncate-fade text-[11px] leading-tight text-dimmed">{nodeMeta(props.node)}</span>
           </Show>
         </span>
         <Show when={hasChildren()}>

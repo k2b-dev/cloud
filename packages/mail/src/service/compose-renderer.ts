@@ -2,10 +2,16 @@ import { EMAIL_HTML_ALLOWED_ATTRIBUTES, EMAIL_HTML_SANITIZE_OPTIONS, EMAIL_HTML_
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { convert } from "html-to-text";
 import juice from "juice";
+import { Tokenizer, TypeGuards } from "liquidjs";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
-import { type ComposeFormattingWarning, composeTemplateVariables, MAX_COMPOSE_FORMATTING_WARNINGS } from "../contracts";
+import {
+  type ComposeFormattingWarning,
+  composeTemplateVariables,
+  MAX_COMPOSE_FORMATTING_WARNINGS,
+  mailboxLogoDisplayHeight,
+} from "../contracts";
 import { composeRenderFailure } from "./compose-render-errors";
 import { allowedEmailInlineStyles, allowedEmailInlineStyleValue, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
 import { renderMailLiquidTemplate, validateMailLiquidTemplate } from "./template-rendering";
@@ -26,6 +32,7 @@ const MAX_MARKDOWN_SYNTAX_MARKERS = 12_000;
 const MAX_RENDERED_SOURCE_BYTES = 3 * 1024 * 1024;
 const MAIL_CONTENT_CLASS = "mail-content";
 const SIGNATURE_CLASS = "mail-signature";
+const BLANK_LINE_CLASS = "mail-blank-line";
 // Invisible marks around an inserted signature: the text between a matching pair stays a template until preview and send.
 const COMPOSE_SEGMENT_START = "\u2063";
 const COMPOSE_SEGMENT_END = "\u2064";
@@ -33,6 +40,37 @@ const COMPOSE_SEGMENT_MARKS = /[\u2063\u2064]/g;
 // A segment is a start mark followed by an end mark with no other mark between them; every other mark is a leftover.
 const COMPOSE_SEGMENT = /\u2063([^\u2063\u2064]*)\u2064/g;
 const COMPOSE_SEGMENT_OR_LEFTOVER_MARK = /(\u2063[^\u2063\u2064]*\u2064)|[\u2063\u2064]/g;
+
+// Logo tags are owned by Mail, never evaluated as Liquid variables or filters.
+const LIQUID_COMPOSE_VARIABLES = Object.keys(composeTemplateVariables).filter((variable) => variable !== "mailbox.logo");
+const replaceLogoTags = (source: string, value: string) => {
+  const parts: string[] = [];
+  let cursor = 0;
+  let hasLogo = false;
+  let hasCapture = false;
+  // Mail's Liquid renderer uses the default delimiters, operators and whitespace options.
+  // Top-level tokens preserve quoted strings and raw blocks as Liquid sees them.
+  for (const token of new Tokenizer(source).readTopLevelTokens()) {
+    if (TypeGuards.isTagToken(token)) {
+      if (
+        token.name === "capture" ||
+        (token.name === "liquid" && token.tokenizer.readLiquidTagTokens().some((line) => line.name === "capture"))
+      ) {
+        hasCapture = true;
+      }
+    }
+    if (!TypeGuards.isOutputToken(token) || token.content !== "mailbox.logo") continue;
+    hasLogo = true;
+    const before = source.slice(cursor, token.begin);
+    parts.push(token.trimLeft ? before.trimEnd() : before, value);
+    cursor = token.end;
+    if (token.trimRight) {
+      while (cursor < source.length && /\s/.test(source[cursor] ?? "")) cursor += 1;
+    }
+  }
+  parts.push(source.slice(cursor));
+  return { source: parts.join(""), hasLogo, hasCapture };
+};
 
 const ALLOWED_TAGS = new Set<string>(EMAIL_HTML_TAGS);
 const withoutSegmentMarks = (attribs: sanitizeHtml.Attributes): sanitizeHtml.Attributes =>
@@ -47,11 +85,11 @@ const INLINED_EMAIL_SANITIZE_OPTIONS = {
   allowedAttributes: Object.fromEntries(
     [...EMAIL_HTML_TAGS].map((tag) => [
       tag,
-      [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style", ...(tag === "div" ? ["class"] : [])])],
+      [...new Set([...(EMAIL_HTML_ALLOWED_ATTRIBUTES[tag] ?? []), "style", ...(tag === "div" || tag === "p" ? ["class"] : [])])],
     ]),
   ),
   // The signature block keeps its class, as mail clients mark signatures, so a reader can tell it from the text.
-  allowedClasses: { div: [SIGNATURE_CLASS] },
+  allowedClasses: { div: [SIGNATURE_CLASS], p: [BLANK_LINE_CLASS] },
   allowedStyles: allowedEmailInlineStyles(EMAIL_HTML_TAGS),
   transformTags: {
     a: (tagName, attribs) => EMAIL_HTML_SANITIZE_OPTIONS.transformTags.a(tagName, withoutSegmentMarks(attribs)),
@@ -77,16 +115,19 @@ export const DEFAULT_MAIL_CSS = `
   font-size: 15px;
   line-height: 1.55;
   max-width: 720px;
+  overflow-wrap: break-word;
 }
 :where(.mail-signature) { margin-top: 16px; }
 p { margin: 0 0 12px; }
+hr { border: 0; border-top: 1px solid #d4d4d8; height: 0; margin: 0 0 12px; }
 h1 { font-size: 24px; line-height: 1.25; margin: 24px 0 12px; }
 h2 { font-size: 20px; line-height: 1.3; margin: 20px 0 10px; }
 h3 { font-size: 17px; line-height: 1.35; margin: 18px 0 8px; }
 a { color: #0f766e; text-decoration: underline; }
 ul, ol { margin: 0 0 12px; padding-left: 24px; }
 table { border-collapse: collapse; margin: 12px 0; width: 100%; }
-th, td { border: 1px solid #d4d4d8; padding: 6px 8px; text-align: left; }
+th, td { border: 1px solid #d4d4d8; overflow-wrap: break-word; padding: 6px 8px; text-align: left; word-break: normal; }
+th a, td a, th code, td code { overflow-wrap: anywhere; }
 code { background-color: #f4f4f5; border-radius: 3px; font-family: monospace; padding: 1px 3px; }
 blockquote { border-left: 3px solid #d4d4d8; color: #52525b; margin: 0 0 12px; padding-left: 12px; }
 pre { background-color: #f4f4f5; border-radius: 4px; font-family: monospace; margin: 0 0 12px; overflow-wrap: break-word; padding: 8px 12px; white-space: pre-wrap; }
@@ -235,6 +276,7 @@ export type RenderedComposeContent = {
   formattingWarnings: ComposeFormattingWarning[];
   html: string | null;
   text: string;
+  logoUsed: boolean;
 };
 
 const isMarkdownLinkDestination = (source: string, offset: number, length: number): boolean =>
@@ -280,11 +322,29 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
   if (source.includes(COMPOSE_SEGMENT_START) || source.includes(COMPOSE_SEGMENT_END)) {
     return fail(err.badInput("Email template contains reserved control characters"));
   }
-  const valid = validateMailLiquidTemplate(source, {
-    allowedVariables: Object.keys(composeTemplateVariables),
+  let replaced: ReturnType<typeof replaceLogoTags>;
+  try {
+    replaced = replaceLogoTags(source, "");
+  } catch {
+    // Report malformed input through the existing Liquid validation error; a source the tokenizer rejects never renders.
+    const invalid = validateMailLiquidTemplate(source, { allowedVariables: LIQUID_COMPOSE_VARIABLES, output: "markdown" });
+    return invalid.ok ? fail(err.badInput("Email template is invalid")) : invalid;
+  }
+  // Liquid validation bounds and parses the source before the URL-context scan.
+  const valid = validateMailLiquidTemplate(replaced.source, {
+    allowedVariables: LIQUID_COMPOSE_VARIABLES,
     output: "markdown",
   });
-  if (!valid.ok) return valid;
+  // Capture turns output into a filterable value, including inside a Liquid block.
+  if (replaced.hasLogo && replaced.hasCapture) {
+    return fail(err.badInput("{{ mailbox.logo }} cannot be used together with capture"));
+  }
+  if (!valid.ok) {
+    if (valid.error.message.includes('"mailbox.logo" is not available')) {
+      return fail(err.badInput(`${valid.error.message} Use {{ mailbox.logo }} alone, without filters or Liquid tags.`));
+    }
+    return valid;
+  }
   for (const match of source.matchAll(/{{[\s\S]*?}}/g)) {
     const offset = match.index;
     if (
@@ -422,15 +482,141 @@ export const hasUnrenderedTemplateSyntax = (body: string): boolean => {
   return false;
 };
 
-/** Markdown as the sanitized email fragment, before the design is inlined. */
-const emailHtmlFragment = (source: string): string =>
-  sanitizeHtml(markdown.renderSync(source, { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
+/**
+ * The Mail editor shows a dash-only line as a divider, never a heading: 3+ dashes divide, 1–2 stay text.
+ * Rewrite dash setext headings at top level and inside quotes; leave equals underlines, lists, code,
+ * HTML, tables and info blocks untouched. Unchanged sources keep their bytes.
+ */
+const withoutDashSetextHeadings = (source: string): string => {
+  const dashUnderline = /\n( {0,3})(-+)([ \t]*)(\n?)$/;
+  const rewrite = (tokens: ReturnType<typeof markdown.marked.lexer>[number][], original: string): string => {
+    let changed = false;
+    const chunks = tokens.map((token, position) => {
+      let raw = token.raw;
+      const previous = tokens[position - 1];
+      if (
+        previous?.type === "heading" &&
+        (dashUnderline.exec(previous.raw)?.[2]?.length ?? 3) < 3 &&
+        (token.type === "paragraph" || (token.type === "heading" && dashUnderline.test(raw)))
+      ) {
+        // A plain dash line merging into the escaped heading must not become its new underline.
+        raw = raw.replace(/^( {0,3})(-{1,2})([ \t]*)(?=\n|$)/, "$1\\$2$3");
+      }
+      if (token.type === "heading") {
+        const underline = dashUnderline.exec(raw);
+        const dashes = underline?.[2];
+        if (underline && dashes) {
+          const index = underline.index + 1;
+          const indentation = underline[1] ?? "";
+          raw =
+            raw.slice(0, index) +
+            (dashes.length >= 3 ? "\n" : `${indentation}\\`) +
+            raw.slice(index + (dashes.length >= 3 ? 0 : indentation.length));
+          const next = tokens[position + 1];
+          if (
+            dashes.length < 3 &&
+            next &&
+            next.type !== "space" &&
+            next.type !== "paragraph" &&
+            !(next.type === "heading" && dashUnderline.test(next.raw)) &&
+            !/\n[ \t]*\n$/.test(raw)
+          ) {
+            // Escaping removes the heading's block boundary; keep later headings, dividers and code separate.
+            raw = raw.replace(/\n?$/, "\n\n");
+          }
+        }
+      } else if (token.type === "blockquote" && token.tokens && token.tokens.map((inner) => inner.raw).join("") === token.text) {
+        const inner = rewrite(token.tokens, token.text);
+        if (inner !== token.text) {
+          raw =
+            inner
+              .split("\n")
+              .map((line) => (line ? `> ${line}` : ">"))
+              .join("\n") + (raw.match(/\n*$/)?.[0] ?? "");
+        }
+      }
+      if (raw !== token.raw) changed = true;
+      return raw;
+    });
+    return changed ? chunks.join("") : original;
+  };
+  return rewrite(markdown.marked.lexer(source), source);
+};
+
+/** Mail's Markdown-to-email-HTML rule shared by sending, Preview and provider draft copies. */
+export const mailMarkdownHtml = (source: string): string =>
+  sanitizeHtml(markdown.renderSync(withoutDashSetextHeadings(source), { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
+
+/** Rewrites only block separators and quotes; every other token keeps its raw source. Null means too many spacers. */
+const withBlankLinePlaceholders = (source: string, placeholder: string, quietBefore?: number): { source: string; count: number } | null => {
+  let count = 0;
+  const rewrite = (tokens: ReturnType<typeof markdown.marked.lexer>[number][], original: string, topLevel = false): string | null => {
+    const initialCount = count;
+    const chunks: string[] = [];
+    let offset = 0;
+    for (const [index, token] of tokens.entries()) {
+      let raw = token.raw;
+      if (topLevel) offset += raw.length;
+      const previous = tokens[index - 1];
+      const next = tokens[index + 1];
+      if (
+        token.type === "space" &&
+        previous &&
+        previous.type !== "space" &&
+        previous.type !== "def" &&
+        next &&
+        next.type !== "space" &&
+        next.type !== "def" &&
+        (!topLevel || offset !== quietBefore)
+      ) {
+        const trailingNewlines = previous.raw.match(/\n*$/)?.[0].length ?? 0;
+        let extra = trailingNewlines - 2;
+        if (count + extra > MAX_EMAIL_HTML_ELEMENTS) return null;
+        for (const character of raw) {
+          if (character === "\n") extra += 1;
+          if (count + extra > MAX_EMAIL_HTML_ELEMENTS) return null;
+        }
+        if (extra > 0) {
+          count += extra;
+          raw = `${"\n".repeat(Math.max(0, 2 - trailingNewlines))}${`${placeholder}\n\n`.repeat(extra)}`;
+        }
+      } else if (token.type === "blockquote" && token.tokens && token.tokens.map((inner) => inner.raw).join("") === token.text) {
+        const beforeQuote = count;
+        const inner = rewrite(token.tokens, token.text);
+        if (inner === null) return null;
+        if (count > beforeQuote) {
+          raw =
+            inner
+              .split("\n")
+              .map((line) => (line ? `> ${line}` : ">"))
+              .join("\n") + (raw.match(/\n*$/)?.[0] ?? "");
+        }
+      }
+      chunks.push(raw);
+    }
+    // Preserve the original bytes when no separator changed, including CRLF and quote syntax.
+    return count === initialCount ? original : chunks.join("");
+  };
+  const rewritten = rewrite(markdown.marked.lexer(source), source, true);
+  return rewritten === null ? null : { source: rewritten, count };
+};
+
+/** Only Mail-authored spacers bypass the first sanitizer; user HTML still follows the original fragment policy. */
+const mailBodyHtmlFragment = (source: string, token: string, quietBefore?: number): Result<string> => {
+  const rewritten = withBlankLinePlaceholders(source, token, quietBefore);
+  if (rewritten === null) return fail(composeRenderFailure("tooComplex"));
+  const html = mailMarkdownHtml(rewritten.source).replaceAll(
+    `<p>${token}</p>`,
+    `<p class="${BLANK_LINE_CLASS}" style="margin:0">&nbsp;</p>`,
+  );
+  return ok(html.includes(token) ? mailMarkdownHtml(source) : html);
+};
 
 const markdownToPlainText = (source: string): Result<string> => {
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
   try {
-    return ok(convert(emailHtmlFragment(source), { wordwrap: false }).trimEnd());
+    return ok(convert(mailMarkdownHtml(source), { wordwrap: false }).trimEnd());
   } catch {
     return fail(err.badInput("Compose template could not be converted to plain text"));
   }
@@ -442,10 +628,16 @@ const fillComposeTemplate = (
   context: ComposeRenderContext,
   output: "plain" | "markdown" | "editable_markdown",
   renderTimeoutMs?: number,
+  logoToken = "",
 ): Result<string> => {
-  const rendered = renderMailLiquidTemplate(source, context, output === "editable_markdown" ? "editable_markdown" : "markdown", {
-    renderTimeoutMs,
-  });
+  const rendered = renderMailLiquidTemplate(
+    replaceLogoTags(source, logoToken).source,
+    context,
+    output === "editable_markdown" ? "editable_markdown" : "markdown",
+    {
+      renderTimeoutMs,
+    },
+  );
   if (!rendered.ok && "reason" in rendered.error && rendered.error.reason === "render_too_large") {
     return fail(composeRenderFailure("tooLarge"));
   }
@@ -469,6 +661,7 @@ const renderComposeTemplateSegments = (
   context: ComposeRenderContext,
   format: "plain" | "markdown",
   budget: { remainingMs: number },
+  logoToken: string,
 ): Result<string> => {
   let outputBytes = 0;
   let segmentCount = 0;
@@ -482,7 +675,7 @@ const renderComposeTemplateSegments = (
       }
       if (isSignatureTemplate(part.text)) {
         const renderStart = performance.now();
-        const rendered = fillComposeTemplate(part.text, context, format, Math.max(0, budget.remainingMs));
+        const rendered = fillComposeTemplate(part.text, context, format, Math.max(0, budget.remainingMs), logoToken);
         budget.remainingMs -= performance.now() - renderStart;
         if (!rendered.ok) return "composeRender" in rendered.error ? rendered : fail(composeRenderFailure("signatureFailed"));
         // A filled-in value may itself contain a mark; it must not reach the message.
@@ -520,10 +713,14 @@ export const renderComposeContent = (params: {
   context: ComposeRenderContext;
   renderLiquid: boolean;
   signature?: string | null;
+  logo?: { src: string; altText: string; displayWidth: number; pixelWidth: number; pixelHeight: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {
+  const logoRandomPart = crypto.randomUUID().replaceAll("-", "").toUpperCase();
+  const token = `MAILLOGO${logoRandomPart}`;
+  const context = params.context;
   const budget = { remainingMs: MAX_COMPOSE_RENDER_MS };
   const renderedSource = params.renderLiquid
-    ? renderComposeTemplateSegments(params.body, params.context, params.format, budget)
+    ? renderComposeTemplateSegments(params.body, context, params.format, budget, token)
     : ok(params.body.replace(COMPOSE_SEGMENT_MARKS, ""));
   if (!renderedSource.ok) return renderedSource;
   let source = renderedSource.data;
@@ -532,21 +729,55 @@ export const renderComposeContent = (params: {
     const valid = validateComposeTemplateSource(params.signature);
     if (!valid.ok) return fail(composeRenderFailure("signatureFailed"));
     const start = performance.now();
-    const signature = fillComposeTemplate(params.signature, params.context, params.format, Math.max(0, budget.remainingMs));
+    const signature = fillComposeTemplate(params.signature, context, params.format, Math.max(0, budget.remainingMs), token);
     budget.remainingMs -= performance.now() - start;
     if (!signature.ok) return "composeRender" in signature.error ? signature : fail(composeRenderFailure("signatureFailed"));
     parts = { ...splitQuotedHistory(source), signature: signature.data.replace(COMPOSE_SEGMENT_MARKS, "") };
     source = [parts.reply, parts.signature, parts.history].filter(Boolean).join("\n\n");
   }
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
-  if (params.format === "plain") return ok({ html: null, text: source, formattingWarnings: [] });
+  // Only intact tokens may reach replacement; transformed or truncated markers must never be sent.
+  if (source.replaceAll(token, "").toUpperCase().includes(logoRandomPart)) {
+    return fail(composeRenderFailure("signatureFailed"));
+  }
+  const requestedLogo = source.includes(token);
+  const logoWarnings: ComposeFormattingWarning[] = requestedLogo && !params.logo ? [{ code: "missing_mailbox_logo" }] : [];
+  if (params.format === "plain") {
+    if (!requestedLogo) return ok({ html: null, text: source, formattingWarnings: logoWarnings, logoUsed: false });
+    const altText = params.logo?.altText ?? "";
+    // Check the expanded size before allocating it: a loop can repeat the placeholder many times.
+    const occurrences = source.split(token).length - 1;
+    if (sourceBytes(source) + occurrences * (sourceBytes(altText) - token.length) > MAX_RENDERED_SOURCE_BYTES) {
+      return fail(composeRenderFailure("tooLarge"));
+    }
+    return ok({
+      html: null,
+      text: source.replaceAll(token, () => altText).trimEnd(),
+      formattingWarnings: logoWarnings,
+      logoUsed: true,
+    });
+  }
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
 
   try {
-    const fragment = parts
-      ? `${emailHtmlFragment(parts.reply)}<div class="${SIGNATURE_CLASS}">${emailHtmlFragment(parts.signature)}</div>${emailHtmlFragment(parts.history)}`
-      : emailHtmlFragment(source);
+    const blankLineToken = `MAILBLANKLINE${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
+    let historyStart: number | undefined;
+    if (!parts) {
+      const normalized = source.replace(/\r\n?/g, "\n");
+      const { history } = splitQuotedHistory(normalized);
+      historyStart = history ? normalized.length - history.length : undefined;
+    }
+    const reply = parts ? mailBodyHtmlFragment(parts.reply, blankLineToken) : mailBodyHtmlFragment(source, blankLineToken, historyStart);
+    if (!reply.ok) return reply;
+    let fragment = reply.data;
+    if (parts) {
+      const signature = mailBodyHtmlFragment(parts.signature, blankLineToken);
+      if (!signature.ok) return signature;
+      const history = mailBodyHtmlFragment(parts.history, blankLineToken);
+      if (!history.ok) return history;
+      fragment += `<div class="${SIGNATURE_CLASS}">${signature.data}</div>${history.data}`;
+    }
     const elementCount = fragment.match(/<[a-z][^>]*>/gi)?.length ?? 0;
     if (elementCount > MAX_EMAIL_HTML_ELEMENTS) {
       return fail(composeRenderFailure("tooComplex"));
@@ -561,14 +792,58 @@ export const renderComposeContent = (params: {
       formattingWarnings = [{ code: "ignored_mailbox_css" }];
     }
     if (!inlined.ok) return inlined;
-    const html = inlined.data;
+    let html = inlined.data;
+    if (requestedLogo) {
+      // Strip tokens from parsed attributes before replacing text nodes. User HTML
+      // and Markdown images have already been rejected by the final sanitizer.
+      const stripToken = (attribs: sanitizeHtml.Attributes) =>
+        Object.fromEntries(Object.entries(attribs).map(([key, value]) => [key, value.replaceAll(token, "")]));
+      html = sanitizeHtml(html, {
+        ...INLINED_EMAIL_SANITIZE_OPTIONS,
+        transformTags: {
+          "*": (tagName, attribs) => ({ tagName, attribs: stripToken(attribs) }),
+          a: (tagName, attribs) => EMAIL_HTML_SANITIZE_OPTIONS.transformTags.a(tagName, stripToken(attribs)),
+        },
+      });
+    }
+    const logoUsed = requestedLogo && html.includes(token);
+    // Charge every surviving occurrence as a data URL even when sending CID HTML.
+    // Check before reading/escaping the image source or allocating expanded HTML.
+    let logoCount = 0;
+    for (let offset = html.indexOf(token); offset >= 0; offset = html.indexOf(token, offset + token.length)) logoCount += 1;
+    const imageMarkup = params.logo
+      ? `<img src="" alt="${escapeAttribute(params.logo.altText)}" width="${params.logo.displayWidth}" height="${mailboxLogoDisplayHeight(params.logo)}" style="display:block;border:0;height:auto;max-width:100%">`
+      : "";
+    if (params.logo && logoCount > 0) {
+      // JPEG's prefix is one byte longer than PNG's: use that common upper bound.
+      const imageBytes = sourceBytes(imageMarkup) + "data:image/jpeg;base64,".length + 4 * Math.ceil(params.logo.byteLength / 3);
+      if (sourceBytes(html) + logoCount * (imageBytes - token.length) > MAX_RENDERED_SOURCE_BYTES) {
+        return fail(composeRenderFailure("tooLarge"));
+      }
+      if ((html.match(/<[a-z][^>]*>/gi)?.length ?? 0) + logoCount > MAX_EMAIL_HTML_ELEMENTS) {
+        return fail(composeRenderFailure("tooComplex"));
+      }
+    }
+    const src = params.logo && logoCount > 0 ? escapeAttribute(params.logo.src) : "";
+    const image = imageMarkup.replace('src=""', () => `src="${src}"`);
+    if (sourceBytes(html) + logoCount * (sourceBytes(image) - token.length) > MAX_RENDERED_SOURCE_BYTES) {
+      return fail(composeRenderFailure("tooLarge"));
+    }
+    const text = convert(html, {
+      wordwrap: false,
+      selectors: [
+        { selector: "a", options: { hideLinkHrefIfSameAsText: true } },
+        { selector: `p.${BLANK_LINE_CLASS}`, format: "mailBlankLine" },
+      ],
+      formatters: { mailBlankLine: (_elem, _walk, builder) => builder.addLineBreak() },
+    })
+      .trimEnd()
+      .replaceAll(token, () => params.logo?.altText ?? "");
     return ok({
-      formattingWarnings,
-      html,
-      text: convert(html, {
-        wordwrap: false,
-        selectors: [{ selector: "a", options: { hideLinkHrefIfSameAsText: true } }],
-      }).trimEnd(),
+      formattingWarnings: [...formattingWarnings, ...logoWarnings].slice(0, MAX_COMPOSE_FORMATTING_WARNINGS),
+      html: html.replaceAll(token, () => image),
+      text: requestedLogo && !params.logo ? text.trimEnd() : text,
+      logoUsed,
     });
   } catch {
     return fail(composeRenderFailure("conversionFailed"));
@@ -623,9 +898,9 @@ const styleProperties = (style: string | undefined): Set<string> =>
  * order, or null when the order no longer matches. One HTML block keeps every element raw for Markdown.
  */
 const sanitizedElements = (elements: HtmlElement[]): HtmlElement[] | null => {
-  // `</br>` would read as a second line break.
-  const block = `<div>\n${elements.map((element) => `${openingTag(element)}${element.tag === "br" ? "" : `</${element.tag}>`}`).join("\n")}\n</div>`;
-  const kept = openingTags(sanitizeHtml(emailHtmlFragment(block), INLINED_EMAIL_SANITIZE_OPTIONS)).slice(1);
+  // Void elements have no closing tag; `</br>` would read as a second line break.
+  const block = `<div>\n${elements.map((element) => `${openingTag(element)}${element.tag === "br" || element.tag === "hr" ? "" : `</${element.tag}>`}`).join("\n")}\n</div>`;
+  const kept = openingTags(sanitizeHtml(mailMarkdownHtml(block), INLINED_EMAIL_SANITIZE_OPTIONS)).slice(1);
   return kept.length === elements.length && kept.every((element, index) => element.tag === elements[index]?.tag) ? kept : null;
 };
 
@@ -659,7 +934,7 @@ const formattingWarnings = (body: string): ComposeFormattingWarning[] => {
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES || !validateMarkdownSourceComplexity(source).ok) return [];
 
   const warnings = new Map<string, ComposeFormattingWarning>();
-  const add = (warning: Exclude<ComposeFormattingWarning, { code: "ignored_mailbox_css" }>) => {
+  const add = (warning: Exclude<ComposeFormattingWarning, { code: "ignored_mailbox_css" | "missing_mailbox_logo" }>) => {
     const key = `${warning.code}:${warning.element}:${warning.attribute ?? ""}`;
     if (warnings.size < MAX_COMPOSE_FORMATTING_WARNINGS && !warnings.has(key)) warnings.set(key, warning);
   };

@@ -1,4 +1,4 @@
-import { type BoundNotificationMap, lazySync, notification } from "@k2b/cloud";
+import { type BoundNotificationMap, lazySync, listApps, notification } from "@k2b/cloud";
 import {
   AI_SHORT_ID_PATTERN,
   CHAT_TASK_REASON_CODES,
@@ -9,7 +9,9 @@ import {
 } from "@k2b/cloud/ai";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { coreSettings, getFreeIpaConfig, logger, notifications, trace } from "@k2b/cloud/services";
+import { listPending, loadApprovalActionPolicies, pendingApprovalCard } from "@k2b/cloud/services/approvals";
 import { toPgTextArray } from "@k2b/cloud/services/postgres";
+import { resolveAppIdentityPresentation } from "@k2b/cloud/shared";
 import { i18n } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
@@ -32,6 +34,8 @@ const notificationMessages = i18n.define({
       costBody: ({ cost, unit }: { cost: string; unit: string }) =>
         `Reference costs over the last 24 hours: ${cost} ${unit}. Review Usage rules and the contributing workflows.`,
       approvalWaiting: ({ count }: { count: number }) => (count === 1 ? "Approval waiting" : `${count} approvals waiting`),
+      approvalMore: ({ count }: { count: number }) => `And ${count} more waiting.`,
+      approvalOpen: ({ target }: { target: string }) => `Open it at ${target}`,
       approvalBody: "An Action waits for your approval. Nothing happens until you decide.",
       approvalEmail: ({ target }: { target: string }) =>
         `An Action waits for your approval. Nothing happens until you decide. Open it at ${target}`,
@@ -46,6 +50,8 @@ const notificationMessages = i18n.define({
       costBody: ({ cost, unit }) =>
         `Referenzkosten der letzten 24 Stunden: ${cost} ${unit}. Prüfe die Usage-Regeln und die verursachenden Workflows.`,
       approvalWaiting: ({ count }) => (count === 1 ? "Freigabe wartet" : `${count} Freigaben warten`),
+      approvalMore: ({ count }) => (count === 1 ? "Und 1 weitere wartet." : `Und ${count} weitere warten.`),
+      approvalOpen: ({ target }) => `Öffne sie unter ${target}`,
       approvalBody: "Eine Aktion wartet auf deine Freigabe. Bis du entscheidest, passiert nichts.",
       approvalEmail: ({ target }) =>
         `Eine Aktion wartet auf deine Freigabe. Bis du entscheidest, passiert nichts. Öffne sie unter ${target}`,
@@ -57,6 +63,8 @@ const notificationMessages = i18n.define({
   },
 });
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 const absoluteUrl = async (path: string): Promise<string> => {
   const configured = String((await coreSettings.get<string>("app.url")) || "").trim();
@@ -78,16 +86,31 @@ export const AI_NOTIFICATIONS = {
       "Benachrichtigung, wenn eine Aktion, die du außerhalb der Cloud-Seiten gestartet hast, etwa in cld oder einem Editor, auf deine Freigabe wartet.",
     ),
     delivery: { recommended: ["browser"] },
-    data: z.object({ count: z.number().int().positive() }),
-    render: ({ count }, { locale }) => ({
+    data: z.object({
+      count: z.number().int().positive(),
+      question: z.string().max(400).optional(),
+      reason: z.string().max(500).optional(),
+    }),
+    render: ({ count, question, reason }, { locale }) => ({
       title: text(locale).approvalWaiting({ count }),
-      body: text(locale).approvalBody,
+      body: question
+        ? [question, reason, count > 1 ? text(locale).approvalMore({ count: count - 1 }) : undefined].filter(Boolean).join("\n")
+        : text(locale).approvalBody,
       targetHref: APPROVALS_PAGE_PATH,
     }),
-    email: async ({ count }, { locale }) => ({
-      subject: text(locale).approvalWaiting({ count }),
-      content: text(locale).approvalEmail({ target: await absoluteUrl(APPROVALS_PAGE_PATH) }),
-    }),
+    email: async ({ count, question, reason }, { locale }) => {
+      const subject = text(locale).approvalWaiting({ count });
+      const target = await absoluteUrl(APPROVALS_PAGE_PATH);
+      if (!question) return { subject, content: text(locale).approvalEmail({ target }) };
+      // Escaped HTML, because plain content is read as HTML and would drop "<lea@example.com>" from the question.
+      const lines = [
+        question,
+        reason,
+        count > 1 ? text(locale).approvalMore({ count: count - 1 }) : undefined,
+        text(locale).approvalOpen({ target }),
+      ].filter((line): line is string => Boolean(line));
+      return { subject, rawHtml: lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("") };
+    },
   }),
   backgroundCosts: notification({
     recipient: "user",
@@ -136,7 +159,7 @@ export const AI_NOTIFICATIONS = {
       name: z.string(),
       code: z.enum(CHAT_TASK_REASON_CODES),
       at: z.string(),
-      action: z.string().optional(),
+      action: z.string().max(200).optional(),
       timeZone: z.string(),
     }),
     render: ({ conversationId, name, code, at, action, timeZone }, { locale }) => ({
@@ -167,6 +190,7 @@ type TaskAttentionCandidate = {
   timezone: string;
   reason_code: ChatTaskReasonCode;
   reason_at: Date;
+  reason_action: string | null;
 };
 
 type AiNotificationRecoverySummary = {
@@ -239,7 +263,8 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
              conversation.short_id AS conversation_id,
              task.id AS task_id,
              task.sponsor_user_id AS user_id,
-             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at
+             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at,
+             CASE WHEN task.reason_code = 'needs_approval' THEN task.reason_action END AS reason_action
       FROM ai.chat_task_occurrences occurrence
       JOIN ai.chat_tasks task ON task.id = occurrence.task_id
       JOIN ai.conversations conversation ON conversation.id = task.conversation_id
@@ -280,6 +305,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
             name: chatTaskName({ title: candidate.title, chatTitle: candidate.chat_title, prompt: candidate.prompt }),
             code: candidate.reason_code,
             at: new Date(candidate.reason_at).toISOString(),
+            action: candidate.reason_action ?? undefined,
             timeZone: candidate.timezone,
           },
           idempotencyKey: `routine:${candidate.task_id}:${candidate.reason_code}:${new Date(candidate.reason_at).getTime()}`,
@@ -351,11 +377,43 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     let failed = 0;
     for (const candidate of candidates) {
       try {
+        let recipientLocale = locale;
+        let question: string | undefined;
+        let reason: string | undefined;
+        try {
+          const { items } = await listPending({ approverUserId: candidate.user_id, id: candidate.id, limit: 1 });
+          const row = items[0];
+          if (row) {
+            const run = row.runConfig?.kind === "compact" ? null : row.runConfig;
+            recipientLocale = run?.locale ?? locale;
+            const apps = await listApps();
+            // The same card as the approvals page and Cloud Login, with the Action's declared reason when the review has none.
+            const policy = (await loadApprovalActionPolicies([row]))(row);
+            const card = pendingApprovalCard(
+              row,
+              (id, language) => {
+                const app = apps.find((entry) => entry.id === id);
+                return app ? resolveAppIdentityPresentation(app, language).name : id;
+              },
+              policy ?? undefined,
+              locale || undefined,
+            );
+            // The card's language, so the title and the question never mix languages.
+            recipientLocale = card.locale;
+            question = card.questionText.slice(0, 400);
+            reason = card.reason.text.slice(0, 500);
+          }
+        } catch (error) {
+          log.warn("Failed to build approval waiting question; using the general notice", {
+            approvalId: candidate.id,
+            error: error instanceof Error ? error.message : "Question unavailable",
+          });
+        }
         await notifications.send(definitions.approvalWaiting, {
           recipient: { userId: candidate.user_id },
-          data: { count: candidate.count },
+          data: { count: candidate.count, ...(question ? { question, reason } : {}) },
           idempotencyKey: `approval:${candidate.id}`,
-          locale,
+          locale: recipientLocale,
         });
         sent += 1;
       } catch (error) {

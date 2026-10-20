@@ -4,7 +4,10 @@ import { accountsApiErrorMessage, accountsApiMessages, checkAccountsApiMessages 
 describe("Accounts API messages", () => {
   test("covers German with de-CH fallback", () => {
     expect(checkAccountsApiMessages()).toEqual([]);
-    expect(accountsApiMessages("de-CH").passwordReset).toBe("Passwort zurückgesetzt.");
+    expect(accountsApiMessages("en").passwordReset).toBe("Password reset. The user's sign-ins have ended; Cloud Login phones stay paired.");
+    expect(accountsApiMessages("de-CH").passwordReset).toBe(
+      "Passwort zurückgesetzt. Die Anmeldungen der Person sind beendet; Telefone mit Cloud Login bleiben gekoppelt.",
+    );
   });
 
   test("keeps concurrent request locales isolated", async () => {

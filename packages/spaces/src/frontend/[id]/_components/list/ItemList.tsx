@@ -106,7 +106,7 @@ export default function ItemList(props: ItemListProps) {
     // Moving the pointer over the list, maybe towards the next task, keeps the rows that left in place a while longer.
     <div ref={list} class="min-w-0" on:pointermove={(event) => event.pointerType === "mouse" && props.leaving.postpone()}>
       {props.groupBy === "none" ? (
-        <div class="flex flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5">
+        <div class="flex flex-col">
           <Rows items={rows} />
         </div>
       ) : (
@@ -126,7 +126,7 @@ export default function ItemList(props: ItemListProps) {
                   }`}
                 >
                   <div class={`min-h-0 ${collapsing() ? "overflow-hidden" : ""}`}>
-                    <section aria-labelledby={headingId} class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5">
+                    <section aria-labelledby={headingId}>
                       <GroupHeader
                         config={group() ?? { key, label: "" }}
                         count={props.groupCounts?.[key] ?? items().length}

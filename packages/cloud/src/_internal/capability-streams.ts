@@ -8,6 +8,7 @@ import {
   capabilityResultSchema,
 } from "../contracts/capabilities";
 import type { CompiledCapabilities } from "./capabilities";
+import { capabilityActionReceiptIssues } from "./capability-reviews";
 
 const failure = (status: number, code: string, message: string) => Response.json({ code, message }, { status });
 export async function invokeCapabilityStream(params: {
@@ -26,6 +27,12 @@ export async function invokeCapabilityStream(params: {
   const receipt = (value: unknown) => {
     const parsed = capabilityResultSchema(operation.definition.data).parse(value);
     if (parsed.stream) throw new Error("Stream receipts cannot issue another stream");
+    // The same receipt rules as an ordinary result, so a stream completion cannot skip them.
+    if (parsed.receipt !== undefined) {
+      const issues =
+        params.kind === "queries" ? ["Queries cannot return a receipt"] : capabilityActionReceiptIssues(parsed.receipt, parsed.links);
+      if (issues.length > 0) throw new Error(`Stream result receipt is invalid: ${issues.join("; ")}`);
+    }
     return parsed;
   };
   try {

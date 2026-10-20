@@ -176,12 +176,16 @@
   }
 }
 
+/* The current navigation target carries the app's navigation fill and ink. */
 @utility sidebar-icon-action-active {
-  @apply bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800;
-  @apply dark:bg-blue-950/45 dark:text-blue-300 dark:hover:bg-blue-900/45 dark:hover:text-blue-200;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-blue-500) 22%, transparent),
-    var(--ui-control-bevel);
+  color: var(--ui-app-accent-text);
+  background: var(--ui-app-selected-nav);
+  box-shadow: none;
+
+  &:hover {
+    color: var(--ui-app-accent-text);
+    background: var(--ui-app-selected-nav);
+  }
 }
 
 @utility sidebar-icon-action-success {
@@ -225,7 +229,7 @@
 
 @utility sidebar-item-active {
   position: relative;
-  background: var(--ui-selected);
+  background: var(--ui-app-selected-nav);
   color: var(--ui-app-accent-text);
   @apply font-medium;
   box-shadow: var(--ui-shadow-surface);
@@ -714,7 +718,7 @@
 @utility list-item-active {
   border-left: 0;
   position: relative;
-  background: var(--ui-selected);
+  background: var(--ui-app-selected);
   color: var(--ui-app-accent-text);
   @apply rounded-lg font-medium;
   box-shadow: var(--ui-shadow-surface);
@@ -1047,23 +1051,14 @@
   padding: 0 0.25rem;
 }
 
+/* The box and the app ink; the chip comes from the shared `k2b-icon-tile` on the same element. */
 .sidebar-header-icon {
   width: 1.4375rem;
   height: 1.4375rem;
-  border-radius: 0.4375rem;
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 9%, transparent) !important;
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 80%, black) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 16%, transparent);
 }
 
-.sidebar-header-icon-mobile {
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 9%, transparent) !important;
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 80%, black) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 16%, transparent);
-}
-
-.dark :is(.sidebar-header-icon, .sidebar-header-icon-mobile) {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white) !important;
+:is(.sidebar-header-icon, .sidebar-header-icon-mobile) {
+  color: var(--ui-app-accent-text) !important;
 }
 
 .sidebar-header-title {
@@ -1100,8 +1095,8 @@
 
 .sidebar-icon-action-active {
   color: var(--ui-app-accent-text);
-  background: var(--ui-selected);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 20%, transparent);
+  background: var(--ui-app-selected-nav);
+  box-shadow: none;
 }
 
 :is(.sidebar-item-active, .list-item-active) {
@@ -1114,7 +1109,7 @@
 }
 
 .file-tree > li > div[data-state="selected"] {
-  background: var(--ui-selected) !important;
+  background: var(--ui-app-selected) !important;
   box-shadow: none !important;
 }
 

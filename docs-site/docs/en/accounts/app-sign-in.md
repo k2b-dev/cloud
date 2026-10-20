@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1084
 description: Connect Cloud to its trusted authenticator website and prepare a first sign-in.
 tags: [accounts, administration, authentication]
-updated: 2026-09-30
+updated: 2026-10-19
 ---
 
 # Set up app sign-in
@@ -50,13 +50,33 @@ device can complete sign-in. Enabling it does not remove other sign-in methods.
 
 Administrators can also find setup from **My account → Security** while the
 feature is disabled. Other users see it when enabled or when they have device
-history. Existing device inspection and revocation remain available if the
+history. Existing device inspection and renaming remain available if the
 PWA address is missing; the Cloud's own address must still be valid.
+Revocation then needs an administrator, because no paired device can approve it.
 
 The Cloud address under **General → URL** identifies this Cloud.
 Changing that origin requires pairing again. Changing the trusted PWA origin
 does not revoke existing devices: review and revoke credentials separately
 when replacing an untrusted authenticator.
+
+## Pair further devices and remove devices
+
+The first device pairs when you confirm the matching codes in Cloud. If the
+account already has an active paired device on this Cloud, confirming the codes
+creates a five-minute request. Open Cloud Login on a paired device and approve
+it before the new device can sign in. Denied or expired requests do not pair
+the device.
+
+Removing a device from the browser also needs approval in Cloud Login. You can
+also end the browser sign-ins that device approved; this is selected by default.
+The requesting session stays signed in, as do sign-ins approved by other devices
+and sessions with no device link. Sessions issued before this update have no
+such link.
+
+If no paired device is usable, ask an administrator to revoke the old device
+and use administrator-assisted pairing when enabled. These administrator
+actions remain immediate. Older authenticator apps cannot show device-change
+requests; a pending browser request then expires.
 
 ## Sign in with the app
 
@@ -68,12 +88,53 @@ when replacing an untrusted authenticator.
 3. Keep the login page open and open your authenticator, or tap its
    notification if you turned notifications on.
 4. Unlock the app, compare the request with the waiting login page, and approve
-   only if the codes match and you started the request. The request also shows
-   when it started, in your phone's time zone, so you can tell it apart from a
-   sign-in you did not start.
+   only if the codes match and you started the request. Check the browser,
+   start time, and any place or network details shown above the code.
 
 The waiting page signs you in after approval. Deny requests you do not recognize.
 If a request expires, start a new sign-in from Cloud.
+
+### Read the request details
+
+For browser sign-ins, Clouds that support sign-in context let Cloud Login
+show these rows above the comparison code:
+
+- **{browser} on {os}**, or **Unknown browser**. Safari on an iPad can read
+  **Safari on Mac or iPad**.
+- **Approximately {city}, {country}**, or only the country; **Location unknown**
+  when no place is available. **Network: {operator}**, or **Network unknown**.
+  These two rows appear only when Cloud's location database (GeoIP) knows the
+  address; without a database, or for an unknown address, both are left out.
+  The network line names the operator; Cloud never labels a VPN or data center.
+- **Same internet address as this phone**, only when true. Its absence says
+  nothing about whether the addresses match.
+- **Started at {time}**, in your phone's time zone.
+- **Known browser · since {date}** if this browser signed in to this account
+  before, or the calm note **Cloud does not know this browser yet**. During
+  the first 14 days after the Cloud update, the app makes no known/new claim.
+
+For a known browser in a new country, a calm note says **No sign-in from this
+country in the last 90 days**. While Cloud's location history is younger, it
+says **since {date}** instead. Only a new browser from a country without a
+sign-in in that window, on an account that already has sign-in countries,
+shows **Did you start this sign-in?** as a warning. **Deny** becomes the main
+button; **Approve anyway** stays in its place. After denial, the sheet says
+**Denied · Nobody was signed in.**
+
+Offline, **You are offline. Approve and deny work again once you are connected.**
+replaces the comparison hint, and both buttons are disabled. Older Clouds show
+the earlier dialog with the start time. A request without context also uses
+that dialog. Terminal sign-ins (Cloud CLI) are unchanged.
+
+Known means “signed in here before”, not “safe”. These details help you notice
+a request you did not start. They do not make app sign-in phishing-resistant:
+a real-time phishing page can relay the code, and a proxy near you can match
+place and network. Only passkeys are phishing-resistant. See
+[location accuracy](/en/docs/operations/sign-in-locations#privacy-and-accuracy)
+and [stored sign-in data](/en/docs/operations/sign-in-locations#where-traces-of-a-sign-in-end-up)
+for accuracy and storage limits.
+
+### Continue or use another method
 
 After a FreeIPA sign-in with the app, this browser opens FreeIPA with the app
 next time, until someone signs in there with a FreeIPA password again. The

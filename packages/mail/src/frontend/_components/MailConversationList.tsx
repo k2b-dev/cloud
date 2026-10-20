@@ -6,7 +6,6 @@ import {
   Button,
   ButtonLink,
   createHoverPreview,
-  Dropdown,
   FilterChip,
   HoverPreview,
   IconButton,
@@ -75,6 +74,8 @@ export default function MailConversationList(props: {
   query: string;
   search: ResolvedMailSearchRoute;
   title: string;
+  /** Where the list is already named, or null when its heading must stay visible. */
+  namedBy: "tabs" | "sidebar" | null;
   items: MailListItem[];
   leavingKeys?: ReadonlySet<string>;
   error: MailListError | null;
@@ -103,7 +104,6 @@ export default function MailConversationList(props: {
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
   onNavigateItem: (href: string, item: MailListItem, activation: "keyboard" | "pointer") => void | Promise<void>;
   onToggleSelectionMode: () => void;
-  onListModeChange: (mode: MailListMode) => void;
   onToggleSelection: (item: MailListItem, range: boolean) => void;
   onClearSelection: () => void;
   onAddTags?: () => void | Promise<void>;
@@ -114,6 +114,7 @@ export default function MailConversationList(props: {
   onManageTags: (item: MailListItem) => void | Promise<void>;
   onMergeItem?: (item: MailListItem) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
+  onSearchControls?: (controls: { cancelPending: () => void }) => void;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
 }) {
@@ -245,6 +246,13 @@ export default function MailConversationList(props: {
     (query: string, fields: MailQuickSearchField[], replace: boolean) => applyQuickSearch(query, fields, replace),
     300,
   );
+  props.onSearchControls?.({
+    cancelPending: () => {
+      quickSearch.cancel();
+      quickSearchPending = false;
+      setSearchValue(props.query);
+    },
+  });
 
   createEffect(() => {
     quickSearch.cancel();
@@ -356,7 +364,19 @@ export default function MailConversationList(props: {
           fallback={
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="truncate text-base font-semibold text-primary">
+                {/* Hide the heading only where tabs or a sidebar row already name the list. */}
+                <h1
+                  data-mail-list-heading
+                  ref={listHeading}
+                  tabIndex={-1}
+                  class={
+                    props.namedBy === "tabs"
+                      ? "sr-only"
+                      : props.namedBy === "sidebar"
+                        ? "mail-list-heading truncate text-base font-semibold text-primary"
+                        : "truncate text-base font-semibold text-primary"
+                  }
+                >
                   {props.title}
                 </h1>
                 <p class="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-dimmed">
@@ -385,36 +405,10 @@ export default function MailConversationList(props: {
                   </IconButton>
                 </Tooltip.Anchor>
               </Show>
-              <Dropdown.Root
-                position="bottom-right"
-                width="14rem"
-                items={[
-                  {
-                    label: messages().conversationView,
-                    icon: props.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
-                    action: () => props.onListModeChange("conversations"),
-                  },
-                  {
-                    label: messages().messageView,
-                    icon: props.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
-                    action: () => props.onListModeChange("messages"),
-                  },
-                ]}
-              >
-                <Dropdown.Trigger
-                  iconOnly
-                  type="button"
-                  variant="ghost"
-                  label={messages().chooseListView}
-                  tooltip={props.listMode === "conversations" ? messages().conversationView : messages().messageView}
-                >
-                  <i class="ti ti-layout-list" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
               <Tooltip.Anchor content={messages().searchFilters}>
                 <IconButton
                   type="button"
-                  class={structuredSummary() ? "text-[var(--app-accent)]" : undefined}
+                  class={structuredSummary() ? "app-accent-text" : undefined}
                   label={messages().searchFilters}
                   aria-pressed={Boolean(structuredSummary())}
                   aria-busy={searchBuilderLoading() ? "true" : undefined}
@@ -425,7 +419,12 @@ export default function MailConversationList(props: {
               </Tooltip.Anchor>
               <Show when={props.selectedConversationId || props.selectedMessageId}>
                 <Tooltip.Anchor content={messages().hideList}>
-                  <IconButton type="button" class="hidden lg:inline-flex" label={messages().hideList} onClick={props.onCollapse}>
+                  <IconButton
+                    type="button"
+                    class="hidden @min-[64rem]/k2b-app-area:inline-flex"
+                    label={messages().hideList}
+                    onClick={props.onCollapse}
+                  >
                     <i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -487,21 +486,6 @@ export default function MailConversationList(props: {
             iconOnly
           />
         </form>
-        <Show when={structuredSummary()}>
-          {(summary) => (
-            <button
-              type="button"
-              class="mail-search-summary"
-              aria-label={`${messages().editStructuredSearch}: ${summary()}`}
-              title={summary()}
-              aria-busy={searchBuilderLoading() ? "true" : undefined}
-              onClick={openAdvancedSearch}
-            >
-              <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-filter-check"} aria-hidden="true" />
-              <span class="mail-search-summary__text">{summary()}</span>
-            </button>
-          )}
-        </Show>
         <Show when={healthPresentation()}>
           {(health) => (
             <NoticeCard
@@ -531,7 +515,8 @@ export default function MailConversationList(props: {
           {(hint) => (
             <NoticeCard tone="neutral" data-mail-folder-only-hint>
               <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
-                <p class="min-w-0 flex-[1_1_14rem]">
+                {/* 13rem keeps the semibold folder action beside the text in a desktop list column. */}
+                <p class="min-w-0 flex-[1_1_13rem]">
                   <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
                   {messages().folderOnlyHintDetail}
                 </p>

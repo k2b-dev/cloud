@@ -1,7 +1,17 @@
-import { expect, test } from "bun:test";
+import { expect, beforeEach as pinClockBeforeEach, afterEach as restoreClockAfterEach, setSystemTime, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
+
+const loadSidebar = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return { ...(await import("./mail-sidebar.fixture")), ...(await import("./MailboxMenu")), ...(await import("./MailSidebar")) };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await loadSidebar();
+
 import type { MailFolderView } from "../../service/messages";
 import type { MailListItem } from "./mail-navigation";
 
@@ -70,53 +80,57 @@ if (!isServer) {
   test("dropping a row on a folder moves that row, not another row of its conversation", async () => {
     const dom = createDomTestHarness();
     const { default: MailConversationRow } = await import("./MailConversationRow");
-    const { default: MailSidebar } = await import("./MailSidebar");
+    const { default: MailSidebar, mailSidebarFixture, openMailboxFixture, createMailboxMenu, mailboxMenuOptions } = modules!;
     const moves: Array<{ itemId: string; destinationFolderId: string }> = [];
     const dispose = render(
       () => (
         <>
           <MailSidebar
-            currentUserEmail={null}
-            contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-            mailboxId="Box001"
-            mailboxName="Support"
-            syncEnabled={true}
-            needsConnection={false}
-            folders={[folder("inbox", "Inbox", "inbox"), folder("projects", "Projects", "other")]}
-            localTags={[]}
-            savedViews={[]}
-            scheduledMode={false}
-            scheduledCount={0}
-            activeFolderId={null}
-            activeView={null}
-            activeSavedViewId={null}
-            activeTagId={null}
-            searchActive={false}
-            viewCounts={{
-              needs_action: 0,
-              mine: 0,
-              unassigned: 0,
-              waiting: 0,
-              done: 0,
-              snoozed: 0,
-              send_problems: 0,
-              recently_active: 0,
-              kept: 0,
+            {...mailSidebarFixture()}
+            open={{
+              ...openMailboxFixture(),
+              mailboxId: "Box001",
+              mailboxName: "Support",
+              canWrite: true,
+              assignedOnly: false,
+              folders: [folder("inbox", "Inbox", "inbox"), folder("projects", "Projects", "other")],
+              scheduledMode: false,
+              scheduledCount: 0,
+              activeFolderId: null,
+              activeView: null,
+              viewCounts: {
+                needs_action: 0,
+                mine: 0,
+                unassigned: 0,
+                waiting: 0,
+                done: 0,
+                snoozed: 0,
+                send_problems: 0,
+                recently_active: 0,
+                kept: 0,
+              },
+              onCompose: () => {},
+              onMoveConversation: (input) => void moves.push(input),
+              onNavigate: () => {},
+              menu: createMailboxMenu(() =>
+                mailboxMenuOptions({
+                  mailboxId: "Box001",
+                  canWrite: true,
+                  canAdmin: false,
+                  assignedOnly: false,
+                  needsConnection: false,
+                  managementOpening: null,
+                  settingsOpening: false,
+                  detailsOpening: false,
+                  onOpenDetails: () => {},
+                  onOpenHealth: () => {},
+                  onOpenSharedLinks: () => {},
+                  onOpenRemoteContent: () => {},
+                  onOpenSubscriptions: () => {},
+                  onOpenSettings: () => {},
+                }),
+              ),
             }}
-            canWrite={true}
-            canAdmin={false}
-            assignedOnly={false}
-            managementOpening={null}
-            settingsOpening={false}
-            detailsOpening={false}
-            onOpenDetails={() => {}}
-            onOpenHealth={() => {}}
-            onOpenSharedLinks={() => {}}
-            onOpenRemoteContent={() => {}}
-            onOpenSubscriptions={() => {}}
-            onOpenSettings={() => {}}
-            onMoveConversation={(input) => void moves.push(input)}
-            onNavigate={() => {}}
           />
           <MailConversationRow
             item={question}
@@ -152,3 +166,6 @@ if (!isServer) {
     }
   });
 }
+
+pinClockBeforeEach(() => setSystemTime(new Date("2026-10-14T10:00:00.000Z")));
+restoreClockAfterEach(() => setSystemTime());

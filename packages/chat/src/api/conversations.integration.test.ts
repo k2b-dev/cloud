@@ -6,6 +6,7 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrate } from "../migrate";
 import {
@@ -102,7 +103,7 @@ suite("chat conversations, people, and directory groups", () => {
     return result.data.id;
   };
   const fixture = async (owner: string, members: { id: string; permission: PermissionLevel }[] = []) => {
-    const shortId = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+    const shortId = testShortId();
     const [row] = await sql<{ id: string }[]>`INSERT INTO chat.conversations (short_id, created_by_type, created_by_id)
       VALUES (${shortId}, 'user', ${owner}::uuid) RETURNING id`;
     conversations.push(shortId);

@@ -1,5 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { type DateContext, dates } from "@k2b/stdlib";
+import type { DateContext } from "@k2b/stdlib";
 import {
   type DndBuildIntentContext,
   type DndDraggableSnapshot,
@@ -23,6 +23,7 @@ import {
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
+import { formatDeadline } from "@/presentation/deadline";
 import { descriptionPreview } from "@/presentation/description-preview";
 import { isTaskOverdue } from "@/task-overdue";
 import { spaceCommandMessages } from "../../../../commands";
@@ -1326,7 +1327,7 @@ export default function KanbanBoard(props: Props) {
     );
   };
   const ColumnCount = (countProps: { bucket: KanbanBucketInitial }) => (
-    <span class="text-[11px] tabular-nums text-dimmed" title={countLabel(countProps.bucket)}>
+    <span class="shrink-0 text-xs tabular-nums text-dimmed" title={countLabel(countProps.bucket)}>
       <span aria-hidden="true">{countText(countProps.bucket)}</span>
       <span class="sr-only">{countLabel(countProps.bucket)}</span>
     </span>
@@ -1372,7 +1373,7 @@ export default function KanbanBoard(props: Props) {
         class="k2b-detail-trail relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
         data-scroll-preserve={`spaces-kanban-board-${props.spaceId}`}
       >
-        <div class="flex h-full min-w-max items-stretch gap-[var(--ui-space-shell)]">
+        <div class="spaces-kanban-columns flex h-full min-w-max items-stretch">
           <For each={bucketKeys()}>
             {(key, bucketIndex) => {
               const bucket = createMemo<KanbanBucketInitial>((previous) => getBucketByKey(key) ?? previous, getBucketByKey(key)!);
@@ -1411,7 +1412,7 @@ export default function KanbanBoard(props: Props) {
                       aria-hidden="true"
                       data-spaces-kanban-column-drop-indicator
                       class={`pointer-events-none absolute inset-y-1 z-20 w-0.5 rounded-full bg-[var(--ui-app-accent-border)] ${
-                        bucketIndex() === 0 ? "left-0" : "left-[calc(var(--ui-space-shell)/-2)] -translate-x-1/2"
+                        bucketIndex() === 0 ? "left-0" : "left-[calc(var(--spaces-kanban-gap)/-2)] -translate-x-1/2"
                       }`}
                     />
                   </Show>
@@ -1420,7 +1421,7 @@ export default function KanbanBoard(props: Props) {
                       aria-hidden="true"
                       data-spaces-kanban-column-drop-indicator
                       class={`pointer-events-none absolute inset-y-1 z-20 w-0.5 rounded-full bg-[var(--ui-app-accent-border)] ${
-                        showWormholes() ? "right-[calc(var(--ui-space-shell)/-2)] translate-x-1/2" : "right-0"
+                        showWormholes() ? "right-[calc(var(--spaces-kanban-gap)/-2)] translate-x-1/2" : "right-0"
                       }`}
                     />
                   </Show>
@@ -1444,7 +1445,7 @@ export default function KanbanBoard(props: Props) {
                     <section
                       ref={(element) => registerColumn(element, false)}
                       data-spaces-kanban-column={key}
-                      class="relative flex h-full w-10 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
+                      class="relative flex h-full w-10 shrink-0 flex-col"
                     >
                       <ColumnDropLine />
                       <button
@@ -1467,10 +1468,10 @@ export default function KanbanBoard(props: Props) {
                         data-spaces-kanban-no-drop={refuseDrop() ? "" : undefined}
                       >
                         <ColumnMark class="mt-1" />
-                        <span class="text-[11px] tabular-nums text-dimmed" aria-hidden="true">
+                        <span class="text-xs tabular-nums text-dimmed" aria-hidden="true">
                           {countText(bucket())}
                         </span>
-                        <span class="min-h-0 truncate text-xs font-medium [writing-mode:vertical-rl]" aria-hidden="true">
+                        <span class="min-h-0 truncate text-sm font-semibold [writing-mode:vertical-rl]" aria-hidden="true">
                           {bucket().label}
                         </span>
                       </button>
@@ -1481,10 +1482,10 @@ export default function KanbanBoard(props: Props) {
                     ref={(element) => registerColumn(element, true)}
                     data-spaces-kanban-column={key}
                     aria-labelledby={`spaces-kanban-column-${props.spaceId}-${key}`}
-                    class="relative flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
+                    class="spaces-kanban-column relative flex h-full shrink-0 flex-col"
                   >
                     <ColumnDropLine />
-                    <header class="flex items-center gap-2 px-1.5 py-1">
+                    <header class="k2b-progressive-row flex h-10 items-center gap-1 pl-1.5 pr-1">
                       {/* The title is the drag handle for people who may reorder the board; others get no affordance. A
                           touch on it still scrolls the board, so a swipe never reorders it for everyone: on touch
                           screens the ⋯ menu moves columns. */}
@@ -1501,60 +1502,63 @@ export default function KanbanBoard(props: Props) {
                             </Tooltip.Anchor>
                           )}
                         </Show>
-                        <h3 id={`spaces-kanban-column-${props.spaceId}-${key}`} class="flex-1 truncate text-xs font-medium">
+                        <h3 id={`spaces-kanban-column-${props.spaceId}-${key}`} class="min-w-0 truncate text-sm font-semibold">
                           {bucket().label}
                           <Show when={virtual}>
                             {(kind) => <span class="sr-only">. {kind() === "blocked" ? t.blockedColumnHelp : t.overdueColumnHelp}</span>}
                           </Show>
                         </h3>
+                        <ColumnCount bucket={bucket()} />
                       </div>
-                      <ColumnCount bucket={bucket()} />
-                      <Show when={props.canWrite}>
-                        <Dropdown.Root
-                          position="bottom-left"
-                          items={[
-                            {
-                              label: t.moveColumnLeft,
-                              icon: "ti ti-arrow-left",
-                              disabled: bucketIndex() === 0 || reorderColumnsMutation.loading(),
-                              action: () => {
-                                moveColumn(key, bucketIndex() - 1);
-                                focusColumnMenu(key);
+                      {/* Quiet until the column is hovered or focused; touch screens always show them. */}
+                      <span class="k2b-progressive-action flex items-center">
+                        <Show when={props.canWrite}>
+                          <Dropdown.Root
+                            position="bottom-left"
+                            items={[
+                              {
+                                label: t.moveColumnLeft,
+                                icon: "ti ti-arrow-left",
+                                disabled: bucketIndex() === 0 || reorderColumnsMutation.loading(),
+                                action: () => {
+                                  moveColumn(key, bucketIndex() - 1);
+                                  focusColumnMenu(key);
+                                },
                               },
-                            },
-                            {
-                              label: t.moveColumnRight,
-                              icon: "ti ti-arrow-right",
-                              disabled: bucketIndex() === buckets().length - 1 || reorderColumnsMutation.loading(),
-                              action: () => {
-                                moveColumn(key, bucketIndex() + 2);
-                                focusColumnMenu(key);
+                              {
+                                label: t.moveColumnRight,
+                                icon: "ti ti-arrow-right",
+                                disabled: bucketIndex() === buckets().length - 1 || reorderColumnsMutation.loading(),
+                                action: () => {
+                                  moveColumn(key, bucketIndex() + 2);
+                                  focusColumnMenu(key);
+                                },
                               },
-                            },
-                          ]}
-                        >
-                          <Dropdown.Trigger
-                            iconOnly
-                            size="xs"
-                            variant="ghost"
-                            class="h-6 w-6 text-dimmed"
-                            label={t.columnActions({ column: bucket().label })}
-                            data-spaces-kanban-column-menu={key}
+                            ]}
                           >
-                            <i class="ti ti-dots text-sm" aria-hidden="true" />
-                          </Dropdown.Trigger>
-                        </Dropdown.Root>
-                      </Show>
-                      <IconButton
-                        label={t.foldColumn({ column: bucket().label })}
-                        size="xs"
-                        class="h-6 w-6 text-dimmed"
-                        data-spaces-kanban-fold={key}
-                        aria-expanded="true"
-                        onClick={() => toggleFolded(key)}
-                      >
-                        <i class="ti ti-viewport-narrow text-sm" aria-hidden="true" />
-                      </IconButton>
+                            <Dropdown.Trigger
+                              iconOnly
+                              size="xs"
+                              variant="ghost"
+                              class="h-6 w-6 text-dimmed"
+                              label={t.columnActions({ column: bucket().label })}
+                              data-spaces-kanban-column-menu={key}
+                            >
+                              <i class="ti ti-dots text-sm" aria-hidden="true" />
+                            </Dropdown.Trigger>
+                          </Dropdown.Root>
+                        </Show>
+                        <IconButton
+                          label={t.foldColumn({ column: bucket().label })}
+                          size="xs"
+                          class="h-6 w-6 text-dimmed"
+                          data-spaces-kanban-fold={key}
+                          aria-expanded="true"
+                          onClick={() => toggleFolded(key)}
+                        >
+                          <i class="ti ti-viewport-narrow text-sm" aria-hidden="true" />
+                        </IconButton>
+                      </span>
                     </header>
 
                     <div class="relative flex min-h-0 flex-1 flex-col">
@@ -1576,6 +1580,8 @@ export default function KanbanBoard(props: Props) {
                             meta: { kind: "column", bucketKey: key },
                           }));
                         }}
+                        // 6 px hold the cards' touch hit areas, which reach past a card's edge; less would let the column
+                        // scroll sideways by the difference.
                         class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
                           isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
                         }`}
@@ -1586,7 +1592,7 @@ export default function KanbanBoard(props: Props) {
                           fallback={
                             <>
                               <DropLine bucketKey={key} index={0} />
-                              <p class="px-2 py-6 text-center text-[11px] text-dimmed">
+                              <p class="px-2 py-6 text-center text-xs text-dimmed">
                                 {bucket().unfilteredTotal
                                   ? t.noMatchingItems
                                   : virtual === "blocked"
@@ -1606,6 +1612,7 @@ export default function KanbanBoard(props: Props) {
                                 return value ? priorityMeta[value] : null;
                               };
                               const isSelected = () => id === selectedItemId();
+                              const firstTag = () => item().tags?.[0];
                               // Per column: a moved card's new element registers before its old one leaves, and an automatic
                               // column shows a card twice.
                               const dragId = `drag:item:${key}:${id}`;
@@ -1645,13 +1652,14 @@ export default function KanbanBoard(props: Props) {
                                     data-card-index={itemIndex()}
                                     // On touch screens the grip's 44 px area ends 39 px below the card's top and the claim button's
                                     // starts 43 px above its bottom. A card with both is 82 px tall at least, so neither takes the other's taps.
-                                    class={`k2b-progressive-row relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${
-                                      isPickedUpThis() || heldItemId() === id
-                                        ? "border-[var(--ui-app-accent-border)] bg-[var(--ui-surface)]"
-                                        : isSelected()
-                                          ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
-                                          : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
-                                    } ${isDraggingThis() ? "opacity-40" : ""} ${props.canWrite ? "select-none [-webkit-touch-callout:none]" : ""}`}
+                                    // The card is an object, so it may be a rounded surface: its first tag tints it, and the tag's name
+                                    // stands in the footer, so the colour is never the only signal.
+                                    data-spaces-kanban-card-state={
+                                      isPickedUpThis() || heldItemId() === id ? "held" : isSelected() ? "selected" : undefined
+                                    }
+                                    data-spaces-kanban-card-tint={firstTag() ? "" : undefined}
+                                    style={firstTag() ? { "--spaces-card-tag": firstTag()!.color } : undefined}
+                                    class={`spaces-kanban-card k2b-progressive-row relative rounded-[var(--ui-radius-control)] p-2.5 any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${isDraggingThis() ? "opacity-40" : ""} ${props.canWrite ? "select-none [-webkit-touch-callout:none]" : ""}`}
                                   >
                                     <Show when={props.canWrite}>
                                       <Show
@@ -1728,17 +1736,19 @@ export default function KanbanBoard(props: Props) {
                                     >
                                       <div class="flex items-start gap-2">
                                         <Show when={priority()}>
-                                          <i class={`ti ${priority()!.icon} ${priority()!.color} mt-0.5 shrink-0 text-xs`} />
+                                          <i class={`ti ${priority()!.icon} ${priority()!.color} mt-[0.1875rem] shrink-0 text-sm`} />
                                         </Show>
                                         <p
-                                          class={`break-words text-xs font-medium leading-tight ${item().completedAt ? "line-through text-dimmed" : ""}`}
+                                          class={`spaces-kanban-card-title break-words text-sm font-medium leading-5 ${item().completedAt ? "line-through text-dimmed" : ""}`}
                                         >
                                           {item().title}
                                         </p>
                                       </div>
 
                                       <Show when={descriptionPreview(item().description)}>
-                                        {(preview) => <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{preview()}</p>}
+                                        {(preview) => (
+                                          <p class="mt-1 line-clamp-3 break-words text-xs leading-4 text-dimmed">{preview()}</p>
+                                        )}
                                       </Show>
                                     </a>
 
@@ -1746,7 +1756,7 @@ export default function KanbanBoard(props: Props) {
                                         row keeps the chips' height, so the first reaction does not grow a card whose row has room. */}
                                     <div
                                       data-spaces-kanban-card-footer
-                                      class={`pointer-events-none relative z-[1] mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6 any-pointer-coarse:pr-8" : ""}`}
+                                      class={`pointer-events-none relative z-[1] mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1 ${props.canWrite ? "min-h-6 pr-6 any-pointer-coarse:pr-8" : ""}`}
                                     >
                                       {/* The metadata lies outside the link, so it describes the link: a focused card still says its status,
                                           deadline, and people. The reactions are their own controls and stay out of it. */}
@@ -1756,7 +1766,7 @@ export default function KanbanBoard(props: Props) {
                                           {(column) => (
                                             <span
                                               data-spaces-kanban-card-status
-                                              class="inline-flex max-w-full items-center gap-1 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-1.5 text-[11px] leading-5 text-dimmed"
+                                              class="spaces-kanban-card-status inline-flex max-w-full items-center gap-1 rounded-full px-1.5 text-xs leading-5 text-dimmed"
                                               title={t.cardStatus({ status: column().name })}
                                             >
                                               <span
@@ -1774,17 +1784,36 @@ export default function KanbanBoard(props: Props) {
                                         <Show when={virtual === "blocked" && isTaskOverdue(item(), props.dateConfig)}>
                                           <span
                                             data-spaces-kanban-card-overdue
-                                            class="inline-flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400"
+                                            class="inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-300"
                                           >
-                                            <i class="ti ti-alert-triangle text-[10px]" aria-hidden="true" />
+                                            <i class="ti ti-alert-triangle text-xs" aria-hidden="true" />
                                             {t.overdue}
                                           </span>
                                         </Show>
                                         <Show when={item().deadline}>
-                                          <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
-                                            <i class="ti ti-clock text-[10px]" />
-                                            {dates.formatDateRelative(item().deadline!, props.dateConfig)}
+                                          <span class="spaces-kanban-card-meta inline-flex items-center gap-1 text-xs tabular-nums text-dimmed">
+                                            <i class="ti ti-clock text-xs" aria-hidden="true" />
+                                            {formatDeadline(item().deadline!, props.dateConfig)}
                                           </span>
+                                        </Show>
+                                        <Show when={firstTag()}>
+                                          {(tag) => (
+                                            // The tint and the dot carry the colour; the name stays in neutral text, so it reads at AA
+                                            // contrast for every tag colour in both themes.
+                                            <span data-spaces-kanban-card-tag class="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                                              <span
+                                                class="h-2 w-2 shrink-0 rounded-full"
+                                                style={{ "background-color": tag().color }}
+                                                aria-hidden="true"
+                                              />
+                                              <span class="spaces-kanban-card-meta min-w-0 max-w-32 truncate text-xs text-dimmed">
+                                                {tag().name}
+                                              </span>
+                                              <Show when={(item().tags?.length ?? 0) > 1}>
+                                                <span class="spaces-kanban-card-meta text-xs text-dimmed">+{item().tags!.length - 1}</span>
+                                              </Show>
+                                            </span>
+                                          )}
                                         </Show>
                                         <AssigneeAvatars
                                           assignees={item().assignees ?? []}
@@ -1794,10 +1823,10 @@ export default function KanbanBoard(props: Props) {
                                         />
                                         <Show when={isInactiveTask(item())}>
                                           <span
-                                            class="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
+                                            class="inline-flex items-center gap-1 text-xs text-amber-800 dark:text-amber-300"
                                             title={t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
                                           >
-                                            <i class="ti ti-clock-pause text-[10px]" aria-hidden="true" />
+                                            <i class="ti ti-clock-pause text-xs" aria-hidden="true" />
                                             {t.inactive}
                                           </span>
                                         </Show>
@@ -1873,10 +1902,10 @@ export default function KanbanBoard(props: Props) {
           </For>
 
           <Show when={showWormholes()}>
-            <section class="flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] border border-[var(--ui-border-strong)] bg-[var(--ui-surface-subtle)] p-1">
-              <header class="flex items-center gap-2 px-1.5 py-1.5">
+            <section class="spaces-kanban-column flex h-full shrink-0 flex-col">
+              <header class="flex h-10 items-center gap-2 pl-1.5 pr-1">
                 <i class="ti ti-arrow-bounce shrink-0 text-sm text-dimmed" />
-                <h3 class="flex-1 truncate text-xs font-medium">{t.wormholes}</h3>
+                <h3 class="min-w-0 flex-1 truncate text-sm font-semibold">{t.wormholes}</h3>
                 <Tooltip.Anchor content={t.wormholesHelp}>
                   <IconButton label={t.aboutWormholes} size="xs" class="h-5 w-5">
                     <i class="ti ti-info-circle text-xs" />

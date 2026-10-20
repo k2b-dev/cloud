@@ -3,9 +3,12 @@ import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } 
 import { appApproval } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { sql } from "bun";
+import { decodeJwt, generateKeyPair } from "jose";
+import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate/core/app-approval";
 import { cleanupTerminalLogins, createIdentityOAuthDeviceApprovalRoutes, terminalLogins } from "./identity-oauth-device-approval";
+import { createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
 
 const previousBroker = process.env.CLOUD_OAUTH_BROKER_SECRET;
 beforeAll(() => {
@@ -241,6 +244,7 @@ databaseSuite()("Core terminal authorization bridge", () => {
       const id = await f.authorization();
       expect((await request(createIdentityOAuthDeviceApprovalRoutes(), input(id, f.clientId, f.uid))).status).toBe(200);
       const decided = await sql.begin(async (tx) => {
+        const [user] = await tx<{ auth_epoch: string }[]>`SELECT auth_epoch::text FROM auth.users WHERE id=${f.userId}::uuid`;
         // The transaction's now() is fixed here, as when a decision waits on the device lock.
         await tx`SELECT now()`;
         await sql`UPDATE oauth.device_authorizations SET expires_at=clock_timestamp()+interval '100 milliseconds' WHERE id=${id}::uuid`;
@@ -248,13 +252,118 @@ databaseSuite()("Core terminal authorization bridge", () => {
         return terminalLogins.decide(tx, {
           deviceAuthorizationId: id,
           clientId: f.clientId,
-          user: { id: f.userId, uid: f.uid, provider: "local", profile: "user" },
+          user: { id: f.userId, uid: f.uid, provider: "local", profile: "user", auth_epoch: user!.auth_epoch },
           decision: "approve",
         });
       });
       expect(decided).toBe(false);
       const [grant] = await sql`SELECT status,user_id FROM oauth.device_authorizations WHERE id=${id}::uuid`;
       expect(grant).toMatchObject({ status: "pending", user_id: null });
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  test.each(["approve", "deny"] as const)("signed %s and the terminal hook refuse a stale login epoch", async (decision) => {
+    const f = await fixture();
+    try {
+      await sql`UPDATE auth.users SET auth_epoch=3 WHERE id=${f.userId}::uuid`;
+      const id = await f.authorization();
+      expect((await request(createIdentityOAuthDeviceApprovalRoutes(), input(id, f.clientId, f.uid))).status).toBe(200);
+      await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${f.userId}::uuid`;
+      await expect(f.decide(id, decision)).rejects.toMatchObject({ status: 409 });
+      const [pending] = await sql`SELECT status,user_id,auth_epoch,decided_at FROM oauth.device_authorizations WHERE id=${id}::uuid`;
+      expect(pending).toMatchObject({ status: "pending", user_id: null, auth_epoch: null, decided_at: null });
+
+      // The signed command rejects before the hook; call it directly to check its own epoch binding.
+      const decided = await sql.begin(async (tx) => {
+        const [user] = await tx<{ auth_epoch: string }[]>`SELECT auth_epoch::text FROM auth.users WHERE id=${f.userId}::uuid`;
+        expect(user!.auth_epoch).toBe("4");
+        return terminalLogins.decide(tx, {
+          deviceAuthorizationId: id,
+          clientId: f.clientId,
+          user: { id: f.userId, uid: f.uid, provider: "local", profile: "user", auth_epoch: user!.auth_epoch },
+          decision,
+        });
+      });
+      expect(decided).toBe(false);
+      const [grant] = await sql`SELECT status,user_id,auth_epoch,decided_at FROM oauth.device_authorizations WHERE id=${id}::uuid`;
+      expect(grant).toEqual(pending);
+      const [login] = await sql`SELECT state,auth_epoch::text FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`;
+      expect(login).toMatchObject({ state: "pending", auth_epoch: "3" });
+      expect(await sql`SELECT 1 FROM audit.events WHERE action='oauth.device.authorize' AND metadata->>'deviceGrantId'=${id}`).toHaveLength(
+        0,
+      );
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  test("signed deny preserves the login epoch required for access_denied polling", async () => {
+    const f = await fixture();
+    try {
+      await sql`UPDATE auth.users SET auth_epoch=3 WHERE id=${f.userId}::uuid`;
+      const id = await f.authorization();
+      expect((await request(createIdentityOAuthDeviceApprovalRoutes(), input(id, f.clientId, f.uid))).status).toBe(200);
+      expect(await f.decide(id, "deny")).toEqual({ state: "denied" });
+      // Core does not import the OAuth application; assert the poll's denied-row precondition here.
+      const [grant] = await sql`SELECT d.status,d.auth_epoch::text,l.auth_epoch::text AS login_epoch,u.auth_epoch::text AS user_epoch,
+        d.expires_at>now() AS unexpired FROM oauth.device_authorizations d
+        JOIN auth.app_logins l ON l.device_authorization_id=d.id JOIN auth.users u ON u.id=d.user_id
+        WHERE d.id=${id}::uuid`;
+      expect(grant).toMatchObject({ status: "denied", auth_epoch: "3", login_epoch: "3", user_epoch: "3", unexpired: true });
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  test.each(["current", "signed-out"] as const)("a signed approve can be redeemed only at the approving epoch: %s", async (scenario) => {
+    const f = await fixture();
+    const { privateKey } = await generateKeyPair("RS256");
+    const issuance = createIdentityOAuthIssuanceRoutes({
+      authenticate: () => true,
+      issuer: async () => "https://terminal-core.example.test",
+      withActiveSigner: (_purpose, callback) =>
+        sql.begin((db) =>
+          callback(
+            {
+              kid: crypto.randomUUID(),
+              key: privateKey,
+              signUntil: new Date(Date.now() + 60_000),
+              issuer: "https://terminal-core.example.test",
+            },
+            db,
+          ),
+        ),
+    });
+    try {
+      await sql`UPDATE auth.users SET auth_epoch=3 WHERE id=${f.userId}::uuid`;
+      const id = await f.authorization();
+      expect((await request(createIdentityOAuthDeviceApprovalRoutes(), input(id, f.clientId, f.uid))).status).toBe(200);
+      expect(await f.decide(id, "approve")).toEqual({ state: "approved" });
+      if (scenario === "signed-out") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${f.userId}::uuid`;
+      // The OAuth poll consumes an approved row with an epoch and hands Core this nonce.
+      const nonce = crypto.randomUUID();
+      const consumed = await sql`UPDATE oauth.device_authorizations SET status='consumed',authority_nonce=${nonce}::uuid
+        WHERE id=${id}::uuid AND status='approved' AND auth_epoch IS NOT NULL RETURNING id`;
+      expect(consumed).toHaveLength(1);
+      const response = await issuance.request("/oauth/token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tokens: [{ kind: "user_access", grant: { kind: "device_code", deviceAuthorizationId: id, nonce }, expiresIn: 3600 }],
+        }),
+      });
+      const allowed = scenario === "current";
+      expect(response.status).toBe(allowed ? 200 : 403);
+      if (allowed) {
+        const { tokens } = z.object({ tokens: z.array(z.string()).length(1) }).parse(await response.json());
+        expect(decodeJwt(tokens[0]!).auth_epoch).toBe(3);
+      }
+      const [grant] = await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${id}::uuid`;
+      expect(grant.authority_issued_at !== null).toBe(allowed);
+      const [login] = await sql`SELECT state FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`;
+      expect(login.state).toBe(allowed ? "consumed" : "approved");
     } finally {
       await f.cleanup();
     }
@@ -344,6 +453,7 @@ databaseSuite()("Core terminal authorization bridge", () => {
   test("signed approve and deny update exactly the linked grant and both audits atomically", async () => {
     const f = await fixture();
     try {
+      await sql`UPDATE auth.users SET auth_epoch=3 WHERE id=${f.userId}::uuid`;
       const routes = createIdentityOAuthDeviceApprovalRoutes();
       for (const decision of ["approve", "deny"] as const) {
         const id = await f.authorization(),
@@ -363,20 +473,26 @@ databaseSuite()("Core terminal authorization bridge", () => {
           },
         };
         await expect(f.decide(id, decision, rollback)).rejects.toMatchObject({ status: 409 });
-        const [pending] = await sql`SELECT status,user_id FROM oauth.device_authorizations WHERE id=${id}::uuid`;
-        expect(pending).toMatchObject({ status: "pending", user_id: null });
+        const [pending] = await sql`SELECT status,user_id,auth_epoch FROM oauth.device_authorizations WHERE id=${id}::uuid`;
+        expect(pending).toMatchObject({ status: "pending", user_id: null, auth_epoch: null });
         expect(
           await sql`SELECT 1 FROM audit.events WHERE action='oauth.device.authorize' AND metadata->>'deviceGrantId'=${id}`,
         ).toHaveLength(0);
         expect(await f.decide(id, decision)).toEqual({ state: decision === "approve" ? "approved" : "denied" });
-        const [grant] = await sql`SELECT status,user_id,login_lifetime_seconds FROM oauth.device_authorizations WHERE id=${id}::uuid`;
+        const [grant] =
+          await sql`SELECT status,user_id,login_lifetime_seconds,auth_epoch::text FROM oauth.device_authorizations WHERE id=${id}::uuid`;
         expect(grant).toMatchObject({
           status: decision === "approve" ? "approved" : "denied",
           user_id: f.userId,
           login_lifetime_seconds: decision === "approve" ? 3600 : 7200,
+          auth_epoch: "3",
         });
-        const [untouched] = await sql`SELECT status,user_id FROM oauth.device_authorizations WHERE id=${other}::uuid`;
-        expect(untouched).toMatchObject({ status: "pending", user_id: null });
+        const [login] = await sql`SELECT l.auth_epoch::text,u.auth_epoch::text AS user_epoch FROM auth.app_logins l
+          JOIN auth.users u ON u.id=l.user_id WHERE l.device_authorization_id=${id}::uuid`;
+        expect(grant.auth_epoch).toBe(login.auth_epoch);
+        expect(grant.auth_epoch).toBe(login.user_epoch);
+        const [untouched] = await sql`SELECT status,user_id,auth_epoch FROM oauth.device_authorizations WHERE id=${other}::uuid`;
+        expect(untouched).toMatchObject({ status: "pending", user_id: null, auth_epoch: null });
         const events = await sql<
           { action: string; outcome: string; reason: string | null; metadata: unknown }[]
         >`SELECT action,outcome,reason,metadata FROM audit.events WHERE actor_user_id=${f.userId}::uuid AND metadata->>'deviceGrantId'=${id} ORDER BY action`;

@@ -1,7 +1,7 @@
 import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
 import type { AuditActionGroup, AuditOutcome } from "@k2b/cloud/services";
 import { navigateTo } from "@k2b/ssr/nav";
-import { Button, FilterChip, type FilterChipSection, prompts } from "@k2b/ui";
+import { FilterChip, type FilterChipSection, FilterToggle, prompts } from "@k2b/ui";
 import { useAccountsMessages } from "../messages";
 import { actionOptions } from "./audit-labels";
 
@@ -165,33 +165,14 @@ export default function AuditFilters(props: AuditFiltersProps) {
         isActive={props.actionGroup.length > 0}
         defaultValue={[]}
       />
-      <Button
-        size="sm"
-        variant={props.actor ? "primary" : "subtle"}
-        aria-pressed={Boolean(props.actor)}
-        onClick={() => selectEntity("actor")}
-      >
-        <i class="ti ti-user-search" />
-        <span>{messages().actor}</span>
-      </Button>
-      <Button
-        size="sm"
-        variant={props.target ? "primary" : "subtle"}
-        aria-pressed={Boolean(props.target)}
-        onClick={() => selectEntity("target")}
-      >
-        <i class="ti ti-target" />
-        <span>{messages().target}</span>
-      </Button>
-      <Button
-        size="sm"
-        variant={props.serviceAccountId ? "primary" : "subtle"}
-        aria-pressed={Boolean(props.serviceAccountId)}
+      <FilterToggle icon="ti ti-user-search" active={Boolean(props.actor)} onClick={() => selectEntity("actor")} label={messages().actor} />
+      <FilterToggle icon="ti ti-target" active={Boolean(props.target)} onClick={() => selectEntity("target")} label={messages().target} />
+      <FilterToggle
+        icon="ti ti-user-key"
+        active={Boolean(props.serviceAccountId)}
         onClick={selectServiceAccount}
-      >
-        <i class="ti ti-user-key" />
-        <span>{messages().serviceAccount}</span>
-      </Button>
+        label={messages().serviceAccount}
+      />
     </div>
   );
 }

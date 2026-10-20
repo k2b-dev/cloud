@@ -1,12 +1,23 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { redis, sql } from "bun";
+import { Hono } from "hono";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { migrateBrowserSessionCutover } from "../../../../core/src/migrate/core/auth";
 import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";
 import * as settings from "../settings";
-import { session } from "./index";
+import { SessionEpochChangedError, session } from "./index";
 import { createTestSession } from "./session.test-fixture";
+
+const withFrozenTime = async (run: () => Promise<void>) => {
+  const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
+  setSystemTime(clock!.now);
+  try {
+    await run();
+  } finally {
+    setSystemTime();
+  }
+};
 
 // Changes the migration marker: never run against a developer or live database.
 const suite = databaseSuite();
@@ -18,6 +29,33 @@ const fixture = async () => {
 };
 
 suite("JWT-only browser sessions", () => {
+  test("refuses session creation after the approved epoch changes", () =>
+    withFrozenTime(async () => {
+      const f = await fixture();
+      try {
+        const [user] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${f.userId}::uuid`;
+        const authEpoch = Number(user!.auth_epoch);
+        await session.revokeAllForUser(f.userId);
+        let rejected: unknown;
+        const routes = new Hono().post("/login", async (c) => {
+          try {
+            await session.create(c, f.userId, { method: "cloud_login", notify: null, authEpoch });
+            return c.body(null, 204);
+          } catch (error) {
+            rejected = error;
+            return c.body(null, 409);
+          }
+        });
+        const response = await routes.request("/login", { method: "POST" });
+        expect(response.status).toBe(409);
+        expect(rejected).toBeInstanceOf(SessionEpochChangedError);
+        expect(response.headers.has("set-cookie")).toBe(false);
+        expect(await sql`SELECT sid FROM auth.session_families WHERE user_id = ${f.userId}::uuid`).toHaveLength(0);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
   test("retains signing keys atomically for concurrent long sessions without maintenance", async () => {
     const first = await fixture();
     const second = await fixture();

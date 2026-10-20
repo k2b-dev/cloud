@@ -5,6 +5,7 @@ import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
+import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
 import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
 import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
@@ -1255,4 +1256,149 @@ test("the browser saves into a provider through Core's routes: it creates once, 
   expect(stored.get("docs/taken.txt")).toBe("old");
   await expect(save("shared", "q3.txt")).rejects.toMatchObject({ code: "forbidden", status: 403 });
   expect(upstream.filter((path) => path.startsWith("streams"))).toEqual(["streams/actions/file.save/write"]);
+});
+
+// These exact malformed values also run through the app producer; neither boundary may drift.
+describe("policy review and receipt validation", () => {
+  for (const { name, review, valid, policy } of reviewCases())
+    test(`Core review: ${name}`, async () => {
+      const compiled = compileReviewFixture(policy);
+      const capability = { ...entry(), manifest: compiled.manifest, presentation: compiled.presentation };
+      const routes = createCapabilityRoutes({
+        getCapability: async () => capability,
+        authenticate,
+        fetch: async () => Response.json(review),
+      });
+      const response = await routes.request("/capabilities/v1/actions/demo/send/review", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: {} }),
+      });
+      expect(response.status).toBe(valid ? 200 : 502);
+      if (valid) expect(await response.json()).toEqual(review);
+      else expect(await response.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+    });
+  for (const { name, receipt, links, valid } of receiptCases())
+    test(`Core receipt: ${name}`, async () => {
+      const capability = { ...entry(), manifest: compileReviewFixture().manifest };
+      const response = await dispatchCapability({
+        origin: "http",
+        appId: "demo",
+        capabilityId: "send",
+        kind: "actions",
+        request: new Request("https://cloud.example.test/api/capabilities/v1/actions/demo/send", {
+          method: "POST",
+          headers: { "idempotency-key": "fixed-key" },
+        }),
+        input: {},
+        dependencies: {
+          getCapability: async () => capability,
+          fetch: async () => Response.json({ data: {}, receipt, ...(links ? { links } : {}) }),
+        },
+      });
+      expect(response.status).toBe(valid ? 200 : 502);
+      if (!valid) expect(await response.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+    });
+  for (const [receipt, links, valid] of [
+    [{ text: "Queued" }, undefined, true],
+    [{ text: "{missing}" }, undefined, false],
+    [{ text: "Queued", preview: { kind: "page", title: "Page", body: "Text", format: "plain", truncated: true } }, undefined, false],
+    [
+      { text: "Queued", preview: { kind: "page", title: "Page", body: "Text", format: "plain", truncated: true } },
+      [{ rel: "open", href: "/app/demo" }],
+      true,
+    ],
+    [
+      {
+        text: "Queued",
+        preview: {
+          kind: "message",
+          from: { name: "Ops" },
+          to: [{ name: "Lea" }],
+          subject: "Hi",
+          body: "Text",
+          format: "plain",
+          more: { bcc: 2 },
+        },
+      },
+      undefined,
+      false,
+    ],
+    [
+      { text: "Queued", preview: { kind: "message", to: [{ name: "Lea" }], subject: "Hi", body: "Text", format: "plain" } },
+      undefined,
+      true,
+    ],
+  ] as const)
+    test(`Core receipt ${JSON.stringify(receipt)} ${!!links}`, async () => {
+      const capability = { ...entry(), manifest: compileReviewFixture().manifest };
+      const result = await dispatchCapability({
+        origin: "http",
+        appId: "demo",
+        capabilityId: "send",
+        kind: "actions",
+        request: new Request("https://cloud.example.test/api/capabilities/v1/actions/demo/send", {
+          method: "POST",
+          headers: { "idempotency-key": "fixed-key" },
+        }),
+        input: {},
+        dependencies: {
+          getCapability: async () => capability,
+          fetch: async () => Response.json({ data: {}, receipt, ...(links ? { links } : {}) }),
+        },
+      });
+      expect(result.status).toBe(valid ? 200 : 502);
+      if (!valid) expect(await result.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+    });
+  for (const { name, result: wire, valid } of outcomeCheckCases())
+    test(`Core outcome check: ${name}`, async () => {
+      const capability = { ...entry(), manifest: compileReviewFixture().manifest };
+      const result = await dispatchCapability({
+        origin: "http",
+        appId: "demo",
+        capabilityId: "check",
+        kind: "queries",
+        request: new Request("https://cloud.example.test/api/capabilities/v1/queries/demo/check"),
+        input: { id: "one" },
+        dependencies: {
+          getCapability: async () => capability,
+          fetch: async () => Response.json(wire),
+        },
+      });
+      expect(result.status).toBe(valid ? 200 : 502);
+      if (valid) expect(await result.json()).toEqual(wire);
+      else expect(await result.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+    });
+  test("Query results cannot carry receipts", async () => {
+    const result = await dispatchCapability({
+      origin: "http",
+      appId: "demo",
+      capabilityId: "get",
+      kind: "queries",
+      request: new Request("https://cloud.example.test/api/capabilities/v1/queries/demo/get"),
+      input: { id: "one" },
+      dependencies: {
+        getCapability: async () => entry(),
+        fetch: async () => Response.json({ data: { id: "one" }, receipt: { text: "Read" } }),
+      },
+    });
+    expect(result.status).toBe(502);
+    expect(await result.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+  });
+  test("invalid receipts on dispatched non-idempotent Actions keep unknown-outcome handling", async () => {
+    const result = await dispatchCapability({
+      origin: "http",
+      appId: "demo",
+      capabilityId: "rename",
+      kind: "actions",
+      request: new Request("https://cloud.example.test/api/capabilities/v1/actions/demo/rename", { method: "POST" }),
+      input: { id: "one", name: "Two" },
+      dependencies: {
+        getCapability: async () => entry(),
+        fetch: async () => Response.json({ data: { id: "one", name: "Two" }, receipt: { text: "{missing}" } }),
+      },
+    });
+    expect(result.status).toBe(502);
+    expect(await result.json()).toMatchObject({ code: "ACTION_OUTCOME_UNKNOWN" });
+  });
 });

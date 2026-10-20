@@ -131,18 +131,17 @@
 .notebook-sidebar-chip > span {
   max-width: 8rem;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .notebook-sidebar-chip__chevron {
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
 }
-/* A chosen filter and the list header it opened share the app accent tint. */
+/* A chosen filter and the list header it opened share the navigation fill of an active filter chip. */
 .k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]),
 .k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]):not(:disabled):hover,
 .notebook-sidebar-filter {
   color: var(--k2b-app-workspace-active);
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 14%, var(--k2b-surface));
+  background: var(--k2b-app-workspace-selected);
 }
 .notebook-sidebar-filter {
   display: flex;
@@ -160,7 +159,6 @@
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .notebook-sidebar-filter__label > small {
@@ -291,21 +289,32 @@
 }
 /* The personal "Full width" lifts the column: the text fills the reading
    surface. The server renders the attribute from the settings cookie. It
-   applies only from `lg`, where its switches and command exist, so a narrow
-   window never shows wide text that nothing there can switch back. */
-@media (min-width: 64rem) {
+   applies only from a 64 rem app host, where its switch, menu choice and command exist,
+   so a narrow app never shows wide text that nothing there can switch back.
+   The host decides, not the window, so the app beside Cloud's panel column
+   behaves like a window as wide as the app. */
+@container k2b-app-area (min-width: 64rem) {
   .notebook-document-surface[data-full-width] {
     --notebook-measure: 100%;
   }
 }
-/* Below `lg` the note is about as narrow as the column, so "Full width" would
-   change nothing; its switches do not show there. CSS decides, so the detail
-   panel arrives in its final layout. The query is the exact opposite of the
-   one above, so a zoomed window with a fractional width never shows a switch
-   that changes nothing. */
-@media not all and (min-width: 64rem) {
-  .k2b-ui .k2b-switch-field.notebooks-full-width-option {
-    display: none;
+/* The button that hides or shows the navigation sidebar beside the editor
+   and the graph: the sidebar is a column from a 64 rem app host. Below that
+   the workspace head's button opens it as an overlay, so this button only
+   brings a hidden navigation back (from 48 rem). Phones keep the header's
+   menu. */
+.notebooks-navigation-toggle {
+  display: none;
+  flex-shrink: 0;
+}
+@media (min-width: 48rem) {
+  .notebooks-navigation-toggle[data-navigation-hidden] {
+    display: flex;
+  }
+}
+@container k2b-app-area (min-width: 64rem) {
+  .notebooks-navigation-toggle {
+    display: flex;
   }
 }
 .notebook-book-content {
@@ -733,30 +742,11 @@
   background: var(--ui-hover);
 }
 
-.notebooks-overview-note:focus-visible {
-  outline: 2px solid var(--app-accent);
-  outline-offset: 2px;
-}
-
+/* The box; the chip and the app ink come from `k2b-icon-tile` and `app-accent-text` on the same element. */
 .notebooks-overview-note-icon {
-  display: inline-flex;
   width: 2.25rem;
   height: 2.25rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--ui-radius-control);
-  color: var(--app-accent);
-  background: color-mix(in srgb, var(--app-accent) 12%, var(--ui-surface));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.5),
-    inset 0 -1px 1px rgb(0 0 0 / 0.05);
   font-size: 1rem;
-}
-
-.dark .notebooks-overview-note-icon {
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.07),
-    inset 0 -1px 1px rgb(0 0 0 / 0.4);
 }
 
 .notebooks-overview-note-copy {
@@ -1214,33 +1204,25 @@
 
 /* Hover = soft grey background, text colour unchanged. */
 .cm-tooltip-autocomplete > ul > li:hover {
-  background: rgb(244 244 245) !important; /* zinc-100 */
+  background: var(--ui-hover) !important;
   text-decoration: none !important;
-}
-.dark .cm-tooltip-autocomplete > ul > li:hover {
-  background: rgb(39 39 42) !important; /* zinc-800 */
 }
 
-/* Keyboard-selected = blue text, no background. Pairs cleanly with
-   hover (which only paints bg) so a row that's both selected AND
-   hovered shows blue text on grey bg. */
+/* Keyboard-selected = platform action-blue text, no background: it is a
+   control option, not a picked object. Pairs cleanly with hover (which
+   only paints bg) so a row that's both selected AND hovered shows blue
+   text on the hover bg. */
 .cm-tooltip-autocomplete > ul > li[aria-selected] {
-  color: rgb(59 130 246) !important; /* blue-500 */
+  color: var(--k2b-action) !important;
   background: transparent !important;
   text-decoration: none !important;
-}
-.dark .cm-tooltip-autocomplete > ul > li[aria-selected] {
-  color: rgb(96 165 250) !important; /* blue-400 */
 }
 
 /* Selected + hovered = blue text on the hover-bg (so the user can
    still see "this row is also under my cursor" without losing the
    selection indicator). */
 .cm-tooltip-autocomplete > ul > li[aria-selected]:hover {
-  background: rgb(244 244 245) !important;
-}
-.dark .cm-tooltip-autocomplete > ul > li[aria-selected]:hover {
-  background: rgb(39 39 42) !important;
+  background: var(--ui-hover) !important;
 }
 
 .cm-tooltip-autocomplete .cm-slash-icon {
@@ -1473,12 +1455,20 @@
 
 /* The preview switch sits inline beside the restore action instead of filling the header row. On phones the
    actions take a row of their own, the switch at the start and the restore action at the end, and the switch drops
-   its icons so both fit one row in every language. */
+   its icons so both fit one row in every language. A locked note's label and copy action stay together and move
+   below the switch when a language needs more than the row. */
 .notebooks-version-actions {
   display: flex;
   width: 100%;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.notebooks-version-locked {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 
@@ -2152,7 +2142,7 @@
   white-space: nowrap;
 }
 .k2b-ui .notebook-graph__list .k2b-data-table__row[data-selected="true"] {
-  background: var(--notebook-graph-current-chip);
+  background: var(--k2b-row-selected);
 }
 .notebook-graph__list-title {
   color: inherit;
@@ -2428,9 +2418,9 @@
 .notebook-graph__row-meta .ti {
   font-size: 0.8125rem;
 }
-/* Only the current note takes the app accent. */
+/* Only the current note takes the app row fill. */
 .notebook-graph__row[data-current] {
-  background: var(--notebook-graph-current-chip);
+  background: var(--k2b-row-selected);
 }
 .notebook-graph__row[data-current] .notebook-graph__row-title {
   color: var(--notebook-graph-current-ink);

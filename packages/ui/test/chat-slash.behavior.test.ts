@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { batch, createComponent, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
-import type { ChatCommand, ChatCommandResult, ChatComposerProps } from "../src/chat/ChatComposer";
+import type { ChatCommand, ChatCommandOpenResult, ChatCommandResult, ChatComposerProps } from "../src/chat/ChatComposer";
 import type { ChatMention, ChatSubmitInput } from "../src/chat/types";
 import { createDomTestHarness } from "./dom";
 
@@ -261,6 +261,9 @@ const slash = async (options: Partial<ChatComposerProps> = {}, locale = "en") =>
         ...options,
         get commands() {
           return options.commands;
+        },
+        get commandSections() {
+          return options.commandSections;
         },
         get state() {
           return options.state;
@@ -1825,4 +1828,374 @@ test("a synchronous file chooser failure restores the token and reaches onError"
   await flush();
   expect(h.value()).toBe("/attach");
   expect(h.errors).toEqual([error]);
+});
+
+test("a pending last section ends with three placeholders in the overview, one while searching, and holds Nothing found", async () => {
+  const [pending, setPending] = createSignal(true);
+  const [apps, setApps] = createSignal<ChatCommand[]>([]);
+  const h = await slash({
+    value: "/",
+    get commandSections() {
+      return [
+        { id: "chat", label: "This chat" },
+        { id: "apps", label: "Open in apps", pending: pending() },
+      ];
+    },
+    get commands() {
+      return [{ name: "compact", section: "chat", description: "Summarize" }, ...apps()];
+    },
+  });
+  const groups = () => [...h.root.querySelectorAll(".k2b-chat-composer__command-group")];
+  const placeholders = () => groups().at(-1)!.querySelectorAll(".k2b-chat-composer__command-placeholder").length;
+  expect(groups().map((group) => group.querySelector(".k2b-chat-composer__command-heading")?.textContent)).toEqual([
+    "This chat",
+    "Open in apps",
+  ]);
+  expect(placeholders()).toBe(3);
+  expect(groups().at(-1)!.querySelector(".k2b-chat-composer__command-heading .k2b-spin")).not.toBeNull();
+  // Placeholders are no options: the keyboard never lands on them.
+  expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["compact"]);
+  h.type("/xylo");
+  await flush();
+  expect(placeholders()).toBe(1);
+  expect(h.root.textContent).not.toContain("Nothing found");
+  batch(() => {
+    setApps([{ name: "xylophone", section: "apps", description: "Play" }]);
+    setPending(false);
+  });
+  await flush();
+  expect(placeholders()).toBe(0);
+  expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["xylophone"]);
+});
+
+test("a fixedWhileOpen section keeps the rows it had when / opened; late rows wait for the next /, leaving rows go", async () => {
+  const [recent, setRecent] = createSignal<ChatCommand[]>([]);
+  const h = await slash({
+    value: "/",
+    commandSections: [
+      { id: "recent", label: "Recent", overviewOnly: true, fixedWhileOpen: true },
+      { id: "chat", label: "This chat" },
+    ],
+    get commands() {
+      return [...recent(), { name: "compact", section: "chat", description: "Summarize" }];
+    },
+  });
+  const headings = () => [...h.root.querySelectorAll(".k2b-chat-composer__command-heading")].map((heading) => heading.textContent);
+  const labels = () => h.rows().map((row) => row.querySelector("strong")?.textContent);
+  expect(headings()).toEqual(["This chat"]);
+  setRecent([{ name: "Q3 plan", section: "recent", description: "Note · Sales" }]);
+  await flush();
+  // Arrived while the list is open: nothing is added above the rows already shown.
+  expect(headings()).toEqual(["This chat"]);
+  expect(labels()).toEqual(["compact"]);
+  h.type("Then /");
+  await flush();
+  expect(headings()).toEqual(["Recent", "This chat"]);
+  expect(labels()).toEqual(["Q3 plan", "compact"]);
+  // Overview only: typing leaves it out, even when its row matches.
+  h.type("Then /q");
+  await flush();
+  expect(headings()).not.toContain("Recent");
+  expect(labels()).not.toContain("Q3 plan");
+  h.type("Then /");
+  await flush();
+  setRecent([]);
+  await flush();
+  expect(labels()).toEqual(["compact"]);
+});
+
+test("an open row keeps the token and the list while it runs, then removes the token in one undo step", async () => {
+  let resolve!: () => void;
+  let openSignal: AbortSignal | undefined;
+  const drafts: { value: string; mentions: readonly ChatMention[] }[] = [];
+  let pasted = 0;
+  const h = await slash({
+    value: "Price /tas",
+    onPaste: () => {
+      pasted++;
+    },
+    commands: [
+      {
+        name: "task",
+        label: "New task",
+        description: "Spaces · Create a task",
+        open: (draft, signal) => {
+          drafts.push(draft);
+          openSignal = signal;
+          return new Promise<void>((done) => {
+            resolve = done;
+          });
+        },
+      },
+    ],
+  });
+  const detail = () => h.rows()[0]!.querySelector(".k2b-chat-composer__command-detail")!;
+  // One typed step, so there is something to undo.
+  h.type("Price /task");
+  await flush();
+  h.key("Enter");
+  await flush();
+  expect(drafts).toEqual([{ value: "Price ", mentions: [] }]);
+  expect(h.value()).toBe("Price /task");
+  expect(h.rows()).toHaveLength(1);
+  expect(h.rows()[0]!.getAttribute("aria-busy")).toBe("true");
+  expect(detail().getAttribute("data-state")).toBe("busy");
+  // The description keeps its place, hidden, so the row's height does not change.
+  expect(detail().children[0]!.textContent).toBe("Spaces · Create a task");
+  expect(detail().children[1]!.textContent).toBe("Opening …");
+  // The field stays enabled and focused, only read-only: a disabled field would lose focus and close the list.
+  expect(h.input.disabled).toBe(false);
+  expect(h.input.readOnly).toBe(true);
+  // Choosing again or undoing while it runs does nothing, so the saved draft stays the visible one.
+  h.key("Enter");
+  h.key("z", { ctrlKey: true });
+  h.input.dispatchEvent(new Event("paste", { bubbles: true, cancelable: true }));
+  await flush();
+  expect(drafts).toHaveLength(1);
+  expect(pasted).toBe(0);
+  expect(h.value()).toBe("Price /task");
+  resolve();
+  await flush();
+  expect(h.input.readOnly).toBe(false);
+  expect(h.value()).toBe("Price ");
+  // A successful opening leaves, so its signal stays quiet.
+  expect(openSignal?.aborted).toBe(false);
+  expect(h.rows()).toHaveLength(0);
+  h.key("z", { ctrlKey: true });
+  await flush();
+  expect(h.value()).toBe("Price /task");
+});
+
+test("an open row that fails says why in its place, keeps the list and the draft, and tries again when chosen", async () => {
+  let calls = 0;
+  const signals: AbortSignal[] = [];
+  const h = await slash(
+    {
+      value: "/task",
+      commands: [
+        {
+          name: "task",
+          label: "Neue Aufgabe",
+          description: "Spaces · Aufgabe anlegen",
+          open: async (_draft, signal) => {
+            signals.push(signal);
+            return ++calls === 1 ? { failed: "Spaces ist gerade nicht erreichbar." } : "cancelled";
+          },
+        },
+      ],
+    },
+    "de",
+  );
+  h.key("Enter");
+  await flush();
+  const detail = () => h.rows()[0]!.querySelector(".k2b-chat-composer__command-detail")!;
+  expect(h.value()).toBe("/task");
+  expect(h.rows()).toHaveLength(1);
+  expect(detail().getAttribute("data-state")).toBe("failed");
+  expect(detail().children[0]!.textContent).toBe("Spaces ist gerade nicht erreichbar.");
+  expect(detail().children[1]!.textContent).toBe("Wird geöffnet …");
+  // Announced once, not shown as a status line: the row already says it.
+  expect(h.status().querySelector('[data-tone="error"]')).toBeNull();
+  // The opening ended without leaving, so its signal tells the opener to put the token back into what it saved.
+  expect(signals[0]?.aborted).toBe(true);
+  h.key("Enter");
+  await flush();
+  expect(calls).toBe(2);
+  expect(detail().getAttribute("data-state")).toBeNull();
+  expect(detail().children[0]!.textContent).toBe("Spaces · Aufgabe anlegen");
+  expect(h.value()).toBe("/task");
+});
+
+test("an open row that rejects keeps the token, closes the list and names the reason in the status line", async () => {
+  const h = await slash({
+    value: "/task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: async () => {
+          throw new Error("The draft changed elsewhere.");
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  expect(h.value()).toBe("/task");
+  expect(h.rows()).toHaveLength(0);
+  expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("The draft changed elsewhere.");
+});
+
+test("an open row's failure after its draft moved goes to the status line", async () => {
+  let resolve!: (result: { failed: string }) => void;
+  let followDraft!: () => void;
+  const h = await slash({
+    value: "/task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: (_draft, _abort, follow) => {
+          followDraft = follow;
+          return new Promise((done) => {
+            resolve = done;
+          });
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  followDraft();
+  h.setDraftKey("second");
+  resolve({ failed: "Spaces is not reachable right now." });
+  await flush();
+  expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("Spaces is not reachable right now.");
+});
+
+test("Escape while an open row runs cancels it: the signal aborts, editing returns, and a late success changes nothing", async () => {
+  let resolve!: () => void;
+  let signal: AbortSignal | undefined;
+  const h = await slash({
+    value: "Plan /task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: (_draft, abort) => {
+          signal = abort;
+          return new Promise<void>((done) => {
+            resolve = done;
+          });
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  expect(h.input.readOnly).toBe(true);
+  expect(signal?.aborted).toBe(false);
+  h.key("Escape");
+  await flush();
+  expect(signal?.aborted).toBe(true);
+  expect(h.rows()).toHaveLength(0);
+  expect(h.input.readOnly).toBe(false);
+  expect(h.value()).toBe("Plan /task");
+  resolve();
+  await flush();
+  // The person backed out: the token stays where they left it, with no status line.
+  expect(h.value()).toBe("Plan /task");
+  expect(h.status().querySelector('[data-tone="error"]')).toBeNull();
+});
+
+test("an open row whose draft moved to a new key shows its busy line in the status line, and Escape still cancels it", async () => {
+  let signal: AbortSignal | undefined;
+  let followDraft!: () => void;
+  const h = await slash({
+    value: "Plan /task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: (_draft, abort, follow) => {
+          signal = abort;
+          followDraft = follow;
+          return new Promise<void>(() => {});
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  // The opener saved into a chat it created: the composer now shows that chat's draft, without the token.
+  followDraft();
+  h.setDraftKey("created");
+  await flush();
+  expect(signal?.aborted).toBe(false);
+  expect(h.rows()).toHaveLength(0);
+  expect(h.status().querySelector('[data-tone="busy"]')?.textContent).toBe("Opening …");
+  h.key("Escape");
+  await flush();
+  expect(signal?.aborted).toBe(true);
+  expect(h.input.readOnly).toBe(false);
+  expect(h.status().querySelector('[data-tone="busy"]')).toBeNull();
+});
+
+test.each(["failed", "success", "rejection"] as const)(
+  "a draft key change the opener did not announce cancels the open row at once (%s)",
+  async (outcome) => {
+    let resolve!: (result: ChatCommandOpenResult) => void;
+    let reject!: (error: Error) => void;
+    let signal: AbortSignal | undefined;
+    const h = await slash({
+      value: "Plan /task",
+      commands: [
+        {
+          name: "task",
+          description: "Opens Spaces",
+          open: (_draft, abort) => {
+            signal = abort;
+            return new Promise((done, fail) => {
+              resolve = done;
+              reject = fail;
+            });
+          },
+        },
+      ],
+    });
+    h.key("Enter");
+    await flush();
+    expect(h.input.readOnly).toBe(true);
+    expect(signal?.aborted).toBe(false);
+    batch(() => {
+      h.setValue("Other /task");
+      h.setDraftKey("other");
+    });
+    await flush();
+    expect(signal?.aborted).toBe(true);
+    expect(h.input.readOnly).toBe(false);
+    expect(h.rows()).toHaveLength(0);
+    expect(h.status().querySelector("[data-tone]")).toBeNull();
+    // The destination even contains the same token: a late success must not remove it.
+    if (outcome === "rejection") reject(new Error("x"));
+    else resolve(outcome === "failed" ? { failed: "x" } : undefined);
+    await flush();
+    expect(h.value()).toBe("Other /task");
+    expect(h.rows()).toHaveLength(0);
+    expect(h.status().querySelector("[data-tone]")).toBeNull();
+    expect(h.errors).toEqual([]);
+  },
+);
+
+test("after a followed draft move, a second unannounced draft key change cancels the open row", async () => {
+  let followDraft!: () => void;
+  let signal: AbortSignal | undefined;
+  const h = await slash({
+    value: "Plan /task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: (_draft, abort, follow) => {
+          signal = abort;
+          followDraft = follow;
+          return new Promise<void>(() => {});
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  followDraft();
+  h.setDraftKey("created");
+  await flush();
+  expect(signal?.aborted).toBe(false);
+  expect(h.input.readOnly).toBe(true);
+  expect(h.status().querySelector('[data-tone="busy"]')?.textContent).toBe("Opening …");
+  h.setDraftKey("other");
+  await flush();
+  expect(signal?.aborted).toBe(true);
+  expect(h.input.readOnly).toBe(false);
+  expect(h.rows()).toHaveLength(0);
+  expect(h.status().querySelector("[data-tone]")).toBeNull();
 });

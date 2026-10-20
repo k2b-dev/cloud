@@ -58,6 +58,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     endsAt: null,
     allDay: false,
     deadline: null,
+    deadlineAllDay: false,
     estimatedDurationMinutes: null,
     activeBlockerCount: 0,
     priority: null,
@@ -230,6 +231,27 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
   });
 
   describe("Spaces workspace SSR state", () => {
+    test.each(["list", "table", "kanban", "calendar"] as const)("resolves %s from the request before rendering head tabs", async (view) => {
+      const state = await loadSpacesWorkspaceState({
+        user: { id: USER_ID, roles: ["user"] },
+        spaceId: SPACE_ID,
+        spaceShortId: SPACE_SHORT_ID,
+        href: `/app/spaces/${SPACE_SHORT_ID}?view=${view}`,
+      });
+      expect(state).toMatchObject({ kind: "ok", currentView: view });
+    });
+
+    test("resolves a remembered view on the server when the URL has no override", async () => {
+      const state = await loadSpacesWorkspaceState({
+        user: { id: USER_ID, roles: ["user"] },
+        spaceId: SPACE_ID,
+        spaceShortId: SPACE_SHORT_ID,
+        href: `/app/spaces/${SPACE_SHORT_ID}`,
+        cookieHeader: `settings-app-spaces=${encodeURIComponent(JSON.stringify({ spaces: { [SPACE_SHORT_ID]: { view: "table" } } }))}`,
+      });
+      expect(state).toMatchObject({ kind: "ok", currentView: "table", query: "" });
+    });
+
     test("captures the live cursor after authorization and before snapshot queries", async () => {
       const state = await loadSpacesWorkspaceState({
         user: { id: USER_ID, roles: ["user"] },

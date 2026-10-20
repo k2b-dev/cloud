@@ -1,5 +1,6 @@
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
-import { logger, superviseRuntimeTask } from "@k2b/cloud/services";
+import { getGeoIp } from "@k2b/cloud/server/request-context";
+import { deviceOffersApproval, logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 /**
@@ -31,10 +32,13 @@ import { migrate as migrateAnnouncements } from "./migrate/core/announcements";
 import { migrate as migrateAppApproval } from "./migrate/core/app-approval";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
+import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
+import { migrate as migrateGeoIp } from "./migrate/core/geoip";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
 import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
+import { migrate as migratePanelContextConsent } from "./migrate/core/panel-context-consent";
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
@@ -102,10 +106,13 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "auth", run: migrateAuth },
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
+    { name: "panel-context-consent", run: migratePanelContextConsent },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
     { name: "app-approval", run: migrateAppApproval },
     { name: "pwa", run: migratePwa },
+    { name: "device-trust", run: migrateDeviceTrust },
     { name: "audit", run: migrateAudit },
+    { name: "geoip", run: migrateGeoIp },
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
@@ -128,6 +135,7 @@ export const startCoreServices = async (
   notificationSender: CoreNotificationSender,
   aiNotifications: ReturnType<typeof createAiNotificationService>,
 ): Promise<void> => {
+  void getGeoIp().refresh();
   outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();
@@ -143,7 +151,14 @@ export const startCoreServices = async (
       onApprovalRequested: async ({ approvalId }) => {
         const [notice] = await Promise.allSettled([
           aiNotifications.notifyApprovalWaiting(approvalId),
-          appApproval.wakeForAction(approvalId),
+          deviceOffersApproval(approvalId)
+            .then((offered) => (offered ? appApproval.wakeForAction(approvalId) : undefined))
+            .catch((error) => {
+              logger("core:app-approval").warn("App action push eligibility check failed", {
+                approvalId,
+                error: error instanceof Error ? error.message : "Eligibility unavailable",
+              });
+            }),
         ]);
         if (notice.status === "rejected") throw notice.reason;
       },

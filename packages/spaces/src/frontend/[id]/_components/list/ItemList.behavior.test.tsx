@@ -26,6 +26,7 @@ const task = (id: string, title: string, columnId: string, rank: string): SpaceI
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,

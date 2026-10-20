@@ -32,6 +32,23 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   // The target account's epoch at start: signing out everywhere voids pairings that are still open.
   await db`ALTER TABLE auth.app_pairings ADD COLUMN IF NOT EXISTS auth_epoch BIGINT`.simple();
   await db`CREATE INDEX IF NOT EXISTS app_pairings_expiry ON auth.app_pairings(expires_at)`.simple();
+  await db`CREATE TABLE IF NOT EXISTS auth.app_device_changes (
+    id UUID PRIMARY KEY, issuer TEXT NOT NULL, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK(kind IN ('pair','revoke')),
+    pairing_id UUID REFERENCES auth.app_pairings(id) ON DELETE CASCADE,
+    device_id UUID REFERENCES auth.app_devices(id) ON DELETE CASCADE,
+    end_sessions BOOLEAN NOT NULL, requested_by_sid UUID NOT NULL, auth_epoch BIGINT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','approved','denied','cancelled')),
+    decided_by UUID REFERENCES auth.app_devices(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), expires_at TIMESTAMPTZ NOT NULL,
+    CHECK ((kind='pair' AND pairing_id IS NOT NULL AND device_id IS NULL)
+      OR (kind='revoke' AND pairing_id IS NULL AND device_id IS NOT NULL))
+  )`.simple();
+  await db`CREATE UNIQUE INDEX IF NOT EXISTS app_device_changes_pairing ON auth.app_device_changes(pairing_id) WHERE pairing_id IS NOT NULL`.simple();
+  await db`CREATE INDEX IF NOT EXISTS app_device_changes_pending ON auth.app_device_changes(issuer,user_id,expires_at)`.simple();
+  await db`CREATE INDEX IF NOT EXISTS app_device_changes_expiry ON auth.app_device_changes(expires_at)`.simple();
+  await db`ALTER TABLE auth.session_families ADD COLUMN IF NOT EXISTS app_device_id UUID REFERENCES auth.app_devices(id) ON DELETE SET NULL`.simple();
+  await db`CREATE INDEX IF NOT EXISTS session_families_app_device ON auth.session_families(app_device_id) WHERE app_device_id IS NOT NULL AND revoked_at IS NULL`.simple();
   await db`CREATE TABLE IF NOT EXISTS auth.app_logins (
     id UUID PRIMARY KEY, issuer TEXT NOT NULL, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     auth_epoch BIGINT, category TEXT NOT NULL, browser_hash TEXT NOT NULL, challenge TEXT NOT NULL,
@@ -44,7 +61,11 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS client_id TEXT`.simple();
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS scopes TEXT[]`.simple();
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS lifetime_seconds INTEGER`.simple();
+  await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS context JSONB`.simple();
   await db`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='auth.app_logins'::regclass AND conname='app_logins_context_bytes') THEN
+      ALTER TABLE auth.app_logins ADD CONSTRAINT app_logins_context_bytes CHECK (context IS NULL OR octet_length(context::text) <= 512);
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='auth.app_logins'::regclass AND conname='app_logins_kind') THEN
       ALTER TABLE auth.app_logins ADD CONSTRAINT app_logins_kind CHECK (kind IN ('browser','terminal'));
     END IF;

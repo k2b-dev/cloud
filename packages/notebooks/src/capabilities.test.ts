@@ -9,6 +9,7 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { audit } from "@k2b/cloud/services";
 import {
   decodeNotebookCapabilityCursor,
@@ -1078,7 +1079,7 @@ describe("notebooks capabilities", () => {
         display: "block",
       },
     ]);
-    expect(result.data.approvalScope).toBe(`notebook:${notebook.shortId}`);
+    expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
   });
 
   test("returns a valid notebook scope from every rememberable action review", async () => {
@@ -1110,7 +1111,7 @@ describe("notebooks capabilities", () => {
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      expect(result.data.approvalScope).toBe(`notebook:${notebook.shortId}`);
+      expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
       const parsed = CapabilityActionReviewSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
     }
@@ -1207,4 +1208,12 @@ test("move capability preserves parent-only messages and localizes placement rev
     const result = await operation.run(input, { ...userContext, locale: "de" });
     expect(result.ok && result.data.summary).toBe("„Knowledge index“ als 1. Notiz auf der obersten Ebene des Notizbuchs eingeordnet.");
   }
+});
+
+test("panel place refs select the owning app's public resource reader", () => {
+  const manifest = compileCapabilityManifest("notebooks", notebooksCapabilities);
+  const ref = { type: "notebooks.notebook", id: notebook.shortId };
+  const reader = resolveCapabilityResourceReader(manifest, ref);
+  expect(reader?.localId).toBe("notebook.read");
+  expect(notebooksCapabilities.queries["notebook.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
 });

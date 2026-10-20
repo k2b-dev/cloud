@@ -1,8 +1,10 @@
 import { type AuthContext, auth, jsonResponse, rateLimit, v } from "@k2b/cloud/server";
-import { accounts, get, isAccountCategoryAllowed, logger } from "@k2b/cloud/services";
+import { accounts, get, isAccountCategoryAllowed, logger, oauthTokens } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
+import { getIdentityRuntimeConfig } from "@k2b/cloud/services/identity/runtime-config";
 import * as settings from "@k2b/cloud/services/settings";
 import { createLoginRedirectUrl, publicCloudOrigin } from "@k2b/cloud/shared";
+import { sql } from "bun";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute, validator as openApiValidator } from "hono-openapi";
@@ -19,6 +21,7 @@ import {
 import type { DevicePollResult } from "./service/device";
 import { oauth } from "./service/oauth";
 import { DEFAULT_LOGIN_LIFETIME_SECONDS } from "./service/refresh-tokens";
+import { BrowserSignInRequiredError } from "./service/sign-in";
 import { OAuthDeviceApprovalUnavailableError, type OAuthUserGrantReference, startOAuthDeviceApproval } from "./service/token-authority";
 
 const log = logger("oauth");
@@ -335,10 +338,11 @@ const issueUserGrant = async (
   grant: {
     client: OAuthClient;
     userId: string;
+    authEpoch: number;
     scopes: OAuthScope[];
     audiences: string[];
     resource: string | null;
-    authorityGrant: OAuthUserGrantReference;
+    authorityGrant: Exclude<OAuthUserGrantReference, { kind: "refresh_token" }>;
     grantName: "Authorization code" | "Device code";
     loginLifetimeSeconds: number;
   },
@@ -366,6 +370,7 @@ const issueUserGrant = async (
 
     const tokens = await oauth.tokens.createTokens({
       userId: grant.userId,
+      authEpoch: grant.authEpoch,
       client,
       scopes: grant.scopes,
       audiences: grant.audiences,
@@ -396,6 +401,10 @@ const issueUserGrant = async (
   }
 };
 
+// If-None-Match uses weak comparison, including lists and the wildcard.
+const matchesEtag = (header: string | undefined, etag: string): boolean =>
+  header?.trim() === "*" || (header?.match(/(?:W\/)?"[^"]*"/g) ?? []).some((tag) => tag.replace(/^W\//, "") === etag.replace(/^W\//, ""));
+
 /** OAuth 2.0 / OpenID Connect routes mounted at root-level standard paths. */
 const app = new Hono<AuthContext>()
   .get("/.well-known/openid-configuration", async (c) => {
@@ -412,7 +421,7 @@ const app = new Hono<AuthContext>()
       const etag = `"${new Bun.CryptoHasher("sha256").update(JSON.stringify(jwks)).digest("hex").slice(0, 32)}"`;
       c.header("Cache-Control", "public, max-age=300, must-revalidate");
       c.header("ETag", etag);
-      if (c.req.header("if-none-match") === etag) return c.body(null, 304);
+      if (matchesEtag(c.req.header("if-none-match"), etag)) return c.body(null, 304);
       return c.json(jwks);
     } catch (err) {
       log.error("Failed to get JWKS", {
@@ -583,13 +592,13 @@ const app = new Hono<AuthContext>()
         return redirectAuthorizationError(c, redirect_uri, issuer, state, "access_denied", "You do not have access to this application");
       }
 
-      if (client.registrationKind === "dynamic") {
+      if (client.registrationKind === "dynamic" || client.registrationKind === "first_party") {
         const consentRequest = await oauth.consent.create({
           userId: user.id,
           clientId: client.clientId,
           redirectUri: redirect_uri,
           scopes,
-          resource: query.resource!,
+          resource: query.resource ?? null,
           state,
           nonce,
           codeChallenge: code_challenge!,
@@ -598,16 +607,32 @@ const app = new Hono<AuthContext>()
         return c.redirect(`/oauth/consent?request=${encodeURIComponent(consentRequest)}`);
       }
 
-      const code = await oauth.codes.create({
-        clientId: client.clientId,
-        userId: user.id,
-        redirectUri: redirect_uri,
-        scopes,
-        resource: query.resource,
-        nonce,
-        codeChallenge: code_challenge,
-        codeChallengeMethod: code_challenge_method,
-      });
+      const createCode = (db?: typeof sql) =>
+        oauth.codes.create({
+          db,
+          browserSignIn: { userId: user.id, sid: authenticatedSession.data.sid },
+          clientId: client.clientId,
+          userId: user.id,
+          authEpoch: authenticatedSession.data.authEpoch,
+          redirectUri: redirect_uri,
+          scopes,
+          resource: query.resource,
+          nonce,
+          codeChallenge: code_challenge,
+          codeChallengeMethod: code_challenge_method,
+        });
+
+      let code: string;
+      try {
+        code = scopes.includes("offline_access") ? await sql.begin((tx) => createCode(tx)) : await createCode();
+      } catch (error) {
+        if (!(error instanceof BrowserSignInRequiredError)) throw error;
+        if (error.code === "FORBIDDEN")
+          return redirectAuthorizationError(c, redirect_uri, issuer, state, "access_denied", "You do not have access to this application");
+        const returnTo = new URL(c.req.url);
+        returnTo.searchParams.set("reauthenticate", "1");
+        return c.redirect(createLoginRedirectUrl(returnTo.toString()));
+      }
 
       return c.redirect(redirectAuthorizationResult(redirect_uri, issuer, state, { code }));
     },
@@ -889,6 +914,7 @@ const app = new Hono<AuthContext>()
         return issueUserGrant(c, {
           client,
           userId: result.userId,
+          authEpoch: result.authEpoch,
           scopes: result.scopes,
           audiences: result.audiences,
           resource: null,
@@ -927,6 +953,7 @@ const app = new Hono<AuthContext>()
       return issueUserGrant(c, {
         client: result.client,
         userId: result.userId,
+        authEpoch: result.authEpoch,
         scopes: result.scopes,
         audiences: result.audiences,
         resource: result.resource,
@@ -1020,18 +1047,15 @@ const app = new Hono<AuthContext>()
         const audiences = Array.isArray(payload.aud) ? payload.aud : typeof payload.aud === "string" ? [payload.aud] : [];
         if (!audiences.includes(payload.client_id)) return c.json({ message: "Invalid token audience" }, 401);
 
-        const client = await oauth.clients.getByClientId({ clientId: payload.client_id });
-        if (!client) return c.json({ message: "Invalid token" }, 401);
+        const { groupsAdmin } = await getIdentityRuntimeConfig();
+        const actor = await oauthTokens.resolveOAuthTokenActor(payload, groupsAdmin);
+        if (actor?.kind !== "user" || actor.user.id !== payload.id) return c.json({ message: "Invalid token" }, 401);
 
         const userInfo = await oauth.tokens.createUserInfo({
-          userId: payload.id,
+          user: actor.user,
           subject: payload.sub,
           scopes,
         });
-
-        if (!userInfo) {
-          return c.json({ message: "User not found" }, 401);
-        }
 
         return c.json(userInfo);
       } catch (err) {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
 import { resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
+import { capabilityReviewView } from "../_internal/capability-reviews";
 import {
   CAPABILITY_APPROVAL_REASON_FIELD,
   CAPABILITY_APPROVAL_REASON_MAX_CHARS,
@@ -13,8 +14,9 @@ import {
 import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
 import {
   type CapabilityActionManifest,
-  type CapabilityActionReview,
+  type CapabilityActionReviewData,
   type CapabilityQueryManifest,
+  capabilityActionPolicy,
   cloudResourceRefAppId,
   LinkedCloudResourceReferenceSchema,
   resolveCapabilityResourceReader,
@@ -756,9 +758,14 @@ export const createLoadedAiCapabilityTools = (input: {
   actor: RequestActor;
   /** Locale of the turn; the approval text a person reads is worded in it. */
   locale?: string;
-  review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
-  authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
-  onReview?: (callId: string, review: CapabilityActionReview) => void;
+  review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReviewData | null>;
+  authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
+  onReview?: (
+    callId: string,
+    review: CapabilityActionReviewData,
+    approval: CapabilityActionManifest["approval"],
+    entry: AiCapabilityCatalogEntry,
+  ) => void | Promise<void>;
   execute: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
 }): AiRuntimeTool[] => {
   const byName = new Map(input.catalog.map((entry) => [entry.name, entry]));
@@ -769,7 +776,7 @@ export const createLoadedAiCapabilityTools = (input: {
       defineAiTool({
         name: entry.providerName,
         canonicalName: entry.name,
-        description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
+        description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL. Never retry IDEMPOTENCY_UNCERTAIN or IDEMPOTENCY_IN_PROGRESS. After ACTION_NOT_DONE, ask the person before trying again. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
         inputSchema: aiCapabilityInputSchema(
           offersApprovalReason(entry) ? withApprovalReason(entry.operation.inputSchema) : entry.operation.inputSchema,
         ),
@@ -779,16 +786,21 @@ export const createLoadedAiCapabilityTools = (input: {
         approval: "never",
       }).server(async (modelArgs, context) => {
         const args = withoutApprovalReason(entry, modelArgs);
-        await input.authorizeBackground?.(entry, args);
+        await input.authorizeBackground?.(entry, args, context);
         if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
-          if (review && context.callId) input.onReview?.(context.callId, review);
+          if (review && context.callId)
+            await input.onReview?.(context.callId, review, "approval" in entry.operation ? entry.operation.approval : undefined, entry);
           // Text-only readers such as the CLI read what the card shows: the app's sentence, its review, and the model's reason.
           const locale = input.locale ?? DEFAULT_LOCALE;
           const message = capabilityApprovalText({
             appName: entry.display.appName,
             subject: capabilityActionSubject(aiCapabilityActionWording(entry, locale), args, { locale, timeZone: context.timeZone }),
-            review: review?.message,
+            review: review
+              ? capabilityReviewView(review, {
+                  timeZone: context.timeZone ?? "UTC",
+                }).message
+              : undefined,
             reason: offersApprovalReason(entry) ? capabilityApprovalReason(modelArgs) : null,
             locale,
           });
@@ -873,9 +885,14 @@ export const createAiToolResolver =
     locale?: string;
     maxLoadedTools?: number;
     execute?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
-    review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
-    authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
-    onReview?: (callId: string, review: CapabilityActionReview) => void;
+    review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReviewData | null>;
+    authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
+    onReview?: (
+      callId: string,
+      review: CapabilityActionReviewData,
+      approval: CapabilityActionManifest["approval"],
+      entry: AiCapabilityCatalogEntry,
+    ) => void | Promise<void>;
     onPrepared?: (snapshot: {
       prepared: PreparedAiTools;
       presentations: Map<string, AiToolPresentation>;
@@ -907,6 +924,7 @@ export const createAiToolResolver =
           capabilityId: entry.operation.localId,
           kind: entry.kind,
           approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+          capabilityPolicy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
         }));
     const mandateExcluded = new Set(
       fullCapabilityCatalog.filter((entry) => !mandateAllows(entry)).flatMap((entry) => [entry.name, entry.providerName]),

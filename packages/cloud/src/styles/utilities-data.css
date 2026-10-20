@@ -19,8 +19,9 @@
   }
 }
 
+/* Selected rows carry the active app's selection fill, as @k2b/ui rows do. */
 @utility data-table-row-selected {
-  background: var(--ui-data-row-selected);
+  background: var(--ui-app-selected);
 }
 
 @utility data-table-column-hover {

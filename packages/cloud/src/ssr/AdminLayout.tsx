@@ -1,5 +1,6 @@
 import { AppWorkspace } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
+import type { PanelConsentSnapshot } from "../contracts/panel-context";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import { getLocale } from "../server/locale";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
@@ -10,6 +11,7 @@ import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 
 type Breadcrumb = { title: string; href?: string };
 type AdminLayoutContext = {
+  get(key: "panelConsent"): PanelConsentSnapshot | undefined;
   get(key: "railPreferences"): RailSnapshot | undefined;
   get(key: "user"): any;
   get(key: "page"): any;

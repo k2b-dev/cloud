@@ -38,7 +38,7 @@ Ist die Live-Anwesenheit verfügbar, zeigt **Aktive Mitwirkende** die Personen, 
 
 ## Zugriffsstufen verstehen {icon="shield-lock"}
 
-Zugriff auf das Postfach gibst du unter **Einstellungen → Zugriff**. Alle, die das Postfach ansehen können, sehen unter **Postfachdetails**, wer welchen Zugriff hat: die Schaltfläche (i) neben **Verfassen**. Personen mit Zugriff **Ansehen** sehen dort **Über dieses Postfach**. Gastkonten sehen dort nur ihren eigenen Zugriff und den Zugriff ihrer Gruppen.
+Zugriff auf das Postfach gibst du unter **… → Einstellungen → Zugriff**. Alle, die das Postfach ansehen können, sehen unter **Postfachdetails**, wer welchen Zugriff hat: **… → Postfachdetails** im Kopfbereich. Personen mit Zugriff **Ansehen** sehen dort **Über dieses Postfach**. Gastkonten sehen dort nur ihren eigenen Zugriff und den Zugriff ihrer Gruppen.
 
 | Zugriff | Was er erlaubt |
 | --- | --- |
@@ -52,7 +52,7 @@ Du gibst Zugriff mit dem normalen Zugriffseditor von Cloud an die unterstützten
 
 ## Zugriff nur auf zugewiesene Unterhaltungen geben {icon="user-check"}
 
-Wähle unter **Einstellungen → Zugriff** für eine Person oder Gruppe **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen. Beispiele sind eine freie Mitarbeiterin oder ein anderes Team. In einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
+Wähle unter **… → Einstellungen → Zugriff** für eine Person oder Gruppe **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen. Beispiele sind eine freie Mitarbeiterin oder ein anderes Team. In einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
 
 - Die Person sieht keine E-Mails, bis jemand mit Zugriff **Bearbeiten** oder **Verwalten** ihr eine Unterhaltung zuweist. Dann sieht sie diese Unterhaltung mit allen Nachrichten, auch mit Antworten, die später eintreffen. Sie sieht auch die Anhänge, Kommentare und Aktivität der Unterhaltung.
 - Die Ordnerliste zeigt nur die Ordner, in denen eine ihrer Unterhaltungen liegt. Jeder Zähler zählt nur ihre Unterhaltungen. Suche, **Mir zugewiesen**, die Mail-Übersicht, die Cloud-Suche, Assistant und `cld` verhalten sich genauso.

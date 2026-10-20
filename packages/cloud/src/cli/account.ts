@@ -301,11 +301,21 @@ export default defineCliCommands({
         access: flag.enum(["full", "models"], { default: "full", description: "Full access or models-only inference access" }),
       },
       run: async ({ ctx, args, flags }) => {
-        const result = await readApi<{ credential: ApiKey; token: string }>(
-          ctx,
-          "/api-keys",
+        const response = await ctx.fetch(
+          apiPath("/api-keys"),
           jsonRequest("POST", { name: args.name, expiresAt: parseExpiry(flags.expires), access: flags.access }),
         );
+        if (response.status === 403) {
+          const body: unknown = await response
+            .clone()
+            .json()
+            .catch(() => null);
+          const code = body && typeof body === "object" && "code" in body ? body.code : null;
+          const href = new URL("/me/developer", ctx.options.server).href;
+          if (code === "BROWSER_SIGN_IN_REQUIRED") throw new Error(`Create API keys in the browser: ${href}`);
+          if (code === "REAUTHENTICATE") throw new Error(`Sign in again in the browser, then create the API key: ${href}`);
+        }
+        const result = await ctx.readJson<{ credential: ApiKey; token: string }>(response);
         const modelsOnly = isModelsOnlyApiKey(result.credential);
         if (flags.access === "models" && !modelsOnly) {
           try {

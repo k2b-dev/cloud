@@ -22,6 +22,8 @@ declare global {
     mountComposerEditor: (options: MailComposerEditorHarnessOptions) => void;
     /** Replaces the preview, as a new compose preview response does. */
     setFormattingWarnings: (warnings: ComposeFormattingWarning[]) => void;
+    /** Replaces the previewed HTML, as a compose preview response with a signature logo does. */
+    setPreviewHtml: (html: string) => void;
   }
 }
 
@@ -39,6 +41,7 @@ window.mountComposerEditor = (options) => {
     formattingWarnings: [],
   });
   window.setFormattingWarnings = (formattingWarnings) => setPreview({ ...preview(), formattingWarnings });
+  window.setPreviewHtml = (next) => setPreview({ ...preview(), html: next });
   render(
     () => (
       <LocaleProvider locale={options.locale}>

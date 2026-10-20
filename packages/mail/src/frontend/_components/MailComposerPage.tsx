@@ -11,6 +11,7 @@ import { MailContactDirectoryProvider } from "./mail-contact-directory-context";
 
 export default function MailComposerPage(props: {
   mailboxId: string;
+  mailboxRecipientSuggestions?: boolean;
   currentActor: { kind: "user" | "service_account"; id: string };
   identities: SenderIdentity[];
   signatures: MailComposerSignatures;
@@ -36,6 +37,7 @@ export default function MailComposerPage(props: {
         <MailContactDirectoryProvider value={props.contactDirectory}>
           <MailComposer
             mailboxId={props.mailboxId}
+            mailboxRecipientSuggestions={props.mailboxRecipientSuggestions}
             currentActor={props.currentActor}
             identities={props.identities}
             signatures={props.signatures}

@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 const packageRoot = resolve(import.meta.dir, "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "k2b-ui-packed-consumer-"));
@@ -61,12 +61,22 @@ try {
 
   for (const file of [
     "LICENSE",
+    "map-glyphs/OFL.txt",
     "dist/licenses/ibm-plex-sans.txt",
     "dist/licenses/ibm-plex-mono.txt",
     "dist/licenses/tabler-icons.txt",
     "dist/licenses/emojibase-data.txt",
   ]) {
     if (!(await Bun.file(join(installedUi, file)).text()).trim()) throw new Error(`missing packed license: ${file}`);
+  }
+  for (const asset of ["IBM Plex Sans Medium/0-255.pbf", "OFL.txt"]) {
+    const resolved = import.meta.resolve(`@k2b/ui/map-glyphs/${asset}`, join(consumer, "index.ts"));
+    const path = realpathSync(resolved.startsWith("file:") ? new URL(resolved) : resolved);
+    const within = relative(realpathSync(installedUi), path);
+    const stat = lstatSync(path);
+    if (within.startsWith("..") || isAbsolute(within) || !stat.isFile() || stat.size === 0) {
+      throw new Error(`glyph asset did not resolve inside the packed package: ${asset}`);
+    }
   }
   const manifest = await Bun.file(join(installedUi, "package.json")).json();
   await Bun.write(
@@ -96,6 +106,15 @@ try {
     const required = ["Button", "Chart", "DatePicker", "Panes", "createPanesLayout", "prompts", "ReactionBar", "reactionPeople"];
     const missing = required.filter((name) => ui[name] === undefined);
     if (missing.length) throw new Error("missing representative exports: " + missing.join(", "));
+    const { mapStyle, mapPalette, mapAttribution } = ui;
+    const style = mapStyle({
+      theme: "light", locale: "de",
+      tiles: "/_geo/tiles/{z}/{x}/{y}.pbf",
+      glyphs: "/_geo/glyphs/{fontstack}/{range}.pbf",
+    });
+    if (style.version !== 8 || style.layers[0]?.paint?.["background-color"] !== mapPalette.light.land || mapAttribution.length !== 3) {
+      throw new Error("packed map exports did not build a style");
+    }
     const { renderToString } = await import("solid-js/web");
     const html = renderToString(() => ui.Button({ children: "Packed button" }));
     if (!html.includes("Packed button")) throw new Error("packed SSR component did not render");
@@ -191,8 +210,9 @@ try {
   }
   // Each component family owns its message catalog, so this unminified build
   // carries only the common strings. A leaked family adds several kilobytes;
-  // the budget leaves a few percent for the two components to grow.
-  if (browserOutput.length > 56_000) {
+  // the budget leaves a few percent for the two components to grow. The
+  // locale weekend band and the one-click range moved the pair to about 58 kB.
+  if (browserOutput.length > 60_000) {
     throw new Error(`packed Button + DatePicker browser build is too large: ${browserOutput.length} bytes`);
   }
   for (const unusedMessage of ["chartCopyFailed", "installCopyLink", "qrCameraPreview", "pdfPreviewHttpError", "composerFormatting"]) {

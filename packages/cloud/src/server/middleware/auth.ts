@@ -411,7 +411,18 @@ const getAuthority = (c: Context<AuthContext>): RequestAuthority => {
  * True when the request acts through the mobile app's session, directly or through an
  * invocation made for one. Such requests cannot create authority that outlives the phone.
  */
-const isAppSession = (c: Context<AuthContext>): boolean => isAppSessionActor(c.get("actor"));
+const isAppSession = <E extends AuthContext>(c: Context<E>): boolean => isAppSessionActor(c.get("actor"));
+
+/** Returns only the browser session identity authenticated for this request. */
+const browserSignIn = async <E extends AuthContext>(c: Context<E>): Promise<{ userId: string; sid: string; authEpoch: number } | null> => {
+  if (c.get("credentialKind") !== "session" || c.get("actor")?.kind !== "user" || isAppSession(c)) return null;
+  const token = c.get("sessionToken");
+  if (!token) return null;
+  const authenticated = await session.authenticateRequest(c, token);
+  return authenticated?.data.kind === "web"
+    ? { userId: authenticated.data.userId, sid: authenticated.data.sid, authEpoch: authenticated.data.authEpoch }
+    : null;
+};
 
 /** The standard answer for actions the mobile app may not take. */
 export const APP_SESSION_FORBIDDEN = { code: "FORBIDDEN", message: "Use Cloud on the web for this." } as const;
@@ -460,6 +471,7 @@ export const auth = {
   requireRole,
   requireUser,
   isAppSession,
+  browserSignIn,
   rejectAppSession,
   requireOAuthScope,
   getAuthority,

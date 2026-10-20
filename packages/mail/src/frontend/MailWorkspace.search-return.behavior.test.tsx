@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, mock, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -176,10 +176,13 @@ describe("Mail workspace search return", () => {
   let dom: DomTestHarness;
   let dispose = () => {};
   let workspaceRequests: string[];
+  /** Pages from 2 on load only their list page. */
+  let listRequests: string[];
   let emptyResults: boolean;
   let invalidSearch: boolean;
   let heldSearchResponse: Promise<Response> | undefined;
   let heldCursorResponse: Promise<Response> | undefined;
+  let heldNavigationResponse: Promise<Response> | undefined;
 
   const snapshotFor = (href: string): MailboxPageData => {
     const url = new URL(href, "http://localhost");
@@ -232,10 +235,12 @@ describe("Mail workspace search return", () => {
     Object.defineProperty(globalThis, "CSS", { value: dom.window.CSS, configurable: true });
     Reflect.set(globalThis, "WebSocket", FakeWebSocket);
     workspaceRequests = [];
+    listRequests = [];
     emptyResults = false;
     invalidSearch = false;
     heldSearchResponse = undefined;
     heldCursorResponse = undefined;
+    heldNavigationResponse = undefined;
     builderResult = undefined;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
@@ -244,7 +249,13 @@ describe("Mail workspace search return", () => {
           const href = url.searchParams.get("href") ?? "";
           workspaceRequests.push(href);
           if (new URL(href, "http://localhost").searchParams.has("q") && heldSearchResponse) return heldSearchResponse;
-          if (new URL(href, "http://localhost").searchParams.has("cursor") && heldCursorResponse) return heldCursorResponse;
+          if (!new URL(href, "http://localhost").searchParams.has("q") && heldNavigationResponse) return heldNavigationResponse;
+          return Response.json(snapshotFor(href));
+        }
+        if (url.pathname.endsWith("/workspace-list")) {
+          const href = url.searchParams.get("href") ?? "";
+          listRequests.push(href);
+          if (heldCursorResponse) return heldCursorResponse;
           return Response.json(snapshotFor(href));
         }
         if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
@@ -258,6 +269,8 @@ describe("Mail workspace search return", () => {
     dialogCore.close();
     dispose();
     toast.dismissAll();
+    if (jest.isFakeTimers()) jest.clearAllTimers();
+    jest.useRealTimers();
     await Bun.sleep(20);
     globalThis.fetch = originalFetch;
     Reflect.set(globalThis, "WebSocket", originalWebSocket);
@@ -283,6 +296,11 @@ describe("Mail workspace search return", () => {
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: m.readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+          },
         }),
       dom.root,
     );
@@ -309,7 +327,9 @@ describe("Mail workspace search return", () => {
     expect(title()).toBe(expectedTitle);
   };
   const clickLink = async (query: string) => {
-    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?${query}"]`)!.click();
+    const href = `${path}?${query}`;
+    if (!dom.root.querySelector(`a[href="${href}"]`)) dom.root.querySelector<HTMLButtonElement>('button[aria-label="More views"]')!.click();
+    dom.document.querySelector<HTMLAnchorElement>(`a[href="${href}"]`)!.click();
     await settle();
   };
   const scroller = () => dom.root.querySelector<HTMLElement>('[data-scroll-preserve="mail-list-Box001"]')!;
@@ -318,6 +338,39 @@ describe("Mail workspace search return", () => {
     await settle();
     expect(dom.root.querySelector('[data-conversation-id="page-two"]')).not.toBeNull();
   };
+
+  for (const action of ["Reset", "view tab"]) {
+    test(`head ${action} cancels a pending quick search before a slow navigation`, async () => {
+      jest.useFakeTimers();
+      setSystemTime(new Date(now));
+      mount("q=old");
+      const response = Promise.withResolvers<Response>();
+      heldNavigationResponse = response.promise;
+      const target = action === "Reset" ? path : `${path}?view=needs_action`;
+      const head = dom.root.querySelector(".k2b-app-workspace__head")!;
+      type("new");
+      jest.advanceTimersByTime(100);
+      if (action === "Reset") {
+        [...head.querySelectorAll<HTMLAnchorElement>("a")].find((link) => link.textContent?.trim() === "Reset")!.click();
+      } else {
+        head.querySelector<HTMLAnchorElement>(`a[href="${target}"]`)!.click();
+      }
+      const flush = async () => {
+        for (let turn = 0; turn < 40; turn++) await Promise.resolve();
+      };
+      await flush();
+      expect(workspaceRequests).toEqual([target]);
+      jest.advanceTimersByTime(300);
+      await flush();
+      response.resolve(Response.json(snapshotFor(target)));
+      await flush();
+      expect(location.pathname + location.search).toBe(target);
+      expect(workspaceRequests).toEqual([target]);
+      expect(new URL(location.href).searchParams.has("q")).toBe(false);
+      expect(input().value).toBe("");
+      expect(title()).toBe(action === "Reset" ? "All mail" : "Needs action");
+    });
+  }
 
   for (const method of ["delete", "Escape", "button"]) {
     test(`clearing a pending first quick search via ${method} supersedes its response`, async () => {
@@ -493,11 +546,13 @@ describe("Mail workspace search return", () => {
       scroller().scrollTop = 480;
       await search();
       workspaceRequests = [];
+      listRequests = [];
       scroller().scrollTop = 20;
       if (method === "clear") clearButton().click();
       else history.back();
       await settle();
-      expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=needs_action&cursor=needs-action-next`]);
+      expect(workspaceRequests).toEqual([`${path}?view=needs_action`]);
+      expect(listRequests).toEqual([`${path}?view=needs_action&cursor=needs-action-next`]);
       expect(title()).toBe("Needs action");
       expect(dom.root.querySelector('[data-conversation-id="page-two"]')).not.toBeNull();
       // Happy DOM does not clamp scrollTop, so the page request and rendered row guard the list's height too.
@@ -513,20 +568,19 @@ describe("Mail workspace search return", () => {
     const response = Promise.withResolvers<Response>();
     heldCursorResponse = response.promise;
     workspaceRequests = [];
+    listRequests = [];
     clearButton().click();
     await settle();
-    expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=needs_action&cursor=needs-action-next`]);
+    expect(workspaceRequests).toEqual([`${path}?view=needs_action`]);
+    expect(listRequests).toEqual([`${path}?view=needs_action&cursor=needs-action-next`]);
     scroller().scrollTop = 35;
     await clickLink("view=done");
     assertRoute("view=done", "Done");
     expect(scroller().scrollTop).toBe(35);
     response.resolve(Response.json(snapshotFor(`${path}?view=needs_action&cursor=needs-action-next`)));
     await settle();
-    expect(workspaceRequests).toEqual([
-      `${path}?view=needs_action`,
-      `${path}?view=needs_action&cursor=needs-action-next`,
-      `${path}?view=done`,
-    ]);
+    expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=done`]);
+    expect(listRequests).toEqual([`${path}?view=needs_action&cursor=needs-action-next`]);
     expect(title()).toBe("Done");
     expect(dom.root.querySelector('[data-conversation-id="page-two"]')).toBeNull();
     expect(scroller().scrollTop).toBe(35);

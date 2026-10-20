@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { startGotenbergTrap } from "../../../../scripts/fixtures/gotenberg-trap";
 import { pdfImages, pdfText } from "../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import * as attachments from "./attachments";
 import { buildNotePdfHtml, renderNotePdf } from "./note-pdf";
 import { notePdfImageBoxes, prepareNotePdfImages } from "./note-pdf-images";
@@ -16,13 +17,12 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
   let notebook: { id: string; short_id: string };
   let foreign: { id: string; short_id: string };
   let config: GotenbergConfig;
-  const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 6);
   const ids: string[] = [];
   let jpeg: Uint8Array;
   let png: Uint8Array;
   let webp: Uint8Array;
   const insert = async (data: Uint8Array, type: string, name: string, notebookId = notebook.id, size = data.byteLength) => {
-    const id = shortId();
+    const id = testShortId();
     await sql`INSERT INTO notebooks.attachments (short_id, notebook_id, filename, mime_type, size_bytes, kind, content, created_at)
       VALUES (${id}, ${notebookId}::uuid, ${name}, ${type}, ${size}, 'image', ${data}, '2026-10-01T00:00:00Z')`;
     return id;
@@ -47,7 +47,7 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
   beforeAll(async () => {
     config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30000, maxHtmlBytes: 4 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
     const notebooks = await sql<{ id: string; short_id: string }[]>`INSERT INTO notebooks.notebooks (short_id, name, created_at)
-      VALUES (${shortId()}, 'PDF image fixtures', '2026-10-01T00:00:00Z'), (${shortId()}, 'Private image fixtures', '2026-10-01T00:00:00Z') RETURNING id, short_id`;
+      VALUES (${testShortId()}, 'PDF image fixtures', '2026-10-01T00:00:00Z'), (${testShortId()}, 'Private image fixtures', '2026-10-01T00:00:00Z') RETURNING id, short_id`;
     notebook = notebooks[0]!;
     foreign = notebooks[1]!;
     // Deterministic photo-like gradients; alpha varies in every row, rather than an opaque PNG with an alpha channel.

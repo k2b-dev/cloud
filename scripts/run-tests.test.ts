@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { hasIntegrationTarget } from "./fixtures/test-infra-env";
-import { behaviorIgnore, discoverTestSuites, parseArgs, selectSuites, type TestSuite } from "./run-tests";
+import {
+  behaviorIgnore,
+  discoverTestSuites,
+  parseArgs,
+  planShards,
+  selectSuites,
+  suiteWeight,
+  type TestSuite,
+  type TestWeights,
+} from "./run-tests";
 
 const workspaceRoot = join(import.meta.dir, "..");
 const preload = join(workspaceRoot, "scripts", "fixtures", "test-infra.ts");
@@ -96,6 +105,8 @@ describe("root test orchestration", () => {
       ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--browser", "--filter", "no-such-suite"],
       {
         cwd: workspaceRoot,
+        // This empty selection starts no suites and must not wait for a local heavy slot.
+        env: { ...process.env, CLOUD_HEAVY_LOCK: "held" },
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -105,22 +116,121 @@ describe("root test orchestration", () => {
     expect(run.stdout.toString()).not.toContain("passed");
   });
 
-  test("filters and shards deterministically", () => {
-    const suites: TestSuite[] = ["a", "b", "c", "d", "e"].map((name) => ({
+  const makeSuites = (names: string[]): TestSuite[] =>
+    names.map((name) => ({
       name,
       cwd: join(workspaceRoot, "packages", name),
       command: [],
     }));
-    expect(selectSuites(suites, { integration: false, filter: "packages/c" }, workspaceRoot).map((suite) => suite.name)).toEqual(["c"]);
-    expect(selectSuites(suites, { integration: false, shard: { index: 1, total: 2 } }, workspaceRoot).map((suite) => suite.name)).toEqual([
-      "a",
-      "c",
-      "e",
+  const names = (suites: TestSuite[]) => suites.map((suite) => suite.name);
+  const weights: TestWeights = { browser: {}, unit: { a: 10, b: 1, c: 10, d: 1, e: 10, f: 1 } };
+
+  test("filters and shards deterministically by measured suite time", () => {
+    const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
+    expect(names(selectSuites(suites, { integration: false, filter: "packages/c" }, workspaceRoot))).toEqual(["c"]);
+    const select = (index: number) => selectSuites(suites, { integration: false, shard: { index, total: 2 } }, workspaceRoot, weights);
+    // a -> 1, c -> 2, e -> 1, then all three 1-second suites -> 2.
+    expect(names(select(1))).toEqual(["a", "e"]);
+    expect(names(select(2))).toEqual(["b", "c", "d", "f"]);
+    const loads = [select(1), select(2)].map((shard) => shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights.unit), 0));
+    expect(loads).toEqual([20, 13]);
+    expect(Math.abs(loads[0]! - loads[1]!)).toBeLessThanOrEqual(10);
+    expect(planShards(suites, 2, weights.unit).map((shard) => shard.seconds)).toEqual(loads);
+  });
+
+  test("filters and excludes before planning shards", () => {
+    const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
+    const options = { integration: false, exclude: "packages/e", shard: { index: 1, total: 2 } };
+    expect(names(selectSuites(suites, options, workspaceRoot, weights))).toEqual(["a", "b", "f"]);
+    expect(names(selectSuites(suites, { ...options, filter: "packages/c" }, workspaceRoot, weights))).toEqual(["c"]);
+  });
+
+  test("covers every suite exactly once for every shard count, including empty shards", () => {
+    const suites = makeSuites(["a", "b", "c", "d", "e", "f", "g", "h", "unknown"]);
+    const table = { a: 10, b: 1, c: 10, d: 1, e: 0, f: 3, g: 3, h: 5 };
+    for (const total of [1, 2, 3, 4, 5, 6, 12]) {
+      const shards = planShards(suites, total, table);
+      const all = shards.flatMap((shard) => names(shard.suites));
+      expect(shards).toHaveLength(total);
+      expect(all.toSorted()).toEqual(names(suites).toSorted());
+      expect(new Set(all).size).toBe(suites.length);
+    }
+    expect(planShards([], 3, table)).toEqual(Array.from({ length: 3 }, () => ({ suites: [], seconds: 0 })));
+  });
+
+  test("keeps membership independent of input order, and runs each shard in discovery order", () => {
+    const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
+    const shuffled = makeSuites(["f", "c", "e", "b", "d", "a"]);
+    const original = planShards(suites, 2, weights.unit);
+    const reordered = planShards(shuffled, 2, weights.unit);
+    expect(reordered.map((shard) => names(shard.suites))).toEqual([
+      ["e", "a"],
+      ["f", "c", "b", "d"],
     ]);
-    expect(selectSuites(suites, { integration: false, shard: { index: 2, total: 2 } }, workspaceRoot).map((suite) => suite.name)).toEqual([
-      "b",
-      "d",
+    expect(reordered.map((shard) => names(shard.suites).toSorted())).toEqual(original.map((shard) => names(shard.suites).toSorted()));
+    expect(names(suites)).toEqual(["a", "b", "c", "d", "e", "f"]);
+    expect(names(shuffled)).toEqual(["f", "c", "e", "b", "d", "a"]);
+  });
+
+  test("breaks weight ties by code-unit name order and load ties by count, then index", () => {
+    const suites = makeSuites(["ä", "a", "Z", "A"]);
+    expect(planShards(suites, 2, {}).map((shard) => names(shard.suites))).toEqual([
+      ["a", "A"],
+      ["ä", "Z"],
     ]);
+    // All loads tie at zero; suite counts must still spread work over every shard.
+    expect(planShards(makeSuites(["d", "b", "c", "a"]), 3, { a: 0, b: 0, c: 0, d: 0 }).map((shard) => names(shard.suites))).toEqual([
+      ["d", "a"],
+      ["b"],
+      ["c"],
+    ]);
+  });
+
+  test("unknown and invalid weights use the mode's median, or one for an empty table", () => {
+    expect(suiteWeight("unknown", { a: 9, b: 1, c: 4 })).toBe(4);
+    expect(suiteWeight("unknown", { a: 9, b: 1, c: 4, d: 6 })).toBe(5);
+    expect(suiteWeight("unknown", {})).toBe(1);
+    const table = { a: 0, b: 4, negative: -1, infinite: Infinity, nan: NaN };
+    for (const name of ["unknown", "negative", "infinite", "nan"]) expect(suiteWeight(name, table)).toBe(2);
+    expect(suiteWeight("a", table)).toBe(0);
+    expect(suiteWeight("unknown", { invalid: -1 })).toBe(1);
+  });
+
+  test("selects weights for the requested mode", () => {
+    const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
+    const tables: TestWeights = { unit: weights.unit, browser: { a: 1, b: 10, c: 1, d: 10, e: 1, f: 10 } };
+    const select = (browser: boolean) =>
+      [1, 2].map((index) =>
+        names(selectSuites(suites, { integration: false, browser, shard: { index, total: 2 } }, workspaceRoot, tables)),
+      );
+    expect(select(false)).toEqual([
+      ["a", "e"],
+      ["b", "c", "d", "f"],
+    ]);
+    expect(select(true)).toEqual([
+      ["b", "f"],
+      ["a", "c", "d", "e"],
+    ]);
+  });
+
+  test("reports wall time and fails a run that exceeds its budget even with no failed suites", () => {
+    for (const maxMinutes of ["0.000001", "60"]) {
+      const run = Bun.spawnSync(
+        ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--filter", "no-such-suite", "--max-minutes", maxMinutes],
+        { cwd: workspaceRoot, env: { ...process.env, CLOUD_HEAVY_LOCK: "held" }, stdout: "pipe", stderr: "pipe" },
+      );
+      const stdout = run.stdout.toString();
+      expect(stdout).toMatch(/test run took \d+\.\d min \(limit /);
+      if (maxMinutes === "60") {
+        expect(run.exitCode).toBe(0);
+        expect(stdout).not.toContain("::error");
+        expect(stdout).toContain("All 0 test suites passed.");
+      } else {
+        expect(run.exitCode).toBe(1);
+        expect(stdout.split("::error title=Test shard over its time limit::")).toHaveLength(2);
+        expect(stdout.trim().endsWith("All 0 test suites passed.")).toBeFalse();
+      }
+    }
   });
 
   test("parses arguments and rejects malformed shards", () => {
@@ -135,9 +245,41 @@ describe("root test orchestration", () => {
     expect(() => parseArgs(["--bogus"])).toThrow();
   });
 
+  test("parses positive minute budgets and rejects malformed values", () => {
+    expect(parseArgs(["--max-minutes", "20"])).toEqual({ integration: false, maxMinutes: 20 });
+    expect(parseArgs(["--browser", "--shard", "2/5", "--max-minutes", "20"])).toEqual({
+      integration: false,
+      browser: true,
+      shard: { index: 2, total: 5 },
+      maxMinutes: 20,
+    });
+    expect(parseArgs(["--max-minutes", "0.0001"]).maxMinutes).toBe(0.0001);
+    for (const value of ["0", "-1", "abc", "Infinity", "--browser", undefined]) {
+      const args = value === undefined ? ["--max-minutes"] : ["--max-minutes", value];
+      expect(() => parseArgs(args)).toThrow(`--max-minutes expects a positive number of minutes, got "${value}"`);
+    }
+  });
+
   test("detects configured integration targets", () => {
     expect(hasIntegrationTarget({})).toBeFalse();
     expect(hasIntegrationTarget({ CLOUD_TEST_DATABASE_URL: " " })).toBeFalse();
     expect(hasIntegrationTarget({ CLOUD_TEST_NATS_SERVERS: "nats://localhost:4222" })).toBeTrue();
   });
+});
+
+test("discovers ClickHouse and versioned Pulse migration files as isolated integration suites", async () => {
+  const suites = await discoverTestSuites(workspaceRoot, { integration: true });
+  for (const name of [
+    "src/store/check.integration.test.ts",
+    "src/api/admin-store.integration.test.ts",
+    "src/migrate.integration.test.ts",
+    "integration/test-clickhouse-cleanup.integration.test.ts",
+  ]) {
+    const suite = suites.find((item) => item.name.endsWith(name));
+    expect(suite).toBeDefined();
+    expect(suite?.command.at(-1)).toBe(name);
+  }
+  expect(suites.some((suite) => suite.name.endsWith("src/schema.integration.test.ts") && suite.name.includes("cloud-app-pulse"))).toBe(
+    false,
+  );
 });

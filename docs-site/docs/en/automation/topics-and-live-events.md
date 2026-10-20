@@ -58,6 +58,8 @@ stream is empty. Every topic owns an event stream and a dead-letter stream, so
 a topic per entity multiplies that reservation by the number of entities.
 Reads filter the tenant on the server, so a shared topic costs a tenant read no
 more than a dedicated one.
+For collaboratively edited text, use [Shared text documents](/en/docs/data/shared-text-documents)
+from `@k2b/cloud/shared-text`.
 
 ```ts
 const documentLog = lazySync((sync) => sync.topic<DocumentUpdate>({

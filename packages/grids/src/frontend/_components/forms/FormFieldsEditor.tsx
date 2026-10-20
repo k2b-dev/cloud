@@ -107,7 +107,7 @@ export function FormFieldsEditor(props: {
                   <li>
                     <div
                       class={`paper flex w-full items-center gap-2 px-2 py-2 text-left transition-colors ${
-                        selected() ? "app-accent-border app-accent-text bg-[var(--ui-selected)]" : "hover:paper-highlighted"
+                        selected() ? "app-accent-border app-accent-text bg-[var(--ui-app-selected)]" : "hover:paper-highlighted"
                       }`}
                     >
                       <button

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { dates } from "@k2b/stdlib";
 import type { CalendarItem } from "@/contracts";
 import {
   CALENDAR_MAX_DAYS,
@@ -27,6 +28,7 @@ const item = (id: string, times: Partial<CalendarItem>): CalendarItem => ({
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -155,3 +157,19 @@ describe("Spaces month blocks", () => {
     expect(isBlockLoadingCalendarView("year")).toBe(false);
   });
 });
+
+test.each(["America/Los_Angeles", "Europe/Berlin", "Pacific/Kiritimati"])(
+  "counts and merges all-day deadlines by their date in %s",
+  (timeZone) => {
+    const context = { timeZone };
+    const task = item("Due001", { deadline: "2026-10-24", deadlineAllDay: true });
+    expect(countCalendarDays([task], "2026-10-24", "2026-10-24", context)).toBe(1);
+    expect(countCalendarDays([task], "2026-10-23", "2026-10-23", context)).toBe(0);
+    expect(countCalendarDays([task], "2026-10-25", "2026-10-25", context)).toBe(0);
+    const range = {
+      from: dates.zonedDateTimeToInstant("2026-10-24T00:00", timeZone),
+      to: dates.zonedDateTimeToInstant("2026-10-25T00:00", timeZone),
+    };
+    expect(mergeCalendarItems({ ...range, items: [task] }, { ...range, items: [] }, context).items).toEqual([]);
+  },
+);

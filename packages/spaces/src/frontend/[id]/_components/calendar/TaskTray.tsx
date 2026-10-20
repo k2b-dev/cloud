@@ -3,6 +3,7 @@ import { Checkbox, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createComputed, createSignal, createUniqueId, For, type JSX, onCleanup, Show, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { SpaceItem } from "@/contracts";
+import { formatDeadline } from "@/presentation/deadline";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
@@ -158,13 +159,7 @@ export default function TaskTray(props: Props) {
   };
 
   /** The due day with its date, such as "Tue, Oct 6": a weekday alone is ambiguous here. */
-  const dueDay = (deadline: string) =>
-    new Intl.DateTimeFormat(props.dateConfig?.locale ?? locale(), {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-      timeZone: props.dateConfig?.timeZone,
-    }).format(new Date(deadline));
+  const dueDay = (deadline: string) => formatDeadline(deadline, { ...props.dateConfig, locale: props.dateConfig?.locale ?? locale() });
   const empty = () => tray.overdue.items.length === 0 && tray.undated.items.length === 0;
   const dragHintId = createUniqueId();
 

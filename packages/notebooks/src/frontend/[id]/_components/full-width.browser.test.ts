@@ -59,8 +59,10 @@ beforeAll(async () => {
     fetch(request) {
       if (new URL(request.url).pathname === "/harness.js")
         return new Response(bundle, { headers: { "content-type": "application/javascript; charset=utf-8" } });
+      const host = new URL(request.url).searchParams.get("host");
+      const hostStyle = host ? `container:k2b-app-area / inline-size;width:${Number(host)}px;flex:none` : "width:100%";
       return new Response(
-        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div><script id="note-source" type="text/plain">${markdown}</script><script id="book-source" type="text/plain">${html}</script><script src="/harness.js"></script></body></html>`,
+        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0;display:flex"><div id="app-host" style="${hostStyle}"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div></div>${host ? '<aside style="flex:1">Host panel</aside>' : ""}<script id="note-source" type="text/plain">${markdown}</script><script id="book-source" type="text/plain">${html}</script><script src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -72,10 +74,10 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const open = async (mode = "write", width = 2560, mobile = false) => {
+const open = async (mode = "write", width = 2560, mobile = false, host?: number) => {
   const page = await browser.newPage({ viewport: { width, height: mobile ? 844 : 1440 }, isMobile: mobile, hasTouch: mobile });
   try {
-    await page.goto(`${server.url}?mode=${mode}`);
+    await page.goto(`${server.url}?mode=${mode}${host ? `&host=${host}` : ""}`);
     await page.waitForFunction(() => Boolean(window.harness));
     await settle(page);
     await openView(page);
@@ -209,20 +211,20 @@ for (const width of [390, 1023, 1024]) {
   }, 30_000);
 }
 
-// Whole-pixel viewports cannot show it: at a zoomed, fractional width between
-// two queries a switch would show that changes nothing.
-test("the switches hide by the exact opposite of the query that lifts the column", async () => {
+// One host query lifts the column. The switch, menu choice and command follow the
+// same boundary in script (watchAppHostWidth), so no style sheet hides them.
+test("only the 64 rem app-host query lifts the column", async () => {
   const page = await open();
   try {
     const queries = await page.evaluate(() => {
       const found = { lift: [] as string[], hide: [] as string[] };
-      const walk = (rules: CSSRuleList, media: string | null) => {
+      const walk = (rules: CSSRuleList, container: string | null) => {
         for (const rule of Array.from(rules)) {
-          if (rule instanceof CSSMediaRule) walk(rule.cssRules, rule.media.mediaText);
-          else if (rule instanceof CSSGroupingRule) walk(rule.cssRules, media);
-          else if (rule instanceof CSSStyleRule && media !== null) {
-            if (rule.selectorText.includes(".notebook-document-surface[data-full-width]")) found.lift.push(media);
-            if (rule.selectorText.includes("notebooks-full-width-option")) found.hide.push(media);
+          if (rule instanceof CSSContainerRule) walk(rule.cssRules, `${rule.containerName} ${rule.containerQuery}`);
+          else if (rule instanceof CSSGroupingRule) walk(rule.cssRules, container);
+          else if (rule instanceof CSSStyleRule) {
+            if (container !== null && rule.selectorText.includes(".notebook-document-surface[data-full-width]")) found.lift.push(container);
+            if (rule.selectorText.includes("notebooks-full-width-option")) found.hide.push(container ?? rule.selectorText);
           }
         }
       };
@@ -230,8 +232,10 @@ test("the switches hide by the exact opposite of the query that lifts the column
       // The build may split one rule into several.
       return { lift: [...new Set(found.lift)], hide: [...new Set(found.hide)] };
     });
-    expect(queries.lift).toEqual(["(min-width: 64rem)"]);
-    expect(queries.hide).toEqual(["not all and (min-width: 64rem)"]);
+    // Engines serialize the range differently, for example `(width >= 64rem)`.
+    expect(queries.lift).toHaveLength(1);
+    expect(queries.lift[0]).toMatch(/^k2b-app-area \((min-width: 64rem|width >= 64rem)\)$/);
+    expect(queries.hide).toEqual([]);
   } finally {
     await page.close();
   }
@@ -326,3 +330,31 @@ for (const mode of ["write", "book"]) {
     }, 30_000);
   }
 }
+
+// Pins the JS consumers to the nearest app host; matchMedia would offer them in the 952px host. The settings
+// switch mounts outside the host, as Cloud's dialogs do, so CSS there would follow the window.
+test("command, ViewMenu and the settings switch follow a narrowed host, including host-only resize", async () => {
+  for (const [width, host] of [
+    [1440, 952],
+    [1680, 1192],
+  ] as const) {
+    const page = await open("book", width, false, host);
+    try {
+      const offered = host >= 1024;
+      expect(await page.evaluate(() => window.harness.command() !== null)).toBe(offered);
+      expect(await toggle(page).count()).toBe(offered ? 1 : 0);
+      await page.evaluate(() => window.harness.preferences());
+      const option = page.locator(".k2b-ui-portal .notebooks-full-width-option");
+      expect(await option.count()).toBe(offered ? 1 : 0);
+      for (const next of [1023, 1023.75, 1024]) {
+        await page.locator("#app-host").evaluate((element, width) => (element.style.width = `${width}px`), next);
+        await settle(page);
+        await page.waitForFunction((offered) => (window.harness.command() !== null) === offered, next >= 1024);
+        expect(await toggle(page).count()).toBe(next >= 1024 ? 1 : 0);
+        expect(await option.count()).toBe(next >= 1024 ? 1 : 0);
+      }
+    } finally {
+      await page.close();
+    }
+  }
+}, 30_000);

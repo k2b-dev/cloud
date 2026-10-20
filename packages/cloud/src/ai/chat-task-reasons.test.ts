@@ -45,6 +45,24 @@ describe("routine reason sentences", () => {
       `Wollte eine Mail senden. ${expected.de.needs_approval}`,
     );
   });
+  test("English approval sentences lowercase title-case verbs and preserve acronyms and German titles", () => {
+    for (const [title, expectedTitle] of [
+      ["Create task", "create task"],
+      ["API call", "API call"],
+      ["URL öffnen", "URL öffnen"],
+      ["X", "X"],
+      ["create task", "create task"],
+      ["Édit record", "édit record"],
+    ]) {
+      expect(chatTaskReasonSentence({ code: "needs_approval", at, action: title }, { locale: "en", timeZone: "UTC" })).toBe(
+        `Tried to ${expectedTitle}. ${expected.en.needs_approval}`,
+      );
+    }
+    expect(chatTaskReasonSentence({ code: "needs_approval", at, action: "Aufgabe erstellen" }, { locale: "de", timeZone: "UTC" })).toBe(
+      `Wollte Aufgabe erstellen. ${expected.de.needs_approval}`,
+    );
+  });
+
   test("stop frame with and without completed writes", () => {
     expect(chatTaskStopSentence([], "de")).toBe("Angehalten, während die Routine lief. Nichts wurde rückgängig gemacht.");
     expect(chatTaskStopSentence([], "en")).toBe("Stopped while the routine was running. Nothing was undone.");

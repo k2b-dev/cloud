@@ -5,7 +5,7 @@ section: Platform services
 order: 562
 description: Preserve stable Cloud resource identity across application clipboard interactions.
 tags: [capabilities, resources, clipboard, browser]
-updated: 2026-08-18
+updated: 2026-10-18
 ---
 
 # Copy and paste Cloud resources
@@ -143,3 +143,11 @@ Recognizing the payload establishes identity only. Treat it as untrusted input,
 resolve the current canonical reader from the live manifest, and let the owning
 application authorize the read. Never execute an Action merely because its
 target appeared on the clipboard.
+
+## Select a place for a panel
+
+A page can report its current resource ref to the visible panel through
+`Layout.context` or `publishPageContext()`. The shell handles per-provider
+consent. A panel ref selects a resource and grants no access; the provider
+reads through its own authorized server. See
+[Panel page context](/en/docs/platform/panels#page-context).

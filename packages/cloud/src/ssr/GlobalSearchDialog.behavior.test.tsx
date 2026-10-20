@@ -86,6 +86,12 @@ test("context commands replace their catalog entry and expose only the active sh
         : catalogResponse(),
     { preconnect: originalFetch.preconnect },
   );
+  // The palette offers Commands only from apps in the person's navigation, which the layout renders as shell data.
+  const shell = dom.document.createElement("script");
+  shell.id = "cloud-shell-data";
+  shell.type = "application/json";
+  shell.textContent = JSON.stringify({ apps: [{ id: "notebooks" }] });
+  dom.document.body.append(shell);
   const { registerContextAwareCommand } = await import("../browser/command-bridge");
   const remove = registerContextAwareCommand({
     id: "notebooks.note.compose",

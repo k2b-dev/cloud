@@ -432,13 +432,14 @@ const continueDraft = async (page: Page) => {
   await dialog.getByText("Continue", { exact: true }).first().click();
 };
 
-/** Desktop shows the tools as a menu with labelled groups, mobile as a branch of the app navigation. */
+/** The head options menu offers the same mailbox tools on desktop and phone. */
 const assertMailboxTools = async (container: Locator, sectionLabels: string[]) => {
-  const expectedSections = ["Mailbox", "Manage", "This browser"];
+  const expectedSections = ["Mailbox", "Manage", "This browser", "Actions"];
   if (JSON.stringify(sectionLabels) !== JSON.stringify(expectedSections)) {
     fail(`mailbox tools sections are not stable: ${JSON.stringify(sectionLabels)}`);
   }
   for (const item of [
+    "Mailbox details",
     "Sync mailbox",
     "Mailbox health",
     "Automations",
@@ -446,6 +447,7 @@ const assertMailboxTools = async (container: Locator, sectionLabels: string[]) =
     "Remote images",
     "Shared links",
     "Email link setup",
+    "Settings",
   ]) {
     await container.getByText(item, { exact: true }).waitFor();
   }
@@ -497,7 +499,9 @@ const runSmoke = async (fixture: Fixture) => {
 
     await addStaleCollapsedMailWorkspaceCookie(context);
     await page.goto(mailboxPath, { waitUntil: "load" });
-    const desktopSidebar = page.locator(".mail-workspace-navigation:visible");
+    const desktopSidebar = page.getByLabel("Mailboxes", { exact: true }).and(page.locator(".mail-sidebar"));
+    const mailboxHead = page.locator(".k2b-app-workspace__head");
+    const mailboxOptions = () => mailboxHead.getByRole("button", { name: `Options for ${fixture.mailboxName}`, exact: true });
     await desktopSidebar.waitFor();
     if ((await desktopSidebar.getByRole("button", { name: /^(Collapse|Expand) navigation$/ }).count()) !== 0) {
       fail("Mail desktop navigation still exposes sidebar collapse");
@@ -518,7 +522,7 @@ const runSmoke = async (fixture: Fixture) => {
     await waitForWidth(page, desktopSidebar, 176, "Mail desktop navigation after reload");
     ok("Mail sidebar stays expanded, keyboard-resizable, and SSR-stable");
 
-    await clickHydratedDropdownTrigger(page, page.getByRole("button", { name: "Choose list view", exact: true }));
+    await clickHydratedDropdownTrigger(page, mailboxHead.getByRole("button", { name: "Choose list view", exact: true }));
     await page.locator('[role="menu"]:popover-open').getByText("Message view", { exact: true }).click();
     await page
       .locator('[role="list"][aria-label$=" messages"]')
@@ -529,7 +533,7 @@ const runSmoke = async (fixture: Fixture) => {
     if (messageViewPreference?.listMode !== "messages") fail("message view was not persisted in the workspace cookie");
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator('[role="list"][aria-label$=" messages"]').waitFor();
-    await clickHydratedDropdownTrigger(page, page.getByRole("button", { name: "Choose list view", exact: true }));
+    await clickHydratedDropdownTrigger(page, mailboxHead.getByRole("button", { name: "Choose list view", exact: true }));
     await page.locator('[role="menu"]:popover-open').getByText("Conversation view", { exact: true }).click();
     await page.locator('[role="list"][aria-label$=" conversations"]').waitFor();
     ok("message list mode survives SSR reload and returns to conversation view");
@@ -540,8 +544,8 @@ const runSmoke = async (fixture: Fixture) => {
     if (desktopDirectActions.some((label) => label.includes("Sync mailbox") || label.includes("Automations"))) {
       fail(`desktop sidebar still exposes standalone mailbox tools: ${JSON.stringify(desktopDirectActions)}`);
     }
-    if (!desktopDirectActions.includes("Settings")) fail("desktop sidebar lost its direct Settings action");
-    await clickHydratedDropdownTrigger(page, desktopSidebar.getByRole("button", { name: "Mailbox tools", exact: true }));
+    if (desktopDirectActions.includes("Settings")) fail("desktop sidebar still exposes Settings outside the mailbox menu");
+    await clickHydratedDropdownTrigger(page, mailboxOptions());
     const desktopToolsMenu = page.locator('[role="menu"]:popover-open');
     await desktopToolsMenu.waitFor();
     await assertMailboxTools(desktopToolsMenu, await menuSectionLabels(desktopToolsMenu));
@@ -584,15 +588,26 @@ const runSmoke = async (fixture: Fixture) => {
     if (mobileDirectActions.some((label) => label.includes("Automations"))) {
       fail(`mobile navigation still exposes standalone Automations: ${JSON.stringify(mobileDirectActions)}`);
     }
-    if (!mobileDirectActions.includes("Settings")) fail("mobile navigation lost its direct Settings action");
-    const mobileTools = mobileNavigation
-      .getByRole("listitem")
-      .filter({ has: page.getByRole("button", { name: "Mailbox tools", exact: true }) });
-    await page.evaluate(() => document.documentElement.classList.add("dark"));
-    await assertMailboxTools(mobileTools, await navigationLabels(mobileTools));
-    await page.evaluate(() => document.documentElement.classList.remove("dark"));
+    if (
+      mobileDirectActions.some((label) =>
+        /Settings|Mailbox tools|Sync mailbox|Mailbox health|Mailing lists|Remote images|Shared links|Email link setup/.test(label),
+      )
+    ) {
+      fail(`phone navigation contains mailbox tools or settings: ${JSON.stringify(mobileDirectActions)}`);
+    }
     await page.keyboard.press("Escape");
     await mobileMenu.waitFor({ state: "hidden" });
+    await page.evaluate(() => document.documentElement.classList.add("dark"));
+    await clickHydratedDropdownTrigger(page, mailboxOptions());
+    // On a phone Dropdown uses a sheet; the options and their groups stay the same.
+    const phoneTools = page.getByRole("dialog", { name: `Options for ${fixture.mailboxName}`, exact: true });
+    await phoneTools.waitFor();
+    await assertMailboxTools(phoneTools, await menuSectionLabels(phoneTools));
+    await phoneTools.getByText("Settings", { exact: true }).click();
+    const phoneSettings = page.getByRole("region", { name: "Mailbox settings" });
+    await phoneSettings.waitFor();
+    await phoneSettings.getByRole("button", { name: "Close settings", exact: true }).click();
+    await page.evaluate(() => document.documentElement.classList.remove("dark"));
     await page.setViewportSize({ width: 1440, height: 900 });
     ok("mailbox tools consolidate sync and automation navigation on desktop and mobile");
 
@@ -611,7 +626,8 @@ const runSmoke = async (fixture: Fixture) => {
     // Diagnostics explain the timeout in the reader's language instead of showing the provider's raw reason.
     await healthDialog.getByText("The saved account is valid, but the latest synchronization timed out.", { exact: false }).waitFor();
     await healthDialog.getByRole("button", { name: "close dialog", exact: true }).click();
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await clickHydratedDropdownTrigger(page, mailboxOptions());
+    await page.locator('[role="menu"]:popover-open').getByText("Settings", { exact: true }).click();
     const settings = page.getByRole("region", { name: "Mailbox settings" });
     await settings.getByRole("tab", { name: "Accounts & identities", exact: true }).click();
     await settings.getByText("The saved account is valid, but the latest synchronization timed out.", { exact: false }).waitFor();

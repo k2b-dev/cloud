@@ -36,6 +36,7 @@ const sender: AccountsNotificationSender = {
 const authSender: AuthNotificationSender = {
   sendMagicLink: async () => ({ id: "test", status: "suppressed" }),
   sendIpaLoginHint: async () => ({ id: "test", status: "suppressed" }),
+  sendNewBrowserSignIn: async () => {},
   sendPasswordReset: async () => ({ id: "test", status: "suppressed" }),
 };
 

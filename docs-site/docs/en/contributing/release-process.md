@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-17
+updated: 2026-10-20
 ---
 
 # Release process
@@ -47,6 +47,17 @@ covers the usual forms of release-please's commit grammar, not every one; the
 `release-body` job below parses with release-please itself. After fixing the
 text, re-run the failed `check` job to check it again.
 
+The `check` job reads the body as written, but the squash merge writes it
+wrapped at about 72 columns, and wrapped text can parse differently. A line
+that now starts with a word directly followed by an opening parenthesis,
+such as `` `color-mix( ``, can make release-please drop the whole commit
+without a warning. A line that now starts with a word and a colon reads as a
+second commit ([#1592](https://github.com/k2b-dev/cloud/issues/1592)).
+Before a release pull request merges, parse every squash commit since the
+last release with `parseConventionalCommits` from the release-please version
+that `main.yml` pins. Restore a dropped `feat` or `fix` with an override pull
+request, as for an advisory merge below.
+
 A change to a runtime contract (configuration, routes, permissions, data
 format, deployment) needs a `feat` or `feat!` title and a note on the matching
 [Operations](/en/docs/operations) page. It lands in the next `cloud-vX.Y.Z`
@@ -57,6 +68,15 @@ in light mode; use dark mode only when the change is about dark rendering. Use
 demo data, never a person's real data, and show only the states that changed
 or that a decision depends on. Pull requests are public, and one baseline
 theme lets reviewers compare screenshots across changes.
+
+## Refresh the bundled location snapshot
+
+The image mirror keeps every pinned DB-IP month, so builds and rebuilds of old
+releases do not depend on db-ip.com. To ship newer data, run
+`bun scripts/geoip-snapshot.ts <YYYY-MM>` and review the Dockerfile pin and
+[sign-in location snapshot details](/en/docs/operations/sign-in-locations).
+The pull request's `mirror` job copies the new month to the mirror. Merge it
+while DB-IP still serves that month: the current or previous month.
 
 ## Let release-please cut the release
 
@@ -140,6 +160,49 @@ Docker Hub image. See
 
 Every push to `main` also builds `sha-<12>` images for staging. Those tags are
 not releases: they carry no changelog entry and no support commitment.
+
+### Release a fix merged from a security advisory
+
+A fix built in a private security advisory fork reaches `main` when the
+maintainer merges it on the advisory page. GitHub writes one commit titled
+`Merge commit from fork`, without a pull request in this repository. That
+title is not a Conventional Commit, so release-please drops the whole commit
+without a warning: its fixes, features, and `BREAKING CHANGE:` footer reach
+neither the changelog nor the version bump. The `check` job never sees it,
+because no pull request carries it.
+
+The advisory's pull request compares the fork branch with the fork's own
+`main`, which GitHub does not keep current, so it can show no conflict while
+the branch conflicts with `main`. Before the maintainer merges it,
+fast-forward the fork's `main` to `main`, merge `main` into the fork branch,
+push both to the fork only, and check that
+`git merge-tree --write-tree origin/main HEAD` reports no conflict.
+
+Before the release, open a small pull request with a real change and put a
+`BEGIN_COMMIT_OVERRIDE` block in its body. release-please then reads the
+block instead of that pull request's own commit message:
+
+- List the pull request's own entry and the advisory commit's own
+  user-facing entries, with each `BREAKING CHANGE:` footer copied exactly.
+  The advisory commit's body also repeats the history that the fork branch
+  merged from `main`, including earlier `BREAKING CHANGE:` footers. Parse it
+  and leave those repeated entries out, or they appear twice. Put an entry
+  with `!` first: release-please starts a new entry only at a header without
+  `!` after an empty line, so a later `!` header joins the entry before it.
+- Change a file in every component the advisory commit changed, for example
+  under `packages/cloud/` when it changed `@k2b/cloud`. release-please gives
+  the override only to the components of the pull request's own files.
+- Write the marker only once, where the block starts: release-please takes
+  the text after the first `BEGIN_COMMIT_OVERRIDE` in the body, also when that
+  first one stands in a sentence.
+- Keep the block and the rest of the text free of HTML-like markup, and name
+  the behavior, not the vulnerability, until the advisory is published.
+
+After the merge, check that the refreshed release PR lists the advisory
+entries under each component, and run
+`bun scripts/check-release-pr-body.ts --pr <n>` on it. Publish the advisory
+after the release, with the released `@k2b/cloud` version as the first
+patched version.
 
 ### Recover a release that release-please skipped
 

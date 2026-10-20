@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Layout and navigation
@@ -18,6 +18,14 @@ pages, breadcrumbs and a footer.
 
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
+
+Application authors put objects in the sidebar and views of the open object
+in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
+quiet secondary actions share that row while the workspace width permits;
+filters wrap and the quiet filtered result count disappears first. Put the
+one filled primary action in `Head.primary`; on phones the shell leaves its
+place beside the bottom bar. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
+for the complete rule and API.
 
 ## Know the shell at each width
 
@@ -80,20 +88,17 @@ A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
 no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
 
-`AppWorkspace.Detail` occupies a full-height column beside the workspace head
-and panes from 768 px. Below 768 px it is a half or full sheet at the window’s
-bottom edge. A closable panel on a coarse pointer from 768 to 1023 px overlays
-Main as a drawer. Pass its existing close action as `onClose` in an island or
-client component, or mark a server-rendered panel’s close control with
-`data-workspace-detail-close`. Use `scrollClass="k2b-detail-trail"` on
-DataTable, and `k2b-detail-trail` on a board’s horizontal scroller: beside
-the panel the table keeps its column widths, and under a tablet drawer both
-get the drawer’s width as space at their end. The trail is the clipping scroll
-viewport and carries the surface radius. Put it directly in Main’s content box
-with `scroll={false}` on Main and no vertical scroller around it; a reserved
-scrollbar gutter would widen the gap before the panel beyond
-`--k2b-workspace-detail-inset`.
-See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
+From 768 px, `AppWorkspace.Detail` is a column when it fits beside Main's
+minimum (320 px, raised with `AppWorkspace.Main minWidth`). Otherwise it waits
+behind **Details**; selecting an item opens it directly as a drawer. The
+column shares the workspace surface. The drawer sits flush with the app card's
+edge; Escape parks it and returns focus to Details. Opening Cloud's panel
+parks the drawer; closing the panel restores the column if it fits. The panel
+never closes automatically. Below 768 px, Detail remains a phone sheet or page.
+Use `scrollClass="k2b-detail-trail"` on DataTable or mark a board's horizontal
+scroller with `k2b-detail-trail` so its last item can scroll beside an open drawer.
+See [Detail and panel](/en/ui/layout/workspace#detail-and-panel) for sizing,
+focus, gestures, and the close-action contract.
 
 ### Hide the app bar and navigation
 
@@ -140,9 +145,37 @@ See [Offer a panel](/en/docs/platform/panels).
 fit this page, for example `help={["inventory-start", "inventory-access"]}`.
 Help lists them first under **For this view**, in the declared order. Cloud
 removes duplicates, ignores IDs outside the reader's authorized Help manifest,
-and keeps at most three. Without a manifest, the section is absent. These
+and keeps at most three IDs of at most 180 characters each. Without a manifest, the section is absent. These
 articles stay in their usual task tiles or kind groups too. See
 [In-product Help](/en/docs/platform/help#use-the-automatically-derived-surfaces).
+
+`context?: { scope?: CloudResourceRef } | false` reports the current place to
+the visible panel, for example
+`context={{ scope: { type: "inventory.warehouse", id: warehouse.id } }}`.
+Use the public ID the owning app's resource reader accepts. Cloud adds the
+current app ID and the filtered `help` IDs above. An invalid scope is omitted;
+`context={false}` disables all context for the document. With no current app
+or no panel slot, there is no context.
+
+When the place changes inside one document, publish its current scope from a
+reactive effect in browser code. Dispose that effect's previous publication
+when it changes or unmounts:
+
+```ts
+import { publishPageContext } from "@k2b/cloud/browser/panel";
+import { createEffect, onCleanup } from "solid-js";
+
+createEffect(() => {
+  onCleanup(publishPageContext({ scope: currentScope() }));
+});
+```
+
+Each call owns one source. The most recent active source with a scope wins;
+disposing it reveals the next source, then the server scope. Publishers work
+before the lazy panel controller loads and across independent islands. Cloud
+asks consent per provider app before sharing; Core providers need no consent.
+See [Page context](/en/docs/platform/panels#page-context) for reading it and
+its authorization boundaries.
 
 `printHint?: string` supplies the application's final localized export or printing guidance. In regular and focus mode, `Layout` appends a screen-hidden `data-print-fallback` as the last child of the app canvas. When no `data-print-region` exists, only this fallback prints. Its default hint is “Open the item you want to print, or use the app's export.” Pass an app-specific sentence, such as “Open a note to print it, or download it as a PDF from the note's details.” See [Browser printing](/en/ui/layout/print) for marking printable content.
 
@@ -661,8 +694,12 @@ See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 ## Show the container an app works in
 
 Use `AppWorkspace.SidebarSwitcher` when the app works inside one container
-chosen from several: a notebook, space, mailbox, base, or venue. Put it first
-in `SidebarDesktop`, above the navigation for that container. It replaces
+chosen from several and the sidebar shows that container's contents: a
+notebook's pages, a base's tables, a mailbox's folders, or a venue. When the
+containers are themselves the objects, list them as sidebar rows instead, so
+another one is one click away; Spaces lists every Space this way. Put the
+switcher first in `SidebarDesktop`, above the navigation for that container.
+It replaces
 app-made **All …** sidebar rows with one head and a panel of containers and
 actions. Offer **New …** only to people who may create, and **All …** as a
 link to the overview.

@@ -1,6 +1,7 @@
-import { audit, toPgTextArray } from "@k2b/cloud/services";
+import { audit, requireConfirmedBrowserSignIn, toPgTextArray } from "@k2b/cloud/services";
 import { redis, sql } from "bun";
 import type { OAuthClient, OAuthScope } from "@/contracts";
+import { rejectBrowserSignIn } from "./sign-in";
 
 // ==========================
 // OAuth Device Authorization Grant (RFC 8628)
@@ -30,6 +31,7 @@ type DbDeviceAuthorization = {
   scopes: string[];
   status: DeviceStatus;
   user_id: string | null;
+  auth_epoch: string | number | null;
   expires_at: Date;
   login_lifetime_seconds: number | null;
 };
@@ -140,13 +142,29 @@ export const decide = async (params: {
   id: string;
   client: OAuthClient;
   actor: AuditActor;
+  authEpoch: number;
   decision: "approve" | "deny";
+  browserSignIn: { userId: string; sid: string };
 }): Promise<boolean> =>
   sql.begin(async (tx) => {
+    const [pending] = await tx<{ scopes: string[] }[]>`
+      SELECT scopes FROM oauth.device_authorizations
+      WHERE id = ${params.id}::uuid AND client_id = ${params.client.clientId}
+        AND status = 'pending' AND NOT app_approval AND expires_at > now()
+      FOR UPDATE
+    `;
+    if (!pending) return false;
+    const lasting = params.decision === "approve" && pending.scopes.includes("offline_access");
+    if (lasting) {
+      if (params.browserSignIn.userId !== params.actor.userId) return rejectBrowserSignIn("FORBIDDEN");
+      await requireConfirmedBrowserSignIn(tx, params.browserSignIn, rejectBrowserSignIn);
+    }
     const status: DeviceStatus = params.decision === "approve" ? "approved" : "denied";
     const [row] = await tx<{ id: string; scopes: string[] }[]>`
       UPDATE oauth.device_authorizations
-      SET status = ${status}, user_id = ${params.actor.userId}::uuid, decided_at = now()
+      SET status = ${status}, user_id = ${params.actor.userId}::uuid, decided_at = now(), auth_epoch = ${params.authEpoch},
+        confirmed_sid = ${lasting ? params.browserSignIn.sid : null}::uuid,
+        confirmed_at = CASE WHEN ${lasting} THEN now() ELSE NULL END
       WHERE id = ${params.id}::uuid
         AND client_id = ${params.client.clientId}
         AND status = 'pending'
@@ -174,6 +192,7 @@ export type DevicePollResult =
   | {
       ok: true;
       userId: string;
+      authEpoch: number;
       scopes: OAuthScope[];
       audiences: string[];
       loginLifetimeSeconds: number;
@@ -189,13 +208,16 @@ export const poll = async (params: {
   clientId: string;
   resolveLoginLifetime: (stored: number | null) => Promise<number>;
 }): Promise<DevicePollResult> => {
-  const [row] = await sql<(DbDeviceAuthorization & { expired: boolean })[]>`
-    SELECT id, client_id, scopes, status, user_id, expires_at, login_lifetime_seconds, expires_at <= now() AS expired
-    FROM oauth.device_authorizations
+  const [row] = await sql<(DbDeviceAuthorization & { expired: boolean; epoch_current: boolean | null })[]>`
+    SELECT id, client_id, scopes, status, user_id, auth_epoch, expires_at, login_lifetime_seconds, expires_at <= now() AS expired,
+      auth_epoch = (SELECT auth_epoch FROM auth.users WHERE id = device.user_id) AS epoch_current
+    FROM oauth.device_authorizations device
     WHERE device_code_hash = ${sha256(params.deviceCode)}
   `;
   if (!row || row.client_id !== params.clientId) return { ok: false, error: "invalid_grant" };
   if (row.status === "consumed") return { ok: false, error: "invalid_grant" };
+  if ((row.status !== "pending" && row.auth_epoch === null) || (row.status === "approved" && !row.epoch_current))
+    return { ok: false, error: "invalid_grant" };
   if (row.expired) return { ok: false, error: "expired_token" };
 
   // RFC 8628 §3.5: polling faster than the advertised interval earns slow_down.
@@ -207,18 +229,20 @@ export const poll = async (params: {
 
   const loginLifetimeSeconds = await params.resolveLoginLifetime(row.login_lifetime_seconds);
   const nonce = crypto.randomUUID();
-  const [consumed] = await sql<{ user_id: string; scopes: string[]; audiences: string[] }[]>`
+  const [consumed] = await sql<{ user_id: string; auth_epoch: string | number; scopes: string[]; audiences: string[] }[]>`
     UPDATE oauth.device_authorizations
     SET status = 'consumed', authority_nonce = ${nonce}::uuid
     WHERE id = ${row.id}::uuid
       AND status = 'approved'
+      AND auth_epoch IS NOT NULL
       AND expires_at > now()
-    RETURNING user_id, scopes, audiences
+    RETURNING user_id, auth_epoch, scopes, audiences
   `;
   if (!consumed) return { ok: false, error: "invalid_grant" };
   return {
     ok: true,
     userId: consumed.user_id,
+    authEpoch: Number(consumed.auth_epoch),
     scopes: consumed.scopes as OAuthScope[],
     audiences: consumed.audiences,
     loginLifetimeSeconds,

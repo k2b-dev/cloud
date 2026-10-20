@@ -352,7 +352,7 @@ describe(`GestureMenu in ${browserName}`, () => {
         // The release and anything it would cause, such as a click on the backdrop, are handled by now.
         await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
         await page.waitForTimeout(300);
-        await expect(sheet.isVisible()).resolves.toBe(true);
+        expect(await sheet.isVisible()).toBe(true);
         expect(await page.locator("dialog[open]").getAttribute("aria-label")).toBe("Message 2");
         expect(await page.evaluate(() => getSelection()?.toString() ?? "")).toBe("");
         // Every item has a 44 px touch target at least.
@@ -416,7 +416,7 @@ describe(`GestureMenu in ${browserName}`, () => {
 
       await page.mouse.click(point.x, point.y, { button: "right" });
       const menu = page.locator(".k2b-context-menu[role='menu']");
-      await expect(menu.isVisible()).resolves.toBe(true);
+      expect(await menu.isVisible()).toBe(true);
       expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual(["Reply", "React with thumbs up", "Copy text"]);
       expect(await page.locator("dialog[open]").count()).toBe(0);
     } finally {

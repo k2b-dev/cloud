@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-18
+updated: 2026-10-20
 ---
 
 # Deployment requirements
@@ -27,16 +27,77 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Size Mail for large messages
+
+Each Mail process loads message bodies and extracts attachment text within one
+processing budget of **256 MiB**. Mail estimates the memory of each message or
+attachment from its size before it starts. Work waits in arrival order until it
+fits. A message or attachment larger than the budget runs alone. Mail never
+skips a message because of the budget. Large messages can take longer to
+appear, and the server answers pages and API requests while they wait. A body
+that a workflow or a person opens waits in the same order as background work,
+so it can take longer to load while large messages are processed.
+
+The budget comes on top of the process's own memory. A running Mail process
+uses about 350–450 MiB. One large message can need more than the budget on
+its own: about six times its size plus forty times the size of its HTML part.
+A 40 MiB message with 6 MiB of HTML needs about 500 MiB.
+
+Give Mail a container memory limit of at least **1.5 GiB**. With 1 GiB, a
+burst of large messages can still exceed the limit, and the container is
+killed and restarted.
+
+While the only Mail replica restarts, Mail pages and API requests return
+**Bad Gateway** until it is ready again. Where availability matters, run at
+least **two Mail replicas** from the release that contains the registry fix
+for [#1561](https://github.com/k2b-dev/cloud/issues/1561) and the Mail memory
+bound from [#1571](https://github.com/k2b-dev/cloud/pull/1571), each with the
+memory limit above. The number of replicas is your decision; see
+[Scaling and shutdown](/en/docs/operations/scaling-and-shutdown#what-scales-horizontally-what-must-stay-single-and-why).
+
+## Prepare for browser confirmation of new access
+
+Deploy updated Core and OAuth together: start Core first, then OAuth, as in
+[Start the new release and verify it](#start-the-new-release-and-verify-it).
+OAuth adds the database columns that Core reads for the confirmation, so new
+OAuth sign-ins fail until updated OAuth has started. New OAuth refresh families
+require confirmation from a browser sign-in in the last ten minutes, or a terminal
+Cloud Login approval bound to the exact grant. Existing refresh rotation keeps
+working without another browser sign-in. The browser flow of `cld login` always
+shows consent.
+Ensure the normal browser sign-in methods remain available for confirmation.
+
+People must create personal API keys and passkeys in the browser. Automation
+that created personal API keys using OAuth tokens or API keys now receives
+`403 BROWSER_SIGN_IN_REQUIRED`; create those keys in `/me/developer` instead.
+An older browser sign-in receives `403 REAUTHENTICATE` and requires signing in
+again. Resource and standalone service-account keys are unchanged.
+
+New browser-confirmed OAuth access sends a **New access** notice with email and
+browser delivery recommended. Keep the installation timezone and outgoing mail
+configured. Failed notice preparation is retried by Core maintenance in batches
+of at most 100 families; a notice failure does not fail a completed sign-in.
+See [the migration steps](/en/docs/reference/deprecations-and-migrations#confirm-new-personal-access-in-a-browser).
+
+## Upgrade Core and Action callers before applications use typed Action reviews
+
+Applications built with this release may declare Action policies and return
+per-call reviews or receipts. Upgrade Core and every application that calls
+Actions, at least Assistant and Capabilities, to this release or newer first.
+Older versions still discover the Actions through derived approval metadata,
+but reject the new response shapes. Existing apps need no migration in this
+release. See [Action contract migration](/en/docs/platform/capabilities#migrate-an-application).
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |
 | --- | --- | --- |
 | Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
-| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks and runtime work through NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
+| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks, setup runs on one replica of an application at a time through a NATS lease, and runtime work uses NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
-| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
+| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; the gateway keeps cross-site requests and subresource loads uncompressed. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
 | Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
@@ -208,6 +269,14 @@ header through unchanged. Traefik replaces it by default; do not enable
 `forwardedHeaders.trustedIPs`. To verify, sign in from two networks: rate
 limits and audit entries must show different addresses, not the proxy's.
 
+A public proxy or CDN in front of the gateway that is absent from
+`GATEWAY_TRUSTED_PROXIES`, such as Cloudflare, makes Core see the proxy's
+address. Sign-in places and network names will then describe the proxy instead
+of the person when those details are used; see
+[Sign-in locations](/en/docs/operations/sign-in-locations). Private-network
+proxy addresses are ignored by the place lookup, but those proxies still need
+to be trusted for rate limits.
+
 ## Assign configuration to the correct service
 
 Inject secrets at runtime, never into image build arguments, browser bundles,
@@ -281,8 +350,10 @@ and ephemeral host credential. This is process isolation within one
 capability-free application container, not a separate VM per user; the
 residual risk of an unsandboxed renderer inside that container is accepted and
 tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
-Chromium into a dedicated sidecar. Keep one Assistant replica for now; lost
-hosts are not replayed. Studio previews continue running in the user's browser.
+Chromium into a dedicated sidecar. Keep one Assistant replica for now: Code
+Mode hosts and their approval waits live in the Assistant process, so a poll or
+an approval that reaches another replica marks the call lost. Lost hosts are not
+replayed. Studio previews continue running in the user's browser.
 
 ## Select applications and feature dependencies
 
@@ -300,7 +371,7 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming and must not buffer or compress streamed responses, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes. The gateway compresses HTML and JSON itself with Brotli or gzip according to `Accept-Encoding`, while preserving streaming. Ingress compression of these responses is not needed. Proxies and ingress must pass `Cache-Control: no-transform` responses through without compression or any other transformation. Ingress must pass `Content-Encoding` through, preserve WebSockets, and must not buffer or compress SSE or NDJSON streams, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
@@ -309,7 +380,7 @@ or mutate real data without approval.
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
-| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose | Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
+| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; ClickHouse is optional in this release | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) can be connected now for later releases; current telemetry stays in Postgres. Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
 
 ### Work applications
 
@@ -477,7 +548,63 @@ image, to confirm that assets still load.
    Confirm health, authorization, durable writes, and any required background
    operation separately.
 
+## Provide ClickHouse for Pulse
+
+Provide ClickHouse 26.9 or newer as one node on the internal network, with its
+own persistent volume. Keep the instance dedicated to Pulse: ClickHouse user
+management is instance-wide, so the service user can alter any user, including
+ClickHouse admins. Whoever operates ClickHouse as admin can read all Pulse data.
+
+For the **normal** read profile, plan at least **10 GB RAM**: three concurrent
+reads at 2 GB, 1 GB for maintenance, and reserve. Choose **klein** (small) on
+smaller servers. The setup script also creates **groß** (large); each read
+profile has fixed memory, execution, scan and result limits that readers cannot
+override. This release installs the profiles but does not yet expose read-profile
+selection for bases.
+
+A Cloud admin opens **Administration → Pulse → Data store** (`/admin/pulse`),
+chooses the service password and requests the setup script. Run that script as
+the ClickHouse admin once, with `clickhouse-client --multiquery` or equivalent.
+It contains a salted password hash only and can be re-run to restore profiles
+or update the service password. Then enter the address, service user and
+password on that page, or use:
+
+```sh
+cld pulse admin store setup-sql --password-file /private/pulse.password
+# Run the resulting script as the ClickHouse admin before saving the connection.
+cld pulse admin store set --url http://clickhouse:8123 --password-file /private/pulse.password
+cld pulse admin store check
+```
+
+The save checks reachability, sign-in, version, scoped rights and profile
+constraints before replacing the stored settings. Failed checks leave the
+saved connection unchanged and identify the failed check with a repair hint.
+Store passwords only through the page, a private file or stdin; never put them
+in a CLI flag value or URL.
+
+The Cloud admin owns this internal target. Pulse allows exactly the host in
+the saved or submitted ClickHouse address, without environment configuration.
+Requests connect directly to checked addresses and never follow redirects.
+Remote response bodies are never echoed in errors. The answer time can still
+tell a closed port from an open one, so the Cloud admin role carries reach into
+the internal network that Cloud can connect to.
+
+Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
+Postgres and its encryption keys. Restore them as a consistent set.
+
+**In this release, Pulse does not yet store data in ClickHouse.** Without a
+connection, Pulse keeps working as before and both Cloud and Pulse report ready.
+Later releases require this store. Production Compose does not provision it;
+the operator supplies it.
+
 ## Verify readiness and upgrades
+
+During the rollout to this release, and during a rollback to the previous
+version, replicas of the previous version write no liveness key. While they
+run, a replica that stops can still delete the shared registry entry once, and
+surviving replicas restore it within 60 seconds. During a rollback, replicas of
+this release also replace the previous version's entry with their own on their
+next refresh until they stop. No configuration or rollout order is required.
 
 Check `/_cloud/ready` on each service's **private** origin, then check gateway
 registration and request an owned route through the public origin. The gateway's
@@ -498,6 +625,35 @@ sets and preflight, [Scaling and shutdown](/en/docs/operations/scaling-and-shutd
 for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshooting)
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
+
+### Start replicas of one application together
+
+Replicas of one application can now boot together without setup races causing
+restarts. A starting replica waits while another runs setup, so its boot time
+grows by the other replica's setup time. A replica that crashes or is stopped
+during setup delays the others by at most about 60 seconds while its NATS lease
+expires.
+
+During the rollout to this release, a replica of the previous version takes no
+setup lock. Restart old and new replicas of one app one at a time until all
+run this release. Keep Core first: it creates the shared schemas other
+applications need.
+
+### Prepare Pulse's new data store
+
+This release adds an optional ClickHouse connection and versioned Pulse
+Postgres migrations. A complete existing Pulse installation is adopted without
+replaying its baseline; older images must not start against ledger versions
+they do not recognize. An incomplete Alpha schema still requires an explicit
+reset and is never upgraded automatically.
+
+Provision and [connect ClickHouse](#provide-clickhouse-for-pulse) before the
+later releases that move telemetry there. No data moves in this release, and
+an unset store does not change startup or existing Pulse features.
+
+### Upgrade Spaces task deadlines
+
+Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.
 
 ### Upgrade Spaces user claims and assignments
 
@@ -554,6 +710,24 @@ saved goes out without its signature. Rolling Mail back keeps the column and
 has the same effect for drafts saved after the update. After the rollout, open
 a new message in a mailbox with a default signature and check that the preview
 shows the signature below the text.
+
+### Mail mailbox logos
+
+On its next start, Mail adds `mail.mailbox_logo_versions`,
+`mail.mailboxes.logo_version_id`, and
+`mail.outbox_submissions.inline_logo_version_id`. No configuration change is
+needed. Roll all Mail replicas together: an older replica ignores the frozen
+logo in a queued message and sends HTML whose `cid:` image has no inline part.
+A rollback has the same limitation for messages queued with logos.
+
+Logos count toward the Mail database share, at most 100 KiB per immutable
+version. Unused versions are removed hourly; current logos and versions still
+needed by queued messages or Sent-copy retries are retained. Local sent copies
+retain their inline images in the deduplicated Mail blob store, independently
+of logo versions. After upgrading,
+upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
+schedule it. Check that the local copy shows the logo before provider sync,
+then send it and check that it arrives as an inline image without a remote image link.
 
 ### Mail storage for kept conversations
 
@@ -1004,6 +1178,11 @@ An installation with a large backlog drains it over time. PostgreSQL reuses
 the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
 See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
 
+### Assistant approval choices
+
+**Always approve** is no longer offered on Assistant questions; choices made
+earlier still apply until the next major release.
+
 ### Record why routines stop
 
 This release gives every paused routine and every routine that needs its owner
@@ -1023,6 +1202,23 @@ ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS ai_chat_tasks_reason_state_c
 ```
 
 See [Routine names and stop reasons](/en/docs/ai/structured-and-background-ai#routine-names-and-stop-reasons).
+
+### Check the app's review before a routine changes anything
+
+Routines whose calls the app would ask about now stop with **Braucht dich** /
+**Needs you** instead of running. Before each Action with
+`approval: "rememberable"`, a routine asks the app's review. When the review
+gives no approval scope, fails, or is missing, the Action does not run, and
+the routine shows which Action needs the person. It needs no configuration
+change.
+
+The first Core start adds the column `reason_action` to `ai.chat_tasks` and the
+constraint `ai_chat_tasks_reason_action_length_check`, which only limits the
+action name to 200 characters. The change is backward-compatible: an earlier
+Core can run beside the new one and can be rolled back to without SQL. An
+earlier Core or Assistant still runs such Actions without the review, so
+finish the rollout of both before you rely on the stop. See
+[Routine Action reviews](/en/docs/ai/structured-and-background-ai#routine-action-reviews).
 
 ### Approve OAuth sign-ins in Cloud Login
 
@@ -1069,6 +1265,23 @@ and wait until `/_cloud/ready` answers ready before upgrading further.
 An installation that started Contacts on any release from v0.7.0 through
 v0.45.0 needs no action. See the
 [Contacts short-ID upgrade path](/en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids).
+
+### Discover Commands from navigation apps
+
+The global palette now hides Commands from apps outside a person's navigation.
+No configuration change is needed. The slash menu offers the same Commands in
+**Open in apps**, except those of its own app. Both surfaces require Commands
+that accept an empty input. The target page still checks access.
+
+### Index the messages people sent for Recent
+
+The slash menu's **Recent** section reads the newest messages a person sent.
+The first Core start builds the partial index `idx_ai_messages_sent_by_person`
+on `ai.messages`, covering only people's own chat messages. It needs no
+configuration change. Like the other `ai.messages` indexes, Core builds it
+during its migration: writes to `ai.messages` wait until it is done, so on an
+installation with a large chat history the first start takes longer. A
+rollback keeps the index; an earlier Core ignores it.
 
 ## Coordinate an existing installation's identity upgrade
 
@@ -1117,16 +1330,19 @@ Notebook, or application-schema upgrade checks.
    checks Core's authority before its migrations. Check every service's private
    readiness and its registered public route; gateway health alone is not enough.
    The supplied Compose orders OAuth after Core, but does not impose that order
-   on every other application. Core signs device-authorization grants, so an
-   OAuth release with device sign-in needs Core from the same release; with an
-   older Core, device sign-in fails with `server_error` while other flows keep
-   working.
+   on every other application. Core and OAuth must run the same new release;
+   OAuth sign-ins and refreshes fail until both are updated. Update every
+   application built on `@k2b/cloud` to enforce the live account-epoch check.
 3. Sign in again with the installation's normal account method. Check logout
    and re-login, an authorized app page, global search, a dashboard widget, and
    a Notebook edit that survives reconnect and reload. If OAuth is used, test an
    existing client's authorization and refresh flow through the real HTTPS
    ingress. Old browser sessions and old OAuth access/ID tokens are rejected;
-   client registrations, client secrets, and refresh grants are retained.
+   client registrations and client secrets are retained. Existing OAuth sign-ins
+   of people end once, including their refresh grants and unredeemed codes.
+   Run `cld login` again and reconnect MCP clients and other apps. See
+   [OAuth sign-ins end once on upgrade](/en/docs/reference/deprecations-and-migrations#oauth-sign-ins-end-once-on-upgrade)
+   for rolling-update behavior.
 4. Check startup logs and the
    [JSON metadata repairs](/en/docs/operations/repair-jsonb-containers). Those
    repairs run on startup; no blanket manual repair or database reset is needed.

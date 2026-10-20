@@ -140,9 +140,9 @@ for (const viewport of [
       await app(page).getByText("30", { exact: true }).waitFor();
       await placeholder.evaluate((element) => element.setAttribute("data-harness-view", "kept"));
 
-      // Approve in place: the card becomes its receipt where it stood, and focus stays there without scrolling.
+      // Answer in place: the question collapses to its outcome line where it stood, and focus moves there without scrolling.
       await step(page, "approval");
-      const card = page.getByRole("region", { name: "Freigabe erforderlich: Send email" });
+      const card = page.getByRole("region", { name: "Send email?" });
       await card.waitFor();
       await announced(page, "Freigabe nötig: Send email");
       expect(await page.locator(".ai-turn-work > summary").textContent()).toContain("Wartet auf deine Freigabe");
@@ -151,7 +151,7 @@ for (const viewport of [
       await card.getByRole("button", { name: "Send email", exact: true }).click();
       await page.getByText("Email to Jana Berger sent").waitFor();
       expect((await measure(page)).receipt!.top).toBe(cardTop);
-      expect(await page.evaluate(() => document.activeElement?.classList.contains("ai-turn__action"))).toBe(true);
+      expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
       if (viewport.width > 600) {
         // Everything above the composer fits: neither the decision nor the focus moved the conversation.
         expect(await page.locator(".k2b-chat-timeline__viewport").evaluate((element) => element.scrollTop)).toBe(scrollTop);
@@ -206,7 +206,7 @@ test("a new version of a view takes the earlier place without a frame of its own
   }
 }, 60_000);
 
-test("a stop while an approval waits leaves a not-run receipt at the card's place", async () => {
+test("a stop while a question waits leaves a not-run line at the card's place", async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   try {
     await page.goto(server.url.href);
@@ -214,17 +214,17 @@ test("a stop while an approval waits leaves a not-run receipt at the card's plac
     await step(page, "start");
     await step(page, "present");
     await step(page, "approval");
-    await page.getByRole("region", { name: "Freigabe erforderlich: Send email" }).waitFor();
+    await page.getByRole("region", { name: "Send email?" }).waitFor();
     const before = await measure(page);
     await step(page, "stop");
-    await page.getByText("Nicht ausgeführt: Send email · gestoppt").waitFor();
+    await page.getByText("Die Antwort wurde angehalten.").waitFor();
     const after = await measure(page);
     expect(after.receipt!.top).toBeLessThanOrEqual(before.receipt!.top);
     expect(after.work).toEqual(before.work);
     expect(after.file).toEqual(before.file);
     expect(after.view).toEqual(before.view);
     // Nobody decided this card, so focus stays where it was.
-    expect(await page.evaluate(() => document.activeElement?.classList.contains("ai-turn__action"))).toBe(false);
+    expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(false);
     // A stopped turn has no valid status any more: its texts fold into the work line.
     expect(after.text).toBeNull();
     expect(await page.locator(".ai-turn-work > summary").textContent()).toBe("3 Min. gearbeitet · gestoppt6 Schritte");

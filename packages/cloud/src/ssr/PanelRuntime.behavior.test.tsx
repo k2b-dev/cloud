@@ -193,6 +193,44 @@ else {
     window.dispatchEvent(key());
     expect(h.postMessage).toHaveBeenCalledTimes(2);
   });
+  for (const apple of [false, true]) {
+    test(`posts mod+K search once, with exact modifiers, on ${apple ? "Apple" : "other"} devices`, () => {
+      const h = mount();
+      Object.defineProperty(navigator, "platform", { configurable: true, value: apple ? "MacIntel" : "Linux x86_64" });
+      h.postMessage.mockClear();
+      const key = (extra: KeyboardEventInit = {}) =>
+        new KeyboardEvent("keydown", { key: "K", metaKey: apple, ctrlKey: !apple, cancelable: true, ...extra });
+      for (const extra of [
+        { shiftKey: true },
+        { altKey: true },
+        { isComposing: true },
+        { metaKey: !apple, ctrlKey: apple },
+        { metaKey: true, ctrlKey: true },
+        { metaKey: false, ctrlKey: false },
+      ]) {
+        const event = key(extra);
+        window.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      const prevented = key();
+      prevented.preventDefault();
+      window.dispatchEvent(prevented);
+      expect(h.postMessage).not.toHaveBeenCalled();
+      const event = key();
+      window.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+      expect(h.postMessage.mock.calls).toEqual([[{ type: "cloud.panel.search", v: 1 }, "http://localhost"]]);
+      const repeat = key({ repeat: true });
+      window.dispatchEvent(repeat);
+      expect(repeat.defaultPrevented).toBe(true);
+      expect(h.postMessage).toHaveBeenCalledTimes(1);
+      h.dispose();
+      const afterDispose = key();
+      window.dispatchEvent(afterDispose);
+      expect(afterDispose.defaultPrevented).toBe(false);
+      expect(h.postMessage).toHaveBeenCalledTimes(1);
+    });
+  }
   test("Escape waits until later bubble handlers can prevent it, and cancels deferred work on dispose", () => {
     jest.useFakeTimers();
     const h = mount();

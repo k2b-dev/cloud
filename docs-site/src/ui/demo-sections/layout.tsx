@@ -10,6 +10,7 @@ import {
   DescriptionList,
   DetailPanel,
   Discussion,
+  FilterChip,
   FloatingWindow,
   IconButton,
   LinkCard,
@@ -17,6 +18,7 @@ import {
   MultiSelectInput,
   NoticeCard,
   PageTitle,
+  PageTrailProvider,
   Pagination,
   PanelDialog,
   PanelHeader,
@@ -46,6 +48,7 @@ import {
   Tag,
   TextInput,
   Toolbar,
+  ViewTabs,
 } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -53,6 +56,184 @@ import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./
 import { ResizeSeparatorDemo } from "./resize-separator";
 import { DemoGrid, type DemoSection } from "./types";
 import { LiveWorkspaceDemo } from "./workspace-live";
+
+const WorkspaceHeadRowDemo = () => {
+  const [tags, setTags] = createSignal(["customer"]);
+  const [statuses, setStatuses] = createSignal<string[]>([]);
+  const views = ["List", "Board", "Calendar", "Timeline", "Files", "Activity", "Archive"].map((label) => ({
+    id: label.toLowerCase(),
+    label,
+    href: `?view=${label.toLowerCase()}`,
+    count: label === "List" ? 12 : undefined,
+  }));
+  const filtered = () => tags().length > 0 || statuses().length > 0;
+  return (
+    <DemoCard
+      id="workspace-head-row"
+      chip={[
+        { kind: "component", name: "AppWorkspace.Head", from: "@k2b/ui" },
+        { kind: "component", name: "ViewTabs", from: "@k2b/ui" },
+      ]}
+      description="Objects stay on the left; views, filters, Reset, and actions share the head. Narrow the host to wrap filters and reveal the compact More count."
+      code={`<AppWorkspace.Head
+  views={<ViewTabs label="Views" current="list" items={views} />}
+  filters={<>{tagFilter}{statusFilter}</>}
+  filtered={filtered()}
+  onReset={() => { setTags([]); setStatuses([]); }}
+  count="12 results"
+  actions={<IconButton label="Search" variant="ghost"><i class="ti ti-search" aria-hidden="true" /></IconButton>}
+  primary={{ label: "New task", icon: "ti ti-plus", href: "?new=task" }}
+/>`}
+    >
+      <div
+        style={{
+          height: "24rem",
+          container: "k2b-app-area / inline-size",
+          resize: "horizontal",
+          overflow: "auto",
+          "max-width": "100%",
+          "min-width": "20rem",
+        }}
+      >
+        <PageTrailProvider trail={{ title: "Customer work", ancestors: [{ title: "Spaces", href: "?objects=spaces" }] }}>
+          <AppWorkspace>
+            <AppWorkspace.Head
+              views={<ViewTabs label="Views" current="list" items={views} />}
+              filters={
+                <>
+                  <FilterChip
+                    showValue
+                    label="Tags"
+                    icon="ti ti-tag"
+                    value={tags()}
+                    onValueChange={setTags}
+                    options={[{ multiple: true, options: [{ value: "customer", label: "Customer", color: "#16a34a" }] }]}
+                  />
+                  <FilterChip
+                    showValue
+                    label="Status"
+                    icon="ti ti-filter"
+                    value={statuses()}
+                    onValueChange={setStatuses}
+                    options={[
+                      {
+                        options: [
+                          { value: "open", label: "Open" },
+                          { value: "done", label: "Done" },
+                        ],
+                      },
+                    ]}
+                  />
+                </>
+              }
+              filtered={filtered()}
+              onReset={() => {
+                setTags([]);
+                setStatuses([]);
+              }}
+              count="12 results"
+              actions={
+                <IconButton label="Search" variant="ghost" size="sm">
+                  <i class="ti ti-search" aria-hidden="true" />
+                </IconButton>
+              }
+              primary={{ label: "New task", icon: "ti ti-plus", href: "?new=task" }}
+            />
+            <AppWorkspace.Sidebar label="Spaces" collapsible>
+              <AppWorkspace.SidebarDesktop>
+                <AppWorkspace.SidebarBody>
+                  <AppWorkspace.SidebarSection title="Spaces">
+                    <AppWorkspace.SidebarItem href="?space=customer" active>
+                      Customer work
+                    </AppWorkspace.SidebarItem>
+                    <AppWorkspace.SidebarItem href="?space=operations">Operations</AppWorkspace.SidebarItem>
+                  </AppWorkspace.SidebarSection>
+                </AppWorkspace.SidebarBody>
+              </AppWorkspace.SidebarDesktop>
+            </AppWorkspace.Sidebar>
+            <AppWorkspace.Content>
+              <AppWorkspace.Main>
+                <div class="p-4">
+                  <h2>Tasks</h2>
+                  <p>Prepare the customer workshop</p>
+                  <p>Review the project brief</p>
+                </div>
+              </AppWorkspace.Main>
+            </AppWorkspace.Content>
+          </AppWorkspace>
+        </PageTrailProvider>
+      </div>
+    </DemoCard>
+  );
+};
+
+const longViews = [
+  { id: "focus", label: "Focus", count: 12 },
+  { id: "needs-action", label: "Needs action", count: 12 },
+  { id: "assigned", label: "Assigned to me", count: 5 },
+  { id: "waiting", label: "Waiting for a reply", count: 2 },
+  { id: "unassigned", label: "Not assigned", count: 4 },
+  { id: "done", label: "Done" },
+].map((view) => ({ ...view, href: `?view=${view.id}` }));
+
+const WorkspaceHeadLongViewsDemo = () => (
+  <DemoCard
+    id="workspace-head-long-views"
+    chip={[
+      { kind: "component", name: "AppWorkspace.Head", from: "@k2b/ui" },
+      { kind: "component", name: "ViewTabs", from: "@k2b/ui" },
+    ]}
+    description="Long view names in a narrow head keep their full label and count. The strip scrolls sideways, starts with the current view in view, and fades the edges where more views wait. Widen the host to compare."
+    code={`<AppWorkspace.Head
+  views={<ViewTabs label="Views" current="waiting" items={[
+    { id: "focus", label: "Focus", count: 12, href: "?view=focus" },
+    { id: "needs-action", label: "Needs action", count: 12, href: "?view=needs-action" },
+    { id: "assigned", label: "Assigned to me", count: 5, href: "?view=assigned" },
+    { id: "waiting", label: "Waiting for a reply", count: 2, href: "?view=waiting" },
+    { id: "unassigned", label: "Not assigned", count: 4, href: "?view=unassigned" },
+    { id: "done", label: "Done", href: "?view=done" },
+  ]} />}
+  actions={<>{listType}{more}</>}
+/>`}
+  >
+    <div
+      style={{
+        width: "24rem",
+        height: "12rem",
+        container: "k2b-app-area / inline-size",
+        resize: "horizontal",
+        overflow: "auto",
+        "max-width": "100%",
+        "min-width": "20rem",
+      }}
+    >
+      <PageTrailProvider trail={{ title: "Support", ancestors: [] }}>
+        <AppWorkspace>
+          <AppWorkspace.Head
+            views={<ViewTabs label="Views" current="waiting" items={longViews} />}
+            actions={
+              <>
+                <IconButton label="List type" variant="ghost" size="sm">
+                  <i class="ti ti-layout-list" aria-hidden="true" />
+                </IconButton>
+                <IconButton label="More actions" variant="ghost" size="sm">
+                  <i class="ti ti-dots" aria-hidden="true" />
+                </IconButton>
+              </>
+            }
+          />
+          <AppWorkspace.Content>
+            <AppWorkspace.Main>
+              <div class="p-4">
+                <p>Waiting for a reply</p>
+              </div>
+            </AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </PageTrailProvider>
+    </div>
+  </DemoCard>
+);
 
 const workspaceLevelsFrameHeight = 560;
 const workspaceLevelsCode = `const level = new URL(request.url).searchParams.get("level") ?? "areas";
@@ -1999,6 +2180,8 @@ const items = [
   navigation: () => <NavigationDemo />,
   workspace: () => (
     <DemoGrid columns="one">
+      <WorkspaceHeadRowDemo />
+      <WorkspaceHeadLongViewsDemo />
       <NavigationDemo />
       <LiveWorkspaceDemo />
       <WorkspaceLevelsDemo />

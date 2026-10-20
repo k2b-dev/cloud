@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
@@ -8,7 +9,7 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
-import { executeMutationCommand } from "./command-runtime";
+import { executeMutationCommand, runMailboxCommandsJob } from "./command-runtime";
 import { createActorCommand } from "./commands";
 import { imapSmtpConnector } from "./connectors";
 import { checkCommandKeepProtection } from "./conversation-keep-rules";
@@ -668,6 +669,7 @@ suite("mail command runtime provider safety", () => {
     });
     return {
       move,
+      states,
       /** The configuration each command run passed to `withSession`. */
       runs: () => session.mock.calls.map(([runtime]) => runtime),
       /** The configuration of every provider step, in order. */
@@ -711,6 +713,96 @@ suite("mail command runtime provider safety", () => {
     return command.data.id;
   };
 
+  test.each(["before", "after"])(
+    "a move set throttled %s MOVE waits without claiming a final outcome",
+    async (phase) => {
+      // The job runs the mailbox's queue from its head, so commands that earlier tests left pending
+      // must neither lead the turn nor join the set.
+      await sql`DELETE FROM mail.commands WHERE mailbox_id = ${mailboxId}::uuid AND state IN ('queued', 'executing', 'ambiguous')`;
+      const first = await inboxMessage(`throttled-set-${phase}-first`, phase === "before" ? 424300 : 424302);
+      const second = await inboxMessage(`throttled-set-${phase}-second`, phase === "before" ? 424301 : 424303);
+      const throttle = Object.assign(new Error("The provider may be limiting requests"), { code: "ETHROTTLE" });
+      const provider = await movingProvider(first.rfcMessageId, { afterMove: throttle });
+      const ids: string[] = [];
+      try {
+        ids.push(await moveCommand(first.id, `throttled-set-${phase}-first`));
+        ids.push(await moveCommand(second.id, `throttled-set-${phase}-second`));
+        if (phase === "before") provider.states.mockRejectedValue(throttle);
+        else
+          provider.states.mockResolvedValueOnce(
+            new Map([
+              [424302, { exists: true, flags: [], keywords: [], messageId: first.rfcMessageId, modseq: "1" }],
+              [424303, { exists: true, flags: [], keywords: [], messageId: second.rfcMessageId, modseq: "1" }],
+            ]),
+          );
+        await runMailboxCommandsJob({ input: { mailboxId }, heartbeat: async () => {}, resubmit: () => {} });
+        expect(provider.states).toHaveBeenCalledTimes(phase === "before" ? 1 : 2);
+        expect(provider.states.mock.calls[0]?.[1].uids).toHaveLength(2);
+        expect(provider.move).toHaveBeenCalledTimes(phase === "before" ? 0 : 1);
+        for (const id of ids) {
+          const row = await commandRow(id);
+          expect(row?.state).toBe(phase === "before" ? "queued" : "ambiguous");
+          if (phase === "before") expect(row?.provider_effect_started_at).toBeNull();
+          else expect(row?.provider_effect_started_at).not.toBeNull();
+        }
+      } finally {
+        await provider.restore();
+        // These deliberately unsettled commands must not join a later test's mailbox turn.
+        for (const id of ids) await sql`DELETE FROM mail.commands WHERE id = ${id}::uuid`;
+      }
+    },
+    15_000,
+  );
+
+  test("a state change throttled during its pre-check requeues without starting an effect", async () => {
+    const message = await inboxMessage("throttled-state-precheck", 424304);
+    const state = spyOn(imapSmtpConnector, "getMessageState").mockRejectedValue(
+      Object.assign(new Error("The provider may be limiting requests"), { code: "ETHROTTLE" }),
+    );
+    const change = spyOn(imapSmtpConnector, "changeMessageState");
+    try {
+      const command = await createActorCommand({
+        context: adminContext,
+        mailboxId,
+        enqueue: false,
+        input: {
+          kind: "change_message_state",
+          messageId: message.id,
+          folderId: inboxFolderId,
+          change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+          idempotencyKey: `throttled-state-${suffix}`,
+        },
+      });
+      if (!command.ok) throw new Error(command.error.message);
+      expect(await executeMutationCommand(command.data.id)).toBe("queued");
+      expect(await commandRow(command.data.id)).toEqual({ state: "queued", provider_effect_started_at: null });
+      expect(change).not.toHaveBeenCalled();
+      const [row] = await sql<{ last_error_code: string }[]>`SELECT last_error_code FROM mail.commands WHERE id = ${command.data.id}::uuid`;
+      expect(row?.last_error_code).toBe("ETHROTTLE");
+    } finally {
+      change.mockRestore();
+      state.mockRestore();
+    }
+  });
+
+  test("a delete throttled during verification stays ambiguous", async () => {
+    const message = await inboxMessage("throttled-delete-verification", 424305);
+    const failures: Error[] = [];
+    const provider = deletingProvider(message.rfcMessageId, failures, async () => {
+      failures.push(Object.assign(new Error("The provider may be limiting requests"), { code: "ETHROTTLE" }));
+    });
+    try {
+      const id = await deleteCommand(message.id, "throttled-delete-verification");
+      expect(await executeMutationCommand(id)).toBe("ambiguous");
+      expect((await commandRow(id))?.state).toBe("ambiguous");
+      expect((await commandRow(id))?.provider_effect_started_at).not.toBeNull();
+      expect(provider.remove).toHaveBeenCalledTimes(1);
+      expect(provider.state).toHaveBeenCalledTimes(2);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a move runs every provider step in one session", async () => {
     const message = await inboxMessage("one-session-move", 424260);
     const provider = await movingProvider(message.rfcMessageId);
@@ -737,7 +829,11 @@ suite("mail command runtime provider safety", () => {
     try {
       if (adminContext.actor.kind !== "user") throw new Error("The test context must be a user");
       // A personal API key is minted without scopes and acts with its user's mailbox access.
-      const created = await serviceAccountCredentials.createUserApiToken({ user: adminContext.actor.user, name: `Mail CLI ${suffix}` });
+      const created = await serviceAccountCredentials.createUserApiToken({
+        user: adminContext.actor.user,
+        browserSignIn: await createTestBrowserSignIn(adminContext.actor.user.id),
+        name: `Mail CLI ${suffix}`,
+      });
       if (!created.ok) throw new Error(created.error.message);
       const authenticated = await serviceAccountCredentials.authenticateApiToken(created.data.token);
       if (!authenticated?.delegatedUser) throw new Error("The personal API key did not authenticate as its user");

@@ -1,4 +1,14 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  beforeEach as pinClockBeforeEach,
+  afterEach as restoreClockAfterEach,
+  setSystemTime,
+  spyOn,
+  test,
+} from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -301,6 +311,11 @@ describe("Mail list actions", () => {
           initialUserPreferences: readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+          },
         }),
       dom.root,
     );
@@ -699,3 +714,6 @@ describe("Mail list actions", () => {
     expect(dom.root.querySelector('[data-leaving="true"]')).toBeNull();
   });
 });
+
+pinClockBeforeEach(() => setSystemTime(new Date("2026-10-14T10:00:00.000Z")));
+restoreClockAfterEach(() => setSystemTime());

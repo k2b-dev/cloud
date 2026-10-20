@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { parse } from "postcss";
 import { appIds } from "../../../../scripts/workspace";
 import { appColorStyle, appColorSurfaces, appColors, contrastRatio, mixHex, relativeLuminance } from "./app-color";
 
@@ -106,9 +107,9 @@ describe("app colors", () => {
     for (const accent of accents) {
       const colors = appColors(accent);
       for (const theme of themes) {
-        const { ink, selected, selectedNav } = colors[theme];
-        for (const color of [ink, selected, selectedNav]) expect(color).toMatch(/^#[\da-f]{6}$/);
-        for (const [name, bg] of Object.entries({ ...appColorSurfaces[theme], selected, selectedNav })) {
+        const { ink, selected, selectedNav, shellSelected } = colors[theme];
+        for (const color of [ink, selected, selectedNav, shellSelected]) expect(color).toMatch(/^#[\da-f]{6}$/);
+        for (const [name, bg] of Object.entries({ ...appColorSurfaces[theme], selected, selectedNav, shellSelected })) {
           expect(contrastRatio(ink, bg), `${accent}/${theme}/${name} (${bg}), ink ${ink}`).toBeGreaterThanOrEqual(4.5);
         }
       }
@@ -132,23 +133,25 @@ describe("app colors", () => {
   });
 
   test("derives the specified selection fills and ordered plain hex declarations", () => {
-    expect(appColorStyle("#14b8a6")).toBe(
-      "--app-ink-light:#0d7469;--app-ink-dark:#14b8a6;--app-selected-light:#effaf9;--app-selected-dark:#112c2e;--app-selected-nav-light:#deeeed;--app-selected-nav-dark:#1e3d3f",
-    );
     const colors = appColors("#eab308");
     expect(colors.light.selected).toBe(mixHex("#eab308", appColorSurfaces.light.surface, 0.07));
-    expect(colors.light.selectedNav).toBe(mixHex("#eab308", appColorSurfaces.light.sidebar, 0.1));
+    expect(colors.light.selectedNav).toBe(mixHex("#eab308", appColorSurfaces.light.surface, 0.1));
     expect(colors.dark.selected).toBe(mixHex("#eab308", appColorSurfaces.dark.surface, 0.14));
-    expect(colors.dark.selectedNav).toBe(mixHex("#eab308", appColorSurfaces.dark.sidebar, 0.17));
+    expect(colors.dark.selectedNav).toBe(mixHex("#eab308", appColorSurfaces.dark.surface, 0.17));
+    expect(colors.light.shellSelected).toBe(appColorSurfaces.light.surface);
+    expect(colors.dark.shellSelected).toBe(mixHex("#eab308", appColorSurfaces.dark.muted, 0.17));
+    expect(appColorStyle("#14b8a6")).toBe(
+      "--app-ink-light:#0d7b6f;--app-ink-dark:#14b8a6;--app-selected-light:#effaf9;--app-selected-dark:#112c2e;--app-selected-nav-light:#e8f8f6;--app-selected-nav-dark:#123133",
+    );
   });
 
   test("preserves passing accents and stops at the mildest passing integer step", () => {
     expect(appColors("#1d4ed8").light.ink).toBe("#1d4ed8");
     for (const theme of themes) {
       const accent = "#eab308";
-      const { ink, selected, selectedNav } = appColors(accent)[theme];
+      const { ink, selected, selectedNav, shellSelected } = appColors(accent)[theme];
       const toward = theme === "light" ? "#000000" : "#ffffff";
-      const backgrounds = [...Object.values(appColorSurfaces[theme]), selected, selectedNav];
+      const backgrounds = [...Object.values(appColorSurfaces[theme]), selected, selectedNav, shellSelected];
       expect(ink).not.toBe("#000000");
       expect(ink).not.toBe("#ffffff");
       let step = 100;
@@ -161,8 +164,8 @@ describe("app colors", () => {
       } else expect(ink).toBe(accent);
     }
     // Exercise a dark-mode clamp too: yellow already passes unchanged there.
-    const { ink, selected, selectedNav } = appColors("#000000").dark;
-    const backgrounds = [...Object.values(appColorSurfaces.dark), selected, selectedNav];
+    const { ink, selected, selectedNav, shellSelected } = appColors("#000000").dark;
+    const backgrounds = [...Object.values(appColorSurfaces.dark), selected, selectedNav, shellSelected];
     let step = 100;
     while (step >= 0 && mixHex("#000000", "#ffffff", step / 100) !== ink) step--;
     expect(step).toBeGreaterThanOrEqual(0);
@@ -185,10 +188,34 @@ describe("app colors", () => {
       for (const [surface, token] of surfaceTokens) {
         expect(resolveColor(required(themeTokens[theme], token), theme), `${theme}/${token}`).toBe(surfaces[surface]);
       }
-      // The @k2b/ui workspace sidebar and its row hover, laid over that sidebar.
-      expect(resolveColor("var(--k2b-surface-muted)", theme), `${theme}/--k2b-surface-muted`).toBe(surfaces.sidebar);
-      expect(resolveColor("var(--k2b-app-workspace-hover)", theme, surfaces.sidebar), `${theme}/--k2b-app-workspace-hover`).toBe(
-        surfaces.sidebarHover,
+    }
+  });
+
+  test("the navigation fill base is the background the @k2b/ui sidebar declares", () => {
+    const selector = ".k2b-ui .k2b-app-workspace__sidebar";
+    const stylesDirectory = resolve(workspaceRoot, "packages/ui/src/styles");
+    const backgrounds: string[] = [];
+    let matchingRules = 0;
+    for (const file of readdirSync(stylesDirectory).filter((name) => name.endsWith(".css"))) {
+      const source = readFileSync(resolve(stylesDirectory, file), "utf8");
+      // Only root rules: exclude media/container overrides and selector variants.
+      for (const rule of parse(source, { from: file }).nodes) {
+        if (rule.type !== "rule" || !rule.selectors.some((value) => value.replace(/\s+/g, " ").trim() === selector)) continue;
+        matchingRules++;
+        for (const declaration of rule.nodes) {
+          if (declaration.type === "decl" && ["background", "background-color"].includes(declaration.prop)) {
+            backgrounds.push(declaration.value.replace(/\s+/g, " ").trim());
+          }
+        }
+      }
+    }
+    if (!matchingRules) throw new Error(`Missing top-level ${selector} selector in @k2b/ui CSS`);
+    expect(backgrounds, `Expected exactly one background or background-color declaration for ${selector} in @k2b/ui CSS`).toHaveLength(1);
+    for (const theme of themes) {
+      const sidebar = resolveColor(backgrounds[0]!, theme);
+      expect(sidebar, `${theme}/${selector} background`).toBe(appColorSurfaces[theme].sidebar);
+      expect(resolveColor("var(--k2b-app-workspace-hover)", theme, sidebar), `${theme}/--k2b-app-workspace-hover`).toBe(
+        appColorSurfaces[theme].sidebarHover,
       );
     }
   });

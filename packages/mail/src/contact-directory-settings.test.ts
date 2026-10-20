@@ -5,7 +5,7 @@ import {
   DEFAULT_MAIL_CONTACT_DIRECTORY,
   MAIL_CONTACT_DIRECTORY_DEFAULTS,
   proposeContactDirectoryConfig,
-  requestContactDirectory,
+  requestContactDirectoryConfig,
   resolveMailContactDirectory,
   usesContactDirectoryDefaults,
 } from "./contact-directory-settings";
@@ -39,7 +39,7 @@ const readDirectory = async (settings?: unknown) => {
       c.set("settings", settings);
       await next();
     });
-  router.get("/", (c) => c.json(requestContactDirectory(c)));
+  router.get("/", (c) => c.json(resolveMailContactDirectory(requestContactDirectoryConfig(c))));
   return (await router.request("/")).json();
 };
 

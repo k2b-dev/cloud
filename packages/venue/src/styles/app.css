@@ -4,3 +4,10 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* From a 64 rem app host the shift detail sits beside the calendar; below, a bottom sheet shows it. */
+@container k2b-app-area not (min-width: 64rem) {
+  .venue-shift-detail {
+    display: none !important;
+  }
+}

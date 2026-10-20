@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-17
+updated: 2026-10-20
 ---
 
 # Mail
@@ -14,10 +14,33 @@ Mail connects email accounts and turns their messages into a shared workspace.
 It keeps portable mail state synchronized with the provider while adding team
 context such as assignments, comments, local tags, reminders, and follow-up state.
 
-Open the mailbox name in the sidebar or phone menu to switch mailboxes. The
-current mailbox and the list show the receiving address. Signed-in users can
-choose **New mailbox**; after creation, its delivery settings open before you
-enter the mailbox. If settings cannot load, the mailbox opens directly.
+The sidebar lists **Focus** and your mailboxes, with pinned mailboxes first.
+The open mailbox expands to Inbox, Drafts, Scheduled, Send problems, Sent,
+Archive/Trash/Junk under **More**, and custom folders. On a phone, open the
+mailbox title to reach these places.
+
+The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
+**Waiting for reply**, **Unassigned**, and **More** for the remaining and saved
+views), a **Tag** chip, and a **Search** chip for an active structured search.
+Remove that chip or use **Reset** to clear filters. Folders, Scheduled, and
+Send problems have no view tabs. **Choose list view**, the **…** mailbox menu,
+and **Compose** are also in the head. The mailbox menu contains details,
+tools, and Settings according to your access.
+
+On wide screens the conversation list grows with the window from 320 to
+440 px, and the subject and messages stay in a centered reading column of at
+most 760 px. **Conversation details** stand beside the reader while the reader
+keeps 440 px next to them; otherwise they wait behind **Details** and open with
+one click, also from the reader's own details button. Hiding the list gives
+the reader that room. In Focus, a conversation opens its details beside the
+queue, or over its end when there is no room; on a phone it opens in its
+mailbox. List rows have three lines (sender and time, subject with its marks,
+preview) and a fourth only for tags or **Waiting**. When the reader is narrow,
+Reply all and Forward show only their icons, then move into **…**.
+
+Signed-in users can choose **New mailbox**; after creation, its delivery
+settings open before you enter the mailbox. If settings cannot load, the
+mailbox opens directly.
 
 ## Use Mail
 
@@ -64,7 +87,7 @@ secrets.
 ## Understand the working model
 
 We recommend **Needs action** as your inbox: the work status (**Needs action**, **Waiting for reply**, **Done**) is your queue; folders are filing.
-Every incoming message sets **Needs action** and clears **Show later** once Mail loads it, whatever its folder. A confirmed human reply sets **Waiting for reply**.
+Every incoming message sets **Needs action** and clears **Show later** once Mail loads it or gives up loading it, whatever its folder. A confirmed human reply sets **Waiting for reply**.
 Moving, archiving, filing, and marking read change no work status. Follow-up and assignment views span folders; see [Choose where a folder's mail appears](#choose-where-a-folders-mail-appears) for folder visibility.
 **Assigned to me** and **Unassigned** leave out **Done** and **Later** conversations.
 
@@ -105,7 +128,7 @@ Create it with `cld --json mail automation create --definition-file newsletter.y
 For important mail, add no status step: incoming mail already sets **Needs action**.
 
 In the guided editor, **AI classify** starts with **Important**, **Routine**, and an If branch: **Set status → Needs action** for **Important**, **Set status → Done** otherwise. Add **Move to folder** to the **Routine** branch to file it too.
-An automation's **Done** or **Waiting for reply** covers only its triggering message: loading it later does not reopen it, but any other incoming message sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
+An automation's **Done** or **Waiting for reply** covers only its triggering message, even if Mail loads it later or gives up loading it. Other incoming mail sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
 When several automations match, the oldest decides the folder. Another skips its read step if the message has left its folder or is being moved. Keep read and move in one automation, with read first; the local status step can share that path.
 For existing mail, enable a saved automation without AI steps, then run `cld --json mail automation backfill start <automation-id> --revision <revision> --yes`. One backfill hands over at most 100 messages; `limited` means run it again. For moving only, see [`cld mail sender move`](#automate-mail-from-the-terminal).
 
@@ -248,12 +271,15 @@ for the storage this takes.
 ## Delete and restore a mailbox
 
 The Mail overview lists your mailboxes in a sidebar with their unread and
-needs-action counts; opening one enters its workspace. The page itself is the
+needs-action counts; opening one enters its workspace. Inside a mailbox the
+same sidebar names the other mailboxes without counts, so opening a mailbox
+never waits for the cross-mailbox counts; the open mailbox shows its folders
+with live counts, and its pin and hide sit under **…** on its row. The page itself is the
 cross-mailbox focus queue (for me, unassigned, waiting, all active) with
 **Compose** as its primary action.
 
 People can pin a mailbox to the top of that sidebar or hide one they rarely
-need. A hidden mailbox moves to a collapsed **Hidden** section, and its
+need. A hidden mailbox moves to a collapsed **Hidden mailboxes** section, and its
 conversations leave the focus queue and its view counts; it stays connected and
 opens directly. Mail stores pins and hidden mailboxes per principal, so they
 apply on every device and never change what others see. A service account or
@@ -414,6 +440,34 @@ Use Markdown and Liquid in signatures and snippets. Type `/` to insert snippets
 only. Mail fills in snippet values when you insert them; signatures keep their
 variables until preview and send.
 
+Each mailbox can have one logo. In Mail, open the mailbox's **Settings → Writing → Logo**
+to upload or replace it, change its display width or alt text, or remove it after
+confirmation. These changes require **Manage** access; people with **Edit** access
+see the logo and its values read only. Changing the width or alt text stores a new
+version with the same image. Alternatively, upload it with
+`cld mail compose logo set --file logo.png`.
+Use `{{ mailbox.logo }}` in any signature to place it in new messages,
+replies, forwards, and older signatures still marked in the body. Mail sends
+the logo as an inline image part referenced by `cid:`, never as a remote link.
+The API, CLI, and composer previews show the same image bytes. In plain text,
+the placeholder becomes the logo's alt text. In snippets it stays empty.
+Use the logo tag alone: filters, conditions, and assignments using `mailbox.logo`
+are rejected. Whitespace variations such as `{{mailbox.logo}}` and
+`{{- mailbox.logo -}}` are supported. Each image occurrence counts toward the
+same preview and send size limit; reduce repeated logos if the message is too large.
+
+Upload a PNG or JPEG of at most 100 KiB (102400 bytes) and 1200×400 pixels.
+Mail removes private image metadata, including camera and GPS details, before
+storing the logo. JPEG files marked as rotated are rejected; save the image upright first.
+Display width defaults to 200 px; `--width` accepts 1–600 px. Alt text is
+required and defaults to the trimmed mailbox name; use `--alt` to change it
+(1–200 characters, no control characters). `cld mail compose logo get` shows
+the current logo; `cld mail compose logo remove --yes` removes it. Without a
+logo, the placeholder stays empty and preview warns that the logo is missing.
+The provider's Drafts copy has no signature and therefore no logo. A message
+keeps the logo it had when it was queued for sending, including scheduled
+messages and retries, even if an administrator later replaces or removes the logo.
+
 API and Assistant clients choose the signature with `signatureTemplateId` on
 draft create, update, or patch. Pass a template ID for that signature or `null`
 for none. Omit the field to use the sender's default on create or keep the
@@ -426,6 +480,7 @@ current choice on update or patch. Never write a signature into the body.
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |
 | `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.logo` | The mailbox logo as an inline image in signatures; empty when the mailbox has no logo and in snippets |
 | `mailbox.name` | Mailbox name |
 | `mailbox.description` | Mailbox description; empty when not set |
 | `message.subject` | Subject of the draft |
@@ -487,9 +542,34 @@ cld mail admin contact-directory reset --yes
 | `mail.contact_directory.create` | `contact.create` | No; empty hides **New contact** |
 
 Mail calls the selected app as the requesting person, so that app's
-permissions decide which contacts appear. When the app is missing, stopped, or
-returns data that no longer matches the contract, Mail degrades exactly as when
-Contacts is unavailable.
+permissions decide which contacts appear. When the selected app is not installed
+(not registered), Mail hides contact features without an error. Recipient
+suggestions still come from the mailbox. The details panel has no contacts
+block. **Administration → Mail** still reports the missing app.
+
+When a registered app stops briefly or returns data that no longer matches the
+contract, the details panel shows **Contacts unavailable** with **Retry**.
+Recipient fields still offer mailbox addresses.
+
+### Mailbox recipient suggestions
+
+While you type in **To**, **Cc**, or **Bcc**, contact-directory suggestions come
+first. Addresses known from this mailbox follow, marked with a mail icon.
+They work without the Contacts app. Duplicate addresses appear once. The arrow
+keys highlight a suggestion and Enter adds it.
+
+`GET /api/mail/mailboxes/:mailboxId/recipient-suggestions?query=ada&limit=8`
+returns `{ items: [{ address, displayName, lastSeenAt, writtenTo }] }`.
+It requires mailbox-wide read access. Assigned-only access gets `403`.
+Users and service accounts use the same route and permission check.
+
+The query has 2–320 characters after trimming. The limit defaults to 8 and has
+a maximum of 20. Mail reads the newest 2,000 messages of the mailbox. Within
+them, it skips messages with no live placement or with any live Junk or Drafts
+placement, so those messages still count toward the 2,000. It also skips this
+mailbox's sender and reply-to identities. Addresses the mailbox wrote to come
+first; recency and frequency decide the remaining order. Older correspondents
+come from the contact directory.
 
 ## Find detailed product help
 
@@ -613,6 +693,30 @@ mutation or delivery operation to read its current fields and safety checks.
 To clean up existing mail from one sender or domain, check the count with `cld mail sender preview --match domain --value example.com`, then run `cld mail sender move --match domain --value example.com --destination archive --yes`. Use `--destination trash` or `--folder <name-or-id>` for other targets and `--match sender` for one address. Moving needs write access. Like incoming automations, it matches the first From address and never the mailbox's own sender addresses. It leaves mail in Sent, Drafts, Trash, and Junk where it is, and it does not move kept conversations to Trash. On Gmail, it moves each message once from the Inbox, so Archive removes only the Inbox label and a folder replaces it with that label; only Trash and Junk also take archived mail from All Mail. Each call queues at most 500 moves; when the result says `truncated`, run it again after those commands finish.
 
 To find commands that did not complete, run `cld mail command list --state failed` or `--state needs_attention`. A full page ends with the `--before` value for the next page. Mailbox admins resolve an unclear provider result with `cld mail operator run reconcile --command <id>`; `operator run retry` repeats only failed maintenance reads, not moves or sends.
+
+### Coordinate draft editing
+
+Use `cld mail draft lease get|acquire|heartbeat|release` to inspect, acquire,
+renew, or release a draft editing lease. Acquire returns a token for heartbeat
+and release. Keep it out of logs. All three lease errors return HTTP 409:
+
+| Code | Meaning | Client action |
+| --- | --- | --- |
+| `DRAFT_LEASE_HELD` | Another session holds the draft, including another tab of the same person. | Ask before taking over with `draft lease acquire --takeover`. |
+| `DRAFT_LEASE_NOT_OWNED` | The token expired, was released, or was replaced by a takeover. | Acquire a lease again. |
+| `DRAFT_LEASE_BUSY` | Lease state is being updated. | Retry shortly. |
+
+Draft save, discard, attachment upload, and attachment removal check the lease
+too. They answer `DRAFT_LEASE_HELD` or `DRAFT_LEASE_BUSY`. Restoring a recovery
+copy needs the token and can also answer `DRAFT_LEASE_NOT_OWNED`. Earlier
+versions answered `CONFLICT` for a busy or expired lease.
+
+An editor may send its own `editorId` (a UUID per editor instance) with
+acquire. A repeated acquire with the same `editorId` returns that editor's own
+lease, so a retry after a lost answer does not look like another session.
+
+A lease does not replace revision checks. Keep the local expected revision
+when acquiring again so a concurrent change becomes a recovery copy.
 
 ## Agent-oriented capabilities
 

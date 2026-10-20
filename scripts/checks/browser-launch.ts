@@ -8,7 +8,7 @@ import type { Finding, Rule } from "./rule";
 /** `launch()`, `launchPersistentContext()`, `connect()`, `connectOverCDP()`, and the like. */
 const directLaunch = /\b(?:chromium|firefox|webkit)\.(?:launch|connect)\w*\(/g;
 /** An import of Playwright or of the shared launcher, in any spelling. */
-const playwrightImport = /\bfrom\s+["'](?:playwright|[^"']*\/test\/browser(?:\.ts)?)["']/;
+export const playwrightImport = /\bfrom\s+["'](?:playwright|[^"']*\/test\/browser(?:\.ts)?)["']/;
 /** Integration tests run with `bun run test --integration`, in Chromium only. */
 const integrationImport = /scripts\/fixtures\/test-infra/;
 /**

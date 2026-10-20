@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Spaces
@@ -14,9 +14,12 @@ Spaces organizes tasks and events for a team, project, household, class, or
 recurring process. The same items can be viewed as a list, table, Kanban board,
 or calendar without copying the work into separate systems.
 
-Open the Space name in the sidebar or phone menu to switch Spaces. Signed-in
-users can choose **New space** to create and open a blank Space. The overview
-also offers the task board, event calendar, and project tracker starters.
+Open another Space in the sidebar, shared by the overview and every Space.
+On phones, open the title menu **Space name ⌄**, or **Spaces ⌄** on the overview.
+Both offer **My work**, every accessible Space, and **New space** for signed-in
+users. The create dialog offers **Template** with **Blank space**, **Task board**,
+**Event calendar**, and **Project tracker**; choosing one fills the form and sets
+the starting view. Every field stays editable before creating the Space.
 
 ## Use Spaces
 
@@ -33,12 +36,22 @@ also offers the task board, event calendar, and project tracker starters.
   enabled calendar feed to another calendar client.
 
 The Spaces start page brings accessible work together without changing its
-owning Space. A sidebar lists your Spaces with their open items and last
-activity; opening one enters its workspace, and **New space** starts one from
-a starter. Pin frequently used Spaces, search Spaces, tasks, and events,
-and switch between **For me**, **Today**, and **Upcoming**. On larger screens,
-the Activity panel shows recent Space and item changes; on mobile it opens
-from the Activity button.
+owning Space. **My work** in the sidebar opens it and shows the count assigned
+to you. Each Space row shows its open item count; pinned Spaces come first.
+The sidebar width is shared between the overview and Space pages and can be
+resized. In the page header, switch between **For me**, **Today**, and
+**Upcoming**, search Spaces, tasks, and events, or choose **New task** to choose
+a Space for a new task. On larger screens, the Activity panel shows recent
+Space and item changes; on mobile it opens from the **Activity** button.
+
+Inside a Space, **List**, **Table**, **Kanban**, and **Calendar** are tabs in the
+page header. Search and filter chips share that header in list, table, and
+Kanban; **Reset** clears active filters and search. The calendar keeps its own
+toolbar. The header also offers scoped search, **New task** or **New event**,
+and the **…** menu for **Space settings**, **Copy iCal URL** when enabled, and
+**Keyboard shortcuts** in Kanban. On phones, the primary action is a round
+**+** button. If you can edit the Space, the header previews people with access
+beside the menu or inside it when space is limited.
 
 The selected work view and its counters arrive with the page. Switching work
 views loads the selected list on demand; Back and Forward restore the view
@@ -102,7 +115,7 @@ Rows do not open the item. Read and edit details in Spaces on the web.
 | Link | A Cloud resource reference or an external URL on one item; GitHub issue and pull request links show a cached preview |
 | Calendar surface | Time-based view, invitation integration, and optional iCal export |
 
-Tasks use deadlines; events use a schedule and may recur. Views, filters, and
+Tasks use deadlines; events use a schedule and may recur. Deadlines are all-day by default. Choose **Add time** for a specific time and **Remove time** to return to an all-day deadline. An all-day deadline becomes overdue on the following day in the application timezone. Day and week calendars show it in the all-day row; month and year show it on its date. Existing timed deadlines keep their time. Views, filters, and
 grouping change how items are presented, not which resource owns them.
 
 Each person can react once per emoji. Reacting needs write access; seeing reactions
@@ -200,8 +213,9 @@ a phone, and its arrows move by whole weeks. Both load the week before and
 after while you scroll, and the URL follows the first day you see; an item
 opens there in place. Another filter keeps the days already loaded and the
 place you see, and **Back** after an item keeps the day you scrolled to. The count next to the filters counts the days you see.
-Deadlines show as dashed lines with a checkbox, or **Space**, to check the
-task off, and keep their time when you drag them. Free time creates an event
+Timed deadlines show as dashed lines with a checkbox, or **Space**, to check the
+task off, and keep their time when you drag them. All-day deadlines sit in the
+all-day row; move them in the month view, where they stay all-day, or in the task. Free time creates an event
 where it lies, and a task dragged from the row below the day view into free
 time gets that time, keeps its deadline also when it moves later, and leaves
 the row. **H**, **J**, **K**, **1** to **4**, **G**, **N**, and **Shift+N**
@@ -220,8 +234,9 @@ fetched server-side, cached in Valkey for five minutes per Space, and never
 fetched while a page renders: a first view shows the plain link and the
 detail panel fills the preview once. Public repositories work without
 configuration. A Space administrator can store one GitHub token per Space
-under **Settings › GitHub**; it is encrypted at rest, used only to preview
-links in that Space, and never displayed again. Without a token, private links
+under **… → Space settings → Connections → GitHub**; it is encrypted at rest,
+used only to preview links in that Space, and never displayed again. Without a
+token, private links
 render without a preview. Spaces never writes to GitHub.
 
 Task checklist entries are deliberately small: one completion state and one
@@ -261,7 +276,7 @@ with names unique per kind. A template stores a title and a description that
 may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, a priority, tags,
 assignees or **Assign to me** for whoever creates the item, a task checklist
 and estimate, and an event's location, link, all-day flag, and duration. A due
-time for tasks or a start time for events defaults to 17:00 or 09:00.
+time is optional for tasks: without one, the deadline is all-day. Events default to a 09:00 start.
 
 Its date rule decides which dates the new item dialog proposes:
 
@@ -273,8 +288,7 @@ Its date rule decides which dates the new item dialog proposes:
 
 Proposals are local calendar dates in the person's time zone, so week, month,
 and daylight-saving changes never move a proposed day. A weekday rule offers
-today only while the template's time still lies ahead; an offset always counts
-from today. When someone presses **+**, a Space with templates of that kind
+today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. When someone presses **+**, a Space with templates of that kind
 shows a **Template** chip row (a searchable list with more than six), and
 choosing one fills the form and shows the proposals as date chips with the
 first selected, next to **Other date…** and, for tasks, **No date**.
@@ -336,6 +350,8 @@ list templates with their rule and next proposals in the local time zone.
 --no-date]` creates an item from a template; other `add` flags override it. A
 given `--deadline` or `--starts-at` picks the day instead, and `--starts-at`
 needs `--ends-at`.
+
+For task deadlines, the API and CLI accept `YYYY-MM-DD` as an all-day date or an ISO date-time as a timed deadline. For example, `cld spaces due <item> 2026-10-24` sets an all-day deadline; `cld spaces due <item> 2026-10-24T17:00:00+02:00` adds a time. Responses carry `deadline` unchanged as a calendar date or normalized ISO instant, and `deadlineAllDay` is true only for a date-only deadline. It is false for timed or absent deadlines. Send `deadline: null` to clear a deadline through the update API. Calendar dates never pass through a timezone. `--due-before` still compares against an instant; an all-day deadline sorts at the start of its day in the configured timezone.
 
 Titles are matched exactly. When a space name or title matches several
 resources, the command fails with every candidate as `path (id)` and changes

@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Build and deploy
@@ -105,6 +105,29 @@ Add `scripts/build-extras.ts` only when the application must generate another
 artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.
 
 The build precompresses supported static files with Brotli and gzip.
+
+The application's `app.css` and `favicon.svg` URLs carry `?v=<content hash>`.
+The shared stylesheets (`fonts.css`, `tabler-icons.css`, and `global.css`)
+carry Core's registered release. URLs stay the same across restarts, and all
+applications use the same shared stylesheet URLs. Core's `/branding/favicon`
+keeps its unversioned URL.
+
+In production, these files use `immutable` only when the requested version
+matches the serving process's version. Other requests use `no-cache` with an
+ETag: revalidation takes one round trip and sends no body if the file is
+unchanged. Images built with the default `CLOUD_RELEASE=local` link the shared
+stylesheets without a version, so browsers revalidate them on each page.
+Set `CLOUD_RELEASE` to one immutable `sha-<commit>` value per build.
+
+During the first upgrade to a Cloud version with this behavior, stop every
+old instance of Core and of each application before a new instance receives
+traffic. Use stop-then-start, such as the Compose default or the Kubernetes
+`Recreate` strategy, because a rolling or surge update overlaps old and new
+instances even with one replica. An old instance answers every `/public` file
+`immutable`, also under a version that names the new build. A browser that
+gets the old file this way keeps it until the file changes in a later release.
+Later upgrades can roll, because new instances answer only their own versions
+`immutable`.
 
 Island URLs are `/inventory/_ssr/<content-hash>/<island>.js`. The hash covers
 built island JavaScript, so it stays stable across restarts and releases that
@@ -304,17 +327,44 @@ such as Grids, Mail, Contacts, Spaces, and Weather. See
 
 ## Enable panel providers
 
-Registry entries now accept optional `panel` metadata, and signed-in pages show
-a panel slot when a running application declares one. Nothing changes for
-readers until an application does. During a mixed rollout, pages served by an
-application built against an older `@k2b/cloud` show no slot; they ignore the
+Core now declares Help as a panel provider. Every signed-in reader has the
+slot on Layout pages unless the page sets `panel={false}`. Other applications
+can declare their own providers through optional `panel` registry metadata.
+During a mixed rollout, pages served by an application built against an older `@k2b/cloud` show no slot; they ignore the
 new field.
 
 Keep same-origin iframes allowed on provider routes. An operator's reverse
 proxy or security headers must not set `X-Frame-Options: DENY` or a
 `frame-ancestors` policy that blocks `'self'`. The provider remains responsible
 for authorization: panel visibility grants no route or resource access.
+Blocked framing prevents Help from becoming ready; the slot shows **The panel
+did not load** with **Try again**.
 See [Offer a panel](/en/docs/platform/panels).
+
+`defineApp()` now rejects a `panel.href` at or below the application's
+`<basePath>/help` path, because the framework's Help redirects would shadow
+it. An application with such a provider route must move it before it upgrades,
+or it fails at startup.
+
+### Panel context consent after the upgrade
+
+The panel runtime now supplies place context through the first iframe URL and
+subsequent same-origin messages. Providers served by Core need no consent;
+every other provider receives context only after the person allows it. Older
+application images do not report or receive this context. Rebuild applications
+that use the new `Layout.context` or provider helpers against this runtime.
+
+Core's normal migrations create `auth.panel_context_consent` before startup
+completes; no manual migration or configuration step is needed. The
+idempotent `panel-context-consent` migration adds one row per user and provider
+app ID, holding `allowed`, `revision`, and `updated_at`. It preserves existing answers and
+deletes a person's rows when their `auth.users` account is deleted. Include
+this table in the existing Core database backup policy. The table stores
+answers only, never resource refs or page context.
+
+Keep provider `Referrer-Policy: same-origin` responses intact, and keep query
+strings out of proxy logs and error reports. See the
+[panel context contract](/en/docs/platform/panels#page-context).
 
 ## Roll out a release
 

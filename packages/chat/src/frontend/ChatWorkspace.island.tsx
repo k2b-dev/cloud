@@ -596,7 +596,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                             </IconButton>
                           </Show>
                           <IconButtonLink
-                            label={panel() === "info" ? t().closeChatInfo : t().chatInfo}
+                            label={t().chatInfo}
                             href={panelHref(current().id, panel() === "info" ? null : "info", route().messageId)}
                             navigation="enhanced"
                             onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}

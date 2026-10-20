@@ -22,6 +22,7 @@ export {
 export { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
+export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
 export { getAiChatQuotas } from "./chat-quotas";
@@ -261,6 +262,7 @@ export {
   createCloudAiMemoryTool,
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
+export { type AiOpenQuestion, type AiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 export {
@@ -419,6 +421,7 @@ export type {
   AiProjectPromptSnapshot,
   AiProviderId,
   AiPublicModelProfile,
+  AiRecentResource,
   AiResolvedModel,
   AiRuntimeTool,
   AiSettingsError,

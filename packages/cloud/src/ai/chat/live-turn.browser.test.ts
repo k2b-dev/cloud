@@ -93,6 +93,7 @@ const settled = (page: Page, selector: string) =>
       document
         .querySelector(query)!
         .getAnimations({ subtree: true })
+        .filter((animation) => animation.timeline === document.timeline)
         .every((animation) => animation.playState !== "running"),
     selector,
   );
@@ -690,7 +691,7 @@ for (const view of [
   { name: "phone", width: 390, height: 844, touch: true },
 ] as const)
   for (const theme of ["light", "dark"] as const)
-    test(`a pending approval is a calm card that becomes its receipt in place, also when the turn ends (${view.name}, ${theme})`, async () => {
+    test(`a pending question collapses to its outcome line in place, also when the turn ends (${view.name}, ${theme})`, async () => {
       const context = await browser.newContext({
         viewport: { width: view.width, height: view.height },
         isMobile: view.touch,
@@ -750,67 +751,62 @@ for (const view of [
             },
           },
         });
-        const card = ".ai-turn__action .ai-approval";
+        const card = ".ai-turn__action .k2b-chat-decision__card";
+        await settled(page, ".ai-turn");
         const cardBox = (await viewportBox(page, card))!;
         const workBox = await viewportBox(page, ".ai-turn-work");
         const textBox = await viewportBox(page, ".ai-turn__text");
-        expect(await page.locator(card).innerText()).toContain(
-          de ? "Wird erst nach deiner Freigabe ausgeführt" : "Runs only after you approve it",
+        // Card v4: the old message is the question, Cloud says why, and there is no box around it.
+        expect(await page.locator(`${card} .k2b-chat-decision__sentence`).innerText()).toBe("Send the offer to Jana Berger.");
+        expect(await page.locator(`${card} .k2b-chat-decision__reason`).innerText()).toBe(
+          de ? "Ich frage, weil Mail hier jedes Mal fragt." : "I'm asking because Mail always asks for this.",
         );
-        // No heavy border: the tint alone sets the card apart.
-        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopColor)).toBe("rgba(0, 0, 0, 0)");
-        const [term, value] = await page.$$eval(`${card} dl > *`, (nodes) =>
-          nodes.slice(0, 2).map((node) => {
-            const box = node.getBoundingClientRect();
-            return [Math.round(box.left), Math.round(box.top)];
-          }),
-        );
-        const reject = (await page.getByRole("button", { name: de ? "Ablehnen" : "Reject", exact: true }).boundingBox())!;
-        const approve = page.locator(`${card} .k2b-split-button`);
+        expect(await page.$eval(card, (node) => getComputedStyle(node).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopWidth)).toBe("0px");
+        const approve = page.locator(`${card} .k2b-chat-decision__answer`).first();
+        const decline = page.locator(`${card} .k2b-chat-decision__answer`).nth(1);
         const approveBox = (await approve.boundingBox())!;
+        const declineBox = (await decline.boundingBox())!;
+        expect(await approve.innerText()).toBe(de ? "E-Mail senden" : "Send email");
+        expect(approveBox.height).toBeGreaterThanOrEqual(44);
+        expect(declineBox.y).toBe(approveBox.y);
         if (view.touch) {
-          // Phones stack each field under its label, and the decision buttons share the width.
-          expect(value![0]).toBe(term![0]);
-          expect(value![1]).toBeGreaterThan(term![1]!);
-          const actions = (await page.locator(`${card} .ai-approval__actions`).boundingBox())!;
-          expect(reject.y).toBe(approveBox.y);
-          expect(reject.width).toBeGreaterThan(actions.width * 0.35);
-          expect(approveBox.width).toBeGreaterThan(actions.width * 0.35);
-          expect(reject.width + approveBox.width).toBeGreaterThan(actions.width - 12);
-        } else {
-          expect(value![0]).toBeGreaterThan(term![0]!);
-          expect(value![1]).toBe(term![1]);
+          // Phones let the two answers share the row.
+          const answers = (await page.locator(`${card} .k2b-chat-decision__answers`).boundingBox())!;
+          expect(approveBox.width + declineBox.width).toBeGreaterThan(answers.width - 12);
         }
         expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
 
-        // Approving turns the card into a one-line receipt at its place, with focus on it; nothing above moves.
-        await page.locator(`${card} .k2b-split-button__primary`).click();
-        await frames(page);
+        // Approving collapses the card at once to its outcome line in its place, with focus on it; nothing above moves.
+        await approve.click();
+        await settled(page, ".ai-turn");
         expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
           { callId: "send", approved: true },
         ]);
         expect(await page.locator(card).count()).toBe(0);
-        const receipt = ".ai-turn__action .ai-turn-receipt";
+        const receipt = ".ai-turn__action .k2b-chat-outcome";
+        const current = `${receipt} .k2b-chat-outcome__text[data-current="true"]`;
         const receiptBox = (await viewportBox(page, receipt))!;
         expect(receiptBox[1]).toBe(cardBox[1]);
-        expect(receiptBox[3]).toBeLessThanOrEqual(32);
+        expect(receiptBox[3]).toBeLessThanOrEqual(48);
         expect(await viewportBox(page, ".ai-turn-work")).toEqual(workBox);
         expect(await viewportBox(page, ".ai-turn__text")).toEqual(textBox);
-        expect(await page.evaluate(() => document.activeElement?.classList.contains("ai-turn__action"))).toBe(true);
-        expect(await page.locator(receipt).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
+        expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
+        expect(await page.locator(current).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
 
-        // The turn reports the decision and the outcome: only the receipt's words change.
+        // The turn reports the decision and the outcome: only the line's words change, by 0 px.
         const at = "2026-10-07T10:23:45.000Z";
         const sent = de ? "E-Mail an Jana Berger gesendet" : "Email to Jana Berger sent";
-        await emit(page, { ...base, seq: 6, type: "block_set", block: { ...send, status: "running", approved: true, at } });
-        expect(await page.locator(receipt).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
+        await emit(page, { ...base, seq: 6, type: "block_set", block: { ...send, status: "running", approved: true } });
+        expect(await page.locator(current).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
+        expect(await viewportBox(page, receipt)).toEqual(receiptBox);
         await emit(page, {
           ...base,
           seq: 7,
           type: "block_set",
           block: { ...send, status: "completed", approved: true, result: { summary: sent }, at },
         });
-        expect(await page.locator(receipt).innerText()).toBe(`${sent} · 12:23`);
+        expect(await page.locator(current).innerText()).toBe(`${sent}12:23`);
         expect(await viewportBox(page, receipt)).toEqual(receiptBox);
         await emit(page, {
           ...base,
@@ -820,7 +816,7 @@ for (const view of [
           blockKind: "text",
           delta: "Done. Jana Berger has the offer.",
         });
-        const settled = {
+        const settledBoxes = {
           work: await viewportBox(page, ".ai-turn-work"),
           receipt: await viewportBox(page, receipt),
           text: await viewportBox(page, ".ai-turn__text"),
@@ -864,10 +860,10 @@ for (const view of [
           ],
         });
         await frames(page);
-        expect(await page.locator(receipt).innerText()).toBe(`${sent} · 12:23`);
-        expect(await viewportBox(page, ".ai-turn-work")).toEqual(settled.work);
-        expect(await viewportBox(page, ".ai-turn__text")).toEqual(settled.text);
-        expect(await viewportBox(page, receipt)).toEqual(settled.receipt);
+        expect(await page.locator(current).innerText()).toBe(`${sent}12:23`);
+        expect(await viewportBox(page, ".ai-turn-work")).toEqual(settledBoxes.work);
+        expect(await viewportBox(page, ".ai-turn__text")).toEqual(settledBoxes.text);
+        expect(await viewportBox(page, receipt)).toEqual(settledBoxes.receipt);
       } finally {
         await context.close();
       }
@@ -900,7 +896,7 @@ for (const view of [
       const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "write_file", args: { path: "/app.js" } };
       const status = "Good news: the chart API also returns the totals per month. Now I write the app files for the dashboard.";
       const place = ".ai-turn__text";
-      const receipt = ".ai-turn__action .ai-turn-receipt";
+      const receipt = ".ai-turn__action .k2b-chat-outcome";
       const style = async (selector: string) => {
         await settled(page, selector);
         return page.$eval(`${selector} .assistant-markdown-block`, (node) => {
@@ -996,7 +992,7 @@ for (const view of [
       ].join("\n\n");
       const sent = "Email to Jana Berger sent";
       const place = ".ai-turn__text";
-      const receipt = ".ai-turn__action .ai-turn-receipt";
+      const receipt = ".ai-turn__action .k2b-chat-outcome";
       // The chat opens while the action after the text runs: the text never showed as the answer before it is quiet.
       await emit(page, {
         ...base,
@@ -1061,7 +1057,7 @@ for (const view of [
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(0);
       await settled(page, place);
       expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
-      expect(await page.locator(receipt).innerText()).toBe(`${sent} · 10:00`);
+      expect(await page.locator(`${receipt} .k2b-chat-outcome__text[data-current="true"]`).innerText()).toBe(`${sent}10:00`);
       expect(await viewportBox(page, place)).toEqual(before.text);
       expect(await viewportBox(page, receipt)).toEqual(before.receipt);
     } finally {
@@ -1098,7 +1094,7 @@ test("a streaming answer without steps reserves no height, so it reflows live wh
 }, 30_000);
 
 for (const width of [390, 320])
-  test(`a long action title shortens the approve button on a phone instead of pushing it out of the card (${width} px)`, async () => {
+  test(`a long action title wraps inside its answer on a phone instead of pushing it out of the card (${width} px)`, async () => {
     const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
     try {
       const page = await context.newPage();
@@ -1127,25 +1123,28 @@ for (const width of [390, 320])
           approval: { allowAlways: false, message: "Einstellungen: " + title },
         },
       });
-      const card = ".ai-turn__action .ai-approval";
+      const card = ".ai-turn__action .k2b-chat-decision__card";
+      await settled(page, ".ai-turn");
       const boxes = await page.evaluate((query) => {
         const box = (selector: string) => document.querySelector(`${query} ${selector}`)!.getBoundingClientRect();
-        const label = document.querySelector<HTMLElement>(`${query} .k2b-split-button__primary .k2b-button__label`)!;
+        const answers = Array.from(document.querySelectorAll(`${query} .k2b-chat-decision__answer`)).map((node) =>
+          node.getBoundingClientRect(),
+        );
         return {
           card: box("").right,
-          menu: box(".k2b-split-button__menu-trigger").right,
-          reject: box(".ai-approval__actions > .k2b-button").left,
-          truncated: label.scrollWidth > label.clientWidth,
+          answers: answers.map((answer) => ({ left: answer.left, right: answer.right })),
           document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
       }, card);
-      expect(boxes.menu).toBeLessThanOrEqual(boxes.card);
-      expect(boxes.reject).toBeGreaterThanOrEqual(0);
-      expect(boxes.truncated).toBe(true);
+      // A long answer wraps inside its button instead of leaving the card.
+      for (const answer of boxes.answers) {
+        expect(answer.left).toBeGreaterThanOrEqual(0);
+        expect(answer.right).toBeLessThanOrEqual(boxes.card + 0.5);
+      }
       expect(boxes.document).toBeLessThanOrEqual(0);
       expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
-      // The title reads in full above, and the button keeps it as its name.
-      expect(await page.locator(`${card} .ai-approval__title`).innerText()).toContain(title);
+      // The sentence reads the title in full, and the answer names it.
+      expect(await page.locator(`${card} .k2b-chat-decision__sentence`).innerText()).toContain(title);
       expect(await page.getByRole("button", { name: title, exact: true }).count()).toBe(1);
     } finally {
       await context.close();
@@ -1259,7 +1258,7 @@ for (const view of [
   { name: "desktop", width: 1280, height: 800, touch: false },
   { name: "phone", width: 390, height: 844, touch: true },
 ] as const)
-  test(`a code run's website request offers the chat, and its receipts show each full URL with one-click revoke (${view.name})`, async () => {
+  test(`a code run's website question offers the chat, and its receipts show each full URL with one-click revoke (${view.name})`, async () => {
     const context = await browser.newContext({
       viewport: { width: view.width, height: view.height },
       isMobile: view.touch,
@@ -1288,11 +1287,11 @@ for (const view of [
           },
         },
       });
-      const card = ".ai-turn__action .ai-approval";
-      await page.locator(`${card} .k2b-split-button button[aria-haspopup]`).last().click();
-      const items = await page.getByRole("menuitem").allInnerTexts();
-      expect(items.map((item) => item.trim())).toEqual(["Details", "Allow this website for this chat"]);
-      await page.getByRole("menuitem", { name: "Allow this website for this chat", exact: true }).click();
+      const card = ".ai-turn__action .k2b-chat-decision__card";
+      expect(await page.locator(card).innerText()).toContain(url);
+      // The quiet third answer remembers this website for the chat; Always is no longer offered.
+      expect(await page.locator(card).innerText()).not.toContain("Always approve");
+      await page.getByRole("button", { name: "Yes, and allow this website in this chat", exact: true }).click();
       await frames(page);
       expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
         { callId: "run-approval-0", approved: true, remember: "chat" },

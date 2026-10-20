@@ -19,8 +19,8 @@ export type {
   DropdownTriggerProps,
 } from "./Dropdown";
 export { Dropdown, DropdownItem, dropdownPosition } from "./Dropdown";
-export type { FilterChipOption, FilterChipProps, FilterChipSection } from "./FilterChip";
-export { FilterChip } from "./FilterChip";
+export type { FilterChipOption, FilterChipProps, FilterChipSection, FilterToggleProps } from "./FilterChip";
+export { FilterChip, FilterToggle } from "./FilterChip";
 export type { GestureKind, GestureMenuAction, GestureMenuItem, GestureMenuProps, GestureMenuSection } from "./GestureMenu";
 export { GestureMenu } from "./GestureMenu";
 export type { RemoveButtonProps } from "./RemoveButton";
@@ -43,3 +43,5 @@ export type { TabOption, TabsItemProps, TabsProps } from "./Tabs";
 export { Tabs } from "./Tabs";
 export type { ToolbarActionProps, ToolbarGroupProps, ToolbarLabelProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
 export { Toolbar } from "./Toolbar";
+export type { ViewTab, ViewTabsProps } from "./ViewTabs";
+export { ViewTabs } from "./ViewTabs";

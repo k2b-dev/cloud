@@ -1,0 +1,3 @@
+# Known selection-tokens findings: <file> | <selection|accent-mix|accent-raw> | <count>.
+# Migrations lower counts and remove entries; the rule never raises counts or adds lines.
+# `bun scripts/check.ts selection-tokens --fix` lowers counts whose findings are gone.

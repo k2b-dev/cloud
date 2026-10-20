@@ -104,6 +104,7 @@ test("missing or revoked selected project returns opaque HTML404 despite a stale
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
       projects: [{ ...project, id: project.shortId }],
       doneCount: 0,
+      questions: { items: [], count: 0 },
       conversations: [],
     }),
   );
@@ -120,7 +121,14 @@ test("missing or revoked selected project returns opaque HTML404 despite a stale
 });
 
 test("authorized project omitted by sidebar cap remains in the rendered workspace with public IDs", async () => {
-  spies.push(spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({ projects: [], doneCount: 0, conversations: [] }));
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [],
+    }),
+  );
   const lookup = spyOn(ai.aiProjects, "getByShortId").mockResolvedValue(project);
   const chats = spyOn(ai.aiConversations, "listConversationsPage").mockResolvedValue({
     items: [],
@@ -186,7 +194,14 @@ const approval = {
 };
 
 test("?approvals=1 renders the approvals view without selecting a chat, and the row only while something waits", async () => {
-  spies.push(spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({ projects: [], doneCount: 0, conversations: [chat] }));
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
   const lookup = spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null);
   spies.push(lookup);
   const pending = spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [approval], nextCursor: null, count: 1, elsewhere: 0 });

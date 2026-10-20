@@ -30,10 +30,23 @@ export const APP_ACTION_LIMITS = {
   valueChars: 300,
 } as const;
 /** Commands a Cloud serves beyond the first version, announced in `/info` as `features`. */
-export const APP_APPROVAL_FEATURES = ["actions", "terminal-logins"] as const;
-
-export const APP_APPROVAL_ACCEPT = ["terminal-logins"] as const;
+export const APP_APPROVAL_FEATURES = ["actions", "terminal-logins", "login-context", "device-changes"] as const;
+/**
+ * Optional inbox parts a device asks for in its signed `inbox` command. Without `accept`, the command, its
+ * signed message and the inbox answer keep their first form byte for byte.
+ */
+export const APP_APPROVAL_ACCEPT = ["terminal-logins", "login-context", "device-changes"] as const;
 export type AppApprovalAccept = (typeof APP_APPROVAL_ACCEPT)[number];
+export const APP_APPROVAL_PENDING_ACCEPT = ["login-context"] as const;
+export type AppApprovalPendingAccept = (typeof APP_APPROVAL_PENDING_ACCEPT)[number];
+
+const acceptList = <T extends readonly [string, ...string[]]>(values: T) =>
+  z
+    .array(z.enum(values))
+    .min(1)
+    .max(8)
+    .refine((entries) => new Set(entries).size === entries.length)
+    .optional();
 
 const Id = z.string().uuid();
 const Secret = z.string().regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/);
@@ -70,10 +83,14 @@ export const AppLoginStartSchema = z
 export const AppLoginReferenceSchema = z.object({ requestId: Id, browserSecret: Secret }).strict();
 export const AppDeviceMutationSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("rename"), deviceId: Id, name: z.string().trim().min(1).max(80) }).strict(),
-  z.object({ operation: z.literal("revoke"), deviceId: Id }).strict(),
+  /**
+   * Asks the account's paired devices to approve removing this device. `endSessions` (default `true`) also ends
+   * the sign-ins this device approved, except the requesting session.
+   */
+  z.object({ operation: z.literal("revoke"), deviceId: Id, endSessions: z.boolean().optional() }).strict(),
 ]);
 export const AppDeviceCommandSchema = z.discriminatedUnion("operation", [
-  z.object({ operation: z.literal("pending") }).strict(),
+  z.object({ operation: z.literal("pending"), accept: acceptList(APP_APPROVAL_PENDING_ACCEPT) }).strict(),
   z.object({ operation: z.literal("revoke") }).strict(),
   /** Reads the signing device's own account and device record, e.g. to show which account it signs in. */
   z.object({ operation: z.literal("account") }).strict(),
@@ -83,18 +100,25 @@ export const AppDeviceCommandSchema = z.discriminatedUnion("operation", [
   z
     .object({
       operation: z.literal("inbox"),
-      accept: z
-        .array(z.enum(APP_APPROVAL_ACCEPT))
-        .min(1)
-        .max(8)
-        .refine((values) => new Set(values).size === values.length)
-        .optional(),
+      /** Optional inbox parts this device shows; only send values the Cloud lists in `/info` `features`. */
+      accept: acceptList(APP_APPROVAL_ACCEPT),
     })
     .strict(),
   /** One open Action approval as the device shows it, with the digest the device recomputes before it decides. */
   z.object({ operation: z.literal("action"), actionId: Id }).strict(),
   /** Decides an Action approval. `digest` binds the decision to exactly the view the person saw. */
   z.object({ operation: z.literal("act"), actionId: Id, digest: Digest, decision: z.enum(["approve", "deny"]) }).strict(),
+  /** Decides a request to pair or remove a device of the signing device's account. Binds every fact the device showed. */
+  z
+    .object({
+      operation: z.literal("change"),
+      changeId: Id,
+      kind: z.enum(["pair", "revoke"]),
+      targetId: Id,
+      endSessions: z.boolean(),
+      decision: z.enum(["approve", "deny"]),
+    })
+    .strict(),
   z
     .object({
       operation: z.literal("decide"),
@@ -134,7 +158,8 @@ export const appDeviceProofMessage = (proof: AppDeviceProof): string => {
     c.operation,
     ...(c.operation === "decide" ? [c.requestId, c.challenge, c.comparison, c.decision] : []),
     ...(c.operation === "push" ? [c.token] : []),
-    ...(c.operation === "inbox" && c.accept !== undefined ? [c.accept] : []),
+    ...((c.operation === "inbox" || c.operation === "pending") && c.accept !== undefined ? [c.accept] : []),
+    ...(c.operation === "change" ? [c.changeId, c.kind, c.targetId, c.endSessions, c.decision] : []),
     ...(c.operation === "action" ? [c.actionId] : []),
     ...(c.operation === "act" ? [c.actionId, c.digest, c.decision] : []),
   ]);
@@ -190,6 +215,44 @@ export const AppTerminalLoginSchema = z
   })
   .strict();
 export type AppTerminalLogin = z.infer<typeof AppTerminalLoginSchema>;
+export const APP_LOGIN_CONTEXT_BROWSERS = ["firefox", "chrome", "safari", "edge", "samsung", "opera", "other"] as const;
+export const APP_LOGIN_CONTEXT_OSES = ["windows", "macos", "mac-or-ipad", "ios", "android", "linux", "chromeos", "other"] as const;
+const ContextName = PlainText(96)
+  .min(1)
+  .refine((value) => new TextEncoder().encode(value).length <= 96);
+/** Core alone computes the level. The app displays it and never derives its own.
+ * Terminal logins never carry context. Opted-in browser logins carry it unless
+ * started before the upgrade or omitted to fit the response budget.
+ * History is null during introduction; sameNetwork is a positive, transient hint. */
+export const AppLoginContextSchema = z
+  .object({
+    /** Computed by Core only; descriptive signals never change it. */
+    level: z.enum(["info", "hint", "warn"]),
+    browser: z.enum(APP_LOGIN_CONTEXT_BROWSERS),
+    os: z.enum(APP_LOGIN_CONTEXT_OSES),
+    country: z
+      .string()
+      .regex(/^[A-Z]{2}$/)
+      .nullable(),
+    city: ContextName.nullable(),
+    /** Operator name, never a VPN or data-center classification. */
+    network: ContextName.nullable(),
+    history: z
+      .object({
+        /** This browser's first_seen_at for the account, or null when unknown. */
+        knownSince: DateTime.nullable(),
+        /** A request country, geoip_since set, and no sign-in from it inside the 90-day window. */
+        newCountry: z.boolean(),
+        /** geoip_since only when less than 90 days ago; the app can say "since {date}". */
+        countriesSince: DateTime.nullable(),
+      })
+      .strict()
+      .nullable(),
+    sameNetwork: z.literal(true).optional(),
+  })
+  .strict();
+export type AppLoginContext = z.infer<typeof AppLoginContextSchema>;
+
 export const AppPendingLoginSchema = z
   .object({
     requestId: Id,
@@ -198,6 +261,7 @@ export const AppPendingLoginSchema = z
     createdAt: DateTime,
     expiresAt: DateTime,
     terminal: AppTerminalLoginSchema.optional(),
+    context: AppLoginContextSchema.optional(),
   })
   .strict();
 export const AppPairingPayloadSchema = z
@@ -251,8 +315,29 @@ export const AppPairingClaimResultSchema = z.object({ deviceId: Id, comparison: 
 export const AppPairingResultSchema = z
   .object({ state: z.enum(["pending", "claimed", "confirmed", "cancelled"]), deviceId: Id.nullable(), comparison: Comparison.nullable() })
   .strict();
+/** Approval of a pairing by one of the account's paired devices, as the initiating browser follows it. */
+export const AppDeviceChangeStatusSchema = z
+  .object({ state: z.enum(["pending", "approved", "denied", "cancelled", "expired"]), expiresAt: DateTime })
+  .strict();
+export type AppDeviceChangeStatus = z.infer<typeof AppDeviceChangeStatusSchema>;
 /** Initiating Cloud session only; never returned to an unpaired device. */
-export const AppPairingInspectionSchema = AppPairingResultSchema.extend({ name: z.string().nullable(), userId: Id });
+export const AppPairingInspectionSchema = AppPairingResultSchema.extend({
+  name: z.string().nullable(),
+  userId: Id,
+  /** Set once the code was confirmed while the account already had a paired device: one of them approves. */
+  approval: AppDeviceChangeStatusSchema.nullable(),
+});
+/** `approval` is set when one of the account's paired devices must approve before the device is paired. */
+export const AppPairingConfirmResultSchema = z.object({ deviceId: Id, approval: AppDeviceChangeStatusSchema.nullable() }).strict();
+export const AppDeviceChangeReferenceSchema = z.object({ changeId: Id }).strict();
+/** A removal by its id, or this session's newest removal of a device, e.g. after the answer that named it was lost. */
+export const AppDeviceChangeLookupSchema = z.union([AppDeviceChangeReferenceSchema, z.object({ deviceId: Id }).strict()]);
+export const AppDeviceRemovalStatusSchema = AppDeviceChangeStatusSchema.extend({ changeId: Id, endSessions: z.boolean() }).strict();
+/** A device that is already revoked answers `revoked`; an active one waits for approval on a paired device. */
+export const AppDeviceRevokeResultSchema = z.union([
+  z.object({ state: z.literal("revoked") }).strict(),
+  z.object({ state: z.literal("pending"), changeId: Id, expiresAt: DateTime }).strict(),
+]);
 /** Answer to the `account` command: only the signing device's own account, never secrets or other users. */
 export const AppDeviceAccountSchema = z
   .object({
@@ -275,14 +360,14 @@ const actionFields = {
   createdAt: DateTime,
   expiresAt: DateTime,
 };
-/** One inbox row. `sentence` is the start of the app's sentence; read the Action for everything the person approves. */
+/** One inbox row. `sentence` is the start of the plain question; read the Action for everything the person approves. */
 export const AppActionSummarySchema = z.object({ ...actionFields, sentence: PlainText(APP_ACTION_LIMITS.summaryChars).min(1) }).strict();
 export const AppActionViewSchema = z
   .object({
     ...actionFields,
-    /** What the Action does, in the app's words and the person's language. */
+    /** The plain Assistant question, in the originating turn's language. */
     sentence: PlainText(APP_ACTION_LIMITS.sentenceChars).min(1),
-    /** The app's review of this call, or `null`. */
+    /** The question's reason line, or `null` for older snapshots. */
     message: PlainText(APP_ACTION_LIMITS.messageChars).nullable(),
     details: z
       .array(
@@ -316,6 +401,27 @@ export const AppDeviceInboxSchema = z
   })
   .strict();
 export type AppDeviceInbox = z.infer<typeof AppDeviceInboxSchema>;
+/** A request to pair or remove a device of this account, shown to the account's paired devices. */
+export const AppDeviceChangeSchema = z
+  .object({
+    changeId: Id,
+    kind: z.enum(["pair", "revoke"]),
+    /** The device to pair or remove, with the name the account gave it. The name may be empty. */
+    device: z.object({ id: Id, name: PlainText(80) }).strict(),
+    /** Removal only: also end the sign-ins this device approved. Always `false` for a pairing. */
+    endSessions: z.boolean(),
+    createdAt: DateTime,
+    expiresAt: DateTime,
+  })
+  .strict();
+export type AppDeviceChange = z.infer<typeof AppDeviceChangeSchema>;
+/** The inbox for a device that sent `accept: ["device-changes"]`. Oldest first. */
+export const AppDeviceInboxWithChangesSchema = AppDeviceInboxSchema.extend({
+  changes: z.array(AppDeviceChangeSchema).max(APP_APPROVAL_LIMITS.pendingPerAccount),
+  /** Pending device changes omitted to fit the response budget. */
+  moreChanges: z.number().int().nonnegative().max(APP_APPROVAL_LIMITS.pendingPerAccount),
+}).strict();
+export type AppDeviceInboxWithChanges = z.infer<typeof AppDeviceInboxWithChangesSchema>;
 
 /** UTF-8 of this exact JSON array is hashed into an Action's `digest`. Every field the device shows is part of it. */
 export const appActionDigestMessage = (issuer: string, view: Omit<AppActionView, "digest">): string =>
@@ -356,6 +462,7 @@ export const AppDeviceResponseSchema = z.union([
   z.object({ state: z.enum(["approved", "denied", "revoked", "updated"]) }).strict(),
   AppDeviceAccountSchema,
   AppDeviceInboxSchema,
+  AppDeviceInboxWithChangesSchema,
   AppActionViewSchema,
 ]);
 export const AppLoginStartResultSchema = z

@@ -307,12 +307,12 @@
 }
 /* Only checked rows are filled; outside select mode the highlighted entry is the active row below. */
 :where(.filesv2-list[data-selecting]) .filesv2-list__row[aria-selected="true"] {
-  background: var(--k2b-selected);
+  background: var(--k2b-row-selected);
 }
 /* The active row in list and tree alike: no fill of its own, so it never looks hovered. */
 .filesv2-list__row--active .filesv2-list__name {
   font-weight: 600;
-  color: var(--k2b-action);
+  color: var(--ui-app-accent-text);
 }
 .filesv2-list__row:focus-visible {
   outline: 2px solid var(--k2b-focus-ring);

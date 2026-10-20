@@ -18,7 +18,7 @@ export default function MailConversationSummaryCard(props: {
       data-mail-conversation-summary
     >
       <div class="mb-2 flex items-center gap-2">
-        <h2 id="mail-conversation-summary-title" class="min-w-0 flex-1 text-sm font-semibold text-[var(--app-accent)]">
+        <h2 id="mail-conversation-summary-title" class="min-w-0 flex-1 text-sm font-semibold app-accent-text">
           {t().conversationSummary}
         </h2>
         <Show when={props.canEdit}>

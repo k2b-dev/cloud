@@ -1,7 +1,6 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../../config";
-import { requestContactDirectory } from "../../../../../contact-directory-settings";
 import {
   calendarInvitations,
   composeTemplates,
@@ -10,6 +9,7 @@ import {
   mailboxes,
   senderIdentities,
 } from "../../../../../service";
+import { requestContactDirectory } from "../../../../../service/contact-directory";
 import MailDraftSeedComposerPage from "../../../../_components/MailDraftSeedComposerPage.island";
 import { mailDraftReturnHref } from "../../../../_components/mail-compose-route";
 import { readMailComposerPanesFromCookieHeader } from "../../../../_components/mail-composer-panes";
@@ -58,6 +58,7 @@ export default ssr<AuthContext>(async (c) => {
   const returnHref = mailDraftReturnHref(c.req.query("return") ?? "", mailboxShortId);
   const popout = c.req.query("window") === "1";
   const initialPanes = readMailComposerPanesFromCookieHeader(c.req.header("cookie"));
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
@@ -69,6 +70,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <MailDraftSeedComposerPage
         mailboxId={mailboxShortId}
+        mailboxRecipientSuggestions={access.data.scope === "mailbox"}
         currentActor={currentActor}
         seedId={seedId}
         identities={publicData.identities}
@@ -81,7 +83,7 @@ export default ssr<AuthContext>(async (c) => {
         canManageMailbox={access.data.permission === "admin"}
         currentUserEmail={currentUserEmail}
         calendarIntegrationAvailable={calendarIntegrationAvailable}
-        contactDirectory={requestContactDirectory(c)}
+        contactDirectory={directory}
       />
     </Layout>
   );

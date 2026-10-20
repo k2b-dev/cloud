@@ -26,6 +26,7 @@ import adminAiQuotaRoutes from "./admin-ai-quotas";
 import adminAiSkillsRoutes from "./admin-ai-skills";
 import adminAiUsageRoutes from "./admin-ai-usage";
 import adminCoreSettingsRoutes from "./admin-core-settings";
+import adminGeoIpRoutes from "./admin-geoip";
 import adminIdentityRoutes from "./admin-identity";
 import adminLifecycleRoutes from "./admin-lifecycle";
 import adminLinuxIdentityRoutes from "./admin-linux-identities";
@@ -69,7 +70,10 @@ const buildCoreApi = (options: CoreApiOptions) => {
   const widgetRoutes = createWidgetRoutes();
   return new Hono()
     .use(prettyJSON())
-    .route("/auth/app-approval/v1", createAppApprovalRoutes(undefined, undefined, options.terminalLogins))
+    .route(
+      "/auth/app-approval/v1",
+      createAppApprovalRoutes({ notify: options.notifications.sendNewBrowserSignIn }, undefined, undefined, options.terminalLogins),
+    )
     .route("/auth/pwa/v1", createPwaRoutes())
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
@@ -86,6 +90,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/settings", adminCoreSettingsRoutes)
     .route("/admin/core/rail", adminRailRoutes)
     .route("/admin/core/linux-identities", adminLinuxIdentityRoutes)
+    .route("/admin/core/geoip", adminGeoIpRoutes)
     .route("/admin/identity", adminIdentityRoutes)
     .route("/admin/sync", createSyncOpsProxyRoutes())
     .route("/admin/lifecycle", adminLifecycleRoutes)

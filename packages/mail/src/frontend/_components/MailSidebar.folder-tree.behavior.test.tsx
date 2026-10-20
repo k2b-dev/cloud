@@ -1,8 +1,19 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
+import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
+
+const loadSidebar = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return { ...(await import("./mail-sidebar.fixture")), ...(await import("./MailboxMenu")), ...(await import("./MailSidebar")) };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await loadSidebar();
+
 import type { MailFolderView } from "../../service/messages";
 import type { MailboxPageData } from "../../service/workspace";
 
@@ -121,51 +132,58 @@ if (!isServer) {
       expect(folders).toHaveLength(fixture.folders.length);
       expect(folders.every((folder) => folder.parentId === null || /^[0-9A-Za-z]{6}$/.test(folder.parentId))).toBe(true);
 
-      const { default: MailSidebar } = await import("./MailSidebar");
+      const { default: MailSidebar, mailSidebarFixture, openMailboxFixture, createMailboxMenu, mailboxMenuOptions } = modules!;
+      const [activeFolderId, setActiveFolderId] = createSignal(id("2025/archive"));
+      const hiddenChanges: boolean[] = [];
       const dispose = render(
         () => (
           <MailSidebar
-            currentUserEmail={null}
-            contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-            mailboxId="Box001"
-            mailboxName="Support"
-            syncEnabled={true}
-            needsConnection={false}
-            folders={folders}
-            localTags={[]}
-            savedViews={[]}
-            scheduledMode={false}
-            scheduledCount={0}
-            activeFolderId={id("2025/archive")}
-            activeView={null}
-            activeSavedViewId={null}
-            activeTagId={null}
-            searchActive={false}
-            viewCounts={{
-              needs_action: 0,
-              mine: 0,
-              unassigned: 0,
-              waiting: 0,
-              done: 0,
-              snoozed: 0,
-              send_problems: 0,
-              recently_active: 0,
-              kept: 0,
+            {...mailSidebarFixture()}
+            onOpenPlaceRowHiddenChange={(hidden) => hiddenChanges.push(hidden)}
+            open={{
+              ...openMailboxFixture(),
+              mailboxId: "Box001",
+              mailboxName: "Support",
+              canWrite: true,
+              assignedOnly: false,
+              folders: folders,
+              scheduledMode: false,
+              scheduledCount: 0,
+              activeFolderId: activeFolderId(),
+              activeView: null,
+              viewCounts: {
+                needs_action: 0,
+                mine: 0,
+                unassigned: 0,
+                waiting: 0,
+                done: 0,
+                snoozed: 0,
+                send_problems: 0,
+                recently_active: 0,
+                kept: 0,
+              },
+              onCompose: () => {},
+              onMoveConversation: () => {},
+              onNavigate: () => {},
+              menu: createMailboxMenu(() =>
+                mailboxMenuOptions({
+                  mailboxId: "Box001",
+                  canWrite: true,
+                  canAdmin: false,
+                  assignedOnly: false,
+                  needsConnection: false,
+                  managementOpening: null,
+                  settingsOpening: false,
+                  detailsOpening: false,
+                  onOpenDetails: () => {},
+                  onOpenHealth: () => {},
+                  onOpenSharedLinks: () => {},
+                  onOpenRemoteContent: () => {},
+                  onOpenSubscriptions: () => {},
+                  onOpenSettings: () => {},
+                }),
+              ),
             }}
-            canWrite={true}
-            canAdmin={false}
-            assignedOnly={false}
-            managementOpening={null}
-            settingsOpening={false}
-            detailsOpening={false}
-            onOpenDetails={() => {}}
-            onOpenHealth={() => {}}
-            onOpenSharedLinks={() => {}}
-            onOpenRemoteContent={() => {}}
-            onOpenSubscriptions={() => {}}
-            onOpenSettings={() => {}}
-            onMoveConversation={() => {}}
-            onNavigate={() => {}}
           />
         ),
         dom.root,
@@ -195,11 +213,24 @@ if (!isServer) {
         expect(row("2024/archive").textContent).toContain("3");
         expect(row("projects").getAttribute("href")).toBeNull();
         expect(node("projects").getAttribute("aria-expanded")).toBe("true");
+        expect(hiddenChanges).toEqual([false]);
         row("projects").querySelector<HTMLElement>("[data-k2b-nav-tree-toggle]")!.click();
         expect(node("projects").getAttribute("aria-expanded")).toBe("false");
         expect(node("projects").querySelector('[role="group"]')).toBeNull();
+        expect(hiddenChanges).toEqual([false, true]);
+
+        // Navigation recomputes the result; the collapsed branch's own row and system folders remain visible.
+        setActiveFolderId(id("projects"));
+        expect(hiddenChanges).toEqual([false, true, false]);
+        setActiveFolderId(id("inbox"));
+        setActiveFolderId(id("sent"));
+        expect(hiddenChanges).toEqual([false, true, false]);
+        setActiveFolderId(id("2025/archive"));
+        expect(hiddenChanges).toEqual([false, true, false, true]);
+
         row("projects").querySelector<HTMLElement>("[data-k2b-nav-tree-toggle]")!.click();
         expect(node("2025/archive").getAttribute("aria-selected")).toBe("true");
+        expect(hiddenChanges).toEqual([false, true, false, true, false]);
       } finally {
         dispose();
         dom.cleanup();

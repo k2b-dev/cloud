@@ -23,6 +23,7 @@ import contentIntl from "./content/intl.md" with { type: "text" };
 import contentKbd from "./content/kbd.md" with { type: "text" };
 import contentLabelChip from "./content/label-chip.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
+import contentMapView from "./content/map-view.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
@@ -37,6 +38,7 @@ import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
 import feedbackHoverPreview from "./feedback/hover-preview.md" with { type: "text" };
 import feedbackInstallGuide from "./feedback/install-guide.md" with { type: "text" };
+import feedbackMovedHint from "./feedback/moved-hint.md" with { type: "text" };
 import feedbackPrompts from "./feedback/prompts.md" with { type: "text" };
 import feedbackToast from "./feedback/toast.md" with { type: "text" };
 import feedbackTooltip from "./feedback/tooltip.md" with { type: "text" };
@@ -88,6 +90,7 @@ import surfaceAvatarStack from "./surfaces/avatar-stack.md" with { type: "text" 
 import surfaceBaseStylesheet from "./surfaces/base-stylesheet.md" with { type: "text" };
 import contentCalendar from "./surfaces/calendar.md" with { type: "text" };
 import surfaceCards from "./surfaces/cards.md" with { type: "text" };
+import surfaceColor from "./surfaces/color.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
 import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" };
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
@@ -152,6 +155,7 @@ const catalogContextSources = {
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },
   "layout/floating-window": { file: "layout/floating-window.md", content: layoutFloatingWindow },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
+  "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },
@@ -164,10 +168,12 @@ const catalogContextSources = {
   "feedback/blocks": { file: "feedback/blocks.md", content: feedbackBlocks },
   "feedback/badges": { file: "feedback/badges.md", content: feedbackBadges },
   "feedback/toast": { file: "feedback/toast.md", content: feedbackToast },
+  "feedback/moved-hint": { file: "feedback/moved-hint.md", content: feedbackMovedHint },
   "feedback/tooltip": { file: "feedback/tooltip.md", content: feedbackTooltip },
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
   "feedback/install-guide": { file: "feedback/install-guide.md", content: feedbackInstallGuide },
+  "content/map-view": { file: "content/map-view.md", content: contentMapView },
   "content/kbd": { file: "content/kbd.md", content: contentKbd },
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
   "content/steps": { file: "content/steps.md", content: contentSteps },

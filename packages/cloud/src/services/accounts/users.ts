@@ -675,10 +675,21 @@ export const resetPassword = async (params: { id: string }): Promise<MutationRes
   const serviceSession = await getServiceIpaSession();
   if (!serviceSession.ok) return serviceSession;
 
-  return providers.ipa.users.resetPassword({
+  const result = await providers.ipa.users.resetPassword({
     ipaSession: serviceSession.data,
     id: params.id,
   });
+  if (!result.ok) return result;
+  try {
+    await session.endOtherSignIns(params.id, { reason: "password_reset" });
+  } catch {
+    return {
+      ok: false,
+      error: "The password was reset, but signing out the person's other sign-ins did not work. Reset the password again.",
+      status: 500,
+    };
+  }
+  return result;
 };
 
 export const switchProvider = async (params: { id: string; provider: UserProvider }): Promise<MutationResult<void>> => {

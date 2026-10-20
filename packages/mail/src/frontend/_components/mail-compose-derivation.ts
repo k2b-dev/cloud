@@ -1,7 +1,8 @@
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import type { DraftIntent, SenderIdentity } from "../../contracts";
+import { messageForwardTextOf } from "../../forward-text";
 import { deriveReplyAddressObjects } from "../../reply-recipients";
-import type { MessageDetail } from "../../service/messages";
+import type { MailWorkspaceMessage } from "../../service/workspace";
 
 type RecipientSeed = { to: string[]; cc: string[] };
 
@@ -39,7 +40,7 @@ export const formatMailAddress = (address: { name: string | null; address: strin
 export const replySubject = (subject: string): string => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
 export const forwardSubject = (subject: string): string => (/^fwd:/i.test(subject) ? subject : `Fwd: ${subject}`);
 
-export const forwardMessageBody = (message: MessageDetail, dateConfig: DateContext, locale = dateConfig.locale ?? "en"): string => {
+export const forwardMessageBody = (message: MailWorkspaceMessage, dateConfig: DateContext, locale = dateConfig.locale ?? "en"): string => {
   const { t } = mailComposeDerivationMessages.resolve([locale]);
   const localizedDateConfig = { ...dateConfig, locale };
   return `
@@ -50,11 +51,11 @@ ${t.date}: ${dates.formatDateTime(message.internalDate, localizedDateConfig)}
 ${t.subject}: ${message.subject || t.noSubject}
 ${t.to}: ${message.to.map(formatMailAddress).join(", ") || t.undisclosedRecipients}
 
-${message.forwardText}`;
+${messageForwardTextOf(message)}`;
 };
 
 export const quoteReplyBody = (
-  message: MessageDetail,
+  message: MailWorkspaceMessage,
   selectedText: string,
   dateConfig: DateContext,
   locale = dateConfig.locale ?? "en",
@@ -68,7 +69,7 @@ export const quoteReplyBody = (
     .join("\n")}\n\n`;
 };
 
-export const deriveReplyIdentityId = (message: MessageDetail, identities: SenderIdentity[]): string | null => {
+export const deriveReplyIdentityId = (message: MailWorkspaceMessage, identities: SenderIdentity[]): string | null => {
   const verified = identities.filter((identity) => identity.status === "verified");
   const match = (addresses: Array<{ address: string }>): SenderIdentity[] => {
     const normalized = new Set(addresses.map((item) => item.address.trim().toLowerCase()));
@@ -87,7 +88,7 @@ export const deriveReplyIdentityId = (message: MessageDetail, identities: Sender
 };
 
 export const deriveReplyRecipients = (
-  message: MessageDetail,
+  message: MailWorkspaceMessage,
   intent: Extract<DraftIntent, "reply" | "reply_all">,
   identities: SenderIdentity[],
 ): RecipientSeed => {

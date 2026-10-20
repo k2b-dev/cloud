@@ -5,6 +5,7 @@ import type { DeviceApprovalView } from "./DeviceApproval";
 
 const confirm: DeviceApprovalView = {
   kind: "confirm",
+  reauthenticateHref: null,
   request: "11111111-1111-4111-8111-111111111111",
   code: "WDJB-MJHT",
   client: { name: "Cloud CLI", clientId: "cloud-cli" },

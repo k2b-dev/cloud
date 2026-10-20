@@ -2,6 +2,7 @@ import { PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
 import type { ClientAddress } from "./client-address";
+import { compressBody } from "./compression";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
 import { isInternalPath, upstreamUrl } from "./request-boundary";
 import type { RouteTable } from "./trie";
@@ -222,7 +223,7 @@ export const proxyRequest = async (
     headers.set("X-Gateway-App", match.appId);
     headers.set("X-Gateway-Ms", ms.toFixed(1));
 
-    return new Response(proxyRes.body, {
+    return new Response(compressBody(req, proxyRes, headers), {
       status: proxyRes.status,
       statusText: proxyRes.statusText,
       headers,

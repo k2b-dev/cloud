@@ -163,6 +163,8 @@ export const checkHelpSource = (file: string, source: string, terms: readonly Te
     const visible = prose(text);
     for (const term of localTerms) {
       for (const match of visible.matchAll(term.pattern)) {
+        // A capital letter after a prefix term marks a product name such as ClickHouse, not the avoided word.
+        if (term.text.endsWith("*") && /\p{Lu}/u.test(match[0].slice(term.text.length - 1))) continue;
         findings.push({
           file,
           line: line + (visible.slice(0, match.index).match(/\n/g)?.length ?? 0),

@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1083
 description: Connect a Cloud deployment to FreeIPA identity infrastructure.
 tags: [freeipa, identity, directory]
-updated: 2026-09-10
+updated: 2026-10-19
 ---
 
 # FreeIPA setup
@@ -181,6 +181,20 @@ Open **Administration → Accounts & sign-in → Operations**.
 Read [Repair expiry dates](/en/docs/accounts/lifecycle#repair-expiry-dates)
 before starting: maintenance can restore access for expired accounts.
 It does not assign Linux identities.
+
+## Password changes and sign-ins
+
+Changing or resetting a FreeIPA password in Cloud ends the person's other
+sign-ins, including browsers, `cld`, MCP, connected apps using OAuth, and phones
+paired with the mobile app. This applies to profile changes, administrator
+resets, reset links, and expired or temporary password changes at sign-in.
+People using the command line run `cld login` again afterwards.
+
+A profile change keeps the current browser signed in with a new cookie and its
+original sign-in time and expiry. Cloud Login phones stay paired; a reset link
+also unpairs those phones. API keys, passkeys and background mandates stay valid.
+A password changed directly in FreeIPA, outside Cloud, ends no Cloud sign-in.
+No configuration change or migration is needed.
 
 ## Failure and recovery behavior
 

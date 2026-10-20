@@ -10,6 +10,7 @@ import {
   type ToolCallBlock,
   type ToolStreamIssue,
 } from "@k2b/nessi";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import type { CapabilityActionReview } from "../contracts/capabilities";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
@@ -590,7 +591,7 @@ describe("nessi block event mapping", () => {
       links: [{ rel: "edit" as const, href: "/app/mail/drafts/one" }],
       approvalScope: "skills",
     };
-    mapper.setApprovalReviews(new Map([["call-9", review]]));
+    mapper.setApprovalReviews(new Map([["call-9", review]]), new Map([["call-9", "skills"]]));
     const ops = mapper.translate({
       ...turn,
       type: "tool_action_request",
@@ -1542,5 +1543,93 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
     apply.mockRestore();
     flush.mockRestore();
     push.mockRestore();
+  }
+});
+
+test("executor never offers remembering a silent review that asks, even with scope", () => {
+  const mapper = createEventMapper(1, []);
+  const review = { ...reviewFixture(), scope: "mail", ask: "sends" as const };
+  mapper.setApprovalReviews(new Map([["call-9", review]]));
+  expect(
+    mapper.translate({
+      ...turn,
+      type: "tool_action_request",
+      kind: "custom_approval",
+      callId: "call-9",
+      name: "send",
+      args: {},
+      message: "Send?",
+    })[0],
+  ).toMatchObject({ type: "block_set", block: { approval: { review, allowAlways: false, allowChat: false } } });
+});
+
+test("executor ignores a scope on an asking policy and uses only authorized remember scopes", () => {
+  const review = { ...reviewFixture(), scope: "mail" };
+  for (const rememberable of [false, true]) {
+    const mapper = createEventMapper(1, []);
+    mapper.setApprovalReviews(new Map([["call-9", review]]), rememberable ? new Map([["call-9", "mail"]]) : new Map());
+    expect(
+      mapper.translate({
+        ...turn,
+        type: "tool_action_request",
+        kind: "custom_approval",
+        callId: "call-9-approval-0",
+        name: "send",
+        args: {},
+        message: "Send?",
+      })[0],
+    ).toMatchObject({ type: "block_set", block: { approval: { allowAlways: rememberable, allowChat: rememberable } } });
+  }
+});
+
+test("the pipeline keeps the review and check after an approval and execution end", async () => {
+  const save = spyOn(aiConversations, "saveTurnLiveState").mockResolvedValue(true);
+  const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
+  const review = reviewFixture();
+  const pipeline = new __aiExecutorTest.StreamPipeline({
+    conversationId: "chat",
+    turnId: "turn",
+    attempt: 1,
+    startSeq: 0,
+    leaseOwner: "worker",
+    seedBlocks: [{ id: toolBlockId("send"), kind: "tool", callId: "send", name: "demo.send", args: {}, status: "running" }],
+    allowRememberedApprovals: true,
+  });
+  try {
+    await pipeline.setToolReview("send", review);
+    await pipeline.apply({
+      agentId: "agent",
+      loopId: "turn",
+      turnId: "round",
+      turnIndex: 0,
+      type: "tool_action_request",
+      kind: "custom_approval",
+      callId: "send-approval-0",
+      name: "demo.send",
+      args: {},
+      message: "Send?",
+    });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "awaiting_approval", review });
+    await pipeline.setToolCheck("send", { state: "checking" });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "running", review, check: { state: "checking" } });
+    await pipeline.setToolCheck("send", { state: "done", receipt: { text: "Queued" } });
+    await pipeline.apply({
+      agentId: "agent",
+      loopId: "turn",
+      turnId: "round",
+      turnIndex: 0,
+      type: "tool_execution_end",
+      callId: "send",
+      name: "demo.send",
+      result: { data: null },
+      isError: false,
+    });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "completed", review, check: { state: "done", receipt: { text: "Queued" } } });
+    expect(pipeline.blocks[0]).toMatchObject({ approval: undefined });
+    expect(publish.mock.calls.at(-1)?.[0]).toMatchObject({ type: "block_set", block: { review, check: { state: "done" } } });
+  } finally {
+    await pipeline.flush();
+    save.mockRestore();
+    publish.mockRestore();
   }
 });

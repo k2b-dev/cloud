@@ -34,6 +34,7 @@ import { isAllMailFolder, isInboxFolder, isSentFolder, isTrashOrJunkFolder } fro
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { mailScheduler } from "./mail-scheduler";
+import { deleteUnusedMailboxLogoVersions } from "./mailbox-logos";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
 import { hydrateMessageFromSource, recordMissingMessageSources, releaseExpiredHydrationClaims } from "./message-hydration";
@@ -2706,6 +2707,7 @@ export const hydrateMessageBatch = async (
                       messageId: source.key,
                       source: source.stream,
                       expectedSize: source.expectedSize,
+                      signal,
                       claimId,
                       transportFence,
                     });
@@ -3277,6 +3279,7 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
         await deleteAbandonedDraftAttachmentUploads();
         await deleteAbandonedBlobUploads();
         await deleteOrphanedBlobs();
+        await deleteUnusedMailboxLogoVersions({ limit: 1000 });
       },
     });
     await mailScheduler().create({

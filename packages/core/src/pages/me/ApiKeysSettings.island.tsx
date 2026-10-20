@@ -15,8 +15,11 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
+import { confirmIdentity, SignInNeededError, takeReturnIntent, throwIfSignInNeeded } from "./confirm-identity";
 import { accountMessages } from "./messages";
+
+const CREATE_INTENT = { key: "create", value: "api-key" };
 
 type Props = {
   initialKeys: ServiceAccountCredential[];
@@ -66,12 +69,26 @@ function TokenDialog(props: { token: string; baseUrl: string | null }) {
   );
 }
 
-function ApiKeyCreateDialog(props: { modelsOnlyAvailable: boolean; close: (value: ApiKeyDraft | null) => void }) {
+/** A draft restored after "Confirm identity"; anything else opens the dialog with its defaults. */
+const readApiKeyDraft = (value: unknown): ApiKeyDraft | null => {
+  if (!value || typeof value !== "object") return null;
+  const name = "name" in value ? value.name : undefined;
+  const expiresAt = "expiresAt" in value ? value.expiresAt : undefined;
+  const access = "access" in value ? value.access : undefined;
+  if (typeof name !== "string" || (expiresAt !== null && typeof expiresAt !== "string")) return null;
+  return { name, expiresAt, ...(access === "full" || access === "models" ? { access } : {}) };
+};
+
+function ApiKeyCreateDialog(props: {
+  modelsOnlyAvailable: boolean;
+  initial?: ApiKeyDraft | null;
+  close: (value: ApiKeyDraft | null) => void;
+}) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
-  const [name, setName] = createSignal("");
-  const [access, setAccess] = createSignal<ApiKeyAccess>("full");
-  const [expiresAt, setExpiresAt] = createSignal<string | null>(presetDate(90));
+  const [name, setName] = createSignal(props.initial?.name ?? "");
+  const [access, setAccess] = createSignal<ApiKeyAccess>(props.initial?.access ?? "full");
+  const [expiresAt, setExpiresAt] = createSignal<string | null>(props.initial ? props.initial.expiresAt : presetDate(90));
   const [error, setError] = createSignal<string | undefined>();
 
   const submit = () => {
@@ -150,10 +167,12 @@ export default function ApiKeysSettings(props: Props) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
   const [keys, setKeys] = createSignal<ServiceAccountCredential[]>(props.initialKeys);
+  let submittedDraft: ApiKeyDraft | undefined;
 
   const createMutation = mutations.create<{ credential: ServiceAccountCredential; token: string }, ApiKeyDraft>({
     mutation: async (vars) => {
       const res = await apiClient.me["api-keys"].$post({ json: vars });
+      await throwIfSignInNeeded(res.clone());
       const data = await res.json();
       if (!res.ok) throw new Error(t().apiKeyCreateFailed);
       return data as { credential: ServiceAccountCredential; token: string };
@@ -167,7 +186,16 @@ export default function ApiKeysSettings(props: Props) {
         size: "medium",
       });
     },
-    onError: (err) => prompts.error(err.message),
+    onError: async (err) => {
+      if (err instanceof SignInNeededError && err.code === "REAUTHENTICATE")
+        return confirmIdentity(
+          t().apiKeyReauthenticate,
+          CREATE_INTENT,
+          { title: t().confirmIdentity, confirm: t().confirmIdentity },
+          submittedDraft,
+        );
+      prompts.error(err instanceof SignInNeededError ? t().browserSignInRequired : err.message);
+    },
   });
 
   const revokeMutation = mutations.create<void, { id: string; name: string }, { id: string }>({
@@ -184,13 +212,21 @@ export default function ApiKeysSettings(props: Props) {
     onError: (err) => prompts.error(err.message),
   });
 
-  const openCreate = async () => {
+  const openCreate = async (initial?: ApiKeyDraft | null) => {
     const result = await prompts.dialog<ApiKeyDraft | null>(
-      (close) => <ApiKeyCreateDialog modelsOnlyAvailable={props.openAiBaseUrl !== null} close={close} />,
+      (close) => <ApiKeyCreateDialog modelsOnlyAvailable={props.openAiBaseUrl !== null} initial={initial} close={close} />,
       { title: t().createApiKey, icon: "ti ti-key", size: "medium" },
     );
-    if (result) await createMutation.mutate(result);
+    if (!result) return;
+    submittedDraft = result;
+    await createMutation.mutate(result);
   };
+
+  // Back from "Confirm identity": continue where the person started, with what they entered.
+  onMount(() => {
+    const returned = takeReturnIntent(CREATE_INTENT);
+    if (returned) void openCreate(readApiKeyDraft(returned.draft));
+  });
 
   const revoke = async (key: ServiceAccountCredential) => {
     const confirmed = await prompts.confirm(t().revokeApiKeyConfirm({ name: key.name }), {
@@ -207,7 +243,7 @@ export default function ApiKeysSettings(props: Props) {
       title={t().apiKeys}
       subtitle={t().apiKeysDescription}
       actions={
-        <Button type="button" variant="secondary" size="sm" onClick={openCreate} disabled={createMutation.loading()}>
+        <Button type="button" variant="secondary" size="sm" onClick={() => void openCreate()} disabled={createMutation.loading()}>
           <i class="ti ti-plus" aria-hidden="true" />
           {t().add}
         </Button>

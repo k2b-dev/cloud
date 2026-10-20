@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { reviewFixture } from "../../_internal/capability-review.test-fixture";
 import { migrateCloudAi } from "../../ai/migrate";
-import { aiConversations } from "../../ai/store";
+import { aiConversations, recordAiToolReview } from "../../ai/store";
 import { createDeviceActions } from "../../api/app-approval-actions";
 import { APPROVALS_PAGE_SIZE } from "../../contracts/approvals";
 import { type ApprovalRequestInput, approvals, countPending, listPending, presentPendingApproval } from ".";
@@ -167,5 +168,54 @@ databaseSuite()("pending approval lists", () => {
     expect(await options(confirm)).toEqual({ chat: false, always: false, website: false });
     await sql`UPDATE ai.turns SET run_config=run_config || '{"mandate":{}}'::jsonb WHERE id=${turn.id}::uuid`;
     expect(await options(standard)).toEqual({ chat: false, always: false, website: true });
+  });
+
+  test.each(["ai.messages", "ai.task_messages"])(
+    "reads the pending call's stored review from %s without changing approval details",
+    async (table) => {
+      const { userId, chat, turn, ask } = await fixture();
+      const review = reviewFixture();
+      const id = await ask({ review });
+      const query = { approverUserId: userId, id };
+      const before = (await listPending(query)).items[0]!;
+      expect(before.storedReview).toBeNull();
+      const [pending] = await sql<{ callId: string }[]>`SELECT call_id AS "callId" FROM ai.pending_actions WHERE approval_id=${id}::uuid`;
+      if (!pending) throw new Error("Missing pending call");
+      const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id });
+      await store.append({
+        role: "assistant",
+        content: [pending.callId, "other-call"].map((callId) => ({ type: "tool_call", id: callId, name: "mail.draft.send", args: {} })),
+      });
+      if (table === "ai.task_messages") {
+        await sql`WITH moved AS (
+        DELETE FROM ai.messages WHERE conversation_id=${chat.id}::uuid AND loop_id=${turn.id}::text AND role='assistant' RETURNING *
+      ) INSERT INTO ai.task_messages SELECT * FROM moved`;
+      }
+      const target = { conversationId: chat.id, turnId: turn.id };
+      const storedReview = { ...review, ask: "sensitive" as const };
+      await recordAiToolReview({ ...target, callId: pending.callId, review: storedReview });
+      await recordAiToolReview({ ...target, callId: "other-call", review: { ...review, ask: "deletes" } });
+      const row = (await listPending(query)).items[0]!;
+      expect(row.storedReview).toEqual(storedReview);
+      expect(row.details).toEqual(review);
+      expect(row.argsDigest).toBe(before.argsDigest);
+      expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
+      expect(presentPendingApproval(row, []).review).toEqual(storedReview);
+    },
+  );
+
+  test("a capability's own approval reads the review stored under its parent call", async () => {
+    const { userId, chat, turn, ask } = await fixture();
+    const review = reviewFixture();
+    const id = await ask({ review });
+    // Capability approvals wait as "<call>-approval-<n>"; the review belongs to the call itself.
+    await sql`UPDATE ai.pending_actions SET kind='custom_approval', call_id='write-1-approval-0' WHERE approval_id=${id}::uuid`;
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id });
+    await store.append({ role: "assistant", content: [{ type: "tool_call", id: "write-1", name: "mail.draft.send", args: {} }] });
+    const storedReview = { ...review, ask: "sensitive" as const };
+    await recordAiToolReview({ conversationId: chat.id, turnId: turn.id, callId: "write-1", review: storedReview });
+    const row = (await listPending({ approverUserId: userId, id })).items[0]!;
+    expect(row.storedReview).toEqual(storedReview);
+    expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
   });
 });

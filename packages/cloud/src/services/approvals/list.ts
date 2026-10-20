@@ -1,9 +1,10 @@
 import { sql } from "bun";
+import { type AiStoredActionReview, storedActionReview } from "../../ai/action-review";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals } from "../../ai/approvals";
 import type { AiTurnRunConfig } from "../../ai/types";
 import type { RuntimeAppMeta } from "../../contracts/app";
 import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
-import { CapabilityActionReviewSchema } from "../../contracts/capabilities";
+import { type CapabilityActionPolicy, CapabilityActionReviewDataSchema } from "../../contracts/capabilities";
 import type { ApprovalAssurance } from ".";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
 
@@ -18,6 +19,7 @@ export type PendingApprovalRow = {
   assurance: ApprovalAssurance;
   sentence: string;
   details: unknown;
+  storedReview: AiStoredActionReview | null;
   createdAt: Date;
   expiresAt: Date;
   cursorCreatedAt: string;
@@ -31,7 +33,7 @@ export type PendingApprovalRow = {
 };
 
 // Start with this person's indexed pending rows; a Studio page alone cannot continue a chat.
-const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r
+export const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r
   WHERE r.approver_user_id=${approverUserId}::uuid AND r.status='pending' AND r.expires_at > now()
     AND r.approver_auth_epoch=(SELECT auth_epoch FROM auth.users WHERE id=${approverUserId}::uuid)
     AND (${id ?? null}::uuid IS NULL OR r.id=${id ?? null}::uuid)
@@ -61,10 +63,21 @@ export const listPending = async (input: {
       to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt",
       question.short_id AS "conversationShortId", question.title AS "conversationTitle",
       question.allow_chat AS "allowChat", question.allow_always AS "allowAlways",
-      question.remember_tool_name AS "rememberToolName", question.tool_name AS "toolName", question.run_config AS "runConfig"
+      question.remember_tool_name AS "rememberToolName", question.tool_name AS "toolName", question.run_config AS "runConfig",
+      question.stored_review AS "storedReview"
     FROM open r JOIN LATERAL (
-      SELECT c.short_id, c.title, p.allow_chat, p.allow_always, p.remember_tool_name, p.tool_name, t.run_config
+      SELECT c.short_id, c.title, p.allow_chat, p.allow_always, p.remember_tool_name, p.tool_name, t.run_config,
+        (SELECT m.meta->'toolReviews'->review.call_id FROM (
+          SELECT meta, conversation_id, loop_id, role, seq FROM ai.messages
+          UNION ALL
+          SELECT meta, conversation_id, loop_id, role, seq FROM ai.task_messages
+        ) m WHERE m.conversation_id=p.conversation_id AND m.loop_id=p.turn_id::text AND m.role='assistant'
+          AND m.meta->'toolReviews'->review.call_id IS NOT NULL
+        ORDER BY m.seq DESC LIMIT 1) AS stored_review
       FROM ai.pending_actions p JOIN ai.conversations c ON c.id=p.conversation_id JOIN ai.turns t ON t.id=p.turn_id
+        -- A capability's own approval waits as "<call>-approval-<n>"; its review is stored under the call itself.
+        CROSS JOIN LATERAL (SELECT CASE WHEN p.kind = 'custom_approval'
+          THEN COALESCE(substring(p.call_id FROM '^(.*)-approval-[0-9]+$'), p.call_id) ELSE p.call_id END AS call_id) review
       WHERE p.approval_id=r.id AND p.status='pending' ORDER BY p.created_at DESC, p.id DESC LIMIT 1
     ) question ON true
     WHERE ${matches(input.appId, input.link)}
@@ -93,9 +106,17 @@ export const countPending = async (input: { approverUserId: string }): Promise<A
 export const presentPendingApproval = (
   row: PendingApprovalRow,
   apps: readonly Pick<RuntimeAppMeta, "id" | "name" | "icon">[],
+  policy?: CapabilityActionPolicy,
 ): PendingApproval => {
   const app = apps.find((entry) => entry.id === row.appId);
-  const review = CapabilityActionReviewSchema.nullable().safeParse(row.details);
+  const review = CapabilityActionReviewDataSchema.nullable().safeParse(row.details);
+  const originalReview = review.success ? review.data : null;
+  const displayReview =
+    originalReview && "sentence" in originalReview
+      ? row.storedReview && "sentence" in row.storedReview
+        ? row.storedReview
+        : storedActionReview(originalReview, policy)
+      : originalReview;
   const remember = row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
   return {
     id: row.id,
@@ -103,7 +124,7 @@ export const presentPendingApproval = (
     action: row.action,
     assurance: row.assurance,
     sentence: row.sentence,
-    review: review.success ? review.data : null,
+    review: displayReview && "legacy" in displayReview ? originalReview : displayReview,
     requester: {
       kind: "chat",
       appId: row.requesterAppId,

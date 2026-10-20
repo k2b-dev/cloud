@@ -3,6 +3,180 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.48.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.47.0...cloud-v0.48.0) (2026-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cloud:** The Help panel reader `LayoutHelpPanel` and its `LayoutHelpPanelProps` now come from `@k2b/cloud/ssr` and render in a server page, not inside an island. `@k2b/cloud/ssr/islands` no longer exports `Layout.HelpPanel`, `LayoutHelpPanel` or `LayoutHelpPanelProps`, and there is no alias. Applications that get Help in the panel through the automatic registration need no change.
+
+### Features
+
+* **assistant:** show 'Wartet auf dich' above the composer and a dot on chats with an open question ([#1579](https://github.com/k2b-dev/cloud/issues/1579)) ([b16523b](https://github.com/k2b-dev/cloud/commit/b16523b8877df50c6dc5a8eda22ad7a1072c6d30))
+* **cloud:** Help in the panel draws its start and articles on the server and loads only small islands ([#1639](https://github.com/k2b-dev/cloud/issues/1639)) ([01d11e6](https://github.com/k2b-dev/cloud/commit/01d11e6f9cabfac64b5fa2e988e117574df3b209))
+* **cloud:** keep an app routed while one of its replicas stops ([#1631](https://github.com/k2b-dev/cloud/issues/1631)) ([b4bae47](https://github.com/k2b-dev/cloud/commit/b4bae47c5bd029a0536452b2941f37ce03c88caf))
+* **cloud:** run an app's startup setup on one replica at a time ([#1620](https://github.com/k2b-dev/cloud/issues/1620)) ([a5ffac9](https://github.com/k2b-dev/cloud/commit/a5ffac96e9aeb3b25d9e5f680a7f34c066f32262))
+* **cloud:** word Assistant questions the same way in cld, notifications, Cloud Login and for Cloud tools ([#1612](https://github.com/k2b-dev/cloud/issues/1612)) ([3d4a857](https://github.com/k2b-dev/cloud/commit/3d4a8578462248edaf8ef85686ef5bf26a4a3fe2))
+* **core:** end other sign-ins when a person changes their password ([4375a88](https://github.com/k2b-dev/cloud/commit/4375a883cd927c9017bd36fa2d9cddc2defbdcd7))
+* **mail:** a calm reader on wide windows, three-line rows, and reader actions that move into '…' when space is tight ([#1635](https://github.com/k2b-dev/cloud/issues/1635)) ([31d81f0](https://github.com/k2b-dev/cloud/commit/31d81f0791dfccdcfa6a236544428ab0c8075491)), closes [#1545](https://github.com/k2b-dev/cloud/issues/1545) [#1467](https://github.com/k2b-dev/cloud/issues/1467)
+* **ssr:** give history one owner, so Back and Forward swap between server pages and islands keep their own entries ([#1616](https://github.com/k2b-dev/cloud/issues/1616)) ([50192a8](https://github.com/k2b-dev/cloud/commit/50192a883d417c6136659de59e86cf9f320719cf))
+* **ssr:** let islands veto a page swap, and roll Back and Forward back when they do ([#1628](https://github.com/k2b-dev/cloud/issues/1628)) ([fc6520f](https://github.com/k2b-dev/cloud/commit/fc6520fa955a3b184f3191f8434f1d9225fa899a))
+* **ui:** a flat Cloud map style in light and dark, built from the @k2b/ui tokens, with self-served label glyphs ([#1630](https://github.com/k2b-dev/cloud/issues/1630)) ([9c8ae1f](https://github.com/k2b-dev/cloud/commit/9c8ae1f9e49d604122a5945f1a131308dbeda4e6))
+* **ui:** MapView shows numbered places, routes and areas on a flat map that loads only when visible ([#1611](https://github.com/k2b-dev/cloud/issues/1611)) ([12367d7](https://github.com/k2b-dev/cloud/commit/12367d7a10e66e7c4fe21f3d881a4b179d01a3c0))
+
+
+### Bug Fixes
+
+* **assistant:** `cld assistant code check` works with the chat's short id ([#1638](https://github.com/k2b-dev/cloud/issues/1638)) ([479b481](https://github.com/k2b-dev/cloud/commit/479b481a3b50a13cabf36848b4b093a117ddde5f))
+* **cloud:** a Help article named in the address travels once in the page props ([#1606](https://github.com/k2b-dev/cloud/issues/1606)) ([9db1ad1](https://github.com/k2b-dev/cloud/commit/9db1ad12aedd543962151e678e5e74a0199dbf87))
+* **cloud:** a mail draft question no longer says the mail is sent ([#1640](https://github.com/k2b-dev/cloud/issues/1640)) ([0266608](https://github.com/k2b-dev/cloud/commit/02666083b4e371ab147559ebe918e4f33ccc0473))
+* **cloud:** keep a question valid for every mail recipient name ([#1636](https://github.com/k2b-dev/cloud/issues/1636)) ([843caa1](https://github.com/k2b-dev/cloud/commit/843caa15f1381608213c0cf0832eff9dec5e3b71))
+* **cloud:** PDF tables keep short columns such as 'Nr.' on one line in every template ([#1627](https://github.com/k2b-dev/cloud/issues/1627)) ([9795e33](https://github.com/k2b-dev/cloud/commit/9795e33177c2cd10ab041e430f8c24048c4f6a6e))
+* **mail:** table columns in mail keep short values such as numbers on one line ([#1608](https://github.com/k2b-dev/cloud/issues/1608)) ([8f5a2a2](https://github.com/k2b-dev/cloud/commit/8f5a2a27f4601fb1b613ae0713b5fef19ba7c4cd))
+
+## [0.47.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.46.0...cloud-v0.47.0) (2026-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cloud:** OAuth access tokens, API keys and Cloud app sessions can no longer create API keys or passkeys, and cld account api-keys create now sends you to the browser. A new OAuth sign-in that stays signed in (cld login, MCP clients and other apps asking for offline access) needs a browser sign-in from the last 10 minutes or an approval in Cloud Login, and cld login shows a consent page in the browser.
+
+### Features
+
+* **ai:** check the app's review before a routine changes anything ([#1507](https://github.com/k2b-dev/cloud/issues/1507)) ([6cdf19c](https://github.com/k2b-dev/cloud/commit/6cdf19c77da7ce81c74cdd77a462bdfcb7a891c9))
+* **assistant:** show recently sent references first in the slash menu ([#1531](https://github.com/k2b-dev/cloud/issues/1531)) ([5082c87](https://github.com/k2b-dev/cloud/commit/5082c870415bb020e3d7db161aa342dcda119c28))
+* chosen views, ranges and filters use tabs, segments and chips instead of filled primary buttons ([#1578](https://github.com/k2b-dev/cloud/issues/1578)) ([55490a1](https://github.com/k2b-dev/cloud/commit/55490a149441e533ee285462d75936e8620036cb))
+* **cloud-login:** show who asks before approving ([#1517](https://github.com/k2b-dev/cloud/issues/1517)) ([b1d9883](https://github.com/k2b-dev/cloud/commit/b1d9883263323ccccea721ada68a96b162e250ba))
+* **cloud:** create lasting access only from a confirmed browser sign-in ([7513c61](https://github.com/k2b-dev/cloud/commit/7513c61b7e7216782d16f26f4dcf70ca873bbf88))
+* **cloud:** describe sign-in requests by browser and approximate place ([#1425](https://github.com/k2b-dev/cloud/issues/1425)) ([6c4457d](https://github.com/k2b-dev/cloud/commit/6c4457de03c375c22d6ed8299b233466e5a23398))
+* **cloud:** let an Action describe each call as a sentence with typed slots ([#1524](https://github.com/k2b-dev/cloud/issues/1524)) ([bd93dd4](https://github.com/k2b-dev/cloud/commit/bd93dd412b3f122bc0d6f39a205f38eca2ad66b0))
+* **cloud:** live subscriptions report whether they are caught up ([#1514](https://github.com/k2b-dev/cloud/issues/1514)) ([8dd2faf](https://github.com/k2b-dev/cloud/commit/8dd2fafacc89a1ca85f3eed442f90e981591f3a2))
+* **cloud:** open app commands from the slash menu and return to the chat ([#1521](https://github.com/k2b-dev/cloud/issues/1521)) ([397bda5](https://github.com/k2b-dev/cloud/commit/397bda59590ee28289cdbb1e59827f2e6bf38da5))
+* **cloud:** panels know the page's place through getContext() and onContextChange(), with consent per app ([#1471](https://github.com/k2b-dev/cloud/issues/1471)) ([2a225ea](https://github.com/k2b-dev/cloud/commit/2a225ea00b3e0d767dcb26fb15b34483054ecef6))
+* **cloud:** remember browsers that signed in ([#1483](https://github.com/k2b-dev/cloud/issues/1483)) ([fb5dcc2](https://github.com/k2b-dev/cloud/commit/fb5dcc2bb6e111e09b1dd69f5a2241414431460a))
+* **cloud:** send sign-in context to Cloud Login ([#1504](https://github.com/k2b-dev/cloud/issues/1504)) ([72e9f5e](https://github.com/k2b-dev/cloud/commit/72e9f5e2babb060bdc4002ac197be8fc4ade0a86))
+* **cloud:** shared text documents with one log, fresh reads and authored server writes; Notebooks uses them ([#1576](https://github.com/k2b-dev/cloud/issues/1576)) ([ef08117](https://github.com/k2b-dev/cloud/commit/ef0811751fc58410dc563e9c5bbf14f19ec05498))
+* **cloud:** show Assistant questions as one sentence with the thing itself ([#1556](https://github.com/k2b-dev/cloud/issues/1556)) ([a1d1389](https://github.com/k2b-dev/cloud/commit/a1d13895389a010514bd757a917edb30c0e94375))
+* **cloud:** the platform's own panels list the page's keyboard shortcuts ([#1546](https://github.com/k2b-dev/cloud/issues/1546)) ([fd121b7](https://github.com/k2b-dev/cloud/commit/fd121b7d6c221f18e13283f565b4d8c2abd657c5))
+* **cloud:** version stylesheets by content so restarts and app switches reuse cached CSS ([#1551](https://github.com/k2b-dev/cloud/issues/1551)) ([b842c03](https://github.com/k2b-dev/cloud/commit/b842c033b669c83a2fe534afd0d65af89971979a))
+* **core:** let administrators upload their own sign-in location databases ([#1474](https://github.com/k2b-dev/cloud/issues/1474)) ([baf7aef](https://github.com/k2b-dev/cloud/commit/baf7aefe2580a8ef1614c1e3970a71545a2f1f59))
+* **core:** notify after a sign-in from a new browser ([#1529](https://github.com/k2b-dev/cloud/issues/1529)) ([b516afa](https://github.com/k2b-dev/cloud/commit/b516afa1ac164d0b9f61b844f49912246f1e3b65))
+* **core:** open Help as the first panel beside the app, starting with tasks ([#1582](https://github.com/k2b-dev/cloud/issues/1582)) ([3939b53](https://github.com/k2b-dev/cloud/commit/3939b533fe5b310fb9ecfc543b4d4f2a362967dc))
+* **gateway:** compress dynamic responses, except where text from other people sits next to private content ([#1503](https://github.com/k2b-dev/cloud/issues/1503)) ([590187c](https://github.com/k2b-dev/cloud/commit/590187cb447b9d5eafdb64d7e723a5befd1f2cab))
+* **mail:** --- on its own line becomes a divider in the preview and the sent mail ([#1599](https://github.com/k2b-dev/cloud/issues/1599)) ([e69652d](https://github.com/k2b-dev/cloud/commit/e69652d8461f456775a6693aa918f0a6b3ab7371))
+* **mail:** extra blank lines in Markdown add visible space in the sent mail ([#1595](https://github.com/k2b-dev/cloud/issues/1595)) ([aeb556b](https://github.com/k2b-dev/cloud/commit/aeb556b93465765d74d5f34714a928bbe45d1b6f))
+* **mail:** manage the mailbox logo in settings and see it in the composer ([#1478](https://github.com/k2b-dev/cloud/issues/1478)) ([c2d67af](https://github.com/k2b-dev/cloud/commit/c2d67af0242bb960b53987edcf90371f34d9b930))
+* **mail:** one sidebar with Focus and the mailboxes, views as tabs in the head, and tags as a chip ([#1598](https://github.com/k2b-dev/cloud/issues/1598)) ([dc4b504](https://github.com/k2b-dev/cloud/commit/dc4b5044b3c19f45e51d574b4f11543a3c4cfb8f))
+* **mail:** suggest addresses the mailbox knows in To/Cc/Bcc, and hide contacts calmly without a Contacts app ([#1588](https://github.com/k2b-dev/cloud/issues/1588)) ([d1e0bce](https://github.com/k2b-dev/cloud/commit/d1e0bce8a2eafc7a05453d951414dccb85cee247))
+* **pulse:** connect Pulse to a ClickHouse data store in Administration ([#1442](https://github.com/k2b-dev/cloud/issues/1442)) ([13f8e65](https://github.com/k2b-dev/cloud/commit/13f8e65e5733ffd25e196384424f40420c8c9d56))
+* **spaces:** spaces on the left, views as tabs in the head, and Kanban cards as calm objects on one white surface ([#1527](https://github.com/k2b-dev/cloud/issues/1527)) ([cc19239](https://github.com/k2b-dev/cloud/commit/cc19239b0203dafb0daea5b4ee4450b7b7270bed))
+* **spaces:** task deadlines are all-day by default, a time is optional ([#1432](https://github.com/k2b-dev/cloud/issues/1432)) ([a4db766](https://github.com/k2b-dev/cloud/commit/a4db766d53e7b6439ebe57582e14abbf43216c95))
+* **ssr:** let nav swap a server-rendered page into the content column, newest navigation wins, any failure loads the document ([#1589](https://github.com/k2b-dev/cloud/issues/1589)) ([353e3fa](https://github.com/k2b-dev/cloud/commit/353e3fa069b2e16825ccd5e4a3ac8a0c7db5260a))
+* **ssr:** mount islands in inserted content, and on removal dispose them and close open dialogs ([#1570](https://github.com/k2b-dev/cloud/issues/1570)) ([1c176dd](https://github.com/k2b-dev/cloud/commit/1c176dd731b4854629e5bd39bf7737f32c04e8fe)), closes [#1560](https://github.com/k2b-dev/cloud/issues/1560)
+* **ui:** a minimal table, empty and error states without a box, and a one-time hint for moved paths ([#1508](https://github.com/k2b-dev/cloud/issues/1508)) ([c757e0d](https://github.com/k2b-dev/cloud/commit/c757e0d3c32e576eb9f3da8d9aa4ae07a7a0411d))
+* **ui:** app and shell chrome follow the app host beside the panel, and watchAppHostWidth for scripts ([#1482](https://github.com/k2b-dev/cloud/issues/1482)) ([8208c75](https://github.com/k2b-dev/cloud/commit/8208c759021307bf6e202d9460985e6c35c98582))
+* **ui:** calendars shade the weekend, and one click picks a one-day range ([#1479](https://github.com/k2b-dev/cloud/issues/1479)) ([766c757](https://github.com/k2b-dev/cloud/commit/766c757e6a14f88b07f84f38d8d089dc0bb4ca06))
+* **ui:** darker secondary text and the C Kontrast type scale ([#1415](https://github.com/k2b-dev/cloud/issues/1415)) ([0e14415](https://github.com/k2b-dev/cloud/commit/0e14415e10d8f0d1051ff8702b9e4b57aefbb5ea))
+* **ui:** navigation labels that do not fit fade out instead of ending in an ellipsis ([#1480](https://github.com/k2b-dev/cloud/issues/1480)) ([7b0b36b](https://github.com/k2b-dev/cloud/commit/7b0b36b958d289f5592579d0ca070e3a0ba08b53))
+* **ui:** one white workspace surface, and a detail that keeps Main's minimum and waits behind Details ([#1468](https://github.com/k2b-dev/cloud/issues/1468)) ([e497a3d](https://github.com/k2b-dev/cloud/commit/e497a3d0c72e6613ece7904aedd35609d7a1ec8b))
+* **ui:** open the slash list from + with a search field ([#1540](https://github.com/k2b-dev/cloud/issues/1540)) ([5fe13bf](https://github.com/k2b-dev/cloud/commit/5fe13bf02000c44f92d685650b986c731a6e37e6))
+* **ui:** selected rows and navigation carry the app color ([#1429](https://github.com/k2b-dev/cloud/issues/1429)) ([6bcb69c](https://github.com/k2b-dev/cloud/commit/6bcb69c5069116e46a1442ee8c7ea5e528e5ee86))
+* **ui:** step rows open at their count, and question cards follow the chat's width ([#1532](https://github.com/k2b-dev/cloud/issues/1532)) ([747a852](https://github.com/k2b-dev/cloud/commit/747a8520946eb76d59c13967df5dfc7617a77393))
+* **ui:** views as tabs and filters as chips in one head row that wraps by the workspace's width, with the platform rule 'objects left, views in the head' ([#1493](https://github.com/k2b-dev/cloud/issues/1493)) ([24f6273](https://github.com/k2b-dev/cloud/commit/24f627300b4edda049db22fb300740d762344966))
+
+
+### Bug Fixes
+
+* **ai:** tell background runs that Code Mode is available ([#1366](https://github.com/k2b-dev/cloud/issues/1366)) ([db393e4](https://github.com/k2b-dev/cloud/commit/db393e4672c17e2409446799aab96bff16d110c8))
+* app icons in Grids, Notebooks, Tools and Mail sit in the shared soft chip ([4dc13b5](https://github.com/k2b-dev/cloud/commit/4dc13b557440cbb50ad7c7f3a8c0a5b919db4f6d))
+* **cloud:** Cloud and Core icons sit in the shared soft chip, with no decorative app tints ([#1536](https://github.com/k2b-dev/cloud/issues/1536)) ([e05960e](https://github.com/k2b-dev/cloud/commit/e05960e6b7c3112adb7b2f82c9c17925be9cd8a8))
+* **cloud:** depend on @k2b/stdlib 0.30.0 ([#1500](https://github.com/k2b-dev/cloud/issues/1500)) ([2342456](https://github.com/k2b-dev/cloud/commit/2342456df0ae93fa79393a722f5586f39a9042a4))
+* **cloud:** dialogs opened from an app keep that app's selection color ([#1518](https://github.com/k2b-dev/cloud/issues/1518)) ([0b8238d](https://github.com/k2b-dev/cloud/commit/0b8238d88563d3d4d0e03659e7499727495aee5d)), closes [#1458](https://github.com/k2b-dev/cloud/issues/1458)
+* **cloud:** mix the selected navigation fill over the white sidebar it sits on ([#1512](https://github.com/k2b-dev/cloud/issues/1512)) ([a45fb98](https://github.com/k2b-dev/cloud/commit/a45fb98f0527483c77fef99f3e11916d995598bc))
+* **cloud:** move Cloud and Core selection and secondary text onto the shared tokens ([#1526](https://github.com/k2b-dev/cloud/issues/1526)) ([0c1c54a](https://github.com/k2b-dev/cloud/commit/0c1c54aabc64ad34edb3380146b235294a5aaf65))
+* **cloud:** pair or remove a Cloud Login device only with approval from a paired device ([401cbf6](https://github.com/k2b-dev/cloud/commit/401cbf6fd2469cb963a66f074598da615f075fe7))
+* **mail:** bound memory while hydrating large messages and attachments ([#1549](https://github.com/k2b-dev/cloud/issues/1549)) ([#1571](https://github.com/k2b-dev/cloud/issues/1571)) ([f56815d](https://github.com/k2b-dev/cloud/commit/f56815d665856938017cda2a118203d3c5f135a1))
+* **mail:** one person editing one draft never sees 'being edited elsewhere' ([#1567](https://github.com/k2b-dev/cloud/issues/1567)) ([4edb15a](https://github.com/k2b-dev/cloud/commit/4edb15acabb5b9af199424b4327a7925858acf2d))
+* **mail:** retry a throttled IMAP read instead of reporting the message as missing ([#1361](https://github.com/k2b-dev/cloud/issues/1361)) ([9af4517](https://github.com/k2b-dev/cloud/commit/9af45172098816bf8672d1b9d9554aa530e6c7f2)), closes [#1244](https://github.com/k2b-dev/cloud/issues/1244)
+* **mail:** set Needs action for new mail that Mail cannot load ([#1394](https://github.com/k2b-dev/cloud/issues/1394)) ([8605d75](https://github.com/k2b-dev/cloud/commit/8605d7587682e4dd8b72d65b6754104d6a075f7c))
+* **oauth:** end command-line and app sign-ins when Cloud signs a person out everywhere ([7513c61](https://github.com/k2b-dev/cloud/commit/7513c61b7e7216782d16f26f4dcf70ca873bbf88))
+* selected rows in Mail, Files, Grids, Notebooks and Contacts carry the app color ([#1543](https://github.com/k2b-dev/cloud/issues/1543)) ([33f312a](https://github.com/k2b-dev/cloud/commit/33f312a295a16419e3e4dda0cbf9d07d1b7a08d5))
+* **ui:** one color and selection guide for Cloud apps, with live states ([#1591](https://github.com/k2b-dev/cloud/issues/1591)) ([540a005](https://github.com/k2b-dev/cloud/commit/540a005f1f6255fb2a7204e64cd3bdc1c4bec420))
+* **ui:** view tabs keep their full labels on phones, and the strip scrolls sideways to the current view ([#1569](https://github.com/k2b-dev/cloud/issues/1569)) ([2d496b7](https://github.com/k2b-dev/cloud/commit/2d496b70c41f12d2ef463db3ccabe1fff544f50d))
+* Weather, Gateway Ops, Pulse, Tools, Venue, Assistant and the small apps use the shared color tokens ([#1566](https://github.com/k2b-dev/cloud/issues/1566)) ([13156f7](https://github.com/k2b-dev/cloud/commit/13156f73c44b3ae64166cb260a2de82ffbd9b1ff))
+
+
+### Performance Improvements
+
+* **mail:** load further list pages without rebuilding the whole mailbox ([#1489](https://github.com/k2b-dev/cloud/issues/1489)) ([4754eb1](https://github.com/k2b-dev/cloud/commit/4754eb165ec4953816a5d9ebd0be1a23ff75eb40))
+* **mail:** open a conversation in the shown list by loading only its detail ([#1509](https://github.com/k2b-dev/cloud/issues/1509)) ([0a14a34](https://github.com/k2b-dev/cloud/commit/0a14a340a8485ae781c1080931716e57cd5c7deb))
+* **mail:** switch folders and views by loading only the new list ([#1534](https://github.com/k2b-dev/cloud/issues/1534)) ([e9789a6](https://github.com/k2b-dev/cloud/commit/e9789a6d75cbec7cd47c31c44a279fcbe0b5bcfb)), closes [#1519](https://github.com/k2b-dev/cloud/issues/1519)
+
+## [0.46.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.45.0...cloud-v0.46.0) (2026-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **contacts:** In Contacts, Cloud administrators now see and change only the contact books they hold a grant on, in the app, the API, app tools, the CLI, and live updates. To reach every book, use Administration → Contacts or the admin API at /api/contacts/admin/books/:bookId/access and grant yourself access there.
+* **contacts:** Contacts refuses to start on a database whose short IDs were never finished, such as one coming straight from the June 23, 2026 production baseline. Start Contacts once on Cloud v0.45.0 until it is ready, then upgrade. Installations that started Contacts on any Cloud release since v0.7.0 need no action.
+
+### Features
+
+* **ai:** say which routine stopped and why ([#1448](https://github.com/k2b-dev/cloud/issues/1448)) ([da8fc05](https://github.com/k2b-dev/cloud/commit/da8fc0511451965593d7e530e6c4569cdb764a50))
+* **assistant:** call Assistant tasks routines ([#1416](https://github.com/k2b-dev/cloud/issues/1416)) ([f651e11](https://github.com/k2b-dev/cloud/commit/f651e11821e6f452a4f1246664892bd9eb1bc01a))
+* **cli:** sign in with cld login --user through Cloud Login, and limit any login with --ttl ([#1428](https://github.com/k2b-dev/cloud/issues/1428)) ([48d2dcd](https://github.com/k2b-dev/cloud/commit/48d2dcd032d79e79b6904acdf6593367d2b7c4db))
+* **cloud-login:** show a terminal sign-in with its rights and lifetime before approving ([#1404](https://github.com/k2b-dev/cloud/issues/1404)) ([7ac34de](https://github.com/k2b-dev/cloud/commit/7ac34dedbf2834029657a2fe816c8405183a51fe))
+* **cloud-login:** show when a sign-in request started ([#1414](https://github.com/k2b-dev/cloud/issues/1414)) ([edb60ba](https://github.com/k2b-dev/cloud/commit/edb60baf08b94b6a6c18b36efdd347d2def47fc8))
+* **cloud:** a panel beside every app that any app can offer with `panel` in defineApp ([#1439](https://github.com/k2b-dev/cloud/issues/1439)) ([53bf2e7](https://github.com/k2b-dev/cloud/commit/53bf2e77757ac8d3211ee4d54f312fb90d3665c1))
+* **cloud:** approve terminal sign-ins in Cloud Login, with client, rights and lifetime ([#1395](https://github.com/k2b-dev/cloud/issues/1395)) ([1dcf324](https://github.com/k2b-dev/cloud/commit/1dcf324abb4952c6e9137f232a8e4b049e278dea))
+* **cloud:** insert notes, contacts, tasks and other Cloud content from the slash menu ([#1370](https://github.com/k2b-dev/cloud/issues/1370)) ([d2514a7](https://github.com/k2b-dev/cloud/commit/d2514a7133277868624074cbbdf66812ed80a912))
+* **cloud:** prepare images for PDFs in an isolated worker ([#1407](https://github.com/k2b-dev/cloud/issues/1407)) ([244f067](https://github.com/k2b-dev/cloud/commit/244f0673cd95035f2da50c687b6f42ab526647e0))
+* **cloud:** show stored settings that cannot be read as unreadable and refuse to write over them ([#1303](https://github.com/k2b-dev/cloud/issues/1303)) ([#1422](https://github.com/k2b-dev/cloud/issues/1422)) ([3745c92](https://github.com/k2b-dev/cloud/commit/3745c92b8ef69516aade682def91dd3ff3cc3448))
+* **cloud:** soft shell on iPad and phone: rail in an app-gradient container and the app as a card (I5), a soft card on the gradient and a floating bottom bar (P5) ([#1419](https://github.com/k2b-dev/cloud/issues/1419)) ([99e9e3e](https://github.com/k2b-dev/cloud/commit/99e9e3e626967cf08ff4020bbe09b53d2f07b79a))
+* **contacts:** show Cloud administrators only the contact books they are granted ([#1424](https://github.com/k2b-dev/cloud/issues/1424)) ([a7f62a7](https://github.com/k2b-dev/cloud/commit/a7f62a7621e75e906f43e5268b958de7923fc29b))
+* **grids:** custom-app charts show named, formatted tooltips in the browser ([#1399](https://github.com/k2b-dev/cloud/issues/1399)) ([854dc4e](https://github.com/k2b-dev/cloud/commit/854dc4ec4eb24a142cf75a400960e227f00d1e41))
+* **mail:** add a stored mailbox logo to signatures, sent as an inline part ([#1459](https://github.com/k2b-dev/cloud/issues/1459)) ([4fcb914](https://github.com/k2b-dev/cloud/commit/4fcb91417d3cec65a3e867c7fad3e36a7228fab6))
+* **notebooks:** print attached images in note PDFs ([#1455](https://github.com/k2b-dev/cloud/issues/1455)) ([86da2f9](https://github.com/k2b-dev/cloud/commit/86da2f902f1313e0d14291e79b436a672499ea75))
+* **notebooks:** show a note's neighborhood with In die Mitte, the default on phones ([#1374](https://github.com/k2b-dev/cloud/issues/1374)) ([8297885](https://github.com/k2b-dev/cloud/commit/829788503c8871903f3683a8b14427e2a0a67842))
+* **notebooks:** show all notes on a circle with links as chords per area ([#1393](https://github.com/k2b-dev/cloud/issues/1393)) ([edf8438](https://github.com/k2b-dev/cloud/commit/edf8438caf24c13ce0228c1a2e0e5afb759eae41))
+* **notebooks:** show notes by last change with links as arcs, and sort the list by Last changed ([#1405](https://github.com/k2b-dev/cloud/issues/1405)) ([eac0a10](https://github.com/k2b-dev/cloud/commit/eac0a1040b857007e8fcda0a89566717a6ba7e02))
+* **notebooks:** the PDF export says what it left out ([#1369](https://github.com/k2b-dev/cloud/issues/1369)) ([ec9f208](https://github.com/k2b-dev/cloud/commit/ec9f208fc18ba53fee09c01cbc906f76f67ad002))
+* **oauth:** end a sign-in sooner with a requested lifetime, capped at the session length ([#1368](https://github.com/k2b-dev/cloud/issues/1368)) ([aa84d15](https://github.com/k2b-dev/cloud/commit/aa84d15ede5bc8c10976a31d7db63d0eaebb9bdc))
+* **oauth:** send a device sign-in to the person's Cloud Login with login_hint ([#1402](https://github.com/k2b-dev/cloud/issues/1402)) ([8778b5f](https://github.com/k2b-dev/cloud/commit/8778b5f38545962e655fbc57225138a27f9483cd))
+* **pulse:** dashboard charts name and format their values in tooltips ([#1389](https://github.com/k2b-dev/cloud/issues/1389)) ([9f66703](https://github.com/k2b-dev/cloud/commit/9f66703a642410a1395cf40a57d417f55ffe92b8))
+* **spaces:** let service accounts be assignees so an agent that claims a task is responsible like a person ([#1384](https://github.com/k2b-dev/cloud/issues/1384)) ([c3199d1](https://github.com/k2b-dev/cloud/commit/c3199d15a96ee54007a00a9d81c0d75d5d9a6751)), closes [#1269](https://github.com/k2b-dev/cloud/issues/1269)
+* **spaces:** react to items with emoji through the API, capabilities and cld ([#1362](https://github.com/k2b-dev/cloud/issues/1362)) ([fc55f73](https://github.com/k2b-dev/cloud/commit/fc55f73496f2a838cbab908f733d249b804df53d))
+* **spaces:** react to tasks with emoji on Kanban cards and in the item ([#1400](https://github.com/k2b-dev/cloud/issues/1400)) ([8adf09c](https://github.com/k2b-dev/cloud/commit/8adf09c4db20be4f0eab36325f2a5b8c65841546))
+* **ui:** add chat questions with typed chips and an object preview ([#1412](https://github.com/k2b-dev/cloud/issues/1412)) ([899b7bf](https://github.com/k2b-dev/cloud/commit/899b7bfe5a8dd81b32ee698d6ff44ead7c7e27e7))
+* **ui:** app and file-type icons sit in a soft chip of their color ([#1451](https://github.com/k2b-dev/cloud/issues/1451)) ([4589907](https://github.com/k2b-dev/cloud/commit/45899070079ba3e5321d51c2b5956c7fe208f510))
+* **ui:** every Chart shows tooltips by default ([#1357](https://github.com/k2b-dev/cloud/issues/1357)) ([a2605a0](https://github.com/k2b-dev/cloud/commit/a2605a065473f9824463fc45cbe8129c9ff2e9b2))
+* **ui:** lay out workspaces by the width their host gives them and let a detail that does not fit wait ([#1380](https://github.com/k2b-dev/cloud/issues/1380)) ([a57ba45](https://github.com/k2b-dev/cloud/commit/a57ba45bac687e335b96d134e0ea2c848c33cd85))
+* **ui:** one drag and drop for rows, tasks, events and paragraphs, with a keyboard and menu path ([#1376](https://github.com/k2b-dev/cloud/issues/1376)) ([682e08b](https://github.com/k2b-dev/cloud/commit/682e08babc1500275b413e30336a9a7a9b474ffb)), closes [#1255](https://github.com/k2b-dev/cloud/issues/1255)
+* **ui:** show an overview's objects as chips on iPad and phone instead of the grey block, with an All sheet and a phone title menu ([#1441](https://github.com/k2b-dev/cloud/issues/1441)) ([6643a73](https://github.com/k2b-dev/cloud/commit/6643a73dbc14a864d1658a6ea6871254814529d1))
+* **ui:** stat trends name and format their values in tooltips ([#1420](https://github.com/k2b-dev/cloud/issues/1420)) ([7f42bb3](https://github.com/k2b-dev/cloud/commit/7f42bb35afadaf701bbf3c31617f2431dafae050))
+* **venue/tools:** chart tooltips name their values with dates and units ([#1411](https://github.com/k2b-dev/cloud/issues/1411)) ([9dc1fb8](https://github.com/k2b-dev/cloud/commit/9dc1fb8002db7c1cd6d8c4193d1d486d3fd44ce4))
+
+
+### Bug Fixes
+
+* **access:** keep keyboard focus and open member lists when access settings refresh after a change ([#1346](https://github.com/k2b-dev/cloud/issues/1346)) ([da4353b](https://github.com/k2b-dev/cloud/commit/da4353bef18a5cac5ff8ec058dfd6224c6c35f9d))
+* **ai:** audit remembered approvals and their revocation ([#1378](https://github.com/k2b-dev/cloud/issues/1378)) ([1771214](https://github.com/k2b-dev/cloud/commit/1771214a2921186a3ec4b127e8e9319a92578b2b))
+* **cli:** keep plugin version labels current and update the other profiles when one cannot sign in ([#1392](https://github.com/k2b-dev/cloud/issues/1392)) ([239a561](https://github.com/k2b-dev/cloud/commit/239a5618e9490ae584ee9752d60c255b950a099f)), closes [#1265](https://github.com/k2b-dev/cloud/issues/1265) [#1266](https://github.com/k2b-dev/cloud/issues/1266)
+* **cloud:** keep app-colored text readable and give each app its selection fills ([#1398](https://github.com/k2b-dev/cloud/issues/1398)) ([c486eb9](https://github.com/k2b-dev/cloud/commit/c486eb93a1f463ae2c525e92f65cd784aedae489))
+* **contacts:** document the 401, 403, and 404 answers of the Contacts API ([#1386](https://github.com/k2b-dev/cloud/issues/1386)) ([2a27b5b](https://github.com/k2b-dev/cloud/commit/2a27b5babfad3053e5f86a57565d8fee49bb122e)), closes [#1239](https://github.com/k2b-dev/cloud/issues/1239)
+* **contacts:** drop the startup short-ID backfill and refuse a database that never finished it ([#1242](https://github.com/k2b-dev/cloud/issues/1242)) ([#1385](https://github.com/k2b-dev/cloud/issues/1385)) ([4d3f8b9](https://github.com/k2b-dev/cloud/commit/4d3f8b9d0fa0e2317ada7c3b008996bc0f636072))
+* **contacts:** keep books with the same name in one stable order across pages ([#1372](https://github.com/k2b-dev/cloud/issues/1372)) ([a6ce1ab](https://github.com/k2b-dev/cloud/commit/a6ce1ab91a65276d89976685ac0a9fe05ca9f07c)), closes [#1240](https://github.com/k2b-dev/cloud/issues/1240)
+* **contacts:** keep localized row labels in the quick editor and name the next step in each empty list ([#1397](https://github.com/k2b-dev/cloud/issues/1397)) ([e12cca4](https://github.com/k2b-dev/cloud/commit/e12cca4053f5a52b46e8e32f8c0ed9de5edaccfb)), closes [#1237](https://github.com/k2b-dev/cloud/issues/1237) [#1238](https://github.com/k2b-dev/cloud/issues/1238)
+* **contacts:** use the shared checkbox, icon links, and inline notices instead of local markup ([#1410](https://github.com/k2b-dev/cloud/issues/1410)) ([11350ec](https://github.com/k2b-dev/cloud/commit/11350ecc7a645a5b66a0af28f2d0bbfad8232020))
+* **filesv2:** keep the upload list following the file in flight once the pointer leaves ([#1417](https://github.com/k2b-dev/cloud/issues/1417)) ([0eb2e42](https://github.com/k2b-dev/cloud/commit/0eb2e427fa704928ef5620af9d4c990f3a854a3b))
+* **filesv2:** let guests upload many files through a public link, capped per client across all links ([#1168](https://github.com/k2b-dev/cloud/issues/1168)) ([#1353](https://github.com/k2b-dev/cloud/issues/1353)) ([6273a1d](https://github.com/k2b-dev/cloud/commit/6273a1deb5d3ba01b9177053a18eb391347befc7))
+* **mail:** fail a hand-written workflow's move step when the message already moved ([#1401](https://github.com/k2b-dev/cloud/issues/1401)) ([418483a](https://github.com/k2b-dev/cloud/commit/418483a3e1798419c9bfb2d5acc3df9021c1b89b))
+* **mail:** index per-message command lookups so they stop scanning the command history ([#1413](https://github.com/k2b-dev/cloud/issues/1413)) ([58f7c3f](https://github.com/k2b-dev/cloud/commit/58f7c3fc60894adb85ed77f5f2b93b8c80243a39)), closes [#1247](https://github.com/k2b-dev/cloud/issues/1247)
+* **mail:** pass message references instead of bodies in workflow events ([#1437](https://github.com/k2b-dev/cloud/issues/1437)) ([54936cf](https://github.com/k2b-dev/cloud/commit/54936cf061b2f09ae4f1a8f033624ed11ea2f034))
+* **notebooks:** attachment preview focus lands on the content as it opens ([#1456](https://github.com/k2b-dev/cloud/issues/1456)) ([#1461](https://github.com/k2b-dev/cloud/issues/1461)) ([94db165](https://github.com/k2b-dev/cloud/commit/94db16556f21fcb8f83564289d2d79b83885eeb1))
+* **spaces:** keep kanban cards and columns in place while a refresh updates them ([#1396](https://github.com/k2b-dev/cloud/issues/1396)) ([0cd224d](https://github.com/k2b-dev/cloud/commit/0cd224d99cd9c952916a83d4a2eafdb0a9ea8085))
+* stop WebKit's network process from crashing on Back in browser tests ([#1431](https://github.com/k2b-dev/cloud/issues/1431)) ([#1447](https://github.com/k2b-dev/cloud/issues/1447)) ([4c5d68d](https://github.com/k2b-dev/cloud/commit/4c5d68d9e8a18fb960970e7cbf80815da29c9ff8))
+
 ## [0.45.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.44.0...cloud-v0.45.0) (2026-10-17)
 
 

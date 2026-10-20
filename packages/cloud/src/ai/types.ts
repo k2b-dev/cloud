@@ -13,10 +13,36 @@ import type {
 import type { Usage } from "@k2b/nessi/ai";
 import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
-import type { CapabilityActionReview, CapabilityActionSentences, CloudResourceRef } from "../contracts/capabilities";
+import type {
+  CapabilityActionCallReview,
+  CapabilityActionReviewData,
+  CapabilityActionSentences,
+  CloudResourceRef,
+} from "../contracts/capabilities";
 import type { RequestActor } from "../server";
+import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
+
+/** Current reader-confirmed metadata for a recently sent resource. */
+export type AiRecentResource = {
+  ref: CloudResourceRef;
+  title: string;
+  icon?: string;
+  href?: string;
+  kind: string;
+  preview?: string;
+  appName: string;
+  count: number;
+};
+
+export type AiRecentSentResourceRef = {
+  ref: CloudResourceRef;
+  count: number;
+  lastSentAt: string;
+  /** Internal conversation UUID, only for authorized Studio reads. */
+  conversationId: string;
+};
 
 export const AI_MODEL_CAPABILITIES = ["streaming", "tools", "vision", "transcription"] as const;
 export type AiModelCapability = (typeof AI_MODEL_CAPABILITIES)[number];
@@ -308,6 +334,8 @@ export type AiStoredMessage = {
       trigger: "scheduled" | "manual";
     };
     toolPresentations?: Record<string, AiToolPresentation>;
+    toolReviews?: Record<string, AiStoredActionReview>;
+    toolChecks?: Record<string, AiActionCheck>;
     /** How the person decided an approval; `expired` when the turn ended while it still waited. */
     toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
     /** Requests a website approval let through, by tool call and then by `AiWebsiteReceipt.index`. */
@@ -428,7 +456,14 @@ export type AiPendingTurnAction =
       name: string;
       args: unknown;
       message?: string;
-      review?: CapabilityActionReview;
+      /** Stored review, including the declared ask reason for new-shape reviews. */
+      review?: CapabilityActionReviewData;
+      /** Owning application, with its registry name in the turn's request locale. */
+      app?: { id: string; name: string };
+      /** The chat's current title, when known. */
+      chatTitle?: string | null;
+      /** Expiry of the platform approval request, as an ISO timestamp. */
+      expiresAt?: string;
       allowAlways: boolean;
       /** Whether the approval can be remembered for this chat. */
       allowChat: boolean;
@@ -464,7 +499,7 @@ export type AiPendingTurnActionRecord = {
   name: string;
   args: unknown;
   message?: string;
-  review?: CapabilityActionReview;
+  review?: CapabilityActionReviewData;
   approvalScope: string;
   allowAlways: boolean;
   /** Whether the approval can be remembered for this chat; defaults to `allowAlways`. */
@@ -621,6 +656,7 @@ export type AiBackgroundRunContext = {
   trigger?: "scheduled" | "manual";
   timezone?: string;
   stopDeliveredAt?: string;
+  needsApproval?: { action: string };
   taskId: string;
   occurrenceId: string;
   context: Array<{ seq: number; kind: "message" | "summary"; message: Message }>;
@@ -765,6 +801,7 @@ export type AiConversationService = {
     before?: string;
     limit?: number;
   }): Promise<{ resources: AiConversationResourceRef[]; nextCursor?: string }>;
+  listRecentSentResourceRefs(input: { ownerUserId: string }): Promise<AiRecentSentResourceRef[]>;
   listUserConversationResources(input: {
     ownerUserId: string;
     search?: string;
@@ -1007,6 +1044,8 @@ export type AiConversationService = {
   getPendingTurnAction(input: { conversationId: string; turnId: string; callId: string }): Promise<AiPendingTurnActionRecord | null>;
   findPendingTurnActionByApproval(input: { approvalId: string; ownerUserId: string }): Promise<AiPendingTurnActionRecord | null>;
   listPendingActionRecords(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnActionRecord[]>;
+  /** The reviews Cloud stored with a turn's tool calls, keyed by call ID; the newest message wins. */
+  listTurnToolReviews(input: { conversationId: string; turnId: string }): Promise<Map<string, AiStoredActionReview>>;
   listResolvedPendingActions(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnActionRecord[]>;
   resolvePendingTurnAction(input: {
     conversationId: string;
@@ -1126,7 +1165,7 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           /** Localized short status; never include payloads or secrets. */
           reportProgress?: (message: string) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
-          requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          requestApprovalFor?: (message: string, target: AiApprovalTarget, review?: CapabilityActionCallReview) => Promise<boolean>;
           /** Relays a decision for an effect another platform component consumes and executes. */
           requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */

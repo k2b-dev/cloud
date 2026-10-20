@@ -1,8 +1,12 @@
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { listCapabilities } from "../_internal/registry";
+import { getApp, listCapabilities } from "../_internal/registry";
+import { QUERY_TIMEOUT_MS } from "../api/capabilities";
+import { ErrorResponseSchema } from "../contracts";
 import { APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
+import { capabilityActionPolicy } from "../contracts/capabilities";
 import {
   type AccessSubject,
   type AuthContext,
@@ -11,22 +15,30 @@ import {
   fail,
   getLocale,
   getTimeZone,
+  jsonResponse,
   ok,
   type RequestActor,
   rateLimit,
+  requiresAuth,
   respond,
   v,
 } from "../server";
 import { isAppSessionActor } from "../server/actor";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
-import { approvalDecisionChannel } from "../services/approvals";
+import { noTransform } from "../server/middleware/no-transform";
+import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
+import { approvalDecisionChannel, approvals } from "../services/approvals";
+import { pendingApprovalReview } from "../services/approvals/question";
 import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
+import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { readThemeFromCookieHeader } from "../shared/theme";
+import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome, storedActionReview } from "./action-review";
 import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
+import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
 import { aiChatTasks } from "./chat-tasks";
@@ -67,6 +79,8 @@ import {
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
+import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
 import { type AiChatRequestContext, resolveAiChatRequestContext as resolveContext } from "./request-context";
 import { aiResourceMarker } from "./resource-markers";
 import { isConversationResourceCursor } from "./resource-refs";
@@ -85,9 +99,10 @@ import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { aiConversations } from "./store";
+import { AI_TOOL_CHECK_STALE_MS, aiConversations, claimAiToolCheck, readAiToolCheck, settleAiToolCheck } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
+import { aiToolAudit } from "./tool-audit";
 import { aiToolPromptHints } from "./tools";
 import type { AiConversation, AiTurn } from "./types";
 
@@ -305,6 +320,7 @@ export const aiRoutes = (() => {
 
   return (
     new Hono<AuthContext>()
+      .use("*", noTransform())
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
       .get("/status", async (c) => {
@@ -459,6 +475,42 @@ export const aiRoutes = (() => {
         });
         return respond(c, ok({ prompt, renderedAt: new Date().toISOString() }));
       })
+      .get(
+        "/resources/recent",
+        describeRoute({
+          tags: ["AI"],
+          summary: "List recently sent resources",
+          description: "Up to eight recently sent refs, with current reader-authorized metadata. Unreadable resources are omitted.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(
+              z.object({ resources: z.array(AiRecentResourceSchema).max(RECENT_SENT_REF_LIMIT) }),
+              "Current recent resources",
+            ),
+            401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+            403: jsonResponse(ErrorResponseSchema, "AI context unavailable"),
+          },
+        }),
+        // Titles come from app readers, so a scoped token needs the read scope the capability routes ask for.
+        auth.requireOAuthScope("read", "admin"),
+        async (c) => {
+          c.header("Cache-Control", "no-store");
+          const ctx = await resolveContext(c);
+          if (ctx instanceof Response) return ctx;
+          setRequestTimeout(c, Math.ceil(QUERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
+          try {
+            const resources = await listAiRecentResources({
+              ownerUserId: ctx.ownerUserId,
+              authority: auth.getAuthority(c),
+              locale: getLocale(c),
+              signal: c.req.raw.signal,
+            });
+            return respond(c, ok({ resources }));
+          } finally {
+            setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+          }
+        },
+      )
       .get("/resources", v("query", UserResourcesQuerySchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
@@ -1158,6 +1210,101 @@ export const aiRoutes = (() => {
         await abortAiTurn({ conversationId: conversation.id, turnId: turn.id });
         return respond(c, ok({ ok: true }));
       })
+      .post("/conversations/:conversationId/turns/:turnId/calls/:callId/check", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        // The check runs with the person's session authority, so a scoped token or another client cannot borrow it.
+        if (ctx.actor.kind !== "user" || !ctx.signedInSession)
+          return respond(c, fail(err.forbidden("Action outcome checks require a signed-in browser session.")));
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        const turn = await loadTurn(conversation, c.req.param("turnId"));
+        const callId = c.req.param("callId");
+        if (!turn || !callId) return notFound(c);
+        const target = { conversationId: conversation.id, turnId: turn.id, callId };
+        // The app's Query may take its whole budget; the request must outlast it.
+        setRequestTimeout(c, Math.ceil(QUERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
+        try {
+          const messages = await aiConversations.listTurnMessages({
+            conversationId: conversation.id,
+            loopId: turn.id,
+            includeCompacted: true,
+          });
+          const message = messages.find(
+            ({ message }) =>
+              message.role === "assistant" && message.content.some((block) => block.type === "tool_call" && block.id === callId),
+          );
+          if (!message) return notFound(c);
+          const review = message.meta?.toolReviews?.[callId];
+          const previous = message.meta?.toolChecks?.[callId];
+          if (!review || !("sentence" in review) || !review.check) return respond(c, fail(err.conflict("This call has no outcome check.")));
+          if (!previous) {
+            // An unknown tool result ends executor recovery for this call, even while its turn is live. Without
+            // a result, only a terminal cut-off call may be checked. Both paths require evidence of dispatch.
+            const terminal = turn.status === "completed" || turn.status === "failed" || turn.status === "aborted";
+            const result = messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message;
+            const eligible = result
+              ? result.role === "tool_result" && result.isError === true && isUnknownActionOutcome(result.result)
+              : terminal;
+            if (!eligible || !(await aiToolAudit.hasCapabilityDispatch(target)))
+              return respond(c, fail(err.conflict("This call has no outcome check.")));
+          }
+          // A settled check answers again as it was stored, so a client whose last response got lost can recover
+          // without running the Query again.
+          if (previous?.state === "done" || previous?.state === "not_done") return respond(c, ok(previous));
+          const block =
+            message.message.role === "assistant"
+              ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
+              : undefined;
+          const catalog = buildAiCapabilityCatalog(await listCapabilities());
+          const presentation = message.meta?.toolPresentations?.[callId];
+          const entry = catalog.find(
+            (entry) =>
+              entry.kind === "action" &&
+              (entry.name === (block?.type === "tool_call" ? block.name : undefined) ||
+                entry.providerName === (block?.type === "tool_call" ? block.name : undefined)) &&
+              (!presentation || presentation.appId === entry.appId),
+          );
+          if (!entry) return respond(c, fail(err.conflict("The Action's app is unavailable. Try the check again when it returns.")));
+          const authority = await resolveAiCapabilityActor({
+            conversationId: conversation.id,
+            persistedActor: ctx.actor,
+            store: aiConversations,
+          });
+          // One check at a time per call, across Core replicas and the executor: the claim is one conditional write,
+          // and no transaction stays open while the app's Query runs.
+          const claimedAt = new Date().toISOString();
+          const claimed = await claimAiToolCheck({
+            ...target,
+            first: !previous,
+            at: claimedAt,
+            staleBefore: new Date(Date.now() - AI_TOOL_CHECK_STALE_MS).toISOString(),
+          });
+          if (!claimed) {
+            const stored = await readAiToolCheck(target);
+            if (stored?.state === "done" || stored?.state === "not_done") return respond(c, ok(stored));
+            return respond(c, fail(err.conflict("An outcome check is already running for this call.")));
+          }
+          const answered = await checkAiCapability({
+            ...target,
+            entry,
+            check: review.check,
+            catalog,
+            authority,
+            // The receipt joins the stored review's sentence, so it is asked for in that language.
+            locale: review.locale,
+            context: { callId, signal: c.req.raw.signal },
+          });
+          if (await settleAiToolCheck({ ...target, claimedAt, check: answered })) return respond(c, ok(answered));
+          // The claim went stale and a newer check took over; its stored result is the answer.
+          const stored = await readAiToolCheck(target);
+          return stored && stored.state !== "checking"
+            ? respond(c, ok(stored))
+            : respond(c, fail(err.conflict("An outcome check is already running for this call.")));
+        } finally {
+          setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+        }
+      })
       .post(
         "/conversations/:conversationId/turns/:turnId/actions/:callId",
         bodyLimit({ maxSize: AI_CLIENT_TOOL_ACTION_MAX_BYTES }),
@@ -1208,8 +1355,51 @@ export const aiRoutes = (() => {
         if (!conversation) return notFound(c);
         const turn = await loadTurn(conversation, c.req.param("turnId"));
         if (!turn) return notFound(c);
-        const actions = await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id });
-        return respond(c, ok(actions.map((action) => publicPendingAction(action, conversation.shortId, turn.shortId))));
+        const scope = { conversationId: conversation.id, turnId: turn.id };
+        const actions = await listPendingAiTurnActions(scope);
+        if (!actions.some((action) => action.type === "approval_request"))
+          return respond(c, ok(actions.map((action) => publicPendingAction(action, conversation.shortId, turn.shortId))));
+        const [records, reviews, config] = await Promise.all([
+          aiConversations.listPendingActionRecords(scope),
+          aiConversations.listTurnToolReviews(scope),
+          aiConversations.getTurnRunConfig(scope),
+        ]);
+        const locale = config?.kind !== "compact" ? (config?.locale ?? getLocale(c)) : getLocale(c);
+        let capabilities: Promise<Awaited<ReturnType<typeof listCapabilities>> | null> | undefined;
+        const presented = await Promise.all(
+          actions.map(async (action) => {
+            const result = publicPendingAction(action, conversation.shortId, turn.shortId);
+            if (action.type !== "approval_request") return result;
+            const record = records.find((record) => record.callId === action.callId);
+            const request = record?.approvalId ? await approvals.get(record.approvalId) : null;
+            const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
+            const stored = reviews.get(reviewCallId);
+            let review: AiStoredActionReview | null = stored && !isLegacyActionReview(stored) ? stored : null;
+            if (!review && request) {
+              review = pendingApprovalReview({ storedReview: null, details: request.details });
+              if (review && !isLegacyActionReview(review) && !review.ask) {
+                // As the approvals page: the declared reason when the review names none, read once per listing.
+                capabilities ??= listCapabilities().catch(() => null);
+                const manifest = (await capabilities)?.find((entry) => entry.appId === request.appId)?.manifest;
+                review = storedActionReview(review, manifest ? capabilityActionPolicy(manifest, request.action) : undefined);
+              }
+            }
+            const appId = request?.appId;
+            // The name is presentation: a registry that cannot answer leaves the app ID, never the waiting approvals unread.
+            const app = appId && appId !== "assistant" ? await getApp(appId).catch(() => null) : null;
+            return {
+              ...result,
+              ...(review && !isLegacyActionReview(review) ? { review } : {}),
+              app: {
+                id: appId ?? "assistant",
+                name: app ? resolveAppIdentityPresentation(app, locale).name : appId && appId !== "assistant" ? appId : "Cloud",
+              },
+              chatTitle: conversation.title,
+              ...(request ? { expiresAt: request.expiresAt.toISOString() } : {}),
+            };
+          }),
+        );
+        return respond(c, ok(presented));
       })
       .get("/conversations/:conversationId/stream", async (c) => {
         const ctx = await resolveContext(c);

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { launchBrowser } from "../../../ui/test/browser";
 import type { CloudRuntime } from "../contracts/app";
@@ -96,7 +96,7 @@ beforeAll(async () => {
   const css = await styles.outputs[0]!.text();
   const response = await pages.request("/help/apps/spaces");
   markup = (await response.text())
-    .replace(/<script type="module">[^<]*solid-island[^<]*<\/script>/g, "")
+    .replace(/<script type="module"[^>]*>[^<]*solid-island[^<]*<\/script>/g, "")
     .replace("</head>", `<style>${css}</style></head>`);
   browser = await launchBrowser();
 }, 60_000);
@@ -104,6 +104,10 @@ afterAll(async () => {
   for (const spy of spies) spy.mockRestore();
   await browser?.close();
 });
+// An article opened by a click settles one frame after its body arrives and starts at the top, so a scroll in between
+// is undone (a loaded WebKit run hit this). The settle frame was requested before the body showed; one more frame
+// runs after it.
+const articleSettled = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 const open = async (query = "", viewport = { width: 1440, height: 900 }, ready = "[data-help-search]") => {
   const page = await browser.newPage({ viewport, reducedMotion: "reduce" });
   await page.route("http://cloud.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
@@ -130,6 +134,7 @@ test("wide: a text table of contents stays in view beside the article and follow
     expect(await page.locator(".help-article-tools").isVisible()).toBe(false);
     expect(await active.textContent()).toBe("Section 0");
     expect(await page.locator(".cloud-app-canvas").getAttribute("style")).toContain("--app-accent:#16a34a");
+    await articleSettled(page);
     await page.evaluate(() => {
       document.querySelector<HTMLElement>(".layout-content-main")!.scrollTop = 2000;
     });
@@ -207,6 +212,7 @@ test("on a phone the table of contents is an On this page menu under the head th
     expect(menu!.y).toBeGreaterThan(head!.y);
     // Signed-in phones scroll the soft content card while the window stays put.
     expect(await page.locator(".layout-content-main").evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
+    await articleSettled(page);
     await page.locator(".layout-content-main").evaluate((element) => {
       element.scrollTop = 2000;
     });
@@ -238,6 +244,7 @@ test("an open article keeps following the reading position when the window cross
   try {
     await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
     await page.waitForFunction(`${active} === "Section 0"`);
+    await articleSettled(page);
     // Wide: Layout's main column scrolls instead of the document.
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForFunction(() => getComputedStyle(document.querySelector(".layout-content-main")!).overflowY !== "visible");
@@ -370,11 +377,17 @@ for (const [surface, viewport] of [
       await page.locator('[data-help-tiles] [data-help-topic="share-space"]').click();
       await page.locator(".help-document #section-0").waitFor();
       expect(await input.boundingBox()).toEqual(start);
+      const answered = await page.evaluate(() => Number(document.documentElement.dataset.helpSearches ?? 0));
       await input.fill("share");
       await page.locator('[data-help-search-results] [data-help-topic="share-space"]').waitFor();
-      // Wait for the debounced request to start and finish, including its final layout.
-      await page.waitForFunction(() => !!document.querySelector("[data-help-search-results] .animate-spin"));
-      await page.waitForFunction(() => !document.querySelector("[data-help-search-results] .animate-spin"));
+      // Wait for the debounced request to be answered and its results to settle; a spinner can come and go between
+      // two polls, so the test never waits for it to appear (#1403).
+      await page.waitForFunction(
+        (before) =>
+          Number(document.documentElement.dataset.helpSearches ?? 0) > before &&
+          !document.querySelector("[data-help-search-results] .animate-spin"),
+        answered,
+      );
       expect(await input.boundingBox()).toEqual(start);
       expect(await page.locator(".help-article").count()).toBe(0);
       expect(await input.count()).toBe(1);

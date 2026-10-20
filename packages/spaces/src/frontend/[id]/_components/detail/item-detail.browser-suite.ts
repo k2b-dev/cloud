@@ -51,6 +51,7 @@ const task: SpaceItem = {
   endsAt: null,
   allDay: false,
   deadline: "2026-10-06T15:00:00.000Z",
+  deadlineAllDay: false,
   estimatedDurationMinutes: 45,
   activeBlockerCount: 1,
   priority: "medium",
@@ -853,6 +854,55 @@ describe("Spaces item detail in a browser", () => {
       });
       // Every save refreshed the panel without an error.
       expect(await page.locator("dialog[open]").count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("the due date is a whole day until a time is added, and removing the time keeps the day", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      writes.splice(0);
+      stored = task;
+      const due = planningRow(page, "Due");
+      const value = () => due.locator(".k2b-date-trigger__value").textContent();
+      const rowHeight = () => due.evaluate((row) => row.getBoundingClientRect().height);
+      const height = await rowHeight();
+      const panel = page.locator(".k2b-date-popover:popover-open");
+
+      // An existing timed deadline opens with its time, 17:00 in Berlin.
+      await clickLabel(page, "Due");
+      expect(await panel.getByRole("textbox", { name: "Time" }).inputValue()).toBe("17:00");
+      await panel.getByRole("button", { name: "Remove time" }).click();
+      await panel.getByRole("button", { name: "Apply" }).click();
+      await writesReach(1);
+      expect(writes[0]).toEqual({ method: "PATCH", path: `/api/spaces/${spaceId}/items/Item01`, body: { deadline: "2026-10-06" } });
+      await page.waitForFunction(() =>
+        window.document.querySelector(".k2b-detail-panel .k2b-date-trigger__value")?.textContent?.startsWith("Tue, Oct 6 · "),
+      );
+      expect(await rowHeight()).toBe(height);
+
+      // Without a time, a day is the deadline at once, and a preset is a day too.
+      await clickLabel(page, "Due");
+      expect(await panel.getByRole("button", { name: "Add time" }).isVisible()).toBe(true);
+      await panel.locator('[data-date-day="2026-10-09"]').click();
+      await writesReach(2);
+      expect(writes[1]?.body).toEqual({ deadline: "2026-10-09" });
+
+      // Add time starts at the deadline default and saves an instant.
+      await clickLabel(page, "Due");
+      await panel.getByRole("button", { name: "Add time" }).click();
+      expect(await panel.getByRole("textbox", { name: "Time" }).inputValue()).toBe("17:00");
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.type("0930");
+      await panel.getByRole("button", { name: "Apply" }).click();
+      await writesReach(3);
+      expect(writes[2]?.body).toEqual({ deadline: "2026-10-09T07:30:00.000Z" });
+      await page.waitForFunction(() =>
+        window.document.querySelector(".k2b-detail-panel .k2b-date-trigger__value")?.textContent?.startsWith("Oct 9, 2026, 09:30 · "),
+      );
+      expect(await rowHeight()).toBe(height);
+      expect(await value()).toContain("09:30");
     } finally {
       await page.context().close();
     }

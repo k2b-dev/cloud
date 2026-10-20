@@ -23,6 +23,7 @@ const task = (shortId: string, title: string): OverviewWork["items"][number] => 
   startsAt: null,
   endsAt: null,
   deadline: null,
+  deadlineAllDay: false,
 });
 const tents = task("Item01", "Order the tents");
 const flyer = task("Item02", "Write the flyer");

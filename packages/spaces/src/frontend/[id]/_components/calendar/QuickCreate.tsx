@@ -27,8 +27,8 @@ export const timedEventDefaults = (days: CalendarDays, dateConfig?: DateContext)
   endsAt: instantFromLocalDateTime(days.last, days.first === days.last ? "10:00" : "17:00", dateConfig),
 });
 
-/** A task is due at the end of the last day's working hours, as the deadline presets are. */
-export const taskDeadline = (days: CalendarDays, dateConfig?: DateContext) => instantFromLocalDateTime(days.last, "17:00", dateConfig);
+/** Without a time slot, a task is due all day on the last selected day. */
+export const taskDeadline = (days: CalendarDays) => days.last;
 
 /** A time slot of the day or week view, as ISO instants. */
 export type CalendarSlot = { start: string; end: string };
@@ -43,7 +43,7 @@ export const quickCreateDefaults = (
   dateConfig?: DateContext,
   time?: CalendarSlot,
 ): QuickCreateDefaults => {
-  if (kind === "task") return { type: "task", deadline: time?.start ?? taskDeadline(days, dateConfig) };
+  if (kind === "task") return { type: "task", deadline: time?.start ?? taskDeadline(days) };
   if (kind === "allday")
     return { type: "event", allDay: true, startsAt: allDayStart(days.first, dateConfig), endsAt: allDayEnd(days.last, dateConfig) };
   if (time) return { type: "event", allDay: false, startsAt: time.start, endsAt: time.end };
@@ -96,7 +96,11 @@ export default function QuickCreate(props: {
   /** When the item would be, as one short line. */
   const when = () => {
     const values = quickCreateDefaults(kind(), props.days, props.dateConfig, props.time);
-    if (kind() === "task") return t.quickCreateDue({ date: `${day(props.days.last)}, ${time(values.deadline ?? "")}` });
+    // A task without a time slot is due all day, so its line names the day alone.
+    if (kind() === "task")
+      return t.quickCreateDue({
+        date: props.time ? `${day(props.days.last)}, ${time(values.deadline ?? "")}` : day(props.days.last),
+      });
     const range = props.days.first === props.days.last ? day(props.days.first) : `${day(props.days.first)} – ${day(props.days.last)}`;
     if (kind() === "allday") return t.quickCreateAllDay({ range });
     if (props.days.first === props.days.last) return `${range} · ${time(values.startsAt ?? "")}–${time(values.endsAt ?? "")}`;

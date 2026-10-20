@@ -5,7 +5,19 @@ import { z } from "zod";
 import { mailAddressSchema, mailPrioritySchema } from "../contracts";
 import { MAX_DRAFT_ATTACHMENTS, mimeMessageIdSchema, mimeReferencesSchema } from "./draft-provider-mime";
 
+export const inlineLogoSnapshotSchema = z.object({
+  versionId: z.string().uuid(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  contentType: z.enum(["image/png", "image/jpeg"]),
+  byteLength: z.number().int().min(1).max(102400),
+  contentId: z
+    .string()
+    .max(255)
+    .regex(/^logo\.[a-f0-9-]{36}@[A-Za-z0-9.-]+$/),
+});
+
 const outboundDraftSnapshotBaseSchema = z.object({
+  inlineLogo: inlineLogoSnapshotSchema.nullable().default(null),
   revision: z.number().int().positive(),
   from: z.object({ name: z.string().max(200), address: z.string().email().max(320) }),
   replyTo: z.string().email().max(320).nullable(),
@@ -78,6 +90,7 @@ export const buildMimeStream = (params: {
   messageId: string;
   date: Date;
   openAttachment: (blobId: string) => Readable;
+  inlineLogoContent?: Buffer | null;
   /** Keep the Bcc header; only for the sender's own Sent copy, never for the copy handed to SMTP. */
   keepBcc?: boolean;
 }): Readable => {
@@ -104,11 +117,23 @@ export const buildMimeStream = (params: {
   if (params.snapshot.requestReadReceipt && params.snapshot.receiptAddress) {
     headers["Disposition-Notification-To"] = params.snapshot.receiptAddress;
   }
-  const attachments = params.snapshot.attachments.map((attachment) => ({
-    filename: attachment.filename,
-    contentType: attachment.contentType,
-    content: params.openAttachment(attachment.blobId),
-  }));
+  const attachments: { filename: string; contentType: string; content: Readable | Buffer; cid?: string; contentDisposition?: "inline" }[] =
+    params.snapshot.attachments.map((attachment) => ({
+      filename: attachment.filename,
+      contentType: attachment.contentType,
+      content: params.openAttachment(attachment.blobId),
+    }));
+  if (params.snapshot.format === "markdown" && params.snapshot.inlineLogo) {
+    if (!params.inlineLogoContent) throw Object.assign(new Error("Inline logo content is required"), { code: "INLINE_LOGO_UNAVAILABLE" });
+    const logo = params.snapshot.inlineLogo;
+    attachments.push({
+      filename: logo.contentType === "image/png" ? "logo.png" : "logo.jpg",
+      content: params.inlineLogoContent,
+      contentType: logo.contentType,
+      cid: logo.contentId,
+      contentDisposition: "inline",
+    });
+  }
   if (params.snapshot.vcard) {
     attachments.push({
       filename: "contact.vcf",
@@ -143,6 +168,7 @@ export const buildMimeSource = async (params: {
   messageId: string;
   date: Date;
   openAttachment?: (blobId: string) => Readable;
+  inlineLogoContent?: Buffer | null;
 }): Promise<Buffer> => {
   const chunks: Buffer[] = [];
   for await (const value of buildMimeStream({

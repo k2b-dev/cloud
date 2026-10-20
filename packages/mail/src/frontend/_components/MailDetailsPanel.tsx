@@ -35,10 +35,9 @@ import type { ConversationDraftSummary } from "../../contracts";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "../../service/collaboration";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { ConversationLocalTags, LocalTag } from "../../service/local-tags";
-import type { MessageDetail } from "../../service/messages";
 import type { ConversationPresenceParticipant } from "../../service/presence";
 import type { ConversationReminder } from "../../service/reminders";
-import type { MailDetailErrors } from "../../service/workspace";
+import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import MailConversationContext from "./MailConversationContext";
 import MailRelatedConversations from "./MailRelatedConversations";
@@ -95,7 +94,7 @@ export default function MailDetailsPanel(props: {
   conversationDrafts: ConversationDraftSummary[];
   conversationHref?: string;
   conversationSummary?: ConversationContentSummary | null;
-  messages: MessageDetail[];
+  messages: MailWorkspaceMessage[];
   subject: string;
   requestUrl: string;
   dateConfig: DateContext;
@@ -651,7 +650,12 @@ export default function MailDetailsPanel(props: {
           }
           actions={
             <Tooltip.Anchor content={t().closeDetails}>
-              <IconButton type="button" class="lg:hidden" label={t().closeConversationDetails} onClick={props.onClose}>
+              <IconButton
+                type="button"
+                class="@min-[64rem]/k2b-app-area:hidden"
+                label={t().closeConversationDetails}
+                onClick={props.onClose}
+              >
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             </Tooltip.Anchor>

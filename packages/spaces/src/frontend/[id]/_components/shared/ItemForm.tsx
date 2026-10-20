@@ -18,6 +18,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type { SpaceItemAssignee } from "@/contracts";
+import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
   defaultTemplateDate,
   describeTemplateDateRule,
@@ -44,6 +45,7 @@ import { useSpaceMessages } from "../../messages";
 import {
   allDayEnd,
   allDayStart,
+  DEADLINE_DEFAULT_TIME,
   dateOnlyRange,
   datePart,
   deadlinePresets,
@@ -81,7 +83,9 @@ export default function ItemForm(props: ItemFormProps) {
   const [itemType, setItemType] = createSignal<ItemType>(
     initialIsEvent() ? "event" : isEditMode() ? "task" : (props.defaults?.type ?? "task"),
   );
-  const [deadline, setDeadline] = createSignal(dateTimeInitial(props.item?.deadline ?? props.defaults?.deadline));
+  // A deadline without a time stays a date key; a timed one is edited like the event times.
+  const deadlineInitial = (value?: string | null) => (value && isDateOnlyDeadline(value) ? value : dateTimeInitial(value));
+  const [deadline, setDeadline] = createSignal(deadlineInitial(props.item?.deadline ?? props.defaults?.deadline));
   const [estimatedDurationMinutes, setEstimatedDurationMinutes] = createSignal<number | null>(
     props.item?.estimatedDurationMinutes ?? props.defaults?.estimatedDurationMinutes ?? null,
   );
@@ -417,7 +421,7 @@ export default function ItemForm(props: ItemFormProps) {
               props.dateConfig,
             )
           : null,
-      deadline: !isEvent() && deadline() ? new Date(deadline()).toISOString() : undefined,
+      deadline: !isEvent() && deadline() ? (isDateOnlyDeadline(deadline()) ? deadline() : new Date(deadline()).toISOString()) : undefined,
       estimatedDurationMinutes: !isEvent() ? (estimatedDurationMinutes() ?? (isEditMode() ? null : undefined)) : undefined,
       priority: (priority() || (isEditMode() ? null : undefined)) as Priority | null | undefined,
       assigneeIds: assigneeChange(),
@@ -530,6 +534,8 @@ export default function ItemForm(props: ItemFormProps) {
                         onValueChange={changeDeadline}
                         dateConfig={props.dateConfig}
                         presets={deadlinePresets(props.dateConfig)}
+                        optionalTime
+                        defaultTime={DEADLINE_DEFAULT_TIME}
                         clearable
                       />
                       <NumberInput
@@ -659,7 +665,7 @@ export default function ItemForm(props: ItemFormProps) {
                         </Show>
                       </div>
                       <div
-                        class="flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300"
+                        class="flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm text-secondary dark:bg-zinc-900/50"
                         role="status"
                         aria-live="polite"
                         aria-atomic="true"
@@ -814,13 +820,15 @@ export default function ItemForm(props: ItemFormProps) {
                   onValueChange={changeDeadline}
                   dateConfig={props.dateConfig}
                   presets={deadlinePresets(props.dateConfig)}
+                  optionalTime
+                  defaultTime={DEADLINE_DEFAULT_TIME}
                   clearable
                 />
               </Show>
 
               <Show when={templateSummary().length > 0}>
                 <p class="spaces-template-summary text-xs text-dimmed" data-testid="template-summary">
-                  <span>{t.fromTemplate}</span> <span class="text-zinc-700 dark:text-zinc-300">{templateSummary().join(" · ")}</span>
+                  <span>{t.fromTemplate}</span> <span class="text-secondary">{templateSummary().join(" · ")}</span>
                 </p>
               </Show>
 

@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-17
+updated: 2026-10-20
 ---
 
 # API surface
@@ -31,7 +31,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
-| `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters |
+| `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
@@ -220,7 +220,7 @@ inferring support from autocomplete.
 | --- | --- | --- |
 | `@k2b/cloud` | `defineApp`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
-| `@k2b/cloud/ai` | Structured model calls and local tools used by AI guides | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
+| `@k2b/cloud/ai` | Structured model calls, local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
 | `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
@@ -303,12 +303,15 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
 | `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/solid` | Supported, browser | AI chat controller over the conversation SSE stream | [Chat interface](/en/docs/ai/chat-interface) |
 | `@k2b/cloud/ai/tools` | Advanced, server-only | Mount Cloud's standard agent-tool factories, including document-aware `read_file` and conversation-file `markdown_to_pdf` and `html_to_pdf` | [Files and Projects](/en/docs/ai/files-projects-and-personalization) |
 | `@k2b/cloud/ai/ui` | Supported, SolidJS | Shared AI chat components | [Chat interface](/en/docs/ai/chat-interface) |
+| `@k2b/cloud/ai/testing` | Supported, tests | `aiQuestionFixtures` demo questions (German and English, fixed times; the data may change in any release) and `aiOpenQuestionFixture`, a question as `listAiOpenQuestions` presents it from a tool block | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) |
 | `@k2b/cloud/ai/live` | Supported, server-only | `aiLive`: the cursor of AI live updates for server-rendered state; Core mounts its socket | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/live-events` | Supported, browser and server | `AiInvalidationSchema` and `AI_INVALIDATION_DOMAINS`, the data of AI live updates | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
+| `@k2b/cloud/ai/question-text` | Platform-owned, browser and server | The plain-text form of an Assistant question (`approvalCard`, `actionCardText`, `actionQuestionLines`) that `cld`, notifications, and Cloud Login show | [Tools and approvals](/en/docs/ai/tools-and-approvals) |
 | `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
@@ -321,6 +324,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
+| `@k2b/cloud/browser/hints` | Supported, browser | `markHintSeen`: remembers a moved-path hint in the browser cookie before dismissal or navigation | [One-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop and, under an open modal dialog, offers the reload once the dialog closes; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@k2b/cloud/browser/panel` | Supported, browser | `openPanel` and `closePanel`: open a visible provider or close the current panel | [Panels](/en/docs/platform/panels) |
@@ -328,7 +332,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |
 | `@k2b/cloud/browser/commands` | Supported, browser | Open interactive Commands, handle command links, and register context actions | [Capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/browser/testing` | Supported, browser tests | Inspect mounted context actions and navigation, and capture search requests | [Universal search](/en/docs/platform/search#test-application-search-and-context-actions) |
-| `@k2b/cloud/browser/composer-insert` | Supported, SolidJS | Build composer insert rows and scopes with `cloudInsertMenu`; give each composer its tags from one shared catalog load with `createCloudComposerCatalog` | [Universal search](/en/docs/platform/search#insert-resources-from-a-composer) |
+| `@k2b/cloud/browser/composer-insert` | Supported, SolidJS | Build insert rows with `cloudInsertMenu` and app-opening rows with `cloudCommandMenu` / `openComposerCommand`; read tags, `commands()` and `state()` from `createCloudComposerCatalog` | [Universal search](/en/docs/platform/search#insert-resources-from-a-composer) |
 | `@k2b/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/files` | Supported, SolidJS | `chooseFiles`: add files from this device or from Cloud apps that offer files, as `File` objects; `saveFiles`, `SaveFilesButton`, `saveFilesLabel`, `SAVE_FILES_ICON`: save copies into Cloud apps that store files | [File providers](/en/docs/platform/file-providers) |
 | `@k2b/cloud/clients/core` | Platform-owned, browser | Typed client for the Core platform API | — |
@@ -348,10 +352,10 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/styles/global.css` | Supported asset | Alias for the global stylesheet | [Styling](/en/docs/frontend/styling-and-accessibility) |
 | `@k2b/cloud/cli/access` | Supported | Resource access commands | [CLI modules](/en/docs/platform/cli-modules) |
 | `@k2b/cloud/cli/capabilities` | Platform-owned | Built-in generic capability client | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability catalog, invocation, and Action review client | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability catalog, invocation, and Action review client | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability clients and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest compilation, evolution and resource-link assertions | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest, evolution, resource-link and localized review checks | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/account` | Platform-owned | Built-in account commands | — |
 | `@k2b/cloud/cli/apps` | Platform-owned | Built-in application commands | — |
 | `@k2b/cloud/cli/admin` | Platform-owned | Built-in administration commands | — |
@@ -440,6 +444,19 @@ variant, result, and error types are available from `@k2b/cloud/services` and
 See [PDF and templates](/en/docs/platform/pdf-and-templates)
 for their input, access, cancellation and deployment responsibilities.
 
+### Help surfaces
+
+`@k2b/cloud/ssr/islands` exports `Layout.HelpPage` / `LayoutHelpPage` for
+full-page and embedded readers, plus `Layout.HelpDocuments` /
+`LayoutHelpDocuments` and `openLayoutHelpDialog`.
+`@k2b/cloud/ssr` exports `LayoutHelpPanel` with `LayoutHelpPanelProps` for
+server HTML with small interaction islands. Render it in a server page, such
+as inside `PanelLayout`, never inside an island. Applications normally use the
+automatic Help registration.
+`openLayoutHelpDialog()` first opens Core's provider in the slot and falls back
+to a dialog when no slot accepts it.
+See [In-product Help](/en/docs/platform/help).
+
 ### Workspace navigation
 
 `@k2b/cloud/ssr/WorkspaceNavigation.island` supplies SSR-first workspace links.
@@ -463,3 +480,12 @@ and context actions in the global palette. `@k2b/cloud/capabilities` exports
 `@k2b/cloud/contracts` also exports `isCommandPath` to check Cloud paths.
 Import it from `@k2b/cloud/contracts/command-path` to use the check without
 loading validators.
+
+## Panel page context
+
+Use `readPanelContext(c)` from `@k2b/cloud/ssr` for a provider's first server
+render. Browser code uses `getContext()` and `onContextChange()` from
+`@k2b/cloud/browser/panel`; host pages with in-document place changes use
+`publishPageContext()`. `PanelPageContext` and its strict schema are exported
+from `@k2b/cloud/contracts`. See [Panels](/en/docs/platform/panels#page-context)
+for consent, ordering, and the rule that refs never grant access.

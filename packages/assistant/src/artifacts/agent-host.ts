@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   type AiApprovalTarget,
+  AiBackgroundApprovalRequiredError,
   aiChatTasks,
   aiConversations,
   aiTurnAllowsWebsiteApprovals,
@@ -25,6 +26,7 @@ import { runCodeAi } from "./ai-service";
 import { createArtifactServiceRoutes } from "./api";
 import { backgroundCodeRouteAllowed, backgroundDatabaseOperation } from "./background-code-policy";
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
+import { ChatReference } from "./chat-access";
 import { codeApprovalMessage } from "./code-approval-message";
 import type { CodeToolContext } from "./code-tools";
 import { LIMITS } from "./contracts";
@@ -174,7 +176,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
     theme = context.theme ?? "light";
   if (config.background && url.pathname === "/api/assistant/artifacts/runtime/check/start") {
     const { input } = z
-      .object({ input: CodeCheckInput, conversationId: z.uuid() })
+      .object({ input: CodeCheckInput, conversationId: ChatReference })
       .strict()
       .parse(await new Request(url, init).json());
     if (input.id) {
@@ -233,7 +235,15 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
     }
   }
   const router = new Hono<AuthContext>()
-    .onError((error) => Response.json({ code: "CODE_HOST_REQUEST_FAILED", message: error.message }, { status: 403 }))
+    .onError((error) =>
+      Response.json(
+        {
+          code: error instanceof AiBackgroundApprovalRequiredError ? error.code : "CODE_HOST_REQUEST_FAILED",
+          message: error.message,
+        },
+        { status: 403 },
+      ),
+    )
     .use("*", async (c, next) => {
       c.set("credentialKind", "invocation");
       c.set("actor", context.actor);
@@ -242,6 +252,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
     })
     .post("/api/assistant/artifacts/runtime/capabilities", async (c, next) => {
       if (!config.background) return next();
+      if (!config.mandate) throw new Error("Background capability mandate is missing");
       const input = RuntimeCapabilityRequest.parse(await c.req.json());
       if (input.conversationId !== context.conversationId) throw new Error("Code capability conversation mismatch");
       return c.json(
@@ -254,7 +265,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
             locale: context.locale,
             signal: c.req.raw.signal,
           },
-          true,
+          { turnId: session.turnId, mandate: config.mandate },
         ),
       );
     })

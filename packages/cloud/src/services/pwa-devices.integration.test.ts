@@ -73,7 +73,7 @@ const routes = new Hono<AuthContext>()
     }),
   )
   .route("/api/me", meRoutes)
-  .route(APP_APPROVAL_PATH, createAppApprovalRoutes())
+  .route(APP_APPROVAL_PATH, createAppApprovalRoutes({ notify: async () => {} }))
   // Another application's validator: the ordinary auth middleware of any app.
   .get("/pwa/probe", auth.requireRole("authenticated"), (c) =>
     c.json({ userId: c.get("user").id, kind: c.get("sessionKind"), roles: c.get("user").roles }),
@@ -829,7 +829,9 @@ suite("mobile app pairing and app sessions", () => {
     const webOnly = async (method: string, path: string, body?: unknown) => {
       const response = await call(phone, method, path, { body });
       expect([path, response.status]).toEqual([path, 403]);
-      expect(await json(response)).toMatchObject({ code: "FORBIDDEN" });
+      expect(await json(response)).toMatchObject({
+        code: path === "/api/me/api-keys" || path.startsWith("/api/me/passkeys/registration/") ? "BROWSER_SIGN_IN_REQUIRED" : "FORBIDDEN",
+      });
     };
     await webOnly("POST", "/api/me/api-keys", { name: "From the phone" });
     await webOnly("POST", "/api/me/passkeys/registration/start");

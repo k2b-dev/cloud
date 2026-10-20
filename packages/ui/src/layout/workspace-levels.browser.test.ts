@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, storedCookie } from "../../test/browser";
 import { type AppWorkspaceLayoutState, appWorkspaceLayoutStyle, parseAppWorkspaceLayoutState } from "./app-workspace-state";
 
 const ui = resolve(import.meta.dir, "../..");
@@ -364,9 +364,10 @@ for (const width of [1440, 1920])
       await page.waitForFunction(
         () => JSON.parse(decodeURIComponent(document.cookie.match(/levels_layout=([^;]+)/)![1]!)).paneWidths.sections === 408,
       );
-      expect(
-        JSON.parse(decodeURIComponent((await page.context().cookies()).find((c) => c.name === "levels_layout")!.value)).paneWidths,
-      ).toEqual({ sections: 408, items: 400 });
+      expect(JSON.parse(decodeURIComponent((await storedCookie(page, "levels_layout"))!.value)).paneWidths).toEqual({
+        sections: 408,
+        items: 400,
+      });
     } finally {
       await page.close();
     }

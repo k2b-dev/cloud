@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { MessageResponse } from "../../contracts/shared";
 import * as settings from "../../services/settings";
+import { clientIp } from "../client-ip";
 import { ratelimit } from "../ratelimit";
 import { type AuthContext, auth } from "./auth";
 
@@ -28,9 +29,6 @@ type ResolvedRateLimit = {
 const DEFAULT_WINDOW_SECS = 1;
 const LIMITER_PREFIX = "cloud:rate-limit";
 const limiterCache = new Map<string, ReturnType<typeof ratelimit>>();
-
-const getClientIp = (c: Context): string =>
-  c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-real-ip") ?? "unknown";
 
 const pathMatches = (requestPath: string, matcher: string | RegExp): boolean => {
   if (matcher instanceof RegExp) return matcher.test(requestPath);
@@ -83,13 +81,13 @@ const getLimiter = (limitPerSecond: number, windowSecs: number) => {
 };
 
 const resolveIdentifier = async (c: Context<AuthContext>, keyBy: RateLimitConfig["keyBy"]): Promise<string> => {
-  if (keyBy === "ip") return `ip:${getClientIp(c)}`;
+  if (keyBy === "ip") return `ip:${clientIp(c)}`;
 
   const token = auth.session.getToken(c);
-  if (!token) return `ip:${getClientIp(c)}`;
+  if (!token) return `ip:${clientIp(c)}`;
 
   const userId = await auth.session.getRequestSubject(c, token);
-  if (!userId) return `ip:${getClientIp(c)}`;
+  if (!userId) return `ip:${clientIp(c)}`;
 
   return `user:${userId}`;
 };

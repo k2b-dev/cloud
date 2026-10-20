@@ -3,9 +3,10 @@ import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { batch, createSignal, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
-import type { Mailbox } from "../../contracts";
+import type { Mailbox, MailConversationPreview } from "../../contracts";
 import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
+import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationReader from "./MailConversationReader";
 import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
@@ -40,6 +41,9 @@ declare global {
     setMailItems: (items: MailListItem[]) => void;
     /** Marks rows as leaving, as the workspace does while an action takes them out of the list. */
     setMailLeaving: (keys: string[]) => void;
+    mountMailQuickLook: (item: MailListItem, preview: MailConversationPreview) => void;
+    setMailActive: (id: string | null) => void;
+    setMailChecked: (ids: string[]) => void;
     mailItems: () => MailListItem[];
     mailNavigations: string[];
     folderHintDismissed: boolean;
@@ -115,6 +119,9 @@ window.mountMailList = (options) => {
   window.setMailLeaving = (keys) => setLeaving(new Set(keys));
   window.mailItems = () => [...list.items];
   const [selected, setSelected] = createSignal(options.selectedConversationId);
+  window.setMailActive = setSelected;
+  const [checked, setChecked] = createSignal<ReadonlySet<string>>(new Set());
+  window.setMailChecked = (ids) => setChecked(new Set(ids));
   const [detail, setDetail] = createStore(
     detailFor(
       options.items.find((item) => item.conversationId === selected()),
@@ -204,12 +211,13 @@ window.mountMailList = (options) => {
                   query={options.requestUrl ? (new URL(requestUrl(), location.origin).searchParams.get("q") ?? "") : ""}
                   search={{ query: "", expression: null, sort: "relevance", error: null }}
                   title="Inbox"
+                  namedBy="tabs"
                   items={list.items}
                   leavingKeys={leaving()}
                   error={null}
                   selectedConversationId={selected()}
                   selectedMessageId={null}
-                  selectedConversationIds={new Set()}
+                  selectedConversationIds={checked()}
                   selectionMode={options.selectionMode ?? false}
                   nextCursor={null}
                   dateConfig={dateConfig}
@@ -251,7 +259,6 @@ window.mountMailList = (options) => {
                     open(new URL(href, location.href).searchParams.get("conversation"));
                   }}
                   onToggleSelectionMode={noop}
-                  onListModeChange={noop}
                   onToggleSelection={noop}
                   onClearSelection={noop}
                   onAddTags={noop}
@@ -324,4 +331,28 @@ window.mountMailList = (options) => {
     ),
     host,
   );
+};
+
+/** The real quick-look content in its shipped fixed card, including at widths where the list suppresses previews. */
+window.mountMailQuickLook = (item, preview) => {
+  const card = document.createElement("div");
+  card.id = "summary-card";
+  card.className = "k2b-hover-preview mail-quick-look-card";
+  card.setAttribute("popover", "manual");
+  card.setAttribute("data-size", "fixed");
+  document.querySelector("#root")!.append(card);
+  render(
+    () => (
+      <LocaleProvider locale="en">
+        <MailConversationQuickLook
+          item={item}
+          state={{ status: "ready", data: preview }}
+          dateConfig={{ locale: "en", timeZone: "Europe/Berlin" }}
+          onOpen={() => {}}
+        />
+      </LocaleProvider>
+    ),
+    card,
+  );
+  card.showPopover();
 };

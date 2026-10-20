@@ -13,6 +13,7 @@ import { readContact } from "./contact-capabilities";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";
 import { mailDraftReturnHref, mailDraftSeedHref } from "./mail-compose-route";
+import { mailComposeDraftSeedInput } from "./mail-compose-seed";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./mail-sender-preference";
@@ -39,7 +40,7 @@ export default function MailComposeIntentPage(props: {
   const [returnHref, setReturnHref] = createSignal(CommandPathSchema.safeParse(props.returnHref).success ? props.returnHref : null);
   const [commandLoading, setCommandLoading] = createSignal(false);
   const [commandError, setCommandError] = createSignal<string>();
-  const [retryCommand, setRetryCommand] = createSignal<() => Promise<void>>();
+  const [retryCommand, setRetryCommand] = createSignal<() => Promise<boolean>>();
   const parsedIntent = createMemo(() => parseMailtoIntent(mailto()));
   const commandAbort = new AbortController();
   onCleanup(() => commandAbort.abort());
@@ -185,27 +186,7 @@ export default function MailComposeIntentPage(props: {
       const parsed = parsedIntent();
       if (!parsed.ok) throw new Error(intentErrorMessage(parsed.code));
       const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-        {
-          param: { mailboxId: selectedMailboxId },
-          json: {
-            origin: {
-              kind: "compose",
-              input: {
-                senderIdentityId: identity.id,
-                to: parsed.intent.to,
-                cc: parsed.intent.cc,
-                bcc: parsed.intent.bcc,
-                subject: parsed.intent.subject,
-                body: parsed.intent.body,
-                ...(parsed.intent.body ? { format: "plain" as const } : {}),
-                intent: "new",
-                conversationId: null,
-                sourceMessageId: null,
-                includeSourceAttachments: false,
-              },
-            },
-          },
-        },
+        { param: { mailboxId: selectedMailboxId }, json: mailComposeDraftSeedInput(identity.id, parsed.intent) },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
@@ -280,7 +261,7 @@ export default function MailComposeIntentPage(props: {
         aria-labelledby="mail-compose-intent-title"
       >
         <div class="flex items-start gap-3">
-          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)] text-accent">
+          <span class="k2b-icon-tile app-accent-text h-10 w-10">
             <i class="ti ti-pencil" aria-hidden="true" />
           </span>
           <div class="min-w-0">

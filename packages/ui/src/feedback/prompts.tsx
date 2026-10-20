@@ -118,6 +118,8 @@ export type FieldSchema =
   | (PromptFieldBase<string> & {
       type: "datetime";
       dateOnly?: boolean;
+      /** A date whose time is optional, as `DateTimePicker`'s `optionalTime`. */
+      optionalTime?: boolean;
     })
   | {
       type: "info";
@@ -386,7 +388,11 @@ const PromptControl = (props: {
         onValueChange: (value: string | null) => props.update(value ?? ""),
         clearable: true,
       };
-      return props.field.dateOnly ? <DatePicker {...pickerProps} /> : <DateTimePicker {...pickerProps} />;
+      return props.field.dateOnly ? (
+        <DatePicker {...pickerProps} />
+      ) : (
+        <DateTimePicker {...pickerProps} optionalTime={props.field.optionalTime} />
+      );
     }
   }
 };
