@@ -260,6 +260,7 @@ export default function ContactsResults(props: Props) {
           else setSelectionMode(true);
         },
         publishHead,
+        navigation.supersede,
       ),
     );
     publishHead();

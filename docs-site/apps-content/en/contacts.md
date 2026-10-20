@@ -34,6 +34,8 @@ books contain records created and maintained by Cloud users.
 The sidebar contains **All contacts** and the contact books. On smaller
 screens, the books appear in a row below the head. Each object has **All** and
 **Favorites** tabs at the top. Tab counts ignore search and filters.
+If the counts cannot update, a warning button beside the tabs lets you retry;
+the last known counts stay visible.
 
 Search, tags, **Sort**, and **Contact info** sit in the head row. **Reset**
 clears search and filters while keeping the tab and sort order. A result count

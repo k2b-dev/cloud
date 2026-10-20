@@ -13,6 +13,9 @@
 }
 
 /* Head row: search, tag chips, Sort and Contact info stay one line that the head scrolls sideways. */
+.contacts-view-tabs { display: flex; min-width: 0; align-items: center; gap: 0.25rem; }
+/* Reserve the recovery action in the first frame, so a failed count refresh moves no tab or neighbor. */
+.contacts-count-retry { flex: none; }
 .contacts-head-filters { display: flex; min-width: 0; align-items: center; gap: 0.375rem; }
 .contacts-head-filters > *, .k2b-ui .contacts-head-filters .k2b-filter-chip { flex: none; }
 .contacts-head-search { width: 13rem; }

@@ -17,6 +17,7 @@ Die Kontakte-Übersicht ist eine gemeinsame Arbeitsansicht für alle Kontaktbüc
 - **Zurücksetzen:** Entfernt Suche, Tags sowie E-Mail- und Telefonfilter. Tab und Sortierung bleiben erhalten. Bei aktiven Filtern erscheint die Trefferzahl.
 - **Tags:** Filtere nach den Tags, die der aktuelle Bereich zeigt. Tags gehören zu einem Kontaktbuch. Derselbe Name in zwei Kontaktbüchern bezeichnet zwei getrennte Tags.
 - **Tabs:** **Alle** und **Favoriten** gibt es für alle Kontaktbücher zusammen und innerhalb jedes Kontaktbuchs. Ihre Zahlen gelten ohne Suche und Filter. Markiere einen Kontakt mit dem Stern als Favorit.
+- **Zahlen nicht aktuell:** Mit dem Warnknopf neben den Tabs versuchst du die Aktualisierung erneut. Die zuletzt geladenen Zahlen bleiben sichtbar.
 - **Kontaktbuchaktionen:** Öffne **…** innerhalb eines Kontaktbuchs. Mit Bearbeitungsrecht stehen **Duplikate** und **Auswählen** bereit. Mit Verwaltungsrecht findest du dort auch **Buch-Einstellungen**. Mit **Auswahl beenden** verlässt du den Auswahlmodus.
 :::
 

@@ -37,6 +37,7 @@ else {
       change,
       () => {},
       () => publishContactsHeadState(state),
+      () => {},
     );
     const dispose = render(
       () => (
@@ -89,10 +90,12 @@ else {
       selectionMode: false,
     };
     const change = mock((_change: { href: string; resetSearch?: boolean }) => {});
+    const supersede = mock(() => {});
     const stop = subscribeToContactsHeadChanges(
       change,
       () => {},
       () => publishContactsHeadState(state),
+      supersede,
     );
     const dispose = render(
       () => <Filters initialHref={state.source} initialTotal={1} searchPlaceholder="Search" tags={[]} bookNames={{}} />,
@@ -103,7 +106,10 @@ else {
       input.focus();
       input.value = "Ada";
       input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.value = "Ada L";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
       input.blur();
+      expect(supersede).toHaveBeenCalledTimes(2);
       expect(change).not.toHaveBeenCalled();
       dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click();
       const choice = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((item) =>
@@ -113,7 +119,7 @@ else {
       choice!.click();
       expect(change).toHaveBeenCalledTimes(1);
       const url = new URL(change.mock.calls[0]![0].href, "http://localhost");
-      expect(url.searchParams.get("search")).toBe("Ada");
+      expect(url.searchParams.get("search")).toBe("Ada L");
       expect(url.searchParams.get(key)).toBe(value);
     } finally {
       dispose();
@@ -122,83 +128,25 @@ else {
     }
   });
 
-  test.each(["search=Ada", "tag_id=vip", "email=yes", "phone=yes"])(
-    "filtered Favorites adjusts its count independently of results (%s)",
-    (filter) => {
-      const dom = createDomTestHarness();
-      const href = `/app/contacts/team?favorites=true&${filter}`;
-      const dispose = render(() => <Tabs initialHref={href} bookId="team" allCount={8} favoritesCount={2} />, dom.root);
-      const state = { source: href, requestedSource: href, busy: false, total: 1, filtered: true, selectionMode: false };
-      const count = () => dom.root.querySelectorAll("a")[1]!.textContent;
-      const favorite = (value: boolean) =>
-        window.dispatchEvent(
-          new CustomEvent("contacts:favorite-changed", {
-            detail: { bookId: "team", contactId: "ada", favorite: value },
-          }),
-        );
-      try {
-        publishContactsHeadState(state);
-        expect(count()).toContain("2");
-        favorite(false);
-        expect(count()).toContain("1");
-        publishContactsHeadState({ ...state, total: 0 });
-        expect(count()).toContain("1");
-        favorite(false);
-        favorite(false);
-        expect(count()).toContain("0");
-        favorite(true);
-        expect(count()).toContain("1");
-        // The bridge decides whether its total is filtered, even before the new source commits.
-        publishContactsHeadState({ ...state, source: "/app/contacts/team?favorites=true", busy: true });
-        favorite(true);
-        expect(count()).toContain("2");
-        publishContactsHeadState({ ...state, source: "/app/contacts/team?favorites=true", filtered: false, total: 4 });
-        expect(count()).toContain("4");
-        favorite(false);
-        expect(count()).toContain("4");
-        publishContactsHeadState({ ...state, source: "/app/contacts/team?favorites=true", filtered: false, total: 3 });
-        expect(count()).toContain("3");
-      } finally {
-        dispose();
-        dom.cleanup();
-      }
-    },
-  );
-
-  test("tabs follow committed filters and current unfiltered totals; favorites changes stay in scope", () => {
+  test("tabs follow committed filters while keeping SSR counts until a canonical refresh", () => {
     const dom = createDomTestHarness();
     const dispose = render(() => <Tabs initialHref="/app/contacts/team" bookId="team" allCount={8} favoritesCount={2} />, dom.root);
-    const favorite = (bookId: string, value: boolean) =>
-      window.dispatchEvent(new CustomEvent("contacts:favorite-changed", { detail: { bookId, contactId: "ada", favorite: value } }));
     const tabs = () => [...dom.root.querySelectorAll("a")];
     try {
-      publishContactsHeadState({
-        source: "/app/contacts/team?tag_id=vip",
-        requestedSource: "/app/contacts/team?tag_id=vip",
-        busy: false,
-        total: 1,
-        filtered: true,
-        selectionMode: false,
-      });
-      expect(tabs()[1]!.getAttribute("href")).toBe("/app/contacts/team?tag_id=vip&favorites=true");
-      expect(tabs()[0]!.textContent).toContain("8");
-      favorite("other", true);
-      expect(tabs()[1]!.textContent).toContain("2");
-      favorite("team", true);
-      expect(tabs()[1]!.textContent).toContain("3");
-      for (let i = 0; i < 5; i++) favorite("team", false);
-      expect(tabs()[1]!.textContent).toContain("0");
-      publishContactsHeadState({
-        source: "/app/contacts/team?favorites=true",
-        requestedSource: "/app/contacts/team?favorites=true",
-        busy: false,
-        total: 4,
-        filtered: false,
-        selectionMode: false,
-      });
-      expect(tabs()[1]!.textContent).toContain("4");
-      favorite("team", false);
-      expect(tabs()[1]!.textContent).toContain("4");
+      for (const filtered of [true, false]) {
+        publishContactsHeadState({
+          source: "/app/contacts/team?tag_id=vip&favorites=true",
+          requestedSource: "/app/contacts/team?tag_id=vip&favorites=true",
+          busy: false,
+          total: 99,
+          filtered,
+          selectionMode: false,
+        });
+        expect(tabs()[0]!.getAttribute("href")).toBe("/app/contacts/team?tag_id=vip");
+        expect(tabs()[1]!.getAttribute("href")).toBe("/app/contacts/team?tag_id=vip&favorites=true");
+        expect(tabs()[0]!.textContent).toContain("8");
+        expect(tabs()[1]!.textContent).toContain("2");
+      }
       tabs()[1]!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
       expect(dom.document.cookie).toContain("contacts.favorites-tab");
     } finally {
@@ -222,6 +170,7 @@ else {
           filtered: false,
           selectionMode: false,
         }),
+      () => {},
     );
     const dispose = render(() => <Actions bookId="team" canWrite canManage={false} initialHref="/app/contacts/team" />, dom.root);
     delegateEvents(["click"], dom.document);

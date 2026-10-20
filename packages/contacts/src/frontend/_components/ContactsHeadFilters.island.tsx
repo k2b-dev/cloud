@@ -131,6 +131,7 @@ export default function ContactsHeadFilters(props: {
           onValueChange={(value) => {
             setQuery(value);
             setPending(true);
+            bridge?.supersede();
             debounce.debouncedFn(value);
           }}
           clearable

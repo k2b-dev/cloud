@@ -642,6 +642,40 @@ describe(`Contacts workspace SSR and hydration in ${browserName}`, () => {
       }
     }, 30_000);
 
+  for (const width of [1440, 390])
+    test(`A count-only failure offers Retry without moving the head (${width}px)`, async () => {
+      const page = await open("/app/contacts/kunden", width);
+      try {
+        const before = await page.evaluate(frame);
+        await page.route("**/api/contacts/books/kunden/contacts?**", (route) => {
+          const query = new URL(route.request().url()).searchParams;
+          return query.get("per_page") === "1" && query.get("favorites") === "true"
+            ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Count unavailable" }) })
+            : route.continue();
+        });
+        await page.evaluate(() =>
+          window.dispatchEvent(
+            new CustomEvent("contacts:favorite-changed", { detail: { bookId: "kunden", contactId: "person1", favorite: false } }),
+          ),
+        );
+        const retry = head(page).getByRole("button", {
+          name: "Die Kontaktzahlen konnten nicht aktualisiert werden. Erneut versuchen",
+          exact: true,
+        });
+        await visible(retry);
+        await visible(head(page).getByRole("alert"));
+        expect(await page.evaluate(frame)).toEqual(before);
+        await shot(page, "count-error", "light", width);
+        await page.unrouteAll({ behavior: "wait" });
+        await retry.click();
+        await hidden(retry);
+        await hidden(head(page).getByRole("alert"));
+        expect(await page.evaluate(frame)).toEqual(before);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+
   test("13. Reduced motion gives Detail and the drawer no running transitions", async () => {
     const page = await open("/app/contacts/kunden", 390);
     const noMotion = async () => {
@@ -736,12 +770,15 @@ describe(`Contacts workspace SSR and hydration in ${browserName}`, () => {
           }
           await visible(head(page).locator(".contacts-head-count"));
           await page.unrouteAll({ behavior: "wait" });
+          // Fail only the list read; the tabs' count reads (per_page=1) keep answering.
           await page.route("**/api/contacts/books/kunden/contacts?**", (route) =>
-            route.fulfill({
-              status: 500,
-              contentType: "application/json",
-              body: JSON.stringify({ error: "Fixture: Kontakte konnten nicht geladen werden" }),
-            }),
+            new URL(route.request().url()).searchParams.get("per_page") === "1"
+              ? route.continue()
+              : route.fulfill({
+                  status: 500,
+                  contentType: "application/json",
+                  body: JSON.stringify({ error: "Fixture: Kontakte konnten nicht geladen werden" }),
+                }),
           );
           // A failed refresh of the shown list keeps the rows and names the failure with a retry in a fixed place.
           // A failed filter change instead falls back to a document load, which the server renders.

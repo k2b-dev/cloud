@@ -1,6 +1,7 @@
 export const CONTACTS_HEAD_STATE_EVENT = "contacts-head-state";
 const CONTACTS_HEAD_REQUEST_EVENT = "contacts-head-request";
 const CONTACTS_HEAD_CHANGE_EVENT = "contacts-head-change";
+const CONTACTS_HEAD_SUPERSEDE_EVENT = "contacts-head-supersede";
 const CONTACTS_SELECTION_MODE_EVENT = "contacts-selection-mode";
 
 export type ContactsHeadState = {
@@ -22,6 +23,7 @@ export const subscribeToContactsHeadChanges = (
   change: (change: ContactsHeadChange) => void,
   toggleSelection: () => void,
   publish: () => void,
+  supersede: () => void,
 ) => {
   const onChange = (event: Event) => {
     if (event instanceof CustomEvent) change(event.detail);
@@ -29,10 +31,12 @@ export const subscribeToContactsHeadChanges = (
   window.addEventListener(CONTACTS_HEAD_CHANGE_EVENT, onChange);
   window.addEventListener(CONTACTS_SELECTION_MODE_EVENT, toggleSelection);
   window.addEventListener(CONTACTS_HEAD_REQUEST_EVENT, publish);
+  window.addEventListener(CONTACTS_HEAD_SUPERSEDE_EVENT, supersede);
   return () => {
     window.removeEventListener(CONTACTS_HEAD_CHANGE_EVENT, onChange);
     window.removeEventListener(CONTACTS_SELECTION_MODE_EVENT, toggleSelection);
     window.removeEventListener(CONTACTS_HEAD_REQUEST_EVENT, publish);
+    window.removeEventListener(CONTACTS_HEAD_SUPERSEDE_EVENT, supersede);
   };
 };
 
@@ -50,6 +54,9 @@ export const connectContactsHead = (receive: (state: ContactsHeadState) => void)
     change: (change: ContactsHeadChange) => {
       if (!ready) window.location.assign(change.href);
       else window.dispatchEvent(new CustomEvent<ContactsHeadChange>(CONTACTS_HEAD_CHANGE_EVENT, { detail: change }));
+    },
+    supersede: () => {
+      if (ready) window.dispatchEvent(new CustomEvent(CONTACTS_HEAD_SUPERSEDE_EVENT));
     },
     toggleSelection: () => window.dispatchEvent(new CustomEvent(CONTACTS_SELECTION_MODE_EVENT)),
     dispose: () => window.removeEventListener(CONTACTS_HEAD_STATE_EVENT, onState),

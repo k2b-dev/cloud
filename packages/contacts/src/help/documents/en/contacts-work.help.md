@@ -17,6 +17,7 @@ The Contacts overview is a working view, not only a list of books. Search all bo
 - **Reset:** Clears search, tags, email, and phone filters. It keeps the tab and sort order. A result count appears while filters are active.
 - **Tags:** Filter by the tags that the current scope shows. Tags belong to a book, so the same label in two books stays two separate tags.
 - **Tabs:** **All** and **Favorites** are available for all books together and inside each book. Their counts ignore search and filters. Mark a contact with the star to add it to **Favorites**.
+- **Counts unavailable:** The warning button beside the tabs retries the update. The last known counts stay visible.
 - **Book actions:** Open **…** inside a book. With edit access, choose **Duplicates** or **Select**. With manage access, you can also open **Book settings**. Use **Stop selecting** to leave selection mode.
 :::
 

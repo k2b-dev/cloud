@@ -26,22 +26,30 @@ test("head navigates as a document before results answers, then sends changes an
   const receive = mock((_state: ContactsHeadState) => {});
   const change = mock((_change: { href: string; resetSearch?: boolean }) => {});
   const select = mock(() => {});
+  const supersede = mock(() => {});
   const head = connectContactsHead(receive);
   let stop = () => {};
   try {
     head.change({ href: "/app/contacts?tag_id=vip" });
     expect(assign).toHaveBeenCalledWith("/app/contacts?tag_id=vip");
-    stop = subscribeToContactsHeadChanges(change, select, () => publishContactsHeadState(state));
+    stop = subscribeToContactsHeadChanges(change, select, () => publishContactsHeadState(state), supersede);
+    head.supersede();
+    expect(supersede).not.toHaveBeenCalled();
     publishContactsHeadState(state);
     expect(receive).toHaveBeenCalledWith(state);
     head.change({ href: "/app/contacts", resetSearch: true });
     head.toggleSelection();
+    head.supersede();
+    expect(supersede).toHaveBeenCalledTimes(1);
     expect(change).toHaveBeenCalledWith({ href: "/app/contacts", resetSearch: true });
     expect(select).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledTimes(1);
     head.dispose();
     publishContactsHeadState(state);
     expect(receive).toHaveBeenCalledTimes(1);
+    stop();
+    head.supersede();
+    expect(supersede).toHaveBeenCalledTimes(1);
   } finally {
     head.dispose();
     stop();
@@ -57,6 +65,7 @@ test("a head that mounts after results requests and receives the current state i
     () => {},
     () => {},
     () => publishContactsHeadState(state),
+    () => {},
   );
   const head = connectContactsHead(receive);
   try {
