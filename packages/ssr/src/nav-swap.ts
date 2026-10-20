@@ -157,7 +157,15 @@ const patchHistory = (): HistoryWrites => {
     // While a swap still loads, the entry keeps its page (an unmarked one stays unmarked) so a traversal can commit.
     // Otherwise the shown page wrote it, also over the marker of a traversal that a newer navigation cancelled.
     const stored = marker(history.state);
-    const live = state.active !== undefined && !state.active.signal.aborted;
+    const [, url] = args;
+    let moves = false;
+    try {
+      moves = url != null && new URL(url, document.baseURI).href !== window.location.href;
+    } catch {
+      // The original call rejects an invalid URL below.
+    }
+    // A new URL supersedes a pending traversal, which then never commits: the shown page owns the entry.
+    const live = state.active !== undefined && !state.active.signal.aborted && !moves;
     const page = live ? stored?.page : state.currentPage;
     if (page === undefined) return writes.replace.call(history, value, ...args);
     const entry = { ...(stored?.page === page ? stored : {}), page, position: stored?.position ?? state.currentEntry.position };

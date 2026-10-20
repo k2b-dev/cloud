@@ -1848,6 +1848,22 @@ test("a cleanup replace during a traversal commit keeps the arriving page identi
   }
 });
 
+test("a replace to a new URL during a traversal fetch gives the entry to the shown page", async () => {
+  install();
+  const shown = window.history.state[markerKey].page;
+  const requests = deferredFetch(true);
+  arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new");
+  window.history.replaceState({}, "", "/app/old?edited");
+  expect(window.history.state[markerKey]).toEqual({ page: shown, position: 5 });
+  const result = response();
+  const read = spyOn(result, "text");
+  requests[0]!.resolve(result);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(read).not.toHaveBeenCalled();
+  expect(document.title).toBe("old");
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;
