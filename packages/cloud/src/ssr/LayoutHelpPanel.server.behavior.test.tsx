@@ -620,6 +620,42 @@ else {
     }
   });
 
+  test("a section-menu activation still loading when the reader goes Back opens no menu on the hidden article", async () => {
+    const fixture = await setup(true);
+    const { root, mount, Article, Back, state } = fixture;
+    const reader = await import("./layout-help-panel-reader");
+    const { helpPanelModules } = await import("./layout-help-panel-modules");
+    let release: (() => void) | undefined;
+    const load = spyOn(helpPanelModules, "reader").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(reader);
+        }),
+    );
+    const tools = document.createElement("div");
+    tools.innerHTML = "<button data-help-sections>On this page</button>";
+    root.querySelector("[data-help-server-article]")!.append(tools);
+    const trigger = tools.querySelector("button")!;
+    try {
+      mount("article", () => createComponent(Article, {}));
+      mount("back", () => createComponent(Back, { back: true, tile: "ti ti-box" }));
+      trigger.focus();
+      trigger.click();
+      await until(() => !!release);
+      root.querySelector<HTMLButtonElement>(".help-head-back")!.click();
+      expect(state.view()).toBe("hub");
+      (document.activeElement as HTMLElement | null)?.blur();
+      release!();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(root.querySelector('[role="menu"]')).toBeNull();
+      expect(tools.querySelector("button")).toBe(trigger);
+      expect(trigger.contains(document.activeElement)).toBe(false);
+    } finally {
+      load.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
   test("the server article survives Back and reopening, and menu copy writes synchronously from its shared payload", async () => {
     const fixture = await setup(true);
     const { root, mount, Article, Back, Menu, state, fetcher } = fixture;

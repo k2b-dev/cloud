@@ -60,9 +60,12 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
     const upgrade = (trigger: HTMLButtonElement, key: string) => {
       // Safari keeps focus where it was when a button is clicked; only a focus move after the activation cancels it.
       const start = document.activeElement;
+      const article = current.activeId();
       void load()
         .then((module) => {
-          if (disposed || !trigger.isConnected) return;
+          // Back or another article while the chunk loads cancels the activation: the hidden article opens no menu.
+          if (disposed || !trigger.isConnected || current.view() !== "article" || current.activeId() !== article) return;
+          if (trigger.closest("[hidden]")) return;
           // A pending chunk must not replace the trigger between pointerdown and pointerup.
           if (sectionPressed) {
             queuedSection = { trigger, key };
