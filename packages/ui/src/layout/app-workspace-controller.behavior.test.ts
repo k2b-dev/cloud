@@ -226,6 +226,41 @@ describe("AppWorkspace resize controller behaviour", () => {
     });
   }
 
+  test("share defaults that crowd Main's primary region together are fitted like stored widths", () => {
+    const { root } = workspace({ width: 1462 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    setRect(main, { width: 1000, height: 700 });
+    const handles = ["left", "right"].map((id) => {
+      const pane = document.createElement("section");
+      pane.id = `share-${id}`;
+      pane.className = "k2b-app-workspace__main-pane";
+      pane.dataset.workspaceResizable = "true";
+      const variable = `--k2b-workspace-pane-${id}-width`;
+      // CSS clamps each share default only against Main: 400 px each would leave the primary region 200 px.
+      setDynamicRect(pane, () => ({ width: Number.parseFloat(root.style.getPropertyValue(variable)) || 400, height: 700 }));
+      const handle = document.createElement("button");
+      handle.dataset.appWorkspaceResize = "pane";
+      handle.dataset.workspacePanelId = id;
+      handle.dataset.workspaceResizeEdge = "end";
+      handle.dataset.workspaceDefaultSize = "share:0.3,-40,240,400";
+      handle.dataset.workspaceMinSize = "240";
+      handle.setAttribute("aria-controls", pane.id);
+      main.append(pane, handle);
+      return { variable };
+    });
+    root.append(main);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      const widths = handles.map(({ variable }) => Number.parseFloat(root.style.getPropertyValue(variable)));
+      expect(widths.every((width) => width >= 240)).toBe(true);
+      expect(widths[0]! + widths[1]!).toBeLessThanOrEqual(1000 - 320);
+    } finally {
+      dispose();
+    }
+  });
+
   test("restoring a sidebar width preserves the server overlay despite Main's configured minimum", () => {
     const { root, handle } = workspace({ width: 1064, sidebarWidth: 360 });
     root.style.setProperty("--k2b-workspace-main-min", "760px");

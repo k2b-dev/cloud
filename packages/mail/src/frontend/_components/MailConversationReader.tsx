@@ -169,21 +169,21 @@ export default function MailConversationReader(props: {
   const latestMessage = createMemo(() => orderedMessages()[0] ?? null);
   const [expandedMessages, setExpandedMessages] = createSignal(new Set(initialMessageId ? [initialMessageId] : []));
   // A long conversation shows its newest messages; the older ones wait behind one "n older messages" button.
-  // An expanded older message, such as the one a link selected, stays in view with everything newer.
+  // An expanded older message, such as the one a link selected, shows the whole conversation, and it stays shown
+  // for that conversation when the message is collapsed again, so the header just used never unmounts.
   const [showOlder, setShowOlder] = createSignal(false);
+  let olderPinnedFor: string | null = null;
   const olderMessages = createMemo(() => {
-    if (showOlder()) return null;
+    const selection = props.selectionKey;
+    if (showOlder() || (selection !== null && olderPinnedFor === selection)) return null;
     const items = timeline();
     const messageIndexes = items.flatMap((item, index) => (item.kind === "message" ? [index] : []));
     if (messageIndexes.length < MAIL_READER_COLLAPSE_FROM) return null;
-    let cutoff = messageIndexes[MAIL_READER_NEWEST_SHOWN - 1]! + 1;
+    const cutoff = messageIndexes[MAIL_READER_NEWEST_SHOWN - 1]! + 1;
     const expanded = expandedMessages();
-    for (let index = items.length - 1; index >= cutoff; index--) {
-      const item = items[index]!;
-      if (item.kind === "message" && expanded.has(item.message.id)) {
-        cutoff = index + 1;
-        break;
-      }
+    if (items.slice(cutoff).some((item) => item.kind === "message" && expanded.has(item.message.id))) {
+      olderPinnedFor = selection;
+      return null;
     }
     const count = items.slice(cutoff).filter((item) => item.kind === "message").length;
     return count > 0 ? { cutoff, count } : null;

@@ -325,6 +325,8 @@ type PaneFit = {
   handle: HTMLElement;
   min: number;
   cssDefault: boolean;
+  requested: number;
+  configuredMin: number;
 };
 
 /**
@@ -384,11 +386,16 @@ const reconcilePanes = (root: HTMLElement, layoutState: AppWorkspaceLayoutState,
     // measuring must not turn a responsive default into a stored px width.
     const requested = preferred ?? resolveAppWorkspaceWidth(spec, root.getBoundingClientRect().width);
     const desired = cssDefault ? elementSize(panel, "pane") : clamp(requested, min, max);
-    return [{ desired, handle, min: cssDefault ? desired : min, cssDefault }];
+    return [{ desired, handle, min: cssDefault ? desired : min, cssDefault, requested: clamp(requested, min, max), configuredMin: min }];
   });
   if (!fits.length) return;
 
-  const sizes = fitAppWorkspacePaneSizes(fits, main.getBoundingClientRect().width - fixedWidth - APP_WORKSPACE_MAIN_MIN);
+  const budget = main.getBoundingClientRect().width - fixedWidth - APP_WORKSPACE_MAIN_MIN;
+  // Each share default clamps only against Main, not its siblings. When several panes together leave Main's
+  // primary region less than its minimum, they are fitted together like stored widths.
+  if (fits.length > 1 && fits.reduce((total, fit) => total + fit.desired, 0) > budget)
+    for (const fit of fits) if (fit.cssDefault) Object.assign(fit, { cssDefault: false, desired: fit.requested, min: fit.configuredMin });
+  const sizes = fitAppWorkspacePaneSizes(fits, budget);
   fits.forEach((fit, index) => {
     // Defaults stay CSS-owned; fit only saved or live preferences around them.
     if (!fit.cssDefault) root.style.setProperty(appWorkspacePanelVariable("pane", panelId(fit.handle)), `${sizes[index]}px`);

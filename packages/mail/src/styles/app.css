@@ -224,18 +224,25 @@
     flex: none;
   }
 
+  /* Tags give way before "+n" and "Waiting", which always keep their room. */
+  .mail-row-extra > .mail-row-tag {
+    flex: 0 1 auto;
+    min-width: 2.5rem;
+  }
+
   .mail-row-tag {
-    display: inline-flex;
+    display: inline-block;
     height: 1.25rem;
     max-width: 10rem;
-    align-items: center;
     overflow: hidden;
+    line-height: 1.25rem;
     padding: 0 0.4375rem;
     border-radius: 9999px;
     background: color-mix(in srgb, var(--mail-tag) 15%, var(--k2b-surface));
     font-weight: 500;
     color: color-mix(in srgb, var(--mail-tag) 60%, var(--k2b-text));
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .dark .mail-row-tag {

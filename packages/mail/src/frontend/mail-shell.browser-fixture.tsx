@@ -211,7 +211,7 @@ export function mailboxData(url: URL): MailboxPageData {
     query: search.query,
     search,
     selectedConversationId,
-    selectedMessageId: null,
+    selectedMessageId: url.searchParams.get("message"),
     listItems: scheduledMode || draftsMode ? [] : listRows,
     listCursor: null,
     nextListCursor: null,

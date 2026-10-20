@@ -1109,6 +1109,23 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
 
+      test("reader: a link to an older message shows the whole conversation, also after collapsing that message", async () => {
+        const page = await open(widePath({ path: `${boxPath}?conversation=Conv02&message=Long02` }), 1440, 900);
+        try {
+          const cards = page.locator("[data-mail-conversation-messages] [data-mail-message-id]");
+          expect(await cards.count()).toBe(6);
+          expect(await page.locator("[data-mail-older-messages]").count()).toBe(0);
+          const header = page.locator('[data-mail-message-id="Long02"] [data-mail-message-header]');
+          await header.focus();
+          await page.keyboard.press("Enter");
+          await settled(page);
+          expect(await cards.count()).toBe(6);
+          expect(await header.evaluate((element) => element === document.activeElement)).toBe(true);
+        } finally {
+          await close(page);
+        }
+      });
+
       test("reader: a conversation taller than the reader opens at its start, with the subject in view", async () => {
         const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 480 as 900);
         try {
