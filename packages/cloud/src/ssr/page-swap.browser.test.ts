@@ -28,6 +28,7 @@ let served: ReturnType<typeof Bun.serve>;
 let output: string;
 let origin: string;
 let providerRequests = 0;
+let fileRequests = 0;
 const pending = new Set<ReturnType<typeof Promise.withResolvers<Response>>>();
 let pendingStarted = Promise.withResolvers<void>();
 const spies: { mockRestore(): void }[] = [];
@@ -113,6 +114,7 @@ beforeAll(async () => {
         return held.promise;
       }
       if (url.pathname === "/app/provider/panel" && request.headers.get("sec-fetch-dest") === "iframe") providerRequests++;
+      if (url.pathname === "/app/fixture/file") fileRequests++;
       const response = await server.fetch(request);
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
       // Keep the shipped island loader (it orders shell before column islands); drop the other module scripts.
@@ -339,16 +341,20 @@ for (const [link, destination] of [
   ["api", "/api/fixture"],
   ["file", "/app/fixture/file"],
 ] as const) {
-  test(`${link} uses exactly one document request`, async () => {
+  test(`${link} loads as exactly one document`, async () => {
     const f = await fixture();
     try {
       await swapOnce(f);
+      const filesBefore = fileRequests;
       const navigation = f.page.waitForEvent("framenavigated", {
         predicate: (frame) => frame === f.page.mainFrame() && new URL(frame.url()).pathname === destination,
       });
       await f.page.locator(`#to-${link}`).click();
       await navigation;
       expect(f.documents).toEqual([destination]);
+      // An in-scope link learns that the target is no page only from the swap fetch, so the server sees it twice;
+      // `download` or `data-nav-document` avoids that (url-state-and-navigation.md).
+      if (link === "file") expect(fileRequests - filesBefore).toBe(2);
     } finally {
       await f.close();
     }

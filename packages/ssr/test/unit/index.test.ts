@@ -114,6 +114,35 @@ describe("swap-host loader", () => {
     }
   });
 
+  test("a module with instances on both sides loads with the column, because importing it mounts every instance", async () => {
+    const body = `<div data-nav-shell>${wrapper("shell")}${wrapper("both")}<main data-nav-root>${wrapper("both")}${wrapper("column")}</main></div>`;
+    const loader = await renderLoader(body);
+    const dom = new Window({ settings: { disableCSSFileLoading: true } });
+    try {
+      dom.document.body.innerHTML = body;
+      const sequence: string[] = [];
+      const shell = Promise.withResolvers<void>();
+      const column = Promise.withResolvers<void>();
+      new Function("document", "load", loader.replaceAll("import(", "load("))(dom.document, (url: string) => {
+        sequence.push(url);
+        if (url === "/_ssr/shell.js") return shell.promise;
+        if (url === "/_ssr/column.js") column.resolve();
+        return Promise.resolve();
+      });
+      await Promise.resolve();
+      expect(sequence).toEqual(["/_ssr/shell.js"]);
+      expect([...dom.document.head.querySelectorAll("link")].map((link) => link.getAttribute("href"))).toEqual([
+        "/_ssr/both.js",
+        "/_ssr/column.js",
+      ]);
+      shell.resolve();
+      await column.promise;
+      expect(sequence).toEqual(["/_ssr/shell.js", "/_ssr/both.js", "/_ssr/column.js"]);
+    } finally {
+      await dom.happyDOM.close();
+    }
+  });
+
   test("without a column inside a shell, imports every wrapper as before", async () => {
     const body = `<main data-nav-root>${wrapper("column")}${wrapper("column")}</main>${wrapper("shell")}`;
     const dom = new Window();

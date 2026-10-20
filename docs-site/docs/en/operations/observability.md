@@ -140,6 +140,8 @@ interaction measurement, not zero latency. Reports may arrive when the page
 is hidden. Keep the latest value per metric ID before aggregating; returning
 from the back-forward cache produces a new measurement. These are document
 navigation metrics, not separate measurements for every in-page tab change.
+In an application with `pageSwap`, INP and CLS also cover the pages swapped
+into that document and keep the route template of its first page.
 
 Compare cold and warm visits to the same production build, including its
 precompressed assets, on a machine without competing builds. Keep browser

@@ -147,7 +147,10 @@ The server page declares the parts:
 - `data-nav-attributes` names shell attributes that the fetched page sets or
   removes, for example a layout mode.
 - `data-nav-document` on a link keeps its document navigation, for example
-  for a file download without `download`.
+  for a file download without `download`. Mark every in-scope link to a
+  non-HTML resource this way or with `download`: otherwise the swap fetch
+  learns the type first, and the server receives the request twice. Keep
+  this in mind for single-use links.
 
 An island outside the column installs the swap once:
 
@@ -158,9 +161,12 @@ import { onCleanup, onMount } from "solid-js";
 onMount(() => onCleanup(installPageSwap()));
 ```
 
-In a swap host, the loader mounts islands outside the column first, so an
-installer outside the column precedes column islands that write history;
-`listenPopState()` remains safe in either installation order.
+In a swap host, the loader imports modules that are used only outside the
+column first. Modules with an instance in the column load after them, also
+for their instances outside it, because importing a module mounts every
+instance. An installer outside the column therefore precedes column islands
+that write history. `listenPopState()` remains safe in either installation
+order.
 
 A click that an island handler prevented is never swapped. Modifier keys,
 `target`, `download`, `rel="external"`, other origins, links outside the
@@ -242,11 +248,14 @@ other Help. Every swap fetch passes through the same server route policies as a
 reload.
 
 Column islands use `listenPopState()` and `navigate()` for their own URL state.
-The loader mounts the shell islands outside the column first, so Cloud installs
-page swaps before column islands write history.
+The loader mounts the shell islands that are used only outside the column
+first, so Cloud installs page swaps before column islands write history.
 `listenPopState()` is safe regardless of installation order and reports only
 same-page traversals. Shell code follows `ssr:nav-popstate` for cross-page
 traversals and `ssr:nav-swapped` for the committed content.
+
+Web Vitals belong to the document. INP and CLS cover every swapped page and
+carry the route template of the page that loaded the document.
 
 Protect unsaved column state with `onBeforeLeave()` as described below.
 `beforeunload` is not consulted during swaps; keep it for document loads.

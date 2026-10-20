@@ -715,6 +715,8 @@ async function runSwap(href: string, options: { replace?: boolean }, traversal?:
       !inScope(finalUrl, context.scope) ||
       (traversal && finalUrl.href.split("#")[0] !== requested.href.split("#")[0])
     ) {
+      // A rejected body is never read; stop its download before the document load requests the URL again.
+      response.body?.cancel().catch(() => undefined);
       fail();
       return;
     }

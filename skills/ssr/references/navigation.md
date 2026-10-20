@@ -58,10 +58,10 @@ import { installPageSwap } from "@k2b/ssr/nav";
 onMount(() => onCleanup(installPageSwap()));
 ```
 
-- in a swap host, the loader mounts islands outside the column first, so an installer outside the column precedes column islands that write history; `listenPopState()` remains safe in either order
+- in a swap host, the loader imports modules used only outside the column first; a module with any instance in the column loads with the column (importing it mounts every instance), so an installer outside the column precedes column islands that write history; `listenPopState()` remains safe in either order
 - `data-nav-shell` is an opaque signature; a fetched page with a different one loads as a document, so put app, user, locale, layout kind, and build into it
 - `data-nav-scope` is a path prefix (`/demo` takes `/demo/x`, not `/demobox`); `data-nav-root` is the replaced column; `data-nav-attributes` lists shell attributes the fetched page sets or removes
-- `data-nav-document` on a link keeps document navigation; prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too
+- `data-nav-document` on a link keeps document navigation; mark in-scope links to non-HTML resources with it or `download`, otherwise the server receives the request twice (the swap fetch, then the document); prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too
 - the swap loads the new page's island modules before it disposes the old islands; then it pushes history, replaces the column, sets title and attributes, mounts, focuses the first heading, and announces the title; island cleanups should not navigate
 - the newest navigation wins (another swap, Back/Forward, a native link, a native form submission, an enhanced `Link` click, `navigate()`, `documentNavigate()`), and a swap that starts later turns a pending `Link` handler's `push`, `replaceWith`, and `fallback` into no-ops; any failure (status, not HTML, redirect out of scope, signature, module prefix, `<base>`, stylesheet set, module error) loads the requested URL as a document
 - `swapPage(href, { replace })` swaps from code

@@ -195,7 +195,9 @@ declares the contract in server HTML, and nav knows nothing else about it:
 - optional `data-nav-attributes` on the shell, the attributes copied from the
   fetched shell;
 - one `data-nav-root` inside the shell, the column that is replaced;
-- `data-nav-document` on a link to keep its document navigation.
+- `data-nav-document` on a link to keep its document navigation. A rejected
+  swap response (status, type, scope) has its body cancelled before the
+  document load requests the URL again.
 
 A swap is one transaction, and its order is the contract:
 
@@ -297,9 +299,11 @@ is a teardown path, not a way to hand a running page back to the browser.
 Entries written before install keep the browser's own restoration: on a Back
 onto one, Chromium may scroll the still-shown column before the swap commits,
 so that page's last snapshot can be off. Install before islands write history.
-In a swap host, the loader mounts islands outside the column first, so an
-installer outside the column precedes column islands that write history;
-column entry fetches start through modulepreload while outside imports settle.
+In a swap host, the loader imports modules used only outside the column
+first; a module with any instance in the column waits with the column, because
+importing it mounts every instance. So an installer outside the column precedes
+column islands that write history; column entry fetches start through
+modulepreload while outside imports settle.
 
 Install before islands add raw popstate listeners: Chromium uses registration
 order even for capture. listenPopState is safe in any order through the shared

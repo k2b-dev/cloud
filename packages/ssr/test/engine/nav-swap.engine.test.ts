@@ -23,7 +23,23 @@ let unseenId: string;
 let brokenId: string;
 let heldA: ReturnType<typeof Promise.withResolvers<Response>> | undefined;
 let receivedA: ReturnType<typeof Promise.withResolvers<void>>;
-const scenarios = ["A", "B", "new", "non-html", "403", "redirect", "signature", "prefix", "deploy", "styles", "throw", "sub/nested"];
+/** Holds the document load of `non-html-stream` until the test saw the swap fetch end. */
+let streamDocument: ReturnType<typeof Promise.withResolvers<void>>;
+const scenarios = [
+  "A",
+  "B",
+  "new",
+  "non-html",
+  "non-html-stream",
+  "403",
+  "redirect",
+  "signature",
+  "prefix",
+  "deploy",
+  "styles",
+  "throw",
+  "sub/nested",
+];
 /** Paths of frame requests, to see which URL a relative `src` in a swapped column resolved against. */
 const frames: string[] = [];
 const wrapper = (id: string, label: string) =>
@@ -85,7 +101,10 @@ beforeAll(async () => {
         return new Response(file, { headers: { "content-type": "text/javascript" } });
       }
       const label = url.pathname.split("/").at(-1)!;
-      if (request.headers.get("sec-fetch-dest") === "document") return pageResponse(label);
+      if (request.headers.get("sec-fetch-dest") === "document") {
+        if (label === "non-html-stream") await streamDocument.promise;
+        return pageResponse(label);
+      }
       switch (label) {
         case "A":
           heldA = Promise.withResolvers<Response>();
@@ -93,6 +112,14 @@ beforeAll(async () => {
           return heldA.promise;
         case "non-html":
           return new Response("plain", { headers: { "content-type": "text/plain" } });
+        case "non-html-stream":
+          // The body never ends, so only the swap itself can end this fetch before the document unloads.
+          return new Response(
+            new ReadableStream({
+              start: (controller) => controller.enqueue(new TextEncoder().encode("plain")),
+            }),
+            { headers: { "content-type": "text/plain" } },
+          );
         case "403":
           return new Response("forbidden", { status: 403 });
         case "redirect":
@@ -124,6 +151,7 @@ beforeEach(() => {
   version = "v1";
   heldA = undefined;
   receivedA = Promise.withResolvers<void>();
+  streamDocument = Promise.withResolvers<void>();
 });
 afterAll(async () => {
   try {
@@ -193,6 +221,26 @@ test.each(["non-html", "403", "redirect", "signature", "prefix", "deploy", "styl
     }
   },
 );
+
+test(`${browserName}: a rejected body stops downloading before the document load asks again`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page);
+    const documents = trackDocuments(page);
+    const fetchEnded = page.waitForEvent("requestfailed", {
+      predicate: (request) => request.url() === `${origin}/app/non-html-stream` && !request.isNavigationRequest(),
+    });
+    await page.click("#non-html-stream");
+    await fetchEnded;
+    streamDocument.resolve();
+    await page.waitForFunction(() => location.pathname === "/app/non-html-stream" && document.documentElement.dataset.ready === "yes");
+    expect(documents).toEqual([`${origin}/app/non-html-stream`]);
+  } finally {
+    streamDocument.resolve();
+    await context.close();
+  }
+});
 
 test(`${browserName}: evaluation failure leaves the old column mounted until the document load`, async () => {
   const context = await browser.newContext();

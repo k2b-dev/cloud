@@ -307,7 +307,9 @@ navigation rail, an open side panel) stays. Declare the parts in server HTML:
 - `data-nav-attributes`: optional names of shell attributes that the fetched
   page sets or removes.
 - `data-nav-root`: one element inside the shell, replaced as a whole.
-- `data-nav-document`: keeps document navigation for one link.
+- `data-nav-document`: keeps document navigation for one link. Use it (or
+  `download`) on in-scope links to non-HTML resources; otherwise the swap
+  fetch learns the type first and the server receives the request twice.
 
 Install it once, from an island outside the root:
 
@@ -325,7 +327,9 @@ keys, other buttons, `target`, `download`, `rel="external"`, other origins,
 links outside the scope, and hash links on the same page stay native.
 `swapPage(href, { replace })` starts the same swap from code.
 
-In a swap host, the loader mounts islands outside the column first, so an
+In a swap host, the loader imports modules used only outside the column
+first. A module with an instance in the column loads after them, also for its
+instances outside, because importing a module mounts every instance. So an
 island outside the column can install page swaps before column islands write
 history; `listenPopState()` stays safe in either installation order.
 
