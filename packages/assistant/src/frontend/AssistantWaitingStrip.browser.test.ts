@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiStoredMessage, AiTurnBlock } from "@k2b/cloud/ai";
 import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
 import type { Browser, Page, Route } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
 // "Waiting for you" is layout and focus: its reserved row, whether it shows while a card's answers are in view, a
@@ -335,12 +335,10 @@ const open = async (
   await context.addInitScript(pinPageClock, now);
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
-  const unexpected: string[] = [];
+  // Loads the harness does not answer: each one would leave part of the page broken without failing it.
+  const unrouted: string[] = [];
   const sidebarLoads: string[] = [];
   const errors = pageErrors(page);
-  page.on("console", (message) => {
-    if (message.type() === "error" || message.type() === "warning") unexpected.push(`console: ${message.text()}`);
-  });
   await page.route("http://localhost:4799/**", async (route: Route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/harness.js") return route.fulfill({ body: script, contentType: "text/javascript" });
@@ -393,12 +391,12 @@ const open = async (
     if (url.pathname.endsWith("/dictations")) return route.fulfill({ json: { items: [], nextCursor: null } });
     const contextPath = /^\/api\/assistant\/workspace\/conversations\/(\w+)\/context$/.exec(url.pathname);
     if (contextPath) return route.fulfill({ json: emptySidebarSnapshot({ chatId: contextPath[1]! }) });
-    unexpected.push(`${route.request().method()} ${url.pathname}`);
+    unrouted.push(`${route.request().method()} ${url.pathname}`);
     return route.fulfill({ status: 503, json: { message: "unavailable" } });
   });
   await page.goto(`http://localhost:4799${options.path ?? "/app/assistant?conversation=Wart42"}`);
   await page.locator("textarea").first().waitFor({ timeout: 30_000 });
-  return { page, unexpected, errors, sidebarLoads, close: () => context.close() };
+  return { page, unrouted, errors, sidebarLoads, close: () => context.close() };
 };
 
 const strip = (page: Page) => page.locator("nav.assistant-waiting");
@@ -477,7 +475,7 @@ describe("Waiting for you", () => {
     for (const theme of ["light", "dark"] as const)
       test(`3, 2 and none pending at ${view.name} in ${theme}: one row above the field, no Approve all`, async () => {
         const state: State = { locale: "de", scenario: "three" };
-        const { page, errors, close } = await open(view, state, { theme });
+        const { page, errors, unrouted, close } = await open(view, state, { theme });
         try {
           await strip(page).waitFor();
           expect(await strip(page).getAttribute("aria-label")).toBe("Wartet auf dich");
@@ -531,6 +529,7 @@ describe("Waiting for you", () => {
           await changed(page, null);
           await strip(page).waitFor({ state: "detached" });
           expect(errors).toEqual([]);
+          expect(unrouted).toEqual([]);
         } finally {
           await close();
         }
@@ -538,7 +537,7 @@ describe("Waiting for you", () => {
 
   for (const view of [desktop, phone, panel])
     test(`one question here at ${view.name}: the row keeps its place hidden while its answers are in view`, async () => {
-      const { page, errors, close } = await open(view, { locale: "de", scenario: "one" });
+      const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "one" });
       try {
         await page.locator(".k2b-chat-decision__answers").first().waitFor();
         await strip(page).waitFor({ state: "attached" });
@@ -568,6 +567,7 @@ describe("Waiting for you", () => {
         expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
         expect(await rect(page, ".k2b-chat-composer")).toEqual(field);
         expect(errors).toEqual([]);
+        expect(unrouted).toEqual([]);
       } finally {
         await close();
       }
@@ -576,7 +576,7 @@ describe("Waiting for you", () => {
   for (const view of [desktop, phone])
     test(`a jump into another chat at ${view.name} focuses its sentence; reload and back keep the place`, async () => {
       const state: State = { locale: "de", scenario: "three" };
-      const { page, errors, close } = await open(view, state, { slowMessageDocument: true });
+      const { page, errors, unrouted, close } = await open(view, state, { slowMessageDocument: true });
       try {
         await strip(page).waitFor();
         await strip(page)
@@ -628,19 +628,26 @@ describe("Waiting for you", () => {
         // message document is slow, so WebKit always refuses the stream's reconnect during this goto, and
         // pageErrors() must drop that report (#1579).
         // The load keeps the page's 5 s budget on top of the document's deliberate delay.
+        const refused: string[] = [];
+        page.on("pageerror", (error) => {
+          if (error.message.endsWith(" due to access control checks.")) refused.push(error.message);
+        });
         await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&message=3", { timeout: 5000 + slowDocumentMs });
+        // WebKit did refuse a load here, so this step still exercises what pageErrors() drops.
+        if (browserName === "webkit") expect(refused).not.toEqual([]);
         await strip(page).waitFor();
         await strip(page).locator(".assistant-waiting__entry").nth(1).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence focused over the message");
         expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-del-1");
         expect(errors).toEqual([]);
+        expect(unrouted).toEqual([]);
       } finally {
         await close();
       }
     }, 60_000);
 
   test("a second press while the other chat opens keeps the chat it started from in the history", async () => {
-    const { page, errors, close } = await open(desktop, { locale: "de", scenario: "three" }, { slowChat: "Tops42" });
+    const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "three" }, { slowChat: "Tops42" });
     try {
       await strip(page).waitFor();
       // By the question, since the entry drops "in Team Ops Wochenplanung" once that chat is the open one.
@@ -652,13 +659,14 @@ describe("Waiting for you", () => {
       await page.goBack();
       await page.waitForURL(/\?conversation=Wart42$/);
       expect(errors).toEqual([]);
+      expect(unrouted).toEqual([]);
     } finally {
       await close();
     }
   }, 60_000);
 
   test("a jump started while a reload still looks for a question that is gone keeps its focus", async () => {
-    const { page, errors, close } = await open(desktop, { locale: "de", scenario: "three" });
+    const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "three" });
     try {
       await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&question=tool-gone");
       await strip(page).waitFor();
@@ -675,6 +683,7 @@ describe("Waiting for you", () => {
       );
       expect(await focusedSentence(page)).toBe("tool-del-1");
       expect(errors).toEqual([]);
+      expect(unrouted).toEqual([]);
     } finally {
       await close();
     }
@@ -682,7 +691,7 @@ describe("Waiting for you", () => {
 
   for (const view of [desktop, phone, panel])
     test(`the slash list at ${view.name} opens over the row without moving it or the field`, async () => {
-      const { page, close } = await open(view, { locale: "de", scenario: "three" });
+      const { page, unrouted, close } = await open(view, { locale: "de", scenario: "three" });
       try {
         await strip(page).waitFor();
         const row = await rect(page, "nav.assistant-waiting");
@@ -702,6 +711,7 @@ describe("Waiting for you", () => {
         await list.waitFor({ state: "detached" });
         expect(await strip(page).evaluate((nav) => getComputedStyle(nav).visibility)).toBe("visible");
         expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
+        expect(unrouted).toEqual([]);
       } finally {
         await close();
       }
