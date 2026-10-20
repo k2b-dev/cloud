@@ -99,7 +99,7 @@ Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.
 
 - Use existing `@k2b/ui` components whenever they express the required
-  control, feedback, surface, or layout behavior. A hierarchy of columns (settings areas, list and reader) uses `AppWorkspace.Main level` with the selection in the URL. Drag and drop inside the page uses `DragSource` and `DropTarget`, and every drop also has a menu entry such as "Move to …", the guaranteed path for keyboard and screen reader users.
+  control, feedback, surface, or layout behavior. A hierarchy of columns (settings areas, list and reader) uses `AppWorkspace.Main level` with the selection in the URL. Drag and drop inside the page uses `DragSource` and `DropTarget`, and every drop also has a menu entry such as "Move to …", the guaranteed path for keyboard and screen reader users. A chosen view, range, segment or filter is a selection (`ViewTabs`, `Tabs`, `SegmentedControl`, `FilterChip`, `FilterToggle`); a filled primary button is only the one main action.
 - Do not recreate generic component contracts inside an application. If no
   primitive fits, surface the gap and agree with the application author
   whether to extend `@k2b/ui` or build application-owned UI.

@@ -2,10 +2,11 @@ import { type AuthContext, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
-import { ButtonLink, Placeholder, StatCell, StatGrid } from "@k2b/ui";
+import { Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
+import RangeTabs from "../../frontend/RangeTabs";
 import LogTable from "./_components/LogTable.island";
 import { buildLogFilterUrl, LOG_WINDOWS } from "./_components/types";
 
@@ -95,19 +96,15 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{t.logsDescription}</p>
         </div>
 
-        <nav class="flex flex-wrap items-center gap-1" aria-label={t.logWindow}>
-          <span class="mr-1 text-[10px] text-dimmed">{t.window}</span>
-          {LOG_WINDOW_KEYS.map((option) => (
-            <ButtonLink
-              href={buildLogFilterUrl(LOGS_PAGE_PATH, { window: option, page: 1 }, filter)}
-              variant={option === filter.window ? "primary" : "secondary"}
-              size="sm"
-              aria-current={option === filter.window ? "true" : undefined}
-            >
-              {option}
-            </ButtonLink>
-          ))}
-        </nav>
+        <RangeTabs
+          caption={t.window}
+          label={t.logWindow}
+          current={filter.window}
+          items={LOG_WINDOW_KEYS.map((option) => ({
+            id: option,
+            href: buildLogFilterUrl(LOGS_PAGE_PATH, { window: option, page: 1 }, filter),
+          }))}
+        />
 
         {/* Stat cards — see skills/cloud-app/references/frontend.md § Stats */}
         <StatGrid columns={5}>

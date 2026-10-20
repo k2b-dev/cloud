@@ -1,5 +1,5 @@
 import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { ButtonLink } from "@k2b/ui";
+import { FilterToggle } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { useAccountsMessages } from "../../messages";
 
@@ -29,30 +29,24 @@ export default function TabToolbar(props: Props) {
         <SearchBar action={props.searchAction} />
       </div>
       {props.indirectToggleUrl && (
-        <ButtonLink
+        <FilterToggle
           href={props.indirectToggleUrl}
-          size="sm"
-          variant={props.indirect ? "secondary" : "subtle"}
+          icon="ti ti-hierarchy"
+          active={Boolean(props.indirect)}
           class="shrink-0 self-stretch"
           title={props.indirect ? messages().showDirectMembers : messages().showAllMembers}
-          aria-current={props.indirect ? "true" : undefined}
-        >
-          <i class="ti ti-hierarchy text-sm" />
-          {props.indirect ? messages().allMembers : messages().directOnly}
-        </ButtonLink>
+          label={props.indirect ? messages().allMembers : messages().directOnly}
+        />
       )}
       {props.serviceAccountsToggleUrl && (
-        <ButtonLink
+        <FilterToggle
           href={props.serviceAccountsToggleUrl}
-          size="sm"
-          variant={props.showServiceAccounts ? "primary" : "subtle"}
+          icon="ti ti-user-key"
+          active={Boolean(props.showServiceAccounts)}
           class="shrink-0 self-stretch"
           title={props.showServiceAccounts ? messages().hideServiceAccounts : messages().showServiceAccounts}
-          aria-current={props.showServiceAccounts ? "true" : undefined}
-        >
-          <i class="ti ti-user-key text-sm" />
-          Service accounts
-        </ButtonLink>
+          label={messages().serviceAccounts}
+        />
       )}
       {props.actions}
     </div>

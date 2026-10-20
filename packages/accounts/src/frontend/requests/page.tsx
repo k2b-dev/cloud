@@ -3,7 +3,7 @@ import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone, ViewTabs } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
 import { accountsMessages } from "../messages";
@@ -85,16 +85,15 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           <div class="flex flex-wrap items-center gap-2" style="view-transition-name: accounts-requests-filters">
-            {(["pending", "completed", "denied", "all"] as const).map((value) => (
-              <ButtonLink
-                href={buildRequestsUrl(value, 1)}
-                size="sm"
-                variant={status === value ? "primary" : "subtle"}
-                aria-current={status === value ? "page" : undefined}
-              >
-                {statusLabel(value)}
-              </ButtonLink>
-            ))}
+            <ViewTabs
+              label={t.requestStatus}
+              current={status}
+              items={(["pending", "completed", "denied", "all"] as const).map((value) => ({
+                id: value,
+                label: statusLabel(value),
+                href: buildRequestsUrl(value, 1),
+              }))}
+            />
             <div class="ml-auto">
               <CreateUserForm freeIpaEnabled={freeIpaEnabled} localEmailOptional={localEmailOptional} categoryPolicy={categoryPolicy} />
             </div>

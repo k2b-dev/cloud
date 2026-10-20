@@ -1,7 +1,18 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime as formatDate, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
-import { ButtonLink, DataPanel, DataTable, type DataTableColumn, NoticeCard, PanelHeader, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import {
+  ButtonLink,
+  DataPanel,
+  DataTable,
+  type DataTableColumn,
+  NoticeCard,
+  PanelHeader,
+  StatCell,
+  StatGrid,
+  StatusBadge,
+  ViewTabs,
+} from "@k2b/ui";
 import { ssr } from "../../config";
 
 /** Seconds to a compact age; sessions report ages, not durations. */
@@ -427,18 +438,16 @@ export default ssr<AuthContext>(async (c) => {
                 locale,
               )}
             />
-            <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.filterTablesBySchema}>
-              {schemaChartData.slice(0, 5).map((schema) => (
-                <ButtonLink
-                  href={postgresFilterHref({ schema: schema.label })}
-                  variant={selectedSchema === schema.label ? "primary" : "secondary"}
-                  size="sm"
-                  aria-current={selectedSchema === schema.label ? "true" : undefined}
-                >
-                  {schema.label}
-                </ButtonLink>
-              ))}
-            </nav>
+            <ViewTabs
+              class="mt-2"
+              label={t.filterTablesBySchema}
+              current={selectedSchema}
+              items={schemaChartData.slice(0, 5).map((schema) => ({
+                id: schema.label,
+                label: schema.label,
+                href: postgresFilterHref({ schema: schema.label }),
+              }))}
+            />
           </article>
           <article class="min-w-0">
             <OperationalCharts

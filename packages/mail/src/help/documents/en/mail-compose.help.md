@@ -75,6 +75,8 @@ Only the session that currently holds the editing lease can change the draft. Ma
 
 If another tab or person edits the draft, Mail names that session when possible. You can continue read-only or move editing to this tab on purpose. After the dialog closes, the composer keeps a quiet reminder.
 
+Mail resumes editing on its own after a hidden tab, sleep, or a slow response. It asks only when another tab, device, or person holds the draft.
+
 :::warning Take over makes the other editor read-only
 Choose **Take over** only when you want the other editor to lose editing.
 :::
