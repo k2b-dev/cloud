@@ -15,6 +15,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
+const { MapView } = await import("../content/MapView");
 const { Button, IconButton } = await import("../actions/Button");
 const { Dropdown } = await import("../actions/Dropdown");
 const { FilterChip } = await import("../actions/FilterChip");
@@ -70,7 +71,7 @@ const html = (view: () => JSX.Element) => renderToString(view);
 // @k2b/ssr wraps every island in one of these and ships this rule with the page.
 const island = (markup: string) => `<solid-island>${markup}</solid-island>`;
 // The elements whose `::after` is a touch hit area; `data-without-hit-areas` on the root switches exactly these off.
-const hitAreaElements = ".k2b-ui :is(.k2b-button, .k2b-toast__action, .k2b-toast__close, .k2b-chat-context)";
+const hitAreaElements = ".k2b-ui :is(.k2b-button, .k2b-toast__action, .k2b-toast__close, .k2b-chat-context, .k2b-map-view__pin)";
 const phonePage = (body: string) =>
   `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style id="k2b-styles">${css}</style>` +
   `<style>solid-client,solid-island{display:contents}</style>` +
@@ -153,10 +154,22 @@ const takenPixels = async (page: Page, markup: string, width = "22rem", script =
             // An absolute box on its own positioned element, unscaled and unrotated, lies at the used insets
             // inside the element's padding box.
             const own = getComputedStyle(element);
-            let turned = [after.transform, after.translate, after.scale, after.rotate].some((value) => value !== "none");
-            for (let node: Element | null = element; node && !turned; node = node.parentElement) {
-              const style = getComputedStyle(node);
-              turned = [style.transform, style.scale, style.rotate].some((value) => value !== "none");
+            const scaledOrRotated = (style: CSSStyleDeclaration) => {
+              const matrix = new DOMMatrixReadOnly(style.transform === "none" ? undefined : style.transform);
+              return (
+                !matrix.is2D ||
+                matrix.a !== 1 ||
+                matrix.b !== 0 ||
+                matrix.c !== 0 ||
+                matrix.d !== 1 ||
+                (style.scale !== "none" && style.scale !== "1") ||
+                (style.rotate !== "none" && style.rotate !== "0deg")
+              );
+            };
+            // A translation preserves the hit area's offsets from its rendered box (map pins use one).
+            let turned = scaledOrRotated(after) || scaledOrRotated(own);
+            for (let node: Element | null = element.parentElement; node && !turned; node = node.parentElement) {
+              turned = scaledOrRotated(getComputedStyle(node));
             }
             const box = element.getBoundingClientRect();
             const px = Number.parseFloat;
@@ -222,6 +235,55 @@ const runToasts = async (page: Page, script: string) => {
 };
 
 describe("@k2b/ui touch hit areas on a phone", () => {
+  test("map pins, zoom and locate have 44 px hit areas that keep neighbouring controls' pixels", async () => {
+    const page = await browser.newPage(phone);
+    try {
+      const markup = html(() =>
+        createComponent(MapView, {
+          height: 400,
+          attribution: "Local data",
+          style: { version: 8, sources: {}, layers: [] },
+          onLocate() {},
+          areas: [
+            {
+              id: "bounds",
+              polygon: [
+                { lat: 48.39, lon: 9.99 },
+                { lat: 48.39, lon: 10.04 },
+                { lat: 48.43, lon: 10.04 },
+                { lat: 48.43, lon: 9.99 },
+              ],
+            },
+          ],
+          markers: [
+            { id: "one", mark: 1, label: "Museum", point: { lat: 48.4, lon: 10 } },
+            { id: "two", mark: 2, label: "Park", point: { lat: 48.42, lon: 10.03 } },
+          ],
+        }),
+      ).replace(/\sdisabled(?:="")?/g, "");
+      // Exercise the ready controls' tap geometry without loading a map engine in this CSS fixture.
+      expect(await takenPixels(page, markup, "22rem")).toEqual({});
+      await settled(page);
+      const hitAreas = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".k2b-map-view button"), (button) => {
+          const box = button.getBoundingClientRect();
+          const after = getComputedStyle(button, "::after");
+          return {
+            width: box.width - Number.parseFloat(after.left) - Number.parseFloat(after.right),
+            height: box.height - Number.parseFloat(after.top) - Number.parseFloat(after.bottom),
+          };
+        }),
+      );
+      expect(hitAreas).toHaveLength(5);
+      for (const area of hitAreas) {
+        expect(area.width).toBeGreaterThanOrEqual(44);
+        expect(area.height).toBeGreaterThanOrEqual(44);
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
   test("give a lone compact button a 44 px square without changing its visible size", async () => {
     const page = await browser.newPage(phone);
     try {

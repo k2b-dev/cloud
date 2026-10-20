@@ -1,0 +1,309 @@
+import type { Map as LiveMap } from "maplibre-gl";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { Button, IconButton } from "../actions/Button";
+import { prefersReducedMotion } from "../motion";
+import { MapAttribution, MapGeometry, type MapScale, MapScaleBar, referenceScale, selectedMarker } from "./MapViewFrame";
+import { fitCamera, mapFrame, metersPerPixel, pinOffsets, scaleBar, sortMarkers, unprojectPoint } from "./map-view-geometry";
+import { useMapViewMessages } from "./map-view-messages";
+import type { MapViewProps, MapViewStyle } from "./map-view-types";
+
+export type { MapViewProps } from "./map-view-types";
+
+type MapState = "static" | "loading" | "ready" | "error" | "no-webgl" | "empty";
+
+function supportsWebgl(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+    if (!gl) return false;
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A static server frame enhanced with a same-origin MapLibre worker only after it enters the viewport. */
+export function MapView(props: MapViewProps): JSX.Element {
+  const messages = useMapViewMessages();
+  const frame = createMemo(() => mapFrame(props, props.height, props.padding ?? 48));
+  const selected = createMemo(() => selectedMarker(props.markers ?? [], props.selectedId));
+  const [state, setState] = createSignal<MapState>("static");
+  const [dark, setDark] = createSignal(false);
+  const [boxStyle, setBoxStyle] = createSignal<JSX.CSSProperties>();
+  const [liveScale, setLiveScale] = createSignal<MapScale>();
+  const resolvedStyle = (): MapViewStyle => {
+    const source = props.style;
+    return typeof source === "object" && "dark" in source ? (dark() ? source.dark : source.light) : source;
+  };
+  let root!: HTMLDivElement;
+  let live!: HTMLDivElement;
+  let map: LiveMap | undefined;
+  let currentStyle: MapViewStyle | undefined;
+  let disposed = false;
+  let visible = false;
+  let mounted = false;
+  let touched = false;
+  let generation = 0;
+  let intersection: IntersectionObserver | undefined;
+  let resize: ResizeObserver | undefined;
+  const themes: MutationObserver[] = [];
+
+  const removeMap = () => {
+    generation++;
+    const previous = map;
+    map = undefined;
+    previous?.remove();
+    setBoxStyle(undefined);
+    setLiveScale(undefined);
+    currentStyle = undefined;
+  };
+  const syncOverlay = () => {
+    const f = frame();
+    if (!map || !f || state() !== "ready") return;
+    const a = unprojectPoint(f.minX, f.minY);
+    const b = unprojectPoint(f.minX + f.spanX, f.minY + f.spanY);
+    const top = map.project([a.lon, a.lat]);
+    const bottom = map.project([b.lon, b.lat]);
+    setBoxStyle({
+      left: `${top.x}px`,
+      top: `${top.y}px`,
+      width: `${bottom.x - top.x}px`,
+      height: `${bottom.y - top.y}px`,
+      transform: "none",
+    });
+    if (touched) {
+      const mpp = metersPerPixel(map.getCenter().lat, map.getZoom());
+      const bar = scaleBar(mpp);
+      setLiveScale({ label: bar.label, width: `${bar.meters / mpp}px` });
+    }
+  };
+  const refit = () => {
+    const f = frame();
+    if (map && f && !touched) map.jumpTo(fitCamera(f, root.clientWidth, props.padding ?? 48));
+    syncOverlay();
+  };
+  const start = async () => {
+    if (disposed || !visible || !frame()) return;
+    removeMap();
+    touched = false;
+    if (!supportsWebgl()) {
+      setState("no-webgl");
+      return;
+    }
+    const attempt = generation;
+    setState("loading");
+    const fail = () => {
+      if (disposed || attempt !== generation) return;
+      removeMap();
+      setState("error");
+    };
+    try {
+      const { createMap } = await import("./map-view-live");
+      if (disposed || attempt !== generation) return;
+      const f = frame();
+      if (!f) return;
+      currentStyle = resolvedStyle();
+      const t = messages();
+      const instance = createMap({
+        container: live,
+        style: currentStyle,
+        ...fitCamera(f, root.clientWidth, props.padding ?? 48),
+        attributionControl: false,
+        cooperativeGestures: true,
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+        maxPitch: 0,
+        bearing: 0,
+        pitch: 0,
+        keyboard: true,
+        trackResize: false,
+        renderWorldCopies: false,
+        locale: {
+          "Map.Title": t.canvasTitle,
+          "CooperativeGesturesHandler.WindowsHelpText": t.gestureWindows,
+          "CooperativeGesturesHandler.MacHelpText": t.gestureMac,
+          "CooperativeGesturesHandler.MobileHelpText": t.gestureMobile,
+        },
+      });
+      map = instance;
+      instance.on("error", () => {
+        if (state() === "loading") fail();
+      });
+      instance.on("load", () => {
+        if (disposed || attempt !== generation) return;
+        setState("ready");
+        refit();
+      });
+      instance.on("movestart", (event) => {
+        if (event.originalEvent) touched = true;
+      });
+      instance.on("move", syncOverlay);
+      instance.on("resize", syncOverlay);
+    } catch {
+      fail();
+    }
+  };
+  onMount(() => {
+    mounted = true;
+    const theme = () => setDark(!!root.closest('.dark, .k2b-dark, [data-theme="dark"]'));
+    theme();
+    for (let ancestor: Element | null = root; ancestor; ancestor = ancestor.parentElement) {
+      const observer = new MutationObserver(theme);
+      observer.observe(ancestor, { attributes: true, attributeFilter: ["class", "data-theme"] });
+      themes.push(observer);
+    }
+    resize = new ResizeObserver(() => {
+      map?.resize();
+      refit();
+    });
+    resize.observe(root);
+    const enter = () => {
+      visible = true;
+      intersection?.disconnect();
+      if (frame()) void start();
+    };
+    if (!frame()) setState("empty");
+    if (typeof IntersectionObserver === "undefined") enter();
+    else {
+      intersection = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) enter();
+        },
+        { threshold: 0, rootMargin: "0px" },
+      );
+      intersection.observe(root);
+    }
+  });
+  createEffect(
+    on(
+      frame,
+      (value) => {
+        if (!mounted) return;
+        if (!value) {
+          removeMap();
+          setState("empty");
+        } else if (state() === "empty") {
+          setState("static");
+          if (visible) void start();
+        } else refit();
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(() => {
+    const style = resolvedStyle();
+    if (state() === "ready" && map && style !== currentStyle) {
+      currentStyle = style;
+      map.setStyle(style);
+    }
+  });
+  createEffect(() => {
+    const marker = selected();
+    if (!marker || state() !== "ready" || !map) return;
+    untrack(() => {
+      if (!map) return;
+      const p = map.project([marker.point.lon, marker.point.lat]);
+      const f = frame();
+      const offset = f ? pinOffsets(sortMarkers(props.markers ?? []), f).get(marker.id) : undefined;
+      const x = p.x + (offset?.dx ?? 0);
+      const y = p.y + (offset?.dy ?? 0);
+      if (x >= 16 && x <= root.clientWidth - 16 && y >= 16 && y <= root.clientHeight - 16) return;
+      touched = true;
+      const camera = { center: [marker.point.lon, marker.point.lat] satisfies [number, number] };
+      if (prefersReducedMotion()) map.jumpTo(camera);
+      else map.easeTo(camera);
+    });
+  });
+  onCleanup(() => {
+    disposed = true;
+    intersection?.disconnect();
+    resize?.disconnect();
+    for (const observer of themes) observer.disconnect();
+    removeMap();
+  });
+  const zoom = (direction: "in" | "out") => {
+    if (!map || state() !== "ready") return;
+    touched = true;
+    const options = { animate: !prefersReducedMotion() };
+    if (direction === "in") map.zoomIn(options);
+    else map.zoomOut(options);
+  };
+  return (
+    <div
+      ref={root}
+      class={`k2b-map-view${props.class ? ` ${props.class}` : ""}`}
+      style={{ height: `${props.height}px` }}
+      data-state={state()}
+      role="region"
+      aria-label={messages().mapLabel}
+    >
+      <span class="k2b-sr-only">{messages().summary({ count: props.markers?.length ?? 0 })}</span>
+      <div ref={live} class="k2b-map-view__live" />
+      <Show
+        when={frame()}
+        fallback={
+          <div class="k2b-map-view__empty">
+            <Show when={props.empty}>
+              <span>{props.empty}</span>
+            </Show>
+          </div>
+        }
+      >
+        {(value) => (
+          <>
+            <MapGeometry {...props} frame={value()} boxStyle={boxStyle()} onSelect={props.onSelect} interactive />
+            <MapScaleBar scale={liveScale() ?? referenceScale(value(), props.padding ?? 48)} />
+          </>
+        )}
+      </Show>
+      <div class="k2b-map-view__messages">
+        <Show when={props.notice}>
+          <div class="k2b-map-view__notice">{props.notice}</div>
+        </Show>
+        <Show when={state() === "loading" || state() === "error" || state() === "no-webgl"}>
+          <div class="k2b-map-view__status" role="status">
+            <i
+              aria-hidden="true"
+              class={state() === "loading" ? "ti ti-loader-2 k2b-spin" : state() === "error" ? "ti ti-alert-circle" : "ti ti-info-circle"}
+            />
+            <span>{state() === "loading" ? messages().loading : state() === "error" ? messages().error : messages().noWebgl}</span>
+            <Show when={state() === "error"}>
+              <Button size="xs" variant="text" onClick={() => void start()}>
+                {messages().retry}
+              </Button>
+            </Show>
+          </div>
+        </Show>
+      </div>
+      <div class="k2b-map-view__controls">
+        <div class="k2b-map-view__zoom">
+          <IconButton label={messages().zoomIn} tooltip={false} disabled={state() !== "ready"} onClick={() => zoom("in")}>
+            <i class="ti ti-plus" aria-hidden="true" />
+          </IconButton>
+          <IconButton label={messages().zoomOut} tooltip={false} disabled={state() !== "ready"} onClick={() => zoom("out")}>
+            <i class="ti ti-minus" aria-hidden="true" />
+          </IconButton>
+        </div>
+        <Show when={props.onLocate}>
+          <IconButton
+            class="k2b-map-view__locate"
+            tooltip={false}
+            label={messages().locate}
+            aria-pressed={!!props.ownLocation}
+            onClick={() => props.onLocate?.()}
+          >
+            <i class="ti ti-current-location" aria-hidden="true" />
+          </IconButton>
+        </Show>
+      </div>
+      <div class="k2b-map-view__info" aria-live="polite">
+        <Show when={selected()} keyed>
+          {(marker) => props.infoTile?.(marker)}
+        </Show>
+      </div>
+      <MapAttribution>{props.attribution}</MapAttribution>
+    </div>
+  );
+}
