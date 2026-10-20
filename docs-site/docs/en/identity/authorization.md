@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-06
+updated: 2026-10-20
 ---
 
 # Resource authorization
@@ -428,12 +428,27 @@ their own older check; see
 
 Call `resolveDisplayNames()` when adapter entries do not include names. It also
 accepts `{principal}` records for a proposed grant, preserves supplied fields,
-and adds `displayName`, optional `avatarHash`, and, for service-account
+and adds optional `displayName`, optional `avatarHash`, and, for service-account
 principals, `serviceAccountKind`. A person's `displayName` is their display
 name, or their login name when they have none, so every permission editor names
 people the same way. Authorize the resource operation
 before resolving names. A confirmation should show both name and principal ID;
 names are presentation, never identity or authorization.
+
+Missing principals have no `displayName`; audiences carry no stored name.
+Use `principalLabel(entry, locale)` from `@k2b/cloud/shared` or
+`@k2b/cloud/access/ui` whenever naming a principal for people. It localizes
+audiences and missing names, formats group names for the locale, and never
+falls back to an ID. Keep IDs beside the name in confirmations as described
+above. The permission editor uses this helper for names, avatars, and
+accessible labels. A missing person reads “Unknown person”, a missing group
+“Deleted group”, and a missing service account “Unknown service account”
+(or “Unknown agent” when its kind is known).
+
+Return resolved entries from grant responses too: call
+`resolveDisplayNames([entry])` after authorizing the grant. The editor keeps
+picker metadata when the response omits it; supplied server metadata wins.
+Do not resolve additional identities for viewers who cannot already see them.
 
 `listUsersWithAccess()` expands direct user and nested group grants for bounded
 pickers. It supports search, included and excluded user IDs, a minimum
@@ -448,8 +463,8 @@ must not display raw keys or own secret lifecycle.
 
 For assignment forms that need identity selection without permission levels,
 use `PrincipalPicker` from `@k2b/cloud/access/ui`. Its `onSelect` callback returns
-a `Principal` and display metadata: `displayName` and, for service accounts,
-`serviceAccountKind`. The consumer owns persistence and authorization.
+a `Principal` and display metadata: `displayName`, optional `avatarHash`, and,
+for service accounts, `serviceAccountKind`. The consumer owns persistence and authorization.
 Pass `existing` to exclude already selected principals. Users and groups are
 searched through Accounts after two characters; personal Linux groups are left
 out, so people are granted directly. All signed-in users are

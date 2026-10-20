@@ -301,3 +301,17 @@ describe("access CLI helper", () => {
     expect(requestedPath).toContain("kinds=service_account");
   });
 });
+
+test("human access lists localize missing principals without changing structured identities", async () => {
+  const entry: AccessEntry = { ...userEntry("read"), displayName: undefined };
+  const state = { entries: [entry], grants: [], updates: [], revokes: [] };
+  const mod = createModule(state);
+  const { ctx, tables } = createContext(["access", "list"], {}, () => Response.json({}));
+  ctx.options.locale = "de";
+  await mod.run(ctx);
+  expect(tables[0]?.[0]?.principal).toBe("Unbekannte Person");
+  expect(tables[0]?.[0]?.principal).not.toContain(userId);
+  const json = createContext(["access", "list"], {}, () => Response.json({}), "json");
+  await mod.run(json.ctx);
+  expect(JSON.parse(json.lines[0]!).entries[0].principal.userId).toBe(userId);
+});
