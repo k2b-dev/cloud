@@ -1,8 +1,9 @@
-import { describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { FreeIpaTransportError } from "../server/services/freeipa/transport";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
-import { createHeartbeat } from "./heartbeat";
+import { createHeartbeat, createRegistryMembership } from "./heartbeat";
+import { APP_REGISTRY_TTL_MS } from "./registry";
 
 const entry = {
   id: "test",
@@ -448,4 +449,331 @@ test("dependent publication precedes every app lease and failure prevents advert
   } finally {
     await heartbeat.stop();
   }
+});
+
+describe("replica membership", () => {
+  const epoch = Date.parse("2026-10-20T00:00:00Z");
+  const cleanup: (() => Promise<void>)[] = [];
+  beforeEach(() => setSystemTime(new Date(epoch)));
+  afterEach(async () => {
+    try {
+      for (const stop of cleanup.splice(0).reverse()) await stop();
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  const fixture = () => {
+    // Separate ephemerals share one fake server; instances use the apps ephemeral.
+    const stores = new Map<string, Map<string, { value: unknown; expires: number }>>();
+    const ephemeral = (id: string) => {
+      let store = stores.get(id);
+      if (!store) {
+        store = new Map();
+        stores.set(id, store);
+      }
+      const records = store;
+      const sweep = () => {
+        for (const [key, row] of records) if (row.expires <= Date.now()) records.delete(key);
+      };
+      return {
+        upsert: async ({ key, value }: { key: string; value: unknown }) => {
+          records.set(key, { value, expires: Date.now() + APP_REGISTRY_TTL_MS });
+        },
+        touch: async ({ key }: { key: string }) => {
+          sweep();
+          const row = records.get(key);
+          if (!row) return false;
+          row.expires = Date.now() + APP_REGISTRY_TTL_MS;
+          return true;
+        },
+        delete: async ({ key }: { key: string }) => records.delete(key),
+        snapshot: async ({ prefix }: { prefix: string }) => {
+          sweep();
+          return { entries: [...records].filter(([key]) => key.startsWith(prefix)).map(([key, row]) => ({ key, value: row.value })) };
+        },
+      };
+    };
+    const apps = ephemeral("apps");
+    const capabilities = ephemeral("capabilities");
+    const instances = ephemeral("apps");
+    let tail = Promise.resolve();
+    let held = false;
+    const contended = Promise.withResolvers<void>();
+    const lock = {
+      withLock: async <T>(
+        { ttlMs = 10_000, signal }: { resource: string; ttlMs?: number; signal?: AbortSignal },
+        fn: () => Promise<T>,
+      ): Promise<T | null> => {
+        const previous = tail;
+        const gate = Promise.withResolvers<void>();
+        tail = previous.then(() => gate.promise);
+        if (held) contended.resolve();
+        const aborted = Promise.withResolvers<null>();
+        const abort = () => aborted.resolve(null);
+        signal?.addEventListener("abort", abort, { once: true });
+        try {
+          if (signal?.aborted || (await Promise.race([previous.then(() => true), aborted.promise])) === null) return null;
+          held = true;
+          // Model a lease, including expiry while a write ignores its timeout.
+          const timer = setTimeout(() => gate.resolve(), ttlMs);
+          try {
+            return await fn();
+          } finally {
+            clearTimeout(timer);
+            held = false;
+          }
+        } finally {
+          signal?.removeEventListener("abort", abort);
+          gate.resolve();
+        }
+      },
+    };
+    const process = (instanceId: string, writeTimeoutMs = 500, intervalMs = 3_600_000) => {
+      const membership = createRegistryMembership("test", {
+        registry: () => instances,
+        lock: () => lock,
+        instanceId,
+        hostname: "same-host",
+        startedAt: epoch,
+        writeTimeoutMs,
+      });
+      const options = { membership, intervalMs, writeTimeoutMs };
+      const app = createHeartbeat("test", { ...entry, instanceId }, { ...options, registry: apps });
+      const capability = createHeartbeat("test", { instanceId }, { ...options, registry: capabilities, key: "capabilities/test" });
+      const stop = async () => {
+        await app.stop();
+        await capability.stop();
+      };
+      cleanup.push(stop);
+      return {
+        membership,
+        app,
+        capability,
+        start: async () => {
+          await capability.start();
+          await app.start();
+        },
+        stop,
+      };
+    };
+    const keys = async (registry = apps, prefix = "") => (await registry.snapshot({ prefix })).entries.map(({ key }) => key).sort();
+    return { apps, capabilities, instances, lock, contended, process, keys };
+  };
+
+  test("stopping one process preserves both entries; the last stop removes both and all instance keys", async () => {
+    const f = fixture();
+    const a = f.process("a"),
+      b = f.process("b");
+    await a.start();
+    await b.start();
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/a", "instances/test/b"]);
+    await a.stop();
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/b"]);
+    expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
+    // A's stop does not replace B's newer entry.
+    expect((await f.apps.snapshot({ prefix: "apps/" })).entries[0]?.value).toEqual({ ...entry, instanceId: "b" });
+    await b.stop();
+    expect(await f.keys()).toEqual([]);
+    expect(await f.keys(f.capabilities)).toEqual([]);
+  });
+
+  test("serializes a surge start behind the old process's paused stop snapshot", async () => {
+    const f = fixture();
+    const old = f.process("old"),
+      next = f.process("new");
+    await old.start();
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const snapshot = f.instances.snapshot;
+    let pause = true;
+    f.instances.snapshot = async (input) => {
+      const result = await snapshot(input);
+      if (pause) {
+        pause = false;
+        entered.resolve();
+        await release.promise;
+      }
+      return result;
+    };
+    const stopping = old.stop();
+    await entered.promise;
+    const starting = next.start();
+    // With a lock, N queues; without exclusivity N finishes before O's stale decision.
+    try {
+      await Promise.race([f.contended.promise, starting]);
+    } finally {
+      release.resolve();
+    }
+    await Promise.all([starting, stopping]);
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/new"]);
+    expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
+  });
+
+  test("a crashed sibling ages out and does not prevent the last live process from removing both entries", async () => {
+    const f = fixture();
+    const a = f.process("crashed"),
+      b = f.process("live");
+    await a.start();
+    setSystemTime(new Date(epoch + APP_REGISTRY_TTL_MS / 2));
+    await b.start();
+    setSystemTime(new Date(epoch + APP_REGISTRY_TTL_MS + 1));
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/live"]);
+    await b.stop();
+    expect(await f.keys()).toEqual([]);
+    expect(await f.keys(f.capabilities)).toEqual([]);
+    // The abandoned heartbeat is stopped only by afterEach, after the TTL assertions.
+  });
+
+  test("a lone crashed process loses its shared entries and instance key after the TTL", async () => {
+    const f = fixture();
+    await f.process("crashed").start();
+    setSystemTime(new Date(epoch + APP_REGISTRY_TTL_MS + 1));
+    expect(await f.keys()).toEqual([]);
+    expect(await f.keys(f.capabilities)).toEqual([]);
+  });
+
+  for (const sibling of [false, true]) {
+    for (const stalled of ["shared", "instance"] as const) {
+      test(`cleans a late ${stalled} write after stop (live sibling: ${sibling})`, async () => {
+        const f = fixture();
+        if (sibling) await f.process("sibling").start();
+        const late = f.process("late", 10);
+        const target = stalled === "shared" ? f.apps : f.instances;
+        const upsert = target.upsert;
+        const entered = Promise.withResolvers<void>(),
+          release = Promise.withResolvers<void>();
+        let pause = true;
+        target.upsert = async (input) => {
+          if (pause) {
+            pause = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return upsert(input);
+        };
+        let deletes = 0;
+        const removeInstance = f.instances.delete;
+        f.instances.delete = async (input) => {
+          deletes++;
+          return removeInstance(input);
+        };
+        const starting = late.app.start();
+        const rejected = expect(starting).rejects.toThrow("timed out");
+        await entered.promise;
+        try {
+          await rejected;
+          await late.app.stop();
+        } finally {
+          release.resolve();
+        }
+        await waitUntil(() => deletes >= 2);
+        // Observe cleanup itself, rather than depending on a fixed scheduling delay.
+        const deadline = performance.now() + 250;
+        while ((await f.keys()).includes("instances/test/late") || (await f.keys()).includes("apps/test") !== sibling) {
+          if (performance.now() >= deadline) throw new Error("Late membership write was not cleaned up");
+          await Bun.sleep(1);
+        }
+        expect(await f.keys()).toEqual(sibling ? ["apps/test", "instances/test/sibling"] : []);
+      });
+    }
+  }
+
+  test("an unavailable stop lock deletes only its own instance and rejects", async () => {
+    const f = fixture();
+    const a = f.process("a");
+    await a.start();
+    const withLock = f.lock.withLock;
+    f.lock.withLock = async () => null;
+    try {
+      await expect(a.app.stop()).rejects.toThrow("membership lock unavailable");
+      expect(await f.keys()).toEqual(["apps/test"]);
+      expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
+    } finally {
+      f.lock.withLock = withLock;
+    }
+  });
+
+  test("a failed instance delete or snapshot never removes the shared entry", async () => {
+    const f = fixture();
+    const a = f.process("a");
+    await a.start();
+    const remove = f.instances.delete;
+    f.instances.delete = async () => {
+      throw new Error("NATS delete failed");
+    };
+    await expect(a.app.stop()).rejects.toThrow("NATS delete failed");
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/a"]);
+    f.instances.delete = remove;
+    const snapshot = f.instances.snapshot;
+    f.instances.snapshot = async () => {
+      throw new Error("NATS snapshot failed");
+    };
+    try {
+      await expect(a.app.stop()).rejects.toThrow("NATS snapshot failed");
+      expect(await f.keys()).toEqual(["apps/test"]);
+    } finally {
+      f.instances.snapshot = snapshot;
+    }
+  });
+
+  test("refresh preserves a newer entry and repairs missing shared and instance keys", async () => {
+    const f = fixture();
+    const a = f.process("a", 500, 2),
+      b = f.process("b");
+    await a.start();
+    await b.start();
+    let touches = 0;
+    const touch = f.apps.touch;
+    f.apps.touch = async (input) => {
+      touches++;
+      return touch(input);
+    };
+    await waitUntil(() => touches > 0);
+    expect((await f.apps.snapshot({ prefix: "apps/" })).entries[0]?.value).toEqual({ ...entry, instanceId: "b" });
+    expect((await f.capabilities.snapshot({ prefix: "capabilities/" })).entries[0]?.value).toEqual({ instanceId: "b" });
+    await f.apps.delete({ key: "apps/test" });
+    await f.instances.delete({ key: "instances/test/a" });
+    let repairs = 0;
+    const upsert = f.apps.upsert;
+    f.apps.upsert = async (input) => {
+      await upsert(input);
+      repairs++;
+    };
+    await waitUntil(() => repairs > 0);
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/a", "instances/test/b"]);
+    await a.stop();
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/b"]);
+  });
+
+  test("unstarted heartbeats leave lazy membership resources untouched", async () => {
+    const membership = createRegistryMembership("test", {
+      registry: () => {
+        throw new Error("Membership registry accessed before start");
+      },
+      lock: () => {
+        throw new Error("Membership lock accessed before start");
+      },
+      instanceId: "unstarted",
+      hostname: "test",
+      startedAt: epoch,
+    });
+    const f = fixture();
+    const heartbeat = createHeartbeat("test", entry, { registry: f.apps, membership });
+    await heartbeat.stop();
+    expect(await f.keys()).toEqual([]);
+  });
+
+  test("renew repairs a missing instance and publish stops after leaving", async () => {
+    const f = fixture();
+    const a = f.process("a");
+    await a.start();
+    await f.instances.delete({ key: "instances/test/a" });
+    await a.membership.renew();
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/a"]);
+    await a.stop();
+    await a.membership.renew();
+    await a.membership.publish(() => f.apps.upsert({ key: "apps/test", value: entry }));
+    expect(await f.keys()).toEqual([]);
+  });
 });

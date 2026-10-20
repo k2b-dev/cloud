@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-07-27
+updated: 2026-10-20
 ---
 
 # Scaling and shutdown
@@ -38,23 +38,25 @@ Use [Data](/en/docs/data) and
 
 ## Application registration
 
-The registry does not track individual replicas.
+Every reader uses one logical application entry and one capability manifest per
+application ID. Use the same stable `baseUrl` for every replica.
 
-Every replica writes the same application entry. Use the same stable `baseUrl`
-for every replica so the entry stays identical.
+Each process also keeps a small liveness key for its instance. A running
+replica renews its keys every 60 seconds. All keys have the same 180-second TTL.
 
-A running replica refreshes the entry every 60 seconds.
+A clean stop removes only its own liveness key. It removes the shared entries
+only when no other live instance remains. Stopping one replica keeps the app
+registered; the last replica's clean stop removes it at once. A crashed
+instance stops renewing its liveness key, which ages out after 180 seconds.
+Shared entries also expire after 180 seconds if no replica renews them.
 
-Registry entries expire after 180 seconds if refresh stops. A clean shutdown
-removes the entry immediately.
+During a rollout, the most recently started instance's entry wins. Starting
+writes the entry; refresh only renews it. Repair writes it only when it is
+missing.
 
 The gateway rebuilds its route table when registry entries change. It renews
 its own operations snapshot every five seconds, including when the registry is
 idle, so its 30-second presence lease and request counters stay current.
-
-When one of several replicas shuts down cleanly, it can briefly remove the
-shared entry. Another replica repairs it on its next refresh. Account for this
-window during rolling deployment.
 
 Use the orchestrator, not the Cloud registry, to measure replica health and
 count.

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Deployment requirements
@@ -592,6 +592,11 @@ Later releases require this store. Production Compose does not provision it;
 the operator supplies it.
 
 ## Verify readiness and upgrades
+
+During the rollout to this release, replicas of the previous version write no
+liveness key. While they run, a replica that stops can still delete the shared
+registry entry once, and surviving replicas restore it within 60 seconds. No
+configuration or rollout order is required.
 
 Check `/_cloud/ready` on each service's **private** origin, then check gateway
 registration and request an owned route through the public origin. The gateway's

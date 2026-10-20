@@ -1,6 +1,8 @@
 /** Keep an app discoverable even when the ephemeral registry is recreated. */
 
-import { APP_REGISTRY_TTL_MS } from "./registry";
+import { randomBytes } from "node:crypto";
+import { hostname } from "node:os";
+import { APP_INSTANCE_PREFIX, APP_REGISTRY_TTL_MS, type AppInstanceRecord } from "./registry";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const HEARTBEAT_WRITE_TIMEOUT_MS = 10_000;
@@ -15,8 +17,90 @@ type HeartbeatRegistry<T> = {
   delete: (input: { key: string }) => Promise<unknown>;
 };
 
+type MembershipRegistry = HeartbeatRegistry<AppInstanceRecord> & {
+  snapshot: (input: { prefix: string }) => Promise<{ entries: { key: string }[] }>;
+};
+
+type MembershipLock = {
+  withLock: <T>(input: { resource: string; ttlMs?: number; signal?: AbortSignal }, fn: () => Promise<T>) => Promise<T | null>;
+};
+
+/** One process membership shared by its app and capability heartbeats. Getters stay lazy until use. */
+export const createRegistryMembership = (
+  appId: string,
+  options: {
+    registry: () => MembershipRegistry;
+    lock: () => MembershipLock;
+    instanceId?: string;
+    hostname?: string;
+    startedAt?: number;
+    writeTimeoutMs?: number;
+  },
+) => {
+  const instanceId = options.instanceId ?? randomBytes(12).toString("base64url");
+  const prefix = `${APP_INSTANCE_PREFIX}${appId}/`;
+  const key = `${prefix}${instanceId}`;
+  const value: AppInstanceRecord = {
+    appId,
+    instanceId,
+    hostname: options.hostname ?? hostname(),
+    startedAt: options.startedAt ?? Date.now(),
+  };
+  const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;
+  if (!Number.isFinite(writeTimeoutMs) || writeTimeoutMs <= 0) throw new RangeError("Membership write timeout must be positive and finite");
+  let left = false;
+
+  const locked = async (write: () => Promise<void>): Promise<void> => {
+    const result = await options
+      .lock()
+      .withLock({ resource: appId, ttlMs: writeTimeoutMs, signal: AbortSignal.timeout(writeTimeoutMs) }, async () => {
+        await write();
+        return true;
+      });
+    if (result === null) throw new Error(`Registry membership lock unavailable for app ${appId}`);
+  };
+  const upsert = () => options.registry().upsert({ key, value });
+
+  return {
+    join: async (write: () => Promise<unknown>): Promise<void> => {
+      left = false;
+      await locked(async () => {
+        await upsert();
+        await write();
+      });
+    },
+    publish: async (write: () => Promise<unknown>): Promise<void> => {
+      if (left) return;
+      await locked(async () => {
+        if (left) return;
+        await upsert();
+        await write();
+      });
+    },
+    renew: async (): Promise<void> => {
+      if (left) return;
+      if (!(await options.registry().touch({ key }))) {
+        await locked(async () => {
+          if (!left) await upsert();
+        });
+      }
+    },
+    leave: async (remove: () => Promise<unknown>): Promise<void> => {
+      left = true;
+      // A failed delete must never lead to shared removal: leave routing to its TTL.
+      // Repeat the delete even after leaving, to remove a late registration write.
+      await options.registry().delete({ key });
+      await locked(async () => {
+        const snapshot = await options.registry().snapshot({ prefix });
+        if (!snapshot.entries.some((entry) => entry.key !== key)) await remove();
+      });
+    },
+  };
+};
+
 type HeartbeatOptions<T> = {
   registry: HeartbeatRegistry<T>;
+  membership?: ReturnType<typeof createRegistryMembership>;
   key?: string;
   /** Publish dependent data before advertising or renewing the app. */
   beforeWrite?: () => Promise<void>;
@@ -44,6 +128,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
   let timer: Timer | null = null;
   let inFlight: Promise<void> | null = null;
   let running = false;
+  let needsMembershipCleanup = false;
   let lastSuccessAt = 0;
   let staleReported = false;
   const key = options.key ?? `apps/${appId}`;
@@ -54,19 +139,28 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
     staleReported = false;
   };
 
+  const remove = () => (options.membership ? options.membership.leave(() => registry.delete({ key })) : registry.delete({ key }));
+  const upsert = () => registry.upsert({ key, value: entry });
+
   const register = async (): Promise<void> => {
     await options.beforeWrite?.();
-    await registry.upsert({ key, value: entry });
+    if (options.membership) await options.membership.join(upsert);
+    else await upsert();
     noteSuccess();
   };
 
   const refresh = async (): Promise<void> => {
     // Touch renews the existing entry (and emits a registry invalidation).
+    // Newest start wins: refresh only touches; only a missing entry is republished.
     // Avoid rebuilding the manifest here. A missing entry is repaired
     // immediately, preserving restart-free registry recovery.
     await options.beforeWrite?.();
+    await options.membership?.renew();
     const touched = await registry.touch({ key });
-    if (!touched) await registry.upsert({ key, value: entry });
+    if (!touched) {
+      if (options.membership) await options.membership.publish(upsert);
+      else await upsert();
+    }
     noteSuccess();
   };
 
@@ -76,7 +170,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
     void write
       .then(async () => {
         // A write that completed after its timeout must not resurrect a stopped app.
-        if (timedOut && !running) await registry.delete({ key }).catch(() => false);
+        if (timedOut && !running) await remove().catch(() => false);
       })
       .catch(() => undefined);
     try {
@@ -140,6 +234,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
         return;
       }
       running = true;
+      needsMembershipCleanup = options.membership !== undefined;
       const operation = writeWithTimeout(register());
       inFlight = operation;
       try {
@@ -153,7 +248,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
       schedule(intervalMs);
     },
     stop: async () => {
-      if (!running) return;
+      if (!running && !needsMembershipCleanup) return;
       running = false;
       if (timer) clearTimeout(timer);
       timer = null;
@@ -165,7 +260,8 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
         // still required so a stopped app cannot remain discoverable.
       }
       inFlight = null;
-      await registry.delete({ key });
+      await remove();
+      needsMembershipCleanup = false;
     },
   };
 };

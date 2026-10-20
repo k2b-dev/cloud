@@ -29,7 +29,7 @@ Requires Docker and installed workspace dependencies. Build @k2b/ui first:
   --help            Show this help without taking a heavy slot or contacting Docker.
 
 The script takes a machine heavy slot itself. CLOUD_HEAVY_SLOTS controls available slots.
-SIGKILL recovery can take eight minutes. Containers, volumes and built tags are always removed.
+Chat stop and surge add at least 140 seconds. SIGKILL recovery can take eight minutes. Containers, volumes and built tags are always removed.
 `;
 export const parseOptions = (args: string[]) => {
   const { values } = parseArgs({
@@ -90,12 +90,21 @@ export const envFileContents = (env: Record<string, string>): string =>
 
 export type Replica = { id: string; ip: string; url: string; number: number };
 export type ReplicaEvidence = { a: Replica; b: Replica; served: Set<string> };
-export const assertBothReplicasServed = (app: string, evidence: ReplicaEvidence, running: Set<string>, killed?: string) => {
+export const assertBothReplicasServed = (
+  app: string,
+  evidence: ReplicaEvidence,
+  running: Set<string>,
+  killed?: string,
+  retired: ReadonlySet<string> = new Set(),
+) => {
   const { a, b, served } = evidence;
   check(a.id !== b.id, `${app}: replica B is the same container as replica A; the cross-replica run would be vacuous`);
   check(a.ip && b.ip && a.ip !== b.ip, `${app}: replica A and B must have different internal IPs`);
   for (const replica of [a, b]) {
-    check(running.has(replica.id) || replica.id === killed, `${app}: replica ${replica.number} is no longer running`);
+    check(
+      running.has(replica.id) || replica.id === killed || retired.has(replica.id),
+      `${app}: replica ${replica.number} is no longer running`,
+    );
     check(served.has(replica.id), `${app}: replica ${replica.number} served no scenario step`);
   }
 };
@@ -116,10 +125,10 @@ type MailAnswer = { status: number; body: unknown };
 const succeeded = ({ status }: { status: number }) => status >= 200 && status < 300;
 export const mailLeaseBusy = (answer: MailAnswer) => answer.status === 409 && mailErrorCode(answer.body) === "DRAFT_LEASE_BUSY";
 /**
- * #1561: Mail is unrouted. The gateway then answers its unmatched-route 502, or Core's catch-all answers
- * exactly what Core answers for the same path directly. A Mail 404, 409, or 5xx never matches.
+ * An unrouted path gets the gateway's exact unmatched-route 502 or Core's exact catch-all answer
+ * for that path. Application errors and upstream-unavailable responses never match.
  */
-export const knownMailGatewayGap = (answer: MailAnswer, coreFallthrough: MailAnswer) =>
+export const registryGapAnswer = (answer: MailAnswer, coreFallthrough: MailAnswer) =>
   (answer.status === 404 && coreFallthrough.status === 404 && JSON.stringify(answer.body) === JSON.stringify(coreFallthrough.body)) ||
   (answer.status === 502 && answer.body === "Bad Gateway — no app registered for this path");
 
@@ -344,8 +353,9 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     );
   };
   const evidence = new Map<App, ReplicaEvidence>();
-  const stillRunning = async (targets: Replica[], killed?: string) => {
-    const states = await inspect([...new Set(targets.map((replica) => replica.id))]);
+  const retired = new Set<string>();
+  const stillRunning = async (targets: Replica[], killed?: string, retired: ReadonlySet<string> = new Set()) => {
+    const states = await inspect([...new Set(targets.map((replica) => replica.id).filter((id) => !retired.has(id)))]);
     for (const state of states) check(state.State.Running || state.Id === killed, `Target container stopped: ${state.Id}`);
     return new Set(states.filter((state) => state.State.Running).map((state) => state.Id));
   };
@@ -1287,7 +1297,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       );
       const held = lease,
         startRevision = draft.revision;
-      // Core owns '/', so with Mail unrouted (#1561) a Mail path falls through to Core. Record Core's own
+      // Core owns '/', so an unrouted Mail path falls through to Core. Record Core's own
       // answer for each PUT path; only that exact answer counts as the routing gap, never a Mail error.
       const coreFallthrough = new Map<string, MailAnswer>();
       for (const path of [draftPath, `${draftPath}/lease`]) {
@@ -1311,12 +1321,11 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         at: string;
         afterReady: boolean;
         attempt: number;
-        knownGap?: "#1561";
+        registryGap: boolean;
       };
       const samples: Sample[] = [];
       const deadline = Date.now() + 90_000;
       let stop = false,
-        restarting = false,
         readyAt: number | undefined,
         loopError: unknown;
       let saves = 0,
@@ -1326,7 +1335,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       const call = async (target: Replica | string, path: string, body: unknown) => {
         const answer = await mailBusyCall(target, path, token, body, (answer, attempt) => {
           const signature = coreFallthrough.get(path);
-          const knownGap = typeof target === "string" && restarting && signature !== undefined && knownMailGatewayGap(answer, signature);
+          const registryGap = typeof target === "string" && signature !== undefined && registryGapAnswer(answer, signature);
           samples.push({
             via: typeof target === "string" ? "gateway" : target.id,
             method: path.endsWith("/lease") ? "heartbeat" : "autosave",
@@ -1336,11 +1345,9 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
             at: new Date().toISOString(),
             afterReady: readyAt !== undefined,
             attempt,
-            ...(knownGap ? { knownGap: "#1561" } : {}),
+            registryGap,
           });
         });
-        const signature = coreFallthrough.get(path);
-        if (typeof target === "string" && restarting && signature !== undefined && knownMailGatewayGap(answer, signature)) return undefined;
         expectSuccess(
           answer,
           `Editing during restart via ${typeof target === "string" ? "gateway" : target.id}; samples=${JSON.stringify(samples)}`,
@@ -1356,7 +1363,6 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
             const expected = editing().draft;
             const pending = [
               call(target, draftPath, { expectedRevision: expected.revision, draft: content(body) }).then((answer) => {
-                if (!answer) return;
                 const saved = mailDraft(answer.body);
                 check(
                   saved.id === expected.id && saved.revision === expected.revision + 1 && saved.body === body,
@@ -1371,7 +1377,6 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
               const target = heartbeatCalls++ % 2 === 0 ? gateway : b;
               pending.push(
                 call(target, `${draftPath}/lease`, { token: held.token }).then((answer) => {
-                  if (!answer) return;
                   const renewed = mailLease(answer.body);
                   check(renewed.token === held.token && renewed.acquiredAt === held.acquiredAt, "Restart changed T6");
                 }),
@@ -1391,7 +1396,6 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       try {
         await Bun.sleep(3_200);
         check(!loopError, message(loopError));
-        restarting = true;
         phase("mail-compose-restarting", { victim: a.id, survivor: b.id, deadlineMs: 90_000 });
         await docker(["restart", "--time", "30", a.id], 45_000);
         const [restarted] = await inspect([a.id]);
@@ -1419,8 +1423,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
           victim: a.id,
           survivor: b.id,
           samples,
-          knownGap: "#1561",
-          gatewayGapCount: samples.filter((sample) => sample.knownGap).length,
+          registryGapCount: samples.filter((sample) => sample.registryGap).length,
           gatewayFailuresAfterReady: samples.filter((sample) => sample.via === "gateway" && sample.afterReady && !succeeded(sample)).length,
         });
       }
@@ -1451,10 +1454,132 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         saves,
         revision: final.revision,
         readyAt: new Date(readyAt ?? 0).toISOString(),
-        knownGap: "#1561",
-        gatewayGapCount: samples.filter((sample) => sample.knownGap).length,
+        registryGapCount: samples.filter((sample) => sample.registryGap).length,
         gatewayFailuresAfterReady: samples.filter((sample) => sample.via === "gateway" && sample.afterReady && !succeeded(sample)).length,
       };
+    });
+    await scenario("chat-replica-stop", async () => {
+      if (options.replicas === 1) {
+        phase("chat-replica-stop", { status: "skipped", reason: "A graceful stop needs a surviving Chat replica" });
+        return;
+      }
+      const { a, b } = pair("chat");
+      await stillRunning([a, b]);
+      const path = "/api/chat/conversations";
+      const coreResponse = await http(coreB.url, path, "GET", undefined, token, 404);
+      const raw = await coreResponse.text();
+      let coreBody: unknown = raw;
+      try {
+        coreBody = JSON.parse(raw);
+      } catch {
+        /* Core can answer plain text. */
+      }
+      const coreFallthrough = { status: coreResponse.status, body: coreBody };
+      served("core", coreB);
+      type Sample = { at: number; completedAt: number; phase: string; status: number | null; body?: unknown; error?: string };
+      const samples: Sample[] = [];
+      const windows: { phase: string; start: number; completed?: number }[] = [];
+      let currentPhase = "before-stop",
+        stop = false;
+      const sample = async () => {
+        const at = Date.now(),
+          requestPhase = currentPhase;
+        try {
+          const response = await http(gateway, path, "GET", undefined, token, null);
+          const raw = await response.text();
+          let body: unknown = raw;
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            /* Routing errors are plain text. */
+          }
+          samples.push({ at, completedAt: Date.now(), phase: requestPhase, status: response.status, ...(response.ok ? {} : { body }) });
+        } catch (error) {
+          samples.push({ at, completedAt: Date.now(), phase: requestPhase, status: null, error: message(error) });
+        }
+      };
+      await sample();
+      check(samples[0] && samples[0].status !== null && succeeded({ status: samples[0].status }), "Chat gateway route failed before stop");
+      const loop = (async () => {
+        while (!stop) {
+          const tick = Date.now();
+          await sample();
+          await Bun.sleep(Math.max(0, 250 - (Date.now() - tick)));
+        }
+      })();
+      const retire = async (replica: Replica, name: string) => {
+        currentPhase = name;
+        const window: { phase: string; start: number; completed?: number } = { phase: name, start: Date.now() };
+        windows.push(window);
+        await docker(["stop", "--time", "30", replica.id], 45_000);
+        const completedAt = Date.now();
+        window.completed = completedAt;
+        await docker(["rm", replica.id], 30_000);
+        retired.add(replica.id);
+        // Keep observing past a complete 60-second registry refresh interval.
+        await poll(`${name} observation window`, async () => Date.now() >= completedAt + 70_000, 75_000);
+      };
+      try {
+        await retire(a, "original-stop");
+        currentPhase = "surge-start";
+        const service = devServiceName("chat");
+        await compose(["up", "-d", "--wait", "--no-recreate", "--scale", `${service}=3`, service], 240_000);
+        const resolved = await containers(service);
+        check(resolved.length === 3 && resolved.some((container) => container.Id === b.id), "Chat surge must keep B and add two replicas");
+        const surge = resolved.map((container) => ({
+          id: container.Id,
+          ip: container.NetworkSettings.Networks[`${project}_cloud-internal`]?.IPAddress ?? "",
+          url: port(container, 3000),
+          number: Number(container.Config.Labels["com.docker.compose.container-number"]),
+        }));
+        for (const replica of surge) {
+          await poll(
+            `Surge Chat ${replica.number} readiness`,
+            async () => {
+              await http(replica.url, "/_cloud/ready");
+              return true;
+            },
+            180_000,
+          );
+        }
+        phase("chat-replica-stop-surge", { original: b.id, replacements: surge.filter((replica) => replica.id !== b.id) });
+        await retire(b, "surge-stop");
+        await stillRunning(surge, undefined, retired);
+      } finally {
+        stop = true;
+        await loop;
+        const registryGaps = samples.filter(
+          (sample) => sample.status !== null && registryGapAnswer({ status: sample.status, body: sample.body }, coreFallthrough),
+        );
+        const p4InFlight = samples.filter(
+          (sample) =>
+            (sample.status === null || (sample.status === 502 && sample.body === "Bad Gateway — upstream unavailable")) &&
+            windows.some(
+              (window) =>
+                window.completed !== undefined && sample.completedAt >= window.start && sample.completedAt <= window.completed + 5_000,
+            ),
+        );
+        const p4 = new Set(p4InFlight);
+        const failures = samples.filter((sample) => (sample.status === null || !succeeded({ status: sample.status })) && !p4.has(sample));
+        phase("chat-replica-stop", {
+          samples,
+          windows,
+          coreFallthrough,
+          retired: [...retired],
+          registryGapCount: registryGaps.length,
+          p4InFlight: p4InFlight.length,
+          phases: windows.map((window) => ({
+            ...window,
+            p4InFlight: p4InFlight.filter(
+              (sample) =>
+                window.completed !== undefined && sample.completedAt >= window.start && sample.completedAt <= window.completed + 5_000,
+            ).length,
+          })),
+          failures,
+        });
+        check(registryGaps.length === 0, `Chat had ${registryGaps.length} registry gaps`);
+        check(failures.length === 0, `Chat had ${failures.length} failures outside RISK P4: ${JSON.stringify(failures)}`);
+      }
     });
     // Run last: the intentionally killed replica must not invalidate earlier scenario checks.
     await scenario("sigkill-mail-recovery", async () => {
@@ -1507,8 +1632,8 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     });
     for (const app of SCALED_APPS) {
       const current = pair(app);
-      const running = await stillRunning([current.a, current.b], killedCore);
-      assertBothReplicasServed(devServiceName(app), current, running, killedCore);
+      const running = await stillRunning([current.a, current.b], killedCore, retired);
+      assertBothReplicasServed(devServiceName(app), current, running, killedCore, retired);
     }
     check(errors.length === 0, errors.join("\n"));
     phase("passed", { project, bothReplicasServed: Object.fromEntries([...evidence].map(([app, value]) => [app, [...value.served]])) });
