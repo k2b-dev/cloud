@@ -14,6 +14,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
+import { capabilitySentenceText } from "../_internal/capability-sentences";
+import { preferredLocale } from "../server/locale";
+import { normalizeTimeZone } from "../shared/time";
 import { readBoundedJson } from "../_internal/bounded-json";
 import {
   HELP_SEARCH_MAX_LIMIT,
@@ -31,6 +34,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
   type CapabilityActionManifest,
+  CapabilityActionReceiptSchema,
   type CapabilityQueryManifest,
   CapabilitySemanticLinkSchema,
   type CloudResourceRef,
@@ -67,6 +71,7 @@ type McpRouteDependencies = CapabilityDispatchDependencies & {
   listApps?: () => Promise<AppRegistryEntry[]>;
   help?: HelpReaderFactory;
   getOperatorLocale?: () => Promise<string | undefined>;
+  getOperatorTimeZone?: () => Promise<string | undefined>;
   getAppUrl?: () => Promise<string>;
   authenticate?: MiddlewareHandler<AuthContext>;
   limit?: MiddlewareHandler<AuthContext>;
@@ -682,14 +687,28 @@ const createMcpServer = (
         origin,
       );
     }
-    const resultFor = (value: Record<string, unknown>): CallToolResult => {
+    const receipt = response.ok && selected.kind === "actions" ? CapabilityActionReceiptSchema.safeParse(body.receipt) : null;
+    let receiptText: string | undefined;
+    if (receipt?.success) {
+      const locale = preferredLocale(request.headers) ?? (await resolveHelpLocale());
+      const timeZone = normalizeTimeZone(
+        await (dependencies.getOperatorTimeZone ?? (() => get<string>("app.timezone")))().catch(() => "UTC"),
+      );
+      receiptText = capabilitySentenceText(receipt.data.text, receipt.data.slots ?? {}, { locale, timeZone });
+    }
+    const resultFor = (value: Record<string, unknown>, withReceipt = true): CallToolResult => {
       const result = toolResult(value, !response.ok);
       if (origin) result.content.push(...semanticResourceLinks(value, origin));
+      if (withReceipt && receiptText) result.content.unshift({ type: "text", text: receiptText });
       return result;
     };
-    // Added hrefs are optional: they never turn a result that fits into RESPONSE_TOO_LARGE.
+    // Both enrichments are optional: neither turns a result that fits into RESPONSE_TOO_LARGE.
     const result = resultFor(body);
-    return ensureBoundedToolResult(fitsToolResult(result) || body === providerBody ? result : resultFor(providerBody));
+    if (fitsToolResult(result)) return result;
+    const plain = resultFor(body, false);
+    if (fitsToolResult(plain)) return plain;
+    const original = resultFor(providerBody);
+    return ensureBoundedToolResult(fitsToolResult(original) ? original : resultFor(providerBody, false));
   });
 
   return server;

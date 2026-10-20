@@ -55,11 +55,13 @@ export type ActionPreviewModel =
       locale: string;
       timeZone: string;
       preview?: CapabilityPreview;
-      consequences: { text: ActionText; mark?: "added" | "removed" }[];
+      /** Original slots for plain rule sentences, retaining people’s addresses. */
+      slots?: CapabilityActionCallReview["slots"];
+      consequences: { text: ActionText; plain: string; mark?: "added" | "removed" }[];
       /** The rule sentence of a `rule` preview, with its chips. */
       when?: ActionText;
       /** Each `may` line of a `rule` preview. */
-      may?: { text: ActionText; mark?: "added" | "removed" }[];
+      may?: { text: ActionText; plain: string; mark?: "added" | "removed" }[];
     }
   | { kind: "legacy"; rows: AiLegacyReviewRow[]; markdown?: string; input?: unknown };
 
@@ -206,6 +208,7 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
     );
   const consequence = (entry: CapabilityConsequence) => ({
     text: sentence(entry.text, entry.slots),
+    plain: capabilitySentenceText(entry.text, entry.slots ?? review.slots, { locale, timeZone: context.timeZone }),
     ...(entry.mark ? { mark: entry.mark } : {}),
   });
   const code = review.ask ?? "app_asks";
@@ -224,6 +227,7 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
             locale,
             timeZone: context.timeZone,
             ...(preview ? { preview } : {}),
+            slots: review.slots,
             consequences: (review.consequences ?? []).map(consequence),
             ...(preview?.kind === "rule"
               ? { when: sentence(preview.when.text, preview.when.slots), may: preview.may.map(consequence) }

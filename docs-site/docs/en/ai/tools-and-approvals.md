@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Tools and approvals
@@ -793,7 +793,11 @@ address must match one of these as a whole; a host and path that only appear
 inside a longer address do not count. A message another chat sent counts as
 none of these. Any other address, such as one the model built from other data
 or found in a mail, shows an approval card with the full URL and the same
-website choice as an HTTP request. A refused read fetches nothing. A routine
+website choice as an HTTP request. Cloud tools use per-call reviews for their
+question and outcome wording, just like app Actions. A web read names the
+site in its question, keeps the full address in an Address preview row, and
+uses the `sends` reason with the explanations about address provenance and
+sending the full address to the website. A refused read fetches nothing. A routine
 cannot ask, so such a read fails there; its own prompt counts as the
 person's message.
 

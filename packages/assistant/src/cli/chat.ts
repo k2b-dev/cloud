@@ -13,6 +13,8 @@ import type {
 } from "@k2b/cloud/ai";
 import { guessAiMediaType } from "@k2b/cloud/ai/browser";
 import { arg, cloudResourceUrl, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { pendingActionQuestion } from "./action-question";
+import { terminalSafeText } from "./terminal";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
@@ -467,6 +469,27 @@ export const assistantManagementCommands = [
         ctx,
         conversationPath(args.chat, `/pending-actions/${encodeURIComponent(args.turn)}`),
       );
+      if (ctx.options.output === "text" && actions.length) {
+        actions.forEach((action, index) => {
+          if (index) ctx.print("");
+          if (action.type === "approval_request") {
+            const target = `${action.conversationId} ${action.turnId} ${action.callId}`;
+            for (const line of pendingActionQuestion(ctx, action, {
+              approve: `cld assistant actions approve ${target}`,
+              reject: `cld assistant actions reject ${target}`,
+            }).lines)
+              ctx.print(line);
+          } else {
+            ctx.table(
+              [{ call: action.callId, type: action.type, name: action.name, detail: action.mode }].map((row) =>
+                Object.fromEntries(Object.entries(row).map(([key, value]) => [key, terminalSafeText(value)])),
+              ),
+              [{ key: "call" }, { key: "type" }, { key: "name" }, { key: "detail" }],
+            );
+          }
+        });
+        return;
+      }
       printRows(
         ctx,
         actions,

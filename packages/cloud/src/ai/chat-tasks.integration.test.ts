@@ -1771,10 +1771,10 @@ suite("AI chat tasks", () => {
         // An Action without a done sentence still counts; its title names it.
         expect(lines[0]?.meta?.scheduledTask?.stop).toEqual({
           cause,
-          done: ["Rechnung 42 gespeichert", "invoices.csv geschrieben", "Entwurf aktualisieren"],
+          done: ["Rechnung 42 gespeichert", "„invoices.csv“ geschrieben", "Entwurf aktualisieren"],
         });
         expect(JSON.stringify(lines[0]?.message)).toContain(
-          "Schon erledigt: Rechnung 42 gespeichert; invoices.csv geschrieben; Entwurf aktualisieren. Nichts wurde rückgängig gemacht.",
+          "Schon erledigt: Rechnung 42 gespeichert; „invoices.csv“ geschrieben; Entwurf aktualisieren. Nichts wurde rückgängig gemacht.",
         );
         expect(JSON.stringify(lines[0]?.message)).not.toContain("MODEL CLAIM");
         if (cause === "paused") {

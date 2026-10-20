@@ -1,20 +1,28 @@
 import { submitAiTurnAction } from "../ai/runtime";
 import { aiConversations } from "../ai/store";
 import { APP_ACTION_LIMITS } from "../contracts/app-approval";
+import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import type { AppDeviceActions } from "../services/app-approval";
 import { listPending } from "../services/approvals";
-import { appActionSummary, appActionView } from "../services/approvals/device";
+import { appActionOffered, appActionSummary, appActionView, pendingApprovalCard } from "../services/approvals/device";
 
 export const createDeviceActions = (appName: (appId: string, locale: string) => string): AppDeviceActions => {
   const view: AppDeviceActions["view"] = async ({ userId, issuer, actionId }) => {
     const { items } = await listPending({ approverUserId: userId, id: actionId, limit: 1 });
-    return items[0] ? appActionView(items[0], { issuer, appName }) : null;
+    const row = items[0];
+    if (!row) return null;
+    const mapped = await appActionView(row, { issuer, appName });
+    return appActionOffered(mapped, pendingApprovalCard(row, appName)) ? mapped : null;
   };
   return {
     inbox: async ({ userId, issuer }) => {
-      const { items, count } = await listPending({ approverUserId: userId, limit: APP_ACTION_LIMITS.inboxActions });
+      const { items, count } = await listPending({ approverUserId: userId, limit: APPROVALS_PAGE_SIZE });
       const views = await Promise.all(items.map((row) => appActionView(row, { issuer, appName })));
-      return { actions: views.map(appActionSummary), moreActions: Math.max(0, count - items.length) };
+      const actions = views
+        .filter((mapped, index) => appActionOffered(mapped, pendingApprovalCard(items[index]!, appName)))
+        .slice(0, APP_ACTION_LIMITS.inboxActions)
+        .map(appActionSummary);
+      return { actions, moreActions: Math.max(0, count - actions.length) };
     },
     view,
     decide: async ({ userId, deviceId, issuer, actionId, digest, approved }) => {

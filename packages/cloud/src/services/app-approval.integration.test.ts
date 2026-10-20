@@ -10,6 +10,7 @@ import { migrateCloudAi } from "../ai/migrate";
 import { aiConversations } from "../ai/store";
 import { createAppApprovalRoutes } from "../api/app-approval";
 import { createDeviceActions } from "../api/app-approval-actions";
+import { assertCapabilityReview } from "../capabilities/testing";
 import {
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
@@ -36,6 +37,7 @@ import {
   appDeviceProofMessage,
   appPairingProofMessage,
 } from "../contracts/app-approval";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import {
   type AppApprovalActor,
   type AppApprovalConfig,
@@ -46,6 +48,7 @@ import {
   readAppApprovalConfig,
 } from "./app-approval";
 import { approvals } from "./approvals";
+import { deviceOffersApproval } from "./approvals/device";
 import { createIdentityPublicRoutes } from "./identity";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { browserHash, countryHistory } from "./known-browsers";
@@ -2312,7 +2315,7 @@ suite("isolated app approval protocol", () => {
     beforeAll(migrateCloudAi, 30_000);
     const askAction = async (
       owner: Awaited<ReturnType<typeof account>>,
-      options: { assurance?: "standard" | "confirm"; signedInSession?: true } = {},
+      options: { assurance?: "standard" | "confirm"; signedInSession?: true; review?: CapabilityActionCallReview } = {},
     ) => {
       const chat = await aiConversations.createConversation({ ownerUserId: owner.id, title: "Send a letter" });
       const { turn } = await aiConversations.submitChatTurn({
@@ -2334,7 +2337,7 @@ suite("isolated app approval protocol", () => {
         approverUserId: owner.id,
         assurance: options.assurance ?? "confirm",
         sentence: "mail: Send draft",
-        review: { message: "Send this letter", details: [{ label: "To", value: "Ada" }] },
+        review: options.review ?? { message: "Send this letter", details: [{ label: "To", value: "Ada" }] },
         input: { revision: 1 },
         expiresInMs: 600_000,
       });
@@ -2408,6 +2411,49 @@ suite("isolated app approval protocol", () => {
           decidedVia: "cloud_login",
         });
       }
+    });
+
+    test("incomplete sends stay in Cloud, count as moreActions and cannot be viewed, decided or woken on a device", async () => {
+      const owner = await account();
+      const review: CapabilityActionCallReview = {
+        locale: "en",
+        ask: "sends",
+        sentence: { action: "Send message", running: "Sending message", done: "Sent message", confirm: "Send", decline: "Don't send" },
+        slots: {},
+        links: [{ rel: "open", href: "/mail/drafts/maintenance?revision=7" }],
+        preview: {
+          from: { name: "Team Ops", address: "ops@example.com" },
+          kind: "message",
+          to: [{ name: "Lea", address: "lea@example.com" }],
+          subject: "Maintenance",
+          body: "Full body is in Cloud",
+          format: "plain",
+          truncated: true,
+        },
+      };
+      assertCapabilityReview(review);
+      assertCapabilityReview({ ...review, ask: "app_asks" });
+      const browserOnly = await askAction(owner, { review });
+      const visible = await askAction(owner, { review: { ...review, ask: "app_asks" } });
+      const inbox = await deviceActions.inbox({ userId: owner.id, issuer: cfg.issuer });
+      expect(inbox.actions.map((item) => item.actionId)).toEqual([visible.id]);
+      expect(inbox.moreActions).toBe(1);
+      expect(await deviceActions.view({ userId: owner.id, issuer: cfg.issuer, actionId: browserOnly.id })).toBeNull();
+      expect(await deviceOffersApproval(browserOnly.id)).toBe(false);
+      expect(await deviceOffersApproval(visible.id)).toBe(true);
+      const offered = await deviceActions.view({ userId: owner.id, issuer: cfg.issuer, actionId: visible.id });
+      expect(offered?.truncated).toBe(true);
+      expect(
+        await deviceActions.decide({
+          userId: owner.id,
+          deviceId: crypto.randomUUID(),
+          issuer: cfg.issuer,
+          actionId: browserOnly.id,
+          digest: "A".repeat(43),
+          approved: true,
+        }),
+      ).toBe(false);
+      expect(await approvals.get(browserOnly.id)).toMatchObject({ status: "pending" });
     });
 
     test("all Action commands verify signatures first, and changed, expired or resolved views cannot be decided", async () => {

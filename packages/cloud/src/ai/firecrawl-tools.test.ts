@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
+import { capabilityReviewSentence } from "../_internal/capability-sentences";
+import { approvalAssurance } from "../services/approvals";
+import { AI_WEBSITE_APPROVAL_TOOL, aiWebsiteApprovalScope } from "./approvals";
 import {
   assertPublicHttpUrl,
+  authorizeWebRead,
   createCloudAiWebExtractTool,
   createCloudAiWebSearchTool,
   runCloudAiWebExtract,
@@ -8,6 +13,57 @@ import {
 } from "./firecrawl-tools";
 
 describe("Firecrawl AI tools", () => {
+  test("web reads retain their website approval target and assurance with the exact sends review", async () => {
+    for (const locale of ["de", "en"]) {
+      let captured: CapabilityActionCallReview | undefined;
+      const url = "https://example.com/private?value=one";
+      await authorizeWebRead("page", url, {
+        actor: {
+          kind: "user",
+          user: {
+            id: "11111111-1111-4111-8111-111111111111",
+            uid: "person",
+            roles: ["user"],
+            provider: "local",
+            profile: "user",
+            givenname: "Test",
+            sn: "User",
+            displayName: "Test User",
+            mail: null,
+            avatarHash: null,
+            ipa: null,
+            accountExpires: null,
+            lastLoginLocal: null,
+            memberofGroup: [],
+            memberofGroupIds: [],
+            manages: [],
+            managesGroupIds: [],
+          },
+        },
+        locale,
+        requestApproval: async () => {
+          throw new Error("Expected the website target");
+        },
+        requestApprovalFor: async (message, target, review) => {
+          captured = review;
+          expect(target).toEqual({
+            toolName: AI_WEBSITE_APPROVAL_TOOL,
+            approvalScope: aiWebsiteApprovalScope("https://example.com"),
+            always: false,
+          });
+          // A website target still offers this website in this chat; it keeps the standard assurance.
+          expect(approvalAssurance(target !== undefined)).toBe("standard");
+          expect(review?.ask).toBe("sends");
+          expect(review?.preview).toEqual({ kind: "fields", rows: [{ label: locale === "de" ? "Adresse" : "Address", value: url }] });
+          expect(review?.consequences?.map(({ text }) => text)).toEqual(message.split("\n").slice(1));
+          return true;
+        },
+      });
+      expect(captured && capabilityReviewSentence(captured, "question", { timeZone: "UTC" })).toBe(
+        locale === "de" ? "Seite auf „example.com“ lesen?" : "Read page on “example.com”?",
+      );
+    }
+  });
   test("rejects non-public URLs before extraction", () => {
     expect(() => assertPublicHttpUrl("ftp://example.com/file")).toThrow("http or https");
     expect(() => assertPublicHttpUrl("http://localhost:3000")).toThrow("not allowed");

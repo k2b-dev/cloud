@@ -299,6 +299,28 @@ cld assistant actions submit <chat-id> <turn-id> <call-id> --result-file result.
 cld assistant turns watch <chat-id> <turn-id>
 ```
 
+In text output, `actions list` shows the same question, reason, and preview as
+the chat card. People include their address. Dates use the terminal's time zone;
+the question's locale controls labels. For example:
+
+```text
+? Send email “Maintenance” to Lea Berg <lea.berg@example.com>?
+  I'm asking because this leaves Cloud.
+  Mail · Chat “Maintenance”
+  From:    Team Ops <ops@example.com>
+  To:      Lea Berg <lea.berg@example.com>
+  Subject: Maintenance
+  Hello Lea, maintenance starts on Tuesday.
+  Read all: https://cloud.example/mail/drafts/7?revision=2
+  Send to Lea Berg: cld assistant actions approve <chat> <turn> <call>
+  Don't send:       cld assistant actions reject <chat> <turn> <call>
+```
+
+Long bodies show up to eight lines, followed by `…` when incomplete. Open
+**Read all** for the complete version. Interactive mode shows the same block
+before its approval prompt. JSON output retains the raw API response; JSONL
+retains the existing action rows.
+
 List and revoke remembered Cloud approvals without a REPL:
 
 ```bash

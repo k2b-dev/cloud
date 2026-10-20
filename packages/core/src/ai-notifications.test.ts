@@ -1,5 +1,7 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { CHAT_TASK_REASON_CODES, chatTaskReasonSentence, chatTaskReasonState } from "@k2b/cloud/ai";
+import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
+import { coreSettings } from "@k2b/cloud/services";
 import { AI_NOTIFICATIONS } from "./ai-notifications";
 
 for (const locale of ["de", "en"])
@@ -15,3 +17,63 @@ for (const locale of ["de", "en"])
       expect(Object.keys(AI_NOTIFICATIONS.taskNeedsAttention.data.shape)).not.toContain("taskId");
     });
   }
+
+for (const locale of ["de", "en"]) {
+  test(`approval notice uses the card's plain question and reason in ${locale}`, async () => {
+    const { approvalCard } = await import("@k2b/cloud/ai/browser");
+    const input = {
+      sentence: "Mail: Send draft",
+      action: "draft.send",
+      appName: "Mail",
+      review: {
+        locale,
+        sentence: {
+          action: locale === "de" ? "Mail an {to} senden" : "Send mail to {to}",
+          running: locale === "de" ? "Mail an {to} wird gesendet" : "Sending mail to {to}",
+          done: locale === "de" ? "Mail an {to} gesendet" : "Sent mail to {to}",
+          confirm: locale === "de" ? "Senden" : "Send",
+          decline: locale === "de" ? "Nicht senden" : "Don't send",
+        },
+        slots: { to: { kind: "person", people: [{ name: "Lea Berg", address: "lea.berg@example.com" }] } },
+        ask: "sends",
+      },
+    } satisfies Parameters<typeof approvalCard>[0];
+    assertCapabilityReview(input.review);
+    const card = approvalCard(input, locale, "UTC");
+    const rendered = await AI_NOTIFICATIONS.approvalWaiting.render(
+      { count: 1, question: card.questionText, reason: card.reason.text },
+      { locale },
+    );
+    expect(rendered).toEqual({
+      title: locale === "de" ? "Freigabe wartet" : "Approval waiting",
+      body:
+        locale === "de"
+          ? "Mail an Lea Berg <lea.berg@example.com> senden?\nIch frage, weil das Cloud verlässt."
+          : "Send mail to Lea Berg <lea.berg@example.com>?\nI'm asking because this leaves Cloud.",
+      targetHref: "/me/approvals",
+    });
+    const old = await AI_NOTIFICATIONS.approvalWaiting.render({ count: 3 }, { locale });
+    expect(old.title).toBe(locale === "de" ? "3 Freigaben warten" : "3 approvals waiting");
+    expect(old.body).toBe(
+      locale === "de"
+        ? "Eine Aktion wartet auf deine Freigabe. Bis du entscheidest, passiert nichts."
+        : "An Action waits for your approval. Nothing happens until you decide.",
+    );
+    expect(Object.keys(AI_NOTIFICATIONS.approvalWaiting.data.shape)).not.toContain("locale");
+    const setting = spyOn(coreSettings, "get").mockResolvedValue("https://cloud.example");
+    try {
+      const email = await AI_NOTIFICATIONS.approvalWaiting.email!(
+        { count: 1, question: card.questionText, reason: card.reason.text },
+        { locale },
+      );
+      expect(email).toEqual({
+        subject: rendered.title,
+        content: `${rendered.body}\n${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
+      });
+      const oldEmail = await AI_NOTIFICATIONS.approvalWaiting.email!({ count: 1 }, { locale });
+      expect(oldEmail.content).toBe(`${old.body} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`);
+    } finally {
+      setting.mockRestore();
+    }
+  });
+}

@@ -13,7 +13,12 @@ import type {
 import type { Usage } from "@k2b/nessi/ai";
 import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
-import type { CapabilityActionReviewData, CapabilityActionSentences, CloudResourceRef } from "../contracts/capabilities";
+import type {
+  CapabilityActionCallReview,
+  CapabilityActionReviewData,
+  CapabilityActionSentences,
+  CloudResourceRef,
+} from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
@@ -451,7 +456,14 @@ export type AiPendingTurnAction =
       name: string;
       args: unknown;
       message?: string;
+      /** Stored review, including the declared ask reason for new-shape reviews. */
       review?: CapabilityActionReviewData;
+      /** Owning application, with its registry name in the turn's request locale. */
+      app?: { id: string; name: string };
+      /** The chat's current title, when known. */
+      chatTitle?: string | null;
+      /** Expiry of the platform approval request, as an ISO timestamp. */
+      expiresAt?: string;
       allowAlways: boolean;
       /** Whether the approval can be remembered for this chat. */
       allowChat: boolean;
@@ -1151,7 +1163,7 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           /** Localized short status; never include payloads or secrets. */
           reportProgress?: (message: string) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
-          requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          requestApprovalFor?: (message: string, target: AiApprovalTarget, review?: CapabilityActionCallReview) => Promise<boolean>;
           /** Relays a decision for an effect another platform component consumes and executes. */
           requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */

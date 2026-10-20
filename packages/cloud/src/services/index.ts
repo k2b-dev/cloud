@@ -257,3 +257,5 @@ export {
   type NewBrowserSignInNotifier,
 } from "./known-browsers";
 export { LASTING_ACCESS_SIGN_IN_SECONDS, requireConfirmedBrowserSignIn } from "./session/recent";
+
+export { deviceOffersApproval } from "./approvals/device";

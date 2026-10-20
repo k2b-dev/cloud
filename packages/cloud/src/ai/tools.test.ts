@@ -5,6 +5,9 @@ import type { Provider } from "@k2b/nessi/ai";
 import { z } from "zod";
 import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
+import { approvalReviewDigest } from "../services/approvals";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
+import { cloudToolReview } from "./tool-sentences";
 import { aiToolAllowsAlways, aiToolApprovalScope, aiToolNeedsApproval } from "./approvals";
 import { aiChatAccessSubject } from "./assistant-models";
 import * as credentials from "./credentials";
@@ -518,7 +521,7 @@ describe("platform approval consumption in server tools", () => {
     entries.flatMap((entry) => (entry.message.role === "tool_result" ? [entry.message.result] : []));
   const runTool = async (
     tool: AiToolRuntime | Tool,
-    hooks: Pick<Parameters<typeof prepareAiTools>[0], "consumeApproval" | "linkApproval" | "describeApproval">,
+    hooks: Pick<Parameters<typeof prepareAiTools>[0], "consumeApproval" | "linkApproval" | "describeApproval" | "describeReview">,
     approved = true,
   ) => {
     const entries: StoreEntry[] = [];
@@ -581,6 +584,33 @@ describe("platform approval consumption in server tools", () => {
       ["run-approval-0", target],
       ["run-approval-1", target],
     ]);
+  });
+  test("nested reviews register before every question and consume the same digest after replay", async () => {
+    const base = cloudToolReview("web_extract", { url: "https://example.com/private?value=one" }, "de")!;
+    const review: CapabilityActionCallReview = { ...base, ask: "sends" };
+    const target = { toolName: "website:read", approvalScope: "https://example.com", always: false };
+    const registered = new Map<string, CapabilityActionCallReview>();
+    const consumed: string[] = [];
+    let attempts = 0;
+    const run = () =>
+      runTool(
+        definition().server(async (_input, ctx) => ctx.requestApprovalFor!("Read?", target, review)),
+        {
+          describeReview: async (callId, value) => {
+            await Promise.resolve();
+            registered.set(callId, value);
+          },
+          consumeApproval: async (callId) => {
+            expect(registered.has(callId)).toBe(true);
+            consumed.push(approvalReviewDigest(registered.get(callId)));
+            return attempts++ === 0 ? "changed" : "approved";
+          },
+        },
+      );
+    expect((await run()).requested).toEqual(["run-approval-0", "run-approval-1"]);
+    registered.clear();
+    expect((await run()).requested).toEqual(["run-approval-0"]);
+    expect(consumed).toEqual(Array(3).fill(approvalReviewDigest(review)));
   });
   test("a rejection does not consume", async () => {
     const consume = mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => "approved");

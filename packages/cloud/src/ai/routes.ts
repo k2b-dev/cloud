@@ -2,7 +2,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { listCapabilities } from "../_internal/registry";
+import { getApp, listCapabilities } from "../_internal/registry";
 import { QUERY_TIMEOUT_MS } from "../api/capabilities";
 import { ErrorResponseSchema } from "../contracts";
 import { APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
@@ -26,12 +26,13 @@ import { isAppSessionActor } from "../server/actor";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
-import { approvalDecisionChannel } from "../services/approvals";
+import { approvalDecisionChannel, approvals } from "../services/approvals";
+import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { readThemeFromCookieHeader } from "../shared/theme";
-import { isUnknownActionOutcome } from "./action-review";
+import { isLegacyActionReview, isUnknownActionOutcome } from "./action-review";
 import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
@@ -1352,8 +1353,39 @@ export const aiRoutes = (() => {
         if (!conversation) return notFound(c);
         const turn = await loadTurn(conversation, c.req.param("turnId"));
         if (!turn) return notFound(c);
-        const actions = await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id });
-        return respond(c, ok(actions.map((action) => publicPendingAction(action, conversation.shortId, turn.shortId))));
+        const scope = { conversationId: conversation.id, turnId: turn.id };
+        const [actions, records, messages, config] = await Promise.all([
+          listPendingAiTurnActions(scope),
+          aiConversations.listPendingActionRecords(scope),
+          aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id, includeCompacted: true }),
+          aiConversations.getTurnRunConfig(scope),
+        ]);
+        const locale = config?.kind !== "compact" ? (config?.locale ?? getLocale(c)) : getLocale(c);
+        const presented = await Promise.all(
+          actions.map(async (action) => {
+            const result = publicPendingAction(action, conversation.shortId, turn.shortId);
+            if (action.type !== "approval_request") return result;
+            const record = records.find((record) => record.callId === action.callId);
+            const request = record?.approvalId ? await approvals.get(record.approvalId) : null;
+            const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
+            const stored = messages.toReversed().find((message) => message.meta?.toolReviews?.[reviewCallId])?.meta?.toolReviews?.[
+              reviewCallId
+            ];
+            const appId = request?.appId;
+            const app = appId && appId !== "assistant" ? await getApp(appId) : null;
+            return {
+              ...result,
+              ...(stored && !isLegacyActionReview(stored) ? { review: stored } : {}),
+              app: {
+                id: appId ?? "assistant",
+                name: app ? resolveAppIdentityPresentation(app, locale).name : appId && appId !== "assistant" ? appId : "Cloud",
+              },
+              chatTitle: conversation.title,
+              ...(request ? { expiresAt: request.expiresAt.toISOString() } : {}),
+            };
+          }),
+        );
+        return respond(c, ok(presented));
       })
       .get("/conversations/:conversationId/stream", async (c) => {
         const ctx = await resolveContext(c);
