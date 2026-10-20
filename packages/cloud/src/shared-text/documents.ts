@@ -31,7 +31,7 @@ type DocumentLog = {
  */
 const FALLBACK_CLIENT_ID = 0;
 
-const createDoc = (stored: SharedTextStoredState): Y.Doc => {
+export const createDoc = (stored: SharedTextStoredState): Y.Doc => {
   const doc = new Y.Doc({ gc: true });
   try {
     if (stored.state) Y.applyUpdate(doc, stored.state, "snapshot");

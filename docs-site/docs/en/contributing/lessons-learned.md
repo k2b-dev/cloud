@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Incomplete stored-state fixtures | A direct SQL fixture omits one of the fields that domain writers persist together, creating a state that normal writes cannot produce. | Test: `yjs-snapshot-projections.integration.test.ts` checks the persisted cursor and its matching sequence before publishing in both initialization cases, then asserts that the real snapshot save succeeds ([#1651](https://github.com/k2b-dev/cloud/pull/1651)). |
 | A clear keeps the measured usage | Clearing a base empties its data but keeps the usage that the storage threshold reads, so ingest refuses the empty base until the next usage scan. | Test: Pulse `service/base-lifecycle.integration.test.ts` clears a base over its threshold and checks that usage and the threshold crossing are reset. |
 | A late domain refusal becomes an infrastructure failure | An ingest reservation commits, then T2 returns a service conflict that a catch-all replaces with 503. | Test: Pulse `service/ingest-controls.integration.test.ts` raises a T2 service refusal after a keyed T1 and expects its own 409. |
 | A merge changes the winning observation | A deduplicated view orders by observation time, but physical replacement orders only by acceptance; later merges silently discard the correct state. | Test: Pulse `service/state-transitions.integration.test.ts` checks state timestamp priority before and after a forced merge and schema replay. |
@@ -820,6 +821,13 @@ convention still needs a check or a test.
 - **Root cause:** Pin separation treated only pins as obstacles, and the scale bar, attribution, and info tile each had a fixed absolute place. In WebKit, the screenshot of a WebGL canvas without a preserved drawing buffer showed the frame before MapLibre's last one. MapLibre's own state held the final colour, which a probe of its internals confirmed while the captured pixel stayed stale for 12 s.
 - **Error class:** Overlays placed without each other; Canvas captured one frame late.
 - **Guard:** The dot is an obstacle in `pinOffsets` for numbered and drop pins, and stops keep their route point. The info tile and a shared scale and attribution row form one bottom stack, and selection moves a covered pin above the tile. Browser cases check each overlap with `elementFromPoint` or rects in Chromium and WebKit, and they fail on the code before the fix. The theme case renders one more frame before each sample.
+
+### A snapshot fixture retried saves until its test timed out
+
+- **What happened:** The projections integration test timed out while its snapshot worker repeatedly rejected saves with a replay conflict ([#1651](https://github.com/k2b-dev/cloud/pull/1651)).
+- **Root cause:** The anchored fixture inserted a shared cursor but left its sequence NULL. The save fence requires the stored sequence to be less than the incoming sequence; NULL cannot satisfy that comparison. Runtime writers persist both coordinates together.
+- **Error class:** Incomplete stored-state fixtures.
+- **Guard:** `yjs-snapshot-projections.integration.test.ts` initializes both coordinates and checks their persisted values before publishing, for both text-only initialization cases. It also asserts the real save result. Existing content, version, restore, and live-edit assertions and timeout bounds remain intact.
 
 ## Add a lesson
 
