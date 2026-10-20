@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Deployment requirements
@@ -612,6 +612,18 @@ sets and preflight, [Scaling and shutdown](/en/docs/operations/scaling-and-shutd
 for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshooting)
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
+
+### Start replicas of one application together
+
+Replicas of one application can now boot together without setup races causing
+restarts. A starting replica waits while another runs setup, so its boot time
+grows by the other replica's setup time. A crashed holder delays the others by
+at most about 60 seconds while its NATS lease expires.
+
+During the rollout to this release, a replica of the previous version takes no
+setup lock. Restart old and new replicas of one app one at a time until all
+run this release. Keep Core first: it creates the shared schemas other
+applications need.
 
 ### Prepare Pulse's new data store
 

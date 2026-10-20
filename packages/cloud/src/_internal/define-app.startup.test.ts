@@ -9,8 +9,10 @@ import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 
 describe("application startup readiness", () => {
-  for (const failure of ["setup", "start", "ready", "advertise", null] as const) {
-    test(`advertises only ready resources and cleans up ${failure ?? "successful startup"}`, async () => {
+  for (const mode of ["setup", "start", "ready", "advertise", null, "skip"] as const) {
+    const skipSetup = mode === "skip";
+    const failure = skipSetup ? null : mode;
+    test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
       const events: string[] = [];
       const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
       Object.defineProperty(env, "APP_SECRET", { value: "startup-test-only", configurable: true });
@@ -21,7 +23,18 @@ describe("application startup readiness", () => {
         if (name === failure) throw new Error(`failed:${name}`);
       };
       // Only the methods used by startup are implemented; heartbeat transport is stubbed.
-      const sync = { ephemeral: () => ({}), ready: () => step("ready") } as unknown as Sync;
+      const sync = {
+        ephemeral: () => ({}),
+        ready: () => step("ready"),
+        mutex: () => ({
+          ready: () => step("setup-lock-ready"),
+          acquire: async ({ resource }: { resource: string }) => {
+            await step("setup-lock-acquire");
+            return { resource, ownerToken: "startup-test", fence: 1n, expiresAt: new Date(Date.now() + 60_000) };
+          },
+          release: () => step("setup-lock-release").then(() => true),
+        }),
+      } as unknown as Sync;
       const spies = [
         spyOn(processSync, "startProcessSync").mockImplementation(async () => {
           processSync.bindProcessSync(sync);
@@ -62,8 +75,12 @@ describe("application startup readiness", () => {
         });
         const started = app.start({
           fetch: () => new Response("application"),
+          skipSetup,
           lifecycle: {
-            setup: () => step("setup"),
+            setup: async () => {
+              expect(events).toContain("setup-lock-acquire");
+              await step("setup");
+            },
             start: () => step("start"),
             stop: async () => {
               events.push("stop-lifecycle");
@@ -74,6 +91,7 @@ describe("application startup readiness", () => {
         });
         if (failure) {
           await expect(started).rejects.toThrow(`failed:${failure}`);
+          expect(events).toContain("setup-lock-release");
           expect(events.at(-1)).toBe("disconnect");
           expect(events).toContain("stop-lifecycle");
           expect(events).toContain("stop-watch");
@@ -83,6 +101,13 @@ describe("application startup readiness", () => {
           expect(() => processSync.getProcessSync()).toThrow("not available");
         } else {
           const server = await started;
+          if (skipSetup) {
+            expect(events).not.toContain("setup");
+            expect(events).not.toContain("setup-lock-ready");
+            expect(events).not.toContain("setup-lock-acquire");
+          } else {
+            expect(events.indexOf("setup-lock-release")).toBeLessThan(events.indexOf("start"));
+          }
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("start"));
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("ready"));
           expect(await (await server.fetch(new Request("http://startup-test/_cloud/ready"))).json()).toEqual({

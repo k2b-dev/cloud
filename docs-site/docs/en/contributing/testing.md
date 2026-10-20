@@ -1036,6 +1036,11 @@ Compose project with its own PostgreSQL, NATS, Valkey, and SMTP sink. It never
 uses the development stack or `.env`, and it removes every container, volume,
 and built image tag when it ends, also after a failure or a signal.
 
+The gateway and all Core replicas start together. Once Core is ready, all
+replicas of Mail, Chat, and Notebooks start together. After readiness, the
+harness inspects every application container and requires `RestartCount` to
+be zero, reporting the container name and count on failure.
+
 Steps pin requests to one replica through its own published port, except the
 Mail steps that explicitly use the gateway:
 

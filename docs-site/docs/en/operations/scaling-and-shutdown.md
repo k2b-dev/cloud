@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-07-27
+updated: 2026-10-20
 ---
 
 # Scaling and shutdown
@@ -81,7 +81,11 @@ await app.start({
 });
 ```
 
-`setup` runs before background work. Use it for idempotent migrations.
+`setup` runs before background work, on one replica of an application at a
+time. Use it for idempotent migrations. Later replicas wait until it finishes,
+logging `waiting for setup on another replica`. A crashed replica's turn
+expires after about a minute. A replica that loses its turn during setup fails
+its start and restarts, so setup runs again.
 
 `start` begins workers and subscriptions.
 
