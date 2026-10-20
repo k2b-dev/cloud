@@ -23,6 +23,7 @@ import {
   safeAppWorkspacePanelId,
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
+import { readAppWorkspaceWidth, resolveAppWorkspaceWidth } from "./app-workspace-width";
 import { installScrollFades } from "./scroll-fade";
 
 export type AppWorkspaceControllerOptions = {
@@ -230,8 +231,14 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         : kind === "detail"
           ? APP_WORKSPACE_DETAIL_MAX
           : APP_WORKSPACE_DRAWER_MAX;
+  const mainSpec = readAppWorkspaceWidth(mainElement(root)?.dataset.workspaceMainMin);
   const mainMinValue = cssState(root, "--k2b-workspace-main-min");
-  const mainMin = mainMinValue.endsWith("px") ? Number.parseFloat(mainMinValue) : APP_WORKSPACE_MAIN_MIN;
+  const mainMin =
+    typeof mainSpec === "object"
+      ? resolveAppWorkspaceWidth(mainSpec, root.getBoundingClientRect().width)
+      : mainMinValue.endsWith("px")
+        ? Number.parseFloat(mainMinValue)
+        : APP_WORKSPACE_MAIN_MIN;
   const mainExtra = Math.max(0, (Number.isFinite(mainMin) ? mainMin : APP_WORKSPACE_MAIN_MIN) - APP_WORKSPACE_MAIN_MIN);
   const limits = appWorkspaceResizeLimits({
     kind,
@@ -317,6 +324,7 @@ type PaneFit = {
   desired: number;
   handle: HTMLElement;
   min: number;
+  cssDefault: boolean;
 };
 
 /**
@@ -362,18 +370,28 @@ const reconcilePanes = (root: HTMLElement, layoutState: AppWorkspaceLayoutState,
     if (!isVisible(panel)) return [];
     const min = numberData(handle, "workspaceMinSize", APP_WORKSPACE_PANE_MIN);
     const max = Math.max(min, numberData(handle, "workspaceMaxSize", APP_WORKSPACE_PANE_MAX));
+    const spec = readAppWorkspaceWidth(handle.dataset.workspaceDefaultSize) ?? elementSize(panel, "pane");
     const preferred =
       active?.moved && active.root === root && active.kind === "pane" && active.handle === handle
         ? active.liveSize
-        : (layoutState.paneWidths?.[panelId(handle)] ?? numberData(handle, "workspaceDefaultSize", elementSize(panel, "pane")));
-    const desired = clamp(preferred, min, max);
-    return [{ desired, handle, min }];
+        : layoutState.paneWidths?.[panelId(handle)];
+    const cssDefault = preferred === undefined && typeof spec !== "number";
+    if (cssDefault && root.style.getPropertyValue(appWorkspacePanelVariable("pane", panelId(handle))))
+      // Drop a previous live width (or an inherited SSR preference after reset).
+      root.style.setProperty(appWorkspacePanelVariable("pane", panelId(handle)), "initial");
+    // CSS has already applied this default and the pane-fit clamp, including
+    // subpixels. Reserve exactly that box when fitting other preferences;
+    // measuring must not turn a responsive default into a stored px width.
+    const requested = preferred ?? resolveAppWorkspaceWidth(spec, root.getBoundingClientRect().width);
+    const desired = cssDefault ? elementSize(panel, "pane") : clamp(requested, min, max);
+    return [{ desired, handle, min: cssDefault ? desired : min, cssDefault }];
   });
   if (!fits.length) return;
 
   const sizes = fitAppWorkspacePaneSizes(fits, main.getBoundingClientRect().width - fixedWidth - APP_WORKSPACE_MAIN_MIN);
   fits.forEach((fit, index) => {
-    root.style.setProperty(appWorkspacePanelVariable("pane", panelId(fit.handle)), `${sizes[index]}px`);
+    // Defaults stay CSS-owned; fit only saved or live preferences around them.
+    if (!fit.cssDefault) root.style.setProperty(appWorkspacePanelVariable("pane", panelId(fit.handle)), `${sizes[index]}px`);
   });
   fits.forEach((fit, index) => updateHandleValue(root, fit.handle, "pane", sizes[index]!));
 };
@@ -483,6 +501,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         if (event.detail === 0) requestTitle(aside);
         else detailButton.focus({ preventScroll: true });
       }
+      syncDetailRequestControls();
       return;
     }
     const toggle = target?.closest<HTMLElement>(TOGGLE_SELECTOR);
@@ -568,10 +587,68 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // Whether each open detail waited at the last check, so a column that starts
   // waiting under focus hands that focus to its Details button.
   const detailWasWaiting = new WeakMap<HTMLElement, boolean>();
+  const detailRequestExpanded = new Map<HTMLElement, { rendered: string | null; written: string }>();
+  const restoreDetailRequestExpanded = (control: HTMLElement, state: { rendered: string | null; written: string }) => {
+    // A newer application render already owns the current value.
+    if (control.getAttribute("aria-expanded") !== state.written) return;
+    if (state.rendered === null) control.removeAttribute("aria-expanded");
+    else control.setAttribute("aria-expanded", state.rendered);
+  };
+  const requestedWaitingDetail = (control: HTMLElement) => {
+    if (!wide?.matches || control.matches(DETAIL_TOGGLE_SELECTOR) || !eventRoot.contains(control)) return null;
+    const root = workspaceRoot(control);
+    const region = control.closest(".k2b-app-workspace__main, .k2b-app-workspace__detail");
+    if (!root || !region || region.closest(ROOT_SELECTOR) !== root) return null;
+    const ids = control.getAttribute("aria-controls")?.split(/\s+/);
+    return rootElements(root, detailSelector).find((aside) => !aside.hidden && ids?.includes(aside.id) && detailWaiting(aside)) ?? null;
+  };
+  const syncDetailRequestControls = () => {
+    const waitingControls = new Map<HTMLElement, HTMLElement>();
+    for (const root of allRoots()) {
+      // Only a control that names a Detail can request it.
+      for (const control of rootElements(root, "[aria-controls]")) {
+        const aside = requestedWaitingDetail(control);
+        if (aside) waitingControls.set(control, aside);
+      }
+    }
+    detailRequestExpanded.forEach((state, control) => {
+      if (waitingControls.has(control)) return;
+      restoreDetailRequestExpanded(control, state);
+      detailRequestExpanded.delete(control);
+    });
+    waitingControls.forEach((aside, control) => {
+      const current = control.getAttribute("aria-expanded");
+      const state = detailRequestExpanded.get(control);
+      const written = String(detailDrawer(aside));
+      // Keep the application's latest value to restore when waiting ends.
+      const rendered = !state || current !== state.written ? current : state.rendered;
+      detailRequestExpanded.set(control, { rendered, written });
+      if (current !== written) control.setAttribute("aria-expanded", written);
+    });
+  };
+  const onDetailRequestClick = (event: MouseEvent) => {
+    const control = eventElement(event)?.closest<HTMLElement>(DETAIL_REQUEST_CONTROL_SELECTOR);
+    const aside = control ? requestedWaitingDetail(control) : null;
+    if (!control || !aside) return;
+    // The application keeps its Detail open; only its waiting drawer changes.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    cancelPendingDetail();
+    cancelTitle();
+    clearActivation();
+    if (detailDrawer(aside)) parkDetailDrawer(aside);
+    else {
+      openDetailDrawer(aside);
+      if (event.detail === 0) requestTitle(aside);
+      else control.focus({ preventScroll: true });
+    }
+    syncDetailRequestControls();
+  };
   const openDetailDrawer = (aside: HTMLElement) => {
     aside.dataset.workspaceDetailDrawer = "open";
     detailToggle(aside)?.setAttribute("aria-expanded", "true");
     syncDetailDrawerSpace(aside);
+    syncDetailRequestControls();
   };
   // A sidebar drag changes the room beside it without resizing the workspace,
   // so it rechecks waiting once per frame.
@@ -614,6 +691,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         else if (before !== true && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
       }
     }
+    syncDetailRequestControls();
   };
   const phone = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 47.999rem)") : null;
   const wide = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 48rem)") : null;
@@ -1121,6 +1199,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (!aside || !owningRoot || !isVisible(aside)) return;
     if (event.key === "Escape" && detailDrawer(aside)) {
       parkDetailDrawer(aside, true);
+      syncDetailRequestControls();
       event.preventDefault();
       return;
     }
@@ -1407,11 +1486,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const variable = appWorkspacePanelVariable(kind, panelId(handle));
     root.style.removeProperty(variable);
     // An SSR ancestor may still supply the old preference until the next request.
-    if (getComputedStyle(root).getPropertyValue(variable).trim())
-      root.style.setProperty(
-        variable,
-        `${numberData(handle, "workspaceDefaultSize", kind === "pane" ? APP_WORKSPACE_PANE_DEFAULT : APP_WORKSPACE_DETAIL_DEFAULT)}px`,
-      );
+    if (getComputedStyle(root).getPropertyValue(variable).trim()) {
+      const spec =
+        readAppWorkspaceWidth(handle.dataset.workspaceDefaultSize) ??
+        (kind === "pane" ? APP_WORKSPACE_PANE_DEFAULT : APP_WORKSPACE_DETAIL_DEFAULT);
+      // A share must resolve at the pane, where the workspace length exists.
+      // `initial` clears an inherited SSR preference and restores its CSS fallback.
+      root.style.setProperty(variable, typeof spec === "number" ? `${spec}px` : "initial");
+    }
     // The siblings fit again around the default width, also in a Main without levels.
     if (kind === "pane") reconcilePanes(root, layoutState);
     updateHandleValue(root, handle, kind, currentSize(root, handle, kind));
@@ -1806,6 +1888,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     typeof MutationObserver === "undefined"
       ? null
       : new MutationObserver((records) => {
+          if (
+            records.some(
+              (record) =>
+                record.type === "childList" ||
+                ["hidden", "aria-controls", "aria-expanded", "data-workspace-detail-drawer"].includes(record.attributeName ?? ""),
+            )
+          )
+            syncDetailRequestControls();
           syncPhonePages();
           if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
           if (
@@ -1853,6 +1943,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   ownerDocument.addEventListener("focusin", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("pointerdown", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("keydown", cancelTitleOnInteraction, true);
+  ownerDocument.addEventListener("click", onDetailRequestClick, true);
   ownerDocument.addEventListener("click", onChoiceClick, true);
   ownerDocument.addEventListener("keyup", endActivation, true);
   ownerDocument.addEventListener("pointerup", endActivation, true);
@@ -1877,10 +1968,20 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   window.addEventListener("resize", onResize);
   syncPhonePages();
   syncObservedRoots();
+  syncDetailRequestControls();
   mutationObserver?.observe(eventRoot, {
     attributes: true,
     attributeOldValue: true,
-    attributeFilter: ["hidden", "data-workspace-level-shown", "data-width", "data-workspace-main-min"],
+    attributeFilter: [
+      "hidden",
+      "aria-controls",
+      "aria-expanded",
+      "data-workspace-detail-drawer",
+      "data-workspace-level-shown",
+      "data-width",
+      "data-workspace-main-min",
+      "data-workspace-default-size",
+    ],
     childList: true,
     subtree: true,
   });
@@ -1934,6 +2035,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (reconcileFrame !== null) cancelAnimationFrame(reconcileFrame);
     if (hostSyncFrame !== null) cancelAnimationFrame(hostSyncFrame);
     mutationObserver?.disconnect();
+    detailRequestExpanded.forEach((state, control) => restoreDetailRequestExpanded(control, state));
+    detailRequestExpanded.clear();
+    ownerDocument.removeEventListener("click", onDetailRequestClick, true);
     resizeObserver?.disconnect();
     observedRoots.clear();
     observedHosts.clear();
