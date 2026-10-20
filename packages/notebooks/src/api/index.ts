@@ -39,6 +39,7 @@ import {
   MARKDOWN_PDF_TEMPLATE_IDS,
   MarkdownPdfError,
 } from "@k2b/cloud/services/pdf";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -2070,6 +2071,7 @@ const app = new Hono<AuthContext>()
         const rendered = await renderNotePdf(
           {
             markdown: input.markdown,
+            publicOrigin: publicCloudOrigin(await settings.get<string>("app.url")),
             title: note.title.trim() || filename.slice(0, -".pdf".length),
             templateId: input.templateId,
             customCss: input.customCss,
