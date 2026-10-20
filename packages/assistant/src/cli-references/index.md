@@ -293,11 +293,38 @@ If a turn needs an approval or frontend tool result that was not supplied, the c
 
 ```bash
 cld assistant actions list <chat-id> <turn-id>
-cld assistant actions approve <chat-id> <turn-id> <call-id>
-cld assistant actions reject <chat-id> <turn-id> <call-id>
+cld assistant actions approve -- <chat-id> <turn-id> <call-id>
+cld assistant actions reject -- <chat-id> <turn-id> <call-id>
 cld assistant actions submit <chat-id> <turn-id> <call-id> --result-file result.json
 cld assistant turns watch <chat-id> <turn-id>
 ```
+
+In text output, `actions list` shows the same question, reason, and preview as
+the chat card. People include their address. Dates use the terminal's time zone;
+the question's locale controls labels. For example:
+
+```text
+? Send email “Maintenance” to Lea Berg <lea.berg@example.com>?
+  I'm asking because this leaves Cloud.
+  Mail · Chat “Maintenance”
+  From:    Team Ops <ops@example.com>
+  To:      Lea Berg <lea.berg@example.com>
+  Subject: Maintenance
+  Hello Lea, maintenance starts on Tuesday.
+  Read all: https://cloud.example/mail/drafts/7?revision=2
+  Send to Lea Berg: cld --profile work --server https://cloud.example assistant actions approve -- <chat> <turn> <call>
+  Don't send:       cld --profile work --server https://cloud.example assistant actions reject -- <chat> <turn> <call>
+```
+
+The printed commands put the listing's profile and server before the module
+name and quote every ID, so a copied command decides exactly this question.
+
+Long bodies show up to eight lines, followed by `…`, only when **Read all**
+opens the complete version; otherwise the whole text shows. Interactive mode
+shows the same block before its approval prompt, and the validated input under
+it when the call has no new review or the question leaves something out that no
+link opens. JSON output retains the raw API response; JSONL
+retains the existing action rows.
 
 List and revoke remembered Cloud approvals without a REPL:
 

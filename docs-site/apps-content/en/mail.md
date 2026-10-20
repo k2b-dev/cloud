@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Mail
@@ -14,10 +14,22 @@ Mail connects email accounts and turns their messages into a shared workspace.
 It keeps portable mail state synchronized with the provider while adding team
 context such as assignments, comments, local tags, reminders, and follow-up state.
 
-Open the mailbox name in the sidebar or phone menu to switch mailboxes. The
-current mailbox and the list show the receiving address. Signed-in users can
-choose **New mailbox**; after creation, its delivery settings open before you
-enter the mailbox. If settings cannot load, the mailbox opens directly.
+The sidebar lists **Focus** and your mailboxes, with pinned mailboxes first.
+The open mailbox expands to Inbox, Drafts, Scheduled, Send problems, Sent,
+Archive/Trash/Junk under **More**, and custom folders. On a phone, open the
+mailbox title to reach these places.
+
+The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
+**Waiting for reply**, **Unassigned**, and **More** for the remaining and saved
+views), a **Tag** chip, and a **Search** chip for an active structured search.
+Remove that chip or use **Reset** to clear filters. Folders, Scheduled, and
+Send problems have no view tabs. **Choose list view**, the **…** mailbox menu,
+and **Compose** are also in the head. The mailbox menu contains details,
+tools, and Settings according to your access.
+
+Signed-in users can choose **New mailbox**; after creation, its delivery
+settings open before you enter the mailbox. If settings cannot load, the
+mailbox opens directly.
 
 ## Use Mail
 
@@ -248,12 +260,15 @@ for the storage this takes.
 ## Delete and restore a mailbox
 
 The Mail overview lists your mailboxes in a sidebar with their unread and
-needs-action counts; opening one enters its workspace. The page itself is the
+needs-action counts; opening one enters its workspace. Inside a mailbox the
+same sidebar names the other mailboxes without counts, so opening a mailbox
+never waits for the cross-mailbox counts; the open mailbox shows its folders
+with live counts, and its pin and hide sit under **…** on its row. The page itself is the
 cross-mailbox focus queue (for me, unassigned, waiting, all active) with
 **Compose** as its primary action.
 
 People can pin a mailbox to the top of that sidebar or hide one they rarely
-need. A hidden mailbox moves to a collapsed **Hidden** section, and its
+need. A hidden mailbox moves to a collapsed **Hidden mailboxes** section, and its
 conversations leave the focus queue and its view counts; it stays connected and
 opens directly. Mail stores pins and hidden mailboxes per principal, so they
 apply on every device and never change what others see. A service account or
@@ -516,9 +531,34 @@ cld mail admin contact-directory reset --yes
 | `mail.contact_directory.create` | `contact.create` | No; empty hides **New contact** |
 
 Mail calls the selected app as the requesting person, so that app's
-permissions decide which contacts appear. When the app is missing, stopped, or
-returns data that no longer matches the contract, Mail degrades exactly as when
-Contacts is unavailable.
+permissions decide which contacts appear. When the selected app is not installed
+(not registered), Mail hides contact features without an error. Recipient
+suggestions still come from the mailbox. The details panel has no contacts
+block. **Administration → Mail** still reports the missing app.
+
+When a registered app stops briefly or returns data that no longer matches the
+contract, the details panel shows **Contacts unavailable** with **Retry**.
+Recipient fields still offer mailbox addresses.
+
+### Mailbox recipient suggestions
+
+While you type in **To**, **Cc**, or **Bcc**, contact-directory suggestions come
+first. Addresses known from this mailbox follow, marked with a mail icon.
+They work without the Contacts app. Duplicate addresses appear once. The arrow
+keys highlight a suggestion and Enter adds it.
+
+`GET /api/mail/mailboxes/:mailboxId/recipient-suggestions?query=ada&limit=8`
+returns `{ items: [{ address, displayName, lastSeenAt, writtenTo }] }`.
+It requires mailbox-wide read access. Assigned-only access gets `403`.
+Users and service accounts use the same route and permission check.
+
+The query has 2–320 characters after trimming. The limit defaults to 8 and has
+a maximum of 20. Mail reads the newest 2,000 messages of the mailbox. Within
+them, it skips messages with no live placement or with any live Junk or Drafts
+placement, so those messages still count toward the 2,000. It also skips this
+mailbox's sender and reply-to identities. Addresses the mailbox wrote to come
+first; recency and frequency decide the remaining order. Older correspondents
+come from the contact directory.
 
 ## Find detailed product help
 

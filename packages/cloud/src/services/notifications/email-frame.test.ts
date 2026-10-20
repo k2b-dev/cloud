@@ -68,3 +68,9 @@ test("empty mail still has a text part and an optional logo", async () => {
   expect(html).not.toContain("<img");
   expect(html).toContain("https://example.test/legal/privacy");
 });
+
+test.each(["<p>a</p><hr><p>b</p>", "a<hr>b"])("HTML-only mail keeps dividers and separates their text: %s", async (rawHtml) => {
+  const { html, text } = await prepareNotificationEmail({ rawHtml });
+  expect(html).toContain("<hr");
+  expect(text).toBe("a b");
+});

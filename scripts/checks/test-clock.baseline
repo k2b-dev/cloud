@@ -46,7 +46,6 @@ packages/mail/src/frontend/MailWorkspace.list-actions.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/MailConversationList.browser.test.ts | 2
 packages/mail/src/frontend/_components/MailDraftCollaborationDialog.browser-harness.tsx | 2
 packages/mail/src/frontend/_components/MailIdentitySettings.behavior.test.tsx | 2
-packages/mail/src/frontend/_components/MailboxDetails.browser.test.ts | 1
 packages/notebooks/src/frontend/[id]/_components/detail/detail-panel.browser.test.ts | 1
 packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browser.test.ts | 1
 packages/notebooks/src/frontend/[id]/_components/versions/VersionHistory.behavior.test.tsx | 2

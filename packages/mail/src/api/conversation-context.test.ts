@@ -4,7 +4,9 @@ import * as platformServices from "@k2b/cloud/services";
 import { oauthTokens } from "@k2b/cloud/services";
 import { redis } from "bun";
 import { generateSpecs } from "hono-openapi";
-import { conversationContext, publicResources } from "../service";
+import { requestContactDirectoryConfig, resolveMailContactDirectory } from "../contact-directory-settings";
+import { conversationContext, publicResources, recipientSuggestions } from "../service";
+import * as directoryService from "../service/contact-directory";
 import app from ".";
 
 const base = "/mailboxes/{mailboxId}/conversations/{conversationId}";
@@ -32,6 +34,9 @@ afterEach(() => mock.restore());
 
 describe("Mail conversation context OpenAPI contract", () => {
   beforeEach(() => {
+    spyOn(directoryService, "requestContactDirectory").mockImplementation(async (c) =>
+      resolveMailContactDirectory(requestContactDirectoryConfig(c)),
+    );
     spyOn(platformServices, "get").mockResolvedValue(100);
     spyOn(redis, "send").mockImplementation(async (command) => {
       if (command !== "EVAL") throw new Error(`Unexpected Redis command: ${command}`);
@@ -142,5 +147,48 @@ describe("Mail conversation context OpenAPI contract", () => {
 
     expect(response.status).toBe(404);
     expect(relatedMail).not.toHaveBeenCalled();
+  });
+});
+
+describe("mailbox recipient suggestions route", () => {
+  beforeEach(() => {
+    spyOn(platformServices, "get").mockResolvedValue(100);
+    spyOn(redis, "send").mockResolvedValue([1, 0, "1"]);
+  });
+  test("requires authentication", async () => {
+    const response = await app.request("/mailboxes/mbx123/recipient-suggestions?query=ad");
+    expect(response.status).toBe(401);
+  });
+  test("publishes query bounds, result fields and the absent contact state", async () => {
+    const spec = await generateSpecs(app);
+    const operation = spec.paths?.["/mailboxes/{mailboxId}/recipient-suggestions"]?.get;
+    expect(operation?.tags).toContain("Mail:Compose");
+    expect(operation?.parameters?.map((param) => ("name" in param ? param.name : ""))).toEqual(expect.arrayContaining(["query", "limit"]));
+    const result = JSON.stringify(operation?.responses?.["200"]);
+    for (const field of ["items", "address", "displayName", "lastSeenAt", "writtenTo"]) expect(result).toContain(`"${field}"`);
+    expect(JSON.stringify(spec.paths?.[`${base}/context`]?.get?.responses?.["200"])).toContain('"absent"');
+  });
+  test("passes resolved internal ID and validated query to the service", async () => {
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    const mailboxId = "22222222-2222-4222-8222-222222222222";
+    spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    const suggest = spyOn(recipientSuggestions, "listRecipientSuggestions").mockResolvedValue({ ok: true, data: { items: [] } });
+    const headers = { authorization: "Bearer recipient-test" };
+    const response = await app.request("/mailboxes/mbx123/recipient-suggestions?query=%20Ada%20&limit=5", { headers });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ items: [] });
+    expect(suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mailboxId,
+        query: "Ada",
+        limit: 5,
+        context: expect.objectContaining({ actor: expect.objectContaining({ kind: "user" }) }),
+      }),
+    );
+    suggest.mockClear();
+    for (const query of ["query=a", "query=ad&limit=21", "query=ad&limit=0", "query=ad&limit=1.5"]) {
+      expect((await app.request(`/mailboxes/mbx123/recipient-suggestions?${query}`, { headers })).status).toBe(400);
+    }
+    expect(suggest).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import { toPgTextArray } from "../postgres";
 
 export { countPending, listPending, presentPendingApproval } from "./list";
 export { migrateApprovals } from "./migrate";
+export { type ApprovalActionPolicy, loadApprovalActionPolicies, pendingApprovalCard } from "./question";
 
 // Derived from chat's AI_ACTION_BUDGET_MS and Studio's one-day abandonment of pending calls.
 export const APPROVAL_MAX_WAIT_MS = 24 * 60 * 60_000;

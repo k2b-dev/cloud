@@ -211,6 +211,7 @@ window.mountMailList = (options) => {
                   query={options.requestUrl ? (new URL(requestUrl(), location.origin).searchParams.get("q") ?? "") : ""}
                   search={{ query: "", expression: null, sort: "relevance", error: null }}
                   title="Inbox"
+                  namedBy="tabs"
                   items={list.items}
                   leavingKeys={leaving()}
                   error={null}
@@ -258,7 +259,6 @@ window.mountMailList = (options) => {
                     open(new URL(href, location.href).searchParams.get("conversation"));
                   }}
                   onToggleSelectionMode={noop}
-                  onListModeChange={noop}
                   onToggleSelection={noop}
                   onClearSelection={noop}
                   onAddTags={noop}

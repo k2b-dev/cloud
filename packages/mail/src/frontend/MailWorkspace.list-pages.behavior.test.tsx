@@ -298,6 +298,11 @@ describe("Mail workspace list pages", () => {
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: m.readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+          },
         }),
       dom.root,
     );

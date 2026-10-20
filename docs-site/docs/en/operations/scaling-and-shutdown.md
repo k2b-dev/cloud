@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-07-27
+updated: 2026-10-20
 ---
 
 # Scaling and shutdown
@@ -14,6 +14,11 @@ Cloud can run multiple replicas behind one stable service address.
 
 The orchestrator distributes traffic between replicas. Cloud registers one
 logical entry per application ID and routes to that service address.
+
+The nightly [scale acceptance](/en/docs/contributing/testing#scale-acceptance)
+runs Core, Mail, Chat, and Notebooks with two replicas each in a disposable
+stack. It checks live updates, draft leases, and delivery after one replica is
+killed.
 
 ## Scale stateless request handling
 
@@ -76,7 +81,11 @@ await app.start({
 });
 ```
 
-`setup` runs before background work. Use it for idempotent migrations.
+`setup` runs before background work, on one replica of an application at a
+time. Use it for idempotent migrations. Later replicas wait until it finishes,
+logging `waiting for setup on another replica`. If a replica crashes or is
+stopped during setup, its turn expires after about a minute. A replica that
+loses its turn during setup fails its start and restarts, so setup runs again.
 
 `start` begins workers and subscriptions.
 

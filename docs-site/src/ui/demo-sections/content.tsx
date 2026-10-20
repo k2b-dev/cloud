@@ -27,6 +27,10 @@ import {
   LinkCard,
   LocaleProvider,
   LogEntriesTable,
+  MapView,
+  type MapViewMarker,
+  type MapViewOwnLocation,
+  type MapViewStyle,
   MarkdownEditor,
   MarkdownView,
   MessageRow,
@@ -71,6 +75,155 @@ import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";
+
+const mapDemoMarkers: MapViewMarker[] = [
+  { id: "museum", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
+  { id: "garden", mark: 2, label: "Garden", point: { lat: 48.403, lon: 9.999 }, tone: "second" },
+  { id: "start", mark: "A", label: "Start", point: { lat: 48.398, lon: 9.992 }, tone: "second" },
+];
+const mapDemoStyle = (dark: boolean): MapViewStyle => ({
+  version: 8,
+  sources: {
+    features: {
+      type: "geojson",
+      data: {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: { kind: "water" },
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [9.976, 48.395],
+                  [10.008, 48.4],
+                  [10.008, 48.401],
+                  [9.976, 48.396],
+                  [9.976, 48.395],
+                ],
+              ],
+            },
+          },
+          {
+            type: "Feature",
+            properties: { kind: "park" },
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [9.996, 48.402],
+                  [10.003, 48.402],
+                  [10.003, 48.406],
+                  [9.996, 48.406],
+                  [9.996, 48.402],
+                ],
+              ],
+            },
+          },
+          {
+            type: "Feature",
+            properties: { kind: "park" },
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [9.981, 48.402],
+                  [9.985, 48.402],
+                  [9.985, 48.405],
+                  [9.981, 48.405],
+                  [9.981, 48.402],
+                ],
+              ],
+            },
+          },
+        ],
+      },
+    },
+  },
+  layers: [
+    { id: "land", type: "background", paint: { "background-color": dark ? "#1a1f26" : "#f1efe9" } },
+    {
+      id: "water",
+      type: "fill",
+      source: "features",
+      filter: ["==", "kind", "water"],
+      paint: { "fill-color": dark ? "#203e50" : "#b8dce7" },
+    },
+    {
+      id: "parks",
+      type: "fill",
+      source: "features",
+      filter: ["==", "kind", "park"],
+      paint: { "fill-color": dark ? "#294738" : "#cddfc4" },
+    },
+  ],
+});
+const mapDemoStyles = { light: mapDemoStyle(false), dark: mapDemoStyle(true) };
+const MapViewDemo = () => {
+  const [selectedId, setSelectedId] = createSignal("museum");
+  const [location, setLocation] = createSignal<MapViewOwnLocation>();
+  return (
+    <DemoCard
+      id="map-view"
+      chip={[{ kind: "component", name: "MapView", from: "@k2b/ui" }]}
+      description="Pins and routes keep their position while the map image loads. The host list and info tile share selection."
+      code={
+        '<MapView height={360} style={styles} markers={markers} selectedId={selectedId()} onSelect={setSelectedId} attribution="Demo data" />'
+      }
+    >
+      <MapView
+        height={360}
+        style={mapDemoStyles}
+        markers={mapDemoMarkers}
+        selectedId={selectedId()}
+        onSelect={setSelectedId}
+        attribution="Demo data"
+        notice="A walk around Ulm"
+        infoTile={(marker) => <strong>{marker.label}</strong>}
+        lines={[
+          {
+            id: "walk",
+            points: [
+              { lat: 48.398, lon: 9.992 },
+              { lat: 48.401, lon: 9.994 },
+              { lat: 48.403, lon: 9.999 },
+            ],
+          },
+          {
+            id: "preview",
+            tone: "preview",
+            points: [
+              { lat: 48.403, lon: 9.999 },
+              { lat: 48.405, lon: 9.989 },
+            ],
+          },
+        ]}
+        areas={[
+          {
+            id: "garden",
+            tone: "second",
+            polygon: [
+              { lat: 48.402, lon: 9.996 },
+              { lat: 48.402, lon: 10.003 },
+              { lat: 48.406, lon: 10.003 },
+              { lat: 48.406, lon: 9.996 },
+            ],
+          },
+        ]}
+        ownLocation={location()}
+        onLocate={() => setLocation({ point: { lat: 48.4, lon: 9.99 }, accuracyMeters: 35 })}
+      />
+      <div class="flex flex-wrap gap-2 mt-3">
+        {mapDemoMarkers.map((marker) => (
+          <Button variant="text" aria-pressed={selectedId() === marker.id} onClick={() => setSelectedId(marker.id)}>
+            {marker.mark} {marker.label}
+          </Button>
+        ))}
+      </div>
+    </DemoCard>
+  );
+};
 
 type Row = { id: string; name: string; owner: string; requests: number };
 const rows: Row[] = [
@@ -1682,6 +1835,7 @@ const KbdHintDemo = () => {
 };
 
 const demos: DemoSection = {
+  "map-view": () => <MapViewDemo />,
   kbd: () => (
     <DemoGrid>
       <DemoCard

@@ -88,44 +88,40 @@ const renderOverview = (
     }),
   );
 
-const mailboxRow = (html: string) => html.match(/<div[^>]*mail-overview-mailbox[\s\S]*?<\/a>/)?.[0] ?? "";
+const mailboxRow = (html: string) => html.match(/<div[^>]*mail-sidebar-mailbox[\s\S]*?<\/a>/)?.[0] ?? "";
 /** The row with its trailing actions, which follow the row link. */
-const mailboxRowWithActions = (html: string) => html.match(/<div[^>]*mail-overview-mailbox[\s\S]*?<\/section>/)?.[0] ?? "";
+const mailboxRowWithActions = (html: string) => html.match(/<div[^>]*mail-sidebar-mailbox[\s\S]*?<\/section>/)?.[0] ?? "";
 
 describe("Mail overview", () => {
   test("renders the server-provided cross-mailbox focus queue and accessible view controls", () => {
     const html = renderOverview();
     expect(html).toContain('class="k2b-app-workspace mail-focus-workspace"');
     expect(html).toMatch(/class="k2b-app-workspace mail-focus-workspace"[^>]*data-flat="true"/);
-    // Objects live in a stacked-on-mobile sidebar, not in a mailbox-style tree.
+    // Focus uses the same mailbox sidebar, stacked on small screens.
     expect(html).toMatch(/<nav[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
     expect(html).toContain('class="k2b-app-workspace__sidebar-all" aria-haspopup="dialog" aria-expanded="false"');
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
-    expect(html).toContain("--k2b-workspace-sidebar-width:304px");
-    expect(html.match(/data-variant="object"/g)).toHaveLength(1);
     expect(html).toMatch(/class="k2b-app-workspace__main[^"]*mail-focus-main ?"[^>]*data-width="content"/);
-    expect(html).toContain('href="/app/mail/Mail01?view=needs_action"');
+    expect(html).toContain('href="/app/mail/Mail01"');
     expect(html).toContain("support@example.test");
     expect(html).toContain("1 unread");
     expect(html).toContain("1 need action");
     expect(html).toContain('aria-label="Pin Support"');
     expect(html.indexOf("New mailbox")).toBeGreaterThan(html.indexOf("Support"));
     expect(html).toContain("Recently deleted mailboxes");
-    // The main area is a page: title, primary action, one segmented view control. It names no
+    // The head contains the primary action and view links. It names no
     // mailbox scope: Focus always covers the mailboxes in the list beside it.
-    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Focus<\/h2>/);
-    expect(html).toContain("1 conversation assigned to you");
     expect(html).not.toContain("All mailboxes");
     expect(html).not.toContain("mail-overview-scope");
     expect(html).toContain('href="/app/mail/compose"');
     expect(html).toContain("Compose");
-    expect(html).toContain('role="radiogroup" aria-label="Mail focus view"');
-    expect(html).toContain('role="radio" class="k2b-segmented-control__option" aria-checked="true"');
-    expect(html).not.toContain('role="tablist"');
+    expect(html).toContain('aria-label="Mail focus view"');
+    expect(html).toContain('href="/app/mail?view=unassigned"');
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('<div class="mail-overview-list"');
+    expect(html).not.toContain("k2b-paper");
     expect(html).toContain("For me");
-    expect(html).toContain('<span class="mail-focus-tab-count">1</span>');
     expect(html).toContain("Unassigned");
-    expect(html).toContain('<span class="mail-focus-tab-count">2</span>');
     expect(html).toContain("Release update");
     expect(html).toContain('class="mail-focus-avatar"');
     expect(html).toContain("Ada");
@@ -155,10 +151,11 @@ describe("Mail overview", () => {
 
   test("renders a hidden mailbox only inside the collapsed Hidden section", () => {
     const html = renderOverview(null, ["Mail01"], { unread: 1, needsAction: 1 }, "en", ["Mail01"]);
-    expect(html).toMatch(/<h2>(<!--!\$-->)?Mailboxes<span class="k2b-app-workspace__sidebar-section-count">0<\/span><\/h2>/);
-    expect(html).toMatch(/aria-expanded="false"[^>]*>(<!--!\$-->)?Hidden<span class="k2b-app-workspace__sidebar-section-count">1<\/span>/);
     expect(html).toMatch(
-      /<div id="sidebar-section-\d+" hidden class="k2b-app-workspace__sidebar-section-content"><div[^>]*mail-overview-mailbox/,
+      /aria-expanded="false"[^>]*>(<!--!\$-->)?Hidden mailboxes<span class="k2b-app-workspace__sidebar-section-count">1<\/span>/,
+    );
+    expect(html).toMatch(
+      /<div id="sidebar-section-\d+" hidden class="k2b-app-workspace__sidebar-section-content"><div[^>]*mail-sidebar-mailbox/,
     );
     const row = mailboxRowWithActions(html);
     expect(row).toContain('data-hidden="true"');
@@ -169,7 +166,6 @@ describe("Mail overview", () => {
     // A row the server sent before the mailbox was hidden stays out of Focus.
     expect(html).not.toContain("Release update");
     // Hiding a mailbox adds no scope hint to Focus.
-    expect(html).toContain("1 conversation assigned to you</");
     expect(html).not.toContain("except");
     expect(renderOverview(null, [], undefined, "de", ["Mail01"])).not.toContain("ausgeblendeten");
   });
@@ -186,8 +182,8 @@ describe("Mail overview", () => {
 
   test("shows needs action as the only number and unread as a dot", () => {
     const row = mailboxRow(renderOverview(null, [], { unread: 1234, needsAction: 5 }));
-    expect(row).toContain('<span class="mail-overview-unread-dot"');
-    expect(row).toMatch(/<span class="mail-overview-needs-action" aria-hidden="true">5<\/span>/);
+    expect(row).toContain('<span class="mail-sidebar-unread-dot"');
+    expect(row).toMatch(/<span class="mail-sidebar-needs-action" aria-hidden="true">5<\/span>/);
     expect(row).not.toContain("1,234</span>");
     expect(row).toContain('title="Support · support@example.test · 5 need action · 1234 unread"');
     expect(row).toContain('<span class="sr-only">5 need action, 1234 unread</span>');
@@ -195,16 +191,16 @@ describe("Mail overview", () => {
 
   test("shows only the unread dot without a number when nothing needs action", () => {
     const row = mailboxRow(renderOverview(null, [], { unread: 3, needsAction: 0 }));
-    expect(row).toContain('<span class="mail-overview-unread-dot"');
-    expect(row).toMatch(/<span class="mail-overview-needs-action" aria-hidden="true"><\/span>/);
+    expect(row).toContain('<span class="mail-sidebar-unread-dot"');
+    expect(row).toMatch(/<span class="mail-sidebar-needs-action" aria-hidden="true"><\/span>/);
     expect(row).toContain('title="Support · support@example.test · 3 unread"');
     expect(row).toContain('<span class="sr-only">3 unread</span>');
   });
 
   test("leaves the count column empty without a dot or a zero", () => {
     const row = mailboxRow(renderOverview(null, [], { unread: 0, needsAction: 0 }));
-    expect(row).not.toContain("mail-overview-unread-dot");
-    expect(row).toMatch(/<span class="mail-overview-needs-action" aria-hidden="true"><\/span>/);
+    expect(row).not.toContain("mail-sidebar-unread-dot");
+    expect(row).toMatch(/<span class="mail-sidebar-needs-action" aria-hidden="true"><\/span>/);
     expect(row).not.toMatch(/>0</);
     expect(row).toContain('title="Support · support@example.test"');
     expect(row).not.toContain("sr-only");

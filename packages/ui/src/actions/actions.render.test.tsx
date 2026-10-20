@@ -1061,6 +1061,8 @@ describe("workspace head navigation", () => {
   test("SSR renders ordinary view links and both CSS overflow levels", () => {
     const html = renderToString(() => createComponent(ViewTabs, { label: "Views", items, current: "7", class: "custom" }));
     expect(html).toContain('class="k2b-view-tabs custom" aria-label="Views"');
+    expect(html).toMatch(/<ul[^>]*class="k2b-view-tabs__list"[^>]*data-scroll-fade-mode="both"[^>]*data-scroll-fade-axis="horizontal"/);
+    expect(html).toContain("<script>(function watchViewTabs(");
     expect([...html.matchAll(/data-view-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(["1", "2", "3", "4", "7"]);
     expect(html.match(/data-compact-hidden=""/g)).toHaveLength(2);
     expect(html).toContain('data-wide=""');
@@ -1073,7 +1075,9 @@ describe("workspace head navigation", () => {
     expect(html.match(/<a /g)).toHaveLength(5);
     expect(html).not.toContain('role="tab');
     expect(html).not.toContain("tabindex=");
-    expect(renderToString(() => createComponent(ViewTabs, { label: "Views", items, current: "unknown" }))).not.toContain("aria-current");
+    expect(renderToString(() => createComponent(ViewTabs, { label: "Views", items, current: "unknown" }))).not.toMatch(
+      /<a[^>]*aria-current=/,
+    );
     const de = renderToString(() =>
       createComponent(LocaleProvider, {
         locale: "de",

@@ -1,9 +1,11 @@
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
 import contactsApi from ".";
@@ -19,12 +21,11 @@ const bookWithContacts = async () => {
   const book = { id: crypto.randomUUID(), shortId: newShortId() };
   await sql`INSERT INTO contacts.books (id, short_id, name) VALUES (${book.id}::uuid, ${book.shortId}, 'Export test')`;
   created.books.push(book.id);
-  // Two characters per run plus a four-digit number keep the six-character short IDs unique.
-  const prefix = newShortId().slice(0, 2);
+  const shortIds = Array.from({ length: CONTACT_COUNT }, () => testShortId());
   await sql`
     INSERT INTO contacts.contacts (book_id, short_id, first_name, last_name)
-    SELECT ${book.id}::uuid, ${prefix} || lpad(g::text, 4, '0'), 'Person', 'Number ' || g
-    FROM generate_series(1, ${CONTACT_COUNT}) AS g`;
+    SELECT ${book.id}::uuid, short_id, 'Person', 'Number ' || n
+    FROM unnest(${toPgTextArray(shortIds)}::text[]) WITH ORDINALITY AS fixture(short_id, n)`;
   return book;
 };
 

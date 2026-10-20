@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 
 /**
  * An agent reads and edits a note through the CLI's HTTP routes while the note
@@ -68,7 +69,7 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
     };
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
     const notebookId = crypto.randomUUID();
-    const notebookShortId = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+    const notebookShortId = testShortId();
     const live = new AbortController();
     const doc = new Y.Doc();
     try {

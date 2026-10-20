@@ -1,28 +1,28 @@
 import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
 import { resolveBookReferences } from "./book";
 
 const postgresTest = testFor("database");
 const id = () => crypto.randomUUID();
-const shortId = () => Math.random().toString(36).slice(2, 8).padEnd(6, "x");
 
 const notebookId = id();
 const otherNotebookId = id();
-const colorsShortId = shortId();
-const kickoffShortId = shortId();
-const foreignShortId = shortId();
-const guideShortId = shortId();
-const foreignFileShortId = shortId();
+const colorsShortId = testShortId();
+const kickoffShortId = testShortId();
+const foreignShortId = testShortId();
+const guideShortId = testShortId();
+const foreignFileShortId = testShortId();
 
 beforeAll(async () => {
   if (!testInfra.database) return;
   await migrate();
   await sql`
     INSERT INTO notebooks.notebooks (id, short_id, name) VALUES
-      (${notebookId}::uuid, ${shortId()}, 'Brand'),
-      (${otherNotebookId}::uuid, ${shortId()}, 'Private')
+      (${notebookId}::uuid, ${testShortId()}, 'Brand'),
+      (${otherNotebookId}::uuid, ${testShortId()}, 'Private')
   `;
   await sql`
     INSERT INTO notebooks.notes (id, short_id, notebook_id, title, content_md) VALUES

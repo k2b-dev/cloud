@@ -14,6 +14,17 @@ export function isPanelReadyMessage(value: unknown, provider: string): value is 
   );
 }
 
+export function isPanelSearchMessage(value: unknown): value is { type: "cloud.panel.search"; v: 1 } {
+  return (
+    isRecord(value) &&
+    Reflect.ownKeys(value).length === 2 &&
+    Object.hasOwn(value, "type") &&
+    Object.hasOwn(value, "v") &&
+    value.type === "cloud.panel.search" &&
+    value.v === 1
+  );
+}
+
 export function isPanelCloseMessage(value: unknown): value is { type: "cloud.panel.close"; v?: 1 } {
   return (
     isRecord(value) &&

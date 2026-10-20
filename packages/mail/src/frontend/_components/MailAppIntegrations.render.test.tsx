@@ -11,9 +11,10 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const [{ default: MailCalendarInvitation }, { default: MailConversationContext }] = await Promise.all([
+const [{ default: MailCalendarInvitation }, { default: MailConversationContext }, { MailContactDirectoryProvider }] = await Promise.all([
   import("./MailCalendarInvitation.tsx"),
   import("./MailConversationContext.tsx"),
+  import("./mail-contact-directory-context"),
 ]);
 
 describe("Mail app integration states", () => {
@@ -76,4 +77,24 @@ describe("Mail app integration states", () => {
     expect(html).toContain('aria-label="Spaces" class="space-y-1 bg-[var(--ui-surface)] p-3"');
     expect(html).not.toContain("border-t");
   });
+});
+
+test("absent contact directory hides the entire section in the first server frame", () => {
+  const html = renderToString(() =>
+    createComponent(MailContactDirectoryProvider, {
+      value: { suggest: null, resolve: null, read: null, listWritableBooks: null, create: null },
+      get children() {
+        return createComponent(MailConversationContext, {
+          mailboxId: "Box001",
+          conversationId: "Conv01",
+          requestUrl: "/app/mail/Box001",
+          active: true,
+        });
+      },
+    }),
+  );
+  expect(html).not.toContain('aria-label="Contacts"');
+  expect(html).not.toContain("Loading contacts");
+  expect(html).not.toContain("Contacts unavailable");
+  expect(html).toContain('aria-label="Spaces"');
 });

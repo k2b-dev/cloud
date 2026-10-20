@@ -15,15 +15,15 @@ Der E-Mail-Anbieter bleibt die Quelle für übertragbare E-Mail-Zustände. Wenn 
 - Wenn du Mail über die App-Navigation öffnest, siehst du **Fokus**. Fokus ist eine gemeinsame Arbeitsliste für alle Postfächer, die du ansehen kannst.
 - **Für mich** zeigt dir zugewiesene Unterhaltungen mit Handlungsbedarf. **Nicht zugewiesen** zeigt Arbeit mit Handlungsbedarf, der niemand zugewiesen ist, der sie noch bearbeiten kann.
 - **Wartet** zeigt deine zugewiesenen Unterhaltungen, die auf eine Antwort warten. **Alle aktiven** zeigt alle nicht erledigten Unterhaltungen, die du ansehen kannst und die nicht unter **Später** liegen.
-- Jede Postfachschaltfläche zeigt, wie viele Unterhaltungen Handlungsbedarf haben. Ein Punkt am Postfachsymbol bedeutet ungelesene Unterhaltungen außerhalb von Papierkorb und Spam. Zeige auf die Schaltfläche, um beide genauen Zahlen zu sehen.
+- In Fokus zeigt jede Postfachschaltfläche, wie viele Unterhaltungen Handlungsbedarf haben. Ein Punkt am Postfachsymbol bedeutet ungelesene Unterhaltungen außerhalb von Papierkorb und Spam. Zeige auf die Schaltfläche, um beide genauen Zahlen zu sehen. In einem Postfach zeigen die anderen Postfächer keine Zahlen, und das offene Postfach zeigt die Zahlen seiner Ansichten und Ordner.
 - Öffne ein Postfach, wenn du Ordner, eine Suche im ganzen Postfach oder Einstellungen brauchst.
-- Wähle die Fahne neben einem Postfach, um es oben in der Liste anzuheften.
+- Wähle die Fahne neben einem Postfach, um es oben in der Liste anzuheften. Beim offenen Postfach liegen Fahne und Auge unter **…** in seiner Zeile.
 - Wähle das durchgestrichene Auge, um ein selten genutztes Postfach auszublenden, etwa eine No-Reply-Adresse. Das Postfach verschwindet aus der Liste, und seine Unterhaltungen verschwinden aus Fokus und den Zahlen in Fokus.
 - Ausgeblendete Postfächer liegen unter **Ausgeblendet** unterhalb der Liste. Öffne diesen Abschnitt, um eines zu erreichen, und wähle das Auge, um es wieder einzublenden.
 - Deine angehefteten und ausgeblendeten Postfächer gelten auf jedem Gerät, auf dem du dich anmeldest. Sie gelten nur für dich. Andere mit Zugriff auf ein Postfach behalten ihre eigenen.
 - Wähle auf einem großen Bildschirm eine Zeile in Fokus aus, um daneben Kontext, Zusammenfassung, Workflow-Felder und Teamnotizen zu sehen. Auf einem kleineren Bildschirm öffnet die Zeile die Unterhaltung in ihrem Postfach.
 - Wähle **Neues Postfach**, um ein weiteres E-Mail-Konto zu verbinden.
-- Ein neues Postfach ist zunächst privat. Du hast Zugriff **Verwalten**, und niemand sonst hat Zugriff, bis du ihn unter **Einstellungen → Zugriff** gibst.
+- Ein neues Postfach ist zunächst privat. Du hast Zugriff **Verwalten**, und niemand sonst hat Zugriff, bis du ihn unter **… → Einstellungen → Zugriff** gibst.
 
 Fokus kopiert oder verschiebt keine E-Mails zwischen Postfächern. Jede Zeile behält ihr ursprüngliches Postfach. Wenn du eine Zeile öffnest, prüft Mail deinen aktuellen Zugriff auf das Postfach erneut.
 
@@ -41,11 +41,11 @@ Fokus kopiert oder verschiebt keine E-Mails zwischen Postfächern. Jede Zeile be
 
 Mail prüft IMAP und SMTP getrennt, bevor es die Zugangsdaten speichert. Mail verschlüsselt die Zugangsdaten, und nach dem Speichern kann niemand sie wieder lesen: weder Personen im Postfach noch die Administration. Mail bietet keine Autorisierung im Browser und keine automatische Erneuerung von Tokens. Ersetze manuelle Tokens, wenn sie ablaufen. Dein Anbieter muss die gewählte IMAP-/SMTP-Anmeldung erlauben.
 
-Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchronisierung. Ältere Nachrichten können nach und nach erscheinen, während du das Postfach schon nutzt. Öffne **Postfachwerkzeuge → Postfachstatus**, um den Verbindungsstatus und den Stand von Ordnerermittlung, Synchronisierung und Suche zu sehen.
+Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchronisierung. Ältere Nachrichten können nach und nach erscheinen, während du das Postfach schon nutzt. Öffne **… → Postfachstatus**, um den Verbindungsstatus und den Stand von Ordnerermittlung, Synchronisierung und Suche zu sehen.
 
 ## Versandbereitschaft prüfen {icon="send"}
 
-Öffne **Einstellungen → Konten und Identitäten → Absenderidentitäten**. Eine Absenderidentität fasst alles zusammen, was Mail für einen Versandkontext nutzt:
+Öffne **… → Einstellungen → Konten und Identitäten → Absenderidentitäten**. Eine Absenderidentität fasst alles zusammen, was Mail für einen Versandkontext nutzt:
 
 - Die **Bezeichnung der Absenderidentität** ist nur im Postfach sichtbar. Sie hilft dem Team, den richtigen Kontext zu wählen, etwa „Universität“ oder „Privat“.
 - Empfänger sehen den **Anzeigename** und die **Absenderadresse**.
@@ -55,18 +55,22 @@ Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchr
 
 ## Dich im Postfach zurechtfinden {icon="layout-grid"}
 
-Die linke Navigation enthält:
+Die Seitenleiste enthält **Fokus** und deine Postfächer, angeheftete zuerst. Das geöffnete Postfach zeigt darunter seine Ziele:
 
-- **Verfassen** ganz oben, wenn du senden kannst. Daneben steht die Schaltfläche **Postfachdetails** (i). Kannst du das Postfach nur ansehen, steht dort **Über dieses Postfach** und öffnet dieselben Details. Auf dem Smartphone stehen sie in der ersten Zeile des App-Menüs.
-- **Nachverfolgung** mit Handlungsbedarf, Wartet auf Antwort, Später und Erledigt.
-- **Zuweisung** mit Mir zugewiesen und Nicht zugewiesen.
-- **E-Mail** mit Posteingang, Entwürfe, Geplant, Gesendet und einer Gruppe **Mehr**, die du aufklappen kannst.
-- **Ordner** mit eigenen Ordnern des Anbieters und ihrer verschachtelten Hierarchie. Mit Zugriff **Verwalten** blendest du Ordner hier aus. Das Ausblenden löscht keinen Ordner und bestellt ihn nicht ab.
-- **Tags**, um alle Unterhaltungen mit einem postfachlokalen Tag zu öffnen. Dieser Abschnitt erscheint nur, wenn mindestens ein Tag existiert.
-- **Gespeicherte Ansichten**, die aus wiederverwendbaren Filtern für Postfach und Zusammenarbeit entstanden sind. Dieser Abschnitt erscheint nur, wenn mindestens eine Ansicht existiert.
-- **Mehr** mit Alle E-Mails, Letzte Aktivität, Archiv, Papierkorb und Spam. Alle E-Mails umfasst das Postfach außer Papierkorb und Spam. Mehr öffnet sich automatisch, wenn eines dieser Ziele aktiv ist.
-- **Postfachwerkzeuge** für Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, Freigabelinks und den Umgang des Browsers mit E-Mail-Links. Welche Werkzeuge du siehst, hängt von deinem Zugriff ab.
-- **Einstellungen** am unteren Rand, wenn dein Zugriff es erlaubt.
+- **Posteingang**, **Entwürfe**, **Geplant**, **Versandprobleme** und **Gesendet**.
+- **Mehr** für Archiv, Papierkorb und Spam. Die Gruppe bleibt offen, solange einer dieser Ordner aktiv ist.
+- Eigene Ordner des Anbieters mit ihrer Hierarchie und der Zahl ungelesener E-Mails.
+- **Ausgeblendete Postfächer**, **Neues Postfach** und **Kürzlich gelöschte Postfächer** unter der Postfachliste.
+
+Im Kopfbereich findest du:
+
+- Ansichten als Tabs: **Alle**, **Handlungsbedarf**, **Mir zugewiesen**, **Wartet auf Antwort** und **Nicht zugewiesen**. Unter **Mehr** stehen **Später**, **Erledigt**, **Letzte Aktivität**, **Aufbewahrt** und gespeicherte Ansichten. Ordner, Geplant und Versandprobleme haben keine Ansichts-Tabs.
+- Den Chip **Tag**, wenn Tags existieren, den Chip **Suche** für eine aktive strukturierte Suche und **Zurücksetzen** zum Entfernen der Filter. Entferne den Suche-Chip, um die Suche zu beenden. **Suchfilter** im Listenkopf öffnet den Filterdialog.
+- **Listenansicht auswählen** für Unterhaltungen oder einzelne Nachrichten.
+- **…** für Postfachdetails, Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und **Einstellungen**. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**. Wer nur zugewiesene Unterhaltungen sieht, hat im Kopfbereich kein **…**; das **…** des geöffneten Postfachs in der Seitenleiste bietet dann nur Anheften und Ausblenden.
+- **Verfassen** als Hauptaktion, wenn du senden kannst.
+
+Auf dem Smartphone öffnest du über den Postfachtitel Fokus, andere Postfächer und die Ordner des geöffneten Postfachs. Ansichten, Filter, Verfassen und **…** findest du im Kopfbereich.
 
 **Postfachdetails** zeigt allen, die das Postfach ansehen können, denselben Überblick. Personen mit Zugriff **Ansehen** sehen ihn als **Über dieses Postfach**. Der Überblick zeigt:
 
@@ -75,7 +79,7 @@ Die linke Navigation enthält:
 - die Zahl der Ordner;
 - deinen eigenen Zugriff und wer welchen Zugriff hat.
 
-Bei Gruppen siehst du die Personen, die die Gruppe erreicht, soweit dein Konto sie sehen darf. Gastkonten sehen nur ihren eigenen Zugriff, den Zugriff ihrer Gruppen und wie viele weitere Einträge es gibt. Der Dialog ändert nichts. Mit Zugriff **Verwalten** wählst du **Zugriff verwalten** und machst unter **Einstellungen → Zugriff** weiter.
+Bei Gruppen siehst du die Personen, die die Gruppe erreicht, soweit dein Konto sie sehen darf. Gastkonten sehen nur ihren eigenen Zugriff, den Zugriff ihrer Gruppen und wie viele weitere Einträge es gibt. Der Dialog ändert nichts. Mit Zugriff **Verwalten** wählst du **Zugriff verwalten** und machst unter **… → Einstellungen → Zugriff** weiter.
 
 Die mittlere Liste zeigt eine Zeile pro Unterhaltung. Der Lesebereich gruppiert die Nachrichten dieser Unterhaltung. Er ordnet aussagekräftige Änderungen an Status, Zuweisung, Tags, Zusammenfassung und Workflow ruhig zu dem Zeitpunkt ein, an dem sie geschahen. Technische Verarbeitungsvorgänge bleiben aus dem Lesefluss heraus.
 

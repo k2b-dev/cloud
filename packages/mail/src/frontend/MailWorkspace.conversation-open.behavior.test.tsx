@@ -204,7 +204,7 @@ describe("Mail workspace conversation open", () => {
       draftsMode: false,
       draftsPage: null,
       draftsError: null,
-      activeView: url.searchParams.has("view") ? "needs_action" : null,
+      activeView: url.searchParams.get("view") === "send_problems" ? "send_problems" : url.searchParams.has("view") ? "needs_action" : null,
       savedViewId: null,
       listMode: "conversations",
       folderId: url.searchParams.has("view") ? null : FOLDER,
@@ -381,6 +381,11 @@ describe("Mail workspace conversation open", () => {
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: m.readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...snapshotFor(href).mailbox, receivingAddress: snapshotFor(href).receivingAddress }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+          },
         }),
       dom.root,
     );
@@ -592,7 +597,8 @@ describe("Mail workspace conversation open", () => {
     await until(() => shows(A), "conversation A");
     const held: Array<(status: number) => void> = [];
     routeStatus = () => new Promise<number>((resolve) => held.push(resolve));
-    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?view=needs_action"]`)!.click();
+    // Send problems is a sidebar place and remains reachable while a folder has no head tabs.
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?view=send_problems"]`)!.click();
     await until(() => held.length === 1, "the held view switch");
     dom.root.querySelector<HTMLAnchorElement>(`a[href="${folderPath}"]`)!.click();
     await until(() => held.length === 2, "the held return to the folder");
@@ -612,7 +618,8 @@ describe("Mail workspace conversation open", () => {
     revisions.set(rowId(22), 2);
     open(rowId(22));
     await until(() => held.length === 1, "the row refresh");
-    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?view=needs_action"]`)!.click();
+    // Send problems is a sidebar place and remains reachable while a folder has no head tabs.
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?view=send_problems"]`)!.click();
     await until(() => held.length === 2, "the view switch");
     held[1]!(200);
     await until(() => heading() === null && rows()[0] !== undefined, "the new view");

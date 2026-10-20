@@ -8,6 +8,7 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../scripts/fixtures/test-short-id";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
 import type { PublicSection, PublicStatus, ShiftAssignment, ShiftTemplate, VenueDashboard } from "./contracts";
@@ -131,7 +132,7 @@ suite("Venue sections and feedback say what they do", () => {
     const [row] = await sql<{ venue_id: string; template_id: string }[]>`
       SELECT venue_id::text, id::text AS template_id FROM venue.shift_templates WHERE short_id = ${template.id}
     `;
-    const shortId = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+    const shortId = testShortId();
     // 23:00 in Berlin on 2025-10-26 is 22:00 UTC.
     await sql`
       INSERT INTO venue.shift_assignments (short_id, venue_id, template_id, user_id, starts_at, ends_at)

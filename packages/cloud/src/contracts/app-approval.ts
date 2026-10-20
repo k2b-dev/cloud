@@ -360,14 +360,14 @@ const actionFields = {
   createdAt: DateTime,
   expiresAt: DateTime,
 };
-/** One inbox row. `sentence` is the start of the app's sentence; read the Action for everything the person approves. */
+/** One inbox row. `sentence` is the start of the plain question; read the Action for everything the person approves. */
 export const AppActionSummarySchema = z.object({ ...actionFields, sentence: PlainText(APP_ACTION_LIMITS.summaryChars).min(1) }).strict();
 export const AppActionViewSchema = z
   .object({
     ...actionFields,
-    /** What the Action does, in the app's words and the person's language. */
+    /** The plain Assistant question, in the originating turn's language. */
     sentence: PlainText(APP_ACTION_LIMITS.sentenceChars).min(1),
-    /** The app's review of this call, or `null`. */
+    /** The question's reason line, or `null` for older snapshots. */
     message: PlainText(APP_ACTION_LIMITS.messageChars).nullable(),
     details: z
       .array(

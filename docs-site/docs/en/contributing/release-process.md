@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Release process
@@ -46,6 +46,17 @@ paragraphs, and `BEGIN_NESTED_COMMIT` or `BEGIN_COMMIT_OVERRIDE` blocks
 covers the usual forms of release-please's commit grammar, not every one; the
 `release-body` job below parses with release-please itself. After fixing the
 text, re-run the failed `check` job to check it again.
+
+The `check` job reads the body as written, but the squash merge writes it
+wrapped at about 72 columns, and wrapped text can parse differently. A line
+that now starts with a word directly followed by an opening parenthesis,
+such as `` `color-mix( ``, can make release-please drop the whole commit
+without a warning. A line that now starts with a word and a colon reads as a
+second commit ([#1592](https://github.com/k2b-dev/cloud/issues/1592)).
+Before a release pull request merges, parse every squash commit since the
+last release with `parseConventionalCommits` from the release-please version
+that `main.yml` pins. Restore a dropped `feat` or `fix` with an override pull
+request, as for an advisory merge below.
 
 A change to a runtime contract (configuration, routes, permissions, data
 format, deployment) needs a `feat` or `feat!` title and a note on the matching
@@ -164,10 +175,13 @@ Before the release, open a small pull request with a real change and put a
 `BEGIN_COMMIT_OVERRIDE` block in its body. release-please then reads the
 block instead of that pull request's own commit message:
 
-- List the pull request's own entry and every entry of the advisory commit,
-  with each `BREAKING CHANGE:` footer copied exactly. Put an entry with `!`
-  first: release-please starts a new entry only at a header without `!` after
-  an empty line, so a later `!` header joins the entry before it.
+- List the pull request's own entry and the advisory commit's own
+  user-facing entries, with each `BREAKING CHANGE:` footer copied exactly.
+  The advisory commit's body also repeats the history that the fork branch
+  merged from `main`, including earlier `BREAKING CHANGE:` footers. Parse it
+  and leave those repeated entries out, or they appear twice. Put an entry
+  with `!` first: release-please starts a new entry only at a header without
+  `!` after an empty line, so a later `!` header joins the entry before it.
 - Change a file in every component the advisory commit changed, for example
   under `packages/cloud/` when it changed `@k2b/cloud`. release-please gives
   the override only to the components of the pull request's own files.

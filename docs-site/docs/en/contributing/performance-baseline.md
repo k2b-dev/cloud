@@ -83,7 +83,8 @@ administrator through Core's public consent flow. It requires an authenticated `
 response before checking routes or seeding; redirects to sign-in or consent
 do not count as route readiness. Public HTTP APIs seed three FAQ entries,
 a structured notebook note, an empty Assistant
-conversation, and two folders with three empty Markdown files. Files uses a
+conversation, one Space with the tasks starter, and two folders with three
+empty Markdown files. Files uses a
 throwaway Filegate volume and a fixture-only local Linux identity range.
 Accounts measures the user list containing the administrator. The document
 page is Core's privacy document. IDs and timestamps come from the fresh
@@ -102,7 +103,10 @@ the harness prints its exact removal commands. Keep its fixture directory
 private because it contains temporary credentials.
 
 Run `bun --no-env-file scripts/perf-baseline.ts --help` for every flag:
-`--pages`, `--runs`, `--skip-build`, `--out`, `--compare`, and `--keep`.
+`--pages`, `--panel`, `--runs`, `--skip-build`, `--out`, `--compare`, and `--keep`.
+The default page list has eight entries: `document`, `faq`, `mail-mailbox`,
+`assistant-chat`, `notebooks-editor`, `files`, `accounts`, and `spaces`.
+`spaces` resolves to the Space created through `POST /api/spaces`.
 Output directories must stay inside the checkout. Existing result files are
 never overwritten.
 
@@ -149,9 +153,11 @@ negotiate gzip and transfer headers add overhead.
 
 **TTI** is the latest navigation-relative time among FCP (when supported),
 the end of each initial island/client wrapper's synchronous mount, the
-response end of every script loaded during the observation, and, in
+response end of every main-frame script loaded during the observation, and, in
 Chromium, the end of the last long task. WebKit has no long-task entries.
-Every script request the harness sees must have a resource timing entry.
+Every main-frame script request must have a host resource timing entry.
+Child-frame scripts are excluded from host TTI because their entries belong
+to the frame timeline; their requests and bytes still count in page transfers.
 
 The observation stops when every initial wrapper has mounted, no script is
 pending, every script request has its resource timing entry, and script
@@ -243,6 +249,187 @@ browser context makes each navigation cold, but does not flush server or OS
 caches. TTI covers initial mounting, script loading, and Chromium long tasks,
 not every later interaction or data request. Treat small differences within
 the reported range as inconclusive.
+
+## Measure the panel after a navigation
+
+Use `--panel` to decide whether panel delay warrants prioritizing F10 (page
+changes without a new document) ahead of Assistant and Chat. First measure
+how long the panel needs to show content after a navigation, then assess the
+medians and their ranges:
+
+```bash
+bun --no-env-file scripts/perf-baseline.ts --panel --runs 5
+```
+
+This runs only the panel scenario: `pages` stays empty in `result.json`.
+`--runs` defaults to 3. `--panel` cannot be combined with `--pages` or
+`--compare`; the CLI rejects either combination before setup. The same
+production build, isolated stack, heavy lock, output files, and cleanup rules
+apply. Only Core, Spaces, Mail, Notebooks, and the gateway are started.
+The bundles must include the Help panel provider from #1582.
+
+### Navigations and profiles
+
+Each navigation uses the public-API fixtures described above, in this order:
+
+| Navigation | From → to | Expected Help heading |
+| --- | --- | --- |
+| `spaces` | Spaces overview → seeded Space | For this view |
+| `mail` | Mail overview → seeded mailbox | For this view |
+| `notebooks` | Notebooks overview → seeded note, `?mode=write` | First start heading: What do you want to do? or the first group |
+| `spaces-to-mail` | Seeded Space → seeded mailbox | For this view |
+
+The last navigation crosses application boundaries. The Notebooks editor
+currently declares no view Help IDs, so its expected heading is the first
+start heading. A page expected to show **For this view** fails if only a start heading
+appears. Selectors and nonempty visible text identify these headings; timing
+does not depend on English wording.
+
+For each navigation the harness runs Chromium column, drawer, and sheet,
+then WebKit column, drawer, and sheet:
+
+| Layout | Viewport / scale | Device | Chromium | WebKit |
+| --- | --- | --- | --- | --- |
+| Column | 1440 × 900 / 1 | Desktop | CPU 1, unthrottled network | Unthrottled |
+| Drawer | 834 × 1194 / 1 | Desktop, no touch | CPU 1, unthrottled network | Unthrottled |
+| Sheet | 390 × 844 / 3 | Mobile and touch | CPU 4; 150 ms latency, 200,000 B/s download, 93,750 B/s upload throughout the sample | Unthrottled |
+
+Every sample has a fresh context, administrator session, `en-US` locale,
+`Europe/Berlin` time zone and cookie, light theme, blocked service workers,
+and ignored local certificate errors. **HTTP cache stays enabled** in both
+engines. The from page warms the session cache before the measured navigation;
+desktop also waits for its Help content, warming provider assets. Phone waits
+for host TTI without opening Help. Server and OS caches are not flushed.
+
+Column and drawer use `cloud_panel=1:core:`. Sheet uses no panel cookie.
+After each new document the phone sheet must be closed, with no provider
+document request before tapping Help. A violation fails the sample. This
+measures opening after navigation, rather than a panel opening automatically
+on a phone.
+
+### Anchors and visible content
+
+The harness navigates using `location.assign`, as a full-document link would.
+For desktop, the anchor is the new host document's `performance.timeOrigin`
+(navigation start). Before assign, the old page saves its epoch time in
+session storage. `navigationGapMs` is the new `timeOrigin` minus that assign
+epoch: inspect it to check the anchor, especially in WebKit.
+`assignToContentMs` adds the gap to `panelContentMs` and shows the delay from
+assign to visible panel content.
+
+For sheet, the new host first reaches TTI. The harness arms the probe and
+taps the visible header Help button. Only a trusted `pointerdown`, captured
+before the handler, supplies the opening anchor. Synthetic events cannot
+start it. `openToContentMs` runs from that event's timestamp to the first
+animation-frame callback where the end state holds.
+
+One end-state check serves both modes. It requires:
+
+- The host slot is ready for provider `core`, and the canvas has its desktop
+  panel or phone sheet open attribute.
+- The connected provider iframe is displayed, visible, has positive opacity
+  and size, and intersects the host viewport.
+- Its accessible same-origin document has `data-cloud-panel-ready="core"`.
+- The expected heading in the Help results has nonempty text, visible styles,
+  nonzero size, and intersects the frame viewport.
+
+A loaded document or ready message alone never counts. The first animation
+frame in which all conditions hold records the content timestamp. There are
+no sleeps or network-idle waits. A 45-second probe deadline stops its loop
+and reports the last failing condition, slot state, iframe URL, readiness,
+and elapsed time; Playwright has a separate timeout backstop. Uncaught
+errors, unhandled rejections, and island errors in the host or Help provider
+fail the sample, including errors before the document hop.
+
+### Read panel timings
+
+| Number | Meaning |
+| --- | --- |
+| `panelContentMs` | Desktop navigation start → first frame with visible Help content |
+| `hostTtiMs`, `hostLcpMs` | New host document's TTI using the existing definition, and LCP when supported |
+| `panelLagMs` | `panelContentMs − hostTtiMs`; a negative value means Help appeared before host TTI |
+| `navigationGapMs` | New host navigation start minus the saved assign epoch; an anchor diagnostic |
+| `assignToContentMs` | Assign epoch → visible Help content, including the navigation gap |
+| `openToContentMs` | Phone trusted Help press → first frame with visible Help content |
+| `providerReadyMs` | First observed provider ready mark, converted to the host timeline; readiness alone is insufficient |
+| `providerTtfbMs` | Provider document `responseStart − requestStart`, including gateway and link |
+| `providerDocumentBytes` | Provider document response body plus headers from Playwright `request.sizes()` in either engine |
+| `providerIslandRenderMs` | Sum of the provider's initial island clear-and-render windows; read only after all initial islands mounted |
+| `providerStatic` | Provider eager/lazy build weight and island count, fetched once per navigation from the actual SSR iframe URL with the session and panel cookie |
+
+The time split has four consecutive segments in host-timeline milliseconds:
+
+| Segment | Boundaries | Interpretation |
+| --- | --- | --- |
+| `hostWaitMs` | Anchor → first iframe element with a source in the host DOM | Waiting behind the host document; for sheet, waiting after the tap |
+| `frameStartMs` | Iframe element → iframe document's navigation start | Iframe start, including lazy-iframe deferral |
+| `providerSsrMs` | Iframe navigation start → provider `responseStart` | Provider SSR / TTFB including gateway and link |
+| `providerClientMs` | Provider `responseStart` → visible Help content | HTML transfer, provider JS and islands, ready mark and slot reveal |
+
+Iframe navigation and response timestamps are converted using the difference
+between iframe and host `timeOrigin`. The probe watches DOM insertion and
+checks parser-inserted frames at `DOMContentLoaded`. A MutationObserver
+reports an insertion only after the inserting task, so when the frame's
+navigation already started (a script-inserted frame on the phone), that start
+ends `hostWaitMs` and `frameStartMs` is 0. It observes the ready mark each
+animation frame. Boundaries are rounded before subtraction, so
+the four segments sum exactly to the rounded main duration.
+
+Each table shows per-metric median (min–max). The printed split and its
+percentages come from one **median sample**, selected by sorting samples on
+`panelContentMs` or `openToContentMs` and taking index `floor((n − 1) / 2)`.
+For an even run count this is the lower middle sample; individual metric
+medians still use the existing average-of-middle-values rule.
+`dominantSegment` names that sample's largest segment for each profile. The
+overall dominant segment sums those median-sample segments across all
+verdict-relevant rows: desktop column/drawer in both engines and WebKit sheet.
+
+### Verdict and the F10 decision
+
+A complete run is **not slow** when every navigation meets both rules:
+
+- Both engines, column and drawer: median `panelLagMs` ≤ **400 ms**, the
+  Doherty threshold.
+- WebKit sheet: median `openToContentMs` ≤ **1,000 ms**, the RAIL flow limit.
+
+Any required median above its limit makes the verdict **slow**. Chromium
+sheet is information only and never changes the verdict. A missing, skipped,
+or failed required profile makes it **incomplete**, with the affected rows
+named. WebKit retains the existing connection-skip behavior, so an unavailable
+WebKit yields an incomplete verdict. Any failed panel profile still exits 1,
+including an informational Chromium sheet failure. Partial profiles retain
+raw samples but publish no aggregates.
+
+The report names the worst desktop and phone medians and sets `borderline`
+when either worst median is within 10% of its limit: **360–440 ms** or
+**900–1,100 ms**, inclusive. Equality at 400 / 1,000 passes and is borderline.
+Inspect ranges and repeat noisy or borderline results on a quieter host.
+
+Read `dominantSegment` before attributing a slow result to document
+navigation. F10, a client router, removes only in-app document loads. It does
+not remove cross-app document loads or the provider's own SSR, JavaScript,
+and island cost. Compare `spaces-to-mail` with the in-app rows to distinguish
+those costs when deciding whether F10 should precede Assistant and Chat.
+
+### Mail observations and limits
+
+Once per engine, after the Mail navigation profiles, a column observation
+opens the Mail overview with Help visible and changes its real segmented
+view control. It waits for both the URL's `?view=` and the selected view to
+change. Host and provider window tokens, provider `timeOrigin`, and provider
+document requests detect a host or panel reload. If the seeded mailbox has
+a selectable folder link, the harness observes a folder switch the same way.
+An unconnected mailbox usually exposes no such link; that limitation is
+recorded explicitly. Observation failures are recorded without failing the
+run. JSON stores the engine, switch, reload result (or `null` when unknown),
+and note; the summary includes a human-readable sentence.
+
+These measurements emulate devices locally on a shared VM; they are not real
+phone measurements. Chromium's phone profile is throttled, WebKit is not.
+The header's start/end load averages help identify contention. Help is the
+only measured provider. The mailbox is unconnected and empty; no IMAP,
+message hydration, or populated folder behavior is measured. Unit tests
+verify the probe and verdict contracts, not production performance.
 
 ## Measure Mail at mailbox scale
 

@@ -427,6 +427,7 @@
 
 /* Above a scroll area the head keeps the same scrollbar gutter, so both centre their measure alike. */
 .help-shell[data-surface="modal"] .help-head,
+.help-shell[data-surface="panel"] .help-head,
 .help-shell[data-surface="embedded"] .help-head {
   overflow: hidden;
   padding-bottom: 0.25rem;
@@ -438,6 +439,29 @@
     padding-inline: 1.25rem;
     padding-top: 1.25rem;
   }
+}
+
+/* Help without a panel slot on a phone: the shared bottom sheet at its full height, with its grabber (#858). */
+.k2b-ui .k2b-dialog.cloud-help-sheet {
+  height: min(92dvh, var(--k2b-dialog-available-height));
+}
+
+.cloud-help-sheet .k2b-bottom-sheet-viewport {
+  height: 100%;
+}
+
+.cloud-help-sheet .help-shell[data-surface="modal"] {
+  height: auto;
+  flex: 1 1 auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* In the panel the slot's own title row sits right above: the Help head follows it closely. */
+.help-shell[data-surface="panel"] .help-head {
+  padding-top: 0.25rem;
 }
 
 .help-head-inner {
@@ -622,6 +646,32 @@
   margin-bottom: 0.5rem;
 }
 
+/* A narrow reader, such as the panel column at 20-23 rem, has no room for two tiles side by side: each task keeps
+   its tile, one per row, with the icon beside its title. */
+@container help-shell (max-width: 23rem) {
+  .help-start-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .help-start-tile {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 0.75rem;
+    row-gap: 0.125rem;
+    align-items: start;
+    padding: 0.75rem;
+  }
+
+  .help-start-tile-icon {
+    grid-row: span 2;
+    margin-bottom: 0;
+  }
+
+  .help-start-tile-description {
+    -webkit-line-clamp: 2;
+  }
+}
+
 .help-start-tile-title {
   max-width: 100%;
   color: var(--color-zinc-950);
@@ -804,12 +854,56 @@
   padding-top: 0.25rem;
 }
 
+/* The article head names the app whose Help this is: the app's own canvas gradient (the same tokens and strength as
+   the app background, over the reader's surface), without a border or a shadow, and the article's icon in the flat
+   shared tile. Without app colours it stays the plain surface. The embedded readers (Grids, Pulse) sit inside the
+   app's own chrome, which already names the app: their head stays flat. Text sits on this gradient, so its tint stays at
+   most 30 % light and 15 % dark, as on the phone shell: then the title and the lead read at 4.5:1 on any app colour. */
 .help-article-head {
+  margin-bottom: 2rem;
+}
+
+.help-article:not([data-surface="embedded"]) .help-article-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.5rem;
+  border-radius: var(--ui-radius-surface);
+  padding: 1.5rem;
+  background: linear-gradient(
+    var(--app-canvas-angle, 135deg),
+    color-mix(in srgb, var(--app-canvas-from, var(--k2b-surface)) min(var(--app-canvas-strength, 0%), 30%), var(--k2b-surface)),
+    color-mix(in srgb, var(--app-canvas-via, var(--k2b-surface)) min(var(--app-canvas-strength, 0%), 30%), var(--k2b-surface)) 50%,
+    color-mix(in srgb, var(--app-canvas-to, var(--k2b-surface)) min(var(--app-canvas-strength, 0%), 30%), var(--k2b-surface))
+  );
+}
+
+.dark .help-article:not([data-surface="embedded"]) .help-article-head {
+  background: linear-gradient(
+    var(--app-canvas-angle, 135deg),
+    color-mix(in srgb, var(--app-canvas-from, var(--k2b-surface)) min(var(--app-canvas-dark-strength, 0%), 15%), var(--k2b-surface)),
+    var(--k2b-surface) 50%,
+    color-mix(in srgb, var(--app-canvas-to, var(--k2b-surface)) min(var(--app-canvas-dark-strength, 0%), 15%), var(--k2b-surface))
+  );
+}
+
+.help-article-head-copy {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   align-items: flex-start;
   gap: 0.75rem;
-  margin-bottom: 2rem;
+}
+
+.help-article-icon {
+  width: 4.5rem;
+  height: 4.5rem;
+  font-size: 2.25rem;
+}
+
+/* Over the gradient the chips keep their own quiet fill, so they read as facts and not as part of the colour. */
+.help-article:not([data-surface="embedded"]) .help-article-head .help-article-fact {
+  background: color-mix(in srgb, var(--k2b-surface) 72%, transparent);
 }
 
 .help-article-path {
@@ -1514,9 +1608,50 @@
   }
 }
 
+/* Narrow: the tile stands before the title, and the path, the short answer, and the chips use the full width. */
 @container help-article (max-width: 40rem) {
   .help-article-head {
     margin-bottom: 1.5rem;
+  }
+
+  .help-article:not([data-surface="embedded"]) .help-article-head {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 0.75rem;
+    row-gap: 0;
+    padding: 1.25rem 1rem;
+  }
+
+  .help-article:not([data-surface="embedded"]) .help-article-head-copy {
+    display: contents;
+  }
+
+  .help-article:not([data-surface="embedded"]) .help-article-path {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    margin-bottom: 0.75rem;
+  }
+
+  .help-article-icon {
+    grid-column: 1;
+    grid-row: 2;
+    width: 2.75rem;
+    height: 2.75rem;
+    font-size: 1.375rem;
+  }
+
+  .help-article:not([data-surface="embedded"]) .help-article-title {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .help-article:not([data-surface="embedded"]) .help-article-head-copy > :not(.help-article-path, .help-article-title) {
+    grid-column: 1 / -1;
+    margin-top: 0.75rem;
+  }
+
+  /* The panel article has no path row (the panel head names the app), so the tile and the title open the head. */
+  .help-article[data-surface="panel"] :is(.help-article-icon, .help-article-title) {
+    grid-row: 1;
   }
 
   /* Two columns leave a phone about 140 px per alternative. */

@@ -1,14 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { SenderIdentity } from "../../contracts";
 import type { MailboxDetails } from "../../service/mailbox-details";
 import type { MailboxDetailsHarnessOptions } from "./MailboxDetails.browser-harness";
 
-// Whether the details button is square beside Compose, fills Compose's place for readers, keeps its place while
-// loading, and whether the dialog takes focus and fits a phone are layout and focus questions, which only a real engine
-// answers.
+// Menu loading, focus return, and phone dialog layout need a real browser.
 const buildHarness = async (): Promise<string> => {
   const ui = new URL("../../../../ui/", import.meta.url).pathname;
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -81,7 +79,7 @@ const details: Omit<MailboxDetails, "permission"> = {
   ],
   hiddenAccessCount: 0,
   account: { email: "support@example.test", server: "imap.example.test" },
-  lastSyncAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+  lastSyncAt: "2026-10-14T09:55:00.000Z",
 };
 
 const harness = await buildHarness();
@@ -149,6 +147,20 @@ const load = async (
     Object.defineProperty(window, "copiedTexts", { value: copied });
     Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text: string) => void copied.push(text) } });
   });
+  await page.addInitScript(() => {
+    const RealDate = Date;
+    const start = performance.now();
+    const epoch = RealDate.parse("2026-10-14T10:00:00.000Z");
+    class FixedDate extends RealDate {
+      constructor(value?: string | number) {
+        super(value ?? epoch + performance.now() - start);
+      }
+      static override now() {
+        return epoch + performance.now() - start;
+      }
+    }
+    window.Date = FixedDate as DateConstructor;
+  });
   await page.goto(server.url.href);
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((harnessOptions: MailboxDetailsHarnessOptions) => window.mountMailboxDetails(harnessOptions), {
@@ -157,14 +169,10 @@ const load = async (
     identities,
     phoneMenu: options.phoneMenu,
   } satisfies MailboxDetailsHarnessOptions);
+  await settled(page);
   return Object.assign(page, { errors });
 };
 const close = (page: Page) => page.context().close();
-const box = async (page: Page, selector: string) => {
-  const rect = await page.locator(selector).first().boundingBox();
-  if (!rect) throw new Error(`${selector} is not visible`);
-  return rect;
-};
 /** The layout box, without the press feedback's brief scale. */
 const layoutBox = (page: Page, selector: string) =>
   page
@@ -176,139 +184,68 @@ const layoutBox = (page: Page, selector: string) =>
       width: element.offsetWidth,
       height: element.offsetHeight,
     }));
+const head = (page: Page) => page.locator(".k2b-app-workspace__head");
+const optionsTrigger = (page: Page) => head(page).getByRole("button", { name: /^(Options for|Optionen für) Support$/, exact: true });
 const openDialog = async (page: Page, label = "Mailbox details") => {
-  await page.getByRole("button", { name: label, exact: true }).first().click();
+  await optionsTrigger(page).click();
+  await page.getByRole("menuitem", { name: label, exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.waitFor();
   return dialog;
 };
 
 describe("Mailbox details", () => {
-  test("Compose and mailbox details keep their layout while Compose starts and resets", async () => {
-    const page = await load({ theme: "light" });
-    try {
-      await page.waitForSelector(".mail-compose-action .ti-pencil", { state: "attached" });
-      const before = [await layoutBox(page, ".mail-compose-action"), await layoutBox(page, ".mail-details-action")];
-      await page.evaluate(() => window.setMailboxComposeStarting(true));
-      await page.waitForSelector(".mail-compose-action[aria-busy='true'] .ti-loader-2", { state: "attached" });
-      expect(await page.locator(".mail-compose-action .ti-pencil").count()).toBe(0);
-      expect([await layoutBox(page, ".mail-compose-action"), await layoutBox(page, ".mail-details-action")]).toEqual(before);
-      await page.evaluate(() => window.setMailboxComposeStarting(false));
-      await page.waitForSelector(".mail-compose-action:not([aria-busy]) .ti-pencil", { state: "attached" });
-      expect(await page.locator(".mail-compose-action .ti-loader-2").count()).toBe(0);
-      expect([await layoutBox(page, ".mail-compose-action"), await layoutBox(page, ".mail-details-action")]).toEqual(before);
-      expect(page.errors).toEqual([]);
-    } finally {
-      await close(page);
-    }
-  }, 30_000);
-
-  test("the phone Compose row keeps its layout while disabled and enabled again", async () => {
-    const page = await load({ context: phone, phoneMenu: true });
-    const row = ".mail-phone-menu .k2b-navigation__row";
-    const compose = page.locator(row).first().locator(".k2b-navigation__control");
-    try {
-      await compose.waitFor();
-      const before = await layoutBox(page, row);
-      await page.evaluate(() => window.setMailboxComposeStarting(true));
-      await page.waitForFunction(
-        () => document.querySelector(".mail-phone-menu .k2b-navigation__control")?.getAttribute("aria-disabled") === "true",
-      );
-      expect(await layoutBox(page, row)).toEqual(before);
-      await page.evaluate(() => window.setMailboxComposeStarting(false));
-      await page.waitForFunction(
-        () => document.querySelector(".mail-phone-menu .k2b-navigation__control")?.getAttribute("aria-disabled") !== "true",
-      );
-      expect(await layoutBox(page, row)).toEqual(before);
-      expect(page.errors).toEqual([]);
-    } finally {
-      await close(page);
-    }
-  }, 30_000);
-
-  for (const theme of ["light", "dark"] as const) {
-    test(`sits square beside Compose and keeps its place while loading in ${theme} mode`, async () => {
-      const page = await load({ theme, locale: theme === "dark" ? "de" : "en" });
-      const response = Promise.withResolvers<void>();
-      detailsGate = response.promise;
+  for (const context of [desktop, phone]) {
+    test(`head Compose keeps its layout while preparing at ${context.viewport!.width}px`, async () => {
+      const page = await load({ context });
       try {
-        const label = theme === "dark" ? "Postfachdetails" : "Mailbox details";
-        await page.waitForSelector(".mail-details-action");
-        const compose = await box(page, ".mail-compose-action");
-        const details = await box(page, ".mail-details-action");
-        // Same row and height; the details button is square and ends where the row ends.
-        expect(details.y).toBe(compose.y);
-        expect(details.height).toBe(compose.height);
-        expect(details.width).toBe(details.height);
-        expect(details.x).toBeGreaterThan(compose.x + compose.width);
-        expect(compose.width).toBeGreaterThan(details.width * 4);
-
-        const before = [await layoutBox(page, ".mail-compose-action"), await layoutBox(page, ".mail-details-action")];
-        await page.getByRole("button", { name: label, exact: true }).click();
-        await page.waitForSelector(".mail-details-action[aria-busy='true'] .ti-loader-2", { state: "attached" });
-        expect([await layoutBox(page, ".mail-compose-action"), await layoutBox(page, ".mail-details-action")]).toEqual(before);
-        // The button keeps focus while the details load, so focus can return to it.
-        expect(await page.evaluate(() => document.activeElement?.classList.contains("mail-details-action"))).toBe(true);
-
-        response.resolve();
-        const dialog = page.getByRole("dialog");
-        await dialog.waitFor();
-        expect(await page.evaluate(() => document.activeElement?.closest("dialog") !== null)).toBe(true);
-        await page.keyboard.press("Escape");
-        await dialog.waitFor({ state: "hidden" });
-        await page.waitForFunction(() => document.activeElement?.classList.contains("mail-details-action"));
+        const primary = "[data-workspace-primary]";
+        const before = await layoutBox(page, primary);
+        await page.evaluate(() => window.setMailboxComposeStarting(true));
+        await page.locator(`${primary} .ti-loader-2`).waitFor({ state: "attached" });
+        await settled(page);
+        expect(await layoutBox(page, primary)).toEqual(before);
+        await page.evaluate(() => window.setMailboxComposeStarting(false));
+        await page.locator(`${primary} .ti-pencil`).waitFor({ state: "attached" });
+        await settled(page);
+        expect(await layoutBox(page, primary)).toEqual(before);
         expect(page.errors).toEqual([]);
       } finally {
-        response.resolve();
-        detailsGate = undefined;
         await close(page);
       }
     }, 30_000);
   }
-
   for (const theme of ["light", "dark"] as const) {
-    test(`gives readers the full Compose slot instead and keeps it steady while loading in ${theme} mode`, async () => {
-      const writer = await load({ theme });
-      const writerSlot = await layoutBox(writer, ".mail-compose-action");
-      const writerBody = await box(writer, ".k2b-app-workspace__sidebar-body");
-      await close(writer);
-      const page = await load({ theme, permission: "read", locale: theme === "dark" ? "de" : "en" });
-      const response = Promise.withResolvers<void>();
-      detailsGate = response.promise;
-      try {
-        const label = theme === "dark" ? "Über dieses Postfach" : "About this mailbox";
-        const button = page.getByRole("button", { name: label, exact: true });
-        await button.waitFor();
-        expect(await page.locator(".mail-compose-action").count()).toBe(0);
-        expect(await page.locator(".mail-details-action").count()).toBe(1);
-        // Exactly where Compose and its info button are for writers: same top, height, and full width, so the sidebar
-        // below starts at the same place for both roles.
-        const slot = await layoutBox(page, ".mail-details-action");
-        const row = await layoutBox(page, ".mail-sidebar-actions");
-        expect(slot.y).toBe(writerSlot.y);
-        expect(slot.height).toBe(writerSlot.height);
-        expect(slot.width).toBe(row.width);
-        expect((await box(page, ".k2b-app-workspace__sidebar-body")).y).toBe(writerBody.y);
-        expect(await button.innerText()).toBe(label);
-
-        await button.click();
-        await page.waitForSelector(".mail-details-action[aria-busy='true'] .ti-loader-2", { state: "attached" });
-        expect(await layoutBox(page, ".mail-details-action")).toEqual(slot);
-        expect(await page.evaluate(() => document.activeElement?.classList.contains("mail-details-action"))).toBe(true);
-
-        response.resolve();
-        const dialog = page.getByRole("dialog");
-        await dialog.waitFor();
-        await page.keyboard.press("Escape");
-        await dialog.waitFor({ state: "hidden" });
-        await page.waitForFunction(() => document.activeElement?.classList.contains("mail-details-action"));
-        expect(page.errors).toEqual([]);
-      } finally {
-        response.resolve();
-        detailsGate = undefined;
-        await close(page);
-      }
-    }, 30_000);
+    for (const permission of ["write", "read"] as const) {
+      test(`${permission} opens details from head options and restores focus in ${theme}`, async () => {
+        const page = await load({ theme, permission });
+        const response = Promise.withResolvers<void>();
+        detailsGate = response.promise;
+        try {
+          const trigger = optionsTrigger(page);
+          const before = await trigger.boundingBox();
+          await trigger.click();
+          await page.getByRole("menuitem", { name: permission === "read" ? "About this mailbox" : "Mailbox details", exact: true }).click();
+          await head(page).locator('[aria-busy="true"] .ti-loader-2').waitFor({ state: "attached" });
+          await settled(page);
+          expect(await trigger.boundingBox()).toEqual(before);
+          expect(await trigger.evaluate((element) => document.activeElement === element)).toBe(true);
+          expect(await page.locator("[data-workspace-primary]").count()).toBe(permission === "read" ? 0 : 1);
+          response.resolve();
+          const dialog = page.getByRole("dialog");
+          await dialog.waitFor();
+          expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+          await page.keyboard.press("Escape");
+          await dialog.waitFor({ state: "hidden" });
+          await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Options for Support");
+          expect(page.errors).toEqual([]);
+        } finally {
+          response.resolve();
+          detailsGate = undefined;
+          await close(page);
+        }
+      }, 30_000);
+    }
   }
 
   test("shows a reader the mailbox, its addresses, and who has which access, without a way to change it", async () => {
@@ -351,28 +288,23 @@ describe("Mailbox details", () => {
   }, 30_000);
 
   for (const permission of ["write", "read"] as const) {
-    test(`puts the details in the phone menu ${permission === "write" ? "beside Compose" : "as their own row"} and fits the dialog to the phone`, async () => {
+    test(`opens ${permission} details from the phone head and fits the dialog`, async () => {
       const page = await load({ context: phone, permission, phoneMenu: true, locale: "de" });
       try {
         await page.waitForSelector(".mail-phone-menu .k2b-navigation__row");
-        const first = page.locator(".mail-phone-menu .k2b-navigation__row").first();
-        const row = (await first.boundingBox())!;
-        if (permission === "write") {
-          expect(await first.locator(".k2b-navigation__control").innerText()).toBe("Verfassen");
-          const button = (await first.locator(".k2b-navigation__inline-action").boundingBox())!;
-          expect(button.width).toBe(44);
-          expect(button.height).toBe(44);
-          // Inside the Compose row, at its end.
-          expect(button.y).toBeGreaterThanOrEqual(row.y);
-          expect(button.y + button.height).toBeLessThanOrEqual(row.y + row.height);
-          expect(Math.round(button.x + button.width)).toBe(Math.round(row.x + row.width));
-          await first.locator(".k2b-navigation__inline-action").click();
-        } else {
-          expect(await first.innerText()).toBe("Über dieses Postfach");
-          await first.locator(".k2b-navigation__control").click();
-        }
+        expect(
+          await page
+            .locator(".mail-phone-menu")
+            .getByRole("button", { name: /Postfachdetails|Über dieses Postfach|Einstellungen/ })
+            .count(),
+        ).toBe(0);
+        await optionsTrigger(page).click();
+        await page
+          .getByRole("menuitem", { name: permission === "write" ? "Postfachdetails" : "Über dieses Postfach", exact: true })
+          .click();
         const dialog = page.getByRole("dialog");
         await dialog.waitFor();
+        await settled(page);
         const overflow = await page.evaluate(() => {
           const body = document.querySelector<HTMLElement>("dialog .k2b-panel-dialog__body")!;
           const frame = document.querySelector<HTMLElement>("dialog")!.getBoundingClientRect();
