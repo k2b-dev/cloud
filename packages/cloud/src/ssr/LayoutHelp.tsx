@@ -216,9 +216,12 @@ const HelpShell = (props: {
   const [activeId, setActiveId] = createSignal<string | null>(props.session.activeId);
   const initialTopic = props.documents?.find((topic) => topic.id === props.session.activeId);
   const initialArticle = initialTopic && props.initialArticle?.payload.id === initialTopic.id ? props.initialArticle : undefined;
-  if (initialArticle && initialTopic)
-    props.session.articleCache.set(`${initialTopic.locale ?? "en"}:${initialTopic.url}`, initialArticle.payload);
-  const [payload, setPayload] = createSignal<HelpDocumentPayload | null>(initialArticle?.payload ?? null);
+  // HTML travels once as parts; rebuild it for the cache and the article settle effect.
+  const seeded = initialArticle
+    ? { ...initialArticle.payload, html: (initialArticle.parts.lead ?? "") + initialArticle.parts.body }
+    : undefined;
+  if (seeded && initialTopic) props.session.articleCache.set(`${initialTopic.locale ?? "en"}:${initialTopic.url}`, seeded);
+  const [payload, setPayload] = createSignal<HelpDocumentPayload | null>(seeded ?? null);
   const [loading, setLoading] = createSignal(props.session.view === "article" && !initialArticle);
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [loadAttempt, setLoadAttempt] = createSignal(0);
@@ -318,7 +321,7 @@ const HelpShell = (props: {
   // Reuse the serialized parts for the initial object on both sides of the island boundary.
   const articleParts = createMemo(() => {
     const article = payload();
-    if (initialArticle && article === initialArticle.payload) return initialArticle.parts;
+    if (initialArticle && article === seeded) return initialArticle.parts;
     return article?.html ? helpArticleParts(article.html) : null;
   });
   const articleSections = (): HelpSection[] => (view() === "article" ? articleParts()?.sections : undefined) ?? [];

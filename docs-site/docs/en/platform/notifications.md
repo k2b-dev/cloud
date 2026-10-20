@@ -5,7 +5,7 @@ section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
 tags: [notifications, email, browser, do not disturb, quiet hours]
-updated: 2026-10-09
+updated: 2026-10-20
 ---
 
 # Notifications
@@ -484,6 +484,13 @@ may return `{ status: "delivered" }`.
 Channel IDs are lowercase identifiers with at most 80
 characters. Register one driver per ID. Keep the returned cleanup function and
 call it when the deployment integration stops.
+
+Core's **Pending approvals** notification shows the newest waiting request's
+plain Assistant question and reason in the question's language, the same
+language as its approval card. Email
+adds the link to the approvals page. Existing events without those fields
+keep the general notice. See [Pending approvals notification](/en/docs/identity/approvals#pending-approvals-notification)
+for eligibility and bundling.
 
 ## Send a notification
 

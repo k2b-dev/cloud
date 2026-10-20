@@ -7,6 +7,7 @@ import type { CloudRuntime, RuntimeAppMeta } from "@k2b/cloud/contracts/app";
 import type { AuthContext } from "@k2b/cloud/server";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { fromJSON } from "seroval";
 
 const root = mkdtempSync(join(tmpdir(), "cloud-help-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
@@ -121,6 +122,14 @@ test("registered Help keeps the owning app's rail, canvas and localized way up",
           expect(html).toContain('class="help-article-facts"');
           expect(html).toContain("Server fixture lead.");
           expect(html).toContain("Server fixture body.");
+          // Only the serialized parts carry rendered HTML; Markdown and the DOM keep their own copy.
+          expect(html.split(String.raw`Server fixture body.\\x3C/li>`).length - 1).toBe(1);
+          expect(html.split("Server fixture body.").length - 1).toBe(3);
+          const attribute = html.match(/data-props="([^"]*)" data-file="CoreLayoutHelp\.island\.tsx"/)?.[1];
+          expect(attribute).toBeDefined();
+          const decoded = attribute!.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
+          const props = fromJSON<{ initialArticle: { payload: Record<string, unknown> } }>(JSON.parse(decoded));
+          expect("html" in props.initialArticle.payload).toBe(false);
           if (locale === "en") expect(html).toContain("2 steps");
           expect(html).not.toContain('data-state="loading"');
         } else expect(html).not.toContain("Server fixture lead.");

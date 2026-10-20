@@ -27,6 +27,15 @@ const context: ComposeRenderContext = {
   message: { subject: "Hello", to: ["reader@example.test"], cc: [] },
 };
 
+const tableMarkdown = [
+  "| Nr. | Artikel | Menge |",
+  "| --- | --- | --- |",
+  `| 100 | ${"https://example.test/".padEnd(120, "x")} | 2 |`,
+  `| 110 | \`${"item".repeat(30)}\` | 3 |`,
+  "",
+  "See [the catalog](https://example.test/catalog).",
+].join("\n");
+
 const longBody = Array.from({ length: 900 }, (_, i) => `Paragraph ${i}`).join("\n\n");
 const largeMailboxCss = Array.from(
   { length: 40 },
@@ -57,6 +66,28 @@ const expectLiteralText = (rendered: ReturnType<typeof renderComposeContent>, va
   const elements = new Set(rendered.data.html?.match(/<[a-z][a-z0-9]*/gi));
   expect(elements).toEqual(new Set(/[\r\n]/.test(value) ? ["<div", "<p", "<br"] : ["<div", "<p"]));
 };
+
+describe("Markdown tables", () => {
+  test("inlines break-word cells and anywhere links and code only inside cells", () => {
+    const rendered = renderComposeContent({ body: tableMarkdown, format: "markdown", customCss: "", context, renderLiquid: false });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The table message did not render");
+    const html = rendered.data.html;
+    const table = html.match(/<table\b[^>]*>[\s\S]*?<\/table>/)?.[0] ?? "";
+    const cells = Array.from(table.matchAll(/<(?:th|td)\b[^>]*style="([^"]*)"/g), (match) => match[1]!);
+    expect(cells).toHaveLength(9);
+    for (const style of cells) {
+      expect(style).toContain("overflow-wrap:break-word");
+      expect(style).toContain("word-break:normal");
+    }
+    for (const tag of ["a", "code"]) {
+      expect(table).toMatch(new RegExp(`<${tag}\\b[^>]*style="[^"]*overflow-wrap:anywhere[^"]*"`));
+    }
+    const prose = html.slice(html.indexOf("</table>") + "</table>".length);
+    expect(prose).toContain("<a ");
+    expect(prose).not.toContain("overflow-wrap:anywhere");
+    expect(html).toMatch(/^<div\b[^>]*style="[^"]*overflow-wrap:break-word[^"]*"/);
+  });
+});
 
 describe("Markdown dividers", () => {
   const content = (body: string, options: Partial<Parameters<typeof renderComposeContent>[0]> = {}) => {

@@ -2,10 +2,11 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { listCapabilities } from "../_internal/registry";
+import { getApp, listCapabilities } from "../_internal/registry";
 import { QUERY_TIMEOUT_MS } from "../api/capabilities";
 import { ErrorResponseSchema } from "../contracts";
 import { APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
+import { capabilityActionPolicy } from "../contracts/capabilities";
 import {
   type AccessSubject,
   type AuthContext,
@@ -26,12 +27,14 @@ import { isAppSessionActor } from "../server/actor";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
-import { approvalDecisionChannel } from "../services/approvals";
+import { approvalDecisionChannel, approvals } from "../services/approvals";
+import { pendingApprovalReview } from "../services/approvals/question";
 import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
+import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { readThemeFromCookieHeader } from "../shared/theme";
-import { isUnknownActionOutcome } from "./action-review";
+import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome, storedActionReview } from "./action-review";
 import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
@@ -1352,8 +1355,51 @@ export const aiRoutes = (() => {
         if (!conversation) return notFound(c);
         const turn = await loadTurn(conversation, c.req.param("turnId"));
         if (!turn) return notFound(c);
-        const actions = await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id });
-        return respond(c, ok(actions.map((action) => publicPendingAction(action, conversation.shortId, turn.shortId))));
+        const scope = { conversationId: conversation.id, turnId: turn.id };
+        const actions = await listPendingAiTurnActions(scope);
+        if (!actions.some((action) => action.type === "approval_request"))
+          return respond(c, ok(actions.map((action) => publicPendingAction(action, conversation.shortId, turn.shortId))));
+        const [records, reviews, config] = await Promise.all([
+          aiConversations.listPendingActionRecords(scope),
+          aiConversations.listTurnToolReviews(scope),
+          aiConversations.getTurnRunConfig(scope),
+        ]);
+        const locale = config?.kind !== "compact" ? (config?.locale ?? getLocale(c)) : getLocale(c);
+        let capabilities: Promise<Awaited<ReturnType<typeof listCapabilities>> | null> | undefined;
+        const presented = await Promise.all(
+          actions.map(async (action) => {
+            const result = publicPendingAction(action, conversation.shortId, turn.shortId);
+            if (action.type !== "approval_request") return result;
+            const record = records.find((record) => record.callId === action.callId);
+            const request = record?.approvalId ? await approvals.get(record.approvalId) : null;
+            const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
+            const stored = reviews.get(reviewCallId);
+            let review: AiStoredActionReview | null = stored && !isLegacyActionReview(stored) ? stored : null;
+            if (!review && request) {
+              review = pendingApprovalReview({ storedReview: null, details: request.details });
+              if (review && !isLegacyActionReview(review) && !review.ask) {
+                // As the approvals page: the declared reason when the review names none, read once per listing.
+                capabilities ??= listCapabilities().catch(() => null);
+                const manifest = (await capabilities)?.find((entry) => entry.appId === request.appId)?.manifest;
+                review = storedActionReview(review, manifest ? capabilityActionPolicy(manifest, request.action) : undefined);
+              }
+            }
+            const appId = request?.appId;
+            // The name is presentation: a registry that cannot answer leaves the app ID, never the waiting approvals unread.
+            const app = appId && appId !== "assistant" ? await getApp(appId).catch(() => null) : null;
+            return {
+              ...result,
+              ...(review && !isLegacyActionReview(review) ? { review } : {}),
+              app: {
+                id: appId ?? "assistant",
+                name: app ? resolveAppIdentityPresentation(app, locale).name : appId && appId !== "assistant" ? appId : "Cloud",
+              },
+              chatTitle: conversation.title,
+              ...(request ? { expiresAt: request.expiresAt.toISOString() } : {}),
+            };
+          }),
+        );
+        return respond(c, ok(presented));
       })
       .get("/conversations/:conversationId/stream", async (c) => {
         const ctx = await resolveContext(c);

@@ -1,10 +1,12 @@
 import { type ToolContext, truncateMiddle } from "@k2b/nessi";
 import { z } from "zod";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
 import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, parseNetworkAddress } from "../shared/network-address";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsWebsiteApprovals, aiWebsiteApprovalScope, findRememberedAiToolApproval } from "./approvals";
 import { aiConversations } from "./store";
+import { cloudToolReview } from "./tool-sentences";
 import { defineAiTool } from "./tools";
 import type { AiApprovalTarget, AiWebsiteReceipt } from "./types";
 import { hasWebAddressProvenance, recordWebAddresses, webAddressesIn } from "./web-provenance";
@@ -280,7 +282,7 @@ export type WebReadContext = Pick<ToolContext, "requestApproval"> & {
   conversationId?: string;
   turnId?: string;
   locale?: string;
-  requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+  requestApprovalFor?: (message: string, target: AiApprovalTarget, review?: CapabilityActionCallReview) => Promise<boolean>;
   reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
 };
 
@@ -306,7 +308,18 @@ export const authorizeWebRead = async (kind: "page" | "file", url: string, ctx: 
     return true;
   }
   const message = webReadApprovalMessage(kind, url, ctx.locale);
-  const approved = ctx.requestApprovalFor ? await ctx.requestApprovalFor(message, target) : await ctx.requestApproval(message);
+  const review = cloudToolReview(kind === "page" ? "web_extract" : "fetch_file", { url }, ctx.locale ?? "en");
+  const question: CapabilityActionCallReview | undefined = review
+    ? {
+        ...review,
+        ask: "sends",
+        consequences: message
+          .split("\n")
+          .slice(1)
+          .map((text) => ({ text })),
+      }
+    : undefined;
+  const approved = ctx.requestApprovalFor ? await ctx.requestApprovalFor(message, target, question) : await ctx.requestApproval(message);
   if (!approved) throw new Error("The person did not allow reading this address. Use an address from their message or a search result.");
   return false;
 };

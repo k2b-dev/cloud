@@ -5,7 +5,7 @@ section: Platform services
 order: 565
 description: Connect MCP clients to live Cloud capabilities and registered app Help.
 tags: [mcp, capabilities, help, oauth, agents]
-updated: 2026-10-09
+updated: 2026-10-20
 ---
 
 # Cloud MCP server
@@ -44,6 +44,12 @@ that optional consumer field in each capability tool's output schema so MCP
 clients can validate structured responses. Providers do not add `href` to refs.
 If the added links would push a result over the size bound, MCP returns the
 result without them.
+Action results with a valid receipt start `content` with the receipt as plain
+text, including people's addresses. The JSON text block and resource links
+follow it; `structuredContent` stays unchanged. Receipt text uses the request
+language and the operator's time zone (UTC if unavailable). If the extra text
+would exceed the result size limit, MCP omits it and keeps the result.
+Queries and errors keep their existing content.
 See [Resource links](/en/docs/platform/capabilities#resource-links).
 
 ## Follow the server instructions

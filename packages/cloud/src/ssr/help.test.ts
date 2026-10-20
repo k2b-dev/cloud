@@ -101,7 +101,9 @@ for (const state of ["article", "missing-or-hidden", "read-error"] as const) {
           payload: { locale: "de", id: "share", needs: "edit", kind: "task" },
           parts: { lead: "<p>Teile einen Space.</p>", sections: [{ id: "einladen", label: "Einladen" }], steps: 1 },
         });
-        expect(result.payload.html).toContain("⌘");
+        expect("html" in result.payload).toBe(false);
+        // The server splitter encodes the platform-specific ⌘ key as an HTML entity.
+        expect(result.parts.body).toContain("&#x2318;");
         expect(result.parts.body).not.toContain("Teile einen Space.");
       } else expect(result).toBeNull();
     } finally {

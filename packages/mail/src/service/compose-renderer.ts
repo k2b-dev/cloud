@@ -115,6 +115,7 @@ export const DEFAULT_MAIL_CSS = `
   font-size: 15px;
   line-height: 1.55;
   max-width: 720px;
+  overflow-wrap: break-word;
 }
 :where(.mail-signature) { margin-top: 16px; }
 p { margin: 0 0 12px; }
@@ -125,7 +126,8 @@ h3 { font-size: 17px; line-height: 1.35; margin: 18px 0 8px; }
 a { color: #0f766e; text-decoration: underline; }
 ul, ol { margin: 0 0 12px; padding-left: 24px; }
 table { border-collapse: collapse; margin: 12px 0; width: 100%; }
-th, td { border: 1px solid #d4d4d8; padding: 6px 8px; text-align: left; }
+th, td { border: 1px solid #d4d4d8; overflow-wrap: break-word; padding: 6px 8px; text-align: left; word-break: normal; }
+th a, td a, th code, td code { overflow-wrap: anywhere; }
 code { background-color: #f4f4f5; border-radius: 3px; font-family: monospace; padding: 1px 3px; }
 blockquote { border-left: 3px solid #d4d4d8; color: #52525b; margin: 0 0 12px; padding-left: 12px; }
 pre { background-color: #f4f4f5; border-radius: 4px; font-family: monospace; margin: 0 0 12px; overflow-wrap: break-word; padding: 8px 12px; white-space: pre-wrap; }

@@ -1,12 +1,9 @@
 import { dates } from "@k2b/stdlib";
 import { Button, dialogCore, PanelDialog, Placeholder, panelDialogOptions, prompts, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { capabilityQuestionText, capabilityUnknownText } from "../_internal/capability-sentences";
-import { isLegacyActionReview, storedActionReview } from "../ai/action-review";
-import { type ActionCard, legacyActionCard, reviewActionCard } from "../ai/chat/action-card";
+import type { ActionCard } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
 import { ActionQuestion, ActionReceipt } from "../ai/chat/action-question";
-import { aiChatMessages } from "../ai/chat/messages";
 import { refreshAppBadges } from "../browser/app-badges";
 import { coreClient } from "../clients/core";
 import {
@@ -17,6 +14,7 @@ import {
   ApprovalPageSchema,
   type PendingApproval,
 } from "../contracts/approvals";
+import { approvalCard } from "./approval-card";
 import { approvalMessages } from "./messages";
 
 /** How a decided request ends in this list. It stays in place as a receipt until the next load. */
@@ -57,60 +55,13 @@ const useMessages = () => {
   return () => approvalMessages.resolve([locale()]).t;
 };
 
-const lines = (item: PendingApproval) =>
-  item.sentence
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-/** The first line names the app and the Action; the app already shows as the row's icon and origin. */
-const approvalTitle = (item: PendingApproval): string => {
-  const first = lines(item)[0] ?? item.action;
-  const prefix = `${item.app.name}: `;
-  return first.startsWith(prefix) && first.length > prefix.length ? first.slice(prefix.length) : first;
-};
-
-/** Without a review, the sentence's later `Label: value` lines are what the person approves. */
-const sentenceRows = (item: PendingApproval) =>
-  lines(item)
-    .slice(1)
-    .map((line) => {
-      const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
-      return match ? { label: match[1]!, value: match[2] ?? "" } : { label: "", value: line };
-    });
-
-/**
- * The same card as the chat: a new review gives the app's sentence, reason, and preview; an old review its literal
- * message and rows; a request without a review its sentence. Times show in the reader's zone (UTC until the page
- * passes one, the same on the server and in the first browser render).
- */
-const approvalCard = (item: PendingApproval, locale: string, timeZone: string): ActionCard => {
-  const app = { name: item.app.name, icon: item.app.icon ?? "ti ti-shield-check" };
-  const context = { locale, timeZone, app };
-  const review = item.review ? storedActionReview(item.review) : null;
-  if (review && !isLegacyActionReview(review)) return reviewActionCard(review, context);
-  const title = approvalTitle(item);
-  const t = aiChatMessages(locale);
-  return legacyActionCard(
-    {
-      question: review?.legacy.question ?? capabilityQuestionText(title, locale),
-      rows: review?.legacy.rows ?? sentenceRows(item),
-      ...(review?.legacy.markdown ? { markdown: review.legacy.markdown } : {}),
-      ...(review?.legacy.links ? { links: review.legacy.links } : {}),
-      subject: title,
-      title,
-      outcome: {
-        running: t.receiptRunning({ title }),
-        done: t.receiptDone({ title }),
-        rejected: t.receiptRejected({ title }),
-        notRun: t.receiptNotRun({ title, stopped: false }),
-        unknown: capabilityUnknownText(title, locale),
-        unknownStill: capabilityUnknownText(title, locale, true),
-      },
-    },
-    context,
-  );
-};
+const cardInput = (item: PendingApproval) => ({
+  sentence: item.sentence,
+  action: item.action,
+  appName: item.app.name,
+  appIcon: item.app.icon,
+  review: item.review,
+});
 
 /** Origin of the request: owning app, the chat it waits in, when Cloud asked, and when it expires. */
 function Origin(props: { item: PendingApproval; withApp?: boolean }) {
@@ -170,7 +121,7 @@ function ApprovalCard(props: {
 }) {
   const t = useMessages();
   const locale = useLocale();
-  const card = createMemo(() => approvalCard(props.item, locale(), READER_TIME_ZONE));
+  const card = createMemo(() => approvalCard(cardInput(props.item), locale(), READER_TIME_ZONE));
   const current = () => props.outcome ?? (props.failed ? "failed" : "sending");
   const state = () => (props.outcome || props.busy || props.failed ? "decided" : "open");
   // `confirm` asks every time, whatever the stored options say.
@@ -251,7 +202,7 @@ const openDetails = (item: PendingApproval, locale: string) =>
   dialogCore.open<ApprovalDecisionInput>(
     (close) => {
       const t = () => approvalMessages.resolve([locale]).t;
-      const card = approvalCard(item, locale, READER_TIME_ZONE);
+      const card = approvalCard(cardInput(item), locale, READER_TIME_ZONE);
       return (
         <PanelDialog>
           <PanelDialog.Header
@@ -290,7 +241,13 @@ const openDetails = (item: PendingApproval, locale: string) =>
         </PanelDialog>
       );
     },
-    { ...panelDialogOptions, history: true, ariaLabel: approvalMessages.resolve([locale]).t.approvalFor({ title: approvalTitle(item) }) },
+    {
+      ...panelDialogOptions,
+      history: true,
+      ariaLabel: approvalMessages
+        .resolve([locale])
+        .t.approvalFor({ title: approvalCard(cardInput(item), locale, READER_TIME_ZONE).questionText }),
+    },
   );
 
 function Row(props: {
@@ -304,6 +261,8 @@ function Row(props: {
 }) {
   const t = useMessages();
   const locale = useLocale();
+  // The band words the request as the card does: the plain question and Cloud's reason line.
+  const card = createMemo(() => approvalCard(cardInput(props.item), locale(), READER_TIME_ZONE));
   const details = async () => {
     const input = await openDetails(props.item, locale());
     if (input) props.decide(input);
@@ -322,10 +281,13 @@ function Row(props: {
         />
       }
     >
-      <article class="cloud-approval-band" data-decided={props.outcome} aria-label={t().approvalFor({ title: approvalTitle(props.item) })}>
+      <article class="cloud-approval-band" data-decided={props.outcome} aria-label={t().approvalFor({ title: card().questionText })}>
         <i class={props.outcome ? outcomeIcon(props.outcome, true) : "ti ti-alert-triangle"} aria-hidden="true" />
         <div class="cloud-approval-band__text">
-          <strong>{approvalTitle(props.item)}</strong>
+          <strong lang={card().locale}>{card().questionText}</strong>
+          <span class="cloud-approval-band__reason" lang={card().locale}>
+            {card().reason.text}
+          </span>
           <Origin item={props.item} withApp={false} />
         </div>
         <div class="cloud-approval__foot">

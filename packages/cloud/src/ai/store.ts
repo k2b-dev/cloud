@@ -3607,6 +3607,24 @@ export const aiConversations: AiConversationService = {
     return row ? rowToPendingActionRecord(row) : null;
   },
 
+  listTurnToolReviews: async (input) => {
+    // Only the review metadata, never the messages themselves, which can carry large tool results.
+    const rows = await sql<{ tool_reviews: Record<string, AiStoredActionReview> | null }[]>`
+      SELECT meta->'toolReviews' AS tool_reviews
+      FROM (
+        SELECT meta, seq, conversation_id, loop_id, role FROM ai.messages
+        UNION ALL
+        SELECT meta, seq, conversation_id, loop_id, role FROM ai.task_messages
+      ) messages
+      WHERE conversation_id = ${input.conversationId}
+        AND loop_id = ${input.turnId}
+        AND role = 'assistant'
+        AND meta ? 'toolReviews'
+      ORDER BY seq ASC
+    `;
+    return new Map(rows.flatMap((row) => Object.entries(row.tool_reviews ?? {})));
+  },
+
   listPendingActionRecords: async (input) => {
     const rows = await sql<PendingActionRow[]>`
       SELECT *

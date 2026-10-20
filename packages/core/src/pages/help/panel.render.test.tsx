@@ -9,6 +9,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { helpMessages } from "@k2b/cloud/ssr/help-messages";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { fromJSON } from "seroval";
 
 const root = mkdtempSync(join(tmpdir(), "cloud-help-panel-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
@@ -165,6 +166,14 @@ test("Help panel SSR authorizes selectors and renders the first view without she
         expect(article).toContain('class="help-article-facts"');
         expect(article).toContain("Server fixture lead.");
         expect(article).toContain("Server fixture body.");
+        // Only the serialized parts carry rendered HTML; Markdown and the DOM keep their own copy.
+        expect(article.split(String.raw`Server fixture body.\\x3C/li>`).length - 1).toBe(1);
+        expect(article.split("Server fixture body.").length - 1).toBe(3);
+        const attribute = article.match(/data-props="([^"]*)" data-file="CoreLayoutHelpPanel\.island\.tsx"/)?.[1];
+        expect(attribute).toBeDefined();
+        const decoded = attribute!.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
+        const props = fromJSON<{ initialArticle: { payload: Record<string, unknown> } }>(JSON.parse(decoded));
+        expect("html" in props.initialArticle.payload).toBe(false);
         expect(article).toContain("2 steps");
         expect(article).not.toContain('data-state="loading"');
       } else expect(article).not.toContain("Server fixture lead.");

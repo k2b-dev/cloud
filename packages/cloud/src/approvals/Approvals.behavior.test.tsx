@@ -235,7 +235,9 @@ describe("Approvals", () => {
     const band = await mount({ initial: page([item("a1")]), layout: "band", app: "mail" }, () => Response.json({ status: "rejected" }));
     try {
       const row = band.dom.root.querySelector<HTMLElement>("article.cloud-approval-band")!;
-      expect(row.textContent).toContain("Send “Offer 1”");
+      // The band words the request as its card does: the plain question, then Cloud's reason line.
+      expect(row.querySelector("strong")?.textContent).toBe("Sends the draft after the undo window.");
+      expect(row.querySelector(".cloud-approval-band__reason")?.textContent).toBe("I'm asking because Mail always asks for this.");
       await Bun.sleep(550);
       band.button("Reject", row)!.click();
       await waitFor(() => row.dataset.decided === "rejected", "the band receipt");
