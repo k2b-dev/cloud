@@ -75,14 +75,36 @@ describe("Markdown PDF renderer", () => {
     const broken = "abcdefghij<wbr>klmnopqrst<wbr>abcdefghij<wbr>klmnopqrst<wbr>z";
     const prose = `<h2>${long}</h2>\n<p data-label='unchanged'>${long} &amp;</p><ul><li>${long}</li></ul><pre>${long}</pre>`;
     const html = buildPresetPdfHtml({
-      html: `${prose}<table><tr><th>Nr.</th><th>${long}</th></tr><tr><td>100</td><td>${run} ${long}\t${run}\n${run}</td><td><code>limit</code><a href="/${long}">limit</a></td><td><code>${long}</code><a href="/${long}">${long}</a></td><td>${"😀".repeat(21)}</td></tr></table>`,
+      html: `${prose}<table><tr><th>Nr.</th><th>${long}</th></tr><tr><td>100</td><td>${run} ${long}\t${run}\n${run}</td><td><code>limit</code><a href="/${long}">limit</a></td><td><code>${long}</code> <a href="/${long}">${long}</a></td><td>${"😀".repeat(21)}</td></tr></table>`,
     });
     expect(html).toContain(prose);
     expect(html).toContain(`<th>Nr.</th><th>${broken}</th>`);
     expect(html).toContain(`<td>100</td><td>${run} ${broken}\t${run}\n${run}</td>`);
     expect(html).toContain(`<code>limit</code><a href="/${long}">limit</a>`);
-    expect(html).toContain(`<code>${broken}</code><a href="/${long}">${broken}</a>`);
+    expect(html).toContain(`<code>${broken}</code> <a href="/${long}">${broken}</a>`);
     expect(html).toContain(`<td>${"😀".repeat(10)}<wbr>${"😀".repeat(10)}<wbr>😀</td>`);
+  });
+
+  test("counts one run across inline formatting but starts a new run at other elements", () => {
+    const a = (count: number) => "a".repeat(count);
+    const b = (count: number) => "b".repeat(count);
+    const html = buildPresetPdfHtml({
+      html: `<table><tr><td>${a(20)}<strong>${b(20)}</strong>${a(20)}</td><td>${a(15)}<em>${b(5)}</em></td><td>${a(15)}<br>${b(15)}<span>${a(15)}</span><wbr>${b(15)}</td><td><span>x</span><span>1</span><span>+</span><span>y</span></td></tr></table>`,
+    });
+    expect(html).toContain(`<td>${a(20)}<strong><wbr>${b(10)}<wbr>${b(10)}</strong><wbr>${a(10)}<wbr>${a(10)}</td>`);
+    expect(html).toContain(`<td>${a(15)}<em>${b(5)}</em></td>`);
+    expect(html).toContain(`<td>${a(15)}<br>${b(15)}<span>${a(15)}</span><wbr>${b(15)}</td>`);
+    expect(html).toContain("<td><span>x</span><span>1</span><span>+</span><span>y</span></td>");
+  });
+
+  test("breaks a long Markdown word made of bold and plain pieces", () => {
+    const word = `${"a".repeat(20)}**${"b".repeat(20)}**`.repeat(6);
+    const html = buildMarkdownPdfHtml({ markdown: `| Nr. | Wert |\n| --- | --- |\n| 100 | ${word} |` });
+    const cell = /<td>(?:(?!<\/td>)[\s\S])*<\/td>\s*<\/tr>\s*<\/tbody>/u.exec(html)?.[0] ?? "";
+    expect(cell).toContain("<strong>");
+    // 240 units break every 10 from unit 20; the first piece was written before the run grew past 20.
+    expect(cell.match(/<wbr>/gu)?.length).toBe(22);
+    expect(html).toContain("<td>100</td>");
   });
 
   test("keeps runs up to 20 units whole and never adds a break at the run end", () => {

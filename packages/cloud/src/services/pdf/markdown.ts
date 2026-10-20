@@ -205,29 +205,83 @@ const runUnits = (run: string): string[] => {
   return units;
 };
 
+// Inline formatting does not end a run: `aaa**bbb**ccc` prints one unbroken
+// word. Any other element, such as <br>, <wbr>, an image, a span, or a
+// block, starts a new run, so a short value beside it never breaks.
+const INLINE_FORMATTING = new Set([
+  "a",
+  "b",
+  "code",
+  "del",
+  "em",
+  "i",
+  "ins",
+  "kbd",
+  "mark",
+  "s",
+  "samp",
+  "small",
+  "strong",
+  "sub",
+  "sup",
+  "u",
+  "var",
+]);
+
+const SKIPPED_IN_CELLS = new Set(["svg", "math", "style", "script"]);
+
 const breakLongCellRuns = (html: string): string => {
   let skippedDepth = 0;
   let buffer = "";
-  const breakText = (text: string): string =>
-    // A raw no-break space joins a run: it is no line break opportunity.
-    text.replace(/(?:\S|[\u00a0\u2007\u202f\ufeff])+/gu, (run) => {
-      const units = runUnits(run);
-      if (units.length <= MAX_WHOLE_CELL_RUN) return run;
-      return units.map((unit, index) => (index > 0 && index % CELL_RUN_BREAK_STEP === 0 ? `<wbr>${unit}` : unit)).join("");
-    });
+  // Units of the run that the previous text node in the cell ended with.
+  let carried = 0;
+  // A raw no-break space joins a run: it is no line break opportunity.
+  const pieces = /(?:\S|[\u00a0\u2007\u202f\ufeff])+|[^\S\u00a0\u2007\u202f\ufeff]+/gu;
+  const breakText = (text: string): string => {
+    let output = "";
+    for (const [piece] of text.matchAll(pieces)) {
+      if (!/\S/u.test(piece)) {
+        carried = 0;
+        output += piece;
+        continue;
+      }
+      const units = runUnits(piece);
+      const start = carried;
+      carried += units.length;
+      // A run that continues in a later text node is counted when it gets
+      // there; earlier nodes stay as written, so at most 30 units stay whole.
+      if (carried <= MAX_WHOLE_CELL_RUN) {
+        output += piece;
+        continue;
+      }
+      output += units
+        .map((unit, index) => ((start + index) % CELL_RUN_BREAK_STEP === 0 && start + index > 0 ? `<wbr>${unit}` : unit))
+        .join("");
+    }
+    return output;
+  };
 
   return new HTMLRewriter()
-    .on("td svg, th svg, td math, th math, td style, th style, td script, th script", {
+    .on("td *, th *", {
       element(element) {
-        // Self-closing foreign elements have no end tag to restore the depth.
-        if (element.selfClosing) return;
-        skippedDepth += 1;
+        if (INLINE_FORMATTING.has(element.tagName)) return;
+        carried = 0;
+        // Void and self-closing elements have no end tag.
+        if (!element.canHaveContent || element.selfClosing) return;
+        // Graphics, formulas, styles and scripts in a cell keep their text.
+        const skipped = SKIPPED_IN_CELLS.has(element.tagName);
+        if (skipped) skippedDepth += 1;
+        // One end tag handler per element: a second registration would replace this one.
         element.onEndTag(() => {
-          skippedDepth -= 1;
+          carried = 0;
+          if (skipped) skippedDepth -= 1;
         });
       },
     })
     .on("td, th", {
+      element() {
+        carried = 0;
+      },
       text(chunk) {
         if (skippedDepth) return;
         // HTMLRewriter may split one text node (even an entity) into chunks.
