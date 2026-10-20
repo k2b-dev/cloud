@@ -1,5 +1,5 @@
-import type { ScrollSnapshot } from "./nav";
 import { disposeIslands, islandsPending, mountIslands, onIslandMount } from "./mount";
+import type { ScrollSnapshot } from "./nav";
 import { captureScroll, documentNavigate, restoreScroll, swapKey } from "./nav-history";
 
 type SwapState = {

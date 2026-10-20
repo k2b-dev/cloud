@@ -116,7 +116,9 @@ export const mountIslands = (root: ParentNode): void => {
 
 /** Internal navigation API: call listener after each wrapper mounts, until the returned function stops it. */
 export const onIslandMount = (listener: () => void): (() => void) => {
-  const listeners = (registry().listeners ??= new Set());
+  const shared = registry();
+  shared.listeners ??= new Set();
+  const listeners = shared.listeners;
   listeners.add(listener);
   return () => listeners.delete(listener);
 };
