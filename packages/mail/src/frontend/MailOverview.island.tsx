@@ -164,9 +164,10 @@ function MailOverviewView(props: {
   };
   const [selection, setSelection] = createSignal<MailFocusSelection | null>(props.initialSelection);
   // Fokus has no reader: from 48 rem a chosen conversation opens its Detail, as a column while Main keeps 420 px and
-  // otherwise as the drawer. Phones open the reader instead. A server-rendered selection starts open.
+  // otherwise as the drawer. A click on a phone opens the reader instead; a selection in the URL keeps its Detail
+  // (the sheet on a phone) before and after the island mounts.
   const [wideLayout, setWideLayout] = createSignal(true);
-  const detailOpen = () => wideLayout() && selection() !== null;
+  const detailOpen = () => selection() !== null;
   const closeDetail = () => {
     setSelection(null);
     updateSelectionUrl(null);

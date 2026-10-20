@@ -1096,6 +1096,14 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           expect(
             await page.evaluate(() => document.activeElement?.closest("[data-mail-message-id]")?.getAttribute("data-mail-message-id")),
           ).toBe("Long03");
+          // Another conversation and back: the older messages stay shown with the reading position.
+          await page.locator('.mail-workspace [data-conversation-id="Conv01"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+          await settled(page);
+          await page.locator('.mail-workspace [data-conversation-id="Conv02"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
+          await settled(page);
+          expect(await cards.count()).toBe(6);
         } finally {
           await close(page);
         }

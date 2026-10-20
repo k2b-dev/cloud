@@ -193,7 +193,10 @@ export default function MailConversationReader(props: {
     return older ? timelineIds().slice(0, older.cutoff) : timelineIds();
   });
   const revealOlderMessages = (cutoff: number) => {
-    const firstHidden = timeline()[cutoff];
+    // An activity row may sit at the fold; focus goes to the first message after it.
+    const firstHidden = timeline()
+      .slice(cutoff)
+      .find((item) => item.kind === "message");
     setShowOlder(true);
     // The button leaves; focus goes to the first message it showed.
     if (firstHidden?.kind === "message")
@@ -252,17 +255,22 @@ export default function MailConversationReader(props: {
   let disposed = false;
   const scrollPositions = new Map<string, number>();
   const expandedBySelection = new Map<string, Set<string>>();
+  // Conversations whose older messages the person revealed; going back keeps them shown with the scroll position.
+  const olderShownBySelection = new Set<string>();
 
   const rememberReaderState = (selectionKey: string, scrollTop: number, expanded: Set<string>) => {
     scrollPositions.delete(selectionKey);
     scrollPositions.set(selectionKey, scrollTop);
     expandedBySelection.delete(selectionKey);
     expandedBySelection.set(selectionKey, new Set(expanded));
+    if (showOlder()) olderShownBySelection.add(selectionKey);
+    else olderShownBySelection.delete(selectionKey);
     if (scrollPositions.size <= 50) return;
     const oldest = scrollPositions.keys().next().value;
     if (!oldest) return;
     scrollPositions.delete(oldest);
     expandedBySelection.delete(oldest);
+    olderShownBySelection.delete(oldest);
   };
 
   const scheduleReaderScroll = (options: {
@@ -679,7 +687,7 @@ export default function MailConversationReader(props: {
     );
     setMessageSelections({});
     setPendingNewMessages(0);
-    setShowOlder(false);
+    setShowOlder(Boolean(nextSelection && olderShownBySelection.has(nextSelection)));
     followingNewest = true;
     const savedScrollTop = nextSelection ? scrollPositions.get(nextSelection) : undefined;
     scheduleReaderScroll({
