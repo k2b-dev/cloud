@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiStoredMessage, AiTurnBlock } from "@k2b/cloud/ai";
 import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
 import type { Browser, Page, Route } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
 // "Waiting for you" is layout and focus: its reserved row, whether it shows while a card's answers are in view, a
@@ -317,7 +317,14 @@ const phone: View = { name: "390", width: 390, height: 844, touch: true };
 // The side panel the Assistant moves into: a 22 rem column at the right edge of a wide screen.
 const panel: View = { name: "panel", width: 1440, height: 900, touch: false, column: "22rem" };
 
-const open = async (view: View, state: State, options: { theme?: "light" | "dark"; path?: string; slowChat?: ChatId } = {}) => {
+// Longer than the stream's 500 ms reconnect delay, with room for a busy machine.
+const slowDocumentMs = 800;
+
+const open = async (
+  view: View,
+  state: State,
+  options: { theme?: "light" | "dark"; path?: string; slowChat?: ChatId; slowMessageDocument?: boolean } = {},
+) => {
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch,
@@ -330,7 +337,7 @@ const open = async (view: View, state: State, options: { theme?: "light" | "dark
   page.setDefaultTimeout(5000);
   const unexpected: string[] = [];
   const sidebarLoads: string[] = [];
-  page.on("pageerror", (error) => unexpected.push(`pageerror: ${error.message}`));
+  const errors = pageErrors(page);
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning") unexpected.push(`console: ${message.text()}`);
   });
@@ -339,6 +346,9 @@ const open = async (view: View, state: State, options: { theme?: "light" | "dark
     if (url.pathname === "/harness.js") return route.fulfill({ body: script, contentType: "text/javascript" });
     if (url.pathname.startsWith("/ui/")) return route.fulfill({ path: resolve(ui, "dist", url.pathname.slice(4)) });
     if (url.pathname === "/app/assistant") {
+      // A chat opened at a message that answers later than the stream's 500 ms reconnect delay, so the stream that
+      // the navigation cancelled always opens again while the page waits, and WebKit refuses it.
+      if (options.slowMessageDocument && url.searchParams.has("message")) await new Promise((done) => setTimeout(done, slowDocumentMs));
       const harness = { locale: state.locale, props: propsOf(state, url) };
       const column = view.column
         ? `display:flex;justify-content:flex-end;height:100vh` // The panel column sits at the right edge.
@@ -388,7 +398,7 @@ const open = async (view: View, state: State, options: { theme?: "light" | "dark
   });
   await page.goto(`http://localhost:4799${options.path ?? "/app/assistant?conversation=Wart42"}`);
   await page.locator("textarea").first().waitFor({ timeout: 30_000 });
-  return { page, unexpected, sidebarLoads, close: () => context.close() };
+  return { page, unexpected, errors, sidebarLoads, close: () => context.close() };
 };
 
 const strip = (page: Page) => page.locator("nav.assistant-waiting");
@@ -467,7 +477,7 @@ describe("Waiting for you", () => {
     for (const theme of ["light", "dark"] as const)
       test(`3, 2 and none pending at ${view.name} in ${theme}: one row above the field, no Approve all`, async () => {
         const state: State = { locale: "de", scenario: "three" };
-        const { page, unexpected, close } = await open(view, state, { theme });
+        const { page, errors, close } = await open(view, state, { theme });
         try {
           await strip(page).waitFor();
           expect(await strip(page).getAttribute("aria-label")).toBe("Wartet auf dich");
@@ -520,7 +530,7 @@ describe("Waiting for you", () => {
           state.scenario = "none";
           await changed(page, null);
           await strip(page).waitFor({ state: "detached" });
-          expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
+          expect(errors).toEqual([]);
         } finally {
           await close();
         }
@@ -528,7 +538,7 @@ describe("Waiting for you", () => {
 
   for (const view of [desktop, phone, panel])
     test(`one question here at ${view.name}: the row keeps its place hidden while its answers are in view`, async () => {
-      const { page, unexpected, close } = await open(view, { locale: "de", scenario: "one" });
+      const { page, errors, close } = await open(view, { locale: "de", scenario: "one" });
       try {
         await page.locator(".k2b-chat-decision__answers").first().waitFor();
         await strip(page).waitFor({ state: "attached" });
@@ -557,7 +567,7 @@ describe("Waiting for you", () => {
         await settled(page);
         expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
         expect(await rect(page, ".k2b-chat-composer")).toEqual(field);
-        expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
+        expect(errors).toEqual([]);
       } finally {
         await close();
       }
@@ -566,7 +576,7 @@ describe("Waiting for you", () => {
   for (const view of [desktop, phone])
     test(`a jump into another chat at ${view.name} focuses its sentence; reload and back keep the place`, async () => {
       const state: State = { locale: "de", scenario: "three" };
-      const { page, unexpected, close } = await open(view, state);
+      const { page, errors, close } = await open(view, state, { slowMessageDocument: true });
       try {
         await strip(page).waitFor();
         await strip(page)
@@ -614,20 +624,23 @@ describe("Waiting for you", () => {
         expect(earlier.top).toBeGreaterThanOrEqual(0);
         expect(earlier.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
 
-        // A chat opened at a message: the question takes that place, so a reload does not return to the message.
-        await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&message=3");
+        // A chat opened at a message: the question takes that place, so a reload does not return to the message. The
+        // message document is slow, so WebKit always refuses the stream's reconnect during this goto, and
+        // pageErrors() must drop that report (#1579).
+        // The load keeps the page's 5 s budget on top of the document's deliberate delay.
+        await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&message=3", { timeout: 5000 + slowDocumentMs });
         await strip(page).waitFor();
         await strip(page).locator(".assistant-waiting__entry").nth(1).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence focused over the message");
         expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-del-1");
-        expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
+        expect(errors).toEqual([]);
       } finally {
         await close();
       }
     }, 60_000);
 
   test("a second press while the other chat opens keeps the chat it started from in the history", async () => {
-    const { page, unexpected, close } = await open(desktop, { locale: "de", scenario: "three" }, { slowChat: "Tops42" });
+    const { page, errors, close } = await open(desktop, { locale: "de", scenario: "three" }, { slowChat: "Tops42" });
     try {
       await strip(page).waitFor();
       // By the question, since the entry drops "in Team Ops Wochenplanung" once that chat is the open one.
@@ -638,14 +651,14 @@ describe("Waiting for you", () => {
       await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence focused");
       await page.goBack();
       await page.waitForURL(/\?conversation=Wart42$/);
-      expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
+      expect(errors).toEqual([]);
     } finally {
       await close();
     }
   }, 60_000);
 
   test("a jump started while a reload still looks for a question that is gone keeps its focus", async () => {
-    const { page, unexpected, close } = await open(desktop, { locale: "de", scenario: "three" });
+    const { page, errors, close } = await open(desktop, { locale: "de", scenario: "three" });
     try {
       await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&question=tool-gone");
       await strip(page).waitFor();
@@ -661,7 +674,7 @@ describe("Waiting for you", () => {
           }),
       );
       expect(await focusedSentence(page)).toBe("tool-del-1");
-      expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
+      expect(errors).toEqual([]);
     } finally {
       await close();
     }
