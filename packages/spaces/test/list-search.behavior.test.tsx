@@ -237,9 +237,18 @@ describe("Spaces list search", () => {
       loadSpacesViewSnapshot: () => pending.promise,
     }));
     const { default: SpacesListRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesListRoute.island");
+    const { default: SpaceHeadFilters } = await import("../src/frontend/[id]/_components/filter/SpaceHeadFilters.island");
     const { parseFilterFromUrl } = await import("../src/frontend/[id]/_components/filter/types");
     const dispose = render(
-      () =>
+      () => [
+        createComponent(SpaceHeadFilters, {
+          spaceId: "Space1",
+          columns: [],
+          tags: [],
+          currentView,
+          initialSource: base,
+          initialTotal: 120,
+        }),
         createComponent(SpacesListRoute, {
           spaceId: "Space1",
           currentView,
@@ -253,6 +262,7 @@ describe("Spaces list search", () => {
           canWrite: false,
           currentUserId: "33333333-3333-4333-8333-333333333333",
         }),
+      ],
       dom.root,
     );
     try {

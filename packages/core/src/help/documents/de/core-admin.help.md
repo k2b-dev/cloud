@@ -36,6 +36,8 @@ Halte einen anderen erlaubten Zugang für die Administration oder deinen Notfall
 
 Das Sperren eines Kontotyps lehnt auch spätere Anfragen bestehender Sitzungen, benutzergebundener OAuth-Tokens, persönlicher API-Schlüssel und benutzergebundener Hintergrundarbeit ab. Es löscht keine Konten und stoppt nicht den FreeIPA-Sync. Erlaubst du den Typ wieder, funktionieren ansonsten gültige Zugangsdaten wieder. Die Notfallwiederherstellung erlaubt nach ausdrücklicher Bestätigung wieder alle lokalen **Login**-Konten. Welche Typen die Anmeldeseite zeigt, ändert sie nicht.
 
+Unter **Admin → Einstellungen → Anmeldung → Ortsangaben** siehst du Quelle und Erstellungsdatum der City- und ASN-Datenbanken. Lade eine eigene `.mmdb`- oder `.mmdb.gz`-Datei hoch oder setze einen Typ auf den mitgelieferten Stand zurück. Uploads bleiben bis zum Zurücksetzen aktiv. Sind die Daten älter als etwa sechs Monate, erscheint ein Hinweis. Die Datei muss eine City- oder ASN-Datenbank mit IPv6-Suchbaum sein; beachte die Lizenz des Anbieters. Es gelten 192 MiB entpackt und 128 MiB pro Upload-Anfrage. Solange DB-IP-Daten aktiv sind, erscheint der Quellenhinweis zu DB-IP.
+
 ## Die weiteren Einstellungsgruppen finden {icon="settings"}
 
 :::reference

@@ -12,6 +12,7 @@ import {
 } from "@k2b/ui";
 import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import type { CloudResourceRef } from "../../contracts/capabilities";
+import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import type { AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import {
@@ -46,6 +47,11 @@ export type AiChatActions = {
   /** Revoke the approval that lets this chat read `origin` without asking; the next request asks again. */
   onRevokeWebsite?: (origin: string) => Promise<void>;
   onFrontendToolResult?: FrontendToolResultHandler;
+  /**
+   * Ask the owning app once more whether a call whose outcome stayed unknown happened, through its `check` Query. Never
+   * repeats the call itself. Resolves with the stored check; without it, an unknown outcome offers no new check.
+   */
+  onCheckAction?: (request: AiTurnActionRequest) => Promise<AiActionCheck>;
   onForkMessage?: ForkMessageHandler;
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;

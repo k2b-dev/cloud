@@ -157,7 +157,12 @@ const revokeToken = async (token: string, requestId?: string | null): Promise<vo
   }
 };
 
+export class SessionEpochChangedError extends Error {}
+/** The Cloud Login device that approved a sign-in was removed before the session was issued. */
+export class SessionAppDeviceInactiveError extends Error {}
+
 export type SessionIssueOptions = {
+  authEpoch?: number;
   ttlSeconds: number;
   /** Only web session.create supplies browser persistence, never mobile issuance. */
   knownBrowser?: Pick<
@@ -168,6 +173,8 @@ export type SessionIssueOptions = {
   sid?: string;
   /** Binds the family to a paired phone of the mobile app; the device must be active. */
   pwaDeviceId?: string | null;
+  /** The active Cloud Login device that approved this web sign-in. */
+  appDeviceId?: string;
   /** Web sign-ins update `last_login_local`; app renewals track use per device instead. */
   recordLogin?: boolean;
 };
@@ -186,7 +193,8 @@ type PreparedFamily = {
 const SIGNER_INACTIVE = "Prepared Cloud session signer is no longer active";
 const isSignerInactive = (error: unknown) => error instanceof Error && error.message === SIGNER_INACTIVE;
 
-/** Inserts one family in `tx`. Locks the user row first, like every caller that locks more rows. */
+/** Inserts one family in `tx`. Locks the user row first, like every caller that locks more rows; `NO KEY UPDATE`
+ * serializes with every other account lock but lets foreign-key checks of concurrent writes pass. */
 const insertFamily = async (
   tx: SQL,
   c: Context,
@@ -200,7 +208,7 @@ const insertFamily = async (
   const [user] = await tx<
     Array<{ given_name: string | null; auth_epoch: string | number | bigint; provider: "local" | "ipa"; profile: "guest" | "user" }>
   >`
-    SELECT given_name, auth_epoch, provider, profile FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE
+    SELECT given_name, auth_epoch, provider, profile FROM auth.users WHERE id = ${userId}::uuid FOR NO KEY UPDATE
   `;
   if (!user) throw new Error("Cannot create a session for an unknown user");
   const issuedAt = new Date();
@@ -209,12 +217,21 @@ const insertFamily = async (
     throw new HTTPException(403, { message: "This account category is disabled. Contact an administrator." });
   const epoch = Number(user.auth_epoch);
   if (!Number.isSafeInteger(epoch) || epoch < 0) throw new Error("User auth_epoch is invalid");
+  if (options.authEpoch !== undefined && epoch !== options.authEpoch) throw new SessionEpochChangedError();
   if (options.pwaDeviceId) {
     // Device revocation locks the same user row first, so a revoked device never gets a new family.
     const [device] = await tx`
       SELECT id FROM auth.pwa_devices WHERE id = ${options.pwaDeviceId}::uuid AND user_id = ${userId}::uuid AND revoked_at IS NULL FOR UPDATE
     `;
     if (!device) throw new Error("Cannot create an app session for an inactive device");
+  }
+  if (options.appDeviceId) {
+    // A device that decides a terminal sign-in holds its row and then takes a key-share lock on this user row, so the
+    // user row above is held without blocking key-share locks. Removals that end the device's sign-ins hold the user
+    // row too, so they wait for this family.
+    const [device] = await tx`SELECT id FROM auth.app_devices
+      WHERE id=${options.appDeviceId}::uuid AND user_id=${userId}::uuid AND revoked_at IS NULL`;
+    if (!device) throw new SessionAppDeviceInactiveError("Cannot create a session for an inactive sign-in device");
   }
   const [activeKey] = await tx<Array<{ kid: string }>>`
     UPDATE auth.signing_keys
@@ -225,9 +242,9 @@ const insertFamily = async (
   if (!activeKey) throw new Error(SIGNER_INACTIVE);
   await tx`
     INSERT INTO auth.session_families (
-      sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent, legal_pending, pwa_device_id
+      sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent, legal_pending, pwa_device_id, app_device_id
     ) VALUES (${sid}, ${userId}, ${epoch}, ${signer.kid}, ${issuedAt}, ${expiresAt}, ${requestId}, ${userAgent},
-      NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid), ${options.pwaDeviceId ?? null})
+      NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid), ${options.pwaDeviceId ?? null}, ${options.appDeviceId ?? null})
   `;
   const notice = options.knownBrowser
     ? await rememberSignIn(tx, { ...options.knownBrowser, userId, firstName: noticeFirstName(user.given_name), now: issuedAt })
@@ -388,6 +405,10 @@ export const session = {
       device?: string | null;
       /** Null means this sign-in announces nothing, including during maintenance. */
       notify: NewBrowserSignInNotifier | null;
+      /** Account epoch an earlier approval was bound to; issuance fails when sign-out everywhere moved it. */
+      authEpoch?: number;
+      /** The Cloud Login device that approved this sign-in; removing the device can end the session. */
+      appDeviceId?: string;
     },
   ): Promise<string> => {
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
@@ -397,6 +418,8 @@ export const session = {
     const { browser, os, country, city } = describeRequest(c);
     const { token: clientToken, notice } = await issueJwtSession(c, userId, {
       ttlSeconds,
+      authEpoch: signIn.authEpoch,
+      appDeviceId: signIn.appDeviceId,
       knownBrowser: {
         cookie,
         browser,

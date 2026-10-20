@@ -141,7 +141,7 @@ window.openDecision = ({ locale, state, answer }) => {
   const request = { requestId: "login", comparison: "623775", challenge: "unused", createdAt, expiresAt, ...(context ? { context } : {}) };
   const second = { ...request, requestId: "second", createdAt: "2026-10-24T07:14:30.000Z" };
   const queue = context?.level === "warn" ? [request, second] : [request];
-  const [inbox, setInbox] = createSignal({ fixture: { requests: queue, actions: [], moreActions: 0 } });
+  const [inbox, setInbox] = createSignal({ fixture: { requests: queue, actions: [], moreActions: 0, changes: [], moreChanges: 0 } });
   window.refresh = () =>
     setInbox({
       fixture: {
@@ -152,6 +152,8 @@ window.openDecision = ({ locale, state, answer }) => {
         }),
         actions: [],
         moreActions: 0,
+        changes: [],
+        moreChanges: 0,
       },
     });
   const noop = async () => {};
@@ -167,10 +169,11 @@ window.openDecision = ({ locale, state, answer }) => {
     account: noop,
     action: noop,
     act: noop,
+    decideChange: noop,
     decide: async (_binding, decided) => {
       if (answer === "lost") throw new Error("The response was lost");
       if (answer === "hang") return new Promise(() => {});
-      setInbox({ fixture: { requests: inbox().fixture.requests.filter((item) => item.requestId !== decided.requestId), actions: [], moreActions: 0 } });
+      setInbox({ fixture: { requests: inbox().fixture.requests.filter((item) => item.requestId !== decided.requestId), actions: [], moreActions: 0, changes: [], moreChanges: 0 } });
     },
     revoke: noop,
     syncPush: noop,

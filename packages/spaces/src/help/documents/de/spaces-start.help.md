@@ -6,9 +6,28 @@ description: Lerne die Grundbegriffe kennen, richte einen Space ein und verbinde
 order: 100
 ---
 
-Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen Personen, Kommentaren und einfacher Planung. Die Spaces-Übersicht zeigt alle Spaces, auf die du zugreifen kannst. Dort erstellst, suchst oder öffnest du einen Space.
+Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen Personen, Kommentaren und einfacher Planung. Die Übersicht führt deine Arbeit aus allen Spaces zusammen.
 
 Öffnest du Spaces über die Navigation, landest du im Space, den du in diesem Browser zuletzt angesehen hast, auch wenn das in einem anderen Tab war. Wurde er gelöscht oder nicht mehr mit dir geteilt, öffnet sich stattdessen die Übersicht.
+
+## Anderen Space öffnen {icon="layout-sidebar"}
+
+Die Übersicht und jeder Space teilen sich eine Seitenleiste. Sie zeigt **Meine Arbeit**, alle zugänglichen Spaces und **Neuer Space**. Die Zahl neben einem Space zählt seine offenen Einträge. Angeheftete Spaces stehen zuerst.
+
+Öffne auf dem Handy das Titelmenü **Space-Name ⌄**. In der Übersicht heißt der Titel **Spaces ⌄**. Beide Menüs bieten dieselben Ziele.
+
+**Meine Arbeit** öffnet die Übersicht. Ihre Tabs **Für mich**, **Heute** und **Demnächst** zeigen Arbeit aus allen deinen Spaces. Die Suchschaltfläche durchsucht Spaces, Aufgaben und Termine.
+
+## Space erstellen {icon="square-plus"}
+
+:::steps
+1. Wähle **Neuer Space** am Ende der Seitenleiste oder im Titelmenü auf dem Handy.
+2. Wähle unter **Vorlage** zwischen **Leerer Space**, **Aufgabenboard**, **Veranstaltungskalender** und **Projektübersicht**.
+3. Passe **Name**, **Beschreibung** und **Farbe** an.
+4. Wähle **Erstellen**.
+:::
+
+Die Vorlage füllt das Formular und legt die erste Ansicht fest. Anfangs ist **Leerer Space** ausgewählt. Du kannst alle Felder vor dem Erstellen ändern.
 
 ## Grundbegriffe kennen {icon="layout-grid"}
 

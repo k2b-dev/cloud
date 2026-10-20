@@ -86,6 +86,18 @@ const mapServiceAccount = (row: ServiceAccountActorRow): ServiceAccount => ({
   createdAt: new Date(row.service_account_created_at).toISOString(),
 });
 
+/** A user access token is current only while its `auth_epoch` claim equals the account's live epoch. */
+export const isOAuthTokenEpochCurrent = (payload: JWTPayload, liveEpoch: unknown): boolean => {
+  const claim = payload.auth_epoch;
+  return (
+    typeof claim === "number" &&
+    Number.isSafeInteger(claim) &&
+    claim >= 0 &&
+    (typeof liveEpoch === "number" || typeof liveEpoch === "bigint" || typeof liveEpoch === "string") &&
+    String(liveEpoch) === String(claim)
+  );
+};
+
 /** Resolve the live OAuth client/principal, then check current account-category policy. */
 export const resolveOAuthTokenActor = async (
   payload: JWTPayload,
@@ -136,13 +148,14 @@ export const resolveOAuthTokenActor = async (
   if (!userId && !uid) return null;
   const predicate = userId ? sql`u.id = ${userId}::uuid` : sql`u.uid = ${uid}`;
   const rows = await query<Record<string, unknown>[]>`
-    SELECT ${userProjectionSql(groupsAdmin)}
+    SELECT u.auth_epoch, ${userProjectionSql(groupsAdmin)}
     FROM oauth.clients c
     JOIN auth.users u ON ${predicate}
     ${userProjectionJoin()}
     WHERE c.client_id = ${clientId}
   `;
-  const user = rows[0] ? buildProjectedUser(rows[0]) : null;
+  if (!rows[0] || !isOAuthTokenEpochCurrent(payload, rows[0].auth_epoch)) return null;
+  const user = buildProjectedUser(rows[0]);
   if (!user || isAccountExpired(user.accountExpires)) return null;
   if (!(await isAccountCategoryAllowed(user, query))) return null;
   return { kind: "user", payload, user, scopes };
@@ -206,4 +219,5 @@ export const clearOAuthVerifierCachesForTest = (): void => {
 
 export const oauthTokens = {
   verifyAccessToken,
+  resolveOAuthTokenActor,
 };

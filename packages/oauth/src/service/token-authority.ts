@@ -2,9 +2,9 @@ import { env } from "@k2b/cloud/config";
 import { z } from "zod";
 
 export type OAuthUserGrantReference =
-  | { kind: "authorization_code"; code: string; nonce: string }
+  | { kind: "authorization_code"; code: string; nonce: string; familyId?: string }
   | { kind: "refresh_token"; tokenId: string; nonce: string }
-  | { kind: "device_code"; deviceAuthorizationId: string; nonce: string };
+  | { kind: "device_code"; deviceAuthorizationId: string; nonce: string; familyId?: string };
 
 export type OAuthClientCredentialsGrantReference = { kind: "client_credentials"; grantId: string; nonce: string };
 

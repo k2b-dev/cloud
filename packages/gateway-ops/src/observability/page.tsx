@@ -14,10 +14,11 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { logging, type TraceWindow, trace } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
-import { ButtonLink, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../config";
 import OperationalCharts from "../frontend/OperationalCharts.island";
 import { alignCountSeries, prepareOperationalCharts } from "../frontend/operational-charts";
+import RangeTabs from "../frontend/RangeTabs";
 import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
 import { buildOverviewSignals, type OverviewSignalSeverity, overviewVerdict } from "./overview";
@@ -116,19 +117,12 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{t.observabilityDescription}</p>
         </div>
 
-        <nav class="flex flex-wrap items-center gap-1" aria-label={t.trafficWindow}>
-          <span class="mr-1 text-[10px] text-dimmed">{t.trafficWindow}</span>
-          {RANGE_KEYS.map((option) => (
-            <ButtonLink
-              href={rangeUrl(option)}
-              variant={option === range ? "primary" : "secondary"}
-              size="sm"
-              aria-current={option === range ? "true" : undefined}
-            >
-              {option}
-            </ButtonLink>
-          ))}
-        </nav>
+        <RangeTabs
+          caption={t.trafficWindow}
+          label={t.trafficWindow}
+          current={range}
+          items={RANGE_KEYS.map((option) => ({ id: option, href: rangeUrl(option) }))}
+        />
 
         <section class="paper p-3">
           <div class="flex flex-wrap items-start justify-between gap-3">

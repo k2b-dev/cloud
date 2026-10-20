@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { err } from "@k2b/stdlib";
+import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { composeRenderFailure } from "./compose-render-errors";
 import { localizeMailError, MAX_ERROR_DETAIL_LENGTH, safeErrorDetail } from "./error-messages";
 import { providerBusy } from "./provider-operation-lock";
@@ -70,6 +71,24 @@ describe("Mail service messages", () => {
       status: 409,
     });
     expect(localizeMailError(error, "en")).toBe(error);
+  });
+
+  test("translates draft lease errors into German and preserves English messages", () => {
+    const cases: Array<[string, string, string]> = [
+      [DRAFT_LEASE_ERROR_CODES.HELD, "Draft is open in another session", "Dieser Entwurf ist gerade in einer anderen Sitzung geöffnet."],
+      [
+        DRAFT_LEASE_ERROR_CODES.NOT_OWNED,
+        "Draft editing lease expired",
+        "Die Bearbeitung dieses Entwurfs ist abgelaufen. Lade den Entwurf neu und versuche es erneut.",
+      ],
+      [DRAFT_LEASE_ERROR_CODES.BUSY, "Draft is being updated", "Der Entwurf wird gerade aktualisiert. Versuche es gleich erneut."],
+    ];
+    const translated = cases.map(([code, message]) => {
+      const error = { code, message, status: 409 };
+      expect(localizeMailError(error, "en")).toBe(error);
+      return localizeMailError(error, "de");
+    });
+    expect(translated).toEqual(cases.map(([code, , message]) => ({ code, message, status: 409 })));
   });
 
   test("supports capability transport statuses", () => {

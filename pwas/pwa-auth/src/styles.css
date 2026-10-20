@@ -239,6 +239,61 @@ body {
   padding: 0;
   list-style: none;
 }
+/* The device a change request is about, in the place where a sign-in shows its code. */
+.auth-change-device {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-height: 6.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+}
+.auth-change-device__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: var(--k2b-surface);
+  color: var(--k2b-text-secondary);
+  font-size: 1.5rem;
+}
+.auth-change-device__icon[data-kind="pair"] {
+  background: var(--k2b-info-surface);
+  color: var(--k2b-info-text);
+}
+.auth-change-device__copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.125rem;
+}
+.auth-change-device__copy > strong {
+  overflow-wrap: anywhere;
+  color: var(--k2b-text);
+  font-size: 1.0625rem;
+  line-height: 1.35;
+}
+.auth-change-device__copy > span {
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+/* The consequence and the offline reason share one cell, sized by the longer of both. */
+.auth-change-note {
+  display: grid;
+}
+.auth-change-note > p {
+  grid-area: 1 / 1;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.auth-change-note[data-offline] > p:first-child,
+.auth-change-note > .auth-change-note__sizer {
+  visibility: hidden;
+}
 /* Both choices share the row; a label too long for half of it moves the main action above. Done takes
    their place after an ending, in the same grid cell. */
 .auth-decision-actions {
@@ -619,6 +674,7 @@ body {
 }
 .auth-action-result p {
   max-width: 20rem;
+  overflow-wrap: anywhere;
   color: var(--k2b-text-secondary);
   font-size: 0.875rem;
   line-height: 1.5;

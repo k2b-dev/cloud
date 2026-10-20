@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
 describe("AI usage drill-down", () => {
+  beforeEach(() => setSystemTime(new Date("2026-09-08T12:00:00.000Z")));
+  afterEach(() => setSystemTime());
   if (isServer) {
     test.skip("requires browser conditions and Solid DOM preload", () => {});
     return;
@@ -54,9 +56,18 @@ describe("AI usage drill-down", () => {
     try {
       expect(dom.root.querySelectorAll("table").length).toBe(1);
       expect(dom.root.textContent).not.toContain("provider/model-a");
-      Array.from(dom.root.querySelectorAll("button"))
-        .find((button) => button.textContent === "Models")!
-        .click();
+      const choice = dom.root.querySelector('[role="radiogroup"][aria-label="Compare by"]');
+      expect(choice).not.toBeNull();
+      const radios = Array.from(choice!.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+      expect(radios).toHaveLength(2);
+      const users = radios.find((radio) => radio.textContent === "Users")!;
+      const models = radios.find((radio) => radio.textContent === "Models")!;
+      expect(users.getAttribute("aria-checked")).toBe("true");
+      expect(models.getAttribute("aria-checked")).toBe("false");
+      expect(choice!.querySelector('button[data-variant="primary"]')).toBeNull();
+      models.click();
+      expect(models.getAttribute("aria-checked")).toBe("true");
+      expect(users.getAttribute("aria-checked")).toBe("false");
       expect(dom.root.querySelectorAll("table").length).toBe(1);
       expect(dom.root.textContent).toContain("provider/model-a");
       expect(dom.root.querySelector("details")?.open).toBe(false);

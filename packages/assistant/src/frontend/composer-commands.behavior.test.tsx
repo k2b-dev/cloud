@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
-import type { AiChatTaskView, AiSkillSummary } from "@k2b/cloud/ai";
+import type { AiChatTaskView, AiRecentResource, AiSkillSummary } from "@k2b/cloud/ai";
 import type { AiComposerAttachment } from "@k2b/cloud/ai/ui";
 import type { CloudResourcePickerItem, CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
@@ -70,10 +70,11 @@ const chosenNote: CloudResourcePickerItem = {
 const fixedNow = "2026-10-10T12:00:00.000Z";
 beforeEach(() => setSystemTime(new Date(fixedNow)));
 const cleanups: (() => void)[] = [];
-afterEach(() => {
+afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
   setSystemTime();
   picker.mockReset();
+  (await import("./composer-commands")).resetAssistantRecentResources();
 });
 const flush = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
@@ -137,6 +138,7 @@ const installPopoverStub = () => {
 
 const mount = async (
   options: {
+    add?: boolean;
     host?: ReturnType<typeof createDomTestHarness>;
     value?: string;
     locale?: string;
@@ -155,6 +157,13 @@ const mount = async (
     scheduledTaskSkillsFail?: () => boolean;
     post?: () => Promise<Response>;
     track?: <T>(picking: Promise<T>) => Promise<T>;
+    /** Checked recent references the server answers with; none by default. */
+    recent?: AiRecentResource[];
+    recentFail?: () => boolean;
+    /** The recent references answer only once this settles. */
+    recentGate?: () => Promise<void>;
+    /** More parts that arrive without a new search, such as an upload finishing. */
+    extraParts?: () => number;
   } = {},
 ) => {
   const dom = options.host ? { ...options.host, root: options.host.document.createElement("div") } : createDomTestHarness();
@@ -173,9 +182,12 @@ const mount = async (
     assistantCommandScopes,
     assistantCommandSections,
     assistantComposerCommands,
+    assistantDraftRefs,
     assistantExcludedRefs,
     assistantInsertCommands,
+    assistantRecentCommands,
     createAssistantCommandSession,
+    createAssistantRecentResources,
     createAssistantTaskRunKeys,
   } = await import("./composer-commands");
   const { assistantCopyFor } = await import("./ui-copy");
@@ -189,6 +201,12 @@ const mount = async (
         if (url.pathname === "/api/capabilities/v1/catalog") {
           await options.catalogGate;
           return options.catalogFail?.() ? Response.json({ message: "Offline" }, { status: 500 }) : Response.json(catalog);
+        }
+        if (url.pathname === "/api/ai/resources/recent") {
+          await options.recentGate?.();
+          return options.recentFail?.()
+            ? Response.json({ message: "Offline" }, { status: 500 })
+            : Response.json({ resources: options.recent ?? [] });
         }
         if (url.pathname.endsWith("/run")) return options.post ? options.post() : Response.json({});
         if (url.pathname === "/api/ai/tasks")
@@ -224,7 +242,7 @@ const mount = async (
     },
   });
   cleanups.push(() => loader.dispose());
-  const [value, setValue] = createSignal(options.value ?? "/");
+  const [value, setValue] = createSignal(options.value ?? (options.add ? "Hello world" : "/"));
   const [selectedModel, setSelectedModel] = createSignal("alpha");
   const [state, setState] = createSignal<"idle" | "running">("idle");
   const [mentions, setMentions] = createSignal<readonly ChatMention[]>(options.mentions ?? []);
@@ -245,6 +263,11 @@ const mount = async (
       track: options.track,
     }),
   );
+  // As the workspace does: the recent references load when the composer appears.
+  const recent = createAssistantRecentResources();
+  recent.ensure(locale);
+  const draftRefs = () => assistantDraftRefs(options.attachments ?? [], mentions());
+  const partCount = () => (options.attachments ?? []).length + mentions().length + (options.extraParts?.() ?? 0);
   const modelChanges: string[] = [];
   const chooseModel = (id: string) => {
     modelChanges.push(id);
@@ -254,6 +277,7 @@ const mount = async (
   const dispose = render(
     () => (
       <Chat.Composer
+        addOpensCommands={options.add}
         value={value()}
         state={state()}
         onValueChange={setValue}
@@ -271,6 +295,7 @@ const mount = async (
         attachments={aiChatAttachments(options.attachments ?? [])}
         fileSelection={{ choose: options.choose ?? (async () => []), onSelect() {} }}
         commands={[
+          ...assistantRecentCommands({ items: recent.items(), excludeRefs: draftRefs(), partCount, locale }),
           ...insert().commands,
           ...assistantBuiltInCommands({
             copy,
@@ -291,8 +316,13 @@ const mount = async (
         ]}
         searchCommands={(query, signal, search) => {
           // As the workspace does: typed text outside a scope waits for the opening's catalog answer.
+          const recentAtOpening = recent.opened(search, locale);
           return Promise.all([
             assistantComposerCommands({
+              recent: recent.items(),
+              recentAtOpening,
+              excludeRefs: draftRefs(),
+              partCount,
               query,
               signal,
               session: search.opening,
@@ -324,7 +354,10 @@ const mount = async (
       input.setSelectionRange(text.length, text.length);
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-  const key = (key: string) => input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  const key = (key: string) =>
+    (dom.root.querySelector('input[role="combobox"]') ?? input).dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    );
   const rows = () => [...dom.root.querySelectorAll<HTMLButtonElement>('[role="option"]')];
   const row = (label: string) => rows().find((row) => row.querySelector("strong")?.textContent === label)!;
   const mark = (label: string) => {
@@ -340,6 +373,15 @@ const mount = async (
   await settled();
   return {
     ...dom,
+    openPlus: (start = 5, end = start) => {
+      input.focus();
+      input.setSelectionRange(start, end);
+      input.click();
+      const plus = dom.root.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]');
+      expect(plus).not.toBeNull();
+      plus!.click();
+      expect(dom.root.querySelector('input[role="combobox"]')).not.toBeNull();
+    },
     input,
     type,
     key,
@@ -354,6 +396,9 @@ const mount = async (
     searches: () => searches,
     status: () => dom.root.querySelector(".k2b-chat-composer__status")!.textContent,
     taskGets: () => requests.filter(({ url }) => url.pathname === "/api/ai/tasks"),
+    recentGets: () => requests.filter(({ url }) => url.pathname === "/api/ai/resources/recent"),
+    headings: () => [...dom.root.querySelectorAll(".k2b-chat-composer__command-heading span")].map((el) => el.textContent),
+    labels: () => rows().map((row) => row.querySelector("strong")?.textContent),
     posts: () => requests.filter(({ url }) => url.pathname.endsWith("/run")),
   };
 };
@@ -912,4 +957,387 @@ test("a failed catalog retries at the next opening and Studio narrowing works be
   await settled();
   expect(h.row("Notizen")).toBeDefined();
   expect(h.requests.filter(({ url }) => url.pathname === "/api/capabilities/v1/catalog")).toHaveLength(2);
+});
+
+const recentItem = (type: string, id: string, title: string, extra: Partial<AiRecentResource> = {}): AiRecentResource => ({
+  ref: { type, id },
+  title,
+  icon: "ti ti-file-text",
+  kind: "Notiz",
+  preview: "Vertrieb",
+  appName: "Notebooks",
+  count: 1,
+  ...extra,
+});
+// In the server's recency order; the overview orders the four sent most often first.
+const recentItems = [
+  recentItem("notebooks.note", "N1", "Q3-Planung", { count: 3 }),
+  recentItem("contacts.contact", "C1", "Mara Beispiel", {
+    kind: "Kontakt",
+    preview: "Müller GmbH",
+    icon: "ti ti-address-book",
+    appName: "Kontakte",
+    count: 1,
+  }),
+  recentItem("core.ai.skill", "Skill1", "Skill 1", {
+    kind: "Skill",
+    preview: "Description 1",
+    icon: "ti ti-sparkles",
+    appName: "Assistent",
+    count: 5,
+  }),
+  recentItem("notebooks.note", "N2", "Retro Q3", { count: 1 }),
+  recentItem("notebooks.note", "N3", "Projekt Notizen", { preview: undefined, count: 2 }),
+  recentItem("spaces.item", "T1", "Angebot prüfen", { kind: "Aufgabe oder Termin", preview: undefined, appName: "Spaces", count: 1 }),
+];
+// The list opens only after the references arrived, as it does when someone types "/" after the page loaded.
+const mountWithRecent = async (options: Parameters<typeof mount>[0] = {}) => {
+  const h = await mount({ value: "", recent: recentItems, ...options });
+  h.type("/");
+  // Skills and routines answer after the debounce.
+  await settled();
+  await settled();
+  return h;
+};
+
+test("the overview starts with Recent: the four sent most often, then most recently, each with kind and place", async () => {
+  const h = await mountWithRecent();
+  expect(h.headings()).toEqual(["Zuletzt", "Einfügen", "Skills", "Dieser Chat", "Routinen"]);
+  expect(h.labels().slice(0, 6)).toEqual([
+    "Skill 1",
+    "Q3-Planung",
+    "Projekt Notizen",
+    "Mara Beispiel",
+    "Aus Cloud einfügen",
+    "Datei anhängen",
+  ]);
+  expect(h.row("Q3-Planung").querySelector("small")?.textContent).toBe("Notiz · Vertrieb");
+  // Without a place, the app says where it lives.
+  expect(h.row("Projekt Notizen").querySelector("small")?.textContent).toBe("Notiz · Notebooks");
+  expect(h.row("Mara Beispiel").querySelector("small")?.textContent).toBe("Kontakt · Müller GmbH");
+  // Each entry once: the recent Skill does not repeat under Skills, which still shows four.
+  const labels = h.labels();
+  expect(labels.slice(labels.indexOf("Datei anhängen") + 1, labels.indexOf("Modell wählen"))).toEqual([
+    "Skill 0",
+    "Skill 2",
+    "Skill 3",
+    "Skill 4",
+    "Alle 6 Skills",
+  ]);
+  expect(h.recentGets()).toHaveLength(1);
+});
+
+test("choosing a recent row inserts its reference like any insert row", async () => {
+  const h = await mountWithRecent();
+  h.mark("Q3-Planung");
+  h.key("Enter");
+  await flush();
+  expect(h.value()).toBe("Q3-Planung ");
+  expect(h.mentions()).toEqual([
+    {
+      start: 0,
+      end: 10,
+      attachment: expect.objectContaining({ id: "resource:notebooks.note:N1", name: "Q3-Planung" }),
+    },
+  ]);
+  expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "notebooks.note", id: "N1" } });
+});
+
+test("a person without history sees no Recent; the list starts with Insert", async () => {
+  const h = await mountWithRecent({ recent: [] });
+  expect(h.headings()[0]).toBe("Einfügen");
+  expect(h.labels()[0]).toBe("Aus Cloud einfügen");
+});
+
+test("references already in the draft and a full message are respected", async () => {
+  const h = await mountWithRecent({
+    mentions: [],
+    attachments: [
+      {
+        kind: "resource",
+        id: "resource:notebooks.note:N1",
+        name: "Q3-Planung",
+        icon: "ti ti-file-text",
+        ref: { type: "notebooks.note", id: "N1" },
+      },
+    ],
+  });
+  expect(h.row("Q3-Planung")).toBeUndefined();
+  expect(h.labels().slice(0, 4)).toEqual(["Skill 1", "Projekt Notizen", "Mara Beispiel", "Retro Q3"]);
+  const full = await mountWithRecent({
+    attachments: Array.from({ length: 16 }, (_, i) => ({
+      kind: "resource" as const,
+      id: `resource:${i}`,
+      name: `Note ${i}`,
+      icon: "ti ti-note",
+      ref: { type: "notebooks.note", id: `Note${i}` },
+    })),
+  });
+  expect(full.row("Skill 1").getAttribute("aria-disabled")).toBe("true");
+  expect(full.row("Skill 1").querySelector("small")?.textContent).toBe("Eine Nachricht kann höchstens 16 Elemente enthalten.");
+});
+
+test("while typing, Recent is gone and matching recent references rank first inside Insert and Skills", async () => {
+  const h = await mountWithRecent();
+  h.type("/notiz");
+  await settled();
+  expect(h.headings()[0]).toBe("Einfügen");
+  // A recent title word start comes before a tag's title start; other recent notes match by their kind.
+  expect(h.labels().slice(0, 3)).toEqual(["Projekt Notizen", "Notizen", "Notizbücher"]);
+  expect(h.labels()).toContain("Q3-Planung");
+  h.type("/skill");
+  await settled();
+  expect(h.headings()).toContain("Skills");
+  const skills = h.labels().filter((label) => label?.startsWith("Skill "));
+  expect(skills.slice(0, 2)).toEqual(["Skill 1", "Skill 0"]);
+  expect(h.row("Zuletzt")).toBeUndefined();
+});
+
+test("/notiz q3 lists the matching recent notes above the search row; other kinds stay out", async () => {
+  const h = await mountWithRecent();
+  h.type("/notiz q3");
+  await settled();
+  expect(h.headings()).toEqual(["Notizen aus Notebooks"]);
+  expect(h.labels()).toEqual(["Q3-Planung", "Retro Q3", "„q3“ in Notizen suchen"]);
+  h.type("/notiz ");
+  await settled();
+  expect(h.labels()).toEqual(["Q3-Planung", "Retro Q3", "Projekt Notizen", "Notizen durchsuchen"]);
+});
+
+test("/studio lists recent Studio apps, which the Assistant sends as assistant.artifact", async () => {
+  const app = recentItem("assistant.artifact", "A1", "Umsatz Q3", { kind: "Studio-App", preview: undefined, appName: "Assistent" });
+  const h = await mountWithRecent({ recent: [app, ...recentItems] });
+  h.type("/studio q3");
+  await settled();
+  expect(h.labels()[0]).toBe("Umsatz Q3");
+  expect(h.labels()).not.toContain("Q3-Planung");
+});
+
+test("a late answer never inserts Recent into the open list; the next opening shows it", async () => {
+  let answer!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const h = await mount({ value: "", recent: recentItems, recentGate: () => gate });
+  h.type("/");
+  await settled();
+  await settled();
+  expect(h.headings()[0]).toBe("Einfügen");
+  const first = h.labels();
+  answer();
+  await settled();
+  await settled();
+  expect(h.headings()[0]).toBe("Einfügen");
+  expect(h.labels()).toEqual(first);
+  // Typing in the same opening changes rows as typing does; the overview of a new "/" has Recent.
+  h.type("Bitte /");
+  await settled();
+  expect(h.headings()[0]).toBe("Zuletzt");
+  expect(h.recentGets()).toHaveLength(1);
+});
+
+test("a failed load shows no Recent and no error row; only a new opening asks again", async () => {
+  let failed = true;
+  const h = await mount({ value: "", recent: recentItems, recentFail: () => failed });
+  // The load when the composer appeared failed, so this first opening asks again.
+  h.type("/");
+  await settled();
+  expect(h.headings()[0]).toBe("Einfügen");
+  expect(h.root.textContent).not.toContain("Zuletzt");
+  expect(h.recentGets()).toHaveLength(2);
+  // Keystrokes in the same opening never ask.
+  h.type("/s");
+  await settled();
+  h.type("/");
+  await settled();
+  expect(h.recentGets()).toHaveLength(2);
+  failed = false;
+  h.type("Bitte /");
+  await settled();
+  // Asked again at this opening, which opened before the answer: it stays without Recent.
+  expect(h.recentGets()).toHaveLength(3);
+  expect(h.headings()[0]).toBe("Einfügen");
+  h.type("Bitte / /");
+  await settled();
+  expect(h.headings()[0]).toBe("Zuletzt");
+  expect(h.recentGets()).toHaveLength(3);
+});
+
+test("an answer between opening and the first search keeps a recent Skill under Skills, so it is never missing", async () => {
+  let answer!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const h = await mount({ value: "", recent: recentItems, recentGate: () => gate });
+  h.type("/");
+  // The list opened without Recent; the answer arrives before the Skills search runs.
+  answer();
+  await flush();
+  await settled();
+  await settled();
+  expect(h.headings()[0]).toBe("Einfügen");
+  const labels = h.labels();
+  expect(labels.slice(labels.indexOf("Datei anhängen") + 1, labels.indexOf("Modell wählen"))).toEqual([
+    "Skill 0",
+    "Skill 1",
+    "Skill 2",
+    "Skill 3",
+    "Skill 4",
+    "Alle 6 Skills",
+  ]);
+  // The next opening shows it once, under Recent.
+  h.type("Bitte /");
+  await settled();
+  await settled();
+  expect(h.headings()[0]).toBe("Zuletzt");
+  expect(h.labels().filter((label) => label === "Skill 1")).toHaveLength(1);
+});
+
+test("an answer after the first search never adds a Skill row to the same open list", async () => {
+  let answer!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const h = await mount({ value: "", recent: recentItems, recentGate: () => gate });
+  const skillRows = () => {
+    const labels = h.labels();
+    return labels.slice(labels.indexOf("Datei anhängen") + 1, labels.indexOf("Modell wählen"));
+  };
+  h.type("/");
+  await settled();
+  await settled();
+  const first = skillRows();
+  expect(first).toEqual(["Skill 0", "Skill 1", "Skill 2", "Skill 3", "Alle 6 Skills"]);
+  answer();
+  await settled();
+  // Typing and deleting in the same opening runs the overview search again, now with the answer loaded.
+  h.type("/a");
+  await settled();
+  h.type("/");
+  await settled();
+  await settled();
+  expect(h.headings()[0]).toBe("Einfügen");
+  expect(skillRows()).toEqual(first);
+});
+
+test("a recent search row checks the live part count when chosen, so a full message gets no reference", async () => {
+  const [extra, setExtra] = createSignal(0);
+  const h = await mountWithRecent({ extraParts: extra });
+  h.type("/q3");
+  await settled();
+  expect(h.row("Q3-Planung").getAttribute("aria-disabled")).not.toBe("true");
+  // Uploads finish while the list stays open; no search runs again.
+  setExtra(16);
+  h.mark("Q3-Planung");
+  h.key("Enter");
+  await flush();
+  expect(h.mentions()).toEqual([]);
+  expect(h.value()).toBe("/q3");
+  expect(h.status()).toContain("Eine Nachricht kann höchstens 16 Elemente enthalten.");
+});
+
+test.each([false, true])("Plus starts with Insert after Recent when present (recent=%s)", async (recent) => {
+  const h = await mount({ add: true, recent: recent ? recentItems : [] });
+  h.openPlus();
+  await settled();
+  await settled();
+  expect(h.headings()).toEqual([...(recent ? ["Zuletzt"] : []), "Einfügen", "Skills", "Dieser Chat", "Routinen"]);
+  expect(h.labels().slice(recent ? 4 : 0, recent ? 6 : 2)).toEqual(["Aus Cloud einfügen", "Datei anhängen"]);
+});
+
+test("Plus Attach file uses fileSelection.choose and cancellation returns to the caret", async () => {
+  const choose = mock(async () => []);
+  const h = await mount({ add: true, choose });
+  h.openPlus();
+  h.mark("Datei anhängen");
+  h.key("Enter");
+  expect(choose).toHaveBeenCalledTimes(1);
+  await flush();
+  expect(h.value()).toBe("Hello world");
+  expect(h.document.activeElement === h.input).toBe(true);
+  expect(h.input.selectionStart).toBe(5);
+});
+
+test.each(["item", "app"])("Plus Cloud picker inserts the same model resource at the stored caret (icon=%s)", async (icon) => {
+  const chosen = { ...chosenNote, icon: icon === "item" ? "ti ti-note" : undefined, appIcon: chosenNote.appIcon };
+  picker.mockResolvedValueOnce(chosen);
+  const h = await mount({ add: true });
+  h.openPlus();
+  h.mark("Aus Cloud einfügen");
+  h.key("Enter");
+  await flush();
+  expect(picker).toHaveBeenCalledTimes(1);
+  expect(picker).toHaveBeenLastCalledWith(expect.objectContaining({ requireReader: true }));
+  expect(h.value()).toBe("Hello Q3 plan  world");
+  expect(h.mentions()).toEqual([{ start: 6, end: 13, attachment: expect.objectContaining({ name: chosen.title, href: chosen.href }) }]);
+  expect(h.document.activeElement === h.input).toBe(true);
+  expect(h.input.selectionStart).toBe(14);
+  const { aiChatAttachments, aiComposerSendInput } = await import("@k2b/cloud/ai/ui");
+  const oldAttachment: AiComposerAttachment = {
+    kind: "resource",
+    id: `resource:${chosen.ref.type}:${chosen.ref.id}`,
+    ref: chosen.ref,
+    name: chosen.title,
+    icon: chosen.icon ?? chosen.appIcon ?? "ti ti-cloud",
+    href: chosen.href,
+  };
+  const oldDraft = aiComposerSendInput({ intent: "send", text: "Hello world", attachments: aiChatAttachments([oldAttachment]) });
+  const newDraft = aiComposerSendInput({ intent: "send", text: h.value(), mentions: h.mentions(), attachments: [] });
+  const oldPart = oldDraft.resources![0]!;
+  const newPart = newDraft.draftContent!.find((part) => part.type === "resource")!;
+  expect(oldPart).toEqual({ ref: chosen.ref, title: chosen.title, icon: oldAttachment.icon, href: chosen.href });
+  expect(newPart).toEqual({ type: "resource", ...oldPart, inline: true });
+  expect(newDraft.draftContent!.indexOf(newPart)).toBe(1);
+  h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+  expect(h.value()).toBe("Hello world");
+  expect(h.mentions()).toEqual([]);
+});
+
+test("Plus Search this chat calls the existing searchChat action", async () => {
+  const h = await mount({ add: true });
+  h.openPlus();
+  h.mark("In diesem Chat suchen");
+  h.key("Enter");
+  await flush();
+  expect(h.searches()).toBe(1);
+  expect(h.value()).toBe("Hello world");
+});
+
+test("Plus insert rows retain the attachment limit reason", async () => {
+  const { AI_TURN_ATTACHMENT_MAX_ITEMS } = await import("@k2b/cloud/ai/ui");
+  const choose = mock(async () => []);
+  const h = await mount({
+    add: true,
+    choose,
+    attachments: Array.from({ length: AI_TURN_ATTACHMENT_MAX_ITEMS }, (_, i) => ({
+      kind: "resource",
+      id: `resource:${i}`,
+      name: `Note ${i}`,
+      icon: "ti ti-note",
+      ref: { type: "notebooks.note", id: `Note${i}` },
+    })),
+  });
+  h.openPlus();
+  for (const label of ["Aus Cloud einfügen", "Datei anhängen"]) {
+    expect(h.row(label).getAttribute("aria-disabled")).toBe("true");
+    expect(h.row(label).querySelector("small")?.textContent).toBe(
+      `Eine Nachricht kann höchstens ${AI_TURN_ATTACHMENT_MAX_ITEMS} Elemente enthalten.`,
+    );
+    h.mark(label);
+    h.key("Enter");
+  }
+  expect(choose).not.toHaveBeenCalled();
+  expect(picker).not.toHaveBeenCalled();
+});
+
+test("Plus Attach file retains the running-answer reason", async () => {
+  const choose = mock(async () => []);
+  const h = await mount({ add: true, choose });
+  h.setState("running");
+  h.openPlus();
+  expect(h.row("Datei anhängen").getAttribute("aria-disabled")).toBe("true");
+  expect(h.row("Datei anhängen").querySelector("small")?.textContent).toBe("Geht, sobald die Antwort fertig ist");
+  h.mark("Datei anhängen");
+  h.key("Enter");
+  expect(choose).not.toHaveBeenCalled();
 });

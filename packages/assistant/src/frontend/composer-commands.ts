@@ -1,4 +1,4 @@
-import type { AiChatTaskView, AiProject, AiSkillSummary } from "@k2b/cloud/ai";
+import type { AiChatTaskView, AiProject, AiRecentResource, AiSkillSummary } from "@k2b/cloud/ai";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS, type AiComposerAttachment, aiChatAttachments, aiComposerAttachmentRecords } from "@k2b/cloud/ai/ui";
 import { type CloudSearchTag, cloudInsertMenu } from "@k2b/cloud/browser/composer-insert";
 import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
@@ -13,12 +13,15 @@ import {
   type ChatModelOption,
   matchesChatCommand,
 } from "@k2b/ui";
+import { type Accessor, createSignal } from "solid-js";
 import { AssistantTaskRunError, assistantApi } from "../api/client";
 import { assistantMessages } from "./messages";
 import { assistantTaskTitle, formatAssistantTaskScheduleInline } from "./scheduled-task-format";
 import { type AssistantCopy, assistantCopyFor } from "./ui-copy";
 
 export const assistantCommandSections = (copy: AssistantCopy, pending = false): ChatCommandSection[] => [
+  // Only in the overview, and only with the rows it had when the list opened: it sits on top, so nothing may arrive late.
+  { id: "recent", label: copy.commandRecent, overviewOnly: true, fixedWhileOpen: true },
   { id: "insert", label: copy.commandInsert },
   { id: "skills", label: copy.commandSkills, searched: true },
   { id: "files", label: copy.commandFiles, searched: true, searchOnly: true },
@@ -65,12 +68,16 @@ export const assistantResourceMention = (item: CloudResourcePickerItem): ChatAtt
   ])[0]!;
 };
 
-/** Resources the draft already holds, as attachments or references; the picker leaves them out. */
-export const assistantExcludedRefs = (attachments: readonly AiComposerAttachment[], mentions: readonly ChatMention[]): CloudResourceRef[] =>
+/** Resources the draft already holds, as attachments or references, by the refs it sends. */
+export const assistantDraftRefs = (attachments: readonly AiComposerAttachment[], mentions: readonly ChatMention[]): CloudResourceRef[] =>
   [...attachments, ...aiComposerAttachmentRecords(mentions.map((mention) => mention.attachment))]
     .filter((attachment) => attachment.kind === "resource")
-    // The picker lists Studio apps by their search type.
-    .map(({ ref }) => (ref.type === "assistant.artifact" ? { type: "assistant.app", id: ref.id } : ref));
+    .map(({ ref }) => ref);
+
+/** Resources the draft already holds; the picker leaves them out. */
+export const assistantExcludedRefs = (attachments: readonly AiComposerAttachment[], mentions: readonly ChatMention[]): CloudResourceRef[] =>
+  // The picker lists Studio apps by their search type.
+  assistantDraftRefs(attachments, mentions).map((ref) => (ref.type === "assistant.artifact" ? { type: "assistant.app", id: ref.id } : ref));
 
 /**
  * Cloud insert rows share the draft's reference identity and the server's limit on non-text parts. Counts, not the
@@ -268,7 +275,173 @@ export function assistantBuiltInCommands(input: {
 
 /** Slice 7 replaces this overview selection with personal use counts. */
 export const OVERVIEW_SKILL_COUNT = 4;
-export const overviewSkills = (skills: readonly AiSkillSummary[]) => skills.filter((skill) => skill.enabled).slice(0, OVERVIEW_SKILL_COUNT);
+const SKILL_TYPE = "core.ai.skill";
+/**
+ * The overview's Skills: the first four enabled ones besides those "Recent" may show. Those stay in the list too, with
+ * the row key of their "Recent" row: when this opening shows "Recent", the composer keeps them only there; when it
+ * opened before "Recent" arrived, they stay under Skills, so a Skill is never missing from both.
+ */
+export const overviewSkills = (skills: readonly AiSkillSummary[], recentShortIds: ReadonlySet<string> = new Set()) => {
+  const shown: AiSkillSummary[] = [];
+  let others = 0;
+  for (const skill of skills) {
+    if (others === OVERVIEW_SKILL_COUNT) break;
+    if (!skill.enabled) continue;
+    shown.push(skill);
+    if (!recentShortIds.has(skill.shortId)) others++;
+  }
+  return shown;
+};
+/** One row key per Skill reference, the same under "Recent" and under "Skills", so the composer shows it once. */
+const skillRowId = (shortId: string) => `resource:${SKILL_TYPE}:${shortId}`;
+
+/** "Recent" in the overview: the server checks up to eight, the overview shows the four sent most often. */
+export const RECENT_OVERVIEW_COUNT = 4;
+
+/**
+ * The server checks every reference within one Capability query budget (15 seconds) and then answers with what it
+ * has; the extra time lets that answer travel back, so one stalled app does not hide the others.
+ */
+const RECENT_LOAD_TIMEOUT_MS = 20_000;
+const recentLoads = new Map<string, Promise<readonly AiRecentResource[]>>();
+
+/**
+ * References this person recently sent, checked by the server with each app's reader. One load per page and locale,
+ * shared by every composer; it starts when a composer mounts. A failed load is forgotten, so the next list opening asks
+ * again; nothing polls. `items` stays `undefined` until an answer arrives.
+ */
+export function createAssistantRecentResources(
+  load: (signal: AbortSignal) => Promise<readonly AiRecentResource[]> = assistantApi.listRecentResources,
+) {
+  const [items, setItems] = createSignal<readonly AiRecentResource[]>();
+  let current: string | undefined;
+  let opening: number | undefined;
+  let openedWith: readonly AiRecentResource[] | undefined;
+  return {
+    items: items as Accessor<readonly AiRecentResource[] | undefined>,
+    /**
+     * Call at every `searchCommands` run: only a new list opening asks again after a failure, no keystroke does.
+     * Returns the references this opening had at its first search, for the overview's Skills: an answer that arrives
+     * later must not change which Skills the same open list shows.
+     */
+    opened(search: { opening: number }, locale: string) {
+      if (opening === search.opening) return openedWith;
+      opening = search.opening;
+      openedWith = items();
+      this.ensure(locale);
+      return openedWith;
+    },
+    /** Starts or reuses the page's load for `locale`. Call when the composer mounts. */
+    ensure(locale: string) {
+      let pending = recentLoads.get(locale);
+      if (!pending) {
+        // The server reads under one Capability query budget; the same bound ends a request that never answers.
+        const started: Promise<readonly AiRecentResource[]> = load(AbortSignal.timeout(RECENT_LOAD_TIMEOUT_MS)).catch((error: unknown) => {
+          if (recentLoads.get(locale) === started) recentLoads.delete(locale);
+          throw error;
+        });
+        pending = started;
+        recentLoads.set(locale, pending);
+      }
+      if (current === locale && items() !== undefined) return;
+      current = locale;
+      pending.then(
+        (loaded) => {
+          if (current === locale) setItems(loaded);
+        },
+        () => undefined,
+      );
+    },
+  };
+}
+/** Only for tests: forget the page's loads. */
+export const resetAssistantRecentResources = () => recentLoads.clear();
+
+/**
+ * One recent reference as a row. Choosing it checks the live part count, as the picker rows do: attachments can arrive
+ * while the list is open, and the server rejects a message with more parts.
+ */
+const recentRow = (
+  item: AiRecentResource,
+  section: string,
+  limit: { partCount: () => number; locale: string },
+  recent = false,
+): ChatCommand => {
+  const attachment = aiChatAttachments([
+    {
+      kind: "resource",
+      id: `resource:${item.ref.type}:${item.ref.id}`,
+      name: item.title,
+      ref: item.ref,
+      icon: item.icon ?? "ti ti-cloud",
+      ...(item.href ? { href: item.href } : {}),
+    },
+  ])[0]!;
+  const reason = recentLimitReason(limit.partCount(), limit.locale);
+  return {
+    id: attachment.id,
+    section,
+    name: item.title,
+    label: item.title,
+    // Kind and place, such as "Note · Sales"; without a place the app says where it lives.
+    description: `${item.kind} · ${item.preview ?? item.appName}`,
+    icon: item.icon ?? "ti ti-cloud",
+    keywords: [item.kind, item.appName],
+    app: item.appName,
+    action: () => {
+      const full = recentLimitReason(limit.partCount(), limit.locale);
+      if (full) throw new Error(full);
+      return { mention: attachment };
+    },
+    ...(reason ? { reason } : {}),
+    ...(recent ? { recent: true } : {}),
+  };
+};
+
+const recentKey = (ref: CloudResourceRef) => `${ref.type}\u0000${ref.id}`;
+
+/** Most often sent first, then most recently: the server answers in recency order. Actions are never sorted this way. */
+export const assistantRecentOverview = (items: readonly AiRecentResource[]) =>
+  items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => b.item.count - a.item.count || a.index - b.index)
+    .slice(0, RECENT_OVERVIEW_COUNT)
+    .map(({ item }) => item);
+
+/**
+ * The overview's "Recent" rows. References the draft already holds are left out, as the picker leaves them out; a full
+ * message gives every row the same reason as the other insert rows.
+ */
+export function assistantRecentCommands(input: {
+  items: readonly AiRecentResource[] | undefined;
+  excludeRefs: readonly CloudResourceRef[];
+  /** Attachments plus references in the text: the server counts both. */
+  partCount: () => number;
+  locale: string;
+}): ChatCommand[] {
+  const excluded = new Set(input.excludeRefs.map(recentKey));
+  return assistantRecentOverview((input.items ?? []).filter((item) => !excluded.has(recentKey(item.ref)))).map((item) =>
+    recentRow(item, "recent", input),
+  );
+}
+
+const recentLimitReason = (partCount: number, locale: string) =>
+  partCount >= AI_TURN_ATTACHMENT_MAX_ITEMS
+    ? assistantMessages.resolve([locale]).t.attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS })
+    : undefined;
+
+/** Tags whose references the Assistant reads itself under another type: Studio apps are sent as `assistant.artifact`. */
+const OWN_RECENT_TYPES: Readonly<Record<string, string>> = { "assistant:studio-app": "assistant.artifact" };
+
+/**
+ * A tag scope such as "/notiz" lists recent references of its kind: those whose type is the tag's app and whose local
+ * type id equals the tag (`notebooks:note` ↔ `notebooks.note`). Other references appear only in unscoped search.
+ */
+const recentInTagScope = (scope: string, ref: CloudResourceRef) => {
+  if (!scope.startsWith("cloud-tag:")) return false;
+  const tagKey = scope.slice("cloud-tag:".length);
+  return ref.type === (OWN_RECENT_TYPES[tagKey] ?? tagKey.replace(":", "."));
+};
 
 /** The menu lists at most three task states of 100 each, so one key per listable task fits. */
 export const MAX_PENDING_RUN_KEYS = 300;
@@ -429,6 +602,17 @@ export async function assistantComposerCommands(input: {
   projects: readonly AiProject[];
   assignProject: (projectId: string) => Promise<void>;
   running: boolean;
+  /** Checked recent references, once loaded; they rank first while searching and fill tag scopes. */
+  recent?: readonly AiRecentResource[];
+  /**
+   * The recent references of this list opening, as `opened` returns them; the overview's Skills follow these, so a
+   * later answer never adds a Skill row to the open list. `recent` when left out.
+   */
+  recentAtOpening?: readonly AiRecentResource[];
+  /** References the draft already holds; recent rows leave them out. */
+  excludeRefs?: readonly CloudResourceRef[];
+  /** Attachments plus references in the text, for the insert limit; read again when a recent row is chosen. */
+  partCount?: () => number;
 }): Promise<ChatCommand[]> {
   const copy = assistantCopyFor(input.locale);
   const legacyScope = !input.scope
@@ -470,6 +654,10 @@ export async function assistantComposerCommands(input: {
   });
   const overview = !category && !query;
   const fullSkillScope = category === "skill" && !query;
+  const excluded = new Set((input.excludeRefs ?? []).map(recentKey));
+  const recent = (input.recent ?? []).filter((item) => !excluded.has(recentKey(item.ref)));
+  const recentSkills = new Set(recent.filter((item) => item.ref.type === SKILL_TYPE).map((item) => item.ref.id));
+  const recentLimit = { partCount: input.partCount ?? (() => 0), locale: input.locale };
   const [sessionData, searchedSkills, chatFiles, project] = await Promise.all([
     wants("task") ? input.sessionLoader.load(input.session) : null,
     wants("skill") && !overview && !fullSkillScope ? assistantApi.listSkills(input.signal, query.slice(0, 200)) : [],
@@ -482,6 +670,26 @@ export async function assistantComposerCommands(input: {
   ]);
   const allSkills = fullSkillScope ? await input.sessionLoader.loadSkills(input.session) : sessionData?.skills;
   const results: ChatCommand[] = [];
+  // Typed text: recent references rank first among the insert rows. A tag scope lists the recent ones of its kind.
+  if (!category && query)
+    for (const item of recent)
+      if (item.ref.type !== SKILL_TYPE) {
+        const row = recentRow(item, "insert", recentLimit, true);
+        if (matchesChatCommand(row, query)) results.push(row);
+      }
+  if (category?.startsWith("cloud-tag:"))
+    for (const item of recent)
+      if (recentInTagScope(category, item.ref)) {
+        const row = recentRow(item, "insert", recentLimit, true);
+        if (matchesChatCommand(row, query)) results.push(row);
+      }
+  // An opening that had no answer yet passes `undefined`, which must not fall back to the live answer.
+  const recentAtOpening = (("recentAtOpening" in input ? input.recentAtOpening : input.recent) ?? []).filter(
+    (item) => !excluded.has(recentKey(item.ref)),
+  );
+  const shownRecentSkills = overview
+    ? new Set(assistantRecentOverview(recentAtOpening).flatMap((item) => (item.ref.type === SKILL_TYPE ? [item.ref.id] : [])))
+    : new Set<string>();
   if ((overview || fullSkillScope) && allSkills === null)
     results.push({
       id: "skills-retry",
@@ -492,17 +700,19 @@ export async function assistantComposerCommands(input: {
       icon: "ti ti-alert-circle",
       searchAgain: true,
     });
-  for (const skill of overview ? overviewSkills(allSkills ?? []) : fullSkillScope ? (allSkills ?? []) : searchedSkills) {
+  for (const skill of overview ? overviewSkills(allSkills ?? [], shownRecentSkills) : fullSkillScope ? (allSkills ?? []) : searchedSkills) {
     if (!skill.enabled) continue;
-    results.push(
-      reference("skills", skill.name, `Skill · ${skill.description}`, {
+    const row = {
+      ...reference("skills", skill.name, `Skill · ${skill.description}`, {
         kind: "resource",
         id: `skill:${skill.id}`,
         name: skill.name,
-        ref: { type: "core.ai.skill", id: skill.shortId },
+        ref: { type: SKILL_TYPE, id: skill.shortId },
         icon: "ti ti-sparkles",
       }),
-    );
+      id: skillRowId(skill.shortId),
+    };
+    results.push(!overview && recentSkills.has(skill.shortId) ? { ...row, recent: true } : row);
   }
   const enabledCount = (allSkills ?? []).filter((skill) => skill.enabled).length;
   if (overview && enabledCount > OVERVIEW_SKILL_COUNT)

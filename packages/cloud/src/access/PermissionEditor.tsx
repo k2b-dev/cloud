@@ -425,7 +425,7 @@ function AccessEntryRow(props: {
         <Show
           when={props.entry.principal.type === "user"}
           fallback={
-            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700">
               <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
             </div>
           }
@@ -509,7 +509,7 @@ function AccessEntryRow(props: {
               aria-label={t().remove({ name: displayName() })}
               // A disabled button takes no focus and touch has no hover, so the reason also reaches assistive technology.
               aria-description={props.lastManager ? removeLabel() : undefined}
-              class="focus-ui flex h-7 w-7 items-center justify-center rounded text-zinc-400 transition-colors focus:opacity-100 enabled:hover:bg-red-500/[0.08] enabled:hover:text-red-600 dark:enabled:hover:text-red-400"
+              class="focus-ui flex h-7 w-7 items-center justify-center rounded text-dimmed transition-colors focus:opacity-100 enabled:hover:bg-red-500/[0.08] enabled:hover:text-red-600 dark:enabled:hover:text-red-400"
             >
               <i class="ti ti-x text-sm" />
             </IconButton>

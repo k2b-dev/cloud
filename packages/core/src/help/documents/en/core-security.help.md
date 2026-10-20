@@ -41,7 +41,8 @@ The link expires after five minutes. Do not share it outside this setup.
 2. Scan the QR code, or copy the pairing link into the app.
 3. Return to Cloud and compare the six-digit codes.
 4. Only if the codes match, choose **The codes match — pair device**.
-5. Keep the app open until it confirms the pairing.
+5. If you already have a paired device on this Cloud, open the app on it and approve the pairing.
+6. Keep the new app open until it confirms the pairing.
 :::
 
 ## Sign in with the app {icon="device-mobile"}
@@ -83,15 +84,27 @@ By default, Cloud sends the notice by email. Without an email address, it sends 
 
 ## Check and revoke paired devices {icon="device-mobile"}
 
-**Paired devices** shows the name of each device, when it was paired and last used, and whether an administrator helped with the pairing. Rename a device, or revoke a device that you no longer control. A revoked device cannot approve new sign-ins, but existing sessions stay signed in. These controls stay available when app sign-in is disabled.
+**Paired devices** shows the name of each device, when it was paired and last used, and whether an administrator helped with the pairing. Rename a device, or revoke a device that you no longer control. Removing a device needs approval in the app on a paired device. The device that you remove can approve this, but it cannot deny it. The device stays active until approval. You can also end the sign-ins it approved; this is selected by default. Your requesting session, other devices’ sign-ins, and sessions with no device link stay signed in. Sessions issued before this update have no device link. A revoked device cannot approve new sign-ins. While app sign-in is disabled, you can still rename devices; an administrator revokes them.
 
-If you lost your device and cannot sign in, ask an administrator to revoke it.
+If you cannot use any paired device, ask an administrator to revoke the old device and help pair a replacement. Ask an administrator as well when a device you do not recognize denies your removal requests. Administrator-assisted pairing and removal do not need approval on a paired device.
 
 :::warning A password reset also revokes your paired devices
 When you reset your password with **Reset password** on the sign-in page, Cloud revokes all your paired devices. Any other sign-out from all sessions of your account does the same. Pair your devices again afterwards.
 :::
 
 Pairing, renaming, and revoking can ask you to confirm your identity. Sign in with the same account, without signing out first. Pairing then opens again automatically.
+
+## Confirm new access {icon="shield-lock"}
+
+Create personal API keys under **Developer → API keys** and passkeys under
+**Sign-in → Passkeys** in a browser. Your browser sign-in must be from the last
+ten minutes. If Cloud asks you to confirm your identity, sign in again with the
+same account, without signing out first. The dialog then opens again.
+
+When you connect the command line using the browser flow of `cld login`, Cloud
+always asks for consent. Other apps requesting lasting access need the
+same recent confirmation. A **New access** notice names the command line or
+app and the time. If this was not you, contact your administrator.
 
 ## Protect your account {icon="shield-lock"}
 

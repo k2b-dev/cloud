@@ -14,7 +14,8 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
 import { ActionSheet } from "./ActionSheet";
-import type { ActionView, Authenticator, Login } from "./authenticator";
+import type { ActionView, Authenticator, DeviceChange, Login } from "./authenticator";
+import { ChangeSheet } from "./ChangeSheet";
 import { openDetails } from "./Details";
 import { openDialog } from "./dialog";
 import { authMessages, scopeLabel } from "./i18n";
@@ -461,6 +462,35 @@ export function Clouds(props: {
       if (!disposed) setSheetOpen(false);
     }
   };
+  const changes = () =>
+    props.auth
+      .bindings()
+      .flatMap((binding) =>
+        (props.auth.states()[binding.id]?.changes ?? [])
+          .filter((change) => Date.parse(change.expiresAt) > props.auth.now())
+          .map((change) => ({ binding, change, key: `${binding.id}:${change.changeId}` })),
+      )
+      .sort((a, b) => a.change.createdAt.localeCompare(b.change.createdAt) || a.key.localeCompare(b.key));
+  const openChange = async (binding: Binding, change: DeviceChange) => {
+    if (disposed || sheetOpen() || document.visibilityState !== "visible" || document.querySelector("dialog[open]")) return;
+    seen.add(`${binding.id}:${change.changeId}`);
+    setSheetOpen(true);
+    try {
+      await openDialog((close, context) => {
+        if (disposed || document.visibilityState !== "visible") {
+          queueMicrotask(() => close());
+          return null;
+        }
+        return (
+          <LocaleProvider locale={props.preferences.locale()}>
+            <ChangeSheet auth={props.auth} binding={binding} change={change} dismiss={context.requestDismiss} close={() => close()} />
+          </LocaleProvider>
+        );
+      }, bottomSheetAdaptiveOptions);
+    } finally {
+      if (!disposed) setSheetOpen(false);
+    }
+  };
   const blocked = () => disposed || sheetOpen() || document.visibilityState !== "visible" || !!document.querySelector("dialog[open]");
   // The view loads before the sheet opens, so the sheet never grows after its first frame.
   const openAction = async (candidates: Binding[], actionId: string) => {
@@ -496,7 +526,8 @@ export function Clouds(props: {
   };
   createEffect(() => {
     const queue = pending();
-    const keys = new Set(queue.map((item) => item.key));
+    const changeQueue = changes();
+    const keys = new Set([...queue, ...changeQueue].map((item) => item.key));
     for (const key of seen) if (!keys.has(key)) seen.delete(key);
     if (sheetOpen() || !props.auth.online()) return;
     // A tapped Action loads directly, also when the inbox omitted it; the account that listed it goes first.
@@ -517,9 +548,21 @@ export function Clouds(props: {
     // A tapped notification reopens its request even after the sheet was dismissed.
     const focus = props.focus?.();
     const focused = focus ? queue.find((item) => item.request.requestId === focus) : undefined;
-    if (focused) props.focused?.();
+    // Device changes wake the phone like a sign-in does, with the change's id as the request.
+    const focusedChange = focus && !focused ? changeQueue.find((item) => item.change.changeId === focus) : undefined;
+    if (focused || focusedChange) props.focused?.();
+    if (focusedChange) {
+      void openChange(focusedChange.binding, focusedChange.change);
+      return;
+    }
     const next = focused ?? queue.find((item) => !seen.has(item.key));
-    if (next) void open(next.binding, next.request);
+    if (next) {
+      void open(next.binding, next.request);
+      return;
+    }
+    // Sign-ins wait in the browser and go first; a change request opens once none is left.
+    const nextChange = changeQueue.find((item) => !seen.has(item.key));
+    if (nextChange) void openChange(nextChange.binding, nextChange.change);
   });
   return (
     <div class="auth-clouds">
@@ -530,6 +573,7 @@ export function Clouds(props: {
           const state = () => props.auth.states()[binding.id];
           const requests = () => (state()?.requests ?? []).filter((r) => Date.parse(r.expiresAt) > props.auth.now());
           const actions = () => (state()?.actions ?? []).filter((action) => Date.parse(action.expiresAt) > props.auth.now());
+          const deviceChanges = () => (state()?.changes ?? []).filter((change) => Date.parse(change.expiresAt) > props.auth.now());
           return (
             <Paper as="section" class="auth-cloud">
               <header>
@@ -568,7 +612,16 @@ export function Clouds(props: {
                 </IconButton>
               </header>
               <Show when={state()?.error}>{(error) => <p role="status">{t()[error()]}</p>}</Show>
-              <Show when={state() && !state()?.error && requests().length === 0 && actions().length === 0 && !state()?.moreActions}>
+              <Show
+                when={
+                  state() &&
+                  !state()?.error &&
+                  requests().length === 0 &&
+                  deviceChanges().length === 0 &&
+                  actions().length === 0 &&
+                  !state()?.moreActions
+                }
+              >
                 <p class="auth-quiet">{t().noRequests}</p>
               </Show>
               <Show when={!state()}>
@@ -584,6 +637,24 @@ export function Clouds(props: {
                       void open(binding, request);
                     }}
                   />
+                )}
+              </For>
+              <For each={deviceChanges()}>
+                {(change) => (
+                  <div class="auth-action-row">
+                    <div class="auth-action-row__copy">
+                      <p class="auth-action-row__title">
+                        <strong>{change.kind === "pair" ? t().changePairRow : t().changeRevokeRow}</strong> ·{" "}
+                        {change.device.name || t().changeUnnamed}
+                      </p>
+                      <p class="auth-action-row__origin">
+                        <time dateTime={change.createdAt}>{dates.formatDateTimeRelative(change.createdAt, { locale: locale() })}</time>
+                      </p>
+                    </div>
+                    <Button variant="secondary" onClick={() => void openChange(binding, change)}>
+                      {t().actionReview}
+                    </Button>
+                  </div>
                 )}
               </For>
               <For each={actions()}>

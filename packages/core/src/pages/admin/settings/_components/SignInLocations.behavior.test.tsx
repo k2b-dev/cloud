@@ -1,0 +1,492 @@
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { GeoIpAdminStatus } from "@k2b/cloud/contracts";
+import { createComponent } from "solid-js";
+import { isServer, render } from "solid-js/web";
+import { createDomTestHarness } from "../../../../../../ui/test/dom";
+import { bundledStatus, uploadedStatus } from "./sign-in-locations-fixture";
+
+const uploader = uploadedStatus.databases[0].upload!.uploadedBy!.id;
+/** The status after the default three-byte test file landed as the City upload. */
+const landed = (changes: Partial<NonNullable<GeoIpAdminStatus["databases"][0]["upload"]>> = {}): GeoIpAdminStatus => ({
+  ...uploadedStatus,
+  databases: [
+    { ...uploadedStatus.databases[0], upload: { ...uploadedStatus.databases[0].upload!, size: 3, ...changes } },
+    uploadedStatus.databases[1],
+  ],
+});
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** A scripted XMLHttpRequest: the test decides when progress, the end of the upload and the answer arrive. */
+class FakeXhr {
+  static last: FakeXhr | undefined;
+  static sent: unknown[] = [];
+  method = "";
+  url = "";
+  status = 0;
+  responseText = "";
+  aborted = false;
+  headers: Record<string, string> = {};
+  upload: { onprogress?: (event: { lengthComputable: boolean; loaded: number; total: number }) => void; onload?: () => void } = {};
+  onload?: () => void;
+  onerror?: () => void;
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+  setRequestHeader(name: string, value: string) {
+    this.headers[name] = value;
+  }
+  send(body: unknown) {
+    FakeXhr.last = this;
+    FakeXhr.sent.push(body);
+  }
+  abort() {
+    this.aborted = true;
+  }
+  progress(loaded: number, total: number) {
+    this.upload.onprogress?.({ lengthComputable: true, loaded, total });
+  }
+  respond(status: number, body: unknown) {
+    this.upload.onload?.();
+    this.status = status;
+    this.responseText = typeof body === "string" ? body : JSON.stringify(body);
+    this.onload?.();
+  }
+}
+
+let cleanup = () => {};
+afterEach(() => {
+  cleanup();
+  mock.restore();
+  FakeXhr.last = undefined;
+  FakeXhr.sent = [];
+});
+
+const mount = async (options: { initial?: GeoIpAdminStatus | null; locale?: string } = {}) => {
+  if (isServer) throw new Error("Run behavior tests with the browser export condition.");
+  const dom = createDomTestHarness();
+  const previousXhr = Object.getOwnPropertyDescriptor(globalThis, "XMLHttpRequest");
+  Object.defineProperty(globalThis, "XMLHttpRequest", { configurable: true, writable: true, value: FakeXhr });
+  const ui = await import("@k2b/ui");
+  const confirm = spyOn(ui.prompts, "confirm").mockResolvedValue(true);
+  const announce = spyOn(ui, "announce").mockImplementation(() => {});
+  const requests: { url: string; method: string }[] = [];
+  let answer: (url: string, method: string) => Response = () => Response.json(bundledStatus);
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (url: unknown, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        requests.push({ url: String(url), method });
+        return answer(String(url), method);
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    ),
+  );
+  const { default: SignInLocations } = await import("./SignInLocations");
+  const { LocaleProvider } = ui;
+  const dispose = render(
+    () =>
+      createComponent(LocaleProvider, {
+        locale: options.locale ?? "en",
+        get children() {
+          return createComponent(SignInLocations, {
+            initial: options.initial === undefined ? bundledStatus : options.initial,
+            actorId: uploader,
+          });
+        },
+      }),
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+    if (previousXhr) Object.defineProperty(globalThis, "XMLHttpRequest", previousXhr);
+    else delete (globalThis as { XMLHttpRequest?: unknown }).XMLHttpRequest;
+  };
+  const root = dom.root;
+  const statusLine = () =>
+    [...(root.querySelector("[data-geoip-status]")?.children ?? [])].map((node) => node.textContent?.replace(/\s+/g, " ").trim()).join(" ");
+  const source = (kind: "city" | "asn") => root.querySelector(`[data-geoip-kind="${kind}"] [data-geoip-source]`)?.textContent ?? "";
+  const detail = (kind: "city" | "asn") => root.querySelector(`[data-geoip-kind="${kind}"] [data-geoip-date]`)?.textContent ?? "";
+  const button = (label: string) => [...root.querySelectorAll("button")].find((node) => node.textContent?.trim().endsWith(label));
+  const uploadButton = () => root.querySelector<HTMLButtonElement>("[data-geoip-upload]")!;
+  const resetButton = (kind: "city" | "asn") => root.querySelector<HTMLButtonElement>(`[data-geoip-kind="${kind}"] button`)!;
+  const choose = async (name = "dbip-city-lite-2026-11.mmdb.gz", bytes = new Uint8Array([1, 2, 3])) => {
+    const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new dom.window.File([bytes], name);
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    return file;
+  };
+  return {
+    dom,
+    root,
+    confirm,
+    announce,
+    requests,
+    respondWith: (next: typeof answer) => {
+      answer = next;
+    },
+    statusLine,
+    source,
+    detail,
+    button,
+    uploadButton,
+    resetButton,
+    choose,
+  };
+};
+
+describe("sign-in locations block", () => {
+  test("an upload shows progress, then the check, then the new source in its row", async () => {
+    const view = await mount();
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
+    expect(view.resetButton("city").disabled).toBe(true);
+    const file = await view.choose();
+    const xhr = FakeXhr.last!;
+    expect([xhr.method, xhr.url, xhr.headers["content-type"]]).toEqual(["PUT", "/api/admin/core/geoip", "application/octet-stream"]);
+    expect(FakeXhr.sent).toEqual([file]);
+    expect(view.uploadButton().disabled).toBe(true);
+    xhr.progress(32, 100);
+    await flush();
+    expect(view.statusLine()).toBe("Uploading · 32 % Cancel");
+    xhr.progress(100, 100);
+    await flush();
+    expect(view.statusLine()).toBe("Checking the file");
+    xhr.respond(200, { ...uploadedStatus, kind: "city" });
+    await flush();
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+    expect(view.source("city")).toBe("Uploaded file");
+    expect(view.detail("city")).toBe("As of Oct 14, 2026 · GeoLite2-City");
+    expect(view.resetButton("city").disabled).toBe(false);
+    expect(view.uploadButton().disabled).toBe(false);
+  });
+
+  test("a rejected file keeps the old database and offers another file, not the same one again", async () => {
+    const view = await mount();
+    await view.choose("notes.txt");
+    FakeXhr.last!.respond(422, { code: "geoip_invalid" });
+    await flush();
+    expect(view.statusLine()).toBe("This is not a readable MMDB database. Nothing was changed.");
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
+    expect(FakeXhr.sent).toHaveLength(1);
+  });
+
+  test("a platform 413 without Cloud's code asks for the gzip file", async () => {
+    const view = await mount();
+    await view.choose("dbip-city-lite.mmdb");
+    FakeXhr.last!.respond(413, "Payload Too Large");
+    await flush();
+    expect(view.statusLine()).toBe("The file is too large to send. Upload it as .mmdb.gz.");
+  });
+
+  test("a coded request-size refusal asks for gzip while an unpacked-size refusal names the database limit", async () => {
+    const view = await mount();
+    await view.choose("dbip-city-lite.mmdb");
+    FakeXhr.last!.respond(413, { code: "geoip_request_too_large", maxRequestBytes: 134217728 });
+    await flush();
+    expect(view.statusLine()).toBe("The file is too large to send. Upload it as .mmdb.gz.");
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
+    await view.choose("dbip-city-lite.mmdb.gz");
+    FakeXhr.last!.respond(413, { code: "geoip_too_large", maxDatabaseBytes: 201326592 });
+    await flush();
+    expect(view.statusLine()).toBe("The database is larger than 192 MiB unpacked. Nothing was changed.");
+  });
+
+  test("an expired sign-in or removed admin role is a definite refusal that says to sign in again", async () => {
+    const view = await mount();
+    await view.choose();
+    FakeXhr.last!.respond(403, { code: "FORBIDDEN" });
+    await flush();
+    expect(view.requests).toEqual([]);
+    expect(view.statusLine()).toBe("Your sign-in no longer allows this change. Nothing was changed. Sign in again");
+    // Reloading lets the page's route policy send an expired session to sign-in and back here.
+    const reload = spyOn(location, "reload").mockImplementation(() => {});
+    view.button("Sign in again")!.click();
+    expect(reload).toHaveBeenCalledTimes(1);
+    await view.choose();
+    FakeXhr.last!.respond(400, "Bad Request");
+    await flush();
+    expect(view.requests).toEqual([]);
+    expect(view.statusLine()).toBe("Cloud refused the upload. Nothing was changed.");
+  });
+
+  test("an interrupted upload whose result Cloud does not show yet stays unclear instead of claiming nothing changed", async () => {
+    const view = await mount();
+    await view.choose();
+    FakeXhr.last!.onerror?.();
+    await flush();
+    await flush();
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.uploadButton().disabled).toBe(false);
+  });
+
+  test("a busy server gets the same file again with one click", async () => {
+    const view = await mount();
+    const file = await view.choose();
+    FakeXhr.last!.respond(409, { code: "geoip_upload_busy" });
+    await flush();
+    expect(view.statusLine()).toBe("Another upload is still running. Try again");
+    view.button("Try again")!.click();
+    await flush();
+    expect(FakeXhr.sent).toEqual([file, file]);
+    expect(view.statusLine()).toStartWith("Uploading · 0 %");
+  });
+
+  test("a lost answer after a committed upload reports the upload, not a failure", async () => {
+    const view = await mount();
+    view.respondWith(() => Response.json(landed()));
+    await view.choose();
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+    expect(view.source("city")).toBe("Uploaded file");
+  });
+
+  test("a lost answer after re-uploading the same file reports the upload by its new upload time", async () => {
+    const view = await mount({ initial: landed() });
+    view.respondWith(() => Response.json(landed({ uploadedAt: "2026-10-17T08:00:00.000Z" })));
+    await view.choose();
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+  });
+
+  test("a lost answer with the same upload still listed stays unclear", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith(() => Response.json(uploadedStatus));
+    await view.choose();
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+  });
+
+  test("this administrator's upload of another file elsewhere during a lost answer does not count as this upload", async () => {
+    const view = await mount();
+    // The status lists a new City upload by the same administrator, but of a file with another unpacked size.
+    view.respondWith(() => Response.json(uploadedStatus));
+    await view.choose("dbip-asn-lite-2026-11.mmdb");
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.source("city")).toBe("Uploaded file");
+  });
+
+  test("a gzip file is recognised after a lost answer by the unpacked size in its trailer", async () => {
+    const view = await mount();
+    const gzip = new Uint8Array([0x1f, 0x8b, ...Array(12).fill(0), 0x40, 0x42, 0x0f, 0x00]);
+    for (const [size, line] of [
+      [1_000_000, "Uploaded. Sign-in requests now use this file for places."],
+      [1_000_001, "Unclear whether the change was saved. Load status"],
+    ] as const) {
+      view.respondWith(() => Response.json(landed({ size, sha256: String(size).padStart(64, "0") })));
+      await view.choose("dbip-city-lite-2026-11.mmdb.gz", gzip);
+      FakeXhr.last!.respond(502, "Bad Gateway");
+      await flush();
+      await flush();
+      expect(view.statusLine()).toBe(line);
+    }
+  });
+
+  test("another administrator's upload during a lost answer does not count as this upload", async () => {
+    const view = await mount();
+    const other = { id: "22222222-2222-4222-8222-222222222222", name: "Ana Silva" };
+    view.respondWith(() =>
+      Response.json({
+        ...uploadedStatus,
+        databases: [
+          { ...uploadedStatus.databases[0], upload: { ...uploadedStatus.databases[0].upload!, uploadedBy: other } },
+          uploadedStatus.databases[1],
+        ],
+      }),
+    );
+    await view.choose();
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.source("city")).toBe("Uploaded file");
+  });
+
+  test("when Cloud cannot say what is active, the block says so and offers to load the status", async () => {
+    const view = await mount();
+    view.respondWith(() => {
+      throw new TypeError("offline");
+    });
+    await view.choose();
+    FakeXhr.last!.onerror?.();
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.uploadButton().disabled).toBe(false);
+    view.respondWith(() => Response.json(bundledStatus));
+    view.button("Load status")!.click();
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("City or ASN database in MMDB format, also as .mmdb.gz, up to 192 MiB unpacked.");
+  });
+
+  test.each([bundledStatus, uploadedStatus])("cancel reads unchanged status and returns to the starting hint", async (initial) => {
+    const view = await mount({ initial });
+    view.respondWith(() => {
+      expect(FakeXhr.last!.aborted).toBe(true);
+      expect(view.statusLine()).toBe("Checking what is active now");
+      expect(view.uploadButton().disabled).toBe(true);
+      return Response.json(initial);
+    });
+    await view.choose();
+    const xhr = FakeXhr.last!;
+    view.button("Cancel")!.click();
+    await flush();
+    expect(xhr.aborted).toBe(true);
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
+    expect(view.statusLine()).toBe("City or ASN database in MMDB format, also as .mmdb.gz, up to 192 MiB unpacked.");
+    // A late answer of the cancelled request changes nothing.
+    xhr.respond(200, { ...uploadedStatus, kind: "city" });
+    await flush();
+    expect(view.source("city")).toBe(initial.databases[0].source === "uploaded" ? "Uploaded file" : "Bundled DB-IP Lite snapshot");
+  });
+
+  test("cancel reports and announces a new uploaded checksum already saved", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    const after = landed({ sha256: "cd".repeat(32) });
+    view.respondWith(() => Response.json(after));
+    await view.choose();
+    const xhr = FakeXhr.last!;
+    view.button("Cancel")!.click();
+    await flush();
+    expect(xhr.aborted).toBe(true);
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+    expect(view.announce).toHaveBeenCalledWith("Uploaded. Sign-in requests now use this file for places.");
+    xhr.respond(422, { code: "geoip_invalid" });
+    await flush();
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+  });
+
+  test("cancel leaves the outcome unknown when the status read fails", async () => {
+    const view = await mount();
+    view.respondWith(() => {
+      throw new TypeError("offline");
+    });
+    await view.choose();
+    const xhr = FakeXhr.last!;
+    view.button("Cancel")!.click();
+    await flush();
+    expect(xhr.aborted).toBe(true);
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.uploadButton().disabled).toBe(false);
+  });
+
+  test("offline disables upload and reset and says why in the status line", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    expect(view.resetButton("city").disabled).toBe(false);
+    Object.defineProperty(view.dom.window.navigator, "onLine", { configurable: true, get: () => false });
+    view.dom.window.dispatchEvent(new view.dom.window.Event("offline"));
+    await flush();
+    expect(view.statusLine()).toBe("You are offline. Uploading and resetting work again once you are connected.");
+    expect(view.uploadButton().disabled).toBe(true);
+    expect(view.resetButton("city").disabled).toBe(true);
+    Object.defineProperty(view.dom.window.navigator, "onLine", { configurable: true, get: () => true });
+    view.dom.window.dispatchEvent(new view.dom.window.Event("online"));
+    await flush();
+    expect(view.uploadButton().disabled).toBe(false);
+  });
+
+  test("a status the server could not read shows an error with a retry that loads it", async () => {
+    const view = await mount({ initial: null });
+    expect(view.statusLine()).toBe("Could not load the status. Try again");
+    expect(view.uploadButton().disabled).toBe(true);
+    view.button("Try again")!.click();
+    await flush();
+    await flush();
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
+    expect(view.source("asn")).toBe("Bundled DB-IP Lite snapshot");
+    expect(view.uploadButton().disabled).toBe(false);
+  });
+
+  test("reset asks first, deletes that type and names the bundled snapshot again", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith(() => Response.json({ ...bundledStatus, changed: true }));
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    expect(view.confirm).toHaveBeenCalledTimes(1);
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip/city", method: "DELETE" }]);
+    expect(view.statusLine()).toBe("Reset. Places use the bundled snapshot again.");
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
+  });
+
+  test("a reset that another administrator's upload already replaced says so instead of claiming empty places", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith(() => Response.json({ ...uploadedStatus, changed: true }));
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Reset. Places already come from a newer upload.");
+    expect(view.announce).toHaveBeenCalledWith("Reset. Places already come from a newer upload.");
+    expect(view.source("city")).toBe("Uploaded file");
+  });
+
+  test("a refused reset keeps the uploaded file and offers a retry", async () => {
+    const view = await mount({ initial: uploadedStatus, locale: "de" });
+    view.respondWith(() => Response.json({}, { status: 409 }));
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    expect(view.requests.map((request) => request.method)).toEqual(["DELETE"]);
+    expect(view.statusLine()).toBe("Zurücksetzen hat nicht geklappt. Nichts wurde geändert. Erneut versuchen");
+    expect(view.source("city")).toBe("Hochgeladene Datei");
+  });
+
+  test.each([401, 403])("a reset refused with %i offers a new sign-in instead of a retry", async (status) => {
+    const view = await mount({ initial: uploadedStatus, locale: "de" });
+    const statusLine = view.root.querySelector("[data-geoip-status]")!;
+    const reservedHeight = statusLine.className;
+    view.respondWith(() => Response.json({}, { status }));
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip/city", method: "DELETE" }]);
+    expect(view.statusLine()).toBe("Deine Anmeldung erlaubt diese Änderung nicht mehr. Nichts wurde geändert. Erneut anmelden");
+    expect(view.button("Erneut versuchen")).toBeUndefined();
+    const reload = spyOn(location, "reload").mockImplementation(() => {});
+    view.button("Erneut anmelden")!.click();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(view.source("city")).toBe("Hochgeladene Datei");
+    expect(view.root.querySelectorAll("[data-geoip-status]")).toHaveLength(1);
+    expect(view.root.querySelector("[data-geoip-status]")).toBe(statusLine);
+    expect(statusLine.className).toBe(reservedHeight);
+  });
+
+  test("a server error on reset with the upload still listed stays unclear", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith((_url, method) => (method === "DELETE" ? Response.json({}, { status: 502 }) : Response.json(uploadedStatus)));
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    await flush();
+    expect(view.requests.map((request) => request.method)).toEqual(["DELETE", "GET"]);
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+  });
+
+  test("a reset whose answer was lost after the commit reports the reset", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith((_url, method) => {
+      if (method === "DELETE") throw new TypeError("connection reset");
+      return Response.json(bundledStatus);
+    });
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Reset. Places use the bundled snapshot again.");
+  });
+});

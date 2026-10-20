@@ -1,6 +1,6 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
+import { IconButton, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup } from "solid-js";
 import { spaceCommandMessages } from "../../../../commands";
 import { useSpaceMessages } from "../../messages";
@@ -38,7 +38,11 @@ export default function SearchButton(props: Props) {
   });
 
   if (props.variant === "icon") {
-    return <AppWorkspace.SidebarIconAction icon="ti ti-search" label={t.searchItems} onClick={() => void openSearch()} />;
+    return (
+      <IconButton label={t.searchItems} onClick={() => void openSearch()}>
+        <i class="ti ti-search" aria-hidden="true" />
+      </IconButton>
+    );
   }
 
   return (

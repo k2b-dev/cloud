@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sanitizeIncomingMailHtml, sanitizeIncomingMailHtmlWithRemoteImages } from "./message-hydration";
+import { hydrationHtmlBytes, sanitizeIncomingMailHtml, sanitizeIncomingMailHtmlWithRemoteImages } from "./message-hydration";
 
 describe("incoming mail HTML", () => {
   test("keeps common template layout styles and drops positioning and hiding styles", () => {
@@ -164,5 +164,72 @@ describe("incoming mail HTML", () => {
     expect(result.remoteImages).toHaveLength(64);
     expect(result.html.match(/data-mail-remote-image=/gu)).toHaveLength(64);
     expect(result.html).not.toContain("https://images.example");
+  });
+});
+
+describe("hydration HTML working-set estimate", () => {
+  test("sums the encoded size of every HTML node, attachment subtrees included", () => {
+    const structure = {
+      type: "multipart/mixed",
+      childNodes: [
+        { type: "text/html", disposition: "inline", size: 200 },
+        { type: "text/html", size: 300 },
+        { type: "text/plain", size: 500 },
+        { type: "text/html", disposition: "ATTACHMENT", size: 900 },
+        { type: "multipart/alternative", disposition: "attachment", childNodes: [{ type: "text/html", size: 1000 }] },
+      ],
+    };
+    // MailParser can take HTML from a multipart subtree marked as an attachment into the body.
+    expect(hydrationHtmlBytes(structure, 3000)).toBe(2400);
+    expect(hydrationHtmlBytes(JSON.stringify(structure), 3000)).toBe(2400);
+  });
+
+  test("reserves no HTML bytes for a plain-text message", () => {
+    expect(hydrationHtmlBytes({ type: "text/plain", size: 10 }, 100)).toBe(0);
+  });
+
+  test("reserves no HTML bytes for plain text with a large PDF attachment", () => {
+    const pdfBytes = 15 * 1024 * 1024;
+    expect(
+      hydrationHtmlBytes(
+        {
+          type: "multipart/mixed",
+          childNodes: [
+            { type: "text/plain", size: 10 },
+            { type: "application/pdf", size: pdfBytes },
+          ],
+        },
+        pdfBytes + 100,
+      ),
+    ).toBe(0);
+  });
+
+  test("falls back to source size when the root has no string type, even with usable HTML children", () => {
+    for (const type of [undefined, null, 42]) {
+      expect(hydrationHtmlBytes({ type, childNodes: [{ type: "text/html", size: 10 }] }, 100)).toBe(100);
+    }
+  });
+
+  test("falls back to source size for absent, unparseable, or unusable HTML metadata", () => {
+    for (const structure of [
+      null,
+      {},
+      "{",
+      { type: "text/html" },
+      { type: "text/html", size: -1 },
+      { type: "text/html", size: NaN },
+      { type: "text/html", size: Infinity },
+      { type: "text/html", size: "10" },
+      { type: "text/html", size: null },
+      {
+        type: "multipart/mixed",
+        childNodes: [
+          { type: "text/html", size: 10 },
+          { type: "text/html", size: null },
+        ],
+      },
+    ])
+      expect(hydrationHtmlBytes(structure, 100)).toBe(100);
+    expect(hydrationHtmlBytes({ type: "text/html", size: 0 }, 100)).toBe(0);
   });
 });

@@ -222,6 +222,7 @@ describe("cld login --user", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Compare this code in Cloud Login: 623 775\nWaiting for approval… (Ctrl+C cancels)\n");
+    expect(result.stdout).not.toContain("Confirm this sign-in in the browser.");
     expect(result.stdout).toContain('✓ Signed in as Valentin Kolb (profile "portal")');
     expectNoSecrets(result.stdout + result.stderr);
     expect(state.requests[0]).toBe("/.well-known/oauth-authorization-server");
@@ -465,7 +466,7 @@ describe("cld login --user", () => {
 });
 
 describe("cld login --ttl", () => {
-  test("plain --device keeps its requests and output while recording the server's login lifetime", async () => {
+  test("plain --device records the lifetime and explains browser confirmation", async () => {
     const { state, origin } = startServer();
     const config = await configPath();
     const before = Date.now();
@@ -475,6 +476,7 @@ describe("cld login --ttl", () => {
     expect(result.stderr).toBe("");
     expect(result.stdout).toBe(
       [
+        "Confirm this sign-in in the browser. If your browser sign-in is older than 10 minutes, Cloud asks you to sign in again first.",
         `Open ${origin}/oauth/device and enter the code: WDJB-MJHT`,
         "Waiting for approval…",
         '✓ Signed in as Valentin Kolb (profile "portal")',

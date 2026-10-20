@@ -13,9 +13,8 @@ packages/assistant/src/frontend/composer-insert.browser.test.ts | 2
 packages/chat/src/frontend/ChatWorkspace.browser.test.ts | 7
 packages/chat/src/styles/app-host.browser.test.ts | 2
 packages/cloud/src/access/PermissionEditor.browser.test.ts | 3
-packages/cloud/src/ai/chat/live-turn.browser.test.ts | 59
+packages/cloud/src/ai/chat/live-turn.browser.test.ts | 40
 packages/cloud/src/ai/chat/view-block.browser.test.ts | 22
-packages/cloud/src/approvals/Approvals.browser.test.ts | 3
 packages/cloud/src/browser/CloudResourceSearch.browser.test.ts | 1
 packages/cloud/src/browser/choose-files.browser.test.ts | 2
 packages/cloud/src/ssr/LayoutHeader.browser.test.ts | 2
@@ -67,7 +66,7 @@ packages/notebooks/src/frontend/[id]/_components/editor/note-preview.browser.tes
 packages/notebooks/src/frontend/[id]/_components/full-width.browser.test.ts | 2
 packages/notebooks/src/frontend/[id]/_components/graph/notebook-graph.browser.test.ts | 9
 packages/notebooks/src/frontend/[id]/_components/note-print-copy.browser.test.ts | 5
-packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browser.test.ts | 19
+packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browser.test.ts | 16
 packages/notebooks/src/frontend/[id]/_components/versions/version-history.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/attachment-preview.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/editor/lists.browser.test.ts | 1
@@ -79,7 +78,7 @@ packages/spaces/src/frontend/[id]/_components/calendar/calendar-days.browser-sui
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-month.browser-suite.ts | 20
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts | 1
 packages/spaces/src/frontend/[id]/_components/detail/item-detail.browser-suite.ts | 29
-packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts | 76
+packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts | 72
 packages/spaces/src/frontend/[id]/_components/list/item-list.browser-suite.ts | 2
 packages/spaces/src/frontend/[id]/_components/sidebar/item-templates.browser-suite.ts | 6
 packages/ui/src/actions/drag-and-drop.browser.test.ts | 3
@@ -145,7 +144,6 @@ packages/ui/src/styles/icon-tile.browser.test.ts | 4
 packages/ui/src/styles/motion.browser.test.ts | 1
 packages/ui/src/styles/selection-colors.browser.test.ts | 9
 packages/ui/src/styles/touch-field-text.browser.test.ts | 1
-packages/ui/src/styles/touch-targets.browser.test.ts | 7
 packages/ui/src/surfaces/avatar-tints.browser.test.ts | 1
 packages/ui/src/surfaces/calm-states.browser.test.ts | 1
 packages/ui/src/surfaces/resource-card.browser.test.ts | 8

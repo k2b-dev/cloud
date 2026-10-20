@@ -50,13 +50,33 @@ device can complete sign-in. Enabling it does not remove other sign-in methods.
 
 Administrators can also find setup from **My account → Security** while the
 feature is disabled. Other users see it when enabled or when they have device
-history. Existing device inspection and revocation remain available if the
+history. Existing device inspection and renaming remain available if the
 PWA address is missing; the Cloud's own address must still be valid.
+Revocation then needs an administrator, because no paired device can approve it.
 
 The Cloud address under **General → URL** identifies this Cloud.
 Changing that origin requires pairing again. Changing the trusted PWA origin
 does not revoke existing devices: review and revoke credentials separately
 when replacing an untrusted authenticator.
+
+## Pair further devices and remove devices
+
+The first device pairs when you confirm the matching codes in Cloud. If the
+account already has an active paired device on this Cloud, confirming the codes
+creates a five-minute request. Open Cloud Login on a paired device and approve
+it before the new device can sign in. Denied or expired requests do not pair
+the device.
+
+Removing a device from the browser also needs approval in Cloud Login. You can
+also end the browser sign-ins that device approved; this is selected by default.
+The requesting session stays signed in, as do sign-ins approved by other devices
+and sessions with no device link. Sessions issued before this update have no
+such link.
+
+If no paired device is usable, ask an administrator to revoke the old device
+and use administrator-assisted pairing when enabled. These administrator
+actions remain immediate. Older authenticator apps cannot show device-change
+requests; a pending browser request then expires.
 
 ## Sign in with the app
 

@@ -252,6 +252,7 @@ creating anything. The exact title `New chat` keeps automatic naming.
 | `/conversations/:id/messages/:messageId/feedback` | Set or remove private owner feedback for one Assistant message |
 | `/conversations/:id/resources` | List or filter structured Cloud refs observed in one conversation |
 | `/resources` | List or filter structured Cloud refs across the user's active conversations |
+| `/resources/recent` | Up to 8 recently sent Cloud refs of the user, each re-read with its app's reader for this user before any title is returned |
 | `/conversations/:id/turns` | Start, steer, or stop work |
 | `/conversations/:id/stream` | Receive the conversation event feed over SSE |
 | `/conversations/:id/files` | Manage conversation files |

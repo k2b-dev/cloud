@@ -1030,6 +1030,11 @@ Optional review fields describe this call:
 | `scope` | Stable app-owned domain (1–200 characters) for remembered approval; grants no permission |
 | `links` | Up to ten semantic links to inspect the reviewed revision |
 
+After an unknown Assistant Action outcome, Core runs the review's `check` Query
+once: `done` shows its receipt, `not_done` shows not run, and `pending` keeps the
+unknown line. A failed check also stays unknown; **Check again** repeats only
+the Query, never the Action, and without `check`, no repeat button is offered.
+
 The preview is one of:
 
 | Kind | Content and bounds |

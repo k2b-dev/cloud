@@ -404,6 +404,15 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.messages(conversation_id, loop_id, seq ASC)
     WHERE loop_id IS NOT NULL
   `.simple();
+  // "Recent" in the slash menu reads the newest messages a person sent in each of their latest chats. Without it the
+  // read walks every Assistant and tool row of those chats. The predicate matches the store query word for word.
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_messages_sent_by_person
+    ON ai.messages(conversation_id, seq DESC) INCLUDE (created_at, id)
+    WHERE role = 'user' AND kind = 'message'
+      AND NOT (COALESCE(meta, '{}'::jsonb) ? 'scheduledTask')
+      AND NOT (COALESCE(meta, '{}'::jsonb) ? 'agentMessage')
+  `.simple();
 
   // Optional pg_textsearch ranking. Native weighted FTS above is always the
   // correctness path; missing extension support must never block startup.

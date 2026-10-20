@@ -1,14 +1,21 @@
 import { ButtonLink, DescriptionList, useLocale } from "@k2b/ui";
-import { Match, Switch } from "solid-js";
+import { Match, Show, Switch } from "solid-js";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, DecisionHeader, Outcome, RequestedAccess } from "./AuthorizationParts";
+import { CautionNote, DecisionForm, DecisionHeader, Outcome, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
 import DeviceCodeForm from "./DeviceCodeForm.island";
 
 type DeviceOutcome = "approved" | "denied" | "expired" | "blocked";
 
 export type DeviceApprovalView =
   | { kind: "entry"; code?: string; error?: string }
-  | { kind: "confirm"; request: string; code: string; client: { name: string; clientId: string }; scopes: string[] }
+  | {
+      kind: "confirm";
+      request: string;
+      code: string;
+      client: { name: string; clientId: string };
+      scopes: string[];
+      reauthenticateHref: string | null;
+    }
   | { kind: "result"; outcome: DeviceOutcome; message?: string };
 
 /** The heading of a result, which is also the tab title once the request has an answer. */
@@ -50,7 +57,15 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
             </div>
             <RequestedAccess scopes={view().scopes} />
             <CautionNote>{t().deviceOwnCodeWarning}</CautionNote>
-            <DecisionForm action="/oauth/device" request={view().request} />
+            <Show when={view().reauthenticateHref}>
+              <ReauthenticateNote />
+            </Show>
+            <DecisionForm
+              action="/oauth/device"
+              request={view().request}
+              userCode={view().code}
+              reauthenticateHref={view().reauthenticateHref}
+            />
           </>
         )}
       </Match>

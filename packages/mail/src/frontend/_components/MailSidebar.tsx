@@ -90,6 +90,13 @@ export default function MailSidebar(
     settingsOpening: boolean;
     /** The mailbox details are loading; the details button keeps its place and shows progress. */
     detailsOpening: boolean;
+    /** A new message is being prepared; the Compose button keeps its place and shows progress. */
+    composeStarting: boolean;
+    /**
+     * Starts a new message from this mailbox: the button, the phone menu row and the command. `fallback` opens the
+     * compose page instead; `progressToast` asks for a progress toast where the trigger has no pending spot of its own.
+     */
+    onCompose: (options: { fallback: () => void; progressToast: boolean }) => void;
     onOpenDetails: () => void;
     onOpenHealth: () => void;
     onOpenSharedLinks: () => void;
@@ -103,6 +110,8 @@ export default function MailSidebar(
 ) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  // Every Compose entry keeps this link, so a modified click, a new tab or a page without JavaScript opens the compose page.
+  const composeHref = () => `/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`;
   createEffect(() => {
     const copy = mailCommandMessages.resolve([locale()]).t;
     onCleanup(
@@ -118,7 +127,7 @@ export default function MailSidebar(
       }),
     );
     if (!props.canWrite || props.assignedOnly) return;
-    const mailboxId = props.mailboxId;
+    const href = composeHref();
     onCleanup(
       registerContextAwareCommand({
         id: "mail.compose",
@@ -126,7 +135,7 @@ export default function MailSidebar(
         description: copy.composeDescription({ name: props.mailboxName }),
         icon: "ti ti-mail-plus",
         shortcut: "mod+alt+n",
-        action: () => navigateTo(`/app/mail/compose?mailbox=${mailboxId}&autostart=1`),
+        action: () => props.onCompose({ fallback: () => navigateTo(href), progressToast: true }),
       }),
     );
   });
@@ -570,7 +579,10 @@ export default function MailSidebar(
                   id: "compose",
                   label: messages().compose,
                   icon: "ti ti-pencil",
-                  href: `/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`,
+                  // A plain click runs the action outside a view transition; other clicks follow the link.
+                  href: composeHref(),
+                  action: "compose",
+                  disabled: props.composeStarting,
                   inlineActions: [details(messages().mailboxDetails)],
                 }
               : details(messages().aboutMailbox),
@@ -671,6 +683,7 @@ export default function MailSidebar(
     ],
     onNavigate: props.onNavigate,
     onAction: (action) => {
+      if (action === "compose") return props.onCompose({ fallback: () => documentNavigate(composeHref()), progressToast: true });
       if (action === "settings") return props.onOpenSettings();
       if (action === "details") return props.onOpenDetails();
       const item = mailboxToolSections()
@@ -701,10 +714,18 @@ export default function MailSidebar(
               <>
                 <ButtonLink
                   size="sm"
-                  href={`/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`}
+                  href={composeHref()}
+                  onClick={(event) => {
+                    // Modified and middle clicks open the compose page as a link.
+                    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                      return;
+                    event.preventDefault();
+                    props.onCompose({ fallback: () => documentNavigate(composeHref()), progressToast: false });
+                  }}
                   class="mail-compose-action min-w-0 flex-1"
+                  aria-busy={props.composeStarting ? "true" : undefined}
                 >
-                  <i class="ti ti-pencil" aria-hidden="true" />
+                  <i class={props.composeStarting ? "ti ti-loader-2 animate-spin" : "ti ti-pencil"} aria-hidden="true" />
                   <span>{messages().compose}</span>
                 </ButtonLink>
                 <IconButton

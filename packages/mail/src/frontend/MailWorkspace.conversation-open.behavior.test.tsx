@@ -181,6 +181,23 @@ describe("Mail workspace conversation open", () => {
     const cursor = url.searchParams.get("cursor");
     const page = PAGES[cursor ?? "first"]!;
     return {
+      mailbox: {
+        id: MAILBOX_ID,
+        name: "Support",
+        description: "",
+        health: "active",
+        healthReason: null,
+        syncEnabled: true,
+        searchBackend: "auto",
+        automaticReplyManagementPermission: "admin",
+        accessScope: "mailbox",
+        composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      permission: "write",
+      access: { scope: "mailbox", permission: "write" },
+      savedViews: [],
       scheduledMode: false,
       scheduledPage: null,
       scheduledError: null,
@@ -245,22 +262,6 @@ describe("Mail workspace conversation open", () => {
     const unreadCount = unread.size;
     return {
       receivingAddress: null,
-      mailbox: {
-        id: MAILBOX_ID,
-        name: "Support",
-        description: "",
-        health: "active",
-        healthReason: null,
-        syncEnabled: true,
-        searchBackend: "auto",
-        automaticReplyManagementPermission: "admin",
-        accessScope: "mailbox",
-        composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
-        createdAt: now,
-        updatedAt: now,
-      },
-      permission: "write",
-      access: { scope: "mailbox", permission: "write" },
       initialLiveCursor: "s6t.mail.4",
       folders: [
         mailTestFolder(FOLDER, { role: "inbox", providerRole: "inbox", name: "Inbox", unread: unreadCount, total: 100 }),
@@ -269,7 +270,6 @@ describe("Mail workspace conversation open", () => {
       ],
       identities: [],
       scheduledCount: 0,
-      savedViews: [],
       viewCounts: {
         needs_action: 0,
         mine: 0,

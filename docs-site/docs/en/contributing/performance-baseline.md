@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Measure production page performance
@@ -293,7 +293,8 @@ HTML-heavy thread, rare, common, and structured search, three folder switches,
 view counts, a message arriving live, and opening compose for a new message
 and a reply. `list-paging-workspace` loads page 1 through `workspace-route`
 as an untimed cursor prerequisite, then measures list pages 2–5 through
-`workspace-list`.
+`workspace-list`. `folder-medium-list` measures page 1 of the medium folder
+through `workspace-list`.
 
 For each scenario the run records cold, median, and p95 times, response and
 island props bytes, Server-Timing phases, and the statement count and
@@ -421,3 +422,74 @@ no lock.
   Eligible document and API transfer times reflect Brotli when the browser accepts it;
   the opt-outs above remain uncompressed.
   The run's Caddy does not compress responses.
+
+## Measure Mail memory under hydration load
+
+Use `packages/mail/scripts/memory-load.ts` to measure overlapping hydration,
+attachment extraction, API reads and folder sync. Export the integration-test
+targets `CLOUD_TEST_DATABASE_URL` (database name ending in `_test`),
+`CLOUD_TEST_NATS_SERVERS`, and `CLOUD_TEST_VALKEY_URL`; include
+`CLOUD_TEST_NATS_CREDS_FILE` when the test broker requires it.
+
+```bash
+bun --no-env-file packages/mail/scripts/memory-load.ts --profile guard --json
+bun --no-env-file packages/mail/scripts/memory-load.ts --profile incident --seed 1549
+```
+
+The script takes the machine-wide heavy lock and creates a disposable
+`mail_*_test` database and private Sync namespace. It drains runtimes and
+removes both on success, failure, SIGINT or SIGTERM. A hard OOM or SIGKILL
+cannot run cleanup.
+
+`incident` (default) uses four mailboxes, each with 40 small folders and an
+INBOX containing three 10–40 MiB messages (including one near 34 MiB) and
+20 small messages. `guard` uses four mailboxes, two small folders each, and
+one 10–24 MiB message plus two small INBOX messages each. Its target is under
+90 seconds; this is not a timing guarantee. MIME sources stream lazily in
+64 KiB chunks from a fixed seed and date, including newsletter HTML, inline
+images, CSV and binary attachments. Message sizes include base64 overhead.
+
+Use `--only hydration,extraction,api,folders` to select concurrent work;
+omitted hydration finishes before the baseline. `--html-mib`, `--csv-mib`,
+`--large-per-mailbox`, `--mailboxes` and the other `--help` flags vary the
+fixture. Incompatible component and source sizes fail before bootstrap.
+`--timeout-s` defaults to 900 seconds, separately bounding preparation and
+measurement. Timeout, incomplete or missing messages, and missing generated
+attachments produce a nonzero exit.
+
+Each run writes a fresh `.local/mail-memory/<UTC timestamp>/` directory
+(`--out` overrides it): `samples.ndjson`, `summary.json`, and `summary.md`.
+The summary includes the manifest, baseline and peak RSS, nearest in-flight
+state, heap peaks, main-thread tick gap, and correctness counts. `--json`
+prints compact JSON as the last stdout line, omitting the manifest and
+per-message correctness lists (both remain in `summary.json`). The summary
+also records the processing budget high-water and largest item run alone;
+the budget counters reset after warm-up and preparation.
+`--heap-snapshot-mib N` writes one heap snapshot and object-type counts when RSS first exceeds the baseline by
+N MiB; snapshot work perturbs the measurement.
+
+RSS is sampled in a worker every 20 ms so synchronous work cannot hide peaks.
+Main-thread heap samples (100 ms) and database samples (250 ms) pause during
+stalls; database counts are approximate sequential reads. Extraction has no
+separate running status, so running means pending with an attempt recorded.
+State counts include the warm-up mailbox; correctness counts cover measured
+fixtures. API traffic uses the real Hono app in process. IMAP is simulated:
+these results include neither browser cost nor HTTP socket or provider latency.
+
+`packages/mail/src/service/processing-memory.integration.test.ts` runs the
+`guard` profile with hydration and API traffic in a child process, with a
+300-second test timeout. It requires database, NATS and Valkey test targets
+and uses its own disposable database. It checks that every generated message
+completes and no attachment is missing, and that peak RSS above baseline stays
+within `GUARD_PEAK_ABOVE_BASELINE_MIB` (600 MiB). On Linux x64 with glibc
+and four CPUs, as on the CI runner, that run peaked at 650–669 MiB in three
+runs before the processing memory budget and at 345–510 MiB in six runs with
+it, so the limit fails every such run without the budget. On the full host,
+it peaked at 482–633 MiB before and 391–491 MiB with it. Hydration must
+reserve through the budget, and the estimated processing high-water must stay
+within 256 MiB, except for an item above the budget that runs alone.
+Attachment extraction stays out of this run: its memory is native and glibc keeps those
+pages, so its peak varies more than the budget changes it. The `incident`
+profile measures it. Failures report the summary path and key numbers. The
+unit tests in `processing-memory-budget.test.ts` check FIFO admission, byte
+limits, oversized items, cancellation and release after failure.

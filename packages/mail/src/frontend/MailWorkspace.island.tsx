@@ -17,6 +17,7 @@ import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, 
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
+import type { MailDraftSeed } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
@@ -48,6 +49,8 @@ import {
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
+import { mailDraftSeedHref } from "./_components/mail-compose-route";
+import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import {
   emptyMailConversationSelection,
@@ -87,6 +90,7 @@ import {
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
 import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
+import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
   decideMailAutoReadIntent,
@@ -95,6 +99,7 @@ import {
   mailOptimisticFields,
   runMailWorkspaceAction,
 } from "./_components/mail-workspace-action-runner";
+import { composeMailListSnapshot, pickMailWorkspaceFrame } from "./_components/mail-workspace-frame";
 import { type MailWorkspacePreferences, updateMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import {
   captureMailWorkspaceRefreshError,
@@ -153,6 +158,8 @@ function MailWorkspaceView(props: {
   const [detailsOpening, setDetailsOpening] = createSignal(false);
   const [managementOpening, setManagementOpening] = createSignal<"health" | "links" | "remote-content" | "subscriptions" | null>(null);
   const [liveUnavailable, setLiveUnavailable] = createSignal(false);
+  /** The live subscription has applied every update the server sent, so the counts and folders shown are current. */
+  let liveCaughtUp = false;
   const activeSearch = () => data.search;
   const activeTagId = createMemo(() => {
     const expression = activeSearch().expression;
@@ -396,6 +403,24 @@ function MailWorkspaceView(props: {
   const [routeSource, setRouteSource] = createSignal(initialRouteSource);
   const routeKey = createMemo(() => routeListKey(routeSource()));
   let committedRouteSource = initialRouteSource;
+  /**
+   * Another list without a selection loads only its list view, which also brings the mailbox, access and saved views,
+   * and keeps the folders, counts, identities and tags shown (`MailWorkspaceFrame`): live updates refresh them exactly as
+   * while the person stays in one list. The whole snapshot loads while live
+   * updates are not caught up, when the page started without a live cursor (changes before the subscription would not
+   * reach it), for a change of the list mode, and for a target that opens a conversation or message.
+   */
+  const keepsMailboxFrame = (target: { href: string; listMode: MailboxPageData["listMode"] }): boolean => {
+    if (!liveCaughtUp || liveUnavailable() || props.data.initialLiveCursor === null) return false;
+    const committed = decodeRouteSource(committedRouteSource);
+    const url = mailRouteUrl(target.href);
+    return (
+      target.listMode === committed.listMode &&
+      !url.searchParams.has("conversation") &&
+      !url.searchParams.has("message") &&
+      mailListScope(target.href) !== mailListScope(committed.href)
+    );
+  };
   let workspaceTransition: WorkspaceTransition | null = null;
   /**
    * Counts selection changes and navigations: a reload or a page 1 requested for an earlier generation reports itself as
@@ -455,11 +480,21 @@ function MailWorkspaceView(props: {
     // Later reloads and page loads still use the newest source, so page 1 carries the open conversation.
     isSameSource: sameRouteList,
     initial: { source: initialRouteSource, pages: [{ source: initialRouteSource, snapshot: props.data, generation: 0 }] },
-    loadPage: async (source, { cursor, abortSignal }) => {
+    loadPage: async (source, { cursor, abortSignal, cause }) => {
       const target = decodeRouteSource(source);
       const url = new URL(target.href, window.location.origin);
       if (cursor === undefined) {
         const generation = routeGeneration;
+        // A reload that also covers an invalidation, such as a live event, loads the whole snapshot.
+        if (cause.type === "source" && cause.invalidations.length === 0 && keepsMailboxFrame(target)) {
+          const list = await fetchWorkspaceList(url.toString(), abortSignal, target.listMode);
+          if (!list) throw new Error(t().loadViewFailed);
+          const shown = unwrap(data);
+          // The frame shown when the list arrives: a live refresh queued meanwhile reloads the snapshot after it. Folders
+          // and counts depend on the access scope, so a scope that changed meanwhile loads the whole snapshot.
+          if (list.access.scope === shown.access.scope)
+            return { source, snapshot: composeMailListSnapshot(pickMailWorkspaceFrame(shown), list), generation };
+        }
         const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
         if (!snapshot) throw new Error(t().loadViewFailed);
         return { source, snapshot, generation };
@@ -826,6 +861,78 @@ function MailWorkspaceView(props: {
     return response.json();
   };
 
+  const [composeStarting, setComposeStarting] = createSignal(false);
+  let composeRequest: AbortController | null = null;
+  let composeProgress: ToastHandle | null = null;
+  const endComposeStart = () => {
+    composeRequest = null;
+    composeProgress?.dismiss();
+    composeProgress = null;
+    setComposeStarting(false);
+  };
+  /**
+   * Compose from this mailbox: prepares the draft seed here and opens its composer as the one page load, as Reply and
+   * Forward do, with the compose page's sender rule, request and return target. Without a selectable sender, `fallback`
+   * opens the compose page, which explains why. A trigger without its own pending spot (the phone menu, the command)
+   * asks for the progress toast.
+   */
+  const startCompose = async (options: { fallback: () => void; progressToast: boolean }) => {
+    if (disposed || composeStarting()) return;
+    const mailboxId = data.mailbox.id;
+    const identity = selectComposeSenderIdentity(data.identities, readMailSenderPreference(localStorage, mailboxId), true);
+    if (!identity) return options.fallback();
+    setComposeStarting(true);
+    const request = new AbortController();
+    composeRequest = request;
+    if (options.progressToast)
+      composeProgress = toast(t().preparingMessage, { progress: "indeterminate", duration: 0, iconClass: "ti ti-pencil" });
+    let seed: MailDraftSeed;
+    let store: typeof import("./_components/mail-draft-seed-store") | undefined;
+    try {
+      // The seed store is loaded on demand, as in the reader, and in parallel with the request.
+      const [response, loaded] = await Promise.all([
+        apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+          { param: { mailboxId }, json: mailComposeDraftSeedInput(identity.id) },
+          { init: { signal: request.signal } },
+        ),
+        importOnDemand(() => import("./_components/mail-draft-seed-store")),
+      ]);
+      if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
+      seed = await response.json();
+      store = loaded;
+    } catch (error) {
+      if (disposed || request.signal.aborted) return;
+      endComposeStart();
+      void prompts.error(error instanceof Error ? error.message : t().draftCreateFailed, { title: t().startMessageFailed });
+      return;
+    }
+    if (disposed) return;
+    // importOnDemand already offers a reload when the code cannot load.
+    if (!store) return endComposeStart();
+    writeMailSenderPreference(localStorage, seed.mailboxId, identity.id);
+    try {
+      store.storeMailDraftSeed(localStorage, seed);
+    } catch {
+      endComposeStart();
+      void prompts.error(t().localMessageFailed, { title: t().startMessageFailed });
+      return;
+    }
+    // Stays pending until the composer replaces this page, so another activation meanwhile starts no second seed.
+    documentNavigate(mailDraftSeedHref(seed.mailboxId, seed.id, `/app/mail/${seed.mailboxId}`));
+  };
+  onMount(() => {
+    // A page restored from the back-forward cache shows Compose ready again.
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) endComposeStart();
+    };
+    window.addEventListener("pageshow", restored);
+    onCleanup(() => window.removeEventListener("pageshow", restored));
+  });
+  onCleanup(() => {
+    composeRequest?.abort();
+    composeProgress?.dismiss();
+  });
+
   const openHealth = async () => {
     if (disposed || managementOpening()) return;
     setManagementOpening("health");
@@ -919,6 +1026,9 @@ function MailWorkspaceView(props: {
         parse: (data) => parseMailLiveEvent(data),
         apply: (events) => refreshLiveData(events.map((event) => event.data.conversationId)),
         resync: () => refreshLiveData(null),
+        caughtUp: (caughtUp) => {
+          liveCaughtUp = caughtUp;
+        },
         revoked: () => void documentNavigate("/app/mail", { replace: true }),
         // A reload lets the route policy send an ended session to sign-in. A failure that survives it must not
         // reload in a loop.
@@ -2263,6 +2373,8 @@ function MailWorkspaceView(props: {
         managementOpening={managementOpening()}
         settingsOpening={settingsOpening()}
         detailsOpening={detailsOpening()}
+        composeStarting={composeStarting()}
+        onCompose={(options) => void startCompose(options)}
         onOpenDetails={() => void openDetails()}
         onOpenHealth={() => void openHealth()}
         onOpenSharedLinks={() => void openSharedLinks()}

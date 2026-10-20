@@ -369,7 +369,7 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
       await page.getByText("Item not found").waitFor();
       const highlighted = () =>
         Array.from(document.querySelectorAll<HTMLElement>("[data-spaces-kanban-card]"))
-          .filter((link) => link.closest("article")?.className.includes("bg-[var(--ui-selected)]"))
+          .filter((link) => link.closest("article")?.getAttribute("data-spaces-kanban-card-state") === "selected")
           .map((link) => link.dataset.itemId);
       await page.waitForFunction(`(${highlighted})().join() === "Item02"`);
       expect(new URL(page.url()).searchParams.get("item")).toBe("Item02");
@@ -389,7 +389,9 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
         await page.keyboard.press("j");
         const next = name === "folded" ? "Item04" : "Item03";
         await selected(page, next, name === "folded" ? "Task 4" : "Task 3");
-        expect(await card(page, next).evaluate((link) => link.closest("article")?.className)).toContain("bg-[var(--ui-selected)]");
+        expect(await card(page, next).evaluate((link) => link.closest("article")?.getAttribute("data-spaces-kanban-card-state"))).toBe(
+          "selected",
+        );
       } finally {
         await page.context().close();
       }

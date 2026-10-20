@@ -29,7 +29,7 @@ The sidebar lists your active chats as plain rows: pinned chats first, then by t
 - **Context:** The Project with its instructions, knowledge, files, and references, the Skills the chat used, what was remembered from it, its routines, and Secrets. A Project chat includes its inherited Project context without Project editing actions.
 - **Search:** Use the search button in the sidebar's header to find results, files, and sources in this chat. Escape closes the search.
 - **Delete chat files:** Point at an upload, voice recording, or working file, or reach it with Tab, then select the trash icon at the right; for a result, use its menu. The icon is always visible on touch devices. After you confirm, Assistant removes the file from this chat and closes its open tab. Earlier messages keep their text, but their links to the file no longer open it. Project files are managed on the Project page.
-- **Cloud resources:** Use the composer plus menu to attach a supported Cloud resource without copying its contents into the chat. A chat opened from Mail or another app can begin with one or more resources already attached. Resource links open their owning app in a new tab; every read and Action still checks your current permission there.
+- **Cloud resources:** Choose **+ → Insert from Cloud** to insert a reference to a supported Cloud resource at the text caret. The reference gives the model the same resource as an attachment, without copying its contents into the chat. A chat opened from Mail or another app can begin with one or more resources already attached. Resource links open their owning app in a new tab; every read and Action still checks your current permission there.
 Chats automatically move to **Done** after seven days without use. Sending a message, a run, or reopening a chat counts as use; opening or reading a chat only marks it as read, and background metadata changes do not count either. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. All active chats appear in the sidebar, followed by **Done** and its **All chats** entry.
 
 - **Finish or continue:** Mark a chat done to move it into **Done**. Stop a running response first. Reopen it or send a new message to continue; files, apps, and pinning remain available.
@@ -51,7 +51,24 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 :::info Approvals and client actions
 Decide an approval in its chat card or open **Approvals** above **Studio** for the waiting requests. You can also use **My account → Approvals**. For turns started outside a signed-in browser session, the **Pending approvals** notification opens that account list.
 
-Some turns can request an approval or a frontend tool result. Answer those prompts in the message list to let the turn continue. An approval applies once, to exactly what the prompt shows. If that changes before the Action runs, for example because a draft has another recipient, Assistant asks again. Bounded, repeatable Actions offer **Approve for this chat** and **Always approve** in the approval button menu; a chat approval ends when you delete the chat. Deletion, sending, sharing, and other consequential Actions continue to ask every time. When code reads a website, the menu offers **Allow this website for this chat**: later reads from exactly that website no longer ask, and each one shows its full address with a **Revoke** button. Approvals of this kind are listed under **Secrets & approvals** in the chat's context.
+Each question shows a sentence with chips for people and objects, Cloud's reason
+for asking, and a preview of what will change. Two buttons name the deed and
+target: one allows it and one declines. An approval applies once to what the
+card shows. If that changes before the Action runs, Assistant asks again. A
+reload keeps the reviewed sentence and preview.
+
+Where offered, the quiet **Yes, and don't ask again in this chat** link remembers
+this scope until you delete the chat. **Always approve** is no longer offered;
+earlier choices still apply until the next major release. Chat choices appear
+under **Secrets & approvals**. When code reads a website, **Yes, and allow this
+website in this chat** remembers that exact website; each later read shows its full
+address and **Revoke**.
+
+One outcome line says running, done, rejected, not run, or unknown. If the app
+provides an outcome check, Assistant runs it once after a lost answer. A known
+result settles the card; a pending or failed check leaves the outcome unknown.
+**Check again** checks only the outcome, never repeats the Action. Without an
+outcome check, there is no repeat button.
 :::
 
 ## Conversation-aware Assistant {icon="message-forward"}
@@ -101,7 +118,13 @@ recording: its control still offers **Retry** and **Discard**.
 
 ## Select slash commands and context {icon="command"}
 
-Type `/` at a word boundary anywhere in the composer. Search by name or narrow
+Choose **+** to open the command list with a search field on top. **Attach
+file** opens file selection, and **Search this chat** searches messages in the
+open chat. Escape, **+** again, Back on a phone, or a press outside closes the
+list. An outside press only closes it; it does not activate the control
+underneath. The textarea gets its focus and selection back.
+
+Type `/` at a word boundary anywhere in the composer to open the same list. Search by name or narrow
 the results with `/skill`, `/app`, `/file`, or `/project`. Arrow keys and Enter
 or Tab select a result; Escape closes suggestions and keeps your draft.
 Suggestions temporarily replace the task list above the composer.

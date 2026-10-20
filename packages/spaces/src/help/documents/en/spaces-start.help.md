@@ -7,9 +7,28 @@ order: 100
 kind: start
 ---
 
-Spaces is for shared work that needs tasks, events, lists, assignees, comments, and lightweight planning. The Spaces overview lists every Space that you can access. There you create, find, or return to a Space.
+Spaces is for shared work that needs tasks, events, lists, assignees, comments, and lightweight planning. The overview brings your work across Spaces together.
 
 When you open Spaces from the navigation, you return to the Space that you looked at last in this browser, even in another tab. If that Space was deleted or is no longer shared with you, the overview opens instead.
+
+## Open another Space {icon="layout-sidebar"}
+
+The overview and every Space share one sidebar. It lists **My work**, every Space you can open, and **New space**. The number beside a Space counts its open items. Pinned Spaces come first.
+
+On a phone, open the title menu **Space name ⌄**. On the overview, the title is **Spaces ⌄**. Both menus offer the same destinations.
+
+**My work** opens the overview. Its **For me**, **Today**, and **Upcoming** tabs show work across your Spaces. The search button searches Spaces, tasks, and events.
+
+## Create a Space {icon="square-plus"}
+
+:::steps
+1. Choose **New space** at the end of the sidebar or in the phone title menu.
+2. Under **Template**, choose **Blank space**, **Task board**, **Event calendar**, or **Project tracker**.
+3. Adjust the **Name**, **Description**, and **Color**.
+4. Choose **Create**.
+:::
+
+The template fills the form and sets the starting view. **Blank space** is selected initially. You can change every field before creating the Space.
 
 ## Know the basic terms {icon="layout-grid"}
 

@@ -51,6 +51,8 @@ const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
     managementOpening: null,
     settingsOpening: false,
     detailsOpening: false,
+    composeStarting: false,
+    onCompose: () => {},
     onOpenDetails: () => {},
     onOpenHealth: () => {},
     onOpenSharedLinks: () => {},

@@ -1,5 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -94,7 +95,11 @@ const fixture = async (
       await grant(row!.id, null, i === 5 ? "read" : "write");
       const user = await accounts.users.get({ id: row!.id });
       if (!user) throw new Error("Fixture user missing");
-      const token = await serviceAccountCredentials.createUserApiToken({ user, name: "reactions test" });
+      const token = await serviceAccountCredentials.createUserApiToken({
+        user,
+        browserSignIn: await createTestBrowserSignIn(user.id),
+        name: "reactions test",
+      });
       if (!token.ok) throw new Error(token.error.message);
       // User API credentials are delegated service accounts; clean them explicitly too.
       const credentials = await sql<{ service_account_id: string }[]>`SELECT service_account_id FROM auth.service_account_credentials

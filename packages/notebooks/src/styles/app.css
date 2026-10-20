@@ -136,12 +136,12 @@
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
 }
-/* A chosen filter and the list header it opened share the app accent tint. */
+/* A chosen filter and the list header it opened share the navigation fill of an active filter chip. */
 .k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]),
 .k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]):not(:disabled):hover,
 .notebook-sidebar-filter {
   color: var(--k2b-app-workspace-active);
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 14%, var(--k2b-surface));
+  background: var(--k2b-app-workspace-selected);
 }
 .notebook-sidebar-filter {
   display: flex;
@@ -1223,33 +1223,25 @@
 
 /* Hover = soft grey background, text colour unchanged. */
 .cm-tooltip-autocomplete > ul > li:hover {
-  background: rgb(244 244 245) !important; /* zinc-100 */
+  background: var(--ui-hover) !important;
   text-decoration: none !important;
-}
-.dark .cm-tooltip-autocomplete > ul > li:hover {
-  background: rgb(39 39 42) !important; /* zinc-800 */
 }
 
-/* Keyboard-selected = blue text, no background. Pairs cleanly with
-   hover (which only paints bg) so a row that's both selected AND
-   hovered shows blue text on grey bg. */
+/* Keyboard-selected = platform action-blue text, no background: it is a
+   control option, not a picked object. Pairs cleanly with hover (which
+   only paints bg) so a row that's both selected AND hovered shows blue
+   text on the hover bg. */
 .cm-tooltip-autocomplete > ul > li[aria-selected] {
-  color: rgb(59 130 246) !important; /* blue-500 */
+  color: var(--k2b-action) !important;
   background: transparent !important;
   text-decoration: none !important;
-}
-.dark .cm-tooltip-autocomplete > ul > li[aria-selected] {
-  color: rgb(96 165 250) !important; /* blue-400 */
 }
 
 /* Selected + hovered = blue text on the hover-bg (so the user can
    still see "this row is also under my cursor" without losing the
    selection indicator). */
 .cm-tooltip-autocomplete > ul > li[aria-selected]:hover {
-  background: rgb(244 244 245) !important;
-}
-.dark .cm-tooltip-autocomplete > ul > li[aria-selected]:hover {
-  background: rgb(39 39 42) !important;
+  background: var(--ui-hover) !important;
 }
 
 .cm-tooltip-autocomplete .cm-slash-icon {
@@ -2169,7 +2161,7 @@
   white-space: nowrap;
 }
 .k2b-ui .notebook-graph__list .k2b-data-table__row[data-selected="true"] {
-  background: var(--notebook-graph-current-chip);
+  background: var(--k2b-row-selected);
 }
 .notebook-graph__list-title {
   color: inherit;
@@ -2445,9 +2437,9 @@
 .notebook-graph__row-meta .ti {
   font-size: 0.8125rem;
 }
-/* Only the current note takes the app accent. */
+/* Only the current note takes the app row fill. */
 .notebook-graph__row[data-current] {
-  background: var(--notebook-graph-current-chip);
+  background: var(--k2b-row-selected);
 }
 .notebook-graph__row[data-current] .notebook-graph__row-title {
   color: var(--notebook-graph-current-ink);

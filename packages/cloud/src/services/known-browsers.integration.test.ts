@@ -96,6 +96,8 @@ suite("known browsers at the web session boundary", () => {
     const spy = spyOn(requestContext, "describeRequest").mockImplementation((c) =>
       describe(c, {
         geoIp: {
+          refresh: async () => {},
+          install: () => {},
           lookup: () => ({
             cityDatabase: true,
             asnDatabase: false,

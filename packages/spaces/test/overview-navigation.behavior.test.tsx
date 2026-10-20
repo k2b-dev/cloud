@@ -30,24 +30,26 @@ describe("Spaces overview navigation", () => {
     );
     try {
       const option = (label: string) =>
-        Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find((button) => button.textContent?.startsWith(label))!;
+        Array.from(dom.root.querySelectorAll<HTMLAnchorElement>(".k2b-view-tabs a")).find((button) =>
+          button.textContent?.startsWith(label),
+        )!;
       const today = option("Today");
       const upcoming = option("Upcoming");
       expect(today).toBeDefined();
       expect(upcoming).toBeDefined();
-      expect(option("For me").getAttribute("aria-checked")).toBe("true");
+      expect(option("For me").getAttribute("aria-current")).toBe("page");
       today.focus();
       today.click();
       expect(window.location.search).toBe("?view=today");
-      expect(today.getAttribute("aria-checked")).toBe("true");
+      expect(today.getAttribute("aria-current")).toBe("page");
       expect(document.activeElement).toBe(today);
       const length = window.history.length;
       today.click();
       expect(window.history.length).toBe(length);
       dom.window.history.replaceState(null, "", "/app/spaces?view=upcoming");
       dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
-      expect(upcoming.getAttribute("aria-checked")).toBe("true");
-      expect(today.getAttribute("aria-checked")).toBe("false");
+      expect(upcoming.getAttribute("aria-current")).toBe("page");
+      expect(today.getAttribute("aria-current")).toBeNull();
     } finally {
       dispose();
       dom.cleanup();

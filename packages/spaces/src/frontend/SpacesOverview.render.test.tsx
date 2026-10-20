@@ -26,22 +26,14 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
               name: "Launch",
               description: "Launch work",
               color: "#3b82f6",
-              icalToken: null,
-              createdAt: "2026-08-20T08:00:00.000Z",
-              updatedAt: "2026-08-20T08:00:00.000Z",
               openItemCount: 3,
-              lastActivityAt: "2026-08-20T10:00:00.000Z",
             },
             {
               id: "Space2",
               name: "Archive",
               description: null,
               color: "#10b981",
-              icalToken: null,
-              createdAt: "2026-08-01T08:00:00.000Z",
-              updatedAt: "2026-08-01T08:00:00.000Z",
               openItemCount: 0,
-              lastActivityAt: "2026-08-01T08:00:00.000Z",
             },
           ],
           initialView: "mine",
@@ -92,16 +84,16 @@ describe("Spaces overview", () => {
     expect(overviewMessages.check()).toEqual([]);
     const html = render(null, "de-CH");
     expect(html).toContain("Für mich");
-    expect(html).toContain("Alle Spaces");
+    expect(html).toContain("Meine Arbeit");
     expect(html).toContain("3 offene Einträge");
     expect(html).toContain("„Ship overview“ in Launch erledigt");
     expect(html).not.toContain("Completed “Ship overview”");
   });
 
-  test("renders Spaces as sidebar object rows and a scoped work column with the create action and activity", () => {
+  test("renders the shared object navigation, head tabs and flat work/activity rows", () => {
     const html = render();
     expect(html).toContain("spaces-overview-workspace");
-    expect(html).toMatch(/data-variant="object"[^>]*><a href="\/app\/spaces\/Space1"/);
+    expect(html).toContain('href="/app/spaces/Space1"');
     expect(html).toContain('href="/app/spaces/Space2"');
     expect(html).toContain("3 open items");
     expect(html).toContain("0 open items");
@@ -109,9 +101,14 @@ describe("Spaces overview", () => {
     expect(html).toContain("Pin Archive");
     expect(html).toContain("Search Spaces");
     expect(html).toContain("New space");
-    expect(html).toContain("All spaces");
-    expect(html).toContain('role="radiogroup"');
-    expect(html).toMatch(/role="radio"[^>]*aria-checked="true"[^>]*>(?:(?!<\/button>)[\s\S])*For me/);
+    expect(html).toContain("My work");
+    expect(html).toMatch(/href="\/app\/spaces"[^>]*aria-current="page"/);
+    expect(html).toMatch(/href="\/app\/spaces\?view=mine"[^>]*aria-current="page"/);
+    expect(html).toContain("New task");
+    expect(html).not.toContain("k2b-app-workspace__switcher");
+    expect(html).not.toContain("k2b-paper");
+    expect(html).toContain("spaces-overview-work-row");
+    expect(html).toContain("spaces-overview-activity-row");
     expect(html).not.toContain("spaces-overview-space-list");
     expect(html).toContain("Ship overview");
     expect(html).not.toContain("k2b-stat-grid");

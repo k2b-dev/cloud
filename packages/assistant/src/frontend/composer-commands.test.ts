@@ -309,8 +309,31 @@ test("sections and bilingual scope words agree, with each locale's narrowing wor
   for (const locale of ["en", "de"]) {
     const copy = assistantCopyFor(locale);
     const scopes = assistantCommandScopes(copy, locale);
-    expect(assistantCommandSections(copy).map((section) => section.id)).toEqual(["insert", "skills", "files", "chat", "tasks", "apps"]);
-    expect(assistantCommandSections(copy).map((section) => Boolean(section.searched))).toEqual([false, true, true, false, true, false]);
+    expect(assistantCommandSections(copy).map((section) => section.id)).toEqual([
+      "recent",
+      "insert",
+      "skills",
+      "files",
+      "chat",
+      "tasks",
+      "apps",
+    ]);
+    expect(assistantCommandSections(copy).map((section) => Boolean(section.searched))).toEqual([
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+    ]);
+    // Recent sits on top: only in the overview, and only with the rows it had when the list opened.
+    expect(assistantCommandSections(copy)[0]).toEqual({
+      id: "recent",
+      label: locale === "de" ? "Zuletzt" : "Recent",
+      overviewOnly: true,
+      fixedWhileOpen: true,
+    });
     // App Commands load with the catalog; their section is last, so rows that arrive only fill the end.
     expect(assistantCommandSections(copy, true).at(-1)).toEqual({
       id: "apps",
@@ -806,10 +829,10 @@ test("task matches append after thirty references; overview limits tasks indepen
   try {
     const overview = await searchCommands(input);
     expect(overview.filter((row) => row.section === "skills").map((row) => row.id)).toEqual([
-      "skill:skill-0",
-      "skill:skill-1",
-      "skill:skill-2",
-      "skill:skill-3",
+      "resource:core.ai.skill:Skill0",
+      "resource:core.ai.skill:Skill1",
+      "resource:core.ai.skill:Skill2",
+      "resource:core.ai.skill:Skill3",
       "skills-all",
     ]);
     expect(overview.filter((row) => row.id?.startsWith("task:"))).toHaveLength(5);
@@ -852,7 +875,9 @@ test.each(["en", "de"])("All Skills lists every enabled Skill from the opening's
     });
     const rows = await searchCommands({ ...input, scope: "skill" });
     expect(rows).toHaveLength(40);
-    expect(rows.map((row) => row.id)).toEqual(skills.filter((skill) => skill.enabled).map((skill) => `skill:${skill.id}`));
+    expect(rows.map((row) => row.id)).toEqual(
+      skills.filter((skill) => skill.enabled).map((skill) => `resource:core.ai.skill:${skill.shortId}`),
+    );
     expect(listSkills).toHaveBeenCalledTimes(1);
     // Only the full-list request is made: a second argument would send a q parameter.
     expect(listSkills.mock.calls[0]).toHaveLength(1);

@@ -18,6 +18,7 @@ export type MailboxDetailsHarnessOptions = {
 declare global {
   interface Window {
     mountMailboxDetails: (options: MailboxDetailsHarnessOptions) => void;
+    setMailboxComposeStarting: (starting: boolean) => void;
     /** Each result of the details dialog, in order. */
     detailsResults: Array<string | null>;
   }
@@ -45,6 +46,8 @@ window.mountMailboxDetails = (options) => {
   // Dialogs render outside the island and take the document's language, as in Cloud's pages.
   document.documentElement.lang = options.locale;
   const [detailsOpening, setDetailsOpening] = createSignal(false);
+  const [composeStarting, setComposeStarting] = createSignal(false);
+  window.setMailboxComposeStarting = setComposeStarting;
   const [menuReady, setMenuReady] = createSignal(false);
   // Like the mailbox workspace: load the details, then open the dialog complete.
   const openDetails = async () => {
@@ -90,6 +93,8 @@ window.mountMailboxDetails = (options) => {
             managementOpening={null}
             settingsOpening={false}
             detailsOpening={detailsOpening()}
+            composeStarting={composeStarting()}
+            onCompose={() => {}}
             onOpenDetails={() => void openDetails()}
             onOpenHealth={noop}
             onOpenSharedLinks={noop}

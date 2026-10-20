@@ -3,17 +3,22 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { PanelPageContext } from "../contracts/panel-context";
+import { isPanelContextMessage } from "../contracts/panel-context-plain";
+import { type ContextAwareCommand, registerContextAwareCommand } from "./command-bridge";
 
 if (isServer) test.skip("requires browser conditions and solid-dom-preload", () => {});
 else {
   const bootstrap = createDomTestHarness();
+  const { COMMANDS_CHANGED } = await import("./command-shortcuts");
   const { handlePanelRequest, installPanelSlot, PANEL_READY_TIMEOUT_MS } = await import("./panel-slot");
   const { default: PanelTrigger } = await import("../ssr/PanelTrigger");
   bootstrap.cleanup();
 
   let cleanup = () => {};
+  const commandDisposers: (() => void)[] = [];
   let fetchSpy: { mockRestore(): void } | undefined;
   afterEach(() => {
+    commandDisposers.splice(0).forEach((dispose) => dispose());
     cleanup();
     fetchSpy?.mockRestore();
     fetchSpy = undefined;
@@ -26,7 +31,13 @@ else {
     beforeInstall?: (frame: HTMLIFrameElement) => void,
     navigationApi = false,
     href = (id: string) => `/app/${id}/panel?base=1`,
-    contextOptions: { context: PanelPageContext | null; consent: boolean; answer?: boolean | null; restored?: boolean } = {
+    contextOptions: {
+      context: PanelPageContext | null;
+      consent: boolean;
+      answer?: boolean | null;
+      restored?: boolean;
+      providerIds?: [string, string];
+    } = {
       context: null,
       consent: false,
     },
@@ -36,23 +47,25 @@ else {
     if (navigationApi) Object.defineProperty(dom.window, "navigation", { value: navigation });
     dom.window.innerWidth = viewport;
     document.documentElement.style.fontSize = "16px";
-    const providers = ["fixture", "second"].map((id) => ({
+    const providerIds = contextOptions.providerIds ?? ["fixture", "second"];
+    const initialProvider = providerIds[0];
+    const providers = providerIds.map((id) => ({
       id,
       label: `${id} panel`,
       appName: id,
-      consent: contextOptions.consent,
+      consent: id === "core" ? false : contextOptions.consent,
       icon: "ti ti-box",
       href: href(id),
     }));
-    dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: "fixture", context: contextOptions.context, ...(Object.hasOwn(contextOptions, "answer") ? { consent: { provider: "fixture", allowed: contextOptions.answer, revision: typeof contextOptions.answer === "boolean" ? 1 : 0 } } : {}) } })}</script>
+    dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: initialProvider, context: contextOptions.context, ...(Object.hasOwn(contextOptions, "answer") ? { consent: { provider: initialProvider, allowed: contextOptions.answer, revision: typeof contextOptions.answer === "boolean" ? 1 : 0 } } : {}) } })}</script>
     <button id="opener" data-cloud-panel-toggle>Panel</button>
     <div class="cloud-app-canvas" ${initialOpen ? 'data-panel="open"' : ""} style="${storedWidth ? "--cloud-panel-width-set:24rem" : ""}">
       <div data-cloud-app-area><main class="layout-content-main">Application</main></div>
-      <aside id="cloud-panel" data-provider="fixture" data-state="closed">
+      <aside id="cloud-panel" data-provider="${initialProvider}" data-state="closed">
         <div class="cloud-panel__resize" aria-orientation="vertical" tabindex="0"></div>
         <button data-cloud-panel-close>Close</button><button data-cloud-panel-grow>Grow</button>
-        <button data-cloud-panel-provider="fixture">Fixture</button><button data-cloud-panel-provider="second">Second</button><span data-cloud-panel-menu><button>Placeholder</button></span>
-        <div class="cloud-panel__body"><div data-cloud-panel-consent tabindex="-1"><h3 data-cloud-panel-consent-title></h3><p data-cloud-panel-consent-body></p><button data-cloud-panel-consent-answer="allow">Allow</button><button data-cloud-panel-consent-answer="deny">Deny</button><p data-cloud-panel-consent-error></p></div>${initialOpen ? '<iframe src="/app/fixture/panel?base=1" data-cloud-panel-frame="fixture"></iframe>' : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
+        ${providerIds.map((id) => `<button data-cloud-panel-provider="${id}">${id}</button>`).join("")}<span data-cloud-panel-menu><button>Placeholder</button></span>
+        <div class="cloud-panel__body"><div data-cloud-panel-consent tabindex="-1"><h3 data-cloud-panel-consent-title></h3><p data-cloud-panel-consent-body></p><button data-cloud-panel-consent-answer="allow">Allow</button><button data-cloud-panel-consent-answer="deny">Deny</button><p data-cloud-panel-consent-error></p></div>${initialOpen ? `<iframe src="${href(initialProvider)}" data-cloud-panel-frame="${initialProvider}"></iframe>` : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
         <div data-cloud-panel-status></div>
       </aside>
     </div>`;
@@ -74,7 +87,7 @@ else {
     Object.defineProperty(opener, "getClientRects", { value: () => [{ width: 40, height: 24 }] });
     opener.focus();
     const frame = () => slot.querySelector<HTMLIFrameElement>("iframe")!;
-    const open = (provider = "fixture", search?: string) => handlePanelRequest({ action: "open", provider, search, accepted: true });
+    const open = (provider = initialProvider, search?: string) => handlePanelRequest({ action: "open", provider, search, accepted: true });
     const message = (data: unknown, source = frame().contentWindow, origin = location.origin) => {
       const event = new Event("message");
       Object.defineProperties(event, { data: { value: data }, source: { value: source }, origin: { value: origin } });
@@ -432,9 +445,20 @@ else {
     showDocument(h.frame(), { postMessage: post, location: new URL(h.frame().src, location.origin) });
     return post;
   };
-  const ready = (h: ReturnType<typeof setup>, provider = "fixture") => h.message({ type: "cloud.panel.ready", v: 1, provider });
+  const ready = (h: ReturnType<typeof setup>, provider = h.slot.dataset.provider) =>
+    h.message({ type: "cloud.panel.ready", v: 1, provider });
   const consent = (provider: string, allowed: boolean) =>
     window.dispatchEvent(new CustomEvent("cloud.panel.consent", { detail: { provider, allowed } }));
+  const registerShortcut = (id: string, shortcut: string, extra: Partial<ContextAwareCommand> = {}) => {
+    const dispose = registerContextAwareCommand({ id, title: id, description: "", shortcut, action: () => {}, ...extra });
+    commandDisposers.push(dispose);
+    return dispose;
+  };
+  const setupCore = (context: PanelPageContext | null = pageContext) =>
+    setup(1440, false, true, undefined, false, undefined, { context, consent: true, providerIds: ["core", "fixture"] });
+  const commandBurst = () => {
+    for (let i = 0; i < 20; i++) window.dispatchEvent(new Event(COMMANDS_CHANGED));
+  };
 
   test("foreign providers receive no URL or live context until consent; allow delivers live without reloading", async () => {
     const fetch = spyOn(globalThis, "fetch")
@@ -636,13 +660,251 @@ else {
     const post = mock((_data: unknown, _origin: string) => {});
     const history = {
       state: null,
-      replaceState: (_state: unknown, _title: string, path: string) => {
+      replaceState: mock((_state: unknown, _title: string, path: string) => {
         shown.search = new URL(path, location.origin).search;
-      },
+      }),
     };
     showDocument(h.frame(), { postMessage: post, location: shown, history });
-    return { shown, post };
+    return { shown, post, history };
   };
+
+  test("Core receives only conflict-free shortcut fields, with cloud rows first, and keeps them out of every URL", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupCore();
+    registerShortcut("mail.edit", "e", { title: "Edit Ada", description: "Selected contact", scope: "selection", icon: "ti ti-edit" });
+    registerShortcut("mail.open", "o", { scope: "page" });
+    registerShortcut("cloud.help", "shift+/");
+    registerShortcut("cloud.search", "mod+k");
+    registerShortcut("mail.conflict", "mod+k");
+    h.open();
+    const src = h.frame().src;
+    const { post, history } = loadedDocument(h, src);
+    ready(h);
+    await Promise.resolve();
+    const shortcuts = [
+      { id: "cloud.help", title: "cloud.help", shortcut: "shift+/" },
+      { id: "mail.open", title: "mail.open", shortcut: "o", scope: "page" },
+      { id: "mail.edit", title: "Edit Ada", description: "Selected contact", shortcut: "e", scope: "selection" },
+    ];
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: pageContext, shortcuts }, location.origin]]);
+    const stop = publishPageContext({ scope: { type: "contacts.contact", id: "Ada" } });
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 1 }, shortcuts });
+    stop();
+    expect(history.replaceState).toHaveBeenCalledTimes(2);
+    handlePanelRequest({ action: "close" });
+    expect(post.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    for (const url of [src, ...history.replaceState.mock.calls.map(([, , path]) => path)]) {
+      const decoded = decodeURIComponent(url);
+      expect(decoded).not.toContain("shortcuts");
+      expect(decoded).not.toContain("Edit Ada");
+    }
+  });
+
+  test("Core shortcut lists omit invalid scopes and drop only malformed commands", async () => {
+    const h = setupCore();
+    const invalidScope: unknown = "global";
+    const invalidTitle: unknown = 42;
+    registerShortcut("mail.edit", "e", { scope: "selection" });
+    registerShortcut("mail.open", "o", { scope: invalidScope as ContextAwareCommand["scope"] });
+    registerShortcut("mail.invalid", "i", { title: invalidTitle as string });
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    await Promise.resolve();
+    expect(post).toHaveBeenCalledTimes(1);
+    const message = post.mock.calls[0]?.[0];
+    expect(isPanelContextMessage(message)).toBe(true);
+    expect(message).toEqual({
+      type: "cloud.panel.context",
+      v: 1,
+      context: pageContext,
+      shortcuts: [
+        { id: "mail.open", title: "mail.open", shortcut: "o" },
+        { id: "mail.edit", title: "mail.edit", shortcut: "e", scope: "selection" },
+      ],
+    });
+  });
+
+  test("Core collects no shortcuts and posts nothing on command bursts while not ready or closed", async () => {
+    const h = setupCore();
+    registerShortcut("mail.edit", "e");
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    const collect = mock(() => {});
+    window.addEventListener("cloud.command.collect", collect);
+    try {
+      commandBurst();
+      await Promise.resolve();
+      expect(collect).not.toHaveBeenCalled();
+      expect(post).not.toHaveBeenCalled();
+      ready(h);
+      handlePanelRequest({ action: "close" });
+      collect.mockClear();
+      post.mockClear();
+      commandBurst();
+      await Promise.resolve();
+      expect(collect).not.toHaveBeenCalled();
+      expect(post).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("cloud.command.collect", collect);
+    }
+  });
+
+  test("shortcut registrations and removals send one coalesced update with unchanged seq; unchanged bursts send nothing", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupCore();
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    expect(post.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: pageContext, shortcuts: [] });
+    post.mockClear();
+    const remove = registerShortcut("mail.edit", "e");
+    commandBurst();
+    expect(post).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 0 }, shortcuts: [{ id: "mail.edit" }] });
+    commandBurst();
+    await Promise.resolve();
+    expect(post).toHaveBeenCalledTimes(1);
+    remove();
+    commandBurst();
+    await Promise.resolve();
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 0 }, shortcuts: [] });
+    const stop = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    registerShortcut("mail.new", "n");
+    await Promise.resolve();
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 1 } });
+    expect(post.mock.calls.map(([data]) => (data as { context: PanelPageContext }).context.seq)).toEqual([0, 0, 1, 1]);
+    stop();
+    post.mockClear();
+    commandBurst();
+    h.dispose();
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: null }, location.origin]]);
+    post.mockClear();
+    await Promise.resolve();
+    commandBurst();
+    await Promise.resolve();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  test("an allowed consent provider never receives or collects shortcuts, including after command, scope and bfcache changes", async () => {
+    const { publishPageContext } = await import("./panel");
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 } } })),
+    );
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    registerShortcut("mail.edit", "e", { title: "Edit Ada" });
+    const { post } = loadedDocument(h, h.frame().src);
+    const collect = mock(() => {});
+    window.addEventListener("cloud.command.collect", collect);
+    try {
+      ready(h);
+      expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: pageContext }, location.origin]]);
+      commandBurst();
+      await Promise.resolve();
+      expect(post).toHaveBeenCalledTimes(1);
+      const remove = registerShortcut("mail.new", "n");
+      await Promise.resolve();
+      remove();
+      await Promise.resolve();
+      expect(post).toHaveBeenCalledTimes(1);
+      const stop = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+      stop();
+      restore();
+      commandBurst();
+      await tick();
+      expect(collect).not.toHaveBeenCalled();
+      expect(post.mock.calls.length).toBeGreaterThan(3);
+      for (const [data] of post.mock.calls) expect(data).not.toHaveProperty("shortcuts");
+    } finally {
+      window.removeEventListener("cloud.command.collect", collect);
+    }
+  });
+
+  for (const answer of [false, null])
+    test(`a consent provider with answer ${answer} receives no command-change messages`, async () => {
+      const h = setupContext(pageContext, true, answer);
+      h.open();
+      const { post } = loadedDocument(h, h.frame().src);
+      ready(h);
+      const remove = registerShortcut("mail.edit", "e");
+      commandBurst();
+      await Promise.resolve();
+      remove();
+      await Promise.resolve();
+      expect(post).not.toHaveBeenCalled();
+    });
+
+  test("Core with Layout context false receives nothing on ready or command changes", async () => {
+    const h = setupCore(null);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    registerShortcut("mail.edit", "e");
+    commandBurst();
+    await Promise.resolve();
+    expect(post).not.toHaveBeenCalled();
+    expect(h.frame().src).not.toContain("cloud_panel_context");
+  });
+
+  test("switching from Core clears it without shortcuts, never discloses to the next provider, and sends a fresh list on return and retry", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 } } })),
+    );
+    const h = setupCore();
+    registerShortcut("mail.edit", "e");
+    h.open();
+    const old = loadedDocument(h, h.frame().src);
+    ready(h);
+    expect(old.post.mock.calls.at(-1)?.[0]).toHaveProperty("shortcuts");
+    // The queued flush runs after switching, so it must check the provider at flush time.
+    commandBurst();
+    h.open("fixture");
+    expect(old.post.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    await tick();
+    const foreign = loadedDocument(h, h.frame().src);
+    ready(h);
+    const count = foreign.post.mock.calls.length;
+    registerShortcut("mail.new", "n");
+    commandBurst();
+    await Promise.resolve();
+    expect(foreign.post).toHaveBeenCalledTimes(count);
+    for (const [data] of foreign.post.mock.calls) expect(data).not.toHaveProperty("shortcuts");
+    h.open("core");
+    const current = loadedDocument(h, h.frame().src);
+    ready(h);
+    const expected = [
+      { id: "mail.edit", title: "mail.edit", shortcut: "e" },
+      { id: "mail.new", title: "mail.new", shortcut: "n" },
+    ];
+    expect(current.post.mock.calls.at(-1)?.[0]).toMatchObject({ shortcuts: expected });
+    h.click("[data-cloud-panel-retry]");
+    expect(current.post.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    const retried = loadedDocument(h, h.frame().src);
+    commandBurst();
+    await Promise.resolve();
+    expect(retried.post).not.toHaveBeenCalled();
+    ready(h);
+    expect(retried.post.mock.calls.at(-1)?.[0]).toMatchObject({ shortcuts: expected });
+    handlePanelRequest({ action: "close" });
+    expect(retried.post.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+  });
+
+  test("a Core frame that navigated away receives no shortcut updates", async () => {
+    const h = setupCore();
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    post.mockClear();
+    showDocument(h.frame(), { postMessage: post, location: new URL("/app/fixture/panel", location.origin) }, "fixture");
+    registerShortcut("mail.edit", "e", { title: "Edit Ada" });
+    commandBurst();
+    await Promise.resolve();
+    expect(post).not.toHaveBeenCalled();
+  });
 
   test("withdrawn while the provider was still loading, its address loses the snapshot once it is ready", async () => {
     fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(

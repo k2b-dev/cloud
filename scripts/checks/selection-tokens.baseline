@@ -1,0 +1,13 @@
+# Known selection-tokens findings: <file> | <selection|accent-mix|accent-raw> | <count>.
+# Migrations lower counts and remove entries; the rule never raises counts or adds lines.
+# `bun scripts/check.ts selection-tokens --fix` lowers counts whose findings are gone.
+# Every entry below waits for #1559 (app icons in Grids, Notebooks, Tools and Mail onto k2b-icon-tile).
+packages/grids/src/frontend/admin.tsx | selection | 1
+packages/grids/src/frontend/public/documents/[token]/page.tsx | selection | 1
+packages/grids/src/styles/app.css | accent-mix | 1
+packages/grids/src/styles/app.css | accent-raw | 2
+packages/mail/src/frontend/_components/MailComposeIntentPage.island.tsx | selection | 1
+packages/notebooks/src/styles/app.css | accent-mix | 1
+packages/notebooks/src/styles/app.css | accent-raw | 2
+packages/tools/src/frontend/[tool]/page.tsx | accent-mix | 1
+packages/tools/src/styles/app.css | accent-mix | 2

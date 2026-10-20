@@ -22,7 +22,11 @@ import { authenticateWorkloadCredential } from "../../../packages/cloud/src/serv
 import { verifyAccessToken } from "../../../packages/cloud/src/services/oauth-tokens";
 import { toPgTextArray, toPgUuidArray } from "../../../packages/cloud/src/services/postgres";
 import { serviceAccountCredentials } from "../../../packages/cloud/src/services/service-account-credentials";
-import { createTestAppSession, createTestSession } from "../../../packages/cloud/src/services/session/session.test-fixture";
+import {
+  createTestAppSession,
+  createTestBrowserSignIn,
+  createTestSession,
+} from "../../../packages/cloud/src/services/session/session.test-fixture";
 import { loadCurrentUser } from "../../../packages/cloud/src/services/session/user";
 import * as settings from "../../../packages/cloud/src/services/settings";
 import oauthAdminRoutes from "../../../packages/oauth/src/api";
@@ -185,12 +189,15 @@ suite("Admin credential matrix", () => {
       userId: string,
       scopes: OAuthScope[] = ["openid", "profile", "email", "offline_access", "read", "write"],
     ) => {
-      const refresh = await refreshTokens.create({
+      const [account] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
+      const refresh = await refreshTokens.reserve({
         userId,
+        authEpoch: Number(account!.auth_epoch),
         client: cli,
         scopes,
         expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       });
+      await sql`UPDATE oauth.refresh_token_families SET status = 'active' WHERE id = ${refresh.familyId}::uuid`;
       const exchanged = await oauthRoutes.request("/oauth/token", {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": uniqueCallerAddress() },
@@ -216,7 +223,12 @@ suite("Admin credential matrix", () => {
     credentials.set("cld OAuth token of an expired admin", bearer(expiredCldToken));
 
     for (const access of ["full", "models"] as const) {
-      const created = await serviceAccountCredentials.createUserApiToken({ user: admin, access, name: `${prefix}-${access}` });
+      const created = await serviceAccountCredentials.createUserApiToken({
+        user: admin,
+        browserSignIn: await createTestBrowserSignIn(admin.id),
+        access,
+        name: `${prefix}-${access}`,
+      });
       if (!created.ok) throw new Error(created.error.message);
       if (access === "models") {
         const authenticated = await serviceAccountCredentials.authenticateApiToken(created.data.token);
@@ -229,6 +241,7 @@ suite("Admin credential matrix", () => {
     }
     const expiredKey = await serviceAccountCredentials.createUserApiToken({
       user: expiredAdmin,
+      browserSignIn: await createTestBrowserSignIn(expiredAdmin.id),
       access: "full",
       name: `${prefix}-expired-full`,
     });

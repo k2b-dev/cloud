@@ -694,8 +694,12 @@ See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 ## Show the container an app works in
 
 Use `AppWorkspace.SidebarSwitcher` when the app works inside one container
-chosen from several: a notebook, space, mailbox, base, or venue. Put it first
-in `SidebarDesktop`, above the navigation for that container. It replaces
+chosen from several and the sidebar shows that container's contents: a
+notebook's pages, a base's tables, a mailbox's folders, or a venue. When the
+containers are themselves the objects, list them as sidebar rows instead, so
+another one is one click away; Spaces lists every Space this way. Put the
+switcher first in `SidebarDesktop`, above the navigation for that container.
+It replaces
 app-made **All …** sidebar rows with one head and a panel of containers and
 actions. Offer **New …** only to people who may create, and **All …** as a
 link to the overview.

@@ -8,6 +8,7 @@ import { type AuthContext, auth } from "../server/middleware/auth";
 import { accounts } from "./accounts";
 import { serviceAccountCredentials } from "./service-account-credentials";
 import { serviceAccounts } from "./service-accounts";
+import { createTestBrowserSignIn } from "./session/session.test-fixture";
 
 const suite = databaseSuite();
 
@@ -63,6 +64,7 @@ suite("serviceAccountCredentials", () => {
       if (!user) return;
 
       const created = await serviceAccountCredentials.createUserApiToken({
+        browserSignIn: await createTestBrowserSignIn(user.id),
         user,
         name: "Test key",
         expiresAt: null,
@@ -145,6 +147,7 @@ suite("serviceAccountCredentials", () => {
       expect(afterAdminRevoke).toBeNull();
 
       const second = await serviceAccountCredentials.createUserApiToken({
+        browserSignIn: await createTestBrowserSignIn(user.id),
         user,
         name: "Second test key",
         expiresAt: null,
@@ -173,6 +176,7 @@ suite("serviceAccountCredentials", () => {
       if (!user) return;
 
       const created = await serviceAccountCredentials.createUserApiToken({
+        browserSignIn: await createTestBrowserSignIn(user.id),
         user,
         name: "Concurrent legacy key",
         expiresAt: null,
@@ -212,6 +216,7 @@ suite("serviceAccountCredentials", () => {
       expect(await deniedAuthenticationEvents(created.data.credential.id)).toBe(deniedBefore + denied.length);
 
       const revokedDuringVerification = await serviceAccountCredentials.createUserApiToken({
+        browserSignIn: await createTestBrowserSignIn(user.id),
         user,
         name: "Concurrent revocation key",
         expiresAt: null,

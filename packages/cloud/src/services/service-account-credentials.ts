@@ -11,6 +11,7 @@ import {
   type StandaloneServiceAccountKind,
   serviceAccounts,
 } from "./service-accounts";
+import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "./session/recent";
 
 export type ServiceAccountCredentialStatus = "active" | "revoked";
 export type ServiceAccountCredentialKind = "api_token";
@@ -388,10 +389,27 @@ export const createApiToken = async (params: {
 
 export const createUserApiToken = async (params: {
   user: User;
+  browserSignIn: { userId: string; sid: string };
   access?: "full" | "models";
   name: string;
   expiresAt?: string | null;
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+  const confirmSignIn = async (db: SQL): Promise<ReturnType<typeof fail> | null> => {
+    if (params.browserSignIn.userId !== params.user.id) return fail(err.forbidden("The browser sign-in belongs to another account."));
+    try {
+      await requireConfirmedBrowserSignIn(db, params.browserSignIn, (code) => {
+        throw new ConfirmedBrowserSignInError(code);
+      });
+      return null;
+    } catch (error) {
+      if (error instanceof ConfirmedBrowserSignInError) return fail({ code: error.code, status: 403, message: error.message });
+      throw error;
+    }
+  };
+
+  // Checked before the key holder is created and again where the key is written.
+  const early = await confirmSignIn(sql);
+  if (early) return early;
   const serviceAccountResult = await getOrCreateUserDelegatedServiceAccount({
     userId: params.user.id,
     createdBy: params.user.id,
@@ -399,6 +417,9 @@ export const createUserApiToken = async (params: {
   if (!serviceAccountResult.ok) return fail(serviceAccountResult.error);
 
   return sql.begin(async (tx) => {
+    const rejected = await confirmSignIn(tx);
+    if (rejected) return rejected;
+
     const result = await insertApiToken(tx, {
       serviceAccountId: serviceAccountResult.data.id,
       name: params.name,

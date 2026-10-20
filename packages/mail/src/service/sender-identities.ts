@@ -23,6 +23,7 @@ import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { queueSenderVerification } from "./commands";
 import { resolveRoleFolder } from "./folders";
 import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import { attemptSenderVerification } from "./sender-verification";
 
 const internalCreateSenderIdentityInputSchema = createSenderIdentityInputSchema.extend({
@@ -323,7 +324,7 @@ export const createSenderIdentity = async (params: {
   const parsed = internalCreateSenderIdentityInputSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid sender identity"));
   try {
-    return await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx) => {
       const allowed = await requireLockedMailboxAdmin(params.context, params.mailboxId, tx);
       if (!allowed.ok) return allowed;
       // A folder left out takes the mailbox's discovered role folder; an explicit choice, `null` included, stays.
@@ -436,8 +437,11 @@ export const createSenderIdentity = async (params: {
         },
         tx,
       );
+      await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
       return ok(mapIdentity(created));
     });
+    if (result.ok) mailLive.wake();
+    return result;
   } catch (error) {
     if ((error as { code?: string } | null)?.code === "23505") return fail(err.conflict("Sender identity"));
     if (isServiceError(error)) return fail(error);
@@ -464,8 +468,9 @@ export const updateSenderIdentity = async (params: {
   input: UpdateSenderIdentityInput;
 }): Promise<Result<SenderIdentity>> => {
   const parsed = { data: params.input };
+  let changed = false;
   try {
-    return await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx) => {
       const permission = await requireLockedMailboxAdmin(params.context, params.mailboxId, tx);
       if (!permission.ok) return permission;
       const [current] = await tx<DbIdentity[]>`
@@ -610,8 +615,13 @@ export const updateSenderIdentity = async (params: {
         },
         tx,
       );
+      changed =
+        JSON.stringify({ ...mapIdentity(current), updatedAt: null }) !== JSON.stringify({ ...mapIdentity(reloaded), updatedAt: null });
+      if (changed) await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
       return ok(mapIdentity(reloaded));
     });
+    if (result.ok && changed) mailLive.wake();
+    return result;
   } catch (error) {
     if ((error as { code?: string } | null)?.code === "23505") return fail(err.conflict("Sender identity"));
     if (isServiceError(error)) return fail(error);
@@ -625,7 +635,7 @@ export const disableSenderIdentity = async (params: {
   senderIdentityId: string;
 }): Promise<Result<void>> => {
   try {
-    return await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx) => {
       const permission = await requireLockedMailboxAdmin(params.context, params.mailboxId, tx);
       if (!permission.ok) return permission;
       const [disabled] = await tx<{ id: string; from_address: string }[]>`
@@ -666,8 +676,11 @@ export const disableSenderIdentity = async (params: {
         },
         tx,
       );
+      await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
       return ok();
     });
+    if (result.ok) mailLive.wake();
+    return result;
   } catch {
     return fail(err.internal("Failed to disable sender identity"));
   }

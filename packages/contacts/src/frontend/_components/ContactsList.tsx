@@ -141,7 +141,7 @@ export default function ContactsList(props: Props) {
                 <a
                   href={buildContactDetailHref(props.detailBaseHref, contact.id, contact.bookId)}
                   class="flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:outline-offset-[var(--k2b-focus-offset)] [@media(min-width:640px)]:pr-[7rem]"
-                  classList={{ "pl-10": props.selectionMode }}
+                  classList={{ "pl-10": props.selectionMode, "bg-[var(--ui-app-selected)]": isSelected() }}
                   aria-label={t().openContact({ name: name() })}
                   aria-current={isSelected() ? "true" : undefined}
                   data-contact-row
@@ -152,8 +152,7 @@ export default function ContactsList(props: Props) {
                   }}
                 >
                   <span
-                    class="contact-avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold [outline:2px_solid_transparent] outline-offset-2 transition-[outline-color]"
-                    classList={{ "[outline-color:var(--ui-app-accent-border)]": isSelected() }}
+                    class="contact-avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
                     aria-hidden="true"
                   >
                     {resolveContactInitials(contact)}

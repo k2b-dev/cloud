@@ -4,8 +4,11 @@ import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, Placeholder, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
+import { confirmIdentity, SignInNeededError, takeReturnIntent, throwIfSignInNeeded } from "./confirm-identity";
 import { accountMessages } from "./messages";
+
+const ADD_INTENT = { key: "add", value: "passkey" };
 
 /** Only a stable, machine-readable code reaches the dialog; server prose never does. */
 const safeErrorCode = async (res: { status: number; json: () => Promise<unknown> }): Promise<string> => {
@@ -18,10 +21,10 @@ type Props = {
   initialPasskeys: WebAuthnPasskey[];
 };
 
-function PasskeyCreateDialog(props: { close: (value: { name: string } | null) => void }) {
+function PasskeyCreateDialog(props: { initialName?: string; close: (value: { name: string } | null) => void }) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
-  const [name, setName] = createSignal("");
+  const [name, setName] = createSignal(props.initialName ?? "");
   const [error, setError] = createSignal<string | undefined>();
 
   const submit = () => {
@@ -71,11 +74,13 @@ export default function PasskeysSettings(props: Props) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
   const [passkeys, setPasskeys] = createSignal<WebAuthnPasskey[]>(props.initialPasskeys);
+  let submittedName: string | undefined;
 
   const createMutation = mutations.create<WebAuthnPasskey, { name: string }>({
     mutation: async (vars) => {
       if (!browserSupportsWebAuthn()) throw new Error(t().passkeysUnsupported);
       const optionsRes = await apiClient.me.passkeys.registration.start.$post();
+      await throwIfSignInNeeded(optionsRes.clone());
       const options = await optionsRes.json();
       if (!optionsRes.ok) throw new Error(t().passkeyRegistrationFailed);
 
@@ -83,6 +88,7 @@ export default function PasskeysSettings(props: Props) {
       const verifyRes = await apiClient.me.passkeys.registration.verify.$post({
         json: { name: vars.name, response },
       });
+      await throwIfSignInNeeded(verifyRes.clone());
       const data = await verifyRes.json();
       if (!verifyRes.ok) throw new Error(t().passkeyAddFailed);
       return data as WebAuthnPasskey;
@@ -90,7 +96,16 @@ export default function PasskeysSettings(props: Props) {
     onSuccess: (passkey) => {
       setPasskeys([passkey, ...passkeys()]);
     },
-    onError: (err) => prompts.error(err.message),
+    onError: async (err) => {
+      if (err instanceof SignInNeededError && err.code === "REAUTHENTICATE")
+        return confirmIdentity(
+          t().passkeyReauthenticate,
+          ADD_INTENT,
+          { title: t().confirmIdentity, confirm: t().confirmIdentity },
+          submittedName === undefined ? undefined : { name: submittedName },
+        );
+      prompts.error(err instanceof SignInNeededError ? t().browserSignInRequired : err.message);
+    },
   });
 
   /** Reloads the list from the server; keeps the current list when the reload itself fails. */
@@ -135,14 +150,23 @@ export default function PasskeysSettings(props: Props) {
     onError: (err) => prompts.error(err.message),
   });
 
-  const openCreate = async () => {
-    const result = await prompts.dialog<{ name: string } | null>((close) => <PasskeyCreateDialog close={close} />, {
-      title: t().addPasskey,
-      icon: "ti ti-fingerprint",
-      size: "medium",
-    });
-    if (result) await createMutation.mutate(result);
+  const openCreate = async (initialName?: string) => {
+    const result = await prompts.dialog<{ name: string } | null>(
+      (close) => <PasskeyCreateDialog initialName={initialName} close={close} />,
+      { title: t().addPasskey, icon: "ti ti-fingerprint", size: "medium" },
+    );
+    if (!result) return;
+    submittedName = result.name;
+    await createMutation.mutate(result);
   };
+
+  // Back from "Confirm identity": continue where the person started, with the name they entered.
+  onMount(() => {
+    const returned = takeReturnIntent(ADD_INTENT);
+    if (!returned) return;
+    const draft = returned.draft;
+    void openCreate(draft && typeof draft === "object" && "name" in draft && typeof draft.name === "string" ? draft.name : undefined);
+  });
 
   const remove = async (passkey: WebAuthnPasskey) => {
     const confirmed = await prompts.confirm(t().deletePasskeyConfirm({ name: passkey.name }), {
@@ -159,7 +183,7 @@ export default function PasskeysSettings(props: Props) {
       title={t().passkeys}
       subtitle={t().passkeysDescription}
       actions={
-        <Button type="button" variant="secondary" size="sm" onClick={openCreate} disabled={createMutation.loading()}>
+        <Button type="button" variant="secondary" size="sm" onClick={() => void openCreate()} disabled={createMutation.loading()}>
           <i class="ti ti-plus" aria-hidden="true" />
           {t().add}
         </Button>

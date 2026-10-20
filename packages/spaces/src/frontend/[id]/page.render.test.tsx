@@ -9,7 +9,9 @@ import * as layoutHelp from "@k2b/cloud/ssr/help";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
+import { spacesService } from "../../service";
 import * as mailIntegration from "../../service/mail-integration";
+import * as overview from "../../service/overview";
 import { spacesPublicResources } from "../../service/public-resources";
 import { defaultCalendarFilter } from "./_components/calendar/filter";
 import * as workspaceState from "./_components/workspace/workspace-state";
@@ -82,6 +84,7 @@ const state: Extract<SpacesWorkspaceState, { kind: "ok" }> = {
 const spies: { mockRestore(): void }[] = [];
 beforeEach(() => {
   spies.push(
+    spyOn(overview, "loadSpacesSidebar").mockResolvedValue({ spaces: [], pinnedSpaceIds: [], myWorkCount: 0 }),
     stubRailSnapshot(),
     spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null),
     spyOn(cloudServices, "get").mockResolvedValue("https://cloud.test"),
@@ -126,6 +129,23 @@ test("a page that shows a Space reports its public Space ID in shell data", asyn
   expect(shell.panel.context.scope).toEqual({ type: "spaces.space", id: state.space.id });
   expect(shell.panel.context.scope.id).not.toBe(internalId);
 });
+
+test("a writable Space with a long query still renders its primary command link", async () => {
+  spies.push(
+    spyOn(workspaceState, "loadSpacesWorkspaceState").mockResolvedValue({
+      ...state,
+      query: `view=list&q=${"x".repeat(1990)}`,
+      canWrite: true,
+    }),
+    spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([]),
+  );
+  const response = await request();
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  const primary = html.match(/<a\b[^>]*data-workspace-primary[^>]*>/)?.[0];
+  expect(primary?.match(/\bhref="([^"]*)"/)?.[1]).toContain("command=spaces.task.compose");
+});
+
 for (const kind of ["notFound", "accessDenied"] as const)
   test(`${kind} does not report a Space scope`, async () => {
     spies.push(spyOn(workspaceState, "loadSpacesWorkspaceState").mockResolvedValue({ kind, title: "Unavailable", message: "Unavailable" }));

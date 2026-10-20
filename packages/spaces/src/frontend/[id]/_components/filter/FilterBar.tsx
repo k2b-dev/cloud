@@ -1,16 +1,15 @@
 import { ButtonLink, FilterChip, type FilterChipSection } from "@k2b/ui";
-import type { JSX } from "solid-js";
-import type {
-  AssignedToFilter,
-  DeadlineFilter,
-  ItemActivityFilter,
-  ItemGroupBy,
-  ItemSort,
-  ItemStatus,
-  ItemType,
-  Priority,
-  SpaceColumn,
-  SpaceTag,
+import {
+  AssignedToFilterSchema,
+  DeadlineFilterSchema,
+  ItemActivityFilterSchema,
+  ItemGroupBySchema,
+  ItemSortSchema,
+  ItemStatusSchema,
+  ItemTypeSchema,
+  PrioritySchema,
+  type SpaceColumn,
+  type SpaceTag,
 } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
@@ -26,34 +25,19 @@ type FilterBarProps = {
   /** Matching items; the list shows it, the board shows counts per column instead. */
   total?: number;
   baseUrl: string;
-  hideGroupBy?: boolean;
   onFilterChange?: (patch: Partial<FilterState>) => void;
   onSearchChange?: (search: string) => void | Promise<void>;
   searchBusy?: boolean;
   searchReset?: number;
   onClearFilters?: () => void;
-  /** `board` is the one-row Kanban toolbar: only the filters a board honors, and no result count. */
-  variant?: "list" | "board";
-  /** Trailing controls in the board toolbar row. */
-  actions?: JSX.Element;
+  currentView: "list" | "table" | "kanban";
 };
 
 // Default values for reset
 const VIEW_DEFAULT = [`type:${defaultFilter.type}`, `status:${defaultFilter.status}`, `assigned:${defaultFilter.assignedTo}`];
 const SORT_DEFAULT = [`sort:${defaultFilter.sort}`, `dir:asc`];
 
-/** Prefixes option values so several filters can share one menu. */
-const prefixed = (prefix: string, label: string, section: FilterChipSection): FilterChipSection => ({
-  ...section,
-  label,
-  options: section.options.map((option) => ({ ...option, value: `${prefix}:${option.value}` })),
-});
-const unprefixed = (values: string[], prefix: string) =>
-  values.filter((value) => value.startsWith(`${prefix}:`)).map((value) => value.slice(prefix.length + 1));
-
-/**
- * Filter bar for the items list, or the one-row toolbar above a Kanban board.
- */
+/** Search and URL-backed chips composed directly in the workspace head. */
 export default function FilterBar(props: FilterBarProps) {
   const t = useSpaceMessages();
   const viewOptions: FilterChipSection[] = [
@@ -196,31 +180,8 @@ export default function FilterBar(props: FilterBarProps) {
       ],
     },
   ];
-  const boardFilterOptions = (): FilterChipSection[] => [
-    prefixed("assigned", t.assignment, assignmentOptions[0]!),
-    prefixed("deadline", t.deadline, deadlineOptions[0]!),
-    prefixed("activity", t.activityState, activityOptions[0]!),
-    prefixed("priority", t.priority, priorityOptions[0]!),
-    ...(props.tags.length > 0 ? [prefixed("tag", t.tags, tagOptions()[0]!)] : []),
-  ];
-  const boardFilterValue = () => [
-    `assigned:${props.filter.assignedTo}`,
-    ...props.filter.priority.map((priority) => `priority:${priority}`),
-    `deadline:${props.filter.deadlineFilter}`,
-    `activity:${props.filter.activity}`,
-    ...props.filter.tagIds.map((tagId) => `tag:${tagId}`),
-  ];
-  const commitBoardFilterValue = (value: string[]) =>
-    navigate({
-      assignedTo: (unprefixed(value, "assigned")[0] ?? defaultFilter.assignedTo) as AssignedToFilter,
-      priority: unprefixed(value, "priority") as Priority[],
-      deadlineFilter: (unprefixed(value, "deadline")[0] ?? defaultFilter.deadlineFilter) as DeadlineFilter,
-      activity: (unprefixed(value, "activity")[0] ?? defaultFilter.activity) as ItemActivityFilter,
-      tagIds: unprefixed(value, "tag"),
-    });
-
   const hasFilters = () =>
-    props.hideGroupBy
+    props.currentView === "table"
       ? hasActiveFilters({
           ...props.filter,
           groupBy: defaultFilter.groupBy,
@@ -228,7 +189,7 @@ export default function FilterBar(props: FilterBarProps) {
       : hasActiveFilters(props.filter);
   const resultFilter = () => props.resultFilter ?? props.filter;
   const hasResultFilters = () =>
-    hasActiveFilters(props.hideGroupBy ? { ...resultFilter(), groupBy: defaultFilter.groupBy } : resultFilter());
+    hasActiveFilters(props.currentView === "table" ? { ...resultFilter(), groupBy: defaultFilter.groupBy } : resultFilter());
 
   const clearButton = () =>
     hasFilters() && (
@@ -238,100 +199,28 @@ export default function FilterBar(props: FilterBarProps) {
         variant="ghost"
         size="sm"
         class="shrink-0"
-        aria-label={t.clearFilters}
+        aria-label={t.headReset}
       >
         <i class="ti ti-x" />
-        <span class="hidden sm:inline">{t.clear}</span>
+        <span>{t.headReset}</span>
       </ButtonLink>
     );
 
-  if (props.variant === "board") {
-    // One row in every width: separate chips once the row fits their longest German state with Clear,
-    // one combined menu (with its own reset) below that. A filter moves nothing else: chip labels stay
-    // fixed, chips that count selections come last, and Clear takes the free space after the chips.
-    // Chips that still outgrow the row scroll in their own box, so Clear and the actions stay reachable.
-    return (
-      <div class="@container" style="view-transition-name: filter-bar">
-        <div class="flex items-center gap-2" data-spaces-board-toolbar>
-          <SearchInput
-            class="min-w-0 flex-1 @min-[68rem]:w-52 @min-[68rem]:flex-none"
-            value={props.filter.search}
-            busy={props.searchBusy}
-            reset={props.searchReset}
-            baseUrl={buildFilterUrl(props.baseUrl, {}, props.filter)}
-            onSearch={props.onSearchChange}
-          />
-          <div class="no-scrollbar -m-1 hidden min-w-0 items-center gap-2 overflow-x-auto p-1 @min-[68rem]:flex" data-spaces-board-chips>
-            <FilterChip
-              label={t.assignment}
-              icon="ti ti-user"
-              options={assignmentOptions}
-              value={[props.filter.assignedTo]}
-              onValueChange={(v) => navigate({ assignedTo: (v[0] ?? defaultFilter.assignedTo) as AssignedToFilter })}
-              isActive={props.filter.assignedTo !== defaultFilter.assignedTo}
-              defaultValue={[defaultFilter.assignedTo]}
-            />
-            <FilterChip
-              label={t.deadline}
-              icon="ti ti-clock"
-              options={deadlineOptions}
-              value={[props.filter.deadlineFilter]}
-              onValueChange={(v) => navigate({ deadlineFilter: (v[0] ?? "all") as DeadlineFilter })}
-              isActive={props.filter.deadlineFilter !== defaultFilter.deadlineFilter}
-              defaultValue={[defaultFilter.deadlineFilter]}
-            />
-            <FilterChip
-              label={t.activityState}
-              icon="ti ti-activity"
-              options={activityOptions}
-              value={[props.filter.activity]}
-              onValueChange={(v) => navigate({ activity: (v[0] ?? "all") as ItemActivityFilter })}
-              isActive={props.filter.activity !== defaultFilter.activity}
-              defaultValue={[defaultFilter.activity]}
-            />
-            <FilterChip
-              label={t.priority}
-              icon="ti ti-flag"
-              options={priorityOptions}
-              value={props.filter.priority}
-              onValueChange={(v) => navigate({ priority: v as Priority[] })}
-            />
-            {props.tags.length > 0 && (
-              <FilterChip
-                label={t.tags}
-                icon="ti ti-tag"
-                options={tagOptions()}
-                value={props.filter.tagIds}
-                onValueChange={(v) => navigate({ tagIds: v })}
-              />
-            )}
-          </div>
-          <div class="shrink-0 @min-[68rem]:hidden" data-spaces-board-filter-menu>
-            <FilterChip
-              label={t.filters}
-              icon="ti ti-filter"
-              options={boardFilterOptions()}
-              value={boardFilterValue()}
-              onValueChange={commitBoardFilterValue}
-              isActive={hasActiveFilters({ ...props.filter, search: "" })}
-              defaultValue={[
-                `assigned:${defaultFilter.assignedTo}`,
-                `deadline:${defaultFilter.deadlineFilter}`,
-                `activity:${defaultFilter.activity}`,
-              ]}
-              position="bottom-right"
-            />
-          </div>
-          {hasFilters() && <div class="hidden shrink-0 @min-[68rem]:flex">{clearButton()}</div>}
-          <div class="ml-auto flex shrink-0 items-center gap-1">{props.actions}</div>
-        </div>
-      </div>
-    );
-  }
+  const priorityChip = () => (
+    <FilterChip
+      label={t.priority}
+      showValue
+      icon="ti ti-flag"
+      options={priorityOptions}
+      value={props.filter.priority}
+      onValueChange={(v) => navigate({ priority: v.map((value) => PrioritySchema.parse(value)) })}
+    />
+  );
 
   return (
-    <div class="flex flex-col gap-2" style="view-transition-name: filter-bar">
+    <div class="spaces-head-filters flex items-center gap-1.5" data-spaces-head-filters>
       <SearchInput
+        class="spaces-head-search shrink-0"
         value={props.filter.search}
         busy={props.searchBusy}
         reset={props.searchReset}
@@ -339,17 +228,27 @@ export default function FilterBar(props: FilterBarProps) {
         onSearch={props.onSearchChange}
       />
 
-      <div class="no-scrollbar flex items-center gap-2 overflow-x-auto sm:flex-wrap sm:overflow-visible">
-        {/* Scope: item type + completion state + assignment */}
+      {props.currentView === "kanban" ? (
+        <FilterChip
+          label={t.assignment}
+          showValue
+          icon="ti ti-user"
+          options={assignmentOptions}
+          value={[props.filter.assignedTo]}
+          onValueChange={(v) => navigate({ assignedTo: AssignedToFilterSchema.parse(v[0] ?? defaultFilter.assignedTo) })}
+          isActive={props.filter.assignedTo !== defaultFilter.assignedTo}
+          defaultValue={[defaultFilter.assignedTo]}
+        />
+      ) : (
         <FilterChip
           label={t.scope}
           icon="ti ti-filter"
           options={viewOptions}
           value={[`type:${props.filter.type}`, `status:${props.filter.status}`, `assigned:${props.filter.assignedTo}`]}
           onValueChange={(v) => {
-            const type = (v.find((x) => x.startsWith("type:"))?.slice(5) ?? defaultFilter.type) as ItemType;
-            const status = (v.find((x) => x.startsWith("status:"))?.slice(7) ?? defaultFilter.status) as ItemStatus;
-            const assignedTo = (v.find((x) => x.startsWith("assigned:"))?.slice(9) ?? defaultFilter.assignedTo) as AssignedToFilter;
+            const type = ItemTypeSchema.parse(v.find((x) => x.startsWith("type:"))?.slice(5) ?? defaultFilter.type);
+            const status = ItemStatusSchema.parse(v.find((x) => x.startsWith("status:"))?.slice(7) ?? defaultFilter.status);
+            const assignedTo = AssignedToFilterSchema.parse(v.find((x) => x.startsWith("assigned:"))?.slice(9) ?? defaultFilter.assignedTo);
             navigate({ type, status, assignedTo });
           }}
           isActive={
@@ -359,104 +258,107 @@ export default function FilterBar(props: FilterBarProps) {
           }
           defaultValue={VIEW_DEFAULT}
         />
+      )}
 
-        {/* Priority */}
+      {props.currentView !== "kanban" && priorityChip()}
+
+      {/* Deadline */}
+      <FilterChip
+        label={t.deadline}
+        showValue
+        icon="ti ti-clock"
+        options={deadlineOptions}
+        value={[props.filter.deadlineFilter]}
+        onValueChange={(v) => navigate({ deadlineFilter: DeadlineFilterSchema.parse(v[0] ?? "all") })}
+        isActive={props.filter.deadlineFilter !== defaultFilter.deadlineFilter}
+        defaultValue={[defaultFilter.deadlineFilter]}
+      />
+
+      <FilterChip
+        label={t.activityState}
+        showValue
+        icon="ti ti-activity"
+        options={activityOptions}
+        value={[props.filter.activity]}
+        onValueChange={(v) => navigate({ activity: ItemActivityFilterSchema.parse(v[0] ?? "all") })}
+        isActive={props.filter.activity !== defaultFilter.activity}
+        defaultValue={[defaultFilter.activity]}
+      />
+
+      {props.currentView === "kanban" && priorityChip()}
+
+      {/* Tags */}
+      {props.tags.length > 0 && (
         <FilterChip
-          label={t.priority}
-          icon="ti ti-flag"
-          options={priorityOptions}
-          value={props.filter.priority}
-          onValueChange={(v) => navigate({ priority: v as Priority[] })}
+          label={t.tags}
+          showValue
+          icon="ti ti-tag"
+          options={tagOptions()}
+          value={props.filter.tagIds}
+          onValueChange={(v) => navigate({ tagIds: v })}
         />
+      )}
 
-        {/* Deadline */}
-        <FilterChip
-          label={t.deadline}
-          icon="ti ti-clock"
-          options={deadlineOptions}
-          value={[props.filter.deadlineFilter]}
-          onValueChange={(v) => navigate({ deadlineFilter: (v[0] ?? "all") as DeadlineFilter })}
-          isActive={props.filter.deadlineFilter !== defaultFilter.deadlineFilter}
-          defaultValue={[defaultFilter.deadlineFilter]}
-        />
-
-        <FilterChip
-          label={t.activityState}
-          icon="ti ti-activity"
-          options={activityOptions}
-          value={[props.filter.activity]}
-          onValueChange={(v) => navigate({ activity: (v[0] ?? "all") as ItemActivityFilter })}
-          isActive={props.filter.activity !== defaultFilter.activity}
-          defaultValue={[defaultFilter.activity]}
-        />
-
-        {/* Tags */}
-        {props.tags.length > 0 && (
-          <FilterChip
-            label={t.tags}
-            icon="ti ti-tag"
-            options={tagOptions()}
-            value={props.filter.tagIds}
-            onValueChange={(v) => navigate({ tagIds: v })}
-          />
-        )}
-
-        {/* Workflow status */}
-        <div class="shrink-0">
-          <FilterChip
-            label={t.status}
-            icon="ti ti-layout-kanban"
-            options={columnOptions()}
-            value={props.filter.columnIds}
-            onValueChange={(v) => navigate({ columnIds: v })}
-          />
-        </div>
-
-        {/* Sort */}
-        <div class="shrink-0">
-          <FilterChip
-            label={t.sort}
-            icon="ti ti-arrows-sort"
-            options={sortOptions}
-            value={[`sort:${props.filter.sort}`, `dir:${props.filter.sortDesc ? "desc" : "asc"}`]}
-            onValueChange={(v) => {
-              const sort = (v.find((x) => x.startsWith("sort:"))?.slice(5) ?? defaultFilter.sort) as ItemSort;
-              const sortDesc = v.includes("dir:desc");
-              navigate({ sort, sortDesc });
-            }}
-            isActive={props.filter.sort !== defaultFilter.sort || props.filter.sortDesc !== defaultFilter.sortDesc}
-            defaultValue={SORT_DEFAULT}
-          />
-        </div>
-
-        {/* Group By */}
-        {!props.hideGroupBy && (
+      {props.currentView !== "kanban" && (
+        <>
+          {/* Workflow status */}
           <div class="shrink-0">
             <FilterChip
-              label={t.groupBy}
-              icon="ti ti-layout-list"
-              options={groupByOptions}
-              value={[props.filter.groupBy]}
-              onValueChange={(v) =>
-                navigate({
-                  groupBy: (v[0] ?? defaultFilter.groupBy) as ItemGroupBy,
-                })
-              }
-              isActive={props.filter.groupBy !== defaultFilter.groupBy}
-              defaultValue={[defaultFilter.groupBy]}
+              label={t.status}
+              showValue
+              icon="ti ti-layout-kanban"
+              options={columnOptions()}
+              value={props.filter.columnIds}
+              onValueChange={(v) => navigate({ columnIds: v })}
             />
           </div>
-        )}
 
-        {/* Clear Filters */}
-        {clearButton()}
+          {/* Sort */}
+          <div class="shrink-0">
+            <FilterChip
+              label={t.sort}
+              icon="ti ti-arrows-sort"
+              options={sortOptions}
+              value={[`sort:${props.filter.sort}`, `dir:${props.filter.sortDesc ? "desc" : "asc"}`]}
+              onValueChange={(v) => {
+                const sort = ItemSortSchema.parse(v.find((x) => x.startsWith("sort:"))?.slice(5) ?? defaultFilter.sort);
+                const sortDesc = v.includes("dir:desc");
+                navigate({ sort, sortDesc });
+              }}
+              isActive={props.filter.sort !== defaultFilter.sort || props.filter.sortDesc !== defaultFilter.sortDesc}
+              defaultValue={SORT_DEFAULT}
+            />
+          </div>
 
-        <span class="shrink-0 whitespace-nowrap text-xs text-dimmed">
-          {resultFilter().search && `${t.resultsFor({ query: resultFilter().search })} `}
-          {!props.total ? t.noItems : t.itemCount({ count: props.total })}
-          {hasResultFilters() && !resultFilter().search && ` (${t.filtered})`}
+          {/* Group By */}
+          {props.currentView === "list" && (
+            <div class="shrink-0">
+              <FilterChip
+                label={t.groupBy}
+                icon="ti ti-layout-list"
+                options={groupByOptions}
+                value={[props.filter.groupBy]}
+                onValueChange={(v) =>
+                  navigate({
+                    groupBy: ItemGroupBySchema.parse(v[0] ?? defaultFilter.groupBy),
+                  })
+                }
+                isActive={props.filter.groupBy !== defaultFilter.groupBy}
+                defaultValue={[defaultFilter.groupBy]}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Clear Filters */}
+      {clearButton()}
+
+      {props.currentView !== "kanban" && hasResultFilters() && props.total !== undefined && (
+        <span class="spaces-head-result-count shrink-0 whitespace-nowrap text-xs text-dimmed" data-spaces-filter-count>
+          {t.itemCount({ count: props.total })}
         </span>
-      </div>
+      )}
     </div>
   );
 }

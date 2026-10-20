@@ -246,7 +246,7 @@
 @utility icon-btn {
   border-radius: var(--ui-radius-control);
   @apply inline-flex h-8 w-8 items-center justify-center p-1;
-  @apply text-zinc-400 dark:text-zinc-500;
+  @apply text-dimmed;
   @apply transition-[color,background-color] duration-150 ease-out;
   @apply bg-transparent border-0 shadow-none;
   @apply hover:text-zinc-700 hover:bg-zinc-100;
@@ -398,8 +398,9 @@
   background: var(--ui-hover);
 }
 
+/* An active filter chip shares the navigation fill, as the @k2b/ui FilterChip does. */
 .filter-chip-trigger[data-state="active"] {
   border-color: transparent;
-  background: var(--ui-selected);
+  background: var(--ui-app-selected-nav);
   box-shadow: none;
 }

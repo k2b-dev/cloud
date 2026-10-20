@@ -77,34 +77,54 @@ describe("Approvals", () => {
     };
   };
 
-  test("a decision turns its row into a receipt in place and keeps the others", async () => {
+  test("each request is the chat's question card; an answer collapses it to its outcome line and keeps the others", async () => {
     const view = await mount({ initial: page([item("a1"), item("a2")]) }, () => Response.json({ status: "approved" }));
     try {
       const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
       expect(rows()).toHaveLength(2);
-      expect(rows()[0]?.textContent).toContain("Send “Offer 1”");
+      // An old review reads as its literal message, with every detail as a row and the app's sentence on the answer.
+      expect(rows()[0]?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Sends the draft after the undo window.");
+      expect(rows()[0]?.textContent).toContain("I'm asking because Mail always asks for this.");
+      expect(rows()[0]?.textContent).toContain("customer@example.com");
       expect(rows()[0]?.textContent).not.toContain("Mail: Send");
-      expect(rows()[0]?.textContent).toContain("Asks every time");
       expect(rows()[0]?.querySelector("a")?.getAttribute("href")).toBe("/app/assistant?conversation=chat1");
+      expect(rows()[0]?.textContent).not.toMatch(/Always approve|Immer freigeben/);
       expect(view.dom.root.textContent).toContain("2 open");
-      // Decision buttons arm after a short delay, so a click meant for the page cannot approve a row that just appeared.
+      // Answers arm after a short delay, so a click meant for the page cannot approve a row that just appeared.
       await Bun.sleep(550);
-      view.button("Approve", rows()[0]!)!.click();
-      await waitFor(() => rows()[0]?.dataset.decided === "approved", "the receipt");
+      view.button("Send “Offer 1”", rows()[0]!)!.click();
+      await waitFor(() => rows()[0]?.dataset.decided === "approved", "the outcome");
       expect(view.requests.at(-1)).toEqual({ url: "/api/approvals/a1/decision", body: { approved: true } });
       expect(rows()).toHaveLength(2);
-      expect(rows()[0]?.textContent).toContain("Approved");
-      expect(rows()[0]?.textContent).toContain("Just now, decided here");
-      expect(rows()[0]?.querySelector(".cloud-approval__icon i")?.className).toBe("ti ti-check");
-      expect(view.button("Approve", rows()[0]!)).toBeUndefined();
-      expect(view.button("Approve", rows()[1]!)).toBeDefined();
+      expect(rows()[0]?.querySelector(".k2b-chat-decision__card")).toBeNull();
+      expect(rows()[0]?.querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent).toContain("Approved.");
+      expect(rows()[0]?.querySelector(".k2b-chat-outcome")?.getAttribute("data-tone")).toBe("done");
+      expect(view.button("Send “Offer 2”", rows()[1]!)).toBeDefined();
       expect(view.dom.root.textContent).toContain("1 open");
     } finally {
       view.cleanup();
     }
   });
 
-  test("a request decided elsewhere or gone becomes a neutral receipt; other failures keep the buttons", async () => {
+  test("a review in another language keeps that language in its outcome line too", async () => {
+    const { actionFixtures } = await import("../ai/chat/action-question.fixtures");
+    const review = actionFixtures("de").mail!.block.review!;
+    if (!("sentence" in review)) throw new Error("Expected a new review");
+    const view = await mount({ initial: page([item("a1", { review })]) }, () => Response.json({ status: "rejected" }));
+    try {
+      const row = () => view.dom.root.querySelector<HTMLElement>("article.cloud-approval")!;
+      await Bun.sleep(550);
+      row().querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[1]!.click();
+      await waitFor(() => row().dataset.decided === "rejected", "the outcome");
+      const line = row().querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent ?? "";
+      expect(line).toContain("Du hast abgelehnt.");
+      expect(line).not.toContain("You declined.");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("a request decided elsewhere or gone says so; another failure offers to answer again", async () => {
     const statuses = new Map([
       ["/api/approvals/a1/decision", 409],
       ["/api/approvals/a2/decision", 404],
@@ -116,26 +136,27 @@ describe("Approvals", () => {
     );
     try {
       const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
-      const icon = (row: HTMLElement | undefined) => row?.querySelector(".cloud-approval__icon i")?.className;
+      const line = (row: HTMLElement | undefined) =>
+        row?.querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent?.trim() ?? "";
+      const tone = (row: HTMLElement | undefined) => row?.querySelector(".k2b-chat-outcome")?.getAttribute("data-tone");
       await Bun.sleep(550);
-      for (const row of rows()) view.button("Reject", row)!.click();
-      await waitFor(() => rows()[2]?.textContent?.includes("The decision was not saved") === true, "the failure");
+      for (const row of rows()) view.button("Don't run", row)!.click();
+      await waitFor(() => line(rows()[2]).includes("Your decision was not applied."), "the failure");
       await waitFor(() => rows()[3]?.dataset.decided === "rejected", "the rejection");
-      // A 409 or 404 changed nothing: the row says so and keeps a neutral icon, never the success check.
+      // A 409 or 404 changed nothing: the line says so in a neutral tone, never the success check.
       expect(rows()[0]?.dataset.decided).toBe("elsewhere");
-      expect(rows()[0]?.textContent).toContain("Already decided elsewhere");
-      expect(rows()[0]?.textContent).toContain("Your decision was not applied");
-      expect(rows()[0]?.textContent).not.toContain("decided here");
-      expect(icon(rows()[0])).toBe("ti ti-info-circle");
+      expect(line(rows()[0])).toBe("Already decided elsewhere");
+      expect(tone(rows()[0])).toBe("off");
       expect(rows()[1]?.dataset.decided).toBe("gone");
-      expect(rows()[1]?.textContent).toContain("Expired or withdrawn");
-      expect(rows()[1]?.textContent).toContain("Your decision was not applied");
-      expect(icon(rows()[1])).toBe("ti ti-info-circle");
+      expect(line(rows()[1])).toBe("Expired or withdrawn");
       expect(rows()[2]?.dataset.decided).toBeUndefined();
-      expect(view.button("Reject", rows()[2]!)).toBeDefined();
-      expect(rows()[3]?.textContent).toContain("Rejected");
-      expect(rows()[3]?.textContent).toContain("Just now, decided here");
-      expect(icon(rows()[3])).toBe("ti ti-x");
+      expect(tone(rows()[2])).toBe("warning");
+      expect(line(rows()[3])).toContain("Rejected: Send “Offer 4”");
+      expect(line(rows()[3])).toContain("You declined.");
+      // Answering again brings back the question, armed, in the same place.
+      view.button("Answer again", rows()[2]!)!.click();
+      await waitFor(() => rows()[2]?.querySelector(".k2b-chat-decision__card") !== null, "the question again");
+      expect(view.button("Don't run", rows()[2]!)).toBeDefined();
     } finally {
       view.cleanup();
     }
@@ -167,7 +188,7 @@ describe("Approvals", () => {
     }
   });
 
-  test("offers remember options only where the request does", async () => {
+  test("offers the quiet chat link only where the request offers it, and never Always", async () => {
     const view = await mount(
       {
         initial: page([
@@ -179,9 +200,14 @@ describe("Approvals", () => {
     );
     try {
       const rows = Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
-      expect(rows[0]?.querySelector(".k2b-split-button")).not.toBeNull();
+      expect(rows[0]?.querySelector(".k2b-chat-decision__remember")?.textContent?.trim()).toBe("Yes, and don't ask again in this chat");
       // `confirm` asks every time, whatever the stored options say.
-      expect(rows[1]?.querySelector(".k2b-split-button")).toBeNull();
+      expect(rows[1]?.querySelector(".k2b-chat-decision__remember")).toBeNull();
+      expect(view.dom.root.textContent).not.toMatch(/Always approve|Immer freigeben/);
+      await Bun.sleep(550);
+      (rows[0]!.querySelector(".k2b-chat-decision__remember") as HTMLButtonElement).click();
+      await waitFor(() => view.requests.length > 0, "the decision");
+      expect(view.requests.at(-1)).toEqual({ url: "/api/approvals/a1/decision", body: { approved: true, remember: "chat" } });
     } finally {
       view.cleanup();
     }

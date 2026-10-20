@@ -446,9 +446,48 @@ function ChatPreviewSentence(props: { children: JSX.Element }): JSX.Element {
   return <p class="k2b-chat-preview__sentence">{props.children}</p>;
 }
 
+export type ChatPreviewExcerptProps = {
+  children: JSX.Element;
+  /** Shows the whole text in place instead of the first lines, such as after `Chat.Preview.ShowAll`. */
+  expanded?: boolean;
+  id?: string;
+};
+
 /** The first lines of a longer text. It keeps its line breaks, shows about three lines, and fades out. */
-function ChatPreviewExcerpt(props: { children: JSX.Element }): JSX.Element {
-  return <p class="k2b-chat-preview__excerpt">{props.children}</p>;
+function ChatPreviewExcerpt(props: ChatPreviewExcerptProps): JSX.Element {
+  return (
+    <p
+      class="k2b-chat-preview__excerpt"
+      id={props.id}
+      data-expanded={props.expanded ? "true" : undefined}
+      tabindex={props.expanded ? -1 : undefined}
+    >
+      {props.children}
+    </p>
+  );
+}
+
+export type ChatPreviewShowAllProps = {
+  /** The id of the `Chat.Preview.Excerpt` this button opens. */
+  controls: string;
+  onShow: () => void;
+  children: JSX.Element;
+};
+
+/**
+ * Shows the rest of an excerpt in place, for a text with no page of its own to open. It looks like `ReadMore`; the
+ * caller removes it once the text is shown, and the focus moves to the text, so reading goes on where it was.
+ */
+function ChatPreviewShowAll(props: ChatPreviewShowAllProps): JSX.Element {
+  const show = () => {
+    props.onShow();
+    queueMicrotask(() => document.getElementById(props.controls)?.focus({ preventScroll: true }));
+  };
+  return (
+    <button type="button" class="k2b-chat-preview__more" aria-controls={props.controls} aria-expanded="false" onClick={show}>
+      {props.children}
+    </button>
+  );
 }
 
 export type ChatPreviewReadMoreProps = {
@@ -549,6 +588,7 @@ export const ChatPreview = Object.assign(ChatPreviewRoot, {
   Sentence: ChatPreviewSentence,
   Excerpt: ChatPreviewExcerpt,
   ReadMore: ChatPreviewReadMore,
+  ShowAll: ChatPreviewShowAll,
   Lines: ChatPreviewLines,
   Line: ChatPreviewLine,
   People: ChatPreviewPeople,

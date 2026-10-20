@@ -26,6 +26,13 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Ak
 - **Anmeldung → Passkeys:** WebAuthn-Passkeys für die Anmeldung an deinem Konto. Nachdem du einen Passkey entfernt hast, kann sich niemand mehr damit anmelden.
 :::
 
+Lege API-Schlüssel unter **Entwicklung** und Passkeys unter **Anmeldung** im
+Browser an. Deine Browser-Anmeldung muss aus den letzten zehn Minuten stammen.
+Bittet Cloud dich, deine Identität zu bestätigen, melde dich mit demselben Konto
+erneut an. Der Dialog öffnet sich danach wieder. Die mobile App, eine Anmeldung über die
+Kommandozeile und vorhandene API-Schlüssel können keine persönlichen
+API-Schlüssel oder Passkeys anlegen.
+
 ## Darstellung wählen {icon="palette"}
 
 Das Profilmenü zeigt deine aktuelle Darstellung als einen Eintrag. Wähle

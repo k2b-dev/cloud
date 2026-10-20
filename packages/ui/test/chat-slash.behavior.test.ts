@@ -1868,6 +1868,42 @@ test("a pending last section ends with three placeholders in the overview, one w
   expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["xylophone"]);
 });
 
+test("a fixedWhileOpen section keeps the rows it had when / opened; late rows wait for the next /, leaving rows go", async () => {
+  const [recent, setRecent] = createSignal<ChatCommand[]>([]);
+  const h = await slash({
+    value: "/",
+    commandSections: [
+      { id: "recent", label: "Recent", overviewOnly: true, fixedWhileOpen: true },
+      { id: "chat", label: "This chat" },
+    ],
+    get commands() {
+      return [...recent(), { name: "compact", section: "chat", description: "Summarize" }];
+    },
+  });
+  const headings = () => [...h.root.querySelectorAll(".k2b-chat-composer__command-heading")].map((heading) => heading.textContent);
+  const labels = () => h.rows().map((row) => row.querySelector("strong")?.textContent);
+  expect(headings()).toEqual(["This chat"]);
+  setRecent([{ name: "Q3 plan", section: "recent", description: "Note · Sales" }]);
+  await flush();
+  // Arrived while the list is open: nothing is added above the rows already shown.
+  expect(headings()).toEqual(["This chat"]);
+  expect(labels()).toEqual(["compact"]);
+  h.type("Then /");
+  await flush();
+  expect(headings()).toEqual(["Recent", "This chat"]);
+  expect(labels()).toEqual(["Q3 plan", "compact"]);
+  // Overview only: typing leaves it out, even when its row matches.
+  h.type("Then /q");
+  await flush();
+  expect(headings()).not.toContain("Recent");
+  expect(labels()).not.toContain("Q3 plan");
+  h.type("Then /");
+  await flush();
+  setRecent([]);
+  await flush();
+  expect(labels()).toEqual(["compact"]);
+});
+
 test("an open row keeps the token and the list while it runs, then removes the token in one undo step", async () => {
   let resolve!: () => void;
   let openSignal: AbortSignal | undefined;

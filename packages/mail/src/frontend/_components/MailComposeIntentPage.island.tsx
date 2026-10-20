@@ -13,6 +13,7 @@ import { readContact } from "./contact-capabilities";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";
 import { mailDraftReturnHref, mailDraftSeedHref } from "./mail-compose-route";
+import { mailComposeDraftSeedInput } from "./mail-compose-seed";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./mail-sender-preference";
@@ -185,27 +186,7 @@ export default function MailComposeIntentPage(props: {
       const parsed = parsedIntent();
       if (!parsed.ok) throw new Error(intentErrorMessage(parsed.code));
       const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-        {
-          param: { mailboxId: selectedMailboxId },
-          json: {
-            origin: {
-              kind: "compose",
-              input: {
-                senderIdentityId: identity.id,
-                to: parsed.intent.to,
-                cc: parsed.intent.cc,
-                bcc: parsed.intent.bcc,
-                subject: parsed.intent.subject,
-                body: parsed.intent.body,
-                ...(parsed.intent.body ? { format: "plain" as const } : {}),
-                intent: "new",
-                conversationId: null,
-                sourceMessageId: null,
-                includeSourceAttachments: false,
-              },
-            },
-          },
-        },
+        { param: { mailboxId: selectedMailboxId }, json: mailComposeDraftSeedInput(identity.id, parsed.intent) },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));

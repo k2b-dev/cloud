@@ -12,6 +12,7 @@ import { getMandate } from "../services/mandates";
 import type { MandatePolicyV1 } from "../services/mandates/policy";
 import { coreSettings } from "../services/settings/api";
 import { normalizeLocale } from "../shared/locale";
+import { type AiActionCheck, type AiStoredActionReview, storedActionReview } from "./action-review";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   type AiToolApprovalContext,
@@ -23,8 +24,15 @@ import {
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
 import { authorizeBackgroundActionWith } from "./background-review";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
-import { type AiCapabilityCatalogEntry, createAiToolResolver, createRunToolStore } from "./capabilities";
-import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
+import { type AiCapabilityCatalogEntry, buildAiCapabilityCatalog, createAiToolResolver, createRunToolStore } from "./capabilities";
+import {
+  AiCapabilityExecutionError,
+  aiCapabilityCheckResult,
+  checkAiCapability,
+  executeAiCapability,
+  resolveAiCapabilityActor,
+  reviewAiCapability,
+} from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
@@ -70,7 +78,15 @@ import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
 import { mergeAiSkillCatalog, selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { aiConversations, recordAiWebsiteReceipts } from "./store";
+import {
+  AI_TOOL_CHECK_STALE_MS,
+  aiConversations,
+  claimAiToolCheck,
+  readAiToolCheck,
+  recordAiToolReview,
+  recordAiWebsiteReceipts,
+  settleAiToolCheck,
+} from "./store";
 import { AI_LIVE_SNAPSHOT_INTERVAL_MS, publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
@@ -505,7 +521,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
   const streamKinds = new Map<string, "text" | "thinking">();
 
   const setTool = (callId: string, patch: ToolBlockPatch, displayCallId = callId): BlockOp => {
-    const existing = toolBlocks.get(callId);
+    const existing = toolBlocks.get(callId) ?? toolBlocks.get(displayCallId);
     const rawName = patch.name ?? existing?.name ?? "tool";
     const name = canonicalNames.get(rawName) ?? rawName;
     const approval = patch.clearApproval ? undefined : "approval" in patch ? patch.approval : existing?.approval;
@@ -520,6 +536,8 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
       result: "result" in patch ? patch.result : existing?.result,
       isError: "isError" in patch ? patch.isError : existing?.isError,
       approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false, allowChat: false } : approval,
+      review: patch.review ?? existing?.review,
+      check: patch.check ?? existing?.check,
       frontendMode: patch.frontendMode ?? existing?.frontendMode,
       presentation: patch.presentation ?? existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name),
       ...(approvedCallIds.has(callId) || approvedCallIds.has(displayCallId) || existing?.approved ? { approved: true } : {}),
@@ -652,6 +670,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
 
   return {
     translate,
+    setTool,
     storedMessage,
     compaction,
     setFrontendModes,
@@ -1087,6 +1106,22 @@ export class AiTurnExecutor {
     let backgroundError: string | null = null;
     const rememberableCapabilityApprovals = new Map<string, string>();
     const capabilityActionReviews = new Map<string, CapabilityActionReviewData>();
+    const storedReviews = new Map<string, AiStoredActionReview>();
+    const onCapabilityReview = async (
+      callId: string,
+      review: CapabilityActionReviewData,
+      approval: "none" | "rememberable" | undefined,
+      entry: AiCapabilityCatalogEntry,
+    ) => {
+      capabilityActionReviews.set(callId, review);
+      const scope = capabilityReviewRememberScope(review, approval);
+      if (scope) rememberableCapabilityApprovals.set(callId, scope);
+      else rememberableCapabilityApprovals.delete(callId);
+      const stored = storedActionReview(review, capabilityActionPolicy(entry.app.manifest, entry.operation.localId));
+      await recordAiToolReview({ conversationId, turnId, callId, review: stored });
+      storedReviews.set(callId, stored);
+      await pipeline.setToolReview(callId, stored);
+    };
     pipeline.setApprovalTargets(approvalTargets);
     pipeline.setFrontendModes(prepared.frontendModes);
     pipeline.setCanonicalNames(prepared.canonicalNames);
@@ -1242,7 +1277,7 @@ export class AiTurnExecutor {
             : {}),
           authorizeBackground: authorizeBackgroundMandate
             ? async (entry, args, context) => {
-                await authorizeBackgroundActionWith(
+                const review = await authorizeBackgroundActionWith(
                   {
                     turnId,
                     mandate: config.mandate!,
@@ -1270,14 +1305,16 @@ export class AiTurnExecutor {
                   },
                   () => authorizeBackgroundMandate(entry, args),
                 );
+                if (review && context.callId)
+                  await onCapabilityReview(
+                    context.callId,
+                    review,
+                    "approval" in entry.operation ? entry.operation.approval : undefined,
+                    entry,
+                  );
               }
             : undefined,
-          onReview: (callId, review, approval) => {
-            capabilityActionReviews.set(callId, review);
-            const scope = capabilityReviewRememberScope(review, approval);
-            if (scope) rememberableCapabilityApprovals.set(callId, scope);
-            else rememberableCapabilityApprovals.delete(callId);
-          },
+          onReview: onCapabilityReview,
           ...(capabilityAuthority
             ? {
                 execute: async (entry, args, context) => {
@@ -1296,9 +1333,78 @@ export class AiTurnExecutor {
                       entry,
                       args,
                       context,
+                    }).catch(async (error: unknown) => {
+                      const review = context.callId ? storedReviews.get(context.callId) : undefined;
+                      if (entry.kind !== "action" || !(error instanceof AiCapabilityExecutionError)) throw error;
+                      // Only an answer from the app about the request itself (a 4xx) proves that nothing happened. A 5xx,
+                      // a timeout, or a cancellation leaves the outcome open only once Cloud sent the request to the app;
+                      // before that, nothing ran and the error stays as it is. The idempotency codes speak of an earlier
+                      // attempt with the same key, so they leave it open even when this one sent nothing.
+                      const uncertain =
+                        ["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"].includes(error.code) ||
+                        (error.dispatched && (error.status >= 500 || error.status === 499));
+                      if (!uncertain) throw error;
+                      const unknown =
+                        error.code === "ACTION_OUTCOME_UNKNOWN"
+                          ? error
+                          : new AiCapabilityExecutionError(
+                              "ACTION_OUTCOME_UNKNOWN",
+                              error.status,
+                              `The outcome is unknown after ${error.code}; do not retry automatically.`,
+                              error.dispatched,
+                            );
+                      if (!review || !("sentence" in review) || !review.check || !context.callId) throw unknown;
+                      let check: AiActionCheck;
+                      try {
+                        // Durable first: the claim stores `checking` before the Query runs. If this worker stops, the
+                        // claim goes stale and the person can check again; while it holds, no re-check runs beside it.
+                        const target = { conversationId, turnId, callId: context.callId };
+                        const claimedAt = new Date().toISOString();
+                        const claimed = await claimAiToolCheck({
+                          ...target,
+                          at: claimedAt,
+                          staleBefore: new Date(Date.now() - AI_TOOL_CHECK_STALE_MS).toISOString(),
+                          first: true,
+                        });
+                        if (!claimed) {
+                          // A person's check holds or settled the call already; its stored result is the outcome.
+                          const stored = await readAiToolCheck(target);
+                          const known = stored && stored.state !== "checking" ? stored : { state: "pending" as const };
+                          check = known;
+                        } else {
+                          await pipeline.setToolCheck(context.callId, { state: "checking" });
+                          const answered = await checkAiCapability({
+                            conversationId,
+                            turnId,
+                            authority: capabilityAuthority!,
+                            mandate: config.mandate,
+                            // The receipt joins the review's sentence, so it is asked for in the review's language.
+                            locale: review.locale,
+                            entry,
+                            check: review.check,
+                            catalog: buildAiCapabilityCatalog([entry.app], promptLocale),
+                            context,
+                          });
+                          // A claim that went stale and was taken over loses to the newer check's stored result.
+                          check = (await settleAiToolCheck({ ...target, claimedAt, check: answered }))
+                            ? answered
+                            : ((await readAiToolCheck(target)) ?? answered);
+                        }
+                        await pipeline.setToolCheck(context.callId, check);
+                      } catch (recoveryError) {
+                        log.warn("AI Action outcome recovery failed", {
+                          code: "action_outcome_recovery_failed",
+                          turnId,
+                          callId: context.callId,
+                          error: recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+                        });
+                        throw unknown;
+                      }
+                      return aiCapabilityCheckResult(check);
                     });
                     const resources = collectConversationResourceObservations(args, result);
                     if (resources.length) {
+                      // Bookkeeping after a call that ran never turns its outcome into a failure: the effect happened.
                       await Promise.all([
                         indexConversationResources({ conversationId, turnId, callId: context.callId, resources }),
                         recordMemoryWorkflowEvidence({
@@ -1308,7 +1414,14 @@ export class AiTurnExecutor {
                           capabilityId: entry.name,
                           resources,
                         }),
-                      ]);
+                      ]).catch((error: unknown) =>
+                        log.warn("AI capability bookkeeping failed after the call ran", {
+                          code: "capability_bookkeeping_failed",
+                          turnId,
+                          callId: context.callId,
+                          error: error instanceof Error ? error.message : String(error),
+                        }),
+                      );
                     }
                     return result;
                   } catch (error) {
@@ -2315,6 +2428,16 @@ class StreamPipeline {
     const block = this.blocks.find((block) => block.kind === "tool" && block.id === toolBlockId(callId));
     if (block?.kind !== "tool") return;
     await this.emitOp({ type: "block_set", block: { ...block, receipts: merged } });
+    await this.maybeSnapshot();
+  }
+
+  async setToolReview(callId: string, review: AiStoredActionReview): Promise<void> {
+    await this.emitOp(this.mapper.setTool(callId, { review }));
+    await this.maybeSnapshot();
+  }
+
+  async setToolCheck(callId: string, check: AiActionCheck): Promise<void> {
+    await this.emitOp(this.mapper.setTool(callId, { check, status: "running" }));
     await this.maybeSnapshot();
   }
 
