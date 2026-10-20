@@ -25,7 +25,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type {
@@ -172,10 +172,12 @@ export default function MailConversationReader(props: {
   // An expanded older message, such as the one a link selected, shows the whole conversation, and it stays shown
   // for that conversation when the message is collapsed again, so the header just used never unmounts.
   const [showOlder, setShowOlder] = createSignal(false);
+  // Printing shows every message only for the print; it never pins the fold open.
+  const [printing, setPrinting] = createSignal(false);
   let olderPinnedFor: string | null = null;
   const olderMessages = createMemo(() => {
     const selection = props.selectionKey;
-    if (showOlder() || (selection !== null && olderPinnedFor === selection)) return null;
+    if (showOlder() || printing() || (selection !== null && olderPinnedFor === selection)) return null;
     const items = timeline();
     const messageIndexes = items.flatMap((item, index) => (item.kind === "message" ? [index] : []));
     if (messageIndexes.length < MAIL_READER_COLLAPSE_FROM) return null;
@@ -248,7 +250,6 @@ export default function MailConversationReader(props: {
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
-  const [printing, setPrinting] = createSignal(false);
   let historyScroller: HTMLDivElement | undefined;
   let readerScrollFrame: number | null = null;
   let followingNewest = true;
@@ -768,17 +769,22 @@ export default function MailConversationReader(props: {
     const cleanup = () => {
       if (!active) return;
       active = false;
-      setPrinting(false);
+      // One update, so the fold never sees every message expanded without the print.
+      batch(() => {
+        setPrinting(false);
+        if (props.selectionKey === printSelection) setExpandedMessages(expandedBeforePrint);
+      });
       root.classList.remove("mail-printing-conversation");
-      if (props.selectionKey === printSelection) setExpandedMessages(expandedBeforePrint);
       window.removeEventListener("afterprint", cleanup);
       if (timeout) clearTimeout(timeout);
       if (frame !== null) cancelAnimationFrame(frame);
       if (cleanupPrint === cleanup) cleanupPrint = null;
     };
     cleanupPrint = cleanup;
-    setPrinting(true);
-    setExpandedMessages(new Set(props.messages.map((message) => message.id)));
+    batch(() => {
+      setPrinting(true);
+      setExpandedMessages(new Set(props.messages.map((message) => message.id)));
+    });
     root.classList.add("mail-printing-conversation");
     window.addEventListener("afterprint", cleanup, { once: true });
     timeout = setTimeout(cleanup, 60_000);

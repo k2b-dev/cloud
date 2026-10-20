@@ -824,3 +824,41 @@ test.skipIf(isServer)("printing marks the complete conversation as a region and 
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)(
+  "printing a long conversation shows every message for the print and folds the older ones again afterward",
+  async () => {
+    const dom = createDomTestHarness();
+    const { MailConversationReader } = modules!;
+    const older = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-older-messages]");
+    const print = spyOn(window, "print").mockImplementation(() => {
+      expect(older()).toBeNull();
+      expect(dom.root.querySelectorAll("[data-mail-message-id]")).toHaveLength(5);
+    });
+    const messages = Array.from({ length: 5 }, (_, index): MessageDetail => {
+      const date = new Date(Date.parse(now) - (5 - index) * 60_000).toISOString();
+      return { ...envelopeOnly, id: `Msg00${index + 1}`, internalDate: date, sentAt: date };
+    });
+    const dispose = render(() => createComponent(MailConversationReader, { ...readerProps, messages }), dom.root);
+    try {
+      await waitFor(() => older() !== null);
+      expect(older()!.textContent).toBe("2 older messages");
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="More conversation actions"]')!.click();
+      const printAction = () =>
+        [...dom.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+          (item) => item.textContent?.trim() === "Print conversation",
+        );
+      await waitFor(() => printAction() !== undefined);
+      printAction()!.click();
+      await waitFor(() => print.mock.calls.length === 1);
+      window.dispatchEvent(new Event("afterprint"));
+      await waitFor(() => older() !== null);
+      expect(older()!.textContent).toBe("2 older messages");
+      expect(dom.root.querySelectorAll("[data-mail-message-id]")).toHaveLength(3);
+    } finally {
+      dispose();
+      print.mockRestore();
+      dom.cleanup();
+    }
+  },
+);

@@ -2402,13 +2402,33 @@ describe("waiting detail drawers", () => {
         expect(control.getAttribute("aria-expanded")).toBe("false");
         aside.hidden = true;
         await window.happyDOM.whenAsyncComplete();
-        expect(control.getAttribute("aria-expanded")).toBe(rendered);
+        expect(control.getAttribute("aria-expanded")).toBe(rendered === null ? null : "false");
         expect(control.getAttribute("aria-pressed")).toBe("true");
       } finally {
         dispose();
       }
     });
   }
+
+  test("closing a parked Detail keeps the application's collapsed request expansion", async () => {
+    const { root, main, aside } = waitingWorkspace();
+    const control = document.createElement("button");
+    control.setAttribute("aria-controls", aside.id);
+    control.setAttribute("aria-expanded", "true");
+    main.append(control);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      expect(control.getAttribute("aria-expanded")).toBe("false");
+      control.setAttribute("aria-expanded", "false");
+      aside.hidden = true;
+      await window.happyDOM.whenAsyncComplete();
+      expect(control.getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      dispose();
+    }
+  });
 
   test("a control added while waiting restores its latest application-rendered expansion", async () => {
     const { root, main, aside } = waitingWorkspace();

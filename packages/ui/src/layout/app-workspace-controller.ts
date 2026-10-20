@@ -594,12 +594,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // Whether each open detail waited at the last check, so a column that starts
   // waiting under focus hands that focus to its Details button.
   const detailWasWaiting = new WeakMap<HTMLElement, boolean>();
-  const detailRequestExpanded = new Map<HTMLElement, { rendered: string | null; written: string }>();
-  const restoreDetailRequestExpanded = (control: HTMLElement, state: { rendered: string | null; written: string }) => {
+  const detailRequestExpanded = new Map<HTMLElement, { aside: HTMLElement; rendered: string | null; written: string }>();
+  const restoreDetailRequestExpanded = (control: HTMLElement, state: { aside: HTMLElement; rendered: string | null; written: string }) => {
     // A newer application render already owns the current value.
     if (control.getAttribute("aria-expanded") !== state.written) return;
     if (state.rendered === null) control.removeAttribute("aria-expanded");
-    else control.setAttribute("aria-expanded", state.rendered);
+    else control.setAttribute("aria-expanded", state.aside.hidden || !state.aside.isConnected ? "false" : state.rendered);
   };
   const requestedWaitingDetail = (control: HTMLElement) => {
     if (!wide?.matches || control.matches(DETAIL_TOGGLE_SELECTOR) || !eventRoot.contains(control)) return null;
@@ -637,7 +637,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       const written = String(detailDrawer(aside));
       // Keep the application's latest value to restore when waiting ends.
       const rendered = !state || current !== state.written ? current : state.rendered;
-      detailRequestExpanded.set(control, { rendered, written });
+      detailRequestExpanded.set(control, { aside, rendered, written });
       if (current !== written) control.setAttribute("aria-expanded", written);
     });
   };
