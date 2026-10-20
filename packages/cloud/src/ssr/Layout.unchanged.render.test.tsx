@@ -67,7 +67,8 @@ for (const mode of ["regular", "fullPage", "fullWidth", "focusMode", "anonymous"
   test(`opt-out ${mode} HTML is unchanged`, async () => {
     const response = await server.request(`/app/unchanged?mode=${mode}`);
     expect(response.status).toBe(200);
-    expect(await response.text()).toMatchSnapshot();
+    // Trailing spaces become "·" so the exact bytes stay visible in the snapshot file without trailing whitespace.
+    expect((await response.text()).replace(/ +$/gm, (spaces) => "·".repeat(spaces.length))).toMatchSnapshot();
   });
 }
 afterAll(() => {

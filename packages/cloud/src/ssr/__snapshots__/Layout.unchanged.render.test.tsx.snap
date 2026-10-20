@@ -26,7 +26,7 @@ exports[`opt-out regular HTML is unchanged 1`] = `
   </body>
   <style>solid-client,solid-island{display:contents}</style>
 <script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
-  
+··
 </html>"
 `;
 
@@ -56,7 +56,7 @@ exports[`opt-out fullPage HTML is unchanged 1`] = `
   </body>
   <style>solid-client,solid-island{display:contents}</style>
 <script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
-  
+··
 </html>"
 `;
 
@@ -86,7 +86,7 @@ exports[`opt-out fullWidth HTML is unchanged 1`] = `
   </body>
   <style>solid-client,solid-island{display:contents}</style>
 <script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
-  
+··
 </html>"
 `;
 
@@ -116,7 +116,7 @@ exports[`opt-out focusMode HTML is unchanged 1`] = `
   </body>
   <style>solid-client,solid-island{display:contents}</style>
 <script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
-  
+··
 </html>"
 `;
 
@@ -146,6 +146,6 @@ exports[`opt-out anonymous HTML is unchanged 1`] = `
   </body>
   <style>solid-client,solid-island{display:contents}</style>
 <script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
-  
+··
 </html>"
 `;
