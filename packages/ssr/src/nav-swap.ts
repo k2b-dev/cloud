@@ -368,15 +368,15 @@ export function installPageSwap(): () => void {
     // Capture survives stopPropagation; defer cancellation until later handlers can prevent the submission.
     state.native = { event, controller: state.active };
   };
-  let departure: { key: string; entry: Entry; scroll: ScrollSnapshot } | undefined;
-  let fragment: "push" | "replace" | undefined;
+  // The Navigation API reports the departing entry before history moves, also after traversals nav never saw.
+  let departure: { kind: "traverse" | "push" | "replace"; key: string; entry: Entry; scroll: ScrollSnapshot } | undefined;
   const onNavigate = (event: NavigateEvent): void => {
+    const kind =
+      event.navigationType === "traverse" || (event.hashChange && event.navigationType !== "reload") ? event.navigationType : undefined;
     departure =
-      event.navigationType === "traverse"
-        ? { key: event.destination.key, entry: marker(window.history.state) ?? { position: basePosition() }, scroll: captureScroll() }
+      kind === "traverse" || kind === "push" || kind === "replace"
+        ? { kind, key: event.destination.key, entry: marker(window.history.state) ?? { position: basePosition() }, scroll: captureScroll() }
         : undefined;
-    fragment =
-      event.hashChange && (event.navigationType === "push" || event.navigationType === "replace") ? event.navigationType : undefined;
   };
   const traverse = (entry: Entry): void => {
     state.currentEntry = entry;
@@ -390,8 +390,12 @@ export function installPageSwap(): () => void {
       if (known === "nav") event.stopImmediatePropagation();
       return known;
     }
+    // A traversal's departure must match the arriving entry; a fragment navigation's popstate follows its navigate.
+    const fragmentDeparture = departure && departure.kind !== "traverse" ? departure.kind : undefined;
     const from =
-      departure && departure.key === navigation?.currentEntry?.key ? departure : { entry: state.currentEntry, scroll: captureScroll() };
+      departure && (fragmentDeparture || departure.key === navigation?.currentEntry?.key)
+        ? departure
+        : { entry: state.currentEntry, scroll: captureScroll() };
     const shown = shownEntry(state, from.entry);
     // History already left the shown page while its DOM stays: a cross-page traversal has not committed.
     const pending = from.entry.page !== state.currentPage;
@@ -399,14 +403,13 @@ export function installPageSwap(): () => void {
     departure = undefined;
     remember(state, shown, from.scroll);
     const fragmentMode = navigation
-      ? fragment
+      ? fragmentDeparture
       : event.state === null &&
           state.fragment?.href === window.location.href &&
           state.fragment.event.eventPhase === Event.NONE &&
           !state.fragment.event.defaultPrevented
         ? "push"
         : undefined;
-    fragment = undefined;
     state.fragment = undefined;
     if (fragmentMode) {
       // A fragment entry belongs to the page of the entry it came from, which a pending traversal has not shown yet.
@@ -621,6 +624,9 @@ const commit = (
       // A malformed escape stays as written, as the browser treats it.
     }
     const snapshot = captureScroll();
+    // The shown page may have scrolled while the swap loaded; this is its last snapshot.
+    const shown = shownEntry(state);
+    remember(state, shown, snapshot);
     disposeIslands(context.root);
     if (!owned()) {
       // A cleanup uninstalled the swap or replaced the column: the old islands are gone, so only a load is safe.
@@ -638,8 +644,6 @@ const commit = (
       }
     } else {
       const departing = currentEntry(state);
-      const shown = shownEntry(state);
-      remember(state, shown, snapshot);
       const stored = marker(window.history.state);
       if (!options.replace && stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);
       entry = { page: newPage(state), position: departing.position + (options.replace ? 0 : 1) };

@@ -1652,7 +1652,11 @@ test("a fragment navigation during a pending traversal belongs to the arriving p
     navigation.currentEntry = { key: "arrival", index: 1 };
     arrive({ [markerKey]: { page: "other", position: 1 } }, "/app/new");
     // The hash link in the still-shown old column aborts the pending fetch before its fragment navigation.
+    // Happy DOM's own fragment navigation is replaced by the explicit navigate, push, and popstate below.
+    const native = (event: Event) => event.preventDefault();
+    window.addEventListener("click", native);
     click("/app/new#section");
+    window.removeEventListener("click", native);
     expect(requests[0]!.aborted).toBe(true);
     await Promise.resolve();
     navigation.dispatchEvent(
@@ -1676,6 +1680,62 @@ test("a fragment navigation during a pending traversal belongs to the arriving p
     uninstall();
     Reflect.deleteProperty(window, "navigation");
   }
+});
+
+test("a hash navigation after a dialog Back that nav never saw departs from the page entry", () => {
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "page", index: 4 } });
+  Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+  const navigate = (navigationType: string, key: string, hashChange: boolean) =>
+    navigation.dispatchEvent(Object.assign(new Event("navigate"), { navigationType, destination: { key }, hashChange }));
+  try {
+    install();
+    const page = window.history.state;
+    let y = 120;
+    Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+    window.history.pushState({ ...window.history.state, k2bDialog: 1 }, "");
+    navigation.currentEntry = { key: "dialog", index: 5 };
+    // dialog-core stops this Back before nav sees its popstate.
+    navigate("traverse", "page", false);
+    navigation.currentEntry = { key: "page", index: 4 };
+    History.prototype.replaceState.call(window.history, page, "", "/app/old");
+    y = 650;
+    navigate("push", "", true);
+    navigation.currentEntry = { key: "hash", index: 5 };
+    History.prototype.pushState.call(window.history, null, "", "/app/old#later");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    expect(window.history.state[markerKey]).toEqual({ page: page[markerKey].page, position: page[markerKey].position + 1 });
+    y = 0;
+    navigate("traverse", "page", false);
+    navigation.currentEntry = { key: "page", index: 4 };
+    arrive(page);
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 650);
+  } finally {
+    uninstall();
+    Reflect.deleteProperty(window, "navigation");
+  }
+});
+
+test("scrolling the shown page while a traversal loads keeps that scroll for Forward", async () => {
+  install();
+  let y = 0;
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+  const a = window.history.state;
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("B"), {}, "https://example.test/app/B"));
+  await swapPage("/app/B");
+  const b = window.history.state;
+  y = 500;
+  const requests = deferredFetch(true);
+  arrive(a);
+  y = 800;
+  const back = swapped("old");
+  requests[0]!.resolve(response(html("old"), {}, "https://example.test/app/old"));
+  await back;
+  y = 0;
+  const forward = swapped("B");
+  arrive(b, "/app/B");
+  requests[1]!.resolve(response(html("B"), {}, "https://example.test/app/B"));
+  await forward;
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 800);
 });
 
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
@@ -1761,18 +1821,19 @@ test("Navigation API supplies base and arriving positions and captures the depar
     navigation.dispatchEvent(
       Object.assign(new Event("navigate"), { navigationType: "traverse", destination: { key: "arrival" }, hashChange: false }),
     );
-    y = 990;
     navigation.currentEntry = { key: "arrival", index: 65 };
     spyOn(globalThis, "fetch").mockResolvedValue(response());
     const done = swapped("new");
     arrive(null, "/app/new");
+    // The shown page scrolls while the arriving page loads; its last snapshot wins.
+    y = 990;
     await done;
     expect(window.history.state[markerKey].position).toBe(65);
     const back = swapped("old");
     spyOn(globalThis, "fetch").mockResolvedValue(response(html("old"), {}, "https://example.test/app/old"));
     arrive({ [markerKey]: initial });
     await back;
-    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 310);
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 990);
   } finally {
     uninstall();
     Reflect.deleteProperty(window, "navigation");

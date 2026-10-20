@@ -355,8 +355,9 @@ object or `null`: nav preserves its fields and reserves `"@k2b/ssr/nav"` for
 `{ page, position, scroll? }`. Other state values stay unchanged and unmarked;
 returning to them fetches the server page or reloads the document.
 
-While installed, nav sets `history.scrollRestoration` to `"manual"` and restores
-its previous value on uninstall. The history wrappers stay installed but become
+While installed, nav sets `history.scrollRestoration` to `"manual"`. Uninstall
+restores the previous value for the current entry only; entries created while
+installed stay manual. The history wrappers stay installed but become
 inert. Reloads retain page identity and scroll snapshots for up to 50 entries;
 `"@k2b/ssr/nav:scroll"` is reserved in sessionStorage. bfcache returns check the
 arriving entry. Dialog-only traversals remain with the dialog history owner.

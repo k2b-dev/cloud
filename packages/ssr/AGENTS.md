@@ -259,7 +259,9 @@ cross-page traversal is pending, derive it from the current entry if it belongs
 to the shown page, even if nav never saw that entry's traversal. During a
 pending traversal, keep attributing snapshots to the tracked shown entry.
 Keep scrollRestoration manual for the whole installation and restore the
-previous value on uninstall.
+previous value on uninstall. The setting belongs to each entry, and pushes copy
+it, so entries created while installed stay manual after uninstall; uninstall
+is a teardown path, not a way to hand a running page back to the browser.
 
 Install before islands add raw popstate listeners: Chromium uses registration
 order even for capture. listenPopState is safe in any order through the shared
