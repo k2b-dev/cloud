@@ -20,7 +20,7 @@ const useHelpMessages = () => {
 };
 
 /** An article without its own icon gets a neutral page tile. */
-export const helpIconClass = (icon?: string) => (icon?.startsWith("ti ") ? icon : `ti ${icon ?? "ti-file-text"}`);
+const helpIconClass = (icon?: string) => (icon?.startsWith("ti ") ? icon : `ti ${icon ?? "ti-file-text"}`);
 const GROUP_ICONS: Record<HelpStartGroupKind, string> = {
   start: "ti ti-rocket",
   reference: "ti ti-book-2",
@@ -96,7 +96,7 @@ export function HelpHead(props: {
 }
 
 /** Rows: icon tile, title, and description; the start's groups, its further tasks, and search results use them. */
-export function HelpTopicRows(props: { items: readonly HelpTopic[]; marker?: string; onOpen: (id: string) => void }) {
+function HelpTopicRows(props: { items: readonly HelpTopic[]; marker?: string; onOpen: (id: string) => void }) {
   return (
     <ul class="help-start-rows" {...(props.marker ? { [props.marker]: "" } : {})}>
       <For each={props.items}>
@@ -120,7 +120,7 @@ export function HelpTopicRows(props: { items: readonly HelpTopic[]; marker?: str
 }
 
 /** At most eight tasks as tiles; the app colour shows only in the icon. */
-export function HelpTaskTiles(props: { items: readonly HelpTopic[]; onOpen: (id: string) => void }) {
+function HelpTaskTiles(props: { items: readonly HelpTopic[]; onOpen: (id: string) => void }) {
   return (
     <ul class="help-start-tiles" data-help-tiles="">
       <For each={props.items}>
