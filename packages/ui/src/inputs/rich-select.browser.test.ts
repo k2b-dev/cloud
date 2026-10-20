@@ -35,6 +35,7 @@ const [value, setValue] = createSignal(null);
 const [targets, setTargets] = createSignal(items);
 const [status, setStatus] = createSignal("ready");
 const [disabled, setDisabled] = createSignal(false);
+let resumeHistory;
 document.addEventListener("fixture:state", (event) => {
   const next = event.detail;
   if (next === "revoke") setTargets(items.map(item => item.value === "review" ? { ...item, disabledReason: "No write access" } : item));
@@ -42,19 +43,16 @@ document.addEventListener("fixture:state", (event) => {
   if (next === "empty") { setTargets([]); setStatus("ready"); }
   if (next === "error" || next === "loading") setStatus(next);
   if (next === "disable") setDisabled(true);
+  if (next === "unmount") dispose();
   if (next === "many") setTargets([...items, ...Array.from({ length: 5 }, (_, index) => ({ value: "extra-" + index, label: "Extra " + index }))]);
-  if (next === "revoke-on-choose" || next === "disable-on-choose" || next === "unmount-on-choose") {
-    const revoke = (event) => {
-      if (!event.target.closest(".k2b-rich-select__choose")) return;
-      document.removeEventListener("click", revoke, true);
-      queueMicrotask(() => {
-        if (next === "disable-on-choose") setDisabled(true);
-        else if (next === "unmount-on-choose") dispose();
-        else setTargets(items.map(item => ({ ...item, disabledReason: "No write access" })));
-      });
+  if (next === "hold-history") {
+    const go = history.go.bind(history);
+    history.go = (delta) => {
+      form.dataset.historyPending = "true";
+      resumeHistory = () => { history.go = go; go(delta); };
     };
-    document.addEventListener("click", revoke, true);
   }
+  if (next === "release-history") resumeHistory?.();
 });
 const form = document.createElement("form");
 form.addEventListener("submit", (event) => { event.preventDefault(); form.dataset.submitted = "true"; });
@@ -280,8 +278,13 @@ describe("RichSelect shipped browser contract", () => {
       await trigger.tap();
       const sheet = page.getByRole("dialog");
       await sheet.getByRole("button", { name: "Details: Marketing · Review", exact: true }).tap();
-      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "revoke-on-choose" })));
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "hold-history" })));
       await sheet.getByRole("button", { name: "Choose", exact: true }).tap();
+      await page.waitForFunction(() => document.querySelector("form")?.dataset.historyPending === "true");
+      await page.evaluate(() => {
+        document.dispatchEvent(new CustomEvent("fixture:state", { detail: "revoke" }));
+        document.dispatchEvent(new CustomEvent("fixture:state", { detail: "release-history" }));
+      });
       await page.waitForFunction(() => document.querySelector('[role="combobox"]')?.getAttribute("aria-expanded") === "false");
       expect(await trigger.innerText()).toContain("Move to");
     } finally {
@@ -296,11 +299,13 @@ describe("RichSelect shipped browser contract", () => {
         await page.getByRole("combobox", { name: "Move card" }).tap();
         const sheet = page.getByRole("dialog");
         await sheet.getByRole("button", { name: "Details: Marketing · Review", exact: true }).tap();
-        await page.evaluate(
-          (value) => document.dispatchEvent(new CustomEvent("fixture:state", { detail: value })),
-          `${interruption}-on-choose`,
-        );
+        await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "hold-history" })));
         await sheet.getByRole("button", { name: "Choose", exact: true }).tap();
+        await page.waitForFunction(() => document.querySelector("form")?.dataset.historyPending === "true");
+        await page.evaluate((value) => {
+          document.dispatchEvent(new CustomEvent("fixture:state", { detail: value }));
+          document.dispatchEvent(new CustomEvent("fixture:state", { detail: "release-history" }));
+        }, interruption);
         // The field promise settles after dialogCore's synthetic Back has arrived.
         await page.waitForFunction(() => !history.state?.k2bDialog);
         await sheet.waitFor({ state: "hidden" });

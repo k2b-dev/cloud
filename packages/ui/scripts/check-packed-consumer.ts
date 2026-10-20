@@ -121,7 +121,8 @@ try {
     const picker = renderToString(() => ui.RichSelect({
       label: "Destination", value: "review", items: [{ value: "review", label: "Review" }],
     }));
-    if (!picker.includes("Review") || !picker.includes('role="combobox"')) {
+    const trigger = picker.match(new RegExp('<button[^>]*role="combobox"[^>]*>(.*?)</button>', "s"))?.[1];
+    if (!trigger?.includes("Review")) {
       throw new Error("packed RichSelect did not render its selected value and control");
     }
   `;
