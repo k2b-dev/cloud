@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { announce, dialogCore, panelDialogOptions, prompts, toast, useLocale } from "@k2b/ui";
+import { announce, dialogCore, panelDialogOptions, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, onCleanup, type Setter } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef, ContactTree, ContactTreeNode } from "../../service";
@@ -8,8 +8,9 @@ import { resolveContactName } from "../../shared";
 import AddMemberDialog from "./AddMemberDialog";
 import { readErrorMessage } from "./api";
 import ContactUpsertForm from "./ContactUpsertForm";
+import { contactOutcomeHref } from "./contact-outcome";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
-import { setSelectedContactInUrl } from "./context";
+import { clearSelectedContactInUrl, setSelectedContactInUrl } from "./context";
 import { detailMessages } from "./detail-messages";
 
 export const createContactDetailActions = (config: {
@@ -25,6 +26,29 @@ export const createContactDetailActions = (config: {
   let nextOrgTreeRevision = 0;
   let preparingAction = false;
   let disposed = false;
+  const notices = new Set<ToastHandle>();
+  const reportFailure = (error: Error, retry: () => Promise<void>) => {
+    if (disposed) return;
+    const notice = toast.error(error.message, {
+      duration: 0,
+      action: {
+        label: t().retry,
+        onClick: () => {
+          notice.dismiss();
+          notices.delete(notice);
+          if (!disposed) void retry().catch(() => reportFailure(error, retry));
+        },
+      },
+    });
+    notices.add(notice);
+    for (const older of notices) {
+      if (notices.size <= 3) break;
+      older.dismiss();
+      notices.delete(older);
+    }
+  };
+  type MoveIntent = { bookId: string; contactId: string; targetBookId: string };
+  type UnlinkIntent = { bookId: string; memberId: string };
   const canEdit = () => {
     const selectedBookId = config.bookId();
     if (!selectedBookId) return false;
@@ -37,7 +61,8 @@ export const createContactDetailActions = (config: {
     return config.writableBooks.some((entry) => entry.id !== selectedBookId);
   };
 
-  const moveMutation = mutations.create<Contact, { bookId: string; contactId: string; targetBookId: string }>({
+  const moveMutation = mutations.create<Contact, MoveIntent, MoveIntent>({
+    onBefore: (intent) => intent,
     mutation: async (target, { abortSignal }) => {
       const response = await apiClient.books[":bookId"].contacts[":contactId"].move.$post(
         {
@@ -55,15 +80,15 @@ export const createContactDetailActions = (config: {
       return await response.json();
     },
     onSuccess: (moved) => {
-      toast.success(t().contactMoved);
-      navigateTo(`/app/contacts/${moved.bookId}?contact=${moved.id}&contactBook=${moved.bookId}`);
+      if (!disposed) navigateTo(contactOutcomeHref(moved, "moved"));
     },
-    onError: (error) => {
-      toast.error(error.message);
+    onError: (error, intent) => {
+      if (intent) reportFailure(error, () => moveMutation.mutate(intent));
     },
   });
 
-  const unlinkMemberMutation = mutations.create<void, { bookId: string; memberId: string }>({
+  const unlinkMemberMutation = mutations.create<void, UnlinkIntent, UnlinkIntent>({
+    onBefore: (intent) => intent,
     mutation: async (target, { abortSignal }) => {
       const res = await apiClient.books[":bookId"].contacts[":contactId"].$patch(
         {
@@ -77,12 +102,16 @@ export const createContactDetailActions = (config: {
     // The member leaves the list together with the control that had focus, so a screen reader is told once it is gone.
     onSuccess: () => {
       void config.invalidateDetail().then(
-        () => announce(t().memberRemoved),
-        () => toast.error(t().memberRemovedReloadFailed),
+        () => {
+          if (!disposed) announce(t().memberRemoved);
+        },
+        () => {
+          if (!disposed) reportFailure(new Error(t().memberRemovedReloadFailed), config.invalidateDetail);
+        },
       );
     },
-    onError: (error) => {
-      toast.error(error.message);
+    onError: (error, intent) => {
+      if (intent) reportFailure(error, () => unlinkMemberMutation.mutate(intent));
     },
   });
 
@@ -111,19 +140,21 @@ export const createContactDetailActions = (config: {
     if (orgTree()) config.setDetailMode("tree");
   });
 
-  createEffect(() => {
-    const error = orgTreeQuery.error();
-    if (error) void prompts.error(error.message);
-  });
-
   const openAddMemberDialog = async (parent: Contact) => {
     const member = await dialogCore.open<Contact | null>((close) => <AddMemberDialog parent={parent} close={close} />, panelDialogOptions);
     if (!member || disposed) return;
-    void config.invalidateDetail().catch(() => toast.error(t().memberAddedReloadFailed));
+    void config.invalidateDetail().then(
+      () => {
+        if (!disposed) announce(t().memberAdded);
+      },
+      () => {
+        if (!disposed) reportFailure(new Error(t().memberAddedReloadFailed), config.invalidateDetail);
+      },
+    );
   };
 
   const openEditDialog = async (selectedContact: Contact) => {
-    const updated = await dialogCore.open<Contact | undefined>(
+    const updated = await dialogCore.open<Contact | "deleted" | undefined>(
       (close) => (
         <ContactUpsertForm
           mode="edit"
@@ -133,17 +164,23 @@ export const createContactDetailActions = (config: {
           icon="ti ti-pencil"
           onCancel={() => close(undefined)}
           onSaved={(contact) => close(contact)}
+          onDeleted={() => close("deleted")}
         />
       ),
       panelDialogOptions,
     );
 
     if (!updated || disposed) return;
+    if (updated === "deleted") {
+      clearSelectedContactInUrl();
+      return;
+    }
     setSelectedContactInUrl({
       contactId: updated.id,
       bookId: updated.bookId,
       contact: updated,
     });
+    announce(t().contactUpdated);
   };
 
   const selectOrgTreeNode = (node: ContactTreeNode, fallbackBookId: string) => {
@@ -179,6 +216,8 @@ export const createContactDetailActions = (config: {
       });
       if (!result || disposed) return;
       await moveMutation.mutate({ ...intent, targetBookId: result.targetBookId });
+    } catch (error) {
+      if (!disposed) toast.error(error instanceof Error ? error.message : t().moveContactFailed);
     } finally {
       preparingAction = false;
     }
@@ -201,6 +240,8 @@ export const createContactDetailActions = (config: {
       });
       if (!confirmed || disposed) return;
       await unlinkMemberMutation.mutate(intent);
+    } catch (error) {
+      if (!disposed) toast.error(error instanceof Error ? error.message : t().removeMemberFailed);
     } finally {
       preparingAction = false;
     }
@@ -208,6 +249,7 @@ export const createContactDetailActions = (config: {
 
   onCleanup(() => {
     disposed = true;
+    for (const notice of notices) notice.dismiss();
     moveMutation.abort();
     unlinkMemberMutation.abort();
   });
@@ -224,6 +266,8 @@ export const createContactDetailActions = (config: {
     },
     orgTree,
     orgTreeLoading: orgTreeQuery.loading,
+    orgTreeError: () => (config.orgTreeSource() ? orgTreeQuery.error() : null),
+    retryOrgTree: orgTreeQuery.refresh,
     closeOrgTree: () => {
       config.setDetailMode("details");
       config.setOrgTreeSource(null);
