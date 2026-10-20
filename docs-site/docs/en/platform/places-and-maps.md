@@ -2,7 +2,7 @@
 title: Places and maps
 navTitle: Places and maps
 section: Platform services
-order: 558
+order: 559
 description: Find addresses and places through Core with shared budgets, caching, and attribution.
 tags: [geo, addresses, places, capabilities, maps]
 updated: 2026-10-20
