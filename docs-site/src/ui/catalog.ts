@@ -397,7 +397,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 151;
+export const portableUiComponentCount = 152;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -437,6 +437,9 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",
+  mapAttribution: "Plain attribution data for custom map credits; documented on the MapView page.",
+  mapStyle: "OpenMapTiles style builder requiring host tile and glyph templates; documented on the MapView page.",
   MapViewFrame: "Server-only and PDF rendering uses the shared MapView geometry; documented on the MapView page.",
   truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
   REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
