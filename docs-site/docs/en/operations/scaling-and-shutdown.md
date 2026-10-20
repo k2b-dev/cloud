@@ -83,9 +83,9 @@ await app.start({
 
 `setup` runs before background work, on one replica of an application at a
 time. Use it for idempotent migrations. Later replicas wait until it finishes,
-logging `waiting for setup on another replica`. A crashed replica's turn
-expires after about a minute. A replica that loses its turn during setup fails
-its start and restarts, so setup runs again.
+logging `waiting for setup on another replica`. If a replica crashes or is
+stopped during setup, its turn expires after about a minute. A replica that
+loses its turn during setup fails its start and restarts, so setup runs again.
 
 `start` begins workers and subscriptions.
 
