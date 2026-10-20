@@ -1,7 +1,6 @@
-import { aiConversations } from "@k2b/cloud/ai";
 import { CodeCheckInput } from "@k2b/cloud/ai/browser";
 import { sql } from "bun";
-import { z } from "zod";
+import { requireToolChat } from "../chat-access";
 import { ArtifactSource, hasInterface, LIMITS } from "../contracts";
 import { artifactDatabase } from "../database";
 import { databaseConfigLock } from "../database-lock";
@@ -17,10 +16,7 @@ const CHECK_HISTORY = 2 * LIMITS.pendingRequests;
 const CHECK_CLEANUP_BATCH = 2 * LIMITS.pendingRequests;
 
 async function chat(id: string, identity: ArtifactIdentity) {
-  const conversation = await aiConversations.getConversation({ conversationId: z.uuid().parse(id), ownerUserId: user(identity).id });
-  if (!conversation || conversation.archivedAt || (conversation.allowedTools && !conversation.allowedTools.includes("code_check")))
-    throw new ArtifactError("ACCESS_DENIED");
-  return conversation.id;
+  return requireToolChat(id, identity, "code_check");
 }
 export const appChecks = {
   async assert(source: ArtifactSource, id: string | undefined, identity: ArtifactIdentity, conversationId: string, db?: typeof sql) {
@@ -33,9 +29,9 @@ export const appChecks = {
     const reason = checkGate(true, hash, records);
     if (reason) throw new CloudError("invalid", reason);
   },
-  async start(raw: unknown, conversationId: string, identity: ArtifactIdentity, signal: AbortSignal) {
+  async start(raw: unknown, reference: string, identity: ArtifactIdentity, signal: AbortSignal) {
     const input = CodeCheckInput.parse(raw);
-    await chat(conversationId, identity);
+    const conversation = await chat(reference, identity);
     // Recover crashed checks before allocating another disposable scope.
     await appChecks.cleanup().catch((error: unknown) => console.warn("Assistant check scratch cleanup deferred", error));
     signal.throwIfAborted();
@@ -70,7 +66,7 @@ export const appChecks = {
         const scratch = await artifacts.create({ kind: "app", title: "Code check", source }, identity, true);
         scopeId = scratch.id;
         // Commit the recovery marker before storage/remote database effects.
-        await sql`UPDATE assistant.artifacts SET check_conversation_id=${conversationId}::uuid WHERE short_id=${scratch.id} AND check_scratch`;
+        await sql`UPDATE assistant.artifacts SET check_conversation_id=${conversation.id}::uuid WHERE short_id=${scratch.id} AND check_scratch`;
         const warnings = input.id ? await artifactDatabase.copyForCheck(input.id, scratch.id, identity, signal, db) : [];
         if (resource) {
           const [usage] = await db`SELECT coalesce(sum(bytes),0)::bigint AS bytes FROM assistant.artifact_storage
@@ -97,20 +93,20 @@ export const appChecks = {
     await artifacts.remove(id, identity);
     if (typeof row.namespace === "string") await artifactDatabase.deleteQueuedNamespace(row.namespace);
   },
-  async record(raw: unknown, inputRaw: unknown, conversationId: string, identity: ArtifactIdentity) {
-    await chat(conversationId, identity);
+  async record(raw: unknown, inputRaw: unknown, reference: string, identity: ArtifactIdentity) {
+    const conversation = await chat(reference, identity);
     const input = CodeCheckInput.parse(inputRaw),
       report = CheckReport.parse(raw);
     if (report.passed && (report.issues.some((issue) => issue.severity === "error") || report.screenshots.length !== 3))
       throw new ArtifactError("INVALID_INPUT");
     // Keep the report's tested hash, never relabel it with a newer source hash.
     await sql`INSERT INTO assistant.artifact_checks(user_id,conversation_id,resource_key,hash,passed,height)
-      VALUES(${user(identity).id}::uuid,${conversationId}::uuid,${input.id ?? "files"},${report.hash},${report.passed},${report.height})
+      VALUES(${user(identity).id}::uuid,${conversation.id}::uuid,${input.id ?? "files"},${report.hash},${report.passed},${report.height})
       ON CONFLICT(user_id,conversation_id,resource_key,hash) DO UPDATE SET passed=excluded.passed,height=excluded.height,checked_at=now()`;
     // One-off hashes share the per-conversation bounded history.
-    await sql`DELETE FROM assistant.artifact_checks WHERE user_id=${user(identity).id}::uuid AND conversation_id=${conversationId}::uuid
+    await sql`DELETE FROM assistant.artifact_checks WHERE user_id=${user(identity).id}::uuid AND conversation_id=${conversation.id}::uuid
       AND hash IN (SELECT hash FROM assistant.artifact_checks WHERE user_id=${user(identity).id}::uuid
-        AND conversation_id=${conversationId}::uuid ORDER BY checked_at DESC OFFSET ${CHECK_HISTORY})`;
+        AND conversation_id=${conversation.id}::uuid ORDER BY checked_at DESC OFFSET ${CHECK_HISTORY})`;
   },
   async cleanup() {
     // Crash recovery uses the same durable namespace cleanup queue as app deletion.
