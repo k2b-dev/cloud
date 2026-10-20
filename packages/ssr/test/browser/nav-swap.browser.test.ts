@@ -1916,6 +1916,39 @@ test("a cross-page traversal is reported as ssr:nav-popstate before nav hides it
   }
 });
 
+test("a navigation that an ssr:nav-popstate listener starts wins over the reported traversal", async () => {
+  install();
+  const requests = deferredFetch(true);
+  let later = Promise.resolve();
+  const report = () => {
+    later = swapPage("/app/B");
+  };
+  window.addEventListener("ssr:nav-popstate", report, { once: true });
+  try {
+    arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new");
+    expect(requests).toHaveLength(2);
+    expect(requests[0]!.aborted).toBe(true);
+    expect(requests[1]!.aborted).toBe(false);
+    requests[1]!.resolve(response(html("B"), {}, "https://example.test/app/B"));
+    await later;
+    expect(document.title).toBe("B");
+  } finally {
+    window.removeEventListener("ssr:nav-popstate", report);
+  }
+});
+
+test("a marker-dropping replace during a traversal fetch keeps the arriving entry's stored scroll", async () => {
+  install();
+  const requests = deferredFetch(true);
+  const scroll = { window: { x: 0, y: 640 }, regions: [] };
+  arrive({ [markerKey]: { page: "other", position: 5, scroll } }, "/app/new");
+  window.history.replaceState([], "");
+  const done = swapped("new");
+  requests[0]!.resolve(response());
+  await done;
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 640);
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;

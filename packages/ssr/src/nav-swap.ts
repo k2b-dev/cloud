@@ -410,11 +410,13 @@ export function installPageSwap(): () => void {
     void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key, moves: state.moves });
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
-  const claim = (event: PopStateEvent): void => {
+  const claim = (event: PopStateEvent, entry: Entry): void => {
     decisions.set(event, "nav");
-    // History owners that must see every traversal, like @k2b/ui dialogs, may have registered after nav.
-    window.dispatchEvent(new CustomEvent("ssr:nav-popstate", { detail: event }));
     event.stopImmediatePropagation();
+    traverse(entry);
+    // History owners that must see every traversal, like @k2b/ui dialogs, may have registered after nav. The
+    // traversal already started, so a navigation they start is the newer one.
+    window.dispatchEvent(new CustomEvent("ssr:nav-popstate", { detail: event }));
   };
   const decide = (event: PopStateEvent): "page" | "nav" => {
     const known = decisions.get(event);
@@ -450,8 +452,7 @@ export function installPageSwap(): () => void {
       const entry = { page, position: from.entry.position + (fragmentMode === "push" ? 1 : 0) };
       if (page !== undefined) writes.replace.call(window.history, mergeMarker(window.history.state, { ...entry, page }), "");
       if (pending) {
-        claim(event);
-        traverse(entry);
+        claim(event, entry);
         return "nav";
       }
       state.currentEntry = entry;
@@ -479,8 +480,7 @@ export function installPageSwap(): () => void {
       decisions.set(event, "page");
       return "page";
     }
-    claim(event);
-    traverse(entry ?? { position: basePosition() });
+    claim(event, entry ?? { position: basePosition() });
     return "nav";
   };
   const popstate = (event: PopStateEvent): void => {
@@ -690,7 +690,8 @@ const commit = (
       // The arriving identity was fixed at the decision; a cleanup's replace may have stamped the departing page.
       const { page = newPage(state), position } = traversal.entry;
       const stored = marker(window.history.state);
-      entry = { ...(stored?.page === page ? stored : {}), page, position };
+      const { scroll } = traversal.entry;
+      entry = { ...(scroll ? { scroll } : {}), ...(stored?.page === page ? stored : {}), page, position };
       if (stored?.page !== page && (window.history.state == null || plain(window.history.state)))
         writes.replace.call(window.history, mergeMarker(window.history.state, entry), "");
       traversal.entry = entry;
