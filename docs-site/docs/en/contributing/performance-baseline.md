@@ -798,11 +798,13 @@ mode omits the earlier server scenarios' cache warming and fixture mutations;
 matching fixture digests do not establish equivalent cache conditions. Keep
 that limitation and the shared-host load alongside the observed reduction.
 
-This checkpoint is not ready to ship: nonzero list scroll still needs the
-shared SSR history owner to restore the destination after asynchronous
-mailbox content commits, including rapid Back/Forward reversal. The existing
-browser guards cover retained document/sidebar identity and mailbox URL
-parity, but do not yet prove that scroll contract.
+Mailbox history now uses the shared SSR scroll-restoration completion
+contract: the destination restores after its asynchronous list content
+commits. Chromium and WebKit each pass the nonzero A/B scroll guard, including
+a delayed response followed by rapid Back/Forward reversal and Reload.
+Server, hydrated, and settled geometry agree. The existing guards also cover
+retained document/sidebar identity and mailbox URL parity. These correctness
+checks do not change the measured checkpoint or remove its timing limitations.
 
 ### Rank bottlenecks
 
