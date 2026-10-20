@@ -17,6 +17,7 @@ suite("mailbox recipient suggestions", () => {
   let uid = 0;
   let inbox = "";
   let junk = "";
+  let drafts = "";
   let overridden = "";
   const seed = async (
     addresses: Array<{ email: string; role?: string; name?: string }>,
@@ -61,6 +62,7 @@ suite("mailbox recipient suggestions", () => {
     for (const [name, role] of [
       ["Inbox", "inbox"],
       ["Junk", "junk"],
+      ["Drafts", "drafts"],
       ["Override", "other"],
     ]) {
       const [folder] = await sql<
@@ -70,6 +72,7 @@ suite("mailbox recipient suggestions", () => {
       if (!folder) throw new Error("Could not create folder");
       if (role === "inbox") inbox = folder.id;
       else if (role === "junk") junk = folder.id;
+      else if (role === "drafts") drafts = folder.id;
       else overridden = folder.id;
     }
     await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, folder_id, role) VALUES (${fixture.mailboxId}::uuid, ${overridden}::uuid, 'junk')`;
@@ -91,6 +94,7 @@ suite("mailbox recipient suggestions", () => {
     await seed([{ email: "rank-old@example.test" }], 90);
     await seed([{ email: "reply@example.test" }]);
     await seed([{ email: "junk-only@example.test" }], 0, junk);
+    await seed([{ email: "own@example.test" }, { email: "draft-only@example.test", role: "to" }], 0, drafts);
     await seed([{ email: "override-only@example.test" }], 0, overridden);
     await seed([{ email: "deleted-only@example.test" }], 0, inbox, true);
     const mixedMessage = await seed([{ email: "mixed-junk@example.test" }]);
@@ -98,6 +102,11 @@ suite("mailbox recipient suggestions", () => {
       VALUES (${junk}::uuid, ${mixedMessage}::uuid, 1, ${++uid}) RETURNING id`;
     await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
       VALUES (${mixedRef!.id}::uuid, ${junk}::uuid, ${mixedMessage}::uuid)`;
+    const mixedDraft = await seed([{ email: "mixed-draft@example.test" }]);
+    const [draftRef] = await sql<{ id: string }[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${drafts}::uuid, ${mixedDraft}::uuid, 1, ${++uid}) RETURNING id`;
+    await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
+      VALUES (${draftRef!.id}::uuid, ${drafts}::uuid, ${mixedDraft}::uuid)`;
     const [otherResource] = await sql<
       { id: string }[]
     >`INSERT INTO mail.remote_resources (mailbox_id, remote_locator, server_identity, scope_fingerprint, status)
@@ -186,9 +195,40 @@ suite("mailbox recipient suggestions", () => {
     expect(await list("%t")).toEqual([]);
     expect(await list("\\\\")).toEqual([]);
   });
-  test("excludes own identities, other mailboxes, Junk overrides and deleted placements", async () => {
-    for (const query of ["own@", "reply@", "other-only", "junk-only", "mixed-junk", "override-only", "deleted-only", "not an"])
+  test("excludes own identities, other mailboxes, Junk, effective Drafts and deleted placements", async () => {
+    for (const query of [
+      "own@",
+      "reply@",
+      "other-only",
+      "junk-only",
+      "mixed-junk",
+      "override-only",
+      "draft-only",
+      "mixed-draft",
+      "deleted-only",
+      "not an",
+    ])
       expect(await list(query)).toEqual([]);
+  });
+  test("a Drafts override excludes its folder instead of the provider Drafts folder", async () => {
+    await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, folder_id, role)
+      VALUES (${fixture.mailboxId}::uuid, ${inbox}::uuid, 'drafts')`;
+    try {
+      expect(await list("written@")).toEqual([]);
+      expect(await list("copied@")).toEqual([]);
+      expect((await list("draft-only")).map((item) => item.address)).toEqual(["draft-only@example.test"]);
+    } finally {
+      await sql`DELETE FROM mail.folder_role_overrides WHERE mailbox_id = ${fixture.mailboxId}::uuid AND role = 'drafts'`;
+    }
+  });
+  test("a provider Drafts folder mapped to another role does not exclude its messages", async () => {
+    await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, folder_id, role)
+      VALUES (${fixture.mailboxId}::uuid, ${drafts}::uuid, 'archive')`;
+    try {
+      expect((await list("draft-only")).map((item) => item.address)).toEqual(["draft-only@example.test"]);
+    } finally {
+      await sql`DELETE FROM mail.folder_role_overrides WHERE mailbox_id = ${fixture.mailboxId}::uuid AND role = 'archive'`;
+    }
   });
   test("invalid imported addresses never take a result slot; names fit the recipient name limit", async () => {
     const [item, ...rest] = await list("team@", 1);

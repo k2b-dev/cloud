@@ -538,10 +538,12 @@ It requires mailbox-wide read access. Assigned-only access gets `403`.
 Users and service accounts use the same route and permission check.
 
 The query has 2–320 characters after trimming. The limit defaults to 8 and has
-a maximum of 20. Mail searches the newest 2,000 messages, excludes messages
-with no live placement or any live Junk placement, and excludes this mailbox's
-sender and reply-to identities. Addresses the mailbox wrote to come first;
-recency and frequency decide the remaining order.
+a maximum of 20. Mail reads the newest 2,000 messages of the mailbox. Within
+them, it skips messages with no live placement or with any live Junk or Drafts
+placement, so those messages still count toward the 2,000. It also skips this
+mailbox's sender and reply-to identities. Addresses the mailbox wrote to come
+first; recency and frequency decide the remaining order. Older correspondents
+come from the contact directory.
 
 ## Find detailed product help
 

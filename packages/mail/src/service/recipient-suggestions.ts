@@ -37,13 +37,24 @@ export const recipientSuggestionsQuery = (params: QueryParams, db: typeof sql = 
         UNION ALL
         SELECT LOWER(BTRIM(reply_to)) FROM mail.sender_identities WHERE mailbox_id = ${params.mailboxId}::uuid AND reply_to IS NOT NULL
       ) identity
-    ), junk AS MATERIALIZED (
+    ), excluded AS MATERIALIZED (
       SELECT COALESCE(ARRAY_AGG(folder.id), ARRAY[]::uuid[]) AS folder_ids
       FROM mail.folders folder
       JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
       LEFT JOIN mail.folder_role_overrides role_override
         ON role_override.folder_id = folder.id AND role_override.mailbox_id = ${params.mailboxId}::uuid
-      WHERE resource.mailbox_id = ${params.mailboxId}::uuid AND COALESCE(role_override.role, folder.role) = 'junk'
+      WHERE resource.mailbox_id = ${params.mailboxId}::uuid
+        AND (
+          COALESCE(role_override.role, folder.role) = 'junk'
+          OR role_override.role = 'drafts'
+          OR (
+            COALESCE(role_override.role, folder.role) = 'drafts'
+            AND NOT EXISTS (
+              SELECT 1 FROM mail.folder_role_overrides drafts_override
+              WHERE drafts_override.mailbox_id = ${params.mailboxId}::uuid AND drafts_override.role = 'drafts'
+            )
+          )
+        )
     ), live AS MATERIALIZED (
       SELECT recent.id, recent.internal_date
       FROM (
@@ -53,11 +64,11 @@ export const recipientSuggestionsQuery = (params: QueryParams, db: typeof sql = 
         LIMIT ${params.window}
       ) recent
       CROSS JOIN LATERAL (
-        SELECT COUNT(*) AS live, BOOL_OR(placement.folder_id = ANY((SELECT folder_ids FROM junk)::uuid[])) AS junk
+        SELECT COUNT(*) AS live, BOOL_OR(placement.folder_id = ANY((SELECT folder_ids FROM excluded)::uuid[])) AS excluded
         FROM mail.message_placements placement
         WHERE placement.message_id = recent.id AND placement.deleted_at IS NULL
       ) placement
-      WHERE placement.live > 0 AND NOT placement.junk
+      WHERE placement.live > 0 AND NOT placement.excluded
     ), occurrences AS MATERIALIZED (
       SELECT address.normalized_email AS address, address.display_name, live.id AS message_id, live.internal_date,
         address.role, address.position,
