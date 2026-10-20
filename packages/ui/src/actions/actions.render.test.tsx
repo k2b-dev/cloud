@@ -23,6 +23,7 @@ const {
   Dropdown,
   dropdownPosition,
   FilterChip,
+  FilterToggle,
   IconButton,
   IconButtonLink,
   LocaleProvider,
@@ -1270,5 +1271,62 @@ describe("workspace head navigation", () => {
       expect(html).toContain("k2b-app-workspace__head-actions");
       expect(html.match(/data-workspace-primary=""/g)).toHaveLength(1);
     }
+  });
+});
+
+describe("FilterToggle", () => {
+  test("renders an active or inactive filter as a native link", () => {
+    for (const active of [true, false]) {
+      const html = renderToString(() =>
+        createComponent(FilterToggle, {
+          href: "/users?recursive=true",
+          label: "All members",
+          icon: "ti ti-hierarchy",
+          active,
+        }),
+      );
+      expect(html).toStartWith("<a ");
+      expect(html).toContain('href="/users?recursive=true"');
+      expect(html).toContain('class="k2b-filter-chip ');
+      expect(html.includes('aria-current="true"')).toBe(active);
+      expect(html.includes('data-active="true"')).toBe(active);
+      expect(html).not.toContain("aria-pressed");
+      expect(html).not.toContain("data-variant");
+      if (!active) {
+        expect(html).not.toContain("data-active=");
+        expect(html).not.toContain("aria-current=");
+      }
+    }
+  });
+
+  test("renders a button with pressed state, including a disabled link", () => {
+    for (const active of [true, false]) {
+      const html = renderToString(() => createComponent(FilterToggle, { label: "Only mine", icon: "ti ti-user", active }));
+      expect(html).toStartWith("<button ");
+      expect(html).toContain('type="button"');
+      expect(html).toContain(`aria-pressed="${active}"`);
+      expect(html.includes('data-active="true"')).toBe(active);
+      expect(html).not.toContain("aria-current");
+    }
+    const disabled = renderToString(() =>
+      createComponent(FilterToggle, {
+        href: "/users?recursive=true",
+        label: "All members",
+        icon: "ti ti-hierarchy",
+        active: true,
+        disabled: true,
+      }),
+    );
+    expect(disabled).toStartWith("<button ");
+    expect(disabled).toContain('type="button"');
+    expect(disabled).toContain(" disabled");
+    expect(disabled).not.toContain("href=");
+  });
+
+  test("uses the shared active FilterChip tint and keeps links undecorated", () => {
+    const active = rule('.k2b-ui .k2b-filter-chip[data-active="true"]');
+    expect(active).toContain("background: var(--k2b-app-workspace-selected)");
+    expect(active).toContain("color: var(--k2b-app-workspace-active)");
+    expect(rule(".k2b-ui a.k2b-filter-chip")).toContain("text-decoration: none");
   });
 });
