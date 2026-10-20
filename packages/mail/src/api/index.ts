@@ -19,7 +19,6 @@ import {
   spacesMailDestinationsSchema,
 } from "../app-integration-contracts";
 import { attachmentPreviewKind, attachmentPreviewSignatureMatches, baseAttachmentContentType } from "../attachment-preview-policy";
-import { requestContactDirectory } from "../contact-directory-settings";
 import {
   type AttachmentLink,
   type AttachmentLinkPage,
@@ -79,6 +78,8 @@ import {
   mailFocusViewSchema,
   mailFolderSchema,
   mailingListDispositionInputSchema,
+  mailRecipientSuggestionsQuerySchema,
+  mailRecipientSuggestionsSchema,
   mailSyncRunPageSchema,
   mailSyncRunStateSchema,
   maintenanceCommandInputSchema,
@@ -152,6 +153,7 @@ import {
   presence,
   providerConnections,
   publicResources,
+  recipientSuggestions,
   reminders,
   savedViews,
   scheduledSends,
@@ -165,6 +167,7 @@ import {
   triage,
 } from "../service";
 import { resolveByteRange } from "../service/byte-range";
+import { requestContactDirectory } from "../service/contact-directory";
 import { localizeMailError } from "../service/error-messages";
 import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
@@ -924,6 +927,32 @@ const mailOperationsApi = new Hono<MailApiContext>()
     },
   )
   .get(
+    "/mailboxes/:mailboxId/recipient-suggestions",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Suggest recipients this mailbox knows",
+      description: `Requires mailbox-wide read access for users and service accounts; assigned-only access is refused. Excludes the mailbox's own sender identities, Junk and deleted messages. Searches the newest ${recipientSuggestions.MAIL_RECIPIENT_SUGGESTION_WINDOW.toLocaleString("en-US")} messages. Addresses the mailbox wrote to come first, then recency and frequency decide.`,
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailRecipientSuggestionsSchema, "Recipient suggestions"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    v("query", mailRecipientSuggestionsQuerySchema),
+    async (c) =>
+      respond(
+        c,
+        recipientSuggestions.listRecipientSuggestions({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param")),
+          ...c.req.valid("query"),
+        }),
+      ),
+  )
+  .get(
     "/mailboxes/:mailboxId/conversations/:conversationId/context",
     describeRoute({
       tags: ["Mail:Context"],
@@ -945,7 +974,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         conversationContext.getConversationContext({
           context: requestContext(c),
           request: integrationRequest(c),
-          contactDirectory: requestContactDirectory(c),
+          contactDirectory: await requestContactDirectory(c),
           ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
           query: await internalInput(c, c.req.valid("query")),
         }),
@@ -1076,7 +1105,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       const result = await conversationContext.listRelatedMail({
         context: requestContext(c),
         request: integrationRequest(c),
-        contactDirectory: requestContactDirectory(c),
+        contactDirectory: await requestContactDirectory(c),
         ...internalParams(c, c.req.valid("param")),
         ...(await internalInput(c, c.req.valid("query"))),
       });
