@@ -45,4 +45,5 @@ NATS coordinates distributed work; Valkey provides bounded caches and rate limit
 | Change the schema or write atomically | [Migrations and transactions](/en/docs/data/migrations-and-transactions) |
 | Place secrets, cache entries, files, and other state | [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state) |
 | Link domain resources to platform access | [Resource authorization](/en/docs/identity/authorization) |
+| Let people and agents edit the same text | [Shared text documents](/en/docs/data/shared-text-documents) |
 | Wrap persistence in domain behavior | [Services and Result](/en/docs/server/services-and-results) |

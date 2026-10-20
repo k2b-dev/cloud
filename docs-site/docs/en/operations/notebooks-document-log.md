@@ -5,7 +5,7 @@ section: Operations
 order: 1138
 description: JetStream storage reserved for Notebook live editing, how it is sized, and how per-note topics from older releases are retired.
 tags: [notebooks, nats, jetstream, storage, migration]
-updated: 2026-09-23
+updated: 2026-10-19
 ---
 
 # Size and migrate the Notebook document log
@@ -15,6 +15,8 @@ document log shared by all notes, `cloud:notebooks:yjs`. Each note's updates
 use the note ID as the Sync tenant. Snapshots in Postgres remain the durable
 document state. The log only needs to hold updates until a snapshot covers
 them.
+The platform now provides the log through `@k2b/cloud/shared-text`; the topic
+names and limits are unchanged.
 
 Releases up to 0.10 created one log per note. JetStream reserves every
 stream's configured byte limit against the account, whether or not data is
