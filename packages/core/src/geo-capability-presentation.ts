@@ -17,7 +17,7 @@ export const geoCapabilityPresentation = {
   "place.search": {
     title: "Orte suchen",
     description:
-      "Liefert bis zu 20 Orte aus höchstens 5 Kategorien nahe einem Punkt, im Kreis/Rechteck oder entlang polyline6. Routenfenster höchstens 200 km, Puffer 100–5.000 m. Herkunft und Namensnennung beibehalten; Credits im Betreiberbudget.",
+      "Liefert bis zu 20 Orte aus höchstens 5 Kategorien nahe einem Punkt, im Kreis/Rechteck oder entlang polyline6. Routenfenster höchstens 200 km, Puffer 100–5.000 m. Bei truncated: true das Routenfenster verkleinern; ein leeres Ergebnis schließt dann Treffer nicht aus. Herkunft und Namensnennung beibehalten; Credits im Betreiberbudget.",
   },
   "geo.availability": {
     title: "Geo-Verfügbarkeit prüfen",

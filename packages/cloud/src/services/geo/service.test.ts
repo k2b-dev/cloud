@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { z } from "zod";
-import { GeoGeocodeDataSchema, GeoPlaceSearchDataSchema, type GeoPlaceSearchInput, GEO_MAX_POLYLINE_CHARS } from "../../contracts/geo";
+import { GEO_MAX_POLYLINE_CHARS, GeoGeocodeDataSchema, GeoPlaceSearchDataSchema, type GeoPlaceSearchInput } from "../../contracts/geo";
 import * as settingsStore from "../settings/store";
 import { createGeoBucket } from "./bucket";
 import { createGeoCache, geoCacheKey } from "./cache";
@@ -8,11 +8,11 @@ import { geoReferenceCost, geoReserveCost } from "./costs";
 import autocomplete from "./fixtures/autocomplete.json";
 import geocode from "./fixtures/geocode.json";
 import places from "./fixtures/places.json";
+import { encodeGeoTestLine, GEO_TEST_KEY, GEO_TEST_NOW, geoTestConfig, geoTestContext } from "./geo.test-fixture";
 import { GeoapifyAdapter } from "./geoapify";
-import { createGeoService } from "./service";
 import { cutGeoWindow, decodePolyline6, locateOnGeoLine, simplifyGeoLine } from "./polyline";
+import { createGeoService } from "./service";
 import { readGeoConfig } from "./settings";
-import { encodeGeoTestLine, geoTestConfig, geoTestContext, GEO_TEST_KEY, GEO_TEST_NOW } from "./geo.test-fixture";
 
 const setup = (overrides: Partial<Parameters<typeof createGeoService>[0]> = {}, response: unknown = autocomplete) => {
   const fetch = mock(async () => Response.json(response));
@@ -369,6 +369,43 @@ test("along widens the provider corridor for simplification and filters against 
   expect(result.places[0]!.distanceToRouteMeters).toBeCloseTo(92, 0);
   expect(along.bufferMeters).toBe(100);
 });
+test.each([true, false])(
+  "along filters before limiting and reports a bounded incomplete search (valid candidate: %s)",
+  async (hasValid) => {
+    const route = Array.from({ length: 3001 }, (_, i) => ({ lat: (i % 2) * 0.0001, lon: i * 0.000005 }));
+    const features = Array.from({ length: 20 }, (_, i) => ({
+      ...places.features[0]!,
+      properties: {
+        ...places.features[0]!.properties,
+        lat: 0.0001 + ((hasValid && i === 19 ? 92 : 108) / 6_371_008.8) * (180 / Math.PI),
+        lon: route[1001]!.lon,
+        place_id: `candidate-${i}`,
+      },
+    }));
+    const f = setup({
+      adapter: new GeoapifyAdapter({
+        now: () => GEO_TEST_NOW,
+        fetch: async (_url, init) => {
+          const body = z.object({ limit: z.number() }).parse(JSON.parse(String(init.body)));
+          expect(body.limit).toBe(20);
+          return Response.json({ ...places, features: features.slice(0, body.limit) });
+        },
+      }),
+    });
+    const result = await f.service.searchPlaces(
+      {
+        categories: ["museum"],
+        limit: 1,
+        along: { polyline6: encodeGeoTestLine(route), fromKm: 0, toKm: 100, bufferMeters: 100 },
+      },
+      geoTestContext,
+    );
+    expect(result.places.map((place) => place.id)).toEqual(hasValid ? ["candidate-19"] : []);
+    expect(result.truncated).toBe(!hasValid);
+    expect(f.reserve).toHaveBeenCalledTimes(1);
+    expect(f.reserve.mock.calls[0]?.[2]).toBe(1000);
+  },
+);
 test("along cache keys distinguish original routes that simplify to the same line", async () => {
   const routes = [1, -1].map((direction) =>
     encodeGeoTestLine(Array.from({ length: 2001 }, (_, i) => ({ lat: i % 2 ? direction * 0.000001 : 0, lon: i * 0.000005 }))),

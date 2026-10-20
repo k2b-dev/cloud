@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { GEO_MAX_POLYLINE_CHARS } from "../../contracts/geo";
-import { cutGeoWindow, decodePolyline6, geoDistance, locateOnGeoLine, simplifyGeoLine } from "./polyline";
 import { encodeGeoTestLine } from "./geo.test-fixture";
+import { cutGeoWindow, decodePolyline6, geoDistance, locateOnGeoLine, simplifyGeoLine } from "./polyline";
+
 test("polyline6 preserves negative coordinates, detects malformed and truncated values", () => {
   const points = [
     { lat: 35.14, lon: -89.94 },
@@ -35,6 +36,37 @@ test("window interpolation follows great-circle distance on long diagonal segmen
     100000,
   );
   expect(Math.abs(geoDistance(cut[0]!, cut[1]!) - 100000)).toBeLessThanOrEqual(1);
+});
+test("route projection follows the great circle at high latitudes and across the dateline", () => {
+  for (const line of [
+    [
+      { lat: 85, lon: -10 },
+      { lat: 85, lon: 10 },
+    ],
+    [
+      { lat: 85, lon: 170 },
+      { lat: 85, lon: -170 },
+    ],
+  ]) {
+    const length = geoDistance(line[0]!, line[1]!);
+    const midpoint = cutGeoWindow(line, length / 2, length)[0]!;
+    const located = locateOnGeoLine(midpoint, line);
+    expect(located.distanceToRouteMeters).toBeLessThan(0.001);
+    expect(located.atMeters).toBeCloseTo(length / 2, 3);
+  }
+});
+test("route projection clamps to the closest endpoint and handles repeated points", () => {
+  const line = [
+    { lat: 0, lon: 0 },
+    { lat: 0, lon: 1 },
+  ];
+  expect(locateOnGeoLine({ lat: 0, lon: -1 }, line).atMeters).toBe(0);
+  expect(locateOnGeoLine({ lat: 0, lon: 2 }, line).atMeters).toBe(geoDistance(line[0]!, line[1]!));
+  expect(locateOnGeoLine({ lat: 0, lon: 1 }, [line[0]!, line[0]!])).toEqual({
+    atMeters: 0,
+    distanceToRouteMeters: geoDistance(line[0]!, line[1]!),
+  });
+  expect(locateOnGeoLine({ lat: 0, lon: -179 }, [line[0]!, { lat: 0, lon: 179 }]).atMeters).toBeGreaterThan(19_000_000);
 });
 test("cut first and simplify dense lines to at most 2,000 points", () => {
   const points = Array.from({ length: 10001 }, (_, i) => ({ lat: 49 + Math.sin(i) * 0.0001, lon: 12 + i * 0.00001 }));

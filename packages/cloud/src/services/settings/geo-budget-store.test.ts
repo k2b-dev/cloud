@@ -3,10 +3,10 @@ import { SQL, sql } from "bun";
 import routes from "../../api/admin-core-settings";
 import { session } from "../session";
 import { buildProjectedUser } from "../session/user";
-import * as settings from "./index";
 import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS_MAP } from "./defaults";
 import { assertGeoBudgetPair } from "./geo-budget";
+import * as settings from "./index";
 import * as store from "./store";
 
 const previousSecret = process.env.APP_SECRET;

@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
+import { geoTestConfig } from "../geo/geo.test-fixture";
+import { GEO_PLANS, geoPlan } from "../geo/settings";
 import { CORE_SETTINGS } from "./core-settings";
 import { resolveSettingPresentation, toLegacySettingDefs } from "./defaults";
-import { GEO_PLANS, geoPlan } from "../geo/settings";
-import { geoTestConfig } from "../geo/geo.test-fixture";
+
 test("geo settings have en/de labels/help and no endpoint setting", () => {
   const defs = toLegacySettingDefs(CORE_SETTINGS).filter((def) => def.key.startsWith("geo."));
   expect(defs).toHaveLength(6);

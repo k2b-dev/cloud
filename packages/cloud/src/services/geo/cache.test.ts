@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { createGeoCache, geoCacheKey, normalizeGeoInput, GEO_MAX_JSON_BYTES } from "./cache";
+import { createGeoCache, GEO_MAX_JSON_BYTES, geoCacheKey, normalizeGeoInput } from "./cache";
 
 test("along keys hash the exact raw polyline and include every route search parameter", () => {
   const input = { categories: ["museum", "cafe"], limit: 20, along: { polyline6: "??a?b?", fromKm: 0, toKm: 2, bufferMeters: 1000 } };

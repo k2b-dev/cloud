@@ -4,13 +4,13 @@ import {
   GEO_CATEGORIES,
   type GeoAddress,
   type GeoAutocompleteInput,
+  type GeoFunction,
   type GeoGeocodeInput,
   type GeoPlace,
   type GeoPlaceSearchInput,
   type GeoPoint,
   type GeoProvenance,
   type GeoReverseInput,
-  type GeoFunction,
 } from "../../contracts/geo";
 import { EMPTY_NETWORK_ALLOWLIST } from "../../shared/network-address";
 import { createAllowedNetworkFetch } from "../allowed-network-fetch";

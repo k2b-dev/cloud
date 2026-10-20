@@ -1,4 +1,5 @@
 import { i18n } from "@k2b/stdlib";
+
 const messages = i18n.define({
   baseLocale: "en",
   messages: {

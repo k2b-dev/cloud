@@ -2,18 +2,18 @@ import type { z } from "zod";
 import type { AccessSubject, CapabilityExecutionContext, RequestActor } from "../../contracts";
 import {
   GeoAutocompleteDataSchema,
+  type GeoAutocompleteInput,
   GeoAutocompleteInputSchema,
+  type GeoFunction,
   GeoGeocodeDataSchema,
+  type GeoGeocodeInput,
   GeoGeocodeInputSchema,
   GeoPlaceSearchDataSchema,
+  type GeoPlaceSearchInput,
   GeoPlaceSearchInputSchema,
   GeoReverseDataSchema,
-  GeoReverseInputSchema,
-  type GeoAutocompleteInput,
-  type GeoGeocodeInput,
-  type GeoPlaceSearchInput,
   type GeoReverseInput,
-  type GeoFunction,
+  GeoReverseInputSchema,
 } from "../../contracts/geo";
 import { createGeoBucket, GEO_TIMEOUT_MS } from "./bucket";
 import { createGeoCache, GEO_MAX_JSON_BYTES, geoCacheKey } from "./cache";
@@ -250,6 +250,8 @@ export const createGeoService = (
             along && simplified
               ? {
                   ...value,
+                  // Twenty provider candidates still cost one credit; apply the caller's limit after local filtering.
+                  limit: 20,
                   along: {
                     ...along,
                     bufferMeters: Math.min(100000, Math.ceil((along.bufferMeters ?? 1000) + 2 * simplified.toleranceMeters)),
@@ -265,7 +267,12 @@ export const createGeoService = (
             })
             .filter((place) => place.distanceToRouteMeters <= (along.bufferMeters ?? 1000))
             .sort((a, b) => a.atMeters - b.atMeters);
-          return { ...result, places, simplificationToleranceMeters: simplified!.toleranceMeters };
+          return {
+            ...result,
+            places: places.slice(0, value.limit ?? 20),
+            simplificationToleranceMeters: simplified!.toleranceMeters,
+            truncated: result.places.length === 20 && places.length < (value.limit ?? 20),
+          };
         },
         value.limit,
         cacheInput,

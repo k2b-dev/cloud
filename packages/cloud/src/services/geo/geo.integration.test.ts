@@ -1,14 +1,14 @@
-import { suiteFor, testInfra, createDisposableDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { RedisClient, SQL } from "bun";
+import { createDisposableDatabase, suiteFor, testInfra } from "../../../../../scripts/fixtures/test-infra";
 import { createGeoBucket } from "./bucket";
 import { createGeoCache } from "./cache";
+import autocomplete from "./fixtures/autocomplete.json";
+import { GEO_TEST_KEY, GEO_TEST_NOW, geoTestConfig, geoTestContext } from "./geo.test-fixture";
+import { GeoapifyAdapter } from "./geoapify";
 import { createGeoLedger } from "./ledger";
 import { migrate } from "./migrate";
-import { GeoapifyAdapter } from "./geoapify";
 import { createGeoService } from "./service";
-import { geoTestConfig, geoTestContext, GEO_TEST_KEY, GEO_TEST_NOW } from "./geo.test-fixture";
-import autocomplete from "./fixtures/autocomplete.json";
 
 suiteFor("database", "valkey")("Core geo durable admission and accounting", () => {
   let database: Awaited<ReturnType<typeof createDisposableDatabase>>;

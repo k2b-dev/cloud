@@ -20,7 +20,7 @@ An operator must set `geo.api_key` under
 **Administration → Settings → Places and addresses**. This tab also contains
 the provider plan and credit budgets. All provider calls use
 `https://api-eu.geoapify.com`. The endpoint cannot be changed. No provider key
-is sent to an application or browser. This service does not supply routes,
+appears in geo responses. This service does not supply routes,
 map tiles, a map style, or map components.
 
 ## Choose a Query
@@ -93,8 +93,16 @@ a window ending beyond it stops at the route's end.
 Core sends a Places POST with `filter.type: "polyline"`, widening the provider
 buffer by twice the simplification tolerance (rounded up, capped at 100,000 m),
 then filters hits against the original window with the requested buffer.
+It requests up to 20 candidates within the one-credit search budget, then
+applies the caller's result limit after filtering. If all 20 candidate slots
+are used and too few remain inside the requested corridor, `truncated: true`
+marks the search as incomplete. Narrow the distance window and search again;
+an empty truncated result does not mean that the corridor has no matches.
 It orders hits by `atMeters`, the position on the full route, and returns
 `distanceToRouteMeters`, a straight-line distance rather than a driving detour.
+Positions, distance windows, and corridor distances follow the shortest
+great-circle arc between consecutive route points, including near the poles
+and across the date line.
 The result includes `simplificationToleranceMeters`.
 
 ## Handle budgets and errors

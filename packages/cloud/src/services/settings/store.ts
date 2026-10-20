@@ -21,8 +21,8 @@ import { stripImageDataUrlMetadata } from "../image-metadata";
 import { toPgTextArray } from "../postgres";
 import { requestCacheRedis } from "../request-cache-redis";
 import { decryptValue, encryptValue } from "./crypto";
-import { assertGeoBudgetPair } from "./geo-budget";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
+import { assertGeoBudgetPair } from "./geo-budget";
 
 const REDIS_KEY = (k: string) => `settings:${k}`;
 

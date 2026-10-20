@@ -1,9 +1,9 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { redis as cacheClient } from "bun";
-import * as settingsStore from "../settings/store";
 import * as redis from "../request-cache-redis";
-import { readGeoConfig } from "./settings";
+import * as settingsStore from "../settings/store";
 import { GEO_TEST_KEY } from "./geo.test-fixture";
+import { readGeoConfig } from "./settings";
 
 const values: Record<string, unknown> = {
   "geo.api_key": GEO_TEST_KEY,

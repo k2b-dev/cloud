@@ -1,8 +1,9 @@
-import { HTTPException } from "hono/http-exception";
 import type { sql } from "bun";
+import { HTTPException } from "hono/http-exception";
 import { decryptValue } from "./crypto";
 import { SETTINGS_MAP, validateSettingValue } from "./defaults";
 import { SettingUnreadableError } from "./store";
+
 const MONTH = "geo.monthly_budget_credits";
 const DAY = "geo.person_daily_credits";
 export class GeoBudgetSettingError extends HTTPException {

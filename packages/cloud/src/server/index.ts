@@ -1,5 +1,6 @@
 export { buildMetadata } from "../_internal/build-metadata";
 export { loadPendingApprovals } from "../api/approvals-loader";
+export { geoClient } from "../capabilities/geo-client";
 export { expectUserBackedActor, getUserBackedActor, isAppSessionActor, userFromActor } from "./actor";
 export type { ApiErrorBody, ApiErrorResponse, ApiErrorStatus } from "./api";
 export { api, respond, respondMessage } from "./api";
@@ -97,5 +98,3 @@ export {
 } from "./services";
 export { getDateConfig, getTimeZone, TIMEZONE_COOKIE, time } from "./time";
 export { getWidgetRequest } from "./widget-request";
-
-export { geoClient } from "../capabilities/geo-client";

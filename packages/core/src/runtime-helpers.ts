@@ -14,8 +14,8 @@ import { migrateCloudCapabilities, startCapabilityExecutionMaintenance } from "@
 import {
   browserNotifications,
   lifecycleJobs,
-  migrateWeather,
   migrateGeo,
+  migrateWeather,
   startMandateMaintenance,
   startNotificationRuntime,
   stopNotificationRuntime,

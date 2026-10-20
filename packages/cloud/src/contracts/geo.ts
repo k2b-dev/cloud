@@ -163,6 +163,10 @@ export const GeoPlaceSearchDataSchema = z
     places: z.array(GeoPlaceSchema).max(20),
     provenance: GeoProvenanceSchema,
     simplificationToleranceMeters: z.number().nonnegative().optional(),
+    truncated: z
+      .boolean()
+      .optional()
+      .describe("Candidate limit reached before filling the requested corridor results; narrow the distance window."),
   })
   .strict();
 export const GeoAvailabilityInputSchema = z.object({}).strict();

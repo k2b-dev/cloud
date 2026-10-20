@@ -1,11 +1,11 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { buildAiCapabilityCatalog } from "../../cloud/src/ai/capabilities";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { capabilityResultSchema, geoContract, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import { type CapabilityExecutionContext, capabilityResultSchema, geoContract } from "@k2b/cloud/contracts";
 import { coreGeo } from "@k2b/cloud/services";
 import { GeoError } from "@k2b/cloud/services/geo/errors";
+import { GEO_TEST_NOW, geoTestContext } from "@k2b/cloud/services/geo/geo.test-fixture";
 import { geoProvenance } from "@k2b/cloud/services/geo/geoapify";
-import { geoTestContext, GEO_TEST_NOW } from "@k2b/cloud/services/geo/geo.test-fixture";
+import { buildAiCapabilityCatalog } from "../../cloud/src/ai/capabilities";
 import { aiCapabilities } from "./capabilities";
 import { geoCapabilities } from "./geo-capabilities";
 import { geoCapabilityMessages } from "./geo-capability-messages";

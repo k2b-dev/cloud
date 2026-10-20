@@ -50,7 +50,7 @@ export const geoCapabilities = defineCapabilities({
     "place.search": {
       title: "Search places",
       description:
-        "Return up to 20 places in 1–5 categories near a point, in a bbox/circle, or along polyline6. Along: at most 200 km per window, buffer 100–5,000 m (default 1,000). Includes available raw OSM opening hours, route position and straight-line distance. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
+        "Return up to 20 places in 1–5 categories near a point, in a bbox/circle, or along polyline6. Along: at most 200 km per window, buffer 100–5,000 m (default 1,000). If truncated is true, narrow the distance window; an empty result then does not rule out matches. Includes available raw OSM opening hours, route position and straight-line distance. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
       input: geoContract.searchPlaces.input,
       data: geoContract.searchPlaces.data,
       openWorld: true,

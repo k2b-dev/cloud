@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import { GeoapifyAdapter } from "../services/geo/geoapify";
-import { GEO_TEST_KEY, GEO_TEST_NOW } from "../services/geo/geo.test-fixture";
-import geocode from "../services/geo/fixtures/geocode.json";
 import autocomplete from "../services/geo/fixtures/autocomplete.json";
+import geocode from "../services/geo/fixtures/geocode.json";
+import { GEO_TEST_KEY, GEO_TEST_NOW } from "../services/geo/geo.test-fixture";
+import { GeoapifyAdapter } from "../services/geo/geoapify";
 import { geoClient } from "./geo-client";
+
 const original = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
 afterEach(() => {
   if (original === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;

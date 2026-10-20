@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { geoPeriods, geoSubjectKey } from "./ledger";
+
 test("calendar day and month roll in app.timezone, including DST", () => {
   const before = new Date("2026-10-31T22:59:59.999Z"),
     after = new Date("2026-10-31T23:00:00.000Z");

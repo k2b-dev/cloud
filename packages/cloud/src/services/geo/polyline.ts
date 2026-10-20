@@ -69,19 +69,33 @@ export const cutGeoWindow = (points: readonly GeoPoint[], fromMeters: number, to
   if (output.length < 2) throw new GeoError("GEO_UNSUPPORTED_OPTION");
   return output;
 };
-const segmentProjection = (point: GeoPoint, a: GeoPoint, b: GeoPoint) => {
-  const scale = Math.cos(((a.lat + b.lat + point.lat) * rad) / 3);
-  const x = longitudeDelta(b.lon - a.lon) * rad * R * scale,
-    y = (b.lat - a.lat) * rad * R;
-  const px = longitudeDelta(point.lon - a.lon) * rad * R * scale,
-    py = (point.lat - a.lat) * rad * R;
-  const t = x || y ? Math.max(0, Math.min(1, (px * x + py * y) / (x * x + y * y))) : 0;
-  return {
-    t,
-    distance: geoDistance(point, {
-      lat: a.lat + (b.lat - a.lat) * t,
-      lon: longitudeDelta(a.lon + longitudeDelta(b.lon - a.lon) * t),
-    }),
+const segmentProjection = (a: GeoPoint, b: GeoPoint) => {
+  const length = geoDistance(a, b) / R;
+  const sinA = Math.sin(a.lat * rad),
+    cosA = Math.cos(a.lat * rad);
+  const deltaB = longitudeDelta(b.lon - a.lon) * rad;
+  const bearing = Math.atan2(
+    Math.sin(deltaB) * Math.cos(b.lat * rad),
+    cosA * Math.sin(b.lat * rad) - sinA * Math.cos(b.lat * rad) * Math.cos(deltaB),
+  );
+  const sinBearing = Math.sin(bearing),
+    cosBearing = Math.cos(bearing);
+  return (point: GeoPoint) => {
+    if (!length) return { t: 0, distance: geoDistance(point, a) };
+    const delta = longitudeDelta(point.lon - a.lon) * rad;
+    const sinPoint = Math.sin(point.lat * rad),
+      cosPoint = Math.cos(point.lat * rad),
+      cosDelta = Math.cos(delta);
+    const east = cosPoint * Math.sin(delta),
+      north = cosA * sinPoint - sinA * cosPoint * cosDelta;
+    // Great-circle along-track and cross-track angles, using one prepared bearing per segment.
+    const along = Math.atan2(east * sinBearing + north * cosBearing, sinA * sinPoint + cosA * cosPoint * cosDelta);
+    if (along < 0 || along > length) {
+      const from = geoDistance(point, a),
+        to = geoDistance(point, b);
+      return from <= to ? { t: 0, distance: from } : { t: 1, distance: to };
+    }
+    return { t: along / length, distance: R * Math.asin(Math.min(1, Math.abs(east * cosBearing - north * sinBearing))) };
   };
 };
 export const locateOnGeoLine = (point: GeoPoint, line: readonly GeoPoint[]) => {
@@ -92,7 +106,7 @@ export const locateOnGeoLine = (point: GeoPoint, line: readonly GeoPoint[]) => {
     const a = line[i - 1]!,
       b = line[i]!,
       length = geoDistance(a, b),
-      match = segmentProjection(point, a, b);
+      match = segmentProjection(a, b)(point);
     if (match.distance < distanceToRouteMeters) {
       distanceToRouteMeters = match.distance;
       atMeters = at + match.t * length;
@@ -118,8 +132,9 @@ const simplify = (points: readonly GeoPoint[], tolerance: number): GeoPoint[] =>
     const [start, end] = stack.pop()!;
     let furthest = -1,
       distance = tolerance;
+    const project = segmentProjection(points[start]!, points[end]!);
     for (let i = start + 1; i < end; i++) {
-      const next = segmentProjection(points[i]!, points[start]!, points[end]!).distance;
+      const next = project(points[i]!).distance;
       if (next > distance) {
         distance = next;
         furthest = i;

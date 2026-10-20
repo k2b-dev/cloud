@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
-import { GeoAutocompleteDataSchema, GeoPlaceSearchDataSchema, GeoReverseDataSchema, GeoAddressSchema } from "../../contracts/geo";
+import { GeoAddressSchema, GeoAutocompleteDataSchema, GeoPlaceSearchDataSchema, GeoReverseDataSchema } from "../../contracts/geo";
 import { CORE_SETTINGS } from "../settings/core-settings";
+import along from "./fixtures/along.json";
 import autocomplete from "./fixtures/autocomplete.json";
 import geocode from "./fixtures/geocode.json";
-import reverse from "./fixtures/reverse.json";
 import places from "./fixtures/places.json";
-import along from "./fixtures/along.json";
-import { GeoapifyAdapter, geoNeverSent } from "./geoapify";
+import reverse from "./fixtures/reverse.json";
 import { GEO_TEST_KEY, GEO_TEST_NOW } from "./geo.test-fixture";
+import { GeoapifyAdapter, geoNeverSent } from "./geoapify";
 
 const adapter = (fixture: unknown) =>
   new GeoapifyAdapter({
