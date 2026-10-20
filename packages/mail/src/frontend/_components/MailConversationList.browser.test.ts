@@ -585,11 +585,14 @@ describe("Mail quick look", () => {
   test("tag chips that shorten long names keep every full name in their tooltip", async () => {
     const page = await load();
     try {
+      // The quick look's clock is paused, so wait for the row itself rather than for settled animations.
+      await page.locator(`${row("Cv0000")} .mail-row-tags`).waitFor();
       await pointAt(page, `${row("Cv0000")} .mail-row-tags`);
       await page.clock.runFor(1000);
-      const tips = page.locator('[role="tooltip"]').filter({ hasText: "Event, Offer, Accounting, Members" });
-      await tips.first().waitFor({ state: "attached" });
-      expect(await tips.evaluateAll((elements) => elements.some((element) => element.checkVisibility()))).toBe(true);
+      // The hovered group's tooltip shows; the "+1" tooltip with the same names stays hidden.
+      const tip = page.locator('[role="tooltip"]:visible').filter({ hasText: "Event, Offer, Accounting, Members" });
+      await tip.waitFor({ state: "visible" });
+      expect(await tip.count()).toBe(1);
     } finally {
       await close(page);
     }

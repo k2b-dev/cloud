@@ -447,14 +447,22 @@
     outline-offset: 2px;
   }
 
+  /* A long mailbox name shortens before "Waiting", which keeps its room. */
   .mail-row-mailbox {
     display: inline-flex;
+    flex: 0 1 auto;
     min-width: 0;
     max-width: 16rem;
     align-items: center;
     gap: 0.1875rem;
     overflow: hidden;
+  }
+
+  .mail-row-mailbox-name {
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Loading rows have the layout of the rows they stand for, so the list keeps its size when the
@@ -1085,8 +1093,8 @@
 
 /* The toolbar keeps every action reachable: a person's Reply all and
    Forward show only their icons below 720 px of reader, leave the bar below
-   520 px, and below 440 and 380 px only the first three or one of the
-   other actions stay. "…" lists all of them, and Details always stays.
+   520 px, and below 480, 440 and 380 px only the first six, three or one
+   of the other actions stay. "…" lists all of them, and Details always stays.
    Unlayered, because the shared button style is unlayered too. */
 @container mail-reader (width < 52rem) {
   .k2b-ui .mail-reader-toolbar .mail-reader-draft-label {
@@ -1111,6 +1119,12 @@
 
 @container mail-reader (width < 32.5rem) {
   .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) {
+    display: none;
+  }
+}
+
+@container mail-reader (width < 30rem) {
+  .k2b-ui .mail-reader-toolbar-actions > :nth-child(n + 7) {
     display: none;
   }
 }

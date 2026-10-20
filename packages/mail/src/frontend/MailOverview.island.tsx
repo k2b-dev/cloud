@@ -363,7 +363,7 @@ function MailOverviewView(props: {
                     <span class="mail-row-extra">
                       <span class="mail-row-mailbox">
                         <i class="ti ti-inbox" aria-hidden="true" />
-                        {item.mailboxName}
+                        <span class="mail-row-mailbox-name">{item.mailboxName}</span>
                       </span>
                       <Show when={item.workStatus === "waiting"}>
                         <span class="mail-row-waiting">

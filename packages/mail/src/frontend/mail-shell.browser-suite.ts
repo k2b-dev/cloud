@@ -989,50 +989,54 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       }, 60_000);
 
       test("reader toolbar: the largest own toolbar fits every reader width, in English and German", async () => {
-        // Eight actions is the most a person can choose; all three answers plus the widest icons.
-        const toolbar = "reply,reply_all,forward,archive,spam,trash,move,read";
+        // Eight actions is the most a person can choose: all three answers plus five icons, or Reply plus seven.
         const misfits: string[] = [];
         const readers: number[] = [];
-        for (const locale of ["en", "de"] as const) {
-          for (const [extra, widths] of [
-            ["", [768, 800, 834, 900, 980, 1024, 1100, 1194, 1280, 1366, 1440]],
-            ["&list=hidden", [834, 900]],
-            ["&shell=1&sidebar=240&panel=416", [1024, 1100, 1194, 1280, 1366]],
-          ] as const) {
-            // One page per case, resized through its widths.
-            const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}&locale=${locale}${extra}`, widths[0], 900);
-            try {
-              for (const width of widths) {
-                await page.setViewportSize({ width, height: 900 });
-                await settled(page);
-                const result = await page.evaluate(() => {
-                  const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
-                  const bar = document.querySelector(".mail-reader-toolbar")!;
-                  const outside = [...bar.querySelectorAll<HTMLElement>("button, a")]
-                    .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden")
-                    .filter((element) => {
-                      const box = element.getBoundingClientRect();
-                      return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
-                    })
-                    .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
-                  const details = bar.querySelector<HTMLElement>("[data-mail-details-trigger]")!.getClientRects().length > 0;
-                  return { reader: Math.round(reader.width), outside, details };
-                });
-                readers.push(result.reader);
-                if (result.outside.length || !result.details)
-                  misfits.push(`${locale} ${width}${extra} (reader ${result.reader}): ${result.outside.join(", ") || "no Details"}`);
+        for (const toolbar of ["reply,reply_all,forward,archive,spam,trash,move,read", "reply,archive,spam,trash,move,read,flag,tags"])
+          for (const locale of ["en", "de"] as const) {
+            for (const [extra, widths] of [
+              ["", [768, 800, 834, 900, 980, 1024, 1100, 1194, 1280, 1366, 1440]],
+              ["&list=hidden", [834, 900]],
+              ["&shell=1&sidebar=240&panel=416", [1024, 1100, 1194, 1280, 1366]],
+              ["&list=hidden&shell=1&sidebar=240&panel=416", [900, 924, 960, 1024, 1100, 1194]],
+            ] as const) {
+              // One page per case, resized through its widths.
+              const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}&locale=${locale}${extra}`, widths[0], 900);
+              try {
+                for (const width of widths) {
+                  await page.setViewportSize({ width, height: 900 });
+                  await settled(page);
+                  const result = await page.evaluate(() => {
+                    const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
+                    const bar = document.querySelector(".mail-reader-toolbar")!;
+                    const outside = [...bar.querySelectorAll<HTMLElement>("button, a")]
+                      .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden")
+                      .filter((element) => {
+                        const box = element.getBoundingClientRect();
+                        return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
+                      })
+                      .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
+                    const details = bar.querySelector<HTMLElement>("[data-mail-details-trigger]")!.getClientRects().length > 0;
+                    return { reader: Math.round(reader.width), outside, details };
+                  });
+                  readers.push(result.reader);
+                  if (result.outside.length || !result.details)
+                    misfits.push(
+                      `${toolbar} ${locale} ${width}${extra} (reader ${result.reader}): ${result.outside.join(", ") || "no Details"}`,
+                    );
+                }
+              } finally {
+                await close(page);
               }
-            } finally {
-              await close(page);
             }
           }
-        }
         expect(misfits).toEqual([]);
-        // The sweep covers every tier: under 380, 380–440, 440–520, 520–720 and from 720 px of reader.
+        // The sweep covers every tier: under 380, 380–440, 440–480, 480–520, 520–720 and from 720 px of reader.
         for (const [from, to] of [
           [0, 380],
           [380, 440],
-          [440, 520],
+          [440, 480],
+          [480, 520],
           [520, 720],
           [720, 2000],
         ] as const)
