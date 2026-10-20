@@ -2,6 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { deflateSync } from "node:zlib";
 import type { BrowserContextOptions, Frame, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
+import { renderComposeContent } from "../../service/compose-renderer";
+import { sanitizeIncomingMailHtml } from "../../service/message-hydration";
 import type {} from "./MailMessageBody.browser-harness";
 import type { MessageColors } from "./mail-message-presentation";
 
@@ -817,6 +819,50 @@ describe("HTML mail colors", () => {
         expect(errors).toEqual([]);
       },
       { html: content, theme: "dark", pageQuery: "?theme=dark" },
+    );
+  }, 30_000);
+});
+
+describe("HTML mail from Cloud's Markdown composer", () => {
+  test("keeps each extra blank line one text line tall in a received copy", async () => {
+    const rendered = renderComposeContent({
+      body: "Hello Grace,\n\nthe garden plan is ready.\n\n\nWe meet on Friday.\n\n\n\nSee you soon,\nAda",
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Garden", to: ["grace@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The message did not render");
+    const received = sanitizeIncomingMailHtml(rendered.data.html);
+    await withOpenedMessage(
+      false,
+      async ({ frame, errors }) => {
+        await frame.getByText("We meet on Friday.").waitFor();
+        const layout = await frame.evaluate(() => {
+          const paragraphs = Array.from(document.querySelectorAll("p")).filter((element) => element.textContent?.trim());
+          const blanks = Array.from(document.querySelectorAll("p")).filter((element) => !element.textContent?.trim());
+          return {
+            paragraphs: paragraphs
+              .map((element) => element.getBoundingClientRect())
+              .map((rect) => ({ top: rect.top, bottom: rect.bottom })),
+            blanks: blanks.map((element) => element.getBoundingClientRect().height),
+          };
+        });
+        expect(layout.paragraphs).toHaveLength(4);
+        expect(layout.blanks).toHaveLength(3);
+        const line = layout.paragraphs[0]!.bottom - layout.paragraphs[0]!.top;
+        for (const height of layout.blanks) expect(Math.abs(height - line)).toBeLessThan(0.5);
+        const gap = (index: number) => layout.paragraphs[index + 1]!.top - layout.paragraphs[index]!.bottom;
+        expect(Math.abs(gap(1) - gap(0) - line)).toBeLessThan(0.5);
+        expect(Math.abs(gap(2) - gap(0) - 2 * line)).toBeLessThan(0.5);
+        expect(errors).toEqual([]);
+      },
+      { html: received, attachments: [] },
     );
   }, 30_000);
 });
