@@ -484,13 +484,15 @@ const emailHtmlFragment = (source: string): string =>
   sanitizeHtml(markdown.renderSync(source, { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
 
 /** Rewrites only block separators and quotes; every other token keeps its raw source. Null means too many spacers. */
-const withBlankLinePlaceholders = (source: string, placeholder: string): { source: string; count: number } | null => {
+const withBlankLinePlaceholders = (source: string, placeholder: string, quietBefore?: number): { source: string; count: number } | null => {
   let count = 0;
-  const rewrite = (tokens: ReturnType<typeof markdown.marked.lexer>[number][], original: string): string | null => {
+  const rewrite = (tokens: ReturnType<typeof markdown.marked.lexer>[number][], original: string, topLevel = false): string | null => {
     const initialCount = count;
     const chunks: string[] = [];
+    let offset = 0;
     for (const [index, token] of tokens.entries()) {
       let raw = token.raw;
+      if (topLevel) offset += raw.length;
       const previous = tokens[index - 1];
       const next = tokens[index + 1];
       if (
@@ -500,7 +502,8 @@ const withBlankLinePlaceholders = (source: string, placeholder: string): { sourc
         previous.type !== "def" &&
         next &&
         next.type !== "space" &&
-        next.type !== "def"
+        next.type !== "def" &&
+        (!topLevel || offset !== quietBefore)
       ) {
         let extra = -2;
         for (const character of raw) {
@@ -529,13 +532,13 @@ const withBlankLinePlaceholders = (source: string, placeholder: string): { sourc
     // Preserve the original bytes when no separator changed, including CRLF and quote syntax.
     return count === initialCount ? original : chunks.join("");
   };
-  const rewritten = rewrite(markdown.marked.lexer(source), source);
+  const rewritten = rewrite(markdown.marked.lexer(source), source, true);
   return rewritten === null ? null : { source: rewritten, count };
 };
 
 /** Only Mail-authored spacers bypass the first sanitizer; user HTML still follows the original fragment policy. */
-const mailBodyHtmlFragment = (source: string, token: string): Result<string> => {
-  const rewritten = withBlankLinePlaceholders(source, token);
+const mailBodyHtmlFragment = (source: string, token: string, quietBefore?: number): Result<string> => {
+  const rewritten = withBlankLinePlaceholders(source, token, quietBefore);
   if (rewritten === null) return fail(composeRenderFailure("tooComplex"));
   const html = emailHtmlFragment(rewritten.source).replaceAll(
     `<p>${token}</p>`,
@@ -694,9 +697,13 @@ export const renderComposeContent = (params: {
 
   try {
     const blankLineToken = `MAILBLANKLINE${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
-    const split = parts ?? splitQuotedHistory(source);
-    const bodySource = split.history ? [split.reply, split.history].filter(Boolean).join("\n\n") : source;
-    const reply = mailBodyHtmlFragment(parts ? parts.reply : bodySource, blankLineToken);
+    let historyStart: number | undefined;
+    if (!parts) {
+      const normalized = source.replace(/\r\n?/g, "\n");
+      const { history } = splitQuotedHistory(normalized);
+      historyStart = history ? normalized.length - history.length : undefined;
+    }
+    const reply = parts ? mailBodyHtmlFragment(parts.reply, blankLineToken) : mailBodyHtmlFragment(source, blankLineToken, historyStart);
     if (!reply.ok) return reply;
     let fragment = reply.data;
     if (parts) {

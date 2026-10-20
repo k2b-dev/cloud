@@ -142,8 +142,11 @@ describe("Markdown blank lines", () => {
     }
   });
 
-  test("passes unchanged Markdown to the renderer byte for byte when no spacers qualify", () => {
-    const body = "\r\n> quoted\r\ncontinued\r\n\r\n    a\r\n\r\n\r\n    b\r\n";
+  test.each([
+    "\r\n> quoted\r\ncontinued\r\n\r\n    a\r\n\r\n\r\n    b\r\n",
+    "<pre>a\r\n\r\n\r\n---------- Forwarded message ----------\r\nb</pre>",
+    "Answer\r\n\r\n\r\n\r\nAda wrote:\r\n> History",
+  ])("passes unchanged Markdown to the renderer byte for byte when no spacers qualify: %j", (body) => {
     const renderMarkdown = spyOn(markdown, "renderSync");
     try {
       content(body);
@@ -222,6 +225,27 @@ describe("Markdown blank lines", () => {
       expect(spacers(result.html)).toHaveLength(1);
     },
   );
+
+  test.each(["", "intro\n\n\n"])("keeps a history separator inside raw pre content unchanged with prefix %j", (prefix) => {
+    const body = "<pre>a\n\n\n---------- Forwarded message ----------\nb</pre>";
+    const result = content(`${prefix}${body}`);
+    expect(result.html).toMatch(/<pre\b[^>]*>a\n\n\n---------- Forwarded message ----------\nb<\/pre>/);
+    expect(result.text).toBe(`${prefix}a\n\n\n---------- Forwarded message ----------\nb`);
+    expect(spacers(result.html)).toHaveLength(prefix ? 1 : 0);
+  });
+
+  test.each(["", "intro\n\n\n"])("keeps a history attribution inside indented code unchanged with prefix %j", (prefix) => {
+    const body = "    a\n\n\n    Ada wrote:\n> x";
+    expect(splitQuotedHistory(body).history).toBe("    Ada wrote:\n> x");
+    const result = content(`${prefix}${body}`);
+    expect(result.html).toMatch(/<pre\b[^>]*>a\n\n\nAda wrote:\n<\/pre>/);
+    expect(result.text).toBe(`${prefix}a\n\n\nAda wrote:\n\n\n> x`);
+    expect(spacers(result.html)).toHaveLength(prefix ? 1 : 0);
+  });
+
+  test("ignores CRLF blank lines before quoted history without a signature", () => {
+    expect(content("Answer\r\n\r\n\r\n\r\nAda wrote:\r\n> History").html).toBe(content("Answer\n\nAda wrote:\n> History").html);
+  });
 
   test.each(["", "p { margin: 20px; font-size: 18px; line-height: 1.8; color: #123456; }"])(
     "keeps inline zero margin through juice and preserves paragraph typography: %s",
