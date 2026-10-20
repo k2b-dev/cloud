@@ -35,7 +35,7 @@ export const createGeoBucket = (options: { redis?: () => Promise<GeoRedis>; rand
     async acquire(fn: GeoFunction, rps: number) {
       try {
         if (!Number.isFinite(rps) || rps < 1) throw busy();
-        const id = (options.randomId ?? crypto.randomUUID)();
+        const id = options.randomId ? options.randomId() : crypto.randomUUID();
         const redis = await client();
         const key = `${prefix}:flight:${fn}`;
         const reply = z
@@ -57,7 +57,10 @@ export const createGeoBucket = (options: { redis?: () => Promise<GeoRedis>; rand
           await redis.send("ZREM", [key, id]).catch(() => {});
         };
       } catch (error) {
-        throw error instanceof GeoError ? error : busy();
+        if (error instanceof GeoError) throw error;
+        // Fail closed, but leave a trace: a script or client defect must not look like ordinary load.
+        console.error("[geo] Admission refused after a Valkey failure", { error: error instanceof Error ? error.name : typeof error });
+        throw busy();
       }
     },
   };

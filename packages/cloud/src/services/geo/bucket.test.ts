@@ -38,3 +38,16 @@ test("denied admission preserves retry time; invalid replies and failures refuse
     await expect(bucket.acquire("places", 5)).rejects.toMatchObject({ code: "GEO_BUSY", details: { retryAfterSeconds: seconds } });
   }
 });
+test("the default lease id works without an injected generator", async () => {
+  const calls: string[][] = [];
+  const bucket = createGeoBucket({
+    redis: async () => ({
+      send: async (_command, args) => {
+        calls.push(args);
+        return [1, 0];
+      },
+    }),
+  });
+  await (await bucket.acquire("geocode", 5))();
+  expect(calls[0]!.at(-1)).toMatch(/^[0-9a-f-]{36}$/);
+});
