@@ -1793,6 +1793,20 @@ test("without the Navigation API a newer unmarked push at the same URL drops a t
   expect(reload).not.toHaveBeenCalled();
 });
 
+test("navigate(replace) that cancels a pending traversal gives the entry to the shown page", async () => {
+  install();
+  window.history.pushState(null, "", "/app/old?tab=1");
+  const a1 = window.history.state;
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("B"), {}, "https://example.test/app/B"));
+  await swapPage("/app/B");
+  const b = window.history.state[markerKey];
+  const requests = deferredFetch(true);
+  arrive(a1, "/app/old?tab=1");
+  navigate("/app/B?tab=2", { replace: true, viewTransition: false });
+  expect(requests[0]!.aborted).toBe(true);
+  expect(window.history.state[markerKey]).toEqual({ page: b.page, position: a1[markerKey].position });
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;
@@ -1864,7 +1878,7 @@ test.each(["wheel", "touchstart", "keydown", "pointerdown"])("%s before initial 
   }
 });
 
-test("a push before the initial islands mount cancels the reload replay", async () => {
+test.each([false, true])("a navigate() before the initial islands mount cancels the reload replay (replace: %p)", async (replace) => {
   const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
   const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
   spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
@@ -1873,7 +1887,7 @@ test("a push before the initial islands mount cancels the reload replay", async 
   document.querySelector("main")!.innerHTML = wrapper("list", scrollId);
   window.history.replaceState({ [markerKey]: { page: "reloaded", position: 4, scroll: snapshot } }, "");
   install();
-  navigate("/app/old?tab=2", { viewTransition: false });
+  navigate("/app/old?tab=2", { replace, viewTransition: false });
   const calls = (window.scrollTo as ReturnType<typeof mock>).mock.calls.length;
   mountIslands(document);
   const region = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;

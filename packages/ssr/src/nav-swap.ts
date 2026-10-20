@@ -152,13 +152,16 @@ const patchHistory = (): HistoryWrites => {
   history.replaceState = (value: unknown, ...args: [unused: string, url?: string | URL | null]) => {
     const state = shared[swapKey];
     if (!state || state.document !== document) return writes.replace.call(history, value, ...args);
-    // An unmarked entry keeps the page nav tracks for it: none while a traversal to it has not committed.
-    const { page, position } = marker(history.state) ?? state.currentEntry;
+    // While a swap still loads, the entry keeps its page (an unmarked one stays unmarked) so a traversal can commit.
+    // Otherwise the shown page wrote it, also over the marker of a traversal that a newer navigation cancelled.
+    const stored = marker(history.state);
+    const live = state.active !== undefined && !state.active.signal.aborted;
+    const page = live ? stored?.page : state.currentPage;
     if (page === undefined) return writes.replace.call(history, value, ...args);
-    const entry = { ...marker(history.state), page, position };
+    const entry = { ...(stored?.page === page ? stored : {}), page, position: stored?.position ?? state.currentEntry.position };
     writes.replace.call(history, mergeMarker(value, entry), ...args);
     state.currentEntry = entry;
-    if (entryKey(entry) === entryKey(state.shown)) state.shown = entry;
+    if (!live || entryKey(entry) === entryKey(state.shown)) state.shown = entry;
   };
   return writes;
 };

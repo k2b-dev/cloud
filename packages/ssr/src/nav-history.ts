@@ -6,12 +6,18 @@ const SCROLL_PRESERVE_SELECTOR = "[data-scroll-preserve]";
 export const swapKey = Symbol.for("@k2b/ssr/nav-swap");
 
 type SharedSwap = typeof globalThis & {
-  [swapKey]?: { active?: AbortController; started: number; decide: (event: PopStateEvent) => "page" | "nav" };
+  [swapKey]?: {
+    active?: AbortController;
+    started: number;
+    decide: (event: PopStateEvent) => "page" | "nav";
+    stopRestore: () => void;
+  };
 };
 
-/** Any newer navigation wins over a pending page swap. Without an installed swap this does nothing. */
+/** Any newer navigation wins over a pending page swap and a pending reload scroll replay. Without an installed swap this does nothing. */
 export const cancelPageSwap = (): void => {
   const shared: SharedSwap = globalThis;
+  shared[swapKey]?.stopRestore();
   shared[swapKey]?.active?.abort();
 };
 

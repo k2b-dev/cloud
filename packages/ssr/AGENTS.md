@@ -243,9 +243,12 @@ unchanged. While installed they preserve caller fields in a shallow copy of
 plain-object state, mark null/undefined state, overwrite caller copies of nav's
 key, and leave other state unchanged and unmarked so it fails safe on return.
 Push saves the departing scroll and increments the position; replace retains
-the current marker, and an unmarked entry stays unmarked while a traversal to
-it is pending. A pending traversal also yields to any push through the
-wrapper, so it never commits over a newer entry. Nav's own writes use the saved originals. Positions use
+the current marker while a swap still loads (an unmarked entry stays
+unmarked), so a pending traversal can commit; otherwise the shown page wrote
+it and the entry takes the shown page's id, also over the marker of a
+traversal that a newer navigation cancelled. A pending traversal yields to any
+push through the wrapper, so it never commits over a newer entry. The history
+helpers also cancel a pending reload scroll replay. Nav's own writes use the saved originals. Positions use
 Navigation API indices when available, otherwise the tracked entry or the
 initial history.length - 1.
 
