@@ -9,6 +9,7 @@ import {
   PANEL_SHORTCUTS_CHANGED,
   PANEL_SHORTCUTS_ELEMENT,
 } from "../browser/panel-context-bridge";
+import { formatHelpDocumentMarkdown } from "./layout-help-markdown";
 
 const until = async (condition: () => boolean) => {
   const deadline = performance.now() + 3000;
@@ -73,14 +74,18 @@ else {
       cleanups.push(dispose);
       return dispose;
     };
-    const context = (app: string, help: string[] = []) => {
-      dom.document.getElementById(PANEL_CONTEXT_ELEMENT)!.textContent = JSON.stringify({
-        v: 1,
-        seq: 0,
-        pageId: "22222222-2222-4222-8222-222222222222",
-        app,
-        help,
-      });
+    const context = (app: string | null, help: string[] = []) => {
+      dom.document.getElementById(PANEL_CONTEXT_ELEMENT)!.textContent = JSON.stringify(
+        app === null
+          ? null
+          : {
+              v: 1,
+              seq: 0,
+              pageId: "22222222-2222-4222-8222-222222222222",
+              app,
+              ...(help.length ? { help } : {}),
+            },
+      );
       window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
     };
     const shortcuts = (commands: unknown[]) => {
@@ -145,6 +150,8 @@ else {
       expect(
         [...root.querySelectorAll("[data-help-view] [data-help-topic]")].map((element) => element.getAttribute("data-help-topic")),
       ).toEqual(["roles", "share", "start"]);
+      context(null);
+      expect(root.querySelector("[data-help-view]")).toBeNull();
       context("other", ["share"]);
       expect(root.querySelector("[data-help-view]")).toBeNull();
       context("spaces", ["share"]);
@@ -160,6 +167,73 @@ else {
       fixture.cleanup();
     }
   });
+
+  for (const { beforeMount, empty } of [
+    { beforeMount: false, empty: false },
+    { beforeMount: true, empty: false },
+    { beforeMount: true, empty: true },
+  ])
+    test(`host shortcuts ${beforeMount ? "before" : "after"} mount${empty ? " (empty)" : ""} replace groups and null context restores the seed`, async () => {
+      const fixture = await setup();
+      const { root, mount, Shortcuts, Search, state, context, shortcuts } = fixture;
+      const seed = ["Open global search", "Open shortcut help", "Open or close the panel"];
+      const snapshot = [
+        { id: "cloud.panel", title: "Open or close the panel", shortcut: "mod+j" },
+        { id: "spaces.new", title: "New Space", shortcut: "mod+n" },
+      ];
+      const titles = (scope: string) =>
+        [...root.querySelectorAll(`[data-help-shortcut-group="${scope}"] .help-shortcut-title`)].map((el) => el.textContent);
+      context("spaces");
+      if (beforeMount) shortcuts(empty ? [] : snapshot);
+      try {
+        mount("shortcuts", () => createComponent(Shortcuts, { appName: "Spaces", platform: "apple" }));
+        mount("search", () => createComponent(Search, {}));
+        if (!beforeMount) {
+          expect(titles("everywhere")).toEqual(seed);
+          // A received empty snapshot can arrive with only the context event.
+          const element = document.getElementById(PANEL_SHORTCUTS_ELEMENT)!;
+          element.textContent = "[]";
+          element.setAttribute("data-received", "");
+          context("spaces");
+          expect(titles("everywhere")).toEqual([]);
+          shortcuts(snapshot);
+        }
+        expect(titles("everywhere")).toEqual(empty ? [] : ["Open or close the panel"]);
+        expect(titles("app")).toEqual(empty ? [] : ["New Space"]);
+        if (empty) expect(root.querySelectorAll(".help-shortcut")).toHaveLength(0);
+        shortcuts([]);
+        expect(titles("everywhere")).toEqual([]);
+        expect(titles("app")).toEqual([]);
+        const input = root.querySelector<HTMLInputElement>("[data-help-search]")!;
+        input.value = "Article";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await until(() => state.query() === "Article");
+        expect(root.querySelector<HTMLElement>("[data-help-start-content]")!.hidden).toBe(true);
+        input.value = "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        expect(root.querySelector<HTMLElement>("[data-help-start-content]")!.hidden).toBe(false);
+        expect(root.querySelectorAll(".help-shortcut")).toHaveLength(0);
+        context(null);
+        expect(titles("everywhere")).toEqual(seed);
+        expect(titles("app")).toEqual([]);
+        expect(root.querySelector(".k2b-kbd__keys")?.textContent).toBe("⌘K");
+        context("spaces");
+        shortcuts([
+          ...seed.map((title, i) => ({
+            id: ["cloud.search", "cloud.help", "cloud.panel"][i],
+            title,
+            shortcut: ["mod+k", "shift+/", "mod+j"][i],
+          })),
+          ...snapshot.slice(1),
+          { id: "spaces.delete", title: "Delete selected", shortcut: "delete", scope: "selection" },
+        ]);
+        expect(titles("everywhere")).toEqual(seed);
+        expect(root.querySelector('[data-help-shortcut-group="app"]')?.textContent).toContain("In Spaces");
+        expect(root.querySelector('[data-help-shortcut-group="selection"]')?.textContent).toContain("With a selection");
+      } finally {
+        fixture.cleanup();
+      }
+    });
 
   test("search adopts early text without replacing the field; slash and Escape preserve panel ownership", async () => {
     const fixture = await setup();
@@ -192,6 +266,9 @@ else {
       root.dispatchEvent(slash);
       expect(slash.defaultPrevented).toBe(true);
       expect(document.activeElement).toBe(field);
+      const editableSlash = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
+      field.dispatchEvent(editableSlash);
+      expect(editableSlash.defaultPrevented).toBe(false);
       // Today's TextInput emits while composing too; only shortcut handling suppresses isComposing.
       field.value = "Share";
       field.dispatchEvent(Object.assign(new Event("input", { bubbles: true }), { isComposing: true }));
@@ -209,21 +286,46 @@ else {
 
   test("topic buttons, Help links and Back navigate in place and clearing article search returns to the article", async () => {
     const fixture = await setup();
-    const { root, mount, Article, Back, Search, state } = fixture;
+    const { root, mount, Article, Back, Search, Menu, state } = fixture;
+    Object.assign(fixture.dom.window.happyDOM.settings.navigation, {
+      disableMainFrameNavigation: true,
+      disableChildPageNavigation: true,
+      disableFallbackToSetURL: true,
+    });
+    const push = spyOn(history, "pushState");
+    const replace = spyOn(history, "replaceState");
+    const menuWrapper = document.createElement("solid-island");
+    menuWrapper.dataset.part = "menu";
+    root.querySelector("header")!.append(menuWrapper);
     try {
       mount("article", () => createComponent(Article, {}));
+      mount("menu", () => createComponent(Menu, {}));
       mount("back", () => createComponent(Back, { back: false, tile: "ti ti-box" }));
       mount("search", () => createComponent(Search, {}));
       root.querySelector<HTMLButtonElement>('[data-help-topic="roles"]')!.click();
       await until(() => !!root.querySelector(".help-document a"));
       expect(state.activeId()).toBe("roles");
       expect(state.view()).toBe("article");
+      expect(push).not.toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
       const before = location.href;
       const link = root.querySelector<HTMLAnchorElement>(".help-document a")!;
-      link.setAttribute("href", "/help/apps/spaces/share");
-      link.click();
+      const follow = (href: string) => {
+        link.setAttribute("href", href);
+        const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+        link.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      expect(follow("/help/apps/mail/mail-share")).toBe(false);
+      expect(follow("/app/spaces")).toBe(false);
+      expect(follow("/help/apps/spaces/share")).toBe(true);
       await until(() => state.activeId() === "share" && !!root.querySelector(".help-document a"));
       expect(location.href).toBe(before);
+      expect(push).not.toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+      root.querySelector<HTMLButtonElement>("[data-help-menu]")!.click();
+      await until(() => !!root.querySelector('[role="menuitem"][href]'));
+      expect(root.querySelector('[role="menuitem"][href]')?.getAttribute("href")).toBe("/help/apps/spaces/share");
       state.changeQuery("roles");
       expect(state.view()).toBe("hub");
       state.changeQuery("");
@@ -232,7 +334,11 @@ else {
       root.querySelector<HTMLButtonElement>(".help-head-back")!.click();
       expect(state.view()).toBe("hub");
       expect(root.querySelector<HTMLElement>("[data-help-results]")!.hidden).toBe(false);
+      expect(push).not.toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
     } finally {
+      push.mockRestore();
+      replace.mockRestore();
       fixture.cleanup();
     }
   });
@@ -522,6 +628,7 @@ else {
     root.querySelector("header")!.append(wrapper);
     const write = spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
     const serverArticle = root.querySelector<HTMLElement>("[data-help-server-article]")!;
+    const before = serverArticle.innerHTML;
     try {
       mount("article", () => createComponent(Article, {}));
       mount("back", () => createComponent(Back, { back: true, tile: "ti ti-box" }));
@@ -531,13 +638,16 @@ else {
       state.open("share");
       expect(serverArticle.hidden).toBe(false);
       expect(root.querySelector("[data-help-server-article]")).toBe(serverArticle);
+      expect(serverArticle.innerHTML).toBe(before);
       root.querySelector<HTMLButtonElement>("[data-help-menu]")!.click();
       await until(() => !!root.querySelector('[role="menuitem"] .ti-markdown'));
       const copy = root.querySelector('[role="menuitem"] .ti-markdown')!.closest<HTMLButtonElement>("button")!;
       copy.click();
-      expect(write.mock.calls[0]?.[0]).toContain("Seeded **Markdown**.");
+      const topic = state.data.documents.find((topic) => topic.id === "share")!;
+      expect(write).toHaveBeenCalledWith(formatHelpDocumentMarkdown({ ...topic, markdown: state.data.article!.markdown }));
       expect(fetcher).not.toHaveBeenCalled();
       await until(() => !!root.querySelector("[data-help-announcement]")?.textContent);
+      await until(() => root.querySelector("[data-help-menu]")?.getAttribute("aria-expanded") !== "true");
     } finally {
       write.mockRestore();
       fixture.cleanup();

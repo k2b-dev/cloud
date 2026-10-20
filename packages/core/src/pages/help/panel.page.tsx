@@ -2,7 +2,7 @@ import { PANEL_HELP_ID_MAX_LENGTH } from "@k2b/cloud/contracts/panel-context";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { canReadAppHelp } from "@k2b/cloud/services/help";
 import { HELP_VIEW_LIMIT } from "@k2b/cloud/shared";
-import { getLocalizedRuntimeContext, LayoutHelpServerPanel as LayoutHelpPanel, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
+import { getLocalizedRuntimeContext, LayoutHelpPanel, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { layoutHelpFailed, preloadLayoutHelp, preloadLayoutHelpArticle } from "@k2b/cloud/ssr/help";
 import { keyboardPlatform } from "@k2b/ui";

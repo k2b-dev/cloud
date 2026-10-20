@@ -3,11 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { HelpDocumentManifest } from "../shared/help";
-import type { LayoutHelpPageProps, LayoutHelpPanelProps } from "./LayoutHelp";
+import type { LayoutHelpPageProps } from "./LayoutHelp";
+import type { LayoutHelpPanelProps } from "./LayoutHelpPanel.server";
 import { helpArticlePartsServer } from "./layout-help-article.server";
 import type { ShellData } from "./shell-data";
 
-type Frame = { panel?: Partial<LayoutHelpPanelProps>; page?: Partial<LayoutHelpPageProps>; shell?: ShellData; locale?: string };
+type Frame = { page?: Partial<LayoutHelpPageProps>; shell?: ShellData; locale?: string };
 
 /**
  * Help renders inside islands, so this compiles it as an island does: Solid's hydratable server output from the same
@@ -26,10 +27,10 @@ const fixture = await (async () => {
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { LocaleProvider } from "@k2b/ui";
-import { LayoutHelpPage, LayoutHelpPanel } from "./LayoutHelp";
+import { LayoutHelpPage } from "./LayoutHelp";
 import { ShellDataProvider } from "./shell-data";
-export const run = ({ panel, page, shell, locale }) => renderToString(() => createComponent(LocaleProvider, { locale: locale ?? "en", get children() {
-  const help = () => (panel ? createComponent(LayoutHelpPanel, panel) : createComponent(LayoutHelpPage, page));
+export const run = ({ page, shell, locale }) => renderToString(() => createComponent(LocaleProvider, { locale: locale ?? "en", get children() {
+  const help = () => createComponent(LayoutHelpPage, page);
   return shell ? createComponent(ShellDataProvider, { data: shell, get children() { return help(); } }) : help();
 } }));`,
     },
@@ -148,33 +149,10 @@ const shellData: ShellData = {
   platform: "apple",
 };
 
-const panel = (props: Partial<LayoutHelpPanelProps> = {}, locale?: string) =>
-  canonical(
-    fixture.run({
-      panel: { documents, app, appearance: "--app-accent:#16a34a", pageBase: "/help/apps/spaces", platform: "apple", ...props },
-      locale,
-    }),
-  );
 const page = (props: Partial<LayoutHelpPageProps> = {}, shell?: ShellData) =>
   canonical(fixture.run({ page: { documents, accent: "#16a34a", pageBase: "/app/spaces/help", ...props }, shell }));
 
 describe("Help server frames", () => {
-  test("panel start without and with For this view", () => {
-    expect(panel()).toMatchSnapshot();
-    expect(panel({ view: ["roles", "share", "unknown"] })).toMatchSnapshot();
-    expect(panel({ view: ["share"] }, "de")).toMatchSnapshot();
-  });
-
-  test("panel article from ?topic=", () => {
-    expect(panel({ initialTopic: "share", initialArticle })).toMatchSnapshot();
-  });
-
-  test("panel unavailable and failed", () => {
-    expect(panel({ documents: [], app: undefined, state: "unavailable" })).toMatchSnapshot();
-    expect(panel({ documents: [], state: "failed" })).toMatchSnapshot();
-    expect(panel({ documents: [] })).toMatchSnapshot();
-  });
-
   test("page hub and article", () => {
     expect(page()).toMatchSnapshot();
     expect(page({ initialTopic: "share", initialArticle })).toMatchSnapshot();
@@ -193,19 +171,22 @@ describe("Help server frames", () => {
   });
 });
 
-// Additive server-provider frames; the original fourteen frames above remain the compatibility guard.
+// Server-provider frames freeze the server HTML and its small island boundaries.
 const serverPanelFixture = await (await import("../../../../scripts/fixtures/help-panel")).createPanelRenderer();
 afterAll(serverPanelFixture.cleanup);
-const serverPanel = (props: Partial<LayoutHelpPanelProps> = {}) =>
+const serverPanel = (props: Partial<LayoutHelpPanelProps> = {}, locale = "en") =>
   canonical(
-    serverPanelFixture.render({
-      documents,
-      app,
-      appearance: "--app-accent:#16a34a",
-      pageBase: "/help/apps/spaces",
-      platform: "apple",
-      ...props,
-    }),
+    serverPanelFixture.render(
+      {
+        documents,
+        app,
+        appearance: "--app-accent:#16a34a",
+        pageBase: "/help/apps/spaces",
+        platform: "apple",
+        ...props,
+      },
+      locale,
+    ),
   );
 
 for (const [name, props] of [
@@ -218,68 +199,37 @@ for (const [name, props] of [
 ] satisfies [string, Partial<LayoutHelpPanelProps>][])
   test(`server provider ${name} frame`, () => expect(serverPanel(props)).toMatchSnapshot());
 
-/** Compare visible markup, stripping only island bookkeeping, inert/hidden regions, menu references, and tree-derived ids. */
-const visiblePanelMarkup = async (html: string) => {
-  const { createDomTestHarness } = await import("../../../ui/test/dom");
-  const dom = createDomTestHarness();
-  try {
-    dom.root.innerHTML = html;
-    for (const node of dom.root.querySelectorAll("[hidden], script, [role=menu]")) node.remove();
-    for (const wrapper of dom.root.querySelectorAll("solid-island, [data-help-start-content]")) wrapper.replaceWith(...wrapper.childNodes);
-    for (const element of dom.root.querySelectorAll("*")) {
-      for (const attribute of [...element.attributes]) {
-        if (
-          // The light menu triggers name no aria-controls: the legacy menu they would point to is removed above.
-          ["aria-controls", "data-help-server-article", "data-help-initial-topic", "data-help-sections", "data-help-announcement"].includes(
-            attribute.name,
-          )
-        )
-          element.removeAttribute(attribute.name);
-      }
-      const attributes = [...element.attributes]
-        .map((attribute) => [attribute.name, attribute.value] as const)
-        .sort(([a], [b]) => a.localeCompare(b));
-      for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name);
-      for (const [name, value] of attributes) element.setAttribute(name, value);
-    }
-    return canonical(dom.root.innerHTML)
-      .replace(/<!--[^]*?-->/g, "")
-      .replace(/\s+(?:style=""|data-help-results="")/g, (value) => (value.trim().startsWith("style") ? "" : value));
-  } finally {
-    dom.cleanup();
-  }
-};
-for (const [name, props] of [
-  ["start", {}],
-  ["view", { view: ["roles", "share"] }],
-  ["article", { initialTopic: "share", initialArticle }],
-] satisfies [string, Partial<LayoutHelpPanelProps>][]) {
-  test(`server provider ${name} matches the legacy panel markup mechanically`, async () => {
-    const data: LayoutHelpPanelProps = {
-      documents,
-      app,
-      appearance: "--app-accent:#16a34a",
-      pageBase: "/help/apps/spaces",
-      platform: "apple",
-      ...props,
-    };
-    expect(await visiblePanelMarkup(serverPanelFixture.render(data))).toBe(await visiblePanelMarkup(serverPanelFixture.render(data, true)));
-  });
-}
+test("server provider view frame (de)", () => expect(serverPanel({ view: ["share"] }, "de")).toMatchSnapshot());
+
+test("server provider rejects missing, unknown and mismatched article seeds", () => {
+  for (const props of [
+    { initialTopic: undefined, initialArticle },
+    { initialTopic: "unknown", initialArticle },
+    { initialTopic: "share", initialArticle: { ...initialArticle, payload: { ...payload, id: "other" } } },
+    { initialTopic: "share", initialArticle, documents: [] },
+  ])
+    expect(serverPanel(props)).not.toContain("Share the Space with your team.");
+});
 
 test("light menu trigger equals Dropdown.Trigger's button and tooltip markup", async () => {
   const { createDomTestHarness } = await import("../../../ui/test/dom");
   const dom = createDomTestHarness();
   const button = (light: boolean) => {
-    dom.root.innerHTML = serverPanelFixture.render({ documents, app, platform: "apple" }, !light);
+    dom.root.innerHTML = light ? serverPanelFixture.render({ documents, app, platform: "apple" }) : serverPanelFixture.renderTrigger();
     const element = dom.root.querySelector("[data-help-menu]");
     if (!element) throw new Error("Missing menu trigger");
     // Generated ids and attribute order follow the component tree; the semantics and every class must agree.
     const attributes = [...element.attributes]
-      .filter((attribute) => attribute.name !== "aria-controls")
+      .filter((attribute) => !["id", "aria-controls", "data-hk"].includes(attribute.name))
       .map((attribute) => [attribute.name, attribute.value])
       .sort();
-    return { attributes, markup: element.innerHTML };
+    const tooltip = element.parentElement?.querySelector('[role="tooltip"]');
+    if (!tooltip) throw new Error("Missing menu tooltip");
+    const tooltipAttributes = [...tooltip.attributes]
+      .filter((attribute) => attribute.name !== "id")
+      .map((attribute) => [attribute.name, attribute.value])
+      .sort();
+    return { attributes, markup: element.innerHTML, tooltipAttributes, tooltipMarkup: tooltip.innerHTML };
   };
   try {
     expect(button(true)).toEqual(button(false));

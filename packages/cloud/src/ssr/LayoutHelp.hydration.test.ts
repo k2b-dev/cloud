@@ -134,9 +134,9 @@ const articleHydrationFixture = await (async () => {
   const fixture = `
 import { createComponent } from "solid-js";
 import { LocaleProvider } from "@k2b/ui";
-import { LayoutHelpPage, LayoutHelpPanel } from "./LayoutHelp";
+import { LayoutHelpPage } from "./LayoutHelp";
 const article = (props) => createComponent(LocaleProvider, { locale: "en", get children() {
-  return createComponent(props.panel ? LayoutHelpPanel : LayoutHelpPage, props);
+  return createComponent(LayoutHelpPage, props);
 } });
 `;
   try {
@@ -204,7 +204,7 @@ test("an initial article hydrates the complete server frame without fetching its
   const { createDomTestHarness } = await import("../../../ui/test/dom");
   const { helpArticlePartsServer } = await import("./layout-help-article.server");
   const { server, clientPath } = articleHydrationFixture;
-  for (const panel of [false, true]) {
+  {
     const { html: articleHtml, ...payload } = {
       id: "share",
       title: "Share a Space",
@@ -216,7 +216,6 @@ test("an initial article hydrates the complete server frame without fetching its
       html: '<p>Share the Space with your team.</p><h2 id="invite">Invite people</h2><div class="help-steps"><ol><li>Open sharing.</li><li>Invite a person.</li></ol></div>',
     };
     const props = {
-      panel,
       platform: "other",
       initialTopic: "share",
       pageBase: "/help/apps/spaces",

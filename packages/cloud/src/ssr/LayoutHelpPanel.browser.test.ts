@@ -1,12 +1,15 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
+import { panelIslandEntries } from "../../../../scripts/fixtures/help-panel";
+import { buildIslandClosure } from "../../../../scripts/fixtures/island-closure";
+import { islandIdFromFile } from "../../../ssr/src/island-id";
 import { launchBrowser } from "../../../ui/test/browser";
 import { serializePanelCookie } from "../_internal/panel-cookie";
 
@@ -14,7 +17,7 @@ const root = mkdtempSync(resolve(tmpdir(), "cloud-help-panel-browser-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
-const { documents, helpManifest, server, helpPanelGeometry, fixtureDocument } = await import("./LayoutHelpPanel.browser-harness");
+const { helpManifest, server, helpPanelGeometry, fixtureDocument } = await import("./LayoutHelpPanel.browser-harness");
 const rail = await import("../services/rail-snapshot");
 const settings = await import("../server/middleware/settings");
 const help = await import("./help");
@@ -35,6 +38,7 @@ beforeAll(async () => {
   if (!styles.success) throw new AggregateError(styles.logs, "Could not compile Help panel styles");
   const css = await styles.outputs[0]!.text();
   const solid = (await import(Bun.resolveSync("babel-preset-solid", import.meta.dir))).default;
+  // The host and the Help page keep their plain client fixture; the provider document loads the real islands below.
   const entry = resolve(import.meta.dir, "LayoutHelpPanel.client-fixture.ts");
   const built = await Bun.build({
     entrypoints: [entry],
@@ -47,30 +51,24 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { LocaleProvider } from "@k2b/ui";
 import ShellRuntime from "./ShellRuntime.island";
-import PanelRuntime from "./PanelRuntime.island";
 import LayoutHelpTrigger from "./LayoutHelpTrigger";
-import { LayoutHelpPanel, LayoutHelpPage } from "./LayoutHelp";
+import { LayoutHelpPage } from "./LayoutHelp";
 import { readShellData } from "./shell-data";
-const provider = !!document.querySelector("[data-cloud-panel-page]");
 const helpRoot = document.getElementById("help-fixture-root");
-const documents = ${JSON.stringify(documents)};
 if (helpRoot) {
   const props = JSON.parse(document.getElementById("help-fixture-props").textContent);
   helpRoot.innerHTML = "";
-  render(() => createComponent(LocaleProvider, { locale: "en", get children() { return createComponent(provider ? LayoutHelpPanel : LayoutHelpPage, props); } }), helpRoot);
+  render(() => createComponent(LocaleProvider, { locale: "en", get children() { return createComponent(LayoutHelpPage, props); } }), helpRoot);
 }
-if (provider) render(() => createComponent(PanelRuntime, { provider: "core", scope: "/panel" }), document.createElement("div"));
-else {
-  // Mount the actual Help trigger in each server-rendered shell position, as the shell island does.
-  const data = readShellData();
-  for (const button of document.querySelectorAll('button[aria-label="Open help"]')) {
-    const rail = button.classList.contains("rail-item");
-    const mount = document.createElement("span"); mount.style.display = "contents";
-    button.replaceWith(mount);
-    render(() => createComponent(LayoutHelpTrigger, { variant: rail ? "rail" : "header", panel: true, helpOpen: document.querySelector(".cloud-app-canvas")?.dataset.panel === "open" && data?.panel?.provider === "core" }), mount);
-  }
-  render(() => createComponent(ShellRuntime, { panel: true, commands: { searchResources: false }, help: ${JSON.stringify(helpManifest)} }), document.createElement("div"));
+// Mount the actual Help trigger in each server-rendered shell position, as the shell island does.
+const data = readShellData();
+for (const button of document.querySelectorAll('button[aria-label="Open help"]')) {
+  const rail = button.classList.contains("rail-item");
+  const mount = document.createElement("span"); mount.style.display = "contents";
+  button.replaceWith(mount);
+  render(() => createComponent(LayoutHelpTrigger, { variant: rail ? "rail" : "header", panel: true, helpOpen: document.querySelector(".cloud-app-canvas")?.dataset.panel === "open" && data?.panel?.provider === "core" }), mount);
 }
+render(() => createComponent(ShellRuntime, { panel: true, commands: { searchResources: false }, help: ${JSON.stringify(helpManifest)} }), document.createElement("div"));
 document.documentElement.dataset.helpFirstFrame = JSON.stringify((${helpPanelGeometry.toString()})());
 document.documentElement.dataset.helpMounted = "true";
 `,
@@ -93,18 +91,43 @@ document.documentElement.dataset.helpMounted = "true";
       },
     ],
   });
-  if (!built.success) throw new AggregateError(built.logs, "Could not bundle Help panel runtime");
+  if (!built.success) throw new AggregateError(built.logs, "Could not bundle Help host runtime");
   const client = await built.outputs[0]!.text();
+  // The provider document is Core's server component; its small islands mount with the production runtime and chunks.
+  const projectRoot = resolve(import.meta.dir, "../../../..");
+  const files: Record<string, string> = {};
+  const islandEntries = panelIslandEntries.map((island) => {
+    // Match the SSR plugin's root; its temporary directory keeps generated assets out of the checkout.
+    const id = islandIdFromFile(island, root);
+    const virtual = resolve(import.meta.dir, `${id}.ts`);
+    files[virtual] =
+      `import { mount } from ${JSON.stringify(resolve(projectRoot, "packages/ssr/src/mount.ts"))}; import C from ${JSON.stringify(island)}; const selector = 'solid-island[data-id="${id}"]'; if (!document.querySelector(selector)) throw new Error("Missing provider island ${id}"); mount(C, selector);`;
+    return virtual;
+  });
+  const islands = await buildIslandClosure(islandEntries, files);
+  if (!islands.metafile) throw new Error("Missing Help provider fixture metafile");
+  const outputMeta = Object.entries(islands.metafile.outputs);
+  const scripts = islandEntries.map((entry) => {
+    const output = outputMeta.find(([, meta]) => meta.entryPoint && resolve(meta.entryPoint) === entry);
+    if (!output) throw new Error(`Missing Help provider island ${entry}`);
+    return basename(output[0]);
+  });
+  const outputs = new Map(await Promise.all(islands.outputs.map(async (output) => [basename(output.path), await output.text()] as const)));
   const served = Bun.serve({
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/help-fixture.js") return new Response(client, { headers: { "content-type": "text/javascript" } });
+      // Split chunks import each other by relative paths from the build's output layout; serve every file by name.
+      const chunk = outputs.get(basename(url.pathname));
+      if (chunk !== undefined) return new Response(chunk, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/api/help/search") return Response.json({ ids: [] });
       if (url.pathname.startsWith("/api/help/")) return Response.json({ ...fixtureDocument, id: url.pathname.split("/").at(-1) });
       const response = await server.fetch(request);
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
-      const html = (await response.text())
+      const source = await response.text();
+      const providerDocument = source.includes("data-cloud-panel-page");
+      const html = source
         .replace(/<script type="module"[^>]*>[^<]*solid-island[^<]*<\/script>/g, "")
         .replace(
           "</head>",
@@ -112,7 +135,12 @@ document.documentElement.dataset.helpMounted = "true";
         )
         .replace(
           "</body>",
-          `<script>document.documentElement.dataset.helpServerFrame=JSON.stringify((${helpPanelGeometry.toString()})());</script><script src="/help-fixture.js"></script></body>`,
+          `<script>document.documentElement.dataset.helpServerFrame=JSON.stringify((${helpPanelGeometry.toString()})());</script>${
+            providerDocument
+              ? // One module script imports every island at once, as @k2b/ssr's loader does; geometry is taken after all mounted.
+                `<script type="module">await Promise.all(${JSON.stringify(scripts)}.map((file) => import("/assets/" + file)));document.documentElement.dataset.helpFirstFrame=JSON.stringify((${helpPanelGeometry.toString()})());document.documentElement.dataset.helpMounted="true";</script>`
+              : '<script src="/help-fixture.js"></script>'
+          }</body>`,
         );
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "Referrer-Policy": "same-origin" } });
     },

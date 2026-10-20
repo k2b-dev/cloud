@@ -36,12 +36,14 @@ export async function createPanelRenderer() {
     files: {
       [entry]: `
 import { createComponent } from "solid-js";
-import { renderToString } from "solid-js/web";
-import { LocaleProvider } from "@k2b/ui";
-import { LayoutHelpPanel as ServerPanel } from "${root}/packages/cloud/src/ssr/LayoutHelpPanel.server";
-import { LayoutHelpPanel as LegacyPanel } from "${root}/packages/cloud/src/ssr/LayoutHelp";
-export function run(props, legacy = false, locale = "en") {
-  return renderToString(() => createComponent(LocaleProvider, { locale, get children() { return createComponent(legacy ? LegacyPanel : ServerPanel, props); } }));
+import { renderToString, ssr } from "solid-js/web";
+import { Dropdown, LocaleProvider } from "@k2b/ui";
+import { LayoutHelpPanel } from "${root}/packages/cloud/src/ssr/LayoutHelpPanel.server";
+export const trigger = () => renderToString(() => createComponent(Dropdown.Root, { label: "More Help actions", position: "bottom-left", items: [], get children() {
+  return createComponent(Dropdown.Trigger, { iconOnly: true, label: "More Help actions", variant: "ghost", "data-help-menu": "", get children() { return ssr('<i class="ti ti-dots" aria-hidden="true"></i>'); } });
+} }));
+export function run(props, locale = "en") {
+  return renderToString(() => createComponent(LocaleProvider, { locale, get children() { return createComponent(LayoutHelpPanel, props); } }));
 }
 `,
     },
@@ -63,8 +65,8 @@ export function run(props, legacy = false, locale = "en") {
     if (!build.success) throw new AggregateError(build.logs, "Could not compile server panel fixture");
     const output = join(directory, "server.mjs");
     await Bun.write(output, build.outputs[0]!);
-    const module: { run: (props: LayoutHelpPanelProps, legacy?: boolean, locale?: string) => string } = await import(output);
-    return { render: module.run, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
+    const module: { trigger: () => string; run: (props: LayoutHelpPanelProps, locale?: string) => string } = await import(output);
+    return { render: module.run, renderTrigger: module.trigger, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
   } catch (error) {
     rmSync(directory, { recursive: true, force: true });
     throw error;

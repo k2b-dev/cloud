@@ -12,7 +12,7 @@ import type { HelpShortcutScope, HelpStart, HelpStartGroupKind, helpShortcutGrou
  * browser; state, effects, requests, the clipboard, and heavy controls stay with the reader that composes them.
  */
 
-export type HelpSurface = "modal" | "page" | "embedded" | "panel";
+export type HelpSurface = "modal" | "page" | "embedded";
 
 const useHelpMessages = () => {
   const locale = useLocale();
@@ -369,7 +369,7 @@ const ArticleEnd = (props: { document: HelpDocumentPayload; appId?: string }) =>
 
 /** The inside of an article: its head, the status of its document, the body, its end, and the aside. */
 export function HelpArticleView(props: {
-  surface: HelpSurface;
+  surface: HelpSurface | "panel";
   topic: HelpTopic;
   appName?: string;
   appId?: string;
