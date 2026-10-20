@@ -25,6 +25,8 @@ export default function HelpPanelSearch() {
   };
   const adopt = () => {
     reserve();
+    // An empty field shows the start again, also after the search code failed to load.
+    if (input && !input.value.trim()) setFailed(false);
     if (input && (engine() || failed() || !input.value.trim())) state()?.changeQuery(input.value);
   };
   const load = () =>
@@ -110,7 +112,7 @@ export default function HelpPanelSearch() {
         }}
       </Show>
       <Show when={failed()}>
-        <NoticeCard tone="danger" title={t().loadFailed} detail={t().loadFallback}>
+        <NoticeCard tone="danger" title={t().helpUnavailable} detail={t().helpUnavailableDetail}>
           <Button size="sm" variant="secondary" onClick={() => location.reload()}>
             {t().reload}
           </Button>

@@ -299,7 +299,7 @@ else {
     try {
       mount("menu", () => createComponent(Menu, {}));
       root.querySelector<HTMLButtonElement>("[data-help-menu]")!.click();
-      await until(() => wrapper.textContent!.includes("Could not load this topic"));
+      await until(() => wrapper.textContent!.includes("Help could not be loaded"));
       const recovery = [...wrapper.querySelectorAll("button")].find((button) => button.textContent === "Reload");
       expect(recovery).toBeDefined();
       recovery!.click();
@@ -343,14 +343,19 @@ else {
       const field = root.querySelector<HTMLInputElement>("[data-help-search]")!;
       field.focus();
       await new Promise((resolve) => requestAnimationFrame(resolve));
-      expect(root.textContent).not.toContain("Could not load this topic");
+      expect(root.textContent).not.toContain("Help could not be loaded");
       field.value = "Roles";
       field.dispatchEvent(new Event("input", { bubbles: true }));
-      await until(() => root.textContent!.includes("Could not load this topic"));
+      await until(() => root.textContent!.includes("Help could not be loaded"));
       const recovery = [...root.querySelectorAll("button")].find((button) => button.textContent === "Reload");
       expect(recovery).toBeDefined();
       recovery!.click();
       expect(reload).toHaveBeenCalledTimes(1);
+      // Clearing the field by any means shows the start again.
+      field.value = "";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(root.textContent).not.toContain("Help could not be loaded");
+      expect(root.querySelector<HTMLElement>("[data-help-start-content]")!.hidden).toBe(false);
     } finally {
       load.mockRestore();
       reload.mockRestore();

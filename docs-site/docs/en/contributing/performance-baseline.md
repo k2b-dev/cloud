@@ -463,9 +463,9 @@ moved in WebKit: the provider document still parses about 150 KB Brotli of CSS.
 That cost and frame start remain for F10. One Chromium column run failed on a
 host-side read of the provider document (#1633).
 
-`packages/core/src/pages/help/panel.bundle.test.ts` keeps a budget of 48 KiB
+`packages/core/src/pages/help/panel.bundle.test.ts` keeps a budget of 49 KiB
 eager Brotli for the panel's islands: their own split production closure
-measured 46,421 B, plus 5 %, rounded up to the next KiB. Core's real build
+measured 46,859 B, plus 5 %, rounded up to the next KiB. Core's real build
 serves more, because its shared chunks also carry code of other Core islands,
 such as the Markdown editor. `PanelRuntime`'s workspace controller is about
 11 KB of the served figure. A quarter of the WebKit sheet limit at the documented phone

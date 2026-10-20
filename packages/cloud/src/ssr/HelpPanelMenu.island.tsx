@@ -115,7 +115,7 @@ export default function HelpPanelMenu() {
             }}
           />
           <Show when={error()}>
-            <NoticeCard class="absolute z-50" tone="danger" title={t().loadFailed} detail={t().loadFallback}>
+            <NoticeCard class="absolute z-50" tone="danger" title={t().helpUnavailable} detail={t().helpUnavailableDetail}>
               <Button size="sm" variant="secondary" onClick={() => location.reload()}>
                 {t().reload}
               </Button>

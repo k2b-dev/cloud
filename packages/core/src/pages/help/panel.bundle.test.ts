@@ -5,11 +5,11 @@ import { islandBundleSize } from "../../../../../scripts/fixtures/island-bundle-
 import { islandIdFromFile } from "../../../../ssr/src/island-id";
 import { defaultRailPreferences, help, panelUrl, rail, server, settings, snapshot } from "./panel.test-fixture";
 
-// Measured 46,421 B on top of 7fa53cd5b (#1624), plus a 5 % margin, rounded up to the next KiB: 48 KiB. The old island
+// Measured 46,859 B on top of 7fa53cd5b (#1624), plus a 5 % margin, rounded up to the next KiB: 49 KiB. The old island
 // measured 121,825 B with this helper. Context: the documented phone profile (200,000 B/s, WebKit sheet limit 1,000 ms)
 // puts a quarter of that limit at 50,000 B. The helper builds these islands alone; Core's served build measured 70,007 B,
 // because its shared chunks also carry code of other Core islands.
-export const PANEL_HELP_EAGER_BROTLI_BUDGET = 48 * 1024;
+export const PANEL_HELP_EAGER_BROTLI_BUDGET = 49 * 1024;
 
 test("every island in the actual /panel HTML is inside the eager bundle budget", async () => {
   const spies = [
