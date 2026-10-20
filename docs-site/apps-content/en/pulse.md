@@ -116,8 +116,8 @@ that another row exists. Results over 4 MiB fail with `RESULT_TOO_LARGE`.
 The console charts the first time column against numeric columns, using up to
 8 series and the first 480 rows in returned order. It states when the chart is
 cut. The time axis uses the column's time zone, or UTC if none is specified.
-For a single day, ticks show times and the axis names the date; longer ranges
-show calendar dates. Inspect a point for its full date, time, and UTC offset.
+The axis labels the two ends of the returned time range. For a single day,
+labels show times and the axis names the date; longer ranges show calendar dates. Inspect a point for its full date, time, and UTC offset.
 Date-only columns show dates without a time.
 
 ### Console URLs and Assistant drafts
@@ -476,4 +476,6 @@ members and retention. Readers can inspect settings and see whom to contact
 for changes. Shorter retention asks for confirmation of its cutoff and amount.
 Usage shows the query profile, input and concurrency limits, and hourly quota.
 Only Cloud admins change quotas and profiles in **Administration → Pulse → Bases**.
+After a quota refusal, the console reloads current usage. If that fails, it
+keeps the quota block and offers **Retry** for the usage read.
 Closing the modal returns to the underlying view.

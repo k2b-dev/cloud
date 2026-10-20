@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { charts } from "@k2b/stdlib";
 import { sqlResultChart } from "./sql-result-chart";
 
 test("explains absent time/numeric columns and empty results", () => {
@@ -224,4 +225,26 @@ test("point inspection preserves the shared chart's small-decimal precision", ()
     },
   });
   expect(point.rows[0]?.value).toBe("0,0001");
+});
+
+test("DateTime64 chart labels only the two domain endpoints at full precision", () => {
+  const result = sqlResultChart(
+    {
+      columns: [
+        { name: "time", type: "DateTime64(3, 'UTC')" },
+        { name: "v", type: "Float64" },
+      ],
+      rows: [
+        ["2026-10-20 08:00:00.001", 1],
+        ["2026-10-20 11:48:00.002", 2],
+      ],
+    },
+    "de",
+  );
+  if (result.kind !== "chart") throw new Error("Missing chart");
+  const svg = charts.line({ width: 480, height: 280, series: result.chart.series, xAxis: result.chart.xAxis });
+  const labels = [...svg.matchAll(/<text class="stdlib-chart-tick-label"[^>]*text-anchor="middle">([^<]*)<\/text>/g)]
+    .map((match) => match[1])
+    .filter(Boolean);
+  expect(labels).toEqual(["08:00:00,001", "11:48:00,002"]);
 });

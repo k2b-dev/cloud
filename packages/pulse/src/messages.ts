@@ -53,6 +53,7 @@ export const pulseMessages = i18n.define({
       sqlStoreUnavailable: "Pulse cannot reach the data store",
       sqlNoReadAccess: "SQL requires read access to this base. Ask a base admin for access.",
       sqlRequestFailed: "The request failed. Please try again.",
+      sqlUsageRefreshFailed: "Could not update current usage. Please try again.",
       sqlRetry: "Try again",
       sqlConflict: "This query has changed since you opened it. Your SQL is preserved. Reload the saved version or save a copy.",
       sqlNameConflict: "A saved query already uses this name. Choose another name; your SQL is preserved.",
@@ -422,6 +423,7 @@ export const pulseMessages = i18n.define({
       sqlStoreUnavailable: "Pulse erreicht den Datenspeicher nicht",
       sqlNoReadAccess: "SQL braucht das Recht Lesen in dieser Base. Bitte eine Admin der Base um Zugriff.",
       sqlRequestFailed: "Die Anfrage ist fehlgeschlagen. Bitte versuche es erneut.",
+      sqlUsageRefreshFailed: "Die aktuellen Nutzungszahlen ließen sich nicht laden. Bitte versuche es erneut.",
       sqlRetry: "Erneut versuchen",
       sqlConflict:
         "Diese Abfrage wurde inzwischen geändert. Dein SQL bleibt erhalten. Lade die gespeicherte Fassung neu oder speichere eine Kopie.",

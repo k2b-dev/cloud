@@ -62,6 +62,13 @@ export const sqlResultChart = (result: Pick<SqlResult, "columns" | "rows">, loca
   }));
   const times = rows.map((row) => timestamp(row[xIndex], xColumn.type)).filter(Number.isFinite);
   const first = times[0];
+  const minTime = Math.min(...times);
+  const maxTime = Math.max(...times);
+  const domain: [number, number] | undefined = times.length
+    ? minTime === maxTime
+      ? [minTime - 1, maxTime + 1]
+      : [minTime, maxTime]
+    : undefined;
   const day = first === undefined ? undefined : dates.formatDateKey(new Date(first), { timeZone });
   const sameDay = day !== undefined && times.every((value) => dates.formatDateKey(new Date(value), { timeZone }) === day);
   const clockTicks = unwrap(xColumn.type) !== "Date" && sameDay;
@@ -75,8 +82,12 @@ export const sqlResultChart = (result: Pick<SqlResult, "columns" | "rows">, loca
       xAxis: {
         label: axisLabel,
         ticks: 2,
+        domain,
+        // Two precise endpoint labels fit the narrow console even when nice ticks add intermediates.
         format: (value) =>
-          (clockTicks && dates.formatDateKey(new Date(value), { timeZone }) === day ? clockFormat : dateFormat).format(value),
+          domain && value > domain[0] && value < domain[1]
+            ? ""
+            : (clockTicks && dates.formatDateKey(new Date(value), { timeZone }) === day ? clockFormat : dateFormat).format(value),
       },
       padding: { left: 60, right: 60 },
       interactive: true,

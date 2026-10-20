@@ -254,7 +254,10 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     } catch (error) {
       if (disposed || activeRun?.id !== id) return;
       const failure = normalizeError(error);
-      if (failure.code === "QUOTA") blockUntil(failure.details.resetAt, failure.details.retryAfter);
+      if (failure.code === "QUOTA") {
+        blockUntil(failure.details.resetAt, failure.details.retryAfter);
+        void refreshLimits();
+      }
       setState(editAtRun === contentVersion ? { kind: "error", ...failure } : { kind: sql().trim() ? "ready" : "empty" });
     } finally {
       if (activeRun?.id === id) activeRun = null;
@@ -440,11 +443,12 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     if (quotaBlocked())
       return {
         kind: "warning",
-        message: messages.sqlQuotaReset({
+        message: `${messages.sqlQuotaReset({
           resetAt: new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" }).format(
             new Date(quotaResetAt()!),
           ),
-        }),
+        })}${limitsError() ? ` · ${messages.sqlUsageRefreshFailed}` : ""}`,
+        action: limitsError() ? { kind: "retry-limits", label: messages.sqlRetry, run: refreshLimits } : undefined,
       };
     if (current.kind === "error") {
       const detail = current.details;

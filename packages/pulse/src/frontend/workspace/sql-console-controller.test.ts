@@ -573,3 +573,53 @@ test("draft protection covers new SQL and edits to a saved query or its paramete
   c.setParameter("host", "b");
   expect(c.hasUnsavedChanges()).toBe(true);
 });
+
+test("quota rejection refreshes the canonical usage without clearing its run block", async () => {
+  let reads = 0;
+  const { controller: c } = harness(
+    {},
+    {
+      run: async () => {
+        throw new SqlClientError("QUOTA", "quota", 429, { resetAt: "2026-10-20T15:00:00Z" });
+      },
+      limits: async () => {
+        reads++;
+        return { ...sqlTestLimits, queriesUsed: 600 };
+      },
+    },
+  );
+  c.setSql("SELECT 1");
+  await c.run();
+  await Promise.resolve();
+  expect(reads).toBe(1);
+  expect(c.limits()?.queriesUsed).toBe(600);
+  expect(c.canRun()).toBe(false);
+  expect(c.canSave()).toBe(true);
+});
+
+test("quota usage refresh failure stays visible and retry never unblocks SQL early", async () => {
+  let fail = true;
+  const { controller: c } = harness(
+    {},
+    {
+      run: async () => {
+        throw new SqlClientError("QUOTA", "quota", 429, { resetAt: "2026-10-20T15:00:00Z" });
+      },
+      limits: async () => {
+        if (fail) throw new Error("offline");
+        return { ...sqlTestLimits, queriesUsed: 600 };
+      },
+    },
+  );
+  c.setSql("SELECT 1");
+  await c.run();
+  await Promise.resolve();
+  expect(c.statusBand().message).toContain("Nutzungszahlen");
+  expect(c.statusBand().action?.kind).toBe("retry-limits");
+  expect(c.canRun()).toBe(false);
+  fail = false;
+  await c.statusBand().action?.run();
+  expect(c.statusBand().message).not.toContain("Nutzungszahlen");
+  expect(c.limits()?.queriesUsed).toBe(600);
+  expect(c.canRun()).toBe(false);
+});

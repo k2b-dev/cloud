@@ -222,49 +222,54 @@ test("editing SQL hides its old result and a response from an earlier draft", as
 }, 30_000);
 
 test("SQL time axes remain readable on phone and desktop", async () => {
-  for (const width of [390, 1440]) {
-    const { tab, answer } = await open(width);
-    try {
-      answer({
-        status: 200,
-        json: {
-          ...sqlTestResult,
-          columns: [
-            { name: "time", type: "DateTime('UTC')" },
-            { name: "orders", type: "UInt64" },
-          ],
-          rows: [
-            ["2026-10-20 08:00:00", 1],
-            ["2026-10-20 09:00:00", 2],
-            ["2026-10-20 10:00:00", 3],
-            ["2026-10-20 11:00:00", 4],
-          ],
-        },
-      });
-      await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
-      await tab.locator('[data-sql-region="result"] .stdlib-chart-axis-label').filter({ hasText: "20.10.2026" }).waitFor();
-      const ticks = await tab
-        .locator('[data-sql-region="result"] .stdlib-chart-tick-label[text-anchor="middle"]')
-        .evaluateAll((elements) =>
-          elements
-            .map((element) => ({
-              text: element.textContent ?? "",
-              left: element.getBoundingClientRect().left,
-              right: element.getBoundingClientRect().right,
-            }))
-            .sort((a, b) => a.left - b.left),
-        );
-      expect(ticks.length).toBeGreaterThan(1);
-      for (const [index, tick] of ticks.entries()) {
-        expect(tick.text).toMatch(/\d{2}:\d{2}:\d{2}/);
-        expect(tick.left).toBeGreaterThanOrEqual(0);
-        expect(tick.right).toBeLessThanOrEqual(width);
-        if (index) expect(tick.left).toBeGreaterThan(ticks[index - 1]!.right);
+  for (const width of [390, 1440])
+    for (const scenario of [
+      { type: "DateTime('UTC')", last: "2026-10-20 11:00:00" },
+      { type: "DateTime64(3, 'UTC')", last: "2026-10-20 11:48:00.002" },
+    ]) {
+      const { tab, answer } = await open(width);
+      try {
+        answer({
+          status: 200,
+          json: {
+            ...sqlTestResult,
+            columns: [
+              { name: "time", type: scenario.type },
+              { name: "orders", type: "UInt64" },
+            ],
+            rows: [
+              ["2026-10-20 08:00:00", 1],
+              ["2026-10-20 09:00:00", 2],
+              ["2026-10-20 10:00:00", 3],
+              [scenario.last, 4],
+            ],
+          },
+        });
+        await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
+        await tab.locator('[data-sql-region="result"] .stdlib-chart-axis-label').filter({ hasText: "20.10.2026" }).waitFor();
+        const ticks = await tab
+          .locator('[data-sql-region="result"] .stdlib-chart-tick-label[text-anchor="middle"]')
+          .evaluateAll((elements) =>
+            elements
+              .map((element) => ({
+                text: element.textContent ?? "",
+                left: element.getBoundingClientRect().left,
+                right: element.getBoundingClientRect().right,
+              }))
+              .filter((tick) => tick.text.length > 0)
+              .sort((a, b) => a.left - b.left),
+          );
+        expect(ticks).toHaveLength(2);
+        for (const [index, tick] of ticks.entries()) {
+          expect(tick.text).toMatch(/\d{2}:\d{2}:\d{2}/);
+          expect(tick.left).toBeGreaterThanOrEqual(0);
+          expect(tick.right).toBeLessThanOrEqual(width);
+          if (index) expect(tick.left).toBeGreaterThan(ticks[index - 1]!.right);
+        }
+      } finally {
+        await tab.close();
       }
-    } finally {
-      await tab.close();
     }
-  }
 }, 60_000);
 
 test("SQL limits are visibly red and running keeps a result-size loading state", async () => {
