@@ -32,7 +32,9 @@ bun run --cwd packages/ssr typecheck
 ```
 
 `test/unit` runs on Bun; `test/browser` runs with browser conditions and the
-Happy DOM globals from `test/browser/setup.ts`. A change in the transform,
+Happy DOM globals from `test/browser/setup.ts`; `test/engine` runs real
+browsers through `launchBrowser()` from `packages/ui/test/browser.ts`, so the
+gate also runs it in WebKit. A change in the transform,
 build, mount runtime, or adapters reaches every application: also run the
 `@k2b/ui` tests and build the production bundle of at least one application
 (`APP_ID=faq bun run packages/cloud/scripts/build.ts`).
@@ -66,8 +68,9 @@ build, mount runtime, or adapters reaches every application: also run the
   never at import time.
 - The dev overlay depends on `data-file` in dev mode and on the wrapper tags
   staying in the SSR output.
-- `@k2b/ssr/nav` stays an opt-in progressive navigation helper, not a router
-  with route matching, loaders, or server re-rendering.
+- `@k2b/ssr/nav` stays opt-in. It swaps server-rendered pages into a declared
+  content column, without route matching and without client loaders. Any
+  failure of a swap ends in one document load, never in a half-swapped page.
 
 ## Build pipeline
 
@@ -177,12 +180,77 @@ Shared helpers live in `src/adapter/utils.ts` (`normalizeBasePath`,
 
 ## Navigation
 
-When changing `src/nav.ts`, keep top-level code SSR-safe, keep `Link`
-rendering a real `<a href>`, preserve native behavior for modifier keys,
-non-left clicks, downloads, and external targets, and keep state
-reconciliation explicit through `listenPopState()`. Cover history push and
-replace, Back and Forward, hash links, async fallbacks, reactive props, and
-scroll snapshots in both test suites.
+`src/nav.ts` is the `./nav` export: `Link`, the history and scroll helpers in
+`src/nav-history.ts`, and the page swap in `src/nav-swap.ts`. Keep top-level
+code SSR-safe, keep `Link` rendering a real `<a href>`, preserve native
+behavior for modifier keys, non-left clicks, downloads, and external targets,
+and keep island state reconciliation explicit through `listenPopState()`.
+
+The page swap is opt-in. Without `installPageSwap()` nothing changes. The host
+declares the contract in server HTML, and nav knows nothing else about it:
+
+- one `data-nav-shell` element whose value is an opaque signature that nav
+  only compares;
+- `data-nav-scope` on the shell, a path prefix for links that may swap;
+- optional `data-nav-attributes` on the shell, the attributes copied from the
+  fetched shell;
+- one `data-nav-root` inside the shell, the column that is replaced;
+- `data-nav-document` on a link to keep its document navigation.
+
+A swap is one transaction, and its order is the contract:
+
+1. Abort the previous swap. Only the newest navigation may commit: a newer
+   swap, `popstate`, a native same-tab link or form submission, and the
+   history helpers (`navigate()`, `documentNavigate()`, `navigateTo()`,
+   `refreshCurrentPath()`) abort a pending swap, and so does a `Link` when it
+   takes an enhanced click. In turn, a swap that starts later makes the older
+   history work do nothing: a `navigate()` commit that a view transition
+   deferred, and a pending `Link` handler's `push`, `replaceWith`, and
+   `fallback`.
+2. Fetch the target as HTML with the abort signal. Check status 200, HTML,
+   final URL in scope, shell signature and scope, the loader's
+   `data-ssr-assets` prefix, the `<base>` element, and the head stylesheets
+   in order with their `media`, because the current head stays.
+3. Preload and import the island entries of the fetched column. The old
+   column stays as it is until every module loaded. Evaluation cannot be
+   cancelled: an entry also mounts wrappers already waiting for it in the
+   document, as on the first load.
+4. Commit without an `await`: dispose the old islands while they are still
+   in the document, then re-check ownership, because their cleanups may
+   uninstall the swap or replace the column. A navigation that a cleanup
+   starts does not stop the commit; cleanups should not navigate. Push history with an absolute
+   URL before inserting the root, so relative URLs in it resolve against the
+   new page. Then replace the root, copy title and attributes, mount the new
+   islands, restore keyed scroll regions, focus the first heading, and
+   announce the title in the one live region.
+
+After every `await`, an aborted or replaced swap returns without a change.
+Every other failure calls `documentNavigate()` for the requested URL once;
+after a history commit it replaces the entry. The click listener sits on
+`window` in the bubble phase, so island and delegated Solid handlers can
+prevent a swap first.
+
+Back and Forward are not swapped yet. Install marks the current entry when
+its state is null; non-null island state stays untouched. Swap entries carry
+their page's marker, and a reload keeps it. A `popstate` onto an entry with
+the shown page's marker, or onto a fresh hash-link entry, stays with islands.
+An unmarked entry stays with islands only on a page loaded normally that has
+not swapped yet; after a swap or a reload it loads the document. An island
+that replaces an entry's state with its own drops the marker, so returning
+to that entry later loads the document. The history slice gives every entry
+its page ID.
+
+A swap does not fire `beforeunload`; an island with unsaved input must prevent
+in-scope link clicks itself (for example, a document capture listener calling
+`preventDefault()`, which the swap honours) or mark the links with
+`data-nav-document`.
+
+Cover every change in the unit, Happy DOM, and `test/engine` suites: history
+push and replace, Back and Forward, hash links, async fallbacks, reactive
+props, scroll snapshots, and for the swap each failure class, rapid clicks,
+and island disposal. A change to the swap contract updates this file,
+`README.md`, the `ssr` skill, and the Fibel page
+`frontend/url-state-and-navigation.md` in the same `feat(ssr)` pull request.
 
 ## Bun caveats
 

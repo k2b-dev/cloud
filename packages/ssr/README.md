@@ -222,8 +222,8 @@ NODE_ENV=development bun --watch --preload=./scripts/preload.ts src/server.ts
 
 ## Optional Navigation Helpers
 
-`@k2b/ssr/nav` is an opt-in browser helper for islands that want to
-update URL history after they have already updated client state.
+`@k2b/ssr/nav` provides opt-in history helpers and server-rendered page swaps.
+It has no route matching or client loaders.
 
 ```tsx
 import { createSignal, onCleanup, onMount } from "solid-js";
@@ -256,9 +256,9 @@ export default function Tabs() {
 
 `Link` renders a real `<a href>` during SSR. Enhanced clicks only run in the
 browser for same-origin, left-click navigation without modifier keys. Without
-`onNavigate`, the anchor keeps native document navigation and ignores `replace`
-and `scroll`. With `onNavigate`, the island owns data loading and state updates,
-then calls `nav.push()`, `nav.replaceWith()`, or `nav.fallback()`.
+`onNavigate`, the anchor keeps native document navigation, or a page swap
+when the host installed one, and ignores `replace` and `scroll`. With
+`onNavigate`, the island owns data loading and state updates, then calls `nav.push()`, `nav.replaceWith()`, or `nav.fallback()`.
 
 Use `listenPopState()` whenever `nav.push()` represents client state. Browser
 Back/Forward changes history but cannot infer how an island maps the URL back to
@@ -278,13 +278,83 @@ Navigation behavior:
 
 Available exports:
 
-- `Link`
+- `Link`, `installPageSwap()`, `swapPage()`
 - `navigate()`, `navigateTo()`, `documentNavigate()`, `currentPathWithQuery()`, `refreshCurrentPath()`
 - `captureScroll()`, `restoreScroll()`, `listenPopState()`, `startViewTransition()`
 - `LinkNavigateEvent`, `LinkProps`, `EnhancedNavigateOptions`, `NavigationScrollMode`, `PopStateNavigationEvent`, `ScrollSnapshot`
 
 Use `data-scroll-preserve="stable-key"` on scroll containers that should keep
 their scroll position across enhanced navigation.
+
+### Swap server-rendered pages
+
+A host can let links swap only the content column: nav fetches the next page
+as server HTML and replaces the column, while the rest of the document (a
+navigation rail, an open side panel) stays. Declare the parts in server HTML:
+
+```html
+<div data-nav-shell="mail:user-42:en:standard:3f9a" data-nav-scope="/mail" data-nav-attributes="data-mode">
+  <nav><a href="/mail/inbox">Inbox</a> <a href="/mail/export.zip" data-nav-document>Export</a></nav>
+  <main data-nav-root><h1>Inbox</h1><!-- server HTML and islands --></main>
+</div>
+```
+
+- `data-nav-shell`: one element, its value an opaque signature. Put
+  everything into it that must match for a swap, such as application, user,
+  locale, layout kind, and build. Nav only compares it.
+- `data-nav-scope`: a path prefix. `/mail` takes `/mail`, `/mail/x`, and
+  `/mail?x`, not `/mailbox`.
+- `data-nav-attributes`: optional names of shell attributes that the fetched
+  page sets or removes.
+- `data-nav-root`: one element inside the shell, replaced as a whole.
+- `data-nav-document`: keeps document navigation for one link.
+
+Install it once, from an island outside the root:
+
+```tsx
+import { onCleanup, onMount } from "solid-js";
+import { installPageSwap } from "@k2b/ssr/nav";
+
+onMount(() => onCleanup(installPageSwap()));
+```
+
+`installPageSwap()` is idempotent per document and returns its uninstall
+function; on the server it does nothing. It listens for clicks on `window`, so
+island handlers run first and a prevented click is never swapped. Modifier
+keys, other buttons, `target`, `download`, `rel="external"`, other origins,
+links outside the scope, and hash links on the same page stay native.
+`swapPage(href, { replace })` starts the same swap from code.
+
+A swap fetches the page, then loads its island modules, and only then disposes
+the old islands. It pushes history, replaces the column, sets the title and
+the declared attributes, mounts the new islands, scrolls to the top or to
+the hash, focuses the first heading of the column, and announces the title in
+a polite live region. A newer navigation aborts a pending swap: another swap,
+Back or Forward, a native link or form submission, an enhanced `Link` click,
+or a call to `navigate()` or `documentNavigate()`. A swap that starts while
+a `Link` handler still loads wins as well: that handler's `push`,
+`replaceWith`, and `fallback` then do nothing.
+
+Any failure loads the requested URL as a normal document: a status other than
+200, a response that is not HTML, a redirect out of the scope, a missing shell
+or root, a different signature, a different module prefix, `<base>`, or stylesheet set,
+and a module that fails to load or to evaluate. The old column stays until
+then. Inline scripts in the fetched page do not run, and only the title of
+its head is used.
+
+Back and Forward are not swapped yet. Install marks the current entry when
+its state is null; non-null island state stays untouched. Swap entries carry
+their page's marker, and a reload keeps it. A `popstate` onto an entry with
+the shown page's marker, or onto a fresh hash-link entry, stays with islands.
+An unmarked entry stays with islands only on a page loaded normally that has
+not swapped yet; after a swap or a reload it loads the document. An island
+that replaces an entry's state with its own drops the marker, so returning
+to that entry later loads the document.
+
+A swap does not fire `beforeunload`; an island with unsaved input must prevent
+in-scope link clicks itself (for example, a document capture listener calling
+`preventDefault()`, which the swap honours) or mark the links with
+`data-nav-document`.
 
 ## Error handling in islands
 

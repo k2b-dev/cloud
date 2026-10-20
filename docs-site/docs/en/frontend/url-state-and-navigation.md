@@ -5,7 +5,7 @@ section: Frontend
 order: 860
 description: Keep durable view state in the URL and navigate without losing server authority.
 tags: [url, navigation, filters]
-updated: 2026-09-15
+updated: 2026-10-19
 ---
 
 # URL state and navigation
@@ -114,9 +114,83 @@ a URL the browser never entered. See
 Subscribe to `popstate` whenever an island changes history. Otherwise the URL
 and visible state diverge after Back or Forward.
 
-The navigation helper is not a client router. It does not run server loaders or
-re-render server components. Fall back to document navigation when the server
-must produce a new result set.
+The navigation helper has no route matching and no client loaders. When the
+server must produce the next result, use a normal link: a document load, or a
+page swap where the host installed one.
+
+## Swap server-rendered pages
+
+A page swap keeps the document and replaces only the content column with the
+next server page. A navigation rail or an open side panel stays as it is.
+Every application can use it; it is part of `@k2b/ssr/nav`, not of Cloud.
+
+The server page declares the parts:
+
+```html
+<div
+  data-nav-shell="inventory:user-42:en:standard:3f9a"
+  data-nav-scope="/app/inventory"
+  data-nav-attributes="data-mode"
+>
+  <nav><a href="/app/inventory/low">Low stock</a></nav>
+  <main data-nav-root><h1>Inventory</h1></main>
+</div>
+```
+
+- `data-nav-shell` is a signature that nav compares and does not read. Put
+  everything into it that must be equal for a swap: the application, the
+  user, the locale, the layout kind, and the build.
+- `data-nav-scope` is the path prefix of links that swap. `/app/inventory`
+  takes `/app/inventory/low`, not `/app/inventory-old`.
+- `data-nav-root` is the column. The fetched page's column replaces it.
+- `data-nav-attributes` names shell attributes that the fetched page sets or
+  removes, for example a layout mode.
+- `data-nav-document` on a link keeps its document navigation, for example
+  for a file download without `download`.
+
+An island outside the column installs the swap once:
+
+```tsx
+import { installPageSwap } from "@k2b/ssr/nav";
+import { onCleanup, onMount } from "solid-js";
+
+onMount(() => onCleanup(installPageSwap()));
+```
+
+A click that an island handler prevented is never swapped. Modifier keys,
+`target`, `download`, `rel="external"`, other origins, links outside the
+scope, and hash links on the same page stay native. `swapPage(href, {
+replace })` starts a swap from code.
+
+The swap fetches the page and loads its island modules before it changes the
+old column. Then it disposes the old islands, pushes history, replaces the
+column, sets the title, mounts the new islands, focuses the first heading of
+the column, and announces the title. A newer navigation cancels a pending
+swap, also a native form submission, an island's `Link` click, or a
+`navigate()` call. A swap that starts while a `Link` handler still loads
+wins as well: that handler's `push`, `replaceWith`, and `fallback` then do
+nothing. Island cleanups should not navigate: they run inside the swap.
+
+Any failure loads the requested URL as a document, so the person sees what a
+reload shows: a status other than 200 such as an expired session's 403, a
+response that is not HTML, a redirect out of the scope, a different
+signature, another `<base>`, a new build with another module prefix or other
+stylesheets, or a module that fails. Inline scripts in the fetched page do not
+run; give page data to islands as props.
+
+Back and Forward are not swapped yet. Install marks the current entry when
+its state is null; non-null island state stays untouched. Swap entries carry
+their page's marker, and a reload keeps it. A `popstate` onto an entry with
+the shown page's marker, or onto a fresh hash-link entry, stays with islands.
+An unmarked entry stays with islands only on a page loaded normally that has
+not swapped yet; after a swap or a reload it loads the document. An island
+that replaces an entry's state with its own drops the marker, so returning
+to that entry later loads the document.
+
+A swap does not fire `beforeunload`; an island with unsaved input must prevent
+in-scope link clicks itself (for example, a document capture listener calling
+`preventDefault()`, which the swap honours) or mark the links with
+`data-nav-document`.
 
 ## Transient UI state
 
