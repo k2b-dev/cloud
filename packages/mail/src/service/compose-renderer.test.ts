@@ -85,6 +85,12 @@ describe("Markdown blank lines", () => {
     expect(result.text).not.toContain("\u00a0");
   });
 
+  test.each([0, 1, 2])("counts the separator newline consumed by an info block for %i extra blank lines", (extra) => {
+    const result = content(`:::note\na\n:::${"\n".repeat(extra + 2)}b`);
+    expect(spacers(result.html)).toHaveLength(extra);
+    expect(result.text).toBe(`Note:\n\na${"\n".repeat(extra + 2)}b`);
+  });
+
   test.each([
     ["> a\n>\n>\n> b", "> a\n> \n> \n> b", 1],
     ["> > a\n> >\n> >\n> > b", "> > a\n> > \n> > \n> > b", 2],
@@ -104,6 +110,33 @@ describe("Markdown blank lines", () => {
     expect(spacers(result.html)).toHaveLength(1);
     expect(result.html).toMatch(/<\/blockquote>\s*<p[^>]*>after<\/p>/);
     expect(result.text).toBe("> a\n> \n> \n> b\n\nafter");
+  });
+
+  test("preserves trailing code newlines in a quote with an unclosed fence", () => {
+    const result = content("> a\n>\n>\n> ```\n> code\n>\n>\n>");
+    expect(result.html).toMatch(/<pre\b[^>]*>code\n\n<\/pre>/);
+    expect(spacers(result.html)).toHaveLength(1);
+  });
+
+  test.each([
+    ["---", /<hr\b[^>]*>/],
+    ["# h", /<h1\b[^>]*>h<\/h1>/],
+  ] as const)("keeps an interrupting block outside a rewritten quote: %s", (block, html) => {
+    const renderMarkdown = spyOn(markdown, "renderSync");
+    try {
+      const result = content(`> a\n>\n>\n> b\n${block}`);
+      const quote = result.html.match(/<blockquote\b[^>]*>[\s\S]*?<\/blockquote>/)?.[0] ?? "";
+      expect(spacers(quote)).toHaveLength(1);
+      expect(spacers(result.html)).toHaveLength(1);
+      // Mail's sanitizer strips hr; check the Markdown result before sanitization too.
+      const fragment = renderMarkdown.mock.results[0]?.value;
+      if (typeof fragment !== "string") throw new Error("Missing rendered Markdown");
+      expect(fragment.slice(fragment.indexOf("</blockquote>") + "</blockquote>".length)).toMatch(html);
+      expect(quote).not.toMatch(html);
+      if (block === "# h") expect(result.html).toMatch(/<\/blockquote>\s*<h1\b[^>]*>h<\/h1>/);
+    } finally {
+      renderMarkdown.mockRestore();
+    }
   });
 
   test("preserves spacing between a heading and a list", () => {

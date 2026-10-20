@@ -505,14 +505,16 @@ const withBlankLinePlaceholders = (source: string, placeholder: string, quietBef
         next.type !== "def" &&
         (!topLevel || offset !== quietBefore)
       ) {
-        let extra = -2;
+        const trailingNewlines = previous.raw.match(/\n*$/)?.[0].length ?? 0;
+        let extra = trailingNewlines - 2;
+        if (count + extra > MAX_EMAIL_HTML_ELEMENTS) return null;
         for (const character of raw) {
           if (character === "\n") extra += 1;
           if (count + extra > MAX_EMAIL_HTML_ELEMENTS) return null;
         }
         if (extra > 0) {
           count += extra;
-          raw = `\n\n${`${placeholder}\n\n`.repeat(extra)}`;
+          raw = `${"\n".repeat(Math.max(0, 2 - trailingNewlines))}${`${placeholder}\n\n`.repeat(extra)}`;
         }
       } else if (token.type === "blockquote" && token.tokens && token.tokens.map((inner) => inner.raw).join("") === token.text) {
         const beforeQuote = count;
@@ -521,7 +523,6 @@ const withBlankLinePlaceholders = (source: string, placeholder: string, quietBef
         if (count > beforeQuote) {
           raw =
             inner
-              .replace(/\n+$/, "")
               .split("\n")
               .map((line) => (line ? `> ${line}` : ">"))
               .join("\n") + (raw.match(/\n*$/)?.[0] ?? "");
