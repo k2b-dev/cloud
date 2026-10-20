@@ -408,6 +408,21 @@
   container: help-shell / inline-size;
 }
 
+/* The panel keeps its start and its server article in the document while hidden, so Back needs no client render.
+   Its flex and grid surfaces would otherwise override the browser's hidden rule. The start's own wrapper adds no box,
+   so its sections keep the start's gap. */
+.help-shell[data-surface="panel"] [hidden] {
+  display: none;
+}
+
+.help-shell[data-surface="panel"] [data-help-start-content] {
+  display: contents;
+}
+
+.help-shell[data-surface="panel"] [data-help-start-content][hidden] {
+  display: none;
+}
+
 .help-measure {
   width: 100%;
   max-width: 56.5rem;
