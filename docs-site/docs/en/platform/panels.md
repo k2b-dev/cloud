@@ -258,8 +258,8 @@ already seen.
 - **A failed save** keeps the question open with **Not saved. Try again.**, and
   nothing is shared until the person answers again.
 - **Other pages and tabs** that are already open follow the new answer on their
-  next page load. A page restored from the browser's back/forward cache stops
-  sharing until it has read the answers again.
+  next page load or in-app page change. A page restored from the browser's
+  back/forward cache stops sharing until it has read the answers again.
 - Context goes only to the selected provider's page below its panel path; a
   frame that navigated elsewhere receives none. A provider page that the
   browser restores from the panel's own history keeps the context it had

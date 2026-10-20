@@ -58,6 +58,7 @@ function BarNavigation(props: { currentPath: string }) {
     window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
     window.addEventListener("popstate", syncLocation);
     window.addEventListener("ssr:nav-popstate", syncLocation);
+    window.addEventListener("ssr:nav-swapped", sync);
     window.addEventListener("ssr:nav-swapped", syncLocation);
     window.addEventListener("hashchange", syncLocation);
     // In-page navigation (`@k2b/ssr/nav`) commits with pushState or replaceState, which only the Navigation API
@@ -67,6 +68,7 @@ function BarNavigation(props: { currentPath: string }) {
       window.removeEventListener(RAIL_PREFERENCES_EVENT, sync);
       window.removeEventListener("popstate", syncLocation);
       window.removeEventListener("ssr:nav-popstate", syncLocation);
+      window.removeEventListener("ssr:nav-swapped", sync);
       window.removeEventListener("ssr:nav-swapped", syncLocation);
       window.removeEventListener("hashchange", syncLocation);
       window.navigation?.removeEventListener("currententrychange", syncLocation);

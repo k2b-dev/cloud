@@ -231,6 +231,9 @@ swap between each other.
 Back and Forward restore the page scroller; a link opens the next page at the
 top, or at its hash target.
 
+The panel follows the arriving page's consent answer, and the rail and phone
+tab bar follow its rail preferences.
+
 `focusMode` pages and links outside the current app route prefix load a
 document. A changed user, session kind, locale, page theme, panel provider set,
 visible navigation app set, or build also loads a document. Every swap fetch

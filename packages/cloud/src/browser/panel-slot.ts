@@ -86,9 +86,14 @@ export function installPanelSlot(): () => void {
     const arriving = readShellData()?.panel;
     // The arriving page carries the server's current consent answer, as a reload would; a newer revision wins.
     const consent = arriving?.consent;
-    if (consent && consent.revision > (revisions.get(consent.provider) ?? 0)) {
-      answers.set(consent.provider, consent.allowed);
-      revisions.set(consent.provider, consent.revision);
+    if (consent) {
+      if (consent.revision > (revisions.get(consent.provider) ?? 0)) {
+        answers.set(consent.provider, consent.allowed);
+        revisions.set(consent.provider, consent.revision);
+      } else if (consent.allowed !== answers.get(consent.provider) || consent.revision !== revisions.get(consent.provider)) {
+        // An older or unreadable answer (`allowed: null`) is what a reload would show: stop and read again.
+        void revalidate();
+      }
     }
     base = arriving?.context ?? null;
     if (base) {
@@ -374,7 +379,7 @@ export function installPanelSlot(): () => void {
     clearTimer();
     slot.dataset.state = "ready";
     if (status) status.textContent = "";
-    if (allowed()) {
+    if (allowed() && context) {
       sendContext();
       return;
     }

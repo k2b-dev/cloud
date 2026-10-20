@@ -45,6 +45,7 @@ export default function RailApps(props: { apps: RailApp[]; settings: RailSnapsho
     window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
     window.addEventListener("popstate", syncLocation);
     window.addEventListener("ssr:nav-popstate", syncLocation);
+    window.addEventListener("ssr:nav-swapped", sync);
     window.addEventListener("ssr:nav-swapped", syncLocation);
     window.addEventListener("hashchange", syncLocation);
     onCleanup(() => {
@@ -52,6 +53,7 @@ export default function RailApps(props: { apps: RailApp[]; settings: RailSnapsho
       window.removeEventListener(RAIL_PREFERENCES_EVENT, sync);
       window.removeEventListener("popstate", syncLocation);
       window.removeEventListener("ssr:nav-popstate", syncLocation);
+      window.removeEventListener("ssr:nav-swapped", sync);
       window.removeEventListener("ssr:nav-swapped", syncLocation);
       window.removeEventListener("hashchange", syncLocation);
     });

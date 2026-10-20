@@ -2,8 +2,9 @@ import { afterEach, expect, jest, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import type { PanelPageContext } from "../contracts/panel-context";
+import type { PanelConsentSnapshot, PanelPageContext } from "../contracts/panel-context";
 import { isPanelContextMessage, PANEL_CONTEXT_PARAM } from "../contracts/panel-context-plain";
+import { readShellData } from "../ssr/shell-data";
 import { type ContextAwareCommand, registerContextAwareCommand } from "./command-bridge";
 
 if (isServer) test.skip("requires browser conditions and solid-dom-preload", () => {});
@@ -499,6 +500,108 @@ else {
   const commandBurst = () => {
     for (let i = 0; i < 20; i++) window.dispatchEvent(new Event(COMMANDS_CHANGED));
   };
+
+  test("a lazy installer clears the retained frame's URL context when the arriving page disables sharing", () => {
+    const h = setup(
+      1440,
+      true,
+      true,
+      undefined,
+      false,
+      (id) => `/app/${id}/panel?${new URLSearchParams({ [PANEL_CONTEXT_PARAM]: JSON.stringify(pageContext) })}`,
+      { context: null, consent: false, providerIds: ["core", "fixture"] },
+    );
+    const shown = new URL(h.frame().src);
+    const post = mock((_data: unknown, _origin: string) => {});
+    showDocument(h.frame(), {
+      postMessage: post,
+      location: shown,
+      history: {
+        state: null,
+        replaceState: (_state: unknown, _unused: string, url: string) => {
+          shown.href = new URL(url, shown).href;
+        },
+      },
+    });
+    ready(h);
+    expect(post.mock.calls.map(([data]) => data).filter(isPanelContextMessage)).toEqual([
+      { type: "cloud.panel.context", v: 1, context: null },
+    ]);
+    expect(shown.searchParams.has(PANEL_CONTEXT_PARAM)).toBe(false);
+    if (!h.serverFrame) throw new Error("Expected an SSR iframe");
+    expect(h.frame()).toBe(h.serverFrame);
+  });
+
+  test.each([
+    { provider: "fixture", allowed: null, revision: 0 },
+    { provider: "fixture", allowed: null, revision: 1 },
+    { provider: "fixture", allowed: false, revision: 0 },
+    { provider: "fixture", allowed: false, revision: 1 },
+    { provider: "fixture", allowed: true, revision: 0 },
+  ] satisfies PanelConsentSnapshot[])(
+    "a swapped page's differing consent snapshot stops sharing until a fresh read: %j",
+    async (consent) => {
+      const read = Promise.withResolvers<Response>();
+      const fetch = spyOn(globalThis, "fetch").mockReturnValue(read.promise);
+      fetchSpy = fetch;
+      const h = setupContext(pageContext, true, true);
+      h.open();
+      const post = spyFrame(h);
+      ready(h);
+      const contexts = () => post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
+      expect(contexts().at(-1)?.context).toEqual(pageContext);
+      const data = readShellData();
+      if (!data?.panel) throw new Error("Expected panel shell data");
+      const root = document.createElement("div");
+      root.setAttribute("data-nav-root", "");
+      const script = document.getElementById("cloud-shell-data");
+      if (!script) throw new Error("Expected shell data script");
+      const next = { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] };
+      const arriving = script.cloneNode();
+      arriving.textContent = JSON.stringify({ ...data, panel: { ...data.panel, context: next, consent } });
+      root.append(arriving);
+      script.replaceWith(root);
+      try {
+        window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+        expect(contexts().at(-1)?.context).toBeNull();
+        expect(contexts().some((message) => message.context?.help?.includes("next-help"))).toBe(false);
+        expect(h.slot.dataset.contextAllowed).toBe("false");
+        await tick();
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch.mock.calls[0]?.[0]).toBe("/api/me/panel-consent");
+        expect(contexts().at(-1)?.context).toBeNull();
+        read.resolve(Response.json({ answers: { fixture: { allowed: true, revision: 2 } } }));
+        await tick();
+        expect(contexts().at(-1)?.context).toEqual({ ...next, pageId: pageContext.pageId, seq: 1 });
+      } finally {
+        read.resolve(Response.json({ answers: {} }));
+        await tick();
+      }
+    },
+  );
+
+  test("a swapped page with the same consent answer shares at once and reads nothing", () => {
+    const fetch = spyOn(globalThis, "fetch");
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    const data = readShellData();
+    const script = document.getElementById("cloud-shell-data");
+    if (!data?.panel || !script) throw new Error("Expected panel shell data");
+    const root = document.createElement("div");
+    root.setAttribute("data-nav-root", "");
+    const arriving = script.cloneNode();
+    const next = { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] };
+    arriving.textContent = JSON.stringify({ ...data, panel: { ...data.panel, context: next } });
+    root.append(arriving);
+    script.replaceWith(root);
+    window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+    const contexts = post.mock.calls.map(([message]) => message).filter(isPanelContextMessage);
+    expect(contexts.at(-1)?.context).toEqual({ ...next, pageId: pageContext.pageId, seq: 1 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
 
   test("a lazy installer keeps the SSR frame's document identity after a page swap", () => {
     const initial = { ...pageContext, seq: 7, help: ["mail-help"] };

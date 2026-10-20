@@ -303,6 +303,9 @@ export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
   restoreArrivingPage();
   window.addEventListener("ssr:nav-swapped", restoreArrivingPage);
   const onCapture = () => rememberPage();
+  const onNavigate = (event: NavigateEvent) => {
+    if (event.navigationType === "traverse") rememberPage();
+  };
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter") rememberPage();
   };
@@ -316,6 +319,7 @@ export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
   document.addEventListener("keydown", onKey, true);
   document.addEventListener("click", onClick);
   window.addEventListener("pagehide", onCapture);
+  window.navigation?.addEventListener("navigate", onNavigate);
   return () => {
     window.removeEventListener("ssr:nav-swapped", restoreArrivingPage);
     stopPageUp();
@@ -323,5 +327,6 @@ export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
     document.removeEventListener("keydown", onKey, true);
     document.removeEventListener("click", onClick);
     window.removeEventListener("pagehide", onCapture);
+    window.navigation?.removeEventListener("navigate", onNavigate);
   };
 };

@@ -274,6 +274,8 @@ else {
       expect(row.dataset.trail).toBe("up");
       expect(row.querySelector(".k2b-page-title__text")?.textContent).toBe("One");
       expect(row.querySelector("[data-k2b-page-trail-up]")?.getAttribute("href")).toBe("/app/inventory/projects");
+      // The arriving island published its trail during mount, before the committed swap signal.
+      window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: row } }));
       layout.update({ breadcrumbs: [{ title: "Inventory", href: "/app/inventory" }] });
       expect(row.dataset.trail).toBe("title");
       expect(row.querySelector(".k2b-page-title__text")?.textContent).toBe("Inventory");

@@ -151,18 +151,12 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
     onMount(() => {
       const messages = t();
       const disposeTitles = installPageTitleController(document);
-      let disposeFollow = followPageTrail(document);
-      const swapped = () => {
-        disposeFollow();
-        disposeFollow = followPageTrail(document);
-      };
-      window.addEventListener("ssr:nav-swapped", swapped);
+      const disposeFollow = followPageTrail(document);
       const disposeRuntime = installPageTrailRuntime((page) => ({
         title: messages.pageUp({ page }),
         description: messages.pageUpDescription,
       }));
       onCleanup(() => {
-        window.removeEventListener("ssr:nav-swapped", swapped);
         disposeTitles();
         disposeFollow();
         disposeRuntime();

@@ -47,6 +47,39 @@ else {
   const { rememberPage, upDestination, goUp, installPageTrailRuntime } = modules!.runtime;
   const labels = (page: string) => ({ title: `Up to ${page}`, description: "Up" });
 
+  test("a history traversal remembers the departing page's current main scroll and stops after disposal", () => {
+    const tab = open();
+    const navigation = new tab.dom.window.EventTarget();
+    Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+    const main = document.createElement("main");
+    main.className = "layout-content-main";
+    document.body.append(main);
+    tab.visit("/app/things?q=red");
+    main.scrollTop = 40;
+    rememberPage();
+    const stop = installPageTrailRuntime(labels);
+    const navigate = (navigationType: string) => {
+      const event = new tab.dom.window.Event("navigate");
+      Object.defineProperty(event, "navigationType", { value: navigationType });
+      navigation.dispatchEvent(event);
+    };
+    const memory = () => JSON.parse(sessionStorage.getItem("cloud:page-trail") ?? "null");
+    try {
+      main.scrollTop = 240;
+      navigate("push");
+      expect(memory().visits).toEqual([{ url: "/app/things?q=red", regions: [{ key: "@main", top: 40, left: 0 }], up: [] }]);
+      navigate("traverse");
+      expect(memory().visits).toEqual([{ url: "/app/things?q=red", regions: [{ key: "@main", top: 240, left: 0 }], up: [] }]);
+      stop();
+      main.scrollTop = 360;
+      navigate("traverse");
+      expect(memory().visits[0].regions).toEqual([{ key: "@main", top: 240, left: 0 }]);
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
   test("the way up swaps in scope and loads destinations outside the scope", async () => {
     const nav = await import("@k2b/ssr/nav");
     const swap = spyOn(nav, "swapPage").mockResolvedValue(undefined);
