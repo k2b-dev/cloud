@@ -26,6 +26,7 @@ type FixtureOptions = {
   dateline?: boolean;
   nearMe?: boolean;
   tallTile?: boolean;
+  growTile?: boolean;
   longCredit?: boolean;
 };
 // Shared data and tree, without compiled JSX closures: SSR and the browser create the very same fixture.
@@ -64,7 +65,7 @@ function fixtureTree(
   return [
     createComponent(MapView, {
       height: 400,
-      class: options.tallTile ? "tall-tile" : undefined,
+      class: options.tallTile || options.growTile ? "tall-tile" : undefined,
       style: { light: options.stylePath, dark: options.darkPath ?? "/dark.json" },
       markers,
       get selectedId() {
@@ -128,6 +129,19 @@ function fixtureTree(
         children: marker.label,
       }),
     ),
+    options.growTile
+      ? createComponent(Button, {
+          class: "host-more",
+          variant: "text",
+          children: "More details",
+          onClick: (event) => {
+            // Late details, as a host's own widget would load them: no selection or map prop changes, only the tile's size.
+            const tile = event.currentTarget.parentElement?.querySelector(".k2b-map-view__info");
+            const marker = markers.find((marker) => marker.id === selectedId());
+            if (tile && marker) tile.textContent = [marker.label, "Open until 18:00", "Category", "Street 1", "example.org"].join("\n");
+          },
+        })
+      : undefined,
   ];
 }
 function measureFrame() {
@@ -254,6 +268,7 @@ const server = Bun.serve({
       dateline: url.searchParams.has("dateline"),
       nearMe: url.searchParams.has("nearMe"),
       tallTile: url.searchParams.has("tallTile"),
+      growTile: url.searchParams.has("growTile"),
       longCredit: url.searchParams.has("longCredit"),
     };
     const html = renderToString(() => fixtureTree({ MapView, Button, createComponent, createSignal }, options));
@@ -416,6 +431,28 @@ test("the info tile never covers the selected pin", async () => {
     await ready(page);
     await page.locator(".host-choice").filter({ hasText: "Start" }).click();
     await settled(page);
+    const visible = await page.evaluate(() => {
+      const pin = document.querySelector('.k2b-map-view__pin[data-id="a"]')!;
+      const r = pin.getBoundingClientRect();
+      return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest(".k2b-map-view__pin") === pin;
+    });
+    expect(visible).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("the selected pin stays clear when the info tile grows later", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?growTile`);
+    await ready(page);
+    await page.locator(".host-choice").filter({ hasText: "Start" }).click();
+    await settled(page);
+    expect(await page.locator(".k2b-map-view__info").textContent()).toBe("Start");
+    await page.locator(".host-more").click();
+    await settled(page);
+    expect(await page.locator(".k2b-map-view__info").textContent()).toBe("Start\nOpen until 18:00\nCategory\nStreet 1\nexample.org");
     const visible = await page.evaluate(() => {
       const pin = document.querySelector('.k2b-map-view__pin[data-id="a"]')!;
       const r = pin.getBoundingClientRect();

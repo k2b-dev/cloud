@@ -84,6 +84,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   let generation = 0;
   let intersection: IntersectionObserver | undefined;
   let resize: ResizeObserver | undefined;
+  let infoResize: ResizeObserver | undefined;
   const themes: MutationObserver[] = [];
 
   // From the person's first camera change on, the camera stays theirs; pin separation follows its zoom.
@@ -214,6 +215,36 @@ export function MapView(props: MapViewProps): JSX.Element {
       fail();
     }
   };
+  const clearSelectedPin = () => {
+    const marker = selected();
+    if (!marker || state() !== "ready" || !map) return;
+    const f = frame();
+    const lon = marker.point.lon + (f ? worldCopy(map, f) * 360 : 0);
+    const p = map.project([lon, marker.point.lat]);
+    const offset = f ? pinOffsets(sortMarkers(props.markers ?? []), f, zoomFactor(), props.ownLocation?.point).get(marker.id) : undefined;
+    const x = p.x + (offset?.dx ?? 0);
+    const y = p.y + (offset?.dy ?? 0);
+    const w = root.clientWidth;
+    const h = root.clientHeight;
+    const tile = info.getBoundingClientRect();
+    const bounds = root.getBoundingClientRect();
+    const tileTop = tile.top - bounds.top - 8;
+    const covered =
+      tile.height > 0 &&
+      x >= tile.left - bounds.left - 8 &&
+      x <= tile.right - bounds.left + 8 &&
+      y >= tileTop &&
+      y <= tile.bottom - bounds.top + 8;
+    if (!covered && x >= 16 && x <= w - 16 && y >= 16 && y <= h - 16) return;
+    touch();
+    // Put the drawn pin, offset included, in the free band above the tile.
+    const targetX = w / 2;
+    const targetY = tile.height > 0 ? tileTop / 2 : h / 2;
+    const target = map.unproject([x + w / 2 - targetX, y + h / 2 - targetY]);
+    const camera = { center: [target.lng, target.lat] satisfies [number, number] };
+    if (prefersReducedMotion()) map.jumpTo(camera);
+    else map.easeTo(camera);
+  };
   onMount(() => {
     mounted = true;
     const theme = () => setDark(!!root.closest('.dark, .k2b-dark, [data-theme="dark"]'));
@@ -230,6 +261,8 @@ export function MapView(props: MapViewProps): JSX.Element {
       refit();
     });
     resize.observe(root);
+    infoResize = new ResizeObserver(clearSelectedPin);
+    infoResize.observe(info);
     const enter = () => {
       visible = true;
       intersection?.disconnect();
@@ -272,42 +305,15 @@ export function MapView(props: MapViewProps): JSX.Element {
     }
   });
   createEffect(() => {
-    const marker = selected();
-    if (!marker || state() !== "ready" || !map) return;
-    untrack(() => {
-      if (!map) return;
-      const f = frame();
-      const lon = marker.point.lon + (f ? worldCopy(map, f) * 360 : 0);
-      const p = map.project([lon, marker.point.lat]);
-      const offset = f ? pinOffsets(sortMarkers(props.markers ?? []), f, zoomFactor(), props.ownLocation?.point).get(marker.id) : undefined;
-      const x = p.x + (offset?.dx ?? 0);
-      const y = p.y + (offset?.dy ?? 0);
-      const w = root.clientWidth;
-      const h = root.clientHeight;
-      const tile = info.getBoundingClientRect();
-      const bounds = root.getBoundingClientRect();
-      const tileTop = tile.top - bounds.top - 8;
-      const covered =
-        tile.height > 0 &&
-        x >= tile.left - bounds.left - 8 &&
-        x <= tile.right - bounds.left + 8 &&
-        y >= tileTop &&
-        y <= tile.bottom - bounds.top + 8;
-      if (!covered && x >= 16 && x <= w - 16 && y >= 16 && y <= h - 16) return;
-      touch();
-      // Put the drawn pin, offset included, in the free band above the tile.
-      const targetX = w / 2;
-      const targetY = tile.height > 0 ? tileTop / 2 : h / 2;
-      const target = map.unproject([x + w / 2 - targetX, y + h / 2 - targetY]);
-      const camera = { center: [target.lng, target.lat] satisfies [number, number] };
-      if (prefersReducedMotion()) map.jumpTo(camera);
-      else map.easeTo(camera);
-    });
+    selected();
+    state();
+    untrack(clearSelectedPin);
   });
   onCleanup(() => {
     disposed = true;
     intersection?.disconnect();
     resize?.disconnect();
+    infoResize?.disconnect();
     for (const observer of themes) observer.disconnect();
     removeMap();
   });

@@ -65,12 +65,14 @@ export function MapGeometry(
 ): JSX.Element {
   const messages = useMapViewMessages();
   const markers = createMemo(() => sortMarkers(props.markers ?? []));
+  const markerIds = createMemo(() => markers().map((marker) => marker.id));
+  const markersById = createMemo(() => new Map(markers().map((marker) => [marker.id, marker])));
   const offsets = createMemo(() => pinOffsets(markers(), props.frame, props.zoomFactor, props.ownLocation?.point));
   const hitRadii = createMemo(() => pinHitRadii(markers(), props.frame, offsets(), props.zoomFactor));
   // Input order decides the fallback selection, as in MapView; sorting is only for drawing and keys.
   const selected = createMemo(() => selectedMarker(props.markers ?? [], props.selectedId));
-  const keydown = (event: KeyboardEvent & { currentTarget: HTMLButtonElement }, marker: MapViewMarker) => {
-    const index = markers().indexOf(marker);
+  const keydown = (event: KeyboardEvent & { currentTarget: HTMLButtonElement }, id: string) => {
+    const index = markerIds().indexOf(id);
     let next: number;
     switch (event.key) {
       case "ArrowRight":
@@ -155,47 +157,48 @@ export function MapGeometry(
         )}
       </Show>
       <div class="k2b-map-view__pins" role="group" aria-label={messages().pins}>
-        <For each={markers()}>
-          {(marker) => {
-            const name = () => (marker.mark === undefined ? marker.label : `${marker.mark} ${marker.label}`);
+        <For each={markerIds()}>
+          {(id) => {
+            const marker = () => markersById().get(id)!;
+            const name = () => (marker().mark === undefined ? marker().label : `${marker().mark} ${marker().label}`);
             const style = () => ({
-              ...positionStyle(marker.point, props.frame),
-              "--k2b-map-pin-dx": `${mapNumber(offsets().get(marker.id)?.dx ?? 0)}px`,
-              "--k2b-map-pin-dy": `${mapNumber(offsets().get(marker.id)?.dy ?? 0)}px`,
-              "--k2b-map-pin-hit": `${mapNumber(hitRadii().get(marker.id) ?? 22)}px`,
+              ...positionStyle(marker().point, props.frame),
+              "--k2b-map-pin-dx": `${mapNumber(offsets().get(marker().id)?.dx ?? 0)}px`,
+              "--k2b-map-pin-dy": `${mapNumber(offsets().get(marker().id)?.dy ?? 0)}px`,
+              "--k2b-map-pin-hit": `${mapNumber(hitRadii().get(marker().id) ?? 22)}px`,
             });
             if (!props.interactive)
               return (
                 <span
                   class="k2b-map-view__pin"
-                  data-id={marker.id}
-                  data-tone={marker.tone ?? "accent"}
-                  data-stop={isStop(marker) || undefined}
-                  data-drop={marker.mark === undefined || undefined}
-                  data-selected={selected()?.id === marker.id || undefined}
+                  data-id={marker().id}
+                  data-tone={marker().tone ?? "accent"}
+                  data-stop={isStop(marker()) || undefined}
+                  data-drop={marker().mark === undefined || undefined}
+                  data-selected={selected()?.id === marker().id || undefined}
                   style={style()}
                   role="img"
                   aria-label={name()}
                 >
-                  <span aria-hidden="true">{marker.mark}</span>
+                  <span aria-hidden="true">{marker().mark}</span>
                 </span>
               );
             return (
               <button
                 type="button"
                 class="k2b-map-view__pin"
-                data-id={marker.id}
-                data-tone={marker.tone ?? "accent"}
-                data-stop={isStop(marker) || undefined}
-                data-drop={marker.mark === undefined || undefined}
+                data-id={marker().id}
+                data-tone={marker().tone ?? "accent"}
+                data-stop={isStop(marker()) || undefined}
+                data-drop={marker().mark === undefined || undefined}
                 style={style()}
                 aria-label={name()}
-                aria-pressed={selected()?.id === marker.id}
-                tabIndex={(selected() ?? markers()[0])?.id === marker.id ? 0 : -1}
-                onKeyDown={(event) => keydown(event, marker)}
-                onClick={() => props.onSelect?.(marker.id)}
+                aria-pressed={selected()?.id === marker().id}
+                tabIndex={(selected() ?? markers()[0])?.id === marker().id ? 0 : -1}
+                onKeyDown={(event) => keydown(event, id)}
+                onClick={() => props.onSelect?.(marker().id)}
               >
-                <span aria-hidden="true">{marker.mark}</span>
+                <span aria-hidden="true">{marker().mark}</span>
               </button>
             );
           }}

@@ -62,7 +62,7 @@ style declares its own attribution.
 | `fit` | `all` (default) fits all vertices and location; `markers` fits pins, falling back to all geometry when there are no pins. |
 | `selectedId` | Controlled selection; otherwise the first marker with `selected: true` is selected. |
 | `onSelect` | Receives a marker ID from a pin click or keyboard selection. |
-| `infoTile` | Renders the selected marker at the bottom left above the scale bar. It lies over the map, so keep it short; a host with its own list can show details there instead. When the tile would cover the selected pin, the live map moves the pin into the free space above it. |
+| `infoTile` | Renders the selected marker at the bottom left above the scale bar. It lies over the map, so keep it short; a host with its own list can show details there instead. When the tile would cover the selected pin, also after its content grows, the live map moves the pin into the free space above it. |
 | `notice` | Host message above the map at the top left. |
 | `empty` | Host sentence centered when there is no geometry. |
 | `onLocate` | Shows the location button. The host obtains and supplies the location. |
@@ -135,7 +135,7 @@ and `--k2b-map-accent-on`, so marks keep 4.5:1 contrast.
 
 Pins are named buttons in a labelled group. The selected pin, or the first
 pin, is the group's tab stop. Arrow keys wrap through pins; Home and End select
-the first and last. These keys move focus and call `onSelect`. Enter, Space,
+the first and last. These keys move focus and call `onSelect`. Pins are keyed by `id`, so a refresh with new marker objects keeps the focused pin. Enter, Space,
 and click activate the pin. Keep a visible focus ring and connect selection
 to the host list through `selectedId`.
 
