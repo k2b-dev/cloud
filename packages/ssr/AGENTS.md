@@ -203,7 +203,10 @@ A swap is one transaction, and its order is the contract:
    swap, `popstate`, a native same-tab link or form submission, and the
    history helpers (`navigate()`, `documentNavigate()`, `navigateTo()`,
    `refreshCurrentPath()`) abort a pending swap, and so does a `Link` when it
-   takes an enhanced click.
+   takes an enhanced click. In turn, a swap that starts later makes the older
+   history work do nothing: a `navigate()` commit that a view transition
+   deferred, and a pending `Link` handler's `push`, `replaceWith`, and
+   `fallback`.
 2. Fetch the target as HTML with the abort signal. Check status 200, HTML,
    final URL in scope, shell signature and scope, the loader's
    `data-ssr-assets` prefix, the `<base>` element, and the head stylesheets

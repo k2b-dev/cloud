@@ -167,8 +167,9 @@ old column. Then it disposes the old islands, pushes history, replaces the
 column, sets the title, mounts the new islands, focuses the first heading of
 the column, and announces the title. A newer navigation cancels a pending
 swap, also a native form submission, an island's `Link` click, or a
-`navigate()` call. Island cleanups should not navigate: they run inside the
-swap.
+`navigate()` call. A swap that starts while a `Link` handler still loads
+wins as well: that handler's `push`, `replaceWith`, and `fallback` then do
+nothing. Island cleanups should not navigate: they run inside the swap.
 
 Any failure loads the requested URL as a document, so the person sees what a
 reload shows: a status other than 200 such as an expired session's 403, a

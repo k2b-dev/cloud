@@ -331,7 +331,9 @@ the declared attributes, mounts the new islands, scrolls to the top or to
 the hash, focuses the first heading of the column, and announces the title in
 a polite live region. A newer navigation aborts a pending swap: another swap,
 Back or Forward, a native link or form submission, an enhanced `Link` click,
-or a call to `navigate()` or `documentNavigate()`.
+or a call to `navigate()` or `documentNavigate()`. A swap that starts while
+a `Link` handler still loads wins as well: that handler's `push`,
+`replaceWith`, and `fallback` then do nothing.
 
 Any failure loads the requested URL as a normal document: a status other than
 200, a response that is not HTML, a redirect out of the scope, a missing shell
