@@ -263,7 +263,10 @@ island scrolled meanwhile. An island that renders the entry asynchronously
 restores its own scroll afterwards, as the browser's restoration would not
 wait for it either. A push through `navigate()` records the departure scroll
 the helper captured before the island changed the page. Cross-page
-and unmarked entries stopImmediatePropagation and fetch the arriving URL in
+and unmarked entries first dispatch `ssr:nav-popstate` on window with the
+PopStateEvent as `detail`, so history owners that must see every traversal
+(`@k2b/ui` dialog-core) still do when nav registered first, then
+stopImmediatePropagation and fetch the arriving URL in
 the swap transaction without pushing history. Commit and reload recovery must
 still own that entry (same URL, Navigation API key, and no newer push or
 URL-changing replace), even after a replace that dropped its marker; a different final

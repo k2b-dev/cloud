@@ -1891,6 +1891,31 @@ test("an empty replaceState URL keeps a pending traversal to a hashed URL", asyn
   expect(window.history.state[markerKey]).toEqual({ page: "other", position: 5 });
 });
 
+test("a cross-page traversal is reported as ssr:nav-popstate before nav hides it; a same-page one is not", async () => {
+  install();
+  const reported: unknown[] = [];
+  const report = (event: Event) => reported.push("detail" in event ? event.detail : undefined);
+  window.addEventListener("ssr:nav-popstate", report);
+  try {
+    const page = window.history.state;
+    window.history.pushState(null, "", "/app/old?tab=1");
+    const same = new PopStateEvent("popstate", { state: page });
+    History.prototype.replaceState.call(window.history, page, "", "/app/old");
+    window.dispatchEvent(same);
+    expect(reported).toEqual([]);
+    spyOn(globalThis, "fetch").mockResolvedValue(response());
+    const done = swapped("new");
+    const foreign = { [markerKey]: { page: "other", position: 2 } };
+    History.prototype.replaceState.call(window.history, foreign, "", "/app/new");
+    const cross = new PopStateEvent("popstate", { state: foreign });
+    window.dispatchEvent(cross);
+    expect(reported).toEqual([cross]);
+    await done;
+  } finally {
+    window.removeEventListener("ssr:nav-popstate", report);
+  }
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;

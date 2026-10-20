@@ -410,6 +410,12 @@ export function installPageSwap(): () => void {
     void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key, moves: state.moves });
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
+  const claim = (event: PopStateEvent): void => {
+    decisions.set(event, "nav");
+    // History owners that must see every traversal, like @k2b/ui dialogs, may have registered after nav.
+    window.dispatchEvent(new CustomEvent("ssr:nav-popstate", { detail: event }));
+    event.stopImmediatePropagation();
+  };
   const decide = (event: PopStateEvent): "page" | "nav" => {
     const known = decisions.get(event);
     if (known) {
@@ -444,8 +450,7 @@ export function installPageSwap(): () => void {
       const entry = { page, position: from.entry.position + (fragmentMode === "push" ? 1 : 0) };
       if (page !== undefined) writes.replace.call(window.history, mergeMarker(window.history.state, { ...entry, page }), "");
       if (pending) {
-        decisions.set(event, "nav");
-        event.stopImmediatePropagation();
+        claim(event);
         traverse(entry);
         return "nav";
       }
@@ -474,8 +479,7 @@ export function installPageSwap(): () => void {
       decisions.set(event, "page");
       return "page";
     }
-    decisions.set(event, "nav");
-    event.stopImmediatePropagation();
+    claim(event);
     traverse(entry ?? { position: basePosition() });
     return "nav";
   };

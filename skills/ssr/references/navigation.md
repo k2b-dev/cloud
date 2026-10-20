@@ -66,7 +66,7 @@ onMount(() => onCleanup(installPageSwap()));
 - `swapPage(href, { replace })` swaps from code
 - inline scripts in the fetched page do not run; keep page data in island props
 - Back and Forward swap another server page's column fresh from the server; a failure or a different final URL reloads the arriving URL. Same-page traversals reach `listenPopState()` without a fetch; cross-page traversals stay hidden from island listeners
-- install before raw `popstate` listeners, or replace them with `listenPopState()`, which is safe in any order
+- install before raw `popstate` listeners, or replace them with `listenPopState()`, which is safe in any order; code that keeps its own history bookkeeping listens to `ssr:nav-popstate` on `window` (`detail` is the hidden `PopStateEvent`)
 - keep history state a plain object or `null`; nav keeps caller fields and reserves `"@k2b/ssr/nav"` for `{ page, position, scroll? }`. Non-plain state stays unchanged and unmarked, so returning to it fetches the page or reloads
 - nav restores window and keyed region scroll from the arriving entry; same-page region scroll remains the island's job. `history.scrollRestoration` is `"manual"` while installed; uninstall restores the previous value for the current entry only, entries created meanwhile stay manual; the history wrappers remain but become inert
 - reloads keep page identity, bfcache returns check the arriving entry, and dialog-only traversals remain with the dialog history owner
