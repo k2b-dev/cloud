@@ -1,5 +1,5 @@
 import type { ScrollSnapshot } from "./nav";
-import { disposeIslands, islandsPending, mountIslands } from "./mount";
+import { disposeIslands, islandsPending, mountIslands, onIslandMount } from "./mount";
 import { captureScroll, documentNavigate, restoreScroll, swapKey } from "./nav-history";
 
 type SwapState = {
@@ -254,12 +254,12 @@ export function installPageSwap(): () => void {
   const initial = marker(window.history.state);
   const scrollRestoration = window.history.scrollRestoration;
   window.history.scrollRestoration = "manual";
-  let observer: MutationObserver | undefined;
+  let stopWaiting: (() => void) | undefined;
   const inputs = ["wheel", "touchstart", "keydown", "pointerdown"];
   const stopRestore = (): void => {
-    if (!observer) return;
-    observer.disconnect();
-    observer = undefined;
+    if (!stopWaiting) return;
+    stopWaiting();
+    stopWaiting = undefined;
     for (const input of inputs) window.removeEventListener(input, stopRestore, true);
   };
   const state: SwapState = {
@@ -308,14 +308,12 @@ export function installPageSwap(): () => void {
     if (islandsPending(document)) {
       // Mounting replaces server regions and creates client-only ones; replay once, unless the person took over
       // or history moved to another entry meanwhile.
-      observer = new MutationObserver(() => {
-        if (!observer) return;
+      stopWaiting = onIslandMount(() => {
         if (entryKey(currentEntry(state)) !== entryKey(initial)) return stopRestore();
         if (islandsPending(document)) return;
         stopRestore();
         restoreScroll(snapshot);
       });
-      observer.observe(document.body, { childList: true, subtree: true });
       for (const input of inputs) window.addEventListener(input, stopRestore, { capture: true, passive: true });
     }
   }

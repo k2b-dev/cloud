@@ -6,7 +6,7 @@ import { toJSON } from "seroval";
 import { render } from "solid-js/web";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
-import { disposeIslands, mountIslands } from "../../src/mount";
+import { disposeIslands, mount, mountIslands } from "../../src/mount";
 import { documentNavigate, installPageSwap, Link, listenPopState, navigate, navigateTo, refreshCurrentPath, swapPage } from "../../src/nav";
 import { makeTempRoot } from "../temp-root";
 
@@ -1857,6 +1857,25 @@ test.each(["reload", "back_forward"])("%s restores saved region scroll again aft
   expect(window.scrollTo).toHaveBeenCalledTimes(2);
 });
 
+test("the reload replay notices a last island that renders nothing", async () => {
+  disposeIslands(document);
+  document.querySelector("main")!.innerHTML =
+    `${wrapper("list", scrollId)}<solid-island data-id="nothing" data-props='${JSON.stringify(toJSON({}))}'></solid-island>`;
+  const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
+  window.history.replaceState({ [markerKey]: { page: "reloaded", position: 4, scroll: snapshot } }, "");
+  const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
+  spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
+  install();
+  await import(`${prefix}/${scrollId}.js`);
+  mountIslands(document);
+  await (window as unknown as Window).happyDOM.waitUntilComplete();
+  const region = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
+  expect(region.scrollTop).toBe(0);
+  mount(() => null, 'solid-island[data-id="nothing"]');
+  await (window as unknown as Window).happyDOM.waitUntilComplete();
+  expect(region.scrollTop).toBe(110);
+});
+
 test.each(["wheel", "touchstart", "keydown", "pointerdown"])("%s before initial islands mount cancels the reload replay", async (input) => {
   const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
   const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
@@ -1870,10 +1889,9 @@ test.each(["wheel", "touchstart", "keydown", "pointerdown"])("%s before initial 
     install();
     if (cancel) window.dispatchEvent(new Event(input));
     mountIslands(document);
-    const region = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
-    region.scrollTop = 37;
     await (window as unknown as Window).happyDOM.waitUntilComplete();
-    expect(region.scrollTop).toBe(cancel ? 37 : 110);
+    // The region exists only after mounting, so only the replay can give it the saved position.
+    expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop).toBe(cancel ? 0 : 110);
     uninstall();
   }
 });
@@ -1890,10 +1908,8 @@ test.each([false, true])("a navigate() before the initial islands mount cancels 
   navigate("/app/old?tab=2", { replace, viewTransition: false });
   const calls = (window.scrollTo as ReturnType<typeof mock>).mock.calls.length;
   mountIslands(document);
-  const region = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
-  region.scrollTop = 37;
   await (window as unknown as Window).happyDOM.waitUntilComplete();
-  expect(region.scrollTop).toBe(37);
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!.scrollTop).toBe(0);
   expect((window.scrollTo as ReturnType<typeof mock>).mock.calls.length).toBe(calls);
 });
 

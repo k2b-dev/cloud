@@ -235,7 +235,8 @@ History has one owner while the swap is installed. The reserved state key
 Validate it on read; missing, malformed, and old string markers mean another
 page. Reload and back_forward document loads keep a valid page id and restore
 its saved window and region scroll, then restore it again once the initial
-islands mounted, unless the person scrolled first.
+islands mounted (the mount runtime reports each mount, also one that renders
+nothing), unless the person scrolled first or history moved on.
 
 Install patches this History object's pushState and replaceState once, with a
 Symbol.for flag. The wrappers remain after uninstall but call the originals

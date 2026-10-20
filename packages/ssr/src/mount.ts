@@ -35,6 +35,8 @@ type IslandRegistry = {
   components: Map<string, (element: HTMLElement) => void>;
   /** The dispose function of each mounted wrapper. */
   mounted: WeakMap<HTMLElement, () => void>;
+  /** Internal navigation listeners called after each wrapper mounted, also when it renders nothing. */
+  listeners?: Set<() => void>;
 };
 const islandsKey = Symbol.for("@k2b/ssr/islands");
 const registry = (): IslandRegistry => {
@@ -82,6 +84,7 @@ const mountElement = <Props extends object>(
       element.replaceChildren(defaultFallback(start));
       mounted.set(element, () => element.replaceChildren());
     }
+    for (const listener of [...(registry().listeners ?? [])]) listener();
   };
   start();
 };
@@ -109,6 +112,13 @@ export const mountIslands = (root: ParentNode): void => {
   for (const element of wrappers(root)) {
     components.get(`${element.localName}[data-id="${element.dataset.id}"]`)?.(element);
   }
+};
+
+/** Internal navigation API: call listener after each wrapper mounts, until the returned function stops it. */
+export const onIslandMount = (listener: () => void): (() => void) => {
+  const listeners = (registry().listeners ??= new Set());
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 };
 
 /** Initial scroll restoration must wait for regions that only exist after mounting. */
