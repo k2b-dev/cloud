@@ -25,8 +25,8 @@ const decode = (value: string) => {
     return "";
   }
 };
-const boundedParams = (raw: unknown): Record<string, string> => {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+export const readConsoleParams = (raw: unknown): Record<string, string> | null => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const entries = Object.entries(raw);
   if (
     entries.length > SQL_MAX_PARAMETERS ||
@@ -35,7 +35,7 @@ const boundedParams = (raw: unknown): Record<string, string> => {
         !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name === "base_tz" || typeof value !== "string" || bytes(value) > SQL_PARAMETER_MAX_BYTES,
     )
   )
-    return {};
+    return null;
   return Object.fromEntries(entries);
 };
 export const readWorkspacePathState = (path: string, baseId: string): WorkspaceRouteState => {
@@ -47,12 +47,14 @@ export const readWorkspacePathState = (path: string, baseId: string): WorkspaceR
   if (view === "sources") state.sourceId = decode(id ?? "");
   else if (view && removedViews.has(view)) state.view = "coming-back";
   else if (view === "sql") {
-    state = { view: "sql", sourceId: "", queryId: decode(id ?? ""), sql: "", params: {} };
+    state = { view: "sql", sourceId: "", queryId: decode(id ?? ""), sql: undefined, params: {} };
+    if (!state.queryId) state.sql = "";
     if (`${url.pathname}${url.search}`.length <= MAX_PULSE_WORKSPACE_HREF_LENGTH) {
-      const sql = url.searchParams.get("sql") ?? "";
-      if (!state.queryId && bytes(sql) <= SQL_MAX_BYTES) state.sql = sql;
+      const sql = url.searchParams.get("sql");
+      if (sql !== null && bytes(sql) <= SQL_MAX_BYTES) state.sql = sql;
+      else if (!state.queryId) state.sql = "";
       try {
-        state.params = boundedParams(JSON.parse(url.searchParams.get("params") ?? "{}"));
+        state.params = readConsoleParams(JSON.parse(url.searchParams.get("params") ?? "{}")) ?? {};
       } catch {
         /* Malformed URL data is an empty draft. */
       }
@@ -77,9 +79,9 @@ export const buildPulseWorkspaceHref = ({ baseId, state }: WorkspaceHrefOptions)
   if (state.settings) search.set("settings", state.settings);
   const fallback = `${path}${search.size ? `?${search}` : ""}`;
   if (state.view === "sql") {
-    if (!state.queryId && state.sql && bytes(state.sql) <= SQL_MAX_BYTES) search.set("sql", state.sql);
-    else if (!state.queryId && state.sql) return fallback;
-    const params = boundedParams(state.params);
+    if (state.sql !== undefined && bytes(state.sql) <= SQL_MAX_BYTES) search.set("sql", state.sql);
+    else if (state.sql !== undefined) return fallback;
+    const params = readConsoleParams(state.params) ?? {};
     if (Object.keys(params).length) search.set("params", JSON.stringify(params));
   }
   const href = `${path}${search.size ? `?${search}` : ""}`;

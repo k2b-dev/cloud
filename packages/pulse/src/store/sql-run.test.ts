@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import { createSqlRunner, mapSqlStoreError, scrubSqlMessage } from "./sql-run";
-import { StoreQueryError } from "./client";
 import { createBaseStore } from "./base-store";
+import { StoreQueryError } from "./client";
+import { createSqlRunner, mapSqlStoreError, scrubSqlMessage } from "./sql-run";
+
 const baseId = "00000000-0000-4000-8000-000000000001",
   runId = "00000000-0000-4000-8000-000000000002";
 const connection = async () => ({ url: "http://fixture.invalid", user: "fixture_service", password: "fake-service-password" });
@@ -70,4 +71,36 @@ test("error classes and wrapper positions are mapped; tenant names and credentia
   expect(mapSqlStoreError(new Error("private"), own).code).toBe("STORE_UNAVAILABLE");
   expect(mapSqlStoreError(new Error(), own, AbortSignal.abort()).code).toBe("CANCELLED");
   expect(scrubSqlMessage("plain", own)).toBe("plain");
+});
+
+test("a stalled credential read exhausts admission time and never submits SQL later", async () => {
+  let resolveCredentials!: (value: { user: string; password: string }) => void;
+  const credentials = new Promise<{ user: string; password: string }>((resolve) => {
+    resolveCredentials = resolve;
+  });
+  const slowStore = createBaseStore();
+  slowStore.readUserCredentials = () => credentials;
+  let requests = 0;
+  const slowRunner = createSqlRunner({
+    store: slowStore,
+    connection,
+    transport: async () => {
+      requests++;
+      return Response.json({});
+    },
+  });
+  const result = slowRunner.run({
+    baseId,
+    runId,
+    database: "fixture_db",
+    profile: "large",
+    timezone: "UTC",
+    sql: "SELECT 1",
+    executionDeadline: performance.now() + 25,
+  });
+  await expect(result).rejects.toMatchObject({ code: "TIME_LIMIT" });
+  resolveCredentials({ user: "fixture_reader", password: "fake-reader-password" });
+  await credentials;
+  await Promise.resolve();
+  expect(requests).toBe(0);
 });

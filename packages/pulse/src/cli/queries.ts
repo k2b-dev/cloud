@@ -67,14 +67,18 @@ export const queryCommands = [
   command("queries delete", {
     summary: "Delete a saved SQL query",
     args: { query: arg.required({ valueLabel: "query-id" }) },
-    flags: { ...baseFlag, yes: confirmFlag("Delete this saved query") },
+    flags: {
+      ...baseFlag,
+      expectedRevision: flag.int({ name: "expected-revision", required: true, min: 1, description: "Revision returned by queries get" }),
+      yes: confirmFlag("Delete this saved query"),
+    },
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Refusing to delete without --yes.");
       const base = flags.base ?? (await requireDefaultBaseRef(ctx));
       const result = await readApi<{ deleted: boolean }>(
         ctx,
         `/bases/${encodeURIComponent(base)}/queries/${encodeURIComponent(args.query)}`,
-        jsonRequest("DELETE"),
+        jsonRequest("DELETE", { expectedRevision: flags.expectedRevision }),
       );
       printMessage(ctx, result, "Saved query deleted.");
     },

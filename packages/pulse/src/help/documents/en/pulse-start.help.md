@@ -43,3 +43,5 @@ Supply values with `--param name=value`. Keep SQL text and values separate.
 Ctrl-C cancels a running query. When Pulse is busy, wait for the stated retry delay.
 A result with 10,000 rows reached the limit. More rows can exist.
 Narrow the time range or group the data to get a complete answer.
+
+Open **SQL** in a base to run a query, inspect its table and time chart, or open a saved query. **Ask AI** opens an unsent Assistant draft with your base, SQL and parameter values. Base settings use a modal with General, Members, Retention, Usage and limits, and Clear and delete tabs.

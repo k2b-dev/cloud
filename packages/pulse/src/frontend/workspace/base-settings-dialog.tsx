@@ -7,9 +7,11 @@ import {
   confirmDiscardIfDirty,
   DescriptionList,
   Format,
+  IconInput,
   NoticeCard,
   NumberInput,
   prompts,
+  Select,
   SettingsField,
   SettingsGroup,
   SettingsModal,
@@ -20,20 +22,33 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { type Accessor, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { BASE_COLORS } from "../../base-settings";
 import type { PulseBase } from "../../contracts";
 import type { BaseStoreStatus } from "../../store/admin-contracts";
 import { usePulseMessages } from "../use-messages";
 import { type BaseStoreMessages, baseStoreMessages } from "./base-store-messages";
 import { jsonFetch } from "./helpers";
+import type { PulseSettingsTab } from "./routes";
+import { sqlClient } from "./sql-client";
 import type { GrantableLevel } from "./types";
 
 type BaseSettingsDialogOptions = {
   base: PulseBase;
+  canAdmin: boolean;
+  admins: string[];
+  maxRawRetentionDays: number;
+  initialTab?: PulseSettingsTab;
+  signal?: AbortSignal;
+  onTabChange?: (tab: PulseSettingsTab) => void;
+  onCloseRequestReady?: (request: () => Promise<boolean>) => void;
   loading: Accessor<boolean>;
   updateBaseSettings: (
     base: PulseBase,
     input: {
       name: string;
+      icon: string;
+      color: string;
+      timezone: string;
       description: string;
       rawRetentionDays: number;
       rollupRetentionDays: number;
@@ -129,7 +144,7 @@ const StoreStatusGroup = (props: { store: () => BaseStoreStatus; busy: () => boo
 
 export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) =>
   prompts.dialog<void>(
-    (close) => {
+    (close, context) => {
       const t = usePulseMessages();
       const locale = useLocale();
       const storeT = createMemo(() => baseStoreMessages.resolve([locale()]).t);
@@ -147,6 +162,9 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
           setRetrying(false);
         }
       };
+      const [icon, setIcon] = createSignal(options.base.icon);
+      const [color, setColor] = createSignal(options.base.color);
+      const [timezone, setTimezone] = createSignal(options.base.timezone);
       const [name, setName] = createSignal(options.base.name);
       const [description, setDescription] = createSignal(options.base.description ?? "");
       const [rawRetentionDays, setRawRetentionDays] = createSignal<number | null>(options.base.rawRetentionDays);
@@ -154,17 +172,28 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       const [sensitiveRetentionHours, setSensitiveRetentionHours] = createSignal<number | null>(options.base.sensitiveRetentionHours);
       const [saved, setSaved] = createSignal({
         name: options.base.name,
+        icon: options.base.icon,
+        color: options.base.color,
+        timezone: options.base.timezone,
         description: options.base.description ?? "",
         rawRetentionDays: options.base.rawRetentionDays,
         rollupRetentionDays: options.base.rollupRetentionDays,
         sensitiveRetentionHours: options.base.sensitiveRetentionHours,
       });
+      const usage = query.create({
+        source: () => options.base.id,
+        load: (baseId, { abortSignal }) => sqlClient.limits(baseId, abortSignal),
+      });
       const access = query.create({
+        enabled: () => options.canAdmin,
         source: () => options.base.id,
         load: (baseId, { abortSignal }) => jsonFetch<AccessEntry[]>(`/api/pulse/bases/${baseId}/access`, { signal: abortSignal }),
       });
       const draft = () => ({
         name: name(),
+        icon: icon(),
+        color: color(),
+        timezone: timezone(),
         description: description(),
         rawRetentionDays: rawRetentionDays() ?? options.base.rawRetentionDays,
         rollupRetentionDays: rollupRetentionDays() ?? options.base.rollupRetentionDays,
@@ -178,6 +207,9 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       const discard = () => {
         const baseline = saved();
         setName(baseline.name);
+        setIcon(baseline.icon);
+        setColor(baseline.color);
+        setTimezone(baseline.timezone);
         setDescription(baseline.description);
         setRawRetentionDays(baseline.rawRetentionDays);
         setRollupRetentionDays(baseline.rollupRetentionDays);
@@ -248,10 +280,22 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
       };
       const accessBusy = () => grantMutation.loading() || updateMutation.loading() || revokeMutation.loading() || access.refreshing();
+      let checkingClose = false;
       const requestClose = async () => {
-        if (options.loading() || accessBusy()) return;
-        if (await confirmDiscardIfDirty(() => changeCount() > 0)) close();
+        if (checkingClose || options.loading() || accessBusy()) return false;
+        checkingClose = true;
+        try {
+          if (!(await confirmDiscardIfDirty(() => changeCount() > 0)) || disposed) return false;
+          close();
+          return true;
+        } finally {
+          checkingClose = false;
+        }
       };
+      options.onCloseRequestReady?.(requestClose);
+      context.setDismissHandler(async () => {
+        await requestClose();
+      });
 
       onCleanup(() => {
         disposed = true;
@@ -263,6 +307,12 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       return (
         <div class="flex h-[86vh] min-h-0 flex-col overflow-hidden">
           <SettingsModal
+            defaultTab={options.initialTab}
+            onTabChange={(tab) => {
+              const valid = ["general", "members", "retention", "usage", "danger"] as const;
+              const value = valid.find((value) => value === tab);
+              if (value) options.onTabChange?.(value);
+            }}
             title={t().pulseSettings}
             subtitle={options.base.name}
             icon="ti ti-activity-heartbeat"
@@ -278,7 +328,14 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     error={() => (!name().trim() ? t().nameRequired : undefined)}
                     changed={() => name() !== saved().name}
                   >
-                    <TextInput aria-label={t().name} icon="ti ti-tag" value={name} onValueChange={setName} required />
+                    <TextInput
+                      disabled={!options.canAdmin}
+                      aria-label={t().name}
+                      icon="ti ti-tag"
+                      value={name}
+                      onValueChange={setName}
+                      required
+                    />
                   </SettingsField>
                   <SettingsField
                     label={t().description}
@@ -287,6 +344,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     changed={() => description() !== saved().description}
                   >
                     <TextInput
+                      disabled={!options.canAdmin}
                       aria-label={t().description}
                       icon="ti ti-align-left"
                       value={description}
@@ -296,57 +354,97 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       placeholder={t().optional}
                     />
                   </SettingsField>
+                  <SettingsField label={t().settingsIcon} description={t().settingsIconHint} error={() => undefined}>
+                    <IconInput aria-label={t().settingsIcon} value={icon} onValueChange={setIcon} disabled={!options.canAdmin} />
+                  </SettingsField>
+                  <SettingsField label={t().settingsColor} description={t().settingsColorHint} error={() => undefined}>
+                    <Select
+                      aria-label={t().settingsColor}
+                      value={color}
+                      onValueChange={(value) => value && setColor(value)}
+                      options={BASE_COLORS.map((value) => ({
+                        value,
+                        label: {
+                          zinc: t().settingsColorGray,
+                          blue: t().settingsColorBlue,
+                          emerald: t().settingsColorGreen,
+                          amber: t().settingsColorAmber,
+                          red: t().settingsColorRed,
+                        }[value],
+                      }))}
+                      disabled={!options.canAdmin}
+                    />
+                  </SettingsField>
+                  <SettingsField label={t().settingsTimezone} description={t().settingsTimezoneHint} error={() => undefined}>
+                    <TextInput
+                      aria-label={t().settingsTimezone}
+                      value={timezone}
+                      onValueChange={setTimezone}
+                      disabled={!options.canAdmin}
+                    />
+                  </SettingsField>
+                  <SettingsField label={t().settingsIdentifier} description={t().settingsIdentifierHint} error={() => undefined}>
+                    <TextInput aria-label={t().settingsIdentifier} value={options.base.shortId} disabled />
+                  </SettingsField>
+                  <Show when={!options.canAdmin}>
+                    <NoticeCard title={t().settingsNotAdmin} detail={options.admins.join(", ")} />
+                  </Show>
                 </SettingsGroup>
-                <StoreStatusGroup store={store} busy={retrying} onRetry={() => void retry()} />
+
                 <SettingsModal.Footer>
                   <SettingsPanelFooter
                     changeCount={changeCount}
                     loading={options.loading}
                     onDiscard={discard}
-                    onSave={() => void saveSettings()}
+                    onSave={() => options.canAdmin && void saveSettings()}
                   />
                 </SettingsModal.Footer>
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
             <SettingsModal.Group title={t().sharing}>
-              <SettingsModal.Tab id="access" title={t().access} icon="ti ti-users" description={t().accessDescription}>
-                <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
-                  <Show when={access.data() && access.error()}>
-                    {(error) => (
-                      <NoticeCard tone="danger" title={t().accessRefreshFailed} detail={error().message}>
-                        <Button onClick={() => void access.refresh()}>{t().retry}</Button>
-                      </NoticeCard>
-                    )}
-                  </Show>
-                  <Show
-                    when={access.data()}
-                    fallback={
-                      <NoticeCard
-                        tone={access.error() ? "danger" : "neutral"}
-                        title={access.error() ? t().accessLoadFailed : t().loadingAccess}
-                        detail={access.error()?.message}
-                      >
-                        {access.error() ? <Button onClick={() => void access.refresh()}>{t().retry}</Button> : null}
-                      </NoticeCard>
-                    }
-                  >
-                    {(entries) => (
-                      <PermissionEditor
-                        initialEntries={entries()}
-                        canEdit
-                        grantAccess={grantAccess}
-                        updateAccess={updateAccess}
-                        revokeAccess={revokeAccess}
-                        allowedLevels={[
-                          { level: "read", label: t().view, icon: "ti-eye" },
-                          { level: "write", label: t().edit, icon: "ti-pencil" },
-                          { level: "admin", label: t().manage, icon: "ti-shield" },
-                        ]}
-                      />
-                    )}
-                  </Show>
-                </SettingsGroup>
+              <SettingsModal.Tab id="members" title={t().settingsMembers} icon="ti ti-users" description={t().accessDescription}>
+                <Show when={!options.canAdmin}>
+                  <NoticeCard title={t().settingsNotAdmin} detail={options.admins.join(", ")} />
+                </Show>
+                <Show when={options.canAdmin}>
+                  <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
+                    <Show when={access.data() && access.error()}>
+                      {(error) => (
+                        <NoticeCard tone="danger" title={t().accessRefreshFailed} detail={error().message}>
+                          <Button onClick={() => void access.refresh()}>{t().retry}</Button>
+                        </NoticeCard>
+                      )}
+                    </Show>
+                    <Show
+                      when={access.data()}
+                      fallback={
+                        <NoticeCard
+                          tone={access.error() ? "danger" : "neutral"}
+                          title={access.error() ? t().accessLoadFailed : t().loadingAccess}
+                          detail={access.error()?.message}
+                        >
+                          {access.error() ? <Button onClick={() => void access.refresh()}>{t().retry}</Button> : null}
+                        </NoticeCard>
+                      }
+                    >
+                      {(entries) => (
+                        <PermissionEditor
+                          initialEntries={entries()}
+                          canEdit
+                          grantAccess={grantAccess}
+                          updateAccess={updateAccess}
+                          revokeAccess={revokeAccess}
+                          allowedLevels={[
+                            { level: "read", label: t().view, icon: "ti-eye" },
+                            { level: "write", label: t().edit, icon: "ti-pencil" },
+                            { level: "admin", label: t().manage, icon: "ti-shield" },
+                          ]}
+                        />
+                      )}
+                    </Show>
+                  </SettingsGroup>
+                </Show>
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
@@ -364,7 +462,8 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       icon="ti ti-clock"
                       suffix={t().days}
                       min={1}
-                      max={3650}
+                      max={options.maxRawRetentionDays}
+                      disabled={!options.canAdmin}
                       value={rawRetentionDays}
                       onValueChange={setRawRetentionDays}
                       required
@@ -382,6 +481,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       suffix={t().days}
                       min={1}
                       max={3650}
+                      disabled={!options.canAdmin}
                       value={rollupRetentionDays}
                       onValueChange={setRollupRetentionDays}
                       required
@@ -399,6 +499,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       suffix={t().hours}
                       min={1}
                       max={8760}
+                      disabled={!options.canAdmin}
                       value={sensitiveRetentionHours}
                       onValueChange={setSensitiveRetentionHours}
                       required
@@ -410,16 +511,51 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     changeCount={changeCount}
                     loading={options.loading}
                     onDiscard={discard}
-                    onSave={() => void saveSettings()}
+                    onSave={() => options.canAdmin && void saveSettings()}
                   />
                 </SettingsModal.Footer>
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
             <SettingsModal.Group title={t().lifecycle}>
+              <SettingsModal.Tab id="usage" title={t().settingsUsage} icon="ti ti-gauge">
+                <StoreStatusGroup store={store} busy={retrying} onRetry={() => options.canAdmin && void retry()} />
+                <SettingsGroup title={t().settingsSqlLimits}>
+                  <div class="min-h-48">
+                    <Show when={usage.error()}>
+                      <NoticeCard tone="danger" title={t().sqlRequestFailed}>
+                        <Button onClick={() => void usage.refresh()}>{t().retry}</Button>
+                      </NoticeCard>
+                    </Show>
+                    <Show when={usage.loading()}>
+                      <p role="status">{t().settingsLoading}</p>
+                    </Show>
+                    <Show when={usage.data()}>
+                      {(limits) => (
+                        <DescriptionList
+                          layout="rows"
+                          items={[
+                            { term: t().settingsSqlInput, description: "16 KiB · 32 × 2 KiB" },
+                            {
+                              term: t().settingsSqlLimits,
+                              description: `${{ small: storeT().profileSmall, normal: storeT().profileNormal, large: storeT().profileLarge }[limits().profile]} · ${limits().memoryBytes / 1e9} GB · ${limits().timeSeconds} s · ${limits().maxRows} · 4 MiB`,
+                            },
+                            {
+                              term: t().settingsSqlConcurrency,
+                              description: `${limits().baseSlots} / ${limits().cloudSlots} · ${limits().maxWaiting} · ${limits().waitMs / 1000} s`,
+                            },
+                            { term: t().settingsQueriesPerHour, description: `${limits().queriesUsed} / ${limits().queriesPerHour}` },
+                          ]}
+                        />
+                      )}
+                    </Show>
+                  </div>
+                  <p class="text-xs text-secondary">{t().settingsOnlyCloudAdmin}</p>
+                </SettingsGroup>
+              </SettingsModal.Tab>
               <SettingsModal.Tab
                 id="danger"
-                title={t().dangerZone}
+                title={t().settingsDanger}
                 icon="ti ti-alert-triangle"
                 tone="danger"
                 description={t().destructiveBaseActions}
@@ -433,7 +569,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       type="button"
                       variant="danger"
                       size="sm"
-                      disabled={options.loading() || options.writeBlocked() || clearBlocked()}
+                      disabled={!options.canAdmin || options.loading() || options.writeBlocked() || clearBlocked()}
                       onClick={() => void options.clearBaseData()}
                     >
                       <i class="ti ti-eraser text-sm" />
@@ -447,7 +583,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       type="button"
                       variant="danger"
                       size="sm"
-                      disabled={options.loading() || options.writeBlocked()}
+                      disabled={!options.canAdmin || options.loading() || options.writeBlocked()}
                       onClick={() => void options.deleteBase().then((deleted) => deleted && close())}
                     >
                       <i class="ti ti-trash text-sm" />
@@ -461,5 +597,5 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
         </div>
       );
     },
-    { surface: "bare", header: false, size: "large" },
+    { surface: "bare", header: false, size: "large", history: false, signal: options.signal },
   );

@@ -39,6 +39,8 @@ const source = (id: string, name: string, overrides: Partial<PulseSource> = {}):
 });
 export const workspaceFixture: PulseWorkspaceProps = {
   initialBaseId: "Lad001",
+  initialPermissions: { write: true, admin: true },
+  initialSettings: { maxRawRetentionDays: 3650, admins: ["Jana"] },
   initialBases: [
     {
       id: "Lad001",

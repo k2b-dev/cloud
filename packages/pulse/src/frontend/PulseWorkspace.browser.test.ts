@@ -86,13 +86,13 @@ describe("Pulse base page after the cut", () => {
     for (const view of views) {
       const { tab } = await open(view, { ...workspaceFixture, initialRouteState: { view: "coming-back", sourceId: "" } });
       try {
-        await tab.getByText("Dashboards und Fragen kommen zurück").first().waitFor();
-        const hint = await tab.getByText("Dashboards und Fragen kommen zurück").first().boundingBox();
+        await tab.getByText("Dashboards kommen zurück").first().waitFor();
+        const hint = await tab.getByText("Dashboards kommen zurück").first().boundingBox();
         expect(await tab.getByRole("button", { name: "Zu den Quellen" }).isVisible()).toBe(true);
         expect(await overflow(tab)).toBeLessThanOrEqual(0);
         // Nothing loads after the first frame, so the hint stays where it was a few frames later.
         await tab.clock.runFor(100);
-        expect(await tab.getByText("Dashboards und Fragen kommen zurück").first().boundingBox()).toEqual(hint);
+        expect(await tab.getByText("Dashboards kommen zurück").first().boundingBox()).toEqual(hint);
       } finally {
         await tab.close();
       }
@@ -223,3 +223,27 @@ describe("Pulse base page after the cut", () => {
     }
   }, 60_000);
 });
+
+test("Browser Back asks before discarding base settings and Cancel preserves the draft", async () => {
+  const { tab } = await open(views[1]!, workspaceFixture);
+  try {
+    await tab.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    const name = tab.getByRole("textbox", { name: "Name", exact: true });
+    await name.fill("Laden Entwurf");
+    await tab.evaluate(() => window.history.back());
+    await tab.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
+    await tab.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
+    expect(await name.inputValue()).toBe("Laden Entwurf");
+    expect(new URL(tab.url()).searchParams.get("settings")).toBe("general");
+    await name.press("Escape");
+    await tab.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
+    await tab.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
+    expect(await name.inputValue()).toBe("Laden Entwurf");
+    await tab.evaluate(() => window.history.back());
+    await tab.getByRole("button", { name: "Verwerfen", exact: true }).click();
+    await tab.waitForFunction(() => !new URL(window.location.href).searchParams.has("settings"));
+    expect(await name.count()).toBe(0);
+  } finally {
+    await tab.close();
+  }
+}, 30_000);

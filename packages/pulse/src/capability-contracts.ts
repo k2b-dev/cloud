@@ -109,6 +109,7 @@ export const SavedQueryDeleteInputSchema = z
   .object({
     baseId: BaseSelectorSchema,
     queryId: z.string().min(1).max(36).describe("Saved query ID returned by saved_query.list."),
+    expectedRevision: z.number().int().positive().describe("Revision returned by saved_query.list; deletion fails if it changed."),
   })
   .strict();
 export const SavedQueryDeleteDataSchema = z.object({ deleted: z.boolean() }).strict();

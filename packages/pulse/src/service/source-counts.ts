@@ -37,6 +37,7 @@ export const sourceCounts = async (baseId: string, now: Date, signal?: AbortSign
         timezone: base.timezone,
         runId,
         signal,
+        executionDeadline: slot.executionDeadline,
         sql: `SELECT source_id, sum(n) AS n FROM (SELECT s.source_id, count() AS n FROM samples AS p INNER JOIN series AS s USING(series_id) WHERE p.ts >= toStartOfDay(:at, :base_tz) GROUP BY s.source_id UNION ALL SELECT source_id, count() AS n FROM events WHERE ts >= toStartOfDay(:at, :base_tz) GROUP BY source_id UNION ALL SELECT source_id, count() AS n FROM states WHERE updated_at >= toStartOfDay(:at, :base_tz) GROUP BY source_id) GROUP BY source_id`,
         params: { at: now.toISOString() },
       });

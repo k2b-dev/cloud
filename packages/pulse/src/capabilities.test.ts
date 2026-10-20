@@ -1,12 +1,12 @@
 import { expect, spyOn, test } from "bun:test";
-import { ok } from "@k2b/stdlib";
-import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { savedQueries } from "./service/saved-queries";
-import { adminFixtureIdentity } from "./store/admin-identity.test-fixture";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
+import { ok } from "@k2b/stdlib";
 import { pulseCapabilities } from "./capabilities";
 import { BaseListDataSchema, BaseReadInputSchema, SourceReadInputSchema } from "./capability-contracts";
+import { savedQueries } from "./service/saved-queries";
+import { adminFixtureIdentity } from "./store/admin-identity.test-fixture";
 import { fixturePolicy } from "./store/base-store.test-fixture";
 
 test("declares SQL and saved query capabilities with base and source readers", () => {
@@ -73,7 +73,7 @@ test("delete capability returns its declared receipt when the service returns no
   };
   try {
     const action = pulseCapabilities.actions["saved_query.delete"];
-    const result = await action.run({ baseId: "Base01", queryId: "Query1" }, context);
+    const result = await action.run({ baseId: "Base01", queryId: "Query1", expectedRevision: 1 }, context);
     expect(result).toEqual({ ok: true, data: { data: { deleted: true } } });
     if (!result.ok) throw new Error("DELETE_FAILED");
     expect(action.data.safeParse(result.data.data).success).toBe(true);

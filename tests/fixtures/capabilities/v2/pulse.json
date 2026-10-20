@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "pulse",
-  "manifestHash": "34916de846a2cfc17506ca6879fa94ff8a5136d7e06e115a3af353326769ded0",
+  "manifestHash": "a110d7b068ecb70b1dd9c33a78141c8729b6c4eb9a89431a2e1119646e6a479a",
   "types": [
     {
       "localId": "base",
@@ -1261,9 +1261,15 @@
             "minLength": 1,
             "maxLength": 36,
             "description": "Saved query ID returned by saved_query.list."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Revision returned by saved_query.list; deletion fails if it changed."
           }
         },
-        "required": ["baseId", "queryId"],
+        "required": ["baseId", "queryId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1277,7 +1283,7 @@
         "required": ["deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "f96896860f601614fa247a628c5107ba1892b61287fda4b271b48ac1622d0c96",
+      "schemaHash": "d13e6819e0ac2d8593fde59a878bff0f4b0506dbae60c4c6547faebd9faedadf",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",

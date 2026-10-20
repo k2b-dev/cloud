@@ -86,7 +86,7 @@ test("rejects oversized encoded parameters and settings before transport", async
     const before = requests.length;
     await expect(
       clickhouseQuery({ ...options, query: "SELECT 1", [field]: { value: "é".repeat(CLICKHOUSE_MAX_URL_BYTES / 6) } }),
-    ).rejects.toThrow("ClickHouse request URL exceeds the 262144-byte budget; chunk query parameters");
+    ).rejects.toThrow("ClickHouse request URL exceeds the 524288-byte budget; chunk query parameters");
     expect(requests).toHaveLength(before);
   }
 });
@@ -122,4 +122,17 @@ test("empty HTTP failure cannot bypass status validation", async () => {
   const transport: QueryOptions["transport"] = async () =>
     new Response("", { status: 500, headers: { "X-ClickHouse-Query-Id": "fixture" } });
   await expect(clickhouseQuery({ ...options, query: "SELECT 1", transport })).rejects.toMatchObject({ kind: "unreachable" });
+});
+
+test("all 32 maximum-size SQL String bindings fit after Escaped and URL encoding", async () => {
+  const { prepareSql } = await import("../sql-params");
+  const params = Object.fromEntries(Array.from({ length: 32 }, (_, i) => [`p${i}`, "\\".repeat(2048)]));
+  const prepared = prepareSql(
+    `SELECT ${Object.keys(params)
+      .map((name) => `:${name}`)
+      .join(", ")}`,
+    params,
+  );
+  await clickhouseQuery({ ...options, query: prepared.sql, params: prepared.params });
+  expect(new TextEncoder().encode(requests.at(-1)!.url).byteLength).toBeLessThan(CLICKHOUSE_MAX_URL_BYTES);
 });

@@ -89,7 +89,8 @@ Databases with no base appear as orphans and can be deleted separately.
 ## Query one base with SQL
 
 Read access allows SQL execution and saved-query reads. Write access allows
-saving, changing, and deleting queries. Base settings require base admin access.
+saving, changing, and deleting queries. Readers can inspect base settings and
+usage; only base administrators can change them.
 An agent with a read grant has the same query access as a person. To answer a
 question across two bases, run two queries with separate base IDs.
 
@@ -103,6 +104,9 @@ ClickHouse parameter syntax, and unbalanced SQL are refused before admission.
 `#` comments and `$` heredoc syntax are unsupported; use `--` or `/* */`
 comments and quoted strings.
 
+Editing SQL or parameter values clears the previous result. A response from a
+run started before that edit does not appear under the changed query.
+
 The result contains column names and ClickHouse types, compact row arrays,
 `rowCount`, `truncated`, execution statistics, and limits. The wrapper applies
 `LIMIT 10000`. Exactly 10,000 returned rows sets `truncated: true`: **the
@@ -113,14 +117,18 @@ that another row exists. Results over 4 MiB fail with `RESULT_TOO_LARGE`.
 
 The console route is `/app/pulse/:baseId/sql`; a saved query adds its ID or
 short ID as the final path segment. An unsaved console keeps SQL and parameter
-values in the URL. A saved console keeps its query ID and parameter values;
-reload restores the saved SQL. Unsaved edits to a saved query's SQL are not
-included in its URL.
+values in the URL. A saved console keeps its query ID, current SQL, and parameter
+values, including unsaved edits. Reload restores that draft; opening a plain
+saved-query link loads its saved SQL.
 
 Console links have a 4,000-character budget, including percent-encoding. If
 SQL and parameters exceed it, the entire console payload is omitted. The
-saved query ID and settings tab remain. Save a long query before relying on
-reload or sharing its link. Result rows are never stored in URLs.
+saved query ID and settings tab remain. The full draft stays in that tab's
+browser history entry and is restored after reload, including for readers who
+cannot save queries. It is not included when you share or open the link in
+another tab. To share a long draft, copy its SQL and parameter values or save
+the query if you have write access. Result rows are never stored in URLs or
+browser history.
 
 The chart adapter uses the first Date, DateTime, or DateTime64 column as X and
 numeric columns as series, including Nullable numeric columns. It takes at
@@ -149,15 +157,17 @@ The CLI exposes `--icon`, `--color`, and `--timezone` on base updates.
 
 | Value | Binding |
 | --- | --- |
-| ISO date-time with `Z` or offset, or `2026-10-20` | `DateTime64(3, '<base timezone>')`; instants keep their offset, date-only values mean local midnight |
+| ISO date-time with or without a zone, or `2026-10-20` | `DateTime64(3, '<base timezone>')`; zoned instants keep their offset; zone-free dates and times use the base timezone |
 | `30s`, `5m`, `1h`, `1d`, `2w` | `UInt32` seconds |
 | Finite number | `Float64` |
 | Other text | `String` |
 
 Every path permits at most 16 KiB of UTF-8 SQL, 32 parameters, and 2 KiB of
-UTF-8 per value. Percent-encoding can triple a value's bytes: 32 × 3 × 2 KiB
-uses 192 KiB of the client's 256 KiB URL budget and leaves 64 KiB for names,
-types, the database, query ID, and other URL overhead. SQL is sent in the body.
+UTF-8 per value. String values are escaped for ClickHouse's parameter format
+before URL encoding, preserving backslashes, control characters and Unicode.
+In the worst case these steps expand a value sixfold: 32 × 6 × 2 KiB uses
+384 KiB of the client's 512 KiB URL budget. The remaining 128 KiB covers names,
+types, database, query ID, and other URL overhead. SQL is sent in the body.
 
 ### Use time buckets and metric helpers
 
@@ -239,6 +249,9 @@ Omitting `params` saves an empty parameter map. A stale revision returns `409`.
 An `Idempotency-Key` allows replay of the same saved-query write for 24 hours,
 even after later revisions; changing the body with that key returns `409`.
 Saving has the same SQL and parameter input checks as execution.
+Deletion requires the current `expectedRevision` in its API body and capability
+input (CLI: `--expected-revision`). A concurrent edit returns `409`; read the
+query again before confirming deletion.
 
 ```sh
 cld pulse sql --base Ops001 --file requests.sql --param from=2026-10-20 --param to=2026-10-21 --format table
@@ -447,3 +460,13 @@ copying it into chat, logs, or shell arguments.
 
 Run `cld pulse --help` for current commands and open **Help** inside Pulse for
 source setup, data types, and recovery.
+
+### Base settings
+
+Open **Settings** in a base for General, Members, Retention, Usage and limits,
+and Clear and delete. Base admins can change the name, icon, color, timezone,
+members and retention. Readers can inspect settings and see whom to contact
+for changes. Shorter retention asks for confirmation of its cutoff and amount.
+Usage shows the query profile, input and concurrency limits, and hourly quota.
+Only Cloud admins change quotas and profiles in **Administration → Pulse → Bases**.
+Closing the modal returns to the underlying view.

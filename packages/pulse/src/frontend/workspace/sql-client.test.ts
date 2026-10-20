@@ -1,6 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { createSqlRunId, SqlClientError, sqlClient } from "./sql-client";
 import { SQL_TEST_RUN_ID, sqlTestLimits, sqlTestQuery, sqlTestResult } from "./sql-test-fixtures";
+
 const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -45,7 +46,7 @@ test("limits and paginated saved-query CRUD use the exact API shapes", async () 
   await sqlClient.create("Base01", input);
   await sqlClient.update("Base01", "Qry001", { ...input, expectedRevision: 2 });
   result = { deleted: true };
-  await sqlClient.delete("Base01", "Qry001");
+  await sqlClient.delete("Base01", "Qry001", 2);
   expect(calls.map((call) => [call.path, call.init?.method ?? "GET"])).toEqual([
     ["/api/pulse/bases/Base01/sql/limits", "GET"],
     ["/api/pulse/bases/Base01/queries?limit=1&offset=1", "GET"],
@@ -55,6 +56,7 @@ test("limits and paginated saved-query CRUD use the exact API shapes", async () 
     ["/api/pulse/bases/Base01/queries/Qry001", "DELETE"],
   ]);
   expect(JSON.parse(String(calls[4]?.init?.body))).toEqual({ ...input, expectedRevision: 2 });
+  expect(JSON.parse(String(calls[5]?.init?.body))).toEqual({ expectedRevision: 2 });
 });
 for (const code of [
   "SQL_ERROR",
@@ -92,4 +94,14 @@ test("non-JSON proxy failures still have a stable code and HTTP-date retry is pr
   await expect(sqlClient.limits("Base01")).rejects.toMatchObject({ code: "REQUEST_FAILED", status: 503 });
   respond(() => Response.json({ code: "QUOTA" }, { status: 429, headers: { "Retry-After": "Tue, 20 Oct 2026 15:00:00 GMT" } }));
   await expect(sqlClient.limits("Base01")).rejects.toMatchObject({ details: { resetAt: "2026-10-20T15:00:00.000Z" } });
+});
+
+test("write receipts travel only in the idempotency header", async () => {
+  const calls = respond(() => Response.json(sqlTestQuery));
+  const input = { name: "CPU", sql: "SELECT 1" };
+  await sqlClient.create("Base01", input, undefined, SQL_TEST_RUN_ID);
+  await sqlClient.update("Base01", "Qry001", { ...input, expectedRevision: 2 }, undefined, SQL_TEST_RUN_ID);
+  await sqlClient.delete("Base01", "Qry001", 2, undefined, SQL_TEST_RUN_ID);
+  for (const call of calls) expect(new Headers(call.init?.headers).get("Idempotency-Key")).toBe(SQL_TEST_RUN_ID);
+  expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(input);
 });

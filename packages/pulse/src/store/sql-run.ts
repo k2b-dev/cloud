@@ -59,6 +59,24 @@ export const mapSqlStoreError = (
   }
   return new SqlError("STORE_UNAVAILABLE", "The Pulse data store is unavailable. Retry later.");
 };
+// Configuration/credential reads cannot be cancelled at their source. Racing
+// them is safe: they only read, and no continuation can submit SQL after abort.
+const beforeAbort = async <T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T> => {
+  signal.throwIfAborted();
+  let abort: (() => void) | undefined;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_, reject) => {
+        abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
+      }),
+    ]);
+  } finally {
+    if (abort) signal.removeEventListener("abort", abort);
+  }
+};
 export const createSqlRunner = ({
   store = baseStore,
   connection = storeConnection,
@@ -69,9 +87,10 @@ export const createSqlRunner = ({
   transport?: QueryOptions["transport"];
 } = {}) => ({
   async kill(baseId: string, runId: string) {
-    const config = await connection();
+    const signal = AbortSignal.timeout(5_000);
+    const config = await beforeAbort(connection, signal);
     if (!config) throw new SqlError("STORE_UNAVAILABLE", "The Pulse data store is unavailable");
-    const credentials = await store.readUserCredentials(baseId);
+    const credentials = await beforeAbort(() => store.readUserCredentials(baseId), signal);
     // Both predicates are essential: a crafted id belonging to another reader
     // must survive this request. Never use the admin's user or a SQL-chosen user.
     await clickhouseQuery({
@@ -80,6 +99,7 @@ export const createSqlRunner = ({
       query: "KILL QUERY WHERE query_id = {q:String} AND user = {u:String} SYNC",
       params: { q: sqlQueryId(baseId, runId), u: credentials.user },
       timeoutMs: 5_000,
+      signal,
     });
   },
   async run(input: {
@@ -91,15 +111,24 @@ export const createSqlRunner = ({
     params?: Record<string, string>;
     runId: string;
     signal?: AbortSignal;
+    /** Monotonic admission deadline, with KILL time already reserved. */
+    executionDeadline?: number;
   }): Promise<SqlRows> {
     const prepared = prepareSql(input.sql, input.params, input.timezone);
-    const config = await connection();
-    if (!config) throw new SqlError("STORE_UNAVAILABLE", "The Pulse data store is unavailable");
-    const credentials = await store.readUserCredentials(input.baseId);
-    const timeoutMs = READ_PROFILES[`read_${input.profile}`].max_execution_time * 1000 + SQL_HTTP_MARGIN_MS;
+    if (input.executionDeadline !== undefined && input.executionDeadline <= performance.now())
+      throw new SqlError("TIME_LIMIT", "The query time limit was reached");
+    const profileMs = READ_PROFILES[`read_${input.profile}`].max_execution_time * 1000 + SQL_HTTP_MARGIN_MS;
+    const timeoutMs = Math.max(1, Math.ceil(Math.min(profileMs, (input.executionDeadline ?? Infinity) - performance.now())));
     const timeout = AbortSignal.timeout(timeoutMs),
       signal = AbortSignal.any([timeout, ...(input.signal ? [input.signal] : [])]);
+    let own: { user: string; password: string } | undefined;
     try {
+      signal.throwIfAborted();
+      const config = await beforeAbort(connection, signal);
+      if (!config) throw new SqlError("STORE_UNAVAILABLE", "The Pulse data store is unavailable");
+      const credentials = await beforeAbort(() => store.readUserCredentials(input.baseId), signal);
+      own = credentials;
+      signal.throwIfAborted();
       const response = await clickhouseResponse({
         ...config,
         ...credentials,
@@ -141,8 +170,8 @@ export const createSqlRunner = ({
       };
     } catch (error) {
       if (error instanceof SqlError) throw error;
-      if (signal.aborted) await this.kill(input.baseId, input.runId).catch(() => {});
-      throw mapSqlStoreError(error, { database: input.database, ...credentials }, input.signal, timeout);
+      if (signal.aborted && own) await this.kill(input.baseId, input.runId).catch(() => {});
+      throw mapSqlStoreError(error, { database: input.database, user: own?.user ?? "", password: own?.password }, input.signal, timeout);
     }
   },
 });

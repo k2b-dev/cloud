@@ -11,13 +11,15 @@ export const WAIT_MS = 5_000;
 // Longest profile 30 s + HTTP margin 2 s + KILL budget 5 s + Valkey 1 s
 // = 38 s; 40 s leases free a dead replica without renewing a running query.
 export const LEASE_MS = 40_000;
-const RUN_TTL_MS = WAIT_MS + LEASE_MS + 2_000;
+const WAIT_GRACE_MS = 2_000;
+const RUN_TTL_MS = WAIT_MS + LEASE_MS + WAIT_GRACE_MS;
 const CLOCK = `local now=tonumber(ARGV[1]); if now<0 then local t=redis.call('TIME'); now=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000) end\n`;
 const ADMIT =
   CLOCK +
   `
 local id,quota,count=ARGV[2],tonumber(ARGV[3]),tonumber(ARGV[4])
 local deadline=tonumber(ARGV[5])
+local cloudSlots,baseSlots,maxWaiting,leaseMs,waitingMs,graceMs=tonumber(ARGV[6]),tonumber(ARGV[7]),tonumber(ARGV[8]),tonumber(ARGV[9]),tonumber(ARGV[10]),tonumber(ARGV[11])
 redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now)
 redis.call('ZREMRANGEBYSCORE',KEYS[2],'-inf',now)
 redis.call('ZREMRANGEBYSCORE',KEYS[3],'-inf',now)
@@ -27,19 +29,19 @@ local used=tonumber(old[1] or 0)==reset and tonumber(old[2] or 0) or 0
 if redis.call('HGET',KEYS[5],'cancelled')=='1' then redis.call('ZREM',KEYS[3],id); return {'CANCELLED',used,reset,now} end
 if deadline>0 and now>=deadline then redis.call('ZREM',KEYS[3],id); return {'BUSY',used,reset,now} end
 if count==1 and used>=quota then redis.call('ZREM',KEYS[3],id); return {'QUOTA',used,reset,now} end
-if redis.call('ZCARD',KEYS[1])<3 and redis.call('ZCARD',KEYS[2])<1 then
+if redis.call('ZCARD',KEYS[1])<cloudSlots and redis.call('ZCARD',KEYS[2])<baseSlots then
  redis.call('ZREM',KEYS[3],id)
- redis.call('ZADD',KEYS[1],now+40000,id); redis.call('PEXPIRE',KEYS[1],40000)
- redis.call('ZADD',KEYS[2],now+40000,id); redis.call('PEXPIRE',KEYS[2],40000)
+ redis.call('ZADD',KEYS[1],now+leaseMs,id); redis.call('PEXPIRE',KEYS[1],leaseMs)
+ redis.call('ZADD',KEYS[2],now+leaseMs,id); redis.call('PEXPIRE',KEYS[2],leaseMs)
  if count==1 then used=used+1; redis.call('HSET',KEYS[4],'reset',reset,'used',used); redis.call('PEXPIRE',KEYS[4],math.max(1,reset-now)) end
  return {'OK',used,reset,now}
 end
 local waiting=redis.call('ZSCORE',KEYS[3],id)
 if waiting then
- if now>=tonumber(waiting)-2000 then redis.call('ZREM',KEYS[3],id); return {'BUSY',used,reset,now} end
+ if now>=tonumber(waiting)-graceMs then redis.call('ZREM',KEYS[3],id); return {'BUSY',used,reset,now} end
 else
- if redis.call('ZCARD',KEYS[3])>=20 then return {'QUEUE_FULL',used,reset,now} end
- redis.call('ZADD',KEYS[3],now+7000,id); redis.call('PEXPIRE',KEYS[3],7000)
+ if redis.call('ZCARD',KEYS[3])>=maxWaiting then return {'QUEUE_FULL',used,reset,now} end
+ redis.call('ZADD',KEYS[3],now+waitingMs,id); redis.call('PEXPIRE',KEYS[3],waitingMs)
 end
 return {'WAIT',used,reset,now}`;
 const RELEASE = `redis.call('ZREM',KEYS[1],ARGV[1]); redis.call('ZREM',KEYS[2],ARGV[1]); redis.call('ZREM',KEYS[3],ARGV[1]); return 1`;
@@ -98,13 +100,34 @@ export const createSqlAdmission = (
     await evalScript(RELEASE, keys(baseId), [`${baseId}:${runId}`]);
   };
   const check = async (input: AdmissionInput, deadlineMs = 0) => {
+    // A monotonic local deadline starts before the admission round trip, so
+    // network latency can only shorten the database work window.
+    const executionDeadline = performance.now() + LEASE_MS - 5_000;
     const reply = await evalScript(
       ADMIT,
       [...keys(input.baseId), `${prefix}:quota:${input.baseId}`, runKey(input.baseId, input.runId)],
-      [clock(), `${input.baseId}:${input.runId}`, String(input.quota), input.countQuota === false ? "0" : "1", String(deadlineMs)],
+      [
+        clock(),
+        `${input.baseId}:${input.runId}`,
+        String(input.quota),
+        input.countQuota === false ? "0" : "1",
+        String(deadlineMs),
+        String(CLOUD_SLOTS),
+        String(BASE_SLOTS),
+        String(MAX_WAITING),
+        String(LEASE_MS),
+        String(WAIT_MS + WAIT_GRACE_MS),
+        String(WAIT_GRACE_MS),
+      ],
     );
     if (!Array.isArray(reply)) throw new SqlError("STORE_UNAVAILABLE", "Invalid admission response");
-    return { state: String(reply[0]), used: Number(reply[1]), resetAt: new Date(Number(reply[2])).toISOString(), nowMs: Number(reply[3]) };
+    return {
+      executionDeadline,
+      state: String(reply[0]),
+      used: Number(reply[1]),
+      resetAt: new Date(Number(reply[2])).toISOString(),
+      nowMs: Number(reply[3]),
+    };
   };
   const pause =
     options.testOnly?.poll ??

@@ -1,4 +1,3 @@
-import { waitUntil } from "./sql-run.test-fixture";
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { clickhouseAdminQuery as admin } from "../../../../scripts/fixtures/test-clickhouse";
@@ -7,8 +6,10 @@ import { createBaseLifecycle } from "../service/base-lifecycle";
 import { READ_PROFILE_NAMES } from "./admin-contracts";
 import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "./base-store.test-fixture";
 import { clickhouseQuery } from "./client";
-import { createSqlRunner, sqlQueryId } from "./sql-run";
 import { READ_PROFILES } from "./setup-sql";
+import { createSqlRunner, sqlQueryId } from "./sql-run";
+import { waitUntil } from "./sql-run.test-fixture";
+
 const suite = suiteFor("database", "clickhouse");
 const expensive = "SELECT sum(cityHash64(a.number,b.number)) FROM numbers(1000000) a CROSS JOIN numbers(1000000) b";
 suite("SQL executes only through bounded read profiles", () => {
@@ -57,6 +58,18 @@ suite("SQL executes only through bounded read profiles", () => {
         sql: "SELECT :message AS message, toUnixTimestamp64Milli(:at) AS epoch, :bucket AS seconds, :number AS number, toString(:day) AS day, :base_tz AS timezone",
         params: { message: "'); DROP TABLE x; --", at: "2026-10-25T02:30:00+01:00", bucket: "2w", number: "-1.5", day: "2026-10-25" },
       });
+      for (const message of ["tabs\tand\nlines\r", String.raw`backslash\n\t\N\x41`, "nul\0back\bform\f", "Grüße 😃", ""]) {
+        const roundtrip = await runner.run({
+          baseId: base.id,
+          database: base.database,
+          profile: "normal",
+          timezone: "UTC",
+          runId: crypto.randomUUID(),
+          sql: "SELECT :message",
+          params: { message },
+        });
+        expect(roundtrip.rows).toEqual([[message]]);
+      }
       expect(result.rows[0]).toEqual([
         "'); DROP TABLE x; --",
         Date.parse("2026-10-25T01:30:00Z"),

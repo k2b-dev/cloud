@@ -1,5 +1,13 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { buildPulseWorkspaceHref, PULSE_SETTINGS_TABS, type PulseSettingsTab, type WorkspaceHrefOptions } from "./routes";
+import {
+  buildPulseWorkspaceHref,
+  PULSE_SETTINGS_TABS,
+  type PulseSettingsTab,
+  readWorkspacePathState,
+  type WorkspaceHrefOptions,
+} from "./routes";
+
+import { readSqlDraftHistory, sqlDraftHistoryState } from "./sql-draft-history";
 
 export const navigatePulseWorkspace = (options: WorkspaceHrefOptions): void => {
   const href = buildPulseWorkspaceHref(options);
@@ -8,9 +16,11 @@ export const navigatePulseWorkspace = (options: WorkspaceHrefOptions): void => {
 };
 
 export type PulseSettingsHistory = {
+  baseId: string;
+  currentState?: () => unknown;
   currentHref: () => string;
-  push: (href: string) => void;
-  replace: (href: string) => void;
+  push: (href: string, state?: unknown) => void;
+  replace: (href: string, state?: unknown) => void;
   back: () => void;
   /** The view subscribes once and disposes with its Solid owner. */
   subscribe?: (changed: () => void) => () => void;
@@ -19,6 +29,8 @@ export type PulseSettingsHistory = {
 /** One history entry for the modal; changing tabs replaces that entry. */
 export const createPulseSettingsNavigation = (history: PulseSettingsHistory) => {
   let opened = false;
+  let settingsHref: string | undefined;
+  let settingsState: unknown;
   const tab = (): PulseSettingsTab | undefined => {
     const value = new URL(history.currentHref(), "http://pulse.invalid").searchParams.get("settings");
     return PULSE_SETTINGS_TABS.find((tab) => tab === value);
@@ -30,10 +42,25 @@ export const createPulseSettingsNavigation = (history: PulseSettingsHistory) => 
       const url = new URL(history.currentHref(), "http://pulse.invalid");
       const alreadyOpen = url.searchParams.has("settings");
       url.searchParams.set("settings", tab);
-      const href = `${url.pathname}${url.search}${url.hash}`;
-      if (alreadyOpen) history.replace(href);
+      const route = readWorkspacePathState(history.currentHref(), history.baseId);
+      const draft = readSqlDraftHistory(history.currentState?.(), history.baseId, history.currentHref());
+      const next = { ...route, ...draft, settings: tab };
+      const href =
+        route.view === "sql" ? buildPulseWorkspaceHref({ baseId: history.baseId, state: next }) : `${url.pathname}${url.search}${url.hash}`;
+      settingsHref = href;
+      settingsState =
+        route.view === "sql" ? sqlDraftHistoryState(history.currentState?.(), history.baseId, next) : history.currentState?.();
+      if (alreadyOpen) history.replace(href, settingsState);
       else {
-        history.push(href);
+        history.push(href, settingsState);
+        opened = true;
+      }
+    },
+    // Back has already moved history. Restore the modal entry before asking to
+    // discard so Cancel or an in-flight write keeps URL and mounted dialog together.
+    restore: () => {
+      if (settingsHref) {
+        history.push(settingsHref, settingsState);
         opened = true;
       }
     },

@@ -4,6 +4,7 @@ import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
 import { pulseMessages } from "../../messages";
 import { SQL_MAX_BYTES, SQL_MAX_PARAMETERS, SqlInputError, sqlParameterNames, validateSqlInput } from "../../sql-params";
+import { baseStoreMessages } from "./base-store-messages";
 import { launchPulseSqlAssistant, type PulseAssistantLaunchInput } from "./pulse-assistant-launch";
 import type { WorkspaceRouteState } from "./routes";
 import {
@@ -28,7 +29,16 @@ export type SqlStatusBand = {
   kind: "neutral" | "running" | "ok" | "warning" | "error";
   message: string;
   action?: {
-    kind: "retry" | "cancel" | "focus-parameter" | "retry-assistant" | "reload-saved" | "retry-save" | "retry-delete" | "retry-limits";
+    kind:
+      | "retry"
+      | "cancel"
+      | "focus-parameter"
+      | "retry-assistant"
+      | "reload-saved"
+      | "retry-save"
+      | "retry-delete"
+      | "retry-limits"
+      | "save-as";
     label: string;
     run: () => void | Promise<unknown>;
     parameterName?: string;
@@ -43,16 +53,18 @@ export type SqlConsoleControllerOptions = {
   client?: SqlClient;
   clock?: SqlConsoleClock;
   newRunId?: () => string;
+  newOperationId?: () => string;
   launchAssistant?: (input: PulseAssistantLaunchInput) => Promise<AssistantLaunch>;
   onAssistantLaunched?: (launch: AssistantLaunch) => void;
   onRouteChange?: (state: WorkspaceRouteState) => void;
   focusParameter?: (name: string) => void;
+  onSaveAsRequested?: () => void | Promise<void>;
 };
 export const sqlConsoleInitialState = (
   route: WorkspaceRouteState,
   snapshot?: { query: SavedQuery | null; limits: SqlLimits | null; error: SqlConsoleError | null },
 ): NonNullable<SqlConsoleControllerOptions["initial"]> => ({
-  sql: route.queryId ? (snapshot?.query?.sql ?? "") : (route.sql ?? ""),
+  sql: route.sql ?? snapshot?.query?.sql ?? "",
   params: { ...snapshot?.query?.params, ...route.params },
   query: snapshot?.query ?? null,
   limits: snapshot?.limits ?? null,
@@ -121,6 +133,10 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     );
   const equalParams = (a: SqlParams, b: SqlParams) =>
     Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value);
+  const hasUnsavedChanges = () => {
+    const query = saved();
+    return query ? query.sql !== sql() || !equalParams(query.params, activeParams()) : !!sql().trim();
+  };
   const chosenQuery = () => {
     const query = saved();
     return query
@@ -139,6 +155,8 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
   let limitsVersion = 0;
   let contentVersion = 0;
   let lastSaveName: string | undefined;
+  let saveReceipt: { signature: string; key: string } | undefined;
+  let deleteReceipt: { queryId: string; revision: number; key: string } | undefined;
   const isStateError = (code: string) => {
     const current = state();
     return current.kind === "error" && current.code === code;
@@ -147,7 +165,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
   const canRun = () => !disposed && !!sql().trim() && state().kind !== "running" && !quotaBlocked();
   const canSave = () => !disposed && !!sql().trim() && !saving();
   const syncRoute = () =>
-    options.onRouteChange?.({ view: "sql", sourceId: "", queryId: saved()?.id ?? "", sql: saved() ? "" : sql(), params: activeParams() });
+    options.onRouteChange?.({ view: "sql", sourceId: "", queryId: saved()?.id ?? "", sql: sql(), params: activeParams() });
   const blockUntil = (resetAt: string | undefined, retryAfter?: number) => {
     const at =
       resetAt && Number.isFinite(Date.parse(resetAt))
@@ -187,6 +205,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
   };
   const edit = () => {
     contentVersion++;
+    setResult(null);
     if (!activeRun) setState({ kind: sql().trim() ? "ready" : "empty" });
     syncRoute();
   };
@@ -227,7 +246,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     try {
       const result = await client.run(options.base.id, { ...input, runId: id }, abort.signal);
       if (disposed || activeRun?.id !== id) return;
-      setResult(result);
+      if (editAtRun === contentVersion) setResult(result);
       ++limitsVersion;
       setLimitsLoading(false);
       acceptLimits(result.limits);
@@ -236,7 +255,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
       if (disposed || activeRun?.id !== id) return;
       const failure = normalizeError(error);
       if (failure.code === "QUOTA") blockUntil(failure.details.resetAt, failure.details.retryAfter);
-      setState({ kind: "error", ...failure });
+      setState(editAtRun === contentVersion ? { kind: "error", ...failure } : { kind: sql().trim() ? "ready" : "empty" });
     } finally {
       if (activeRun?.id === id) activeRun = null;
     }
@@ -274,6 +293,9 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     const query = saved();
     if (!query && name === undefined) return null;
     const snapshot = contentVersion;
+    const signature = JSON.stringify([query?.id, name, query?.revision, input]);
+    if (saveReceipt?.signature !== signature) saveReceipt = { signature, key: (options.newOperationId ?? createSqlRunId)() };
+    const idempotencyKey = saveReceipt.key;
     setSaving(true);
     setSaveError(null);
     setSaveOperation("save");
@@ -281,12 +303,13 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     try {
       const value =
         name !== undefined
-          ? await client.create(options.base.id, { ...input, name }, lifetime.signal)
+          ? await client.create(options.base.id, { ...input, name }, lifetime.signal, idempotencyKey)
           : await client.update(
               options.base.id,
               query!.id,
               { ...input, name: query!.name, expectedRevision: query!.revision },
               lifetime.signal,
+              idempotencyKey,
             );
       if (disposed) return null;
       // Edits made during save remain local and dirty; selecting another query never gets overwritten.
@@ -310,7 +333,9 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     setSaveError(null);
     setSaveOperation("delete");
     try {
-      await client.delete(options.base.id, query.id, lifetime.signal);
+      if (deleteReceipt?.queryId !== query.id || deleteReceipt.revision !== query.revision)
+        deleteReceipt = { queryId: query.id, revision: query.revision, key: (options.newOperationId ?? createSqlRunId)() };
+      await client.delete(options.base.id, query.id, query.revision, lifetime.signal, deleteReceipt.key);
       if (disposed) return false;
       if (saved()?.id === query.id) {
         setSaved(null);
@@ -361,9 +386,10 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     t().sqlInputBytes({ used: number(new TextEncoder().encode(sql()).length / 1024), max: number(SQL_MAX_BYTES / 1024) });
   const limitsLine = () => {
     const value = limits();
+    const storeT = baseStoreMessages.resolve([locale()]).t;
     return value
       ? t().sqlLimits({
-          profile: value.profile,
+          profile: { small: storeT.profileSmall, normal: storeT.profileNormal, large: storeT.profileLarge }[value.profile],
           memory: number(value.memoryBytes / 1_000_000_000),
           seconds: number(value.timeSeconds),
           rows: number(value.maxRows, 0),
@@ -390,27 +416,32 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
         action: { kind: "retry-assistant", label: messages.sqlRetry, run: launchAssistant },
       };
     const writeError = saveError();
-    if (writeError)
+    if (writeError) {
+      const conflict = writeError.cause instanceof SqlClientError && writeError.cause.status === 409;
+      const nameConflict = conflict && saveOperation() === "save" && lastSaveName !== undefined;
       return {
         kind: "error",
-        message:
-          writeError.cause instanceof SqlClientError && writeError.cause.status === 409
+        message: nameConflict
+          ? messages.sqlNameConflict
+          : conflict
             ? messages.sqlConflict
             : saveOperation() === "delete"
               ? messages.sqlDeleteFailed
               : messages.sqlSaveFailed,
-        action:
-          writeError.cause instanceof SqlClientError && writeError.cause.status === 409
+        action: nameConflict
+          ? { kind: "save-as", label: messages.sqlChooseName, run: () => options.onSaveAsRequested?.() }
+          : conflict
             ? { kind: "reload-saved", label: messages.sqlReloadSaved, run: reloadSaved }
             : saveOperation() === "delete"
               ? { kind: "retry-delete", label: messages.sqlRetry, run: deleteQuery }
               : { kind: "retry-save", label: messages.sqlRetry, run: () => persist(lastSaveName) },
       };
+    }
     if (quotaBlocked())
       return {
         kind: "warning",
         message: messages.sqlQuotaReset({
-          resetAt: new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(
+          resetAt: new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" }).format(
             new Date(quotaResetAt()!),
           ),
         }),
@@ -446,7 +477,10 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
             : { kind: "retry" as const, label: messages.sqlRetry, run };
       return {
         kind: ["BUSY", "QUEUE_FULL", "QUOTA", "CANCELLED"].includes(current.code) ? "warning" : "error",
-        message: byCode[current.code] ?? messages.sqlRequestFailed,
+        message:
+          current.code === "SQL_ERROR" && current.message
+            ? `${byCode.SQL_ERROR} · ${current.message}`
+            : (byCode[current.code] ?? messages.sqlRequestFailed),
         action,
       };
     }
@@ -488,6 +522,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     parameterValues,
     setParameter,
     chosenQuery,
+    hasUnsavedChanges,
     state,
     lastResult,
     limits,

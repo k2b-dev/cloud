@@ -91,7 +91,7 @@ const routes = new Hono<AuthContext>()
       try {
         const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
         if (!baseId.ok) return respond(c, baseId.result);
-        return respond(
+        return await respond(
           c,
           projectResult(pulseService.source.list(baseId.value, requestAccessScope(c), { signal: c.req.raw.signal }), (items) =>
             projectSources(items),

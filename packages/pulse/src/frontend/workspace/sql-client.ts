@@ -61,11 +61,32 @@ export const sqlClient = {
   },
   get: (baseId: string, queryId: string, signal?: AbortSignal) =>
     request<SavedQuery>(`${path(baseId)}/queries/${encodeURIComponent(queryId)}`, { signal }),
-  create: (baseId: string, input: SaveSqlQuery, signal?: AbortSignal) =>
-    request<SavedQuery>(`${path(baseId)}/queries`, { method: "POST", body: JSON.stringify(input), signal }),
-  update: (baseId: string, queryId: string, input: SaveSqlQuery & { expectedRevision: number }, signal?: AbortSignal) =>
-    request<SavedQuery>(`${path(baseId)}/queries/${encodeURIComponent(queryId)}`, { method: "PATCH", body: JSON.stringify(input), signal }),
-  delete: (baseId: string, queryId: string, signal?: AbortSignal) =>
-    request<{ deleted: boolean }>(`${path(baseId)}/queries/${encodeURIComponent(queryId)}`, { method: "DELETE", signal }),
+  create: (baseId: string, input: SaveSqlQuery, signal?: AbortSignal, idempotencyKey?: string) =>
+    request<SavedQuery>(`${path(baseId)}/queries`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      signal,
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+    }),
+  update: (
+    baseId: string,
+    queryId: string,
+    input: SaveSqlQuery & { expectedRevision: number },
+    signal?: AbortSignal,
+    idempotencyKey?: string,
+  ) =>
+    request<SavedQuery>(`${path(baseId)}/queries/${encodeURIComponent(queryId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+      signal,
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+    }),
+  delete: (baseId: string, queryId: string, expectedRevision: number, signal?: AbortSignal, idempotencyKey?: string) =>
+    request<{ deleted: boolean }>(`${path(baseId)}/queries/${encodeURIComponent(queryId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ expectedRevision }),
+      signal,
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+    }),
 };
 export type SqlClient = typeof sqlClient;

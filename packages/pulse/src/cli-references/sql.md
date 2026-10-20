@@ -78,9 +78,11 @@ cld pulse queries save --base Base01 --name 'Event count' --file count.sql \
   --idempotency-key event-count-create
 cld pulse queries save --base Base01 --query Query1 --expected-revision 1 \
   --name 'Event count' --file count.sql --idempotency-key event-count-update-1
-cld pulse queries delete Query1 --base Base01 --yes
+cld pulse queries delete Query1 --base Base01 --expected-revision 1 --yes
 ```
 
 `queries save` accepts the same positional SQL, file, stdin, and parameter
 flags as `sql`. Each command has `--help`. Deletion removes only the saved
 query; measurements remain. Obtain explicit approval before deletion.
+
+Deleting a saved query requires `--expected-revision` from `queries get`. A conflict means the query changed; read it again before deleting.

@@ -2,13 +2,14 @@ import { describe, expect, test } from "bun:test";
 import {
   bindSqlValue,
   prepareSql,
-  scanSql,
   SQL_MAX_BYTES,
   SQL_PARAMETER_MAX_BYTES,
   SqlInputError,
+  scanSql,
   sqlParameterNames,
   validateSqlInput,
 } from "./sql-params";
+
 const refused = (sql: string, code: SqlInputError["code"], params: Record<string, string> = {}) => {
   try {
     validateSqlInput(sql, params);
@@ -23,6 +24,21 @@ describe("SQL lexical contract", () => {
     const source = "SELECT '-- :no', 'it\\'s :no', 'it''s :no', \"--:no\", `:no`, x::String, :a:b, a:b, ::x, :A, :a /* :u */ -- :v\n, :z";
     expect(sqlParameterNames(source)).toEqual(["a", "A", "z"]);
     for (const token of scanSql(source)) expect(source.slice(token.start, token.end)).toBe(token.text);
+  });
+  test("line comments end only at LF and FORMAT functions remain usable", () => {
+    expect(sqlParameterNames("SELECT 1 -- :hidden\r :also_hidden\n, :visible")).toEqual(["visible"]);
+    expect(validateSqlInput("SELECT format('{}', 1)").sql).toBe("SELECT format('{}', 1)");
+    refused("SELECT 1 FORMAT JSON", "SQL_ERROR");
+  });
+  test("local date-times bind in the base timezone", () => {
+    expect(bindSqlValue("2026-10-20T12:34:56.123", "Europe/Berlin")).toEqual({
+      type: "DateTime64(3, 'Europe/Berlin')",
+      value: "2026-10-20 12:34:56.123",
+    });
+    expect(bindSqlValue("2026-10-20 12:34:56", "Europe/Berlin")).toEqual({
+      type: "DateTime64(3, 'Europe/Berlin')",
+      value: "2026-10-20 12:34:56",
+    });
   });
   test("one trailing semicolon is stripped, balanced UNION is allowed", () => {
     expect(validateSqlInput("SELECT 1; -- end").sql).toBe("SELECT 1 -- end");

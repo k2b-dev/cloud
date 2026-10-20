@@ -1,7 +1,7 @@
 import {
   CAPABILITY_MAX_RESULT_BYTES,
-  type CapabilityExecutionContext,
   type CapabilityError,
+  type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CloudResourceView,
   capabilityPage,
@@ -17,31 +17,30 @@ import {
   BaseListDataSchema,
   BaseListInputSchema,
   BaseReadInputSchema,
+  SavedQueryDataSchema,
+  SavedQueryDeleteDataSchema,
+  SavedQueryDeleteInputSchema,
+  SavedQueryListDataSchema,
+  SavedQueryListInputSchema,
+  SavedQuerySaveInputSchema,
   SourceDataSchema,
   SourceListDataSchema,
   SourceListInputSchema,
   SourceReadInputSchema,
-  SqlRunInputSchema,
   SqlRunDataSchema,
-  SavedQueryListInputSchema,
-  SavedQueryListDataSchema,
-  SavedQuerySaveInputSchema,
-  SavedQueryDataSchema,
-  SavedQueryDeleteInputSchema,
-  SavedQueryDeleteDataSchema,
+  SqlRunInputSchema,
 } from "./capability-contracts";
-import { boundSqlCapabilityResult } from "./capability-sql-result";
-import { runBaseSql } from "./service/sql-service";
-import { savedQueries } from "./service/saved-queries";
-import { SqlInputError, validateSqlInput } from "./sql-params";
-import { requireBaseAccess } from "./service/access-control";
 import { pulseCapabilityPresentation } from "./capability-presentation";
+import { boundSqlCapabilityResult } from "./capability-sql-result";
 import type { PulseBase, PulseSource } from "./contracts";
 import { resolvePulseMessages } from "./messages";
 import { pulseBaseHref, pulseSourceHref } from "./resource-hrefs";
 import { pulseService } from "./service";
-import { accessScopeFor } from "./service/access-control";
+import { accessScopeFor, requireBaseAccess } from "./service/access-control";
 import { projectBases, projectSources, resolvePublicId } from "./service/public-resources";
+import { savedQueries } from "./service/saved-queries";
+import { runBaseSql } from "./service/sql-service";
+import { SqlInputError, validateSqlInput } from "./sql-params";
 import { PULSE_NOT_CONFIGURED } from "./store/gate";
 import { pulseStoreConfigured } from "./store/service";
 
@@ -247,7 +246,7 @@ const savedReview = async (
   context: CapabilityExecutionContext,
   deleting = false,
 ) => {
-  if (!deleting && Boolean(input.queryId) !== (input.expectedRevision !== undefined))
+  if (Boolean(input.queryId) !== (input.expectedRevision !== undefined))
     return fail(err.badInput("Use queryId and expectedRevision together."));
   if (input.sql !== undefined) {
     try {
@@ -267,7 +266,7 @@ const savedReview = async (
   if (input.queryId) {
     const current = await savedQueries.get({ ...savedIdentity(context), baseId: input.baseId, queryId: input.queryId });
     if (!current.ok) return current;
-    if (!deleting && input.expectedRevision !== current.data.revision)
+    if (input.expectedRevision !== current.data.revision)
       return fail({
         code: "REVISION_CONFLICT",
         message: "The saved query changed. Read its current revision and retry.",

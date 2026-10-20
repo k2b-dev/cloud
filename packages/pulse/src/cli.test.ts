@@ -717,8 +717,16 @@ describe("Pulse saved query CLI", () => {
     expect(new Headers(context.calls[0]?.init?.headers).get("Idempotency-Key")).toBe("fixture-save");
     expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({ name: "Count", sql: "SELECT 1", params: {}, expectedRevision: 1 });
   });
+  test("delete sends the revision that was confirmed", async () => {
+    const context = createContext(["queries", "delete", "Query1"], { base: baseId, "expected-revision": "2", yes: true }, [
+      jsonResponse({ deleted: true }),
+    ]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.init?.method).toBe("DELETE");
+    expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({ expectedRevision: 2 });
+  });
   test("delete needs confirmation", async () => {
-    const context = createContext(["queries", "delete", "Query1"], { base: baseId });
+    const context = createContext(["queries", "delete", "Query1"], { base: baseId, "expected-revision": "1" });
     await expect(pulseCli.run(context.ctx)).rejects.toThrow("without --yes");
     expect(context.calls).toHaveLength(0);
   });

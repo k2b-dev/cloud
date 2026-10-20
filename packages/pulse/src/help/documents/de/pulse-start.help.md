@@ -43,3 +43,5 @@ Lies `cld pulse reference sql.md` für Parameter und Exportformate.
 Strg-C bricht eine laufende Abfrage ab. Wenn Pulse ausgelastet ist, warte die angegebene Zeit vor dem nächsten Versuch.
 Ein Ergebnis mit 10.000 Zeilen hat die Grenze erreicht. Es kann weitere Zeilen geben.
 Verkürze den Zeitraum oder gruppiere die Daten, um eine vollständige Antwort zu erhalten.
+
+Öffne **SQL** in einer Base, um eine Abfrage auszuführen, Tabelle und Zeitdiagramm zu sehen oder eine gespeicherte Abfrage zu öffnen. **Mit KI fragen** öffnet einen ungesendeten Assistant-Entwurf mit Base, SQL und Parameterwerten. Die Einstellungen öffnen ein Modal mit Allgemein, Mitglieder, Aufbewahrung, Nutzung und Grenzen sowie Leeren und löschen.

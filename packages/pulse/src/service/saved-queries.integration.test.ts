@@ -4,8 +4,8 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
-import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { updateBase } from "./base-management";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { savedQueries } from "./saved-queries";
 
 suiteFor("database")("saved SQL queries", () => {
@@ -72,8 +72,13 @@ suiteFor("database")("saved SQL queries", () => {
         error: { status: 409 },
       });
       expect(await savedQueries.save(input)).toEqual(saved);
-      expect(await savedQueries.remove({ ...read, queryId: saved.data.id })).toMatchObject({ ok: false, error: { status: 403 } });
-      const deletion = { ...write, queryId: saved.data.id, idempotencyKey: "delete-1" };
+      expect(await savedQueries.remove({ ...read, queryId: saved.data.id, expectedRevision: 2 })).toMatchObject({
+        ok: false,
+        error: { status: 403 },
+      });
+      const deletion = { ...write, queryId: saved.data.id, expectedRevision: 2, idempotencyKey: "delete-1" };
+      expect(await savedQueries.remove({ ...deletion, expectedRevision: 1 })).toMatchObject({ ok: false, error: { status: 409 } });
+      expect(await savedQueries.get({ ...read, queryId: saved.data.id })).toEqual(updated);
       expect(await savedQueries.remove(deletion)).toMatchObject({ ok: true });
       expect(await savedQueries.remove(deletion)).toMatchObject({ ok: true });
       expect(await savedQueries.get({ ...read, queryId: saved.data.id })).toMatchObject({ ok: false, error: { status: 404 } });

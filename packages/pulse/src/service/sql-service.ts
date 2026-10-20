@@ -135,6 +135,7 @@ export const runBaseSql = async (input: RunBaseSqlInput): Promise<SqlServiceResu
           params: input.params,
           runId,
           signal,
+          executionDeadline: lease.executionDeadline,
         });
       } catch (error) {
         throw observerError ?? error;

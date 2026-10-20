@@ -7,14 +7,14 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { clickhouseAdminQuery as admin } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
-import { newShortId } from "../lib/short-id";
-import { listSources } from "../service/source-management";
 import { pulseCapabilities } from "../capabilities";
+import { newShortId } from "../lib/short-id";
 import { createBaseLifecycle } from "../service/base-lifecycle";
+import { listSources } from "../service/source-management";
 import { sqlAdmission } from "../service/sql-admission";
 import { READ_VIEWS } from "../store/base-schema";
-import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "../store/base-store.test-fixture";
 import { baseStore } from "../store/base-store";
+import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "../store/base-store.test-fixture";
 import { clickhouseQuery } from "../store/client";
 import { deniedReadQueries, readViewArguments } from "../store/read-attacks.test-fixture";
 import { settingsFixture } from "../store/settings.test-fixture";
@@ -187,7 +187,9 @@ suite("SQL HTTP and agent capability share the base read boundary", () => {
       const row = (await created.json()) as { id: string; revision: number };
       expect((await person.request(base, "", { method: "PATCH", body: { timezone: "Europe/Berlin" } })).status).toBe(403);
       await sql`UPDATE auth.access SET permission='read' WHERE id=${grant}::uuid`;
-      expect((await person.request(base, `/queries/${row.id}`, { method: "DELETE" })).status).toBe(403);
+      expect(
+        (await person.request(base, `/queries/${row.id}`, { method: "DELETE", body: { expectedRevision: row.revision } })).status,
+      ).toBe(403);
       expect(
         (
           await person.request(base, `/queries/${row.id}`, {
@@ -200,7 +202,9 @@ suite("SQL HTTP and agent capability share the base read boundary", () => {
       const updated = await person.request(base, "", { method: "PATCH", body: { timezone: "Europe/Berlin" } });
       expect(updated.status).toBe(200);
       expect(await updated.json()).toMatchObject({ timezone: "Europe/Berlin", shortId: base.shortId });
-      expect((await person.request(base, `/queries/${row.id}`, { method: "DELETE" })).status).toBe(200);
+      expect(
+        (await person.request(base, `/queries/${row.id}`, { method: "DELETE", body: { expectedRevision: row.revision } })).status,
+      ).toBe(200);
     } finally {
       await cleanupFixtureBase(base);
       await sql`DELETE FROM auth.users WHERE id=${person.id}::uuid`;

@@ -95,6 +95,7 @@ const LimitsFields = (props: {
         {field("storageBytes", props.t.storageLimit, GB, props.t.gb, props.t.storageLimitDescription)}
         {field("valuesPerMinute", props.t.valuesPerMinute, 1, undefined, props.t.valuesPerMinuteDescription)}
         {field("bytesPerMinute", props.t.bytesPerMinute, MIB, props.t.mib)}
+        {field("queriesPerHour", props.t.queriesPerHour)}
         {field("maxSeries", props.t.maxSeries)}
         {field("maxEventKinds", props.t.maxEventKinds)}
         {field("maxStateKeys", props.t.maxStateKeys)}

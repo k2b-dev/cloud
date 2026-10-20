@@ -56,15 +56,24 @@ suiteFor("database")("saved query capability permissions, review, and retries", 
         error: { status: 409 },
       });
       const deletion = pulseCapabilities.actions["saved_query.delete"];
+      const deleteInput = { baseId: baseRef, queryId: created.data.data.id, expectedRevision: 1 };
+      expect(await deletion.review(deleteInput, context)).toMatchObject({ ok: false, error: { status: 409 } });
+      expect(await deletion.run(deleteInput, { ...context, idempotencyKey: "stale-delete" })).toMatchObject({
+        ok: false,
+        error: { status: 409 },
+      });
       expect("approval" in deletion).toBe(false);
       expect(deletion.destructive).toBe(true);
       const deleted = await deletion.run(
-        { baseId: baseRef, queryId: created.data.data.id },
+        { baseId: baseRef, queryId: created.data.data.id, expectedRevision: 2 },
         { ...context, idempotencyKey: "delete-query" },
       );
       expect(deleted).toMatchObject({ ok: true, data: { data: { deleted: true } } });
       expect(
-        await deletion.run({ baseId: baseRef, queryId: created.data.data.id }, { ...context, idempotencyKey: "delete-query" }),
+        await deletion.run(
+          { baseId: baseRef, queryId: created.data.data.id, expectedRevision: 2 },
+          { ...context, idempotencyKey: "delete-query" },
+        ),
       ).toEqual(deleted);
     } finally {
       await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;

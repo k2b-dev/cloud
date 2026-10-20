@@ -36,10 +36,12 @@ export type QueryOptions = {
   transport?: (input: string, init: RequestInit) => Promise<Response>;
 };
 const MAX_RESPONSE_BYTES = 1024 * 1024;
-// ClickHouse defaults http_max_uri_size to 1 MiB. Reserve 3/4 for intermediaries and overhead.
-export const CLICKHOUSE_MAX_URL_BYTES = 256 * 1024;
+// ClickHouse defaults http_max_uri_size to 1 MiB. Reserve half for intermediaries
+// and overhead. 32 String bindings of 2 KiB each need at most 384 KiB after
+// ClickHouse Escaped encoding and URL encoding (a backslash becomes 6 bytes).
+export const CLICKHOUSE_MAX_URL_BYTES = 512 * 1024;
 // Encoded UUID + Int64 pair: (36 + 2*3 quotes + 3 comma) + (20 digits/sign + 3 comma) = 68 bytes.
-// 2,000 pairs need <=136,000 bytes, leaving >123 KiB for the origin, brackets, keys and scalar settings.
+// 2,000 pairs need <=136,000 bytes, leaving >387 KiB for the origin, brackets, keys and scalar settings.
 export const CLICKHOUSE_UUID_CHUNK_SIZE = 2_000;
 
 // By Pulse's design, the Cloud admin owns internal targets: the saved or submitted

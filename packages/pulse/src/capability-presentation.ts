@@ -107,7 +107,11 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         "saved_query.delete": {
           title: "Gespeicherte Pulse-Abfrage löschen",
           description: "Eine Abfrage einer beschreibbaren Base löschen. Fragt immer nach Freigabe; Messdaten bleiben erhalten.",
-          input: { baseId: "ID oder Kennung der Base.", queryId: "ID aus saved_query.list." },
+          input: {
+            baseId: "ID oder Kennung der Base.",
+            queryId: "ID aus saved_query.list.",
+            expectedRevision: "Aktuelle Revision; vor dem Löschen lesen.",
+          },
         },
       },
     },

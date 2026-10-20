@@ -1,8 +1,8 @@
 /** Browser-safe SQL contract shared by the console, saved queries and the server. */
 export const SQL_MAX_BYTES = 16 * 1024;
 export const SQL_MAX_PARAMETERS = 32;
-// A URL-encoded UTF-8 byte can take 3 bytes. 32 * 3 * 2048 = 196608;
-// the remaining 65536 bytes of the client's 256 KiB URL budget cover names,
+// Escaped + URL encoded String bytes take at most 6 bytes.
+// 32 * 6 * 2048 = 393216; the remaining 128 KiB of the 512 KiB budget cover names,
 // types, database, query_id and origin. SQL itself travels in the POST body.
 export const SQL_PARAMETER_MAX_BYTES = 2 * 1024;
 export const SQL_RESERVED_PARAMETERS = ["base_tz"] as const;
@@ -52,7 +52,7 @@ export const scanSql = (source: string): SqlToken[] => {
       while (at < source.length && /\s/.test(source[at]!)) at++;
     } else if (source.startsWith("--", at)) {
       kind = "comment";
-      while (at < source.length && source[at] !== "\n" && source[at] !== "\r") at++;
+      while (at < source.length && source[at] !== "\n") at++;
     } else if (source.startsWith("/*", at)) {
       kind = "comment";
       at += 2;
@@ -137,7 +137,7 @@ export const validateSqlInput = (source: string, params: Record<string, string> 
   for (const [index, token] of meaningful.entries()) {
     if (token.text === ";" && (index !== meaningful.length - 1 || token.depth !== 0))
       throw new SqlInputError("SQL_ERROR", "Only one trailing semicolon is allowed", source, token.start);
-    if (token.kind === "word" && token.depth === 0 && /^(FORMAT|SETTINGS)$/i.test(token.text))
+    if (token.kind === "word" && token.depth === 0 && /^(FORMAT|SETTINGS)$/i.test(token.text) && meaningful[index + 1]?.text !== "(")
       throw new SqlInputError("SQL_ERROR", "Top-level FORMAT and SETTINGS are not allowed", source, token.start);
     if (
       token.kind === "word" &&
@@ -163,6 +163,11 @@ export const validateSqlInput = (source: string, params: Record<string, string> 
 };
 export type SqlBinding = { type: string; value: string };
 export const bindSqlValue = (value: string, timezone: string): SqlBinding => {
+  // Zone-free date-times are wall times in the base timezone, not in the
+  // server process timezone. ClickHouse parses the bound value in its type.
+  const local = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(value);
+  if (local && Number.isFinite(Date.parse(value.replace(" ", "T") + "Z")))
+    return { type: `DateTime64(3, '${timezone}')`, value: value.replace("T", " ") };
   const date = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(value);
   if (date && Number.isFinite(Date.parse(value))) {
     // Explicit instants use decimal Unix seconds, avoiding an ambiguous local
@@ -183,6 +188,13 @@ export const bindSqlValue = (value: string, timezone: string): SqlBinding => {
     return { type: "Float64", value: String(Number(value)) };
   return { type: "String", value };
 };
+// HTTP query parameters of type String use ClickHouse's Escaped input format,
+// after URL decoding. Escape only String bindings, not typed numeric/date fields.
+export const escapeSqlStringParameter = (value: string): string =>
+  value.replace(
+    /[\\\0\b\f\n\r\t]/g,
+    (character) => ({ "\\": "\\\\", "\0": "\\0", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t" })[character]!,
+  );
 export const prepareSql = (source: string, supplied: Record<string, string> = {}, timezone = "UTC") => {
   // The timezone becomes a type annotation, so check its syntax before interpolation.
   try {
@@ -205,5 +217,10 @@ export const prepareSql = (source: string, supplied: Record<string, string> = {}
     offset = token.end;
   }
   sql += checked.sql.slice(offset);
-  return { sql, params: Object.fromEntries([...bindings].map(([name, binding]) => [name, binding.value])) };
+  return {
+    sql,
+    params: Object.fromEntries(
+      [...bindings].map(([name, binding]) => [name, binding.type === "String" ? escapeSqlStringParameter(binding.value) : binding.value]),
+    ),
+  };
 };

@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import { createSqlConsoleController, type SqlConsoleControllerOptions, consoleSqlParameterNames } from "./sql-console-controller";
-import { SqlClientError, type SqlClient, type SqlResult, type SavedQuery } from "./sql-client";
+import { type SavedQuery, type SqlClient, SqlClientError, type SqlResult } from "./sql-client";
+import { consoleSqlParameterNames, createSqlConsoleController, type SqlConsoleControllerOptions } from "./sql-console-controller";
 import { SQL_TEST_NOW, SQL_TEST_RUN_ID, sqlTestLimits, sqlTestQuery, sqlTestResult } from "./sql-test-fixtures";
+
 const disposals: Array<() => void> = [];
 afterEach(() => {
   for (const dispose of disposals.splice(0)) dispose();
@@ -56,6 +57,7 @@ const harness = (overrides: Partial<SqlConsoleControllerOptions> = {}, api: Part
       initial: { limits: sqlTestLimits },
       locale: () => "de",
       newRunId: () => SQL_TEST_RUN_ID,
+      newOperationId: () => SQL_TEST_RUN_ID,
       clock: {
         now: () => now,
         schedule: (run, delay) => {
@@ -85,6 +87,26 @@ const harness = (overrides: Partial<SqlConsoleControllerOptions> = {}, api: Part
     },
   };
 };
+test("editing SQL or parameters clears previous results and ignores a result from the older execution snapshot", async () => {
+  const pending = deferred<SqlResult>();
+  const { controller: c } = harness({}, { run: () => pending.promise });
+  c.setSql("SELECT :value");
+  c.setParameter("value", "1");
+  const running = c.run();
+  c.setSql("SELECT 999 AS value");
+  pending.resolve(sqlTestResult);
+  await running;
+  expect(c.state()).toEqual({ kind: "ready" });
+  expect(c.lastResult()).toBeNull();
+  await c.run();
+  expect(c.lastResult()).toEqual(sqlTestResult);
+  c.setSql("SELECT :value");
+  expect(c.lastResult()).toBeNull();
+  await c.run();
+  expect(c.lastResult()).toEqual(sqlTestResult);
+  c.setParameter("value", "2");
+  expect(c.lastResult()).toBeNull();
+});
 test("empty/ready state and parameter values survive disappearing names; scanner errors tolerate typing", () => {
   const { controller: c } = harness();
   expect(c.state()).toEqual({ kind: "empty" });
@@ -395,8 +417,9 @@ test("successful last-budget run blocks the next run and preserves the result", 
   expect(c.canRun()).toBe(true);
 });
 
+import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
 import { sqlConsoleInitialState } from "./sql-console-controller";
-import { readWorkspacePathState, buildPulseWorkspaceHref } from "./routes";
+
 test("SSR and browser derive identical initial SQL/query/values from a reloadable URL", () => {
   const route = readWorkspacePathState(
     buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sql", queryId: "Qry001", params: { host: "db-01" }, settings: "usage" } }),
@@ -433,4 +456,120 @@ test("a GET started during a run cannot overwrite its newer limits snapshot", as
   await refreshing;
   expect(c.limits()?.queriesUsed).toBe(13);
   expect(c.limitsLoading()).toBe(false);
+});
+
+test("saved-query edits survive URL restoration including an intentionally empty draft", () => {
+  const routes: import("./routes").WorkspaceRouteState[] = [];
+  const { controller: c } = harness({
+    initial: { query: sqlTestQuery, limits: sqlTestLimits },
+    onRouteChange: (state) => routes.push(state),
+  });
+  c.setSql("SELECT 2");
+  expect(routes.at(-1)?.sql).toBe("SELECT 2");
+  c.setSql("");
+  expect(routes.at(-1)?.sql).toBe("");
+});
+
+test("a lost save response retries the same write receipt instead of creating another query", async () => {
+  const keys: Array<string | undefined> = [];
+  const { controller: c } = harness(
+    {},
+    {
+      create: async (_base, input, _signal, key) => {
+        keys.push(key);
+        if (keys.length === 1) throw new TypeError("Connection lost after write");
+        return { ...sqlTestQuery, ...input, params: input.params ?? {} };
+      },
+    },
+  );
+  c.setSql("SELECT 1");
+  expect(await c.saveAs("Answer")).toBeNull();
+  expect(c.statusBand().action?.kind).toBe("retry-save");
+  await c.statusBand().action?.run();
+  expect(keys).toEqual([SQL_TEST_RUN_ID, SQL_TEST_RUN_ID]);
+});
+
+test("delete retries retain the receipt and a reread revision requires a new operation", async () => {
+  const calls: Array<{ revision: number; key?: string }> = [];
+  let operation = 0;
+  const { controller: c } = harness(
+    { newOperationId: () => `delete-operation-${++operation}` },
+    {
+      get: async () => ({ ...sqlTestQuery, revision: 3, sql: "SELECT 3" }),
+      delete: async (_base, _id, revision, _signal, key) => {
+        calls.push({ revision, key });
+        if (calls.length === 1) throw new TypeError("Connection lost");
+        if (revision === 2) throw new SqlClientError("CONFLICT", "stale", 409);
+        return { deleted: true };
+      },
+    },
+  );
+  c.loadSaved(sqlTestQuery);
+  expect(await c.delete()).toBe(false);
+  expect(c.statusBand().action?.kind).toBe("retry-delete");
+  await c.statusBand().action?.run();
+  expect(c.statusBand().action?.kind).toBe("reload-saved");
+  await c.statusBand().action?.run();
+  expect(c.chosenQuery()?.revision).toBe(3);
+  expect(await c.delete()).toBe(true);
+  expect(calls).toEqual([
+    { revision: 2, key: "delete-operation-1" },
+    { revision: 2, key: "delete-operation-1" },
+    { revision: 3, key: "delete-operation-2" },
+  ]);
+});
+
+test("SQL errors expose the scrubbed cause next to their location", async () => {
+  const { controller: c } = harness(
+    {},
+    {
+      run: async () => {
+        throw new SqlClientError("SQL_ERROR", "Unknown identifier missing_column", 422, { line: 1, column: 8 });
+      },
+    },
+  );
+  c.setSql("SELECT missing_column");
+  await c.run();
+  expect(c.statusBand().message).toContain("Zeile 1");
+  expect(c.statusBand().message).toContain("Unknown identifier missing_column");
+});
+
+test("save-as name conflicts request a new name rather than reloading an absent query", async () => {
+  let chooseName = 0;
+  const names: string[] = [];
+  const { controller: c } = harness(
+    {
+      onSaveAsRequested: () => {
+        chooseName++;
+      },
+    },
+    {
+      create: async (_base, input) => {
+        names.push(input.name);
+        if (input.name === "Taken") throw new SqlClientError("CONFLICT", "name exists", 409);
+        return { ...sqlTestQuery, ...input, params: input.params ?? {} };
+      },
+    },
+  );
+  c.setSql("SELECT 42");
+  await c.saveAs("Taken");
+  expect(c.statusBand().message).toContain("anderen Namen");
+  expect(c.statusBand().action?.kind).toBe("save-as");
+  await c.statusBand().action?.run();
+  expect(chooseName).toBe(1);
+  expect(names).toEqual(["Taken"]);
+  await c.saveAs("Free");
+  expect(c.chosenQuery()?.name).toBe("Free");
+  expect(c.sql()).toBe("SELECT 42");
+});
+
+test("draft protection covers new SQL and edits to a saved query or its parameters", () => {
+  const { controller: c } = harness();
+  expect(c.hasUnsavedChanges()).toBe(false);
+  c.setSql("SELECT 42");
+  expect(c.hasUnsavedChanges()).toBe(true);
+  c.loadSaved({ ...sqlTestQuery, sql: "SELECT :host", params: { host: "a" } });
+  expect(c.hasUnsavedChanges()).toBe(false);
+  c.setParameter("host", "b");
+  expect(c.hasUnsavedChanges()).toBe(true);
 });

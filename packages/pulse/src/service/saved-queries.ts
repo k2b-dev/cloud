@@ -178,13 +178,15 @@ const save = async (input: SaveQueryInput): Promise<Result<SavedQuery>> => {
     throw error;
   }
 };
-const remove = async (input: BaseInput & { queryId: string; idempotencyKey?: string }): Promise<Result<void>> => {
+const remove = async (input: BaseInput & { queryId: string; expectedRevision: number; idempotencyKey?: string }): Promise<Result<void>> => {
   const authorized = await authorize(input, "write");
   if (!authorized.ok) return authorized;
   if (!idempotencyValid(input.idempotencyKey)) return fail(err.badInput("Idempotency-Key must contain 1 to 200 bytes"));
+  if (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 1)
+    return fail(err.badInput("expectedRevision is required for deletion"));
   const { baseId, scope } = authorized.data,
     key = receiptKey(input, "delete"),
-    hash = digest(input.queryId);
+    hash = digest([input.queryId, input.expectedRevision]);
   return sql.begin(async (tx): Promise<Result<void>> => {
     await tx`SELECT id FROM pulse.bases WHERE id=${baseId}::uuid FOR UPDATE`;
     const access = await requireBaseAccess(baseId, scope, "write", tx);
@@ -195,6 +197,7 @@ const remove = async (input: BaseInput & { queryId: string; idempotencyKey?: str
     if (!active.ok) return active;
     const row = await find(baseId, input.queryId, tx);
     if (!row) return fail(err.notFound("Saved query"));
+    if (row.revision !== input.expectedRevision) return fail(err.conflict("Saved query changed. Read its current revision and retry."));
     await tx`DELETE FROM pulse.saved_queries WHERE id=${row.id}::uuid`;
     await record(tx, baseId, key, hash, null);
     return ok();

@@ -46,8 +46,8 @@ test("SQL routes restore unsaved SQL/values and saved UUID or short IDs", () => 
   expect(readWorkspacePathState(href, "Base01")).toEqual({ ...state, sourceId: "", queryId: "" });
   for (const queryId of ["Qry001", "00000000-0000-4000-8000-000000000001"]) {
     const href = buildPulseWorkspaceHref({ baseId: "Base01", state: { ...state, queryId } });
-    expect(href).not.toContain("sql=");
-    expect(readWorkspacePathState(href, "Base01")).toEqual({ view: "sql", sourceId: "", sql: "", queryId, params: state.params });
+    expect(href).toContain("sql=");
+    expect(readWorkspacePathState(href, "Base01")).toEqual({ view: "sql", sourceId: "", sql: state.sql, queryId, params: state.params });
   }
   expect(readWorkspacePathState("/app/pulse/Base01/sql", "Base01")).toEqual({
     view: "sql",
@@ -80,7 +80,7 @@ test("URL payload bounds omit whole drafts, keep saved identity/settings, and re
   }
   expect(readWorkspacePathState("/app/pulse/Base01/sql?sql=" + "a".repeat(4000), "Base01").sql).toBe("");
   expect(readWorkspacePathState("/app/pulse/Base01/sql/%ZZ", "Base01").queryId).toBe("");
-  expect(readWorkspacePathState("/app/pulse/Base01/sql/Qry001?sql=SELECT+2", "Base01").sql).toBe("");
+  expect(readWorkspacePathState("/app/pulse/Base01/sql/Qry001?sql=SELECT+2", "Base01").sql).toBe("SELECT 2");
 });
 
 test("settings tabs preserve underlying source/SQL URL state", () => {

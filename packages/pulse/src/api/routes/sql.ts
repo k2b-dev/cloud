@@ -1,5 +1,5 @@
 import { type AuthContext, jsonResponse, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout, v } from "@k2b/cloud/server";
-import { Hono, type Context } from "hono";
+import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { savedQueries } from "../../service/saved-queries";
@@ -104,8 +104,18 @@ const routes = new Hono<AuthContext>()
       return answer(c, await savedQueries.save({ ...input, ...c.req.valid("json"), idempotencyKey: c.req.header("idempotency-key") }));
     },
   )
-  .delete("/bases/:baseId/queries/:queryId", metadata("Delete a saved Pulse query", z.object({ deleted: z.boolean() })), async (c) => {
-    const result = await savedQueries.remove({ ...identity(c), queryId: c.req.param("queryId") });
-    return result.ok ? c.json({ deleted: true }) : answer(c, result);
-  });
+  .delete(
+    "/bases/:baseId/queries/:queryId",
+    metadata("Delete a saved Pulse query at an expected revision", z.object({ deleted: z.boolean() })),
+    v("json", z.object({ expectedRevision: z.number().int().positive() }).strict()),
+    async (c) => {
+      const result = await savedQueries.remove({
+        ...identity(c),
+        queryId: c.req.param("queryId"),
+        expectedRevision: c.req.valid("json").expectedRevision,
+        idempotencyKey: c.req.header("idempotency-key"),
+      });
+      return result.ok ? c.json({ deleted: true }) : answer(c, result);
+    },
+  );
 export default routes;
