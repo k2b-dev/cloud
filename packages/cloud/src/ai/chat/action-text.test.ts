@@ -383,3 +383,17 @@ test("a long text is cut only when Read all can open it", () => {
   expect(linked).toContain("  …");
   expect(linked).toContain("  Read all: https://cloud.example/notes/1");
 });
+
+test("a question that shortens a long value leaves the text incomplete", () => {
+  // Two long recipients make the question longer than 400 characters, so each value is cut to 40.
+  const people = ["a", "b"].map((letter) => ({ name: letter.repeat(100), address: `${letter.repeat(200)}@example.com` }));
+  const review: CapabilityActionCallReview = {
+    locale: "en",
+    ask: "sends",
+    sentence: { action: "Send to {to}", running: "Sending to {to}", done: "Sent to {to}", confirm: "Send", decline: "Don't send" },
+    slots: { to: { kind: "person", people } },
+  };
+  const text = actionCardText(reviewActionCard(review, { locale: "en", timeZone: "UTC", app: { name: "Mail", icon: "ti ti-mail" } }));
+  expect(text.question).toContain("…");
+  expect(text.incomplete).toBe(true);
+});

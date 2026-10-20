@@ -98,8 +98,8 @@ export type ActionCard = {
   hasCheck: boolean;
   /** The receipt text of an old review's success summary. */
   summary?: string;
-  /** Every person slot of a new review, its consequences and rule lines, so plain text can tell who it left out. */
-  personSlots?: Extract<CapabilitySlot, { kind: "person" }>[];
+  /** Every slot of a new review, its consequences and rule lines, so plain text can tell what it shortened or left out. */
+  sentenceSlots?: CapabilitySlot[];
 };
 
 const REASON_LOOK: Record<CapabilityAskReason, Omit<ActionReason, "code" | "text">> = {
@@ -261,11 +261,11 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
       : plainText(context.app.name),
     short: capabilityReviewSentence(review, "short", tz),
     hasCheck: Boolean(review.check),
-    personSlots: [
+    sentenceSlots: [
       review.slots,
       ...(review.consequences ?? []).map((entry) => entry.slots ?? {}),
       ...(preview?.kind === "rule" ? [preview.when.slots ?? {}, ...preview.may.map((entry) => entry.slots ?? {})] : []),
-    ].flatMap((slots) => Object.values(slots).filter((slot) => slot.kind === "person")),
+    ].flatMap((slots) => Object.values(slots)),
   };
 };
 

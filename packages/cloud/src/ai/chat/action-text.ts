@@ -214,13 +214,16 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
     for (const consequence of model.consequences)
       row(consequence.mark === "added" ? t.added : consequence.mark === "removed" ? t.removed : t.also, consequence.plain);
   }
-  // The question names at most three people of a slot, then "N more". Those people count as shown only when a row
-  // lists each of them; people the app left out entirely are never shown.
-  for (const slot of card.personSlots ?? []) {
-    const total = slot.total ?? slot.people.length;
-    if (total > slot.people.length) incomplete = true;
-    else if (total > 3 && !slot.people.every((person) => rows.some((entry) => entry.value.includes(capabilityPersonText(person)))))
-      incomplete = true;
+  // A long question shortens slot values and names at most three people of a slot, then "N more". The text is
+  // complete only when the question or a row shows each value whole; people the app left out are never shown.
+  const shown = [card.questionText, ...rows.map((entry) => entry.value)];
+  const whole = (value: string) => shown.some((text) => text.includes(value));
+  for (const slot of card.sentenceSlots ?? []) {
+    if (slot.kind === "person") {
+      if ((slot.total ?? slot.people.length) > slot.people.length || !slot.people.every((person) => whole(capabilityPersonText(person))))
+        incomplete = true;
+    } else if ((slot.kind === "object" || slot.kind === "place") && !whole(slot.title)) incomplete = true;
+    else if (slot.kind === "text" && !whole(slot.value)) incomplete = true;
   }
   return {
     locale: card.locale,
