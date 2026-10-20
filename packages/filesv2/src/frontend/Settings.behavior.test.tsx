@@ -8,8 +8,9 @@ import type { PublicConfiguration } from "../contracts";
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 const TIMEOUT = 20_000;
 const area = { enabled: false, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" };
-const configuration = (unreadable: boolean): PublicConfiguration => ({
+const configuration = (unreadable: boolean, activityRetentionDays = 365): PublicConfiguration => ({
   url: "",
+  activityRetentionDays,
   cloud: { ...area, autoCreate: false, autoArchive: true },
   freeipa: { ...area, root: "freeipa" },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
@@ -17,17 +18,21 @@ const configuration = (unreadable: boolean): PublicConfiguration => ({
   unreadable,
 });
 
-async function setup(unreadable: boolean, hold?: Promise<void>) {
+async function setup(unreadable: boolean, hold?: Promise<void>, activityRetentionDays?: number) {
   const dom = createDomTestHarness();
   const { default: Settings } = await import("./Settings");
   const { dialogCore } = await import("@k2b/ui");
-  const requests: Array<{ method: string; url: string }> = [];
+  const requests: Array<{ method: string; url: string; body: unknown }> = [];
   let saved = 0;
   let dirty = { dirty: false, saving: false };
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: unknown, init?: RequestInit) => {
-        requests.push({ method: init?.method ?? "GET", url: String(input instanceof Request ? input.url : input) });
+        requests.push({
+          method: init?.method ?? "GET",
+          url: String(input instanceof Request ? input.url : input),
+          body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+        });
         await hold;
         return Response.json({ reset: true });
       },
@@ -37,7 +42,7 @@ async function setup(unreadable: boolean, hold?: Promise<void>) {
   const dispose = render(
     () =>
       createComponent(Settings, {
-        configuration: configuration(unreadable),
+        configuration: configuration(unreadable, activityRetentionDays),
         availability: { localLinuxEnabled: true, freeipaEnabled: true },
         onSaved: async () => {
           saved += 1;
@@ -153,6 +158,70 @@ describe("Files settings with an unreadable saved configuration", () => {
         expect(url.value).toBe("");
       } finally {
         release();
+        ui.cleanup();
+      }
+    },
+    TIMEOUT,
+  );
+});
+
+// The history retention is one more stored key: the form sends it back unchanged and never saves a value the server refuses.
+describe("Files settings history retention", () => {
+  if (isServer) {
+    test.skip("requires browser conditions and Solid DOM preload", () => {});
+    return;
+  }
+  const type = (field: HTMLInputElement, value: string) => {
+    field.value = value;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  test(
+    "saving another field keeps a non-default retention",
+    async () => {
+      const ui = await setup(false, undefined, 90);
+      try {
+        const retention = ui.document.querySelector<HTMLInputElement>('input[name="activity-retention-days"]')!;
+        expect(retention.value).toBe("90");
+        type(ui.document.querySelector<HTMLInputElement>('input[name="filegate-url"]')!, "http://filegate:4000");
+        await tick();
+        ui.document.querySelector("form")!.requestSubmit();
+        await tick();
+        await tick();
+        expect(ui.requests.map((request) => request.method)).toEqual(["PUT"]);
+        expect(ui.requests[0]!.body).toMatchObject({ url: "http://filegate:4000", activityRetentionDays: 90 });
+        expect(ui.saved()).toBe(1);
+      } finally {
+        ui.cleanup();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "29 and 3651 days are refused in place; a valid value is saved",
+    async () => {
+      const ui = await setup(false);
+      try {
+        const retention = ui.document.querySelector<HTMLInputElement>('input[name="activity-retention-days"]')!;
+        for (const days of ["29", "3651"]) {
+          type(retention, days);
+          await tick();
+          ui.document.querySelector("form")!.requestSubmit();
+          await tick();
+          expect(ui.requests).toEqual([]);
+          const alerts = Array.from(ui.document.querySelectorAll('[role="alert"]')).map((alert) => alert.textContent?.trim());
+          expect(alerts).toEqual(["Keep the history for 30 to 3,650 days."]);
+        }
+        type(retention, "400");
+        await tick();
+        expect(ui.document.querySelector('[role="alert"]')).toBeNull();
+        ui.document.querySelector("form")!.requestSubmit();
+        await tick();
+        await tick();
+        expect(ui.requests.map((request) => request.method)).toEqual(["PUT"]);
+        expect(ui.requests[0]!.body).toMatchObject({ activityRetentionDays: 400 });
+      } finally {
         ui.cleanup();
       }
     },

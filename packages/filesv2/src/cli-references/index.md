@@ -599,6 +599,9 @@ editing), `internalUrl`, `wopiOrigin`, and `documentFormat` (`odf` or `ooxml`). 
 contains `enabled`, `root`, `prefix`, `homes`, `groups`, and `archive`; the
 top-level `url` is the Filegate backend URL. The Cloud block also contains
 `autoCreate` (default `false`) and `autoArchive` (default `true`).
+Top-level `activityRetentionDays` retains folder history for 365 days by
+default and accepts integers from 30 to 3650. Preserve it when editing
+other settings.
 
 ```bash
 cld filesv2 admin configuration get --json > ./filesv2.json

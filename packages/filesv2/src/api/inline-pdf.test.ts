@@ -1,11 +1,22 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import type { AuthContext } from "@k2b/cloud/server";
+import { Hono } from "hono";
+import { testActor, testCall } from "../../test/files-call";
 import { filesService } from "../service";
-import { inlinePdfApi } from "./inline-pdf";
+import { inlinePdfApi as routes } from "./inline-pdf";
 
 afterEach(() => {
   spyOn(filesService, "inlinePdf").mockRestore();
 });
 
+const inlinePdfApi = new Hono<AuthContext>()
+  .use("*", async (c, next) => {
+    c.set("actor", testActor);
+    c.set("accessSubject", testCall(testActor).accessSubject);
+    c.set("credentialKind", "session");
+    await next();
+  })
+  .route("/", routes);
 const pdfStream = () => new Response("%PDF-1.7\n").body!;
 
 test("the API route reads the exact stored path of an encoded address", async () => {

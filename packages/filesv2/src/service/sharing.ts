@@ -1,16 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { RequestActor } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
-import {
-  type ExecutionIdentity,
-  type Filegate,
-  FilegateError,
-  type Node,
-  type Ownership,
-  type RootClient,
-  type Session,
-  type SessionCreated,
-} from "@k2b/filegate";
+import { type ExecutionIdentity, FilegateError, type Node, type Ownership, type Session, type SessionCreated } from "@k2b/filegate";
 import type { z } from "zod";
 import type {
   ArchiveDownload,
@@ -26,15 +17,17 @@ import type {
 import type { Binding, bindings, NewBinding } from "../data/bases";
 import { type ShareRow, shares, shareTokenHash } from "../data/shares";
 import { normalizeExecution, sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
+import { pendingMigration, type UserFilesCall } from "./activity";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
+import type { FilesFilegate, FilesRoot } from "./filegate-facade";
 import { joinPath, relativePath, userPath } from "./paths";
 import type { UnixIdentity } from "./posix";
 import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
 
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
 export type SharingAccess = {
-  root: RootClient;
+  root: FilesRoot;
   node: Node;
   target: string;
   relative: string;
@@ -51,7 +44,7 @@ export type SharingDependencies<T extends SharingAccess> = {
   validateUploadTarget(current: T, path: string): Promise<void>;
   bindings: typeof bindings;
   readConfiguration: typeof readConfiguration;
-  connect(config: Config): Filegate;
+  connect(config: Config): FilesFilegate;
   publicOrigin(): Promise<string>;
   ownershipFor(current: T, directory: boolean): Ownership;
 };
@@ -170,7 +163,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
     )
       throw new FilesError("upload_changed", 409);
   }
-  const sessionRoot = (root: RootClient, upload: Upload) => (upload.execution ? root.as(upload.execution) : root);
+  const sessionRoot = (root: FilesRoot, upload: Upload) => (upload.execution ? root.as(upload.execution) : root);
   async function remember(upload: Upload, share: ShareRow, session: Session): Promise<Upload> {
     validateSession({ ...upload, filegate_session_id: uploadSessionId(upload) ?? session.id }, share, session);
     if (session.result) published(upload, share, session.result);
@@ -185,16 +178,18 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
     // A missing receipt must never turn into a second upload after Filegate discards its idempotency record.
     if (!upload.write_options || Date.now() - upload.created_at.getTime() >= 7 * 86_400_000) throw new FilesError("upload_uncertain", 409);
     await deps.validateUploadTarget(current, upload.path);
-    const created = await current.root.createSession(uploadTarget(upload, share), upload.size, {
-      ...upload.write_options,
-      idempotencyKey: upload.id,
-      expiresIn: 300,
-      allowAbort: true,
-    });
+    const created = await pendingMigration("sharing.inbox_session", () =>
+      current.root.createSession(uploadTarget(upload, share), upload.size, {
+        ...upload.write_options,
+        idempotencyKey: upload.id,
+        expiresIn: 300,
+        allowAbort: true,
+      }),
+    );
     await remember(upload, share, created.session);
     return created;
   }
-  async function reconcile(root: RootClient, upload: Upload, config: Config): Promise<Upload> {
+  async function reconcile(root: FilesRoot, upload: Upload, config: Config): Promise<Upload> {
     if (upload.state !== "open") return upload;
     if (!upload.server_url || upload.server_url !== config.url) {
       await uploads.unresolved(upload.id, "storage_changed");
@@ -240,9 +235,10 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       return unlockSharePassword(row, password);
     },
     async createShare(
-      actor: RequestActor,
+      call: UserFilesCall,
       input: z.input<typeof CreateShareInputSchema> & { baseId: string },
     ): Promise<ShareView & { url: string }> {
+      const actor = call.actor;
       const { CreateShareInputSchema } = await import("../contracts");
       const parsed = CreateShareInputSchema.parse(input);
       if (parsed.maxFileSize > parsed.maxTotalSize) throw new FilesError("inbox_invalid_limits");
@@ -291,7 +287,8 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const url = `${await deps.publicOrigin()}/share/filesv2/${row.kind === "inbox" ? "inbox" : "s"}/${token}`;
       return { ...shareView(row, binding), url };
     },
-    async listShares(actor: RequestActor, input: { after?: string; admin?: boolean } = {}): Promise<SharePage> {
+    async listShares(call: UserFilesCall, input: { after?: string; admin?: boolean } = {}): Promise<SharePage> {
+      const actor = call.actor;
       const userId = await deps.actorUserId(actor);
       if (input.admin) await deps.requireAdmin(actor);
       const page = await shares.list({ ownerId: input.admin ? undefined : userId, after: input.after });
@@ -300,7 +297,8 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         next: page.next,
       };
     },
-    async revokeShare(actor: RequestActor, input: { id: string; admin?: boolean }): Promise<ShareView> {
+    async revokeShare(call: UserFilesCall, input: { id: string; admin?: boolean }): Promise<ShareView> {
+      const actor = call.actor;
       const { row, userId, binding } = await management(actor, input.id, input.admin);
       await shares.revoke(row.id, userId);
       return shareView((await shares.get(row.id))!, binding);
@@ -486,7 +484,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       validateSession(upload, row, session);
       if (session.received !== session.size) throw new FilesError("upload_incomplete", 409);
       try {
-        const node = await active.root.commitSession(sessionId);
+        const node = await pendingMigration("sharing.inbox_session", () => active.root.commitSession(sessionId));
         const result = published(upload, row, node);
         await uploads.finish(upload.id, "committed", node);
         return result;
@@ -508,7 +506,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const sessionId = uploadSessionId(reconciled);
       if (!sessionId) return;
       try {
-        await sessionRoot(root, reconciled).abortSession(sessionId);
+        await pendingMigration("sharing.inbox_session", () => sessionRoot(root, reconciled).abortSession(sessionId));
       } catch (error) {
         await reconcile(root, upload, config);
         if (!(error instanceof FilegateError && [404, 409].includes(error.status))) throw error;
@@ -539,7 +537,8 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       }
       return { processed, unresolved };
     },
-    async adminUploadReservations(actor: RequestActor, input: { after?: string } = {}) {
+    async adminUploadReservations(call: UserFilesCall, input: { after?: string } = {}) {
+      const actor = call.actor;
       await deps.requireAdmin(actor);
       const page = await uploads.uncertain(input.after);
       return {
