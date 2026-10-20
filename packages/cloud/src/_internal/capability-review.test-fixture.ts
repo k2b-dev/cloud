@@ -293,7 +293,7 @@ const slotBoundaryCases = () => {
   }));
   bound("place title", 200, (n) => ({ kind: "place", title: "x".repeat(n) }));
   bound("person people", 20, (n) => ({ kind: "person", people: Array.from({ length: n }, () => ({ name: "Lea" })) }));
-  bound("person name", 120, (n) => ({ kind: "person", people: [{ name: "x".repeat(n), userId: "11111111-1111-4111-8111-111111111111" }] }));
+  bound("person name", 200, (n) => ({ kind: "person", people: [{ name: "x".repeat(n), userId: "11111111-1111-4111-8111-111111111111" }] }));
   bound("person address", 320, (n) => ({ kind: "person", people: [{ address: "x".repeat(n) }] }));
   bound("person total", 100_000, (n) => ({ kind: "person", people: [{ name: "Lea" }], total: n }));
   bound("count value", 1_000_000_000, (n) => ({ kind: "count", value: n, noun: { other: "items" } }), 0);
