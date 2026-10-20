@@ -2384,15 +2384,16 @@ function MailWorkspaceView(props: {
       savedViewId: data.savedViewId,
     }),
   );
-  const [openFolderRowHidden, setOpenFolderRowHidden] = createSignal(false);
+  // The sidebar reports when the person collapsed what holds the open place's row; the heading then names it again.
+  const [openPlaceRowHidden, setOpenPlaceRowHidden] = createSignal(false);
   const listNamedBy = createMemo(() => {
     if (currentTab() !== null) return "tabs";
+    if (openPlaceRowHidden()) return null;
     if (
       data.scheduledMode ||
       data.draftsMode ||
       data.activeView === "send_problems" ||
-      (!openFolderRowHidden() &&
-        flattenMailFolderTree(buildVisibleMailFolderTree(data.folders)).some(({ folder }) => folder.id === data.folderId))
+      flattenMailFolderTree(buildVisibleMailFolderTree(data.folders)).some(({ folder }) => folder.id === data.folderId)
     )
       return "sidebar";
     return null;
@@ -2430,7 +2431,7 @@ function MailWorkspaceView(props: {
         preferences={mailboxPreferences}
         // Other mailboxes' counts require the cross-mailbox Focus read; keep mailbox opens fast.
         counts={[]}
-        onOpenFolderRowHiddenChange={setOpenFolderRowHidden}
+        onOpenPlaceRowHiddenChange={setOpenPlaceRowHidden}
         open={{
           mailboxId: data.mailbox.id,
           mailboxName: data.mailbox.name,

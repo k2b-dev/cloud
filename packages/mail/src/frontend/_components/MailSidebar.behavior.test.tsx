@@ -205,6 +205,7 @@ test.skipIf(isServer)("hiding the open mailbox opens the closed Hidden section, 
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
   const m = modules!;
+  const rowHidden: boolean[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(async () => Response.json({ pinned: false, hidden: true }), { preconnect: originalFetch.preconnect });
   const dispose = render(
@@ -218,6 +219,7 @@ test.skipIf(isServer)("hiding the open mailbox opens the closed Hidden section, 
           ],
           preferences: m.createMailboxPreferences({ pinnedMailboxIds: [], hiddenMailboxIds: ["Box002"] }),
           open: m.openMailboxFixture({ folders: [mailTestFolder("Inbox1", { name: "Inbox", role: "inbox" })] }),
+          onOpenPlaceRowHiddenChange: (hidden: boolean) => rowHidden.push(hidden),
         }),
       ),
     dom.root,
@@ -237,6 +239,15 @@ test.skipIf(isServer)("hiding the open mailbox opens the closed Hidden section, 
     items[1]!.click();
     expect(dom.root.querySelector('[data-mailbox="Box001"][data-hidden="true"]')).not.toBeNull();
     expect(shown(inbox())).toBe(true);
+    expect(rowHidden.at(-1)).toBe(false);
+    // Closing the section hides the open mailbox's places, so the page names the open place again.
+    const section = () => dom.root.querySelector<HTMLButtonElement>(".mail-sidebar-hidden-mailboxes button[aria-expanded]")!;
+    section().click();
+    expect(shown(inbox())).toBe(false);
+    expect(rowHidden.at(-1)).toBe(true);
+    section().click();
+    expect(shown(inbox())).toBe(true);
+    expect(rowHidden.at(-1)).toBe(false);
   } finally {
     dispose();
     globalThis.fetch = originalFetch;

@@ -139,7 +139,7 @@ if (!isServer) {
         () => (
           <MailSidebar
             {...mailSidebarFixture()}
-            onOpenFolderRowHiddenChange={(hidden) => hiddenChanges.push(hidden)}
+            onOpenPlaceRowHiddenChange={(hidden) => hiddenChanges.push(hidden)}
             open={{
               ...openMailboxFixture(),
               mailboxId: "Box001",
