@@ -35,8 +35,8 @@
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
     "@lezer/common": "1.5.3",
-    "@lezer/highlight": "1.2.4",
-    "@lezer/markdown": "1.7.2",
+    "@lezer/highlight": "1.2.5",
+    "@lezer/markdown": "1.8.0",
     "@uiw/codemirror-themes": "4.25.12",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
@@ -48,7 +48,7 @@
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "katex": "catalog:",
-    "marked": "18.0.14",
+    "marked": "18.1.1",
     "mermaid": "catalog:",
     "sanitize-html": "catalog:",
     "solid-codemirror": "2.3.3",
@@ -66,7 +66,7 @@
     "@types/sanitize-html": "catalog:",
     "bun-plugin-tailwind": "catalog:",
     "playwright": "catalog:",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "typescript": "catalog:"
   },
   "license": "AGPL-3.0-or-later"
