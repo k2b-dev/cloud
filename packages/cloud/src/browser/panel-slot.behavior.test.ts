@@ -627,6 +627,48 @@ else {
     expect(fetch.mock.calls.map(([url]) => url)).toContain("/api/me/panel-consent");
   });
 
+  for (const request of ["GET", "PUT"] as const) {
+    test(`a delayed consent ${request} cannot override a newer answer from a swapped page`, async () => {
+      const response = Promise.withResolvers<Response>();
+      const fetch = spyOn(globalThis, "fetch").mockReturnValue(response.promise);
+      fetchSpy = fetch;
+      const h = setupContext(pageContext, true, request === "GET");
+      h.open();
+      const { post, shown } = loadedDocument(h, h.frame().src);
+      ready(h);
+      if (request === "GET") restore();
+      else h.click('[data-cloud-panel-consent-answer="allow"]');
+      await tick();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch.mock.calls[0]?.[1]?.method ?? "GET").toBe(request);
+      swapShellData((panel) => ({
+        ...panel,
+        context: nextContext,
+        consent: { provider: "fixture", allowed: false, revision: 3 },
+      }));
+      const before = post.mock.calls.length;
+      response.resolve(
+        Response.json(
+          request === "GET"
+            ? { answers: { fixture: { allowed: true, revision: 2 } } }
+            : { provider: "fixture", allowed: true, revision: 2 },
+        ),
+      );
+      await tick();
+      await tick();
+      ready(h);
+      expect(h.slot.dataset.contextAllowed).toBe("false");
+      expect(shown.searchParams.has(PANEL_CONTEXT_PARAM)).toBe(false);
+      expect(
+        post.mock.calls
+          .slice(before)
+          .map(([data]) => data)
+          .filter(isPanelContextMessage)
+          .every((message) => message.context === null),
+      ).toBe(true);
+    });
+  }
+
   test("a swapped page with the same consent answer shares at once and reads nothing", () => {
     const fetch = spyOn(globalThis, "fetch");
     fetchSpy = fetch;

@@ -276,8 +276,13 @@ export function installPanelSlot(): () => void {
     }
     for (const item of panel.providers) {
       if (!item.consent) continue;
+      const knownRevision = revisions.get(item.id) ?? 0;
+      const readRevision = nextRevisions.get(item.id);
+      // A page swap can observe a newer answer while this request is in flight. Never rewind that answer.
+      if (readRevision !== undefined && readRevision < knownRevision) continue;
       answers.set(item.id, next.get(item.id) ?? null);
-      revisions.set(item.id, nextRevisions.get(item.id) ?? 0);
+      // An unreadable answer still stops sharing, but must not forget the newest observed revision.
+      revisions.set(item.id, readRevision ?? knownRevision);
     }
     answersStale = false;
   };
@@ -519,8 +524,10 @@ export function installPanelSlot(): () => void {
           saved.revision <= 0
         )
           throw new Error("Invalid panel consent answer");
-        answers.set(item.id, request.allowed);
-        revisions.set(item.id, saved.revision);
+        if (saved.revision >= (revisions.get(item.id) ?? 0)) {
+          answers.set(item.id, request.allowed);
+          revisions.set(item.id, saved.revision);
+        }
       } catch {
         // Not saved: nothing is shared until the person answers again; the read learns the current revision.
         errors.add(item.id);
