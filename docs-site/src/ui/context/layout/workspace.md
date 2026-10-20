@@ -396,6 +396,9 @@ that width plus 440 px for the reader before Detail can become a column.
 `MainPane.defaultSize` uses the share while there is no stored or live width.
 Its own `minSize` and `maxSize` still apply, and it gives way while Main's
 primary region keeps 320 px. Resetting its handle restores the share.
+CSS fits each share default against Main alone. Beside other panes, keep the
+defaults' sum within Main's room: the controller fits crowding panes only
+after it attaches, which moves them once after the server frame.
 
 Waiting depends on the width of the content region beside the sidebar at
 every host width and with every input device. Column fit requires Main's

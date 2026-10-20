@@ -988,6 +988,66 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       }, 60_000);
 
+      test("reader toolbar: the largest own toolbar fits every reader width, in English and German", async () => {
+        // Eight actions is the most a person can choose; all three answers plus the widest icons.
+        const toolbar = "reply,reply_all,forward,archive,spam,trash,move,read";
+        const misfits: string[] = [];
+        const readers: number[] = [];
+        for (const locale of ["en", "de"] as const) {
+          for (const [extra, widths] of [
+            ["", [768, 800, 834, 900, 980, 1024, 1100, 1194, 1280, 1366, 1440]],
+            ["&list=hidden", [834, 900]],
+            ["&shell=1&sidebar=240&panel=416", [1024, 1100, 1194, 1280, 1366]],
+          ] as const) {
+            // One page per case; container queries follow each resize at once.
+            const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}&locale=${locale}${extra}`, widths[0], 900);
+            try {
+              for (const width of widths) {
+                await page.setViewportSize({ width, height: 900 });
+                const result = await page.evaluate(
+                  () =>
+                    new Promise<{ reader: number; outside: string[]; details: boolean }>((resolve) =>
+                      requestAnimationFrame(() =>
+                        requestAnimationFrame(() => {
+                          const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
+                          const bar = document.querySelector(".mail-reader-toolbar")!;
+                          const outside = [...bar.querySelectorAll<HTMLElement>("button, a")]
+                            .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden")
+                            .filter((element) => {
+                              const box = element.getBoundingClientRect();
+                              return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
+                            })
+                            .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
+                          const details = bar.querySelector<HTMLElement>("[data-mail-details-trigger]")!.getClientRects().length > 0;
+                          resolve({ reader: Math.round(reader.width), outside, details });
+                        }),
+                      ),
+                    ),
+                );
+                readers.push(result.reader);
+                if (result.outside.length || !result.details)
+                  misfits.push(`${locale} ${width}${extra} (reader ${result.reader}): ${result.outside.join(", ") || "no Details"}`);
+              }
+            } finally {
+              await close(page);
+            }
+          }
+        }
+        expect(misfits).toEqual([]);
+        // The sweep covers every tier: under 380, 380–440, 440–520, 520–720 and from 720 px of reader.
+        for (const [from, to] of [
+          [0, 380],
+          [380, 440],
+          [440, 520],
+          [520, 720],
+          [720, 2000],
+        ] as const)
+          expect(
+            readers.some((width) => width >= from && width < to),
+            `a reader width in ${from}–${to} (${[...new Set(readers)].join(", ")})`,
+          ).toBe(true);
+      }, 90_000);
+
       test("reader toolbar: a person's own actions stay, and those that do not fit are in …", async () => {
         const toolbar = "reply,forward,archive,trash,move,read,flag,tags";
         const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}`, 834, 1194);
