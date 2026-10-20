@@ -1276,3 +1276,49 @@ describe("capability MCP projection", () => {
     });
   });
 });
+
+test("MCP keeps its JSON socket raised until a tool response or error and resets it", async () => {
+  for (const fail of [false, true]) {
+    const calls: number[] = [];
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      fetch: async () => {
+        entered.resolve();
+        await release.promise;
+        if (fail) throw new Error("upstream unavailable");
+        return Response.json({ data: { id: "one" } });
+      },
+    });
+    const pending = routes.request(
+      "/mcp/v1",
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json, text/event-stream",
+          "content-type": "application/json",
+          "mcp-protocol-version": "2025-06-18",
+          authorization: "Bearer caller",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "demo__query__get", arguments: { id: "one" } },
+        }),
+      },
+      { timeout: (_request: Request, seconds: number) => calls.push(seconds) },
+    );
+    try {
+      await entered.promise;
+      expect(calls).toEqual([55]);
+    } finally {
+      release.resolve();
+    }
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ result: { isError: fail } });
+    expect(calls).toEqual([55, 10]);
+  }
+});
