@@ -375,6 +375,7 @@ test("the Studio scroll canvas follows Cloud, including the transparent wrapper"
         ).toBe(100);
         expect(await app(page).getByRole("textbox").inputValue()).toBe("edited value");
         expect(await wrapper.locator("html").evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches)).toBe(theme === "dark");
+        expect(await wrapper.locator("html").evaluate((element) => getComputedStyle(element).colorScheme)).toBe(theme);
         const surface = await page.locator("html").evaluate((element) => getComputedStyle(element).backgroundColor);
         expect(
           await app(page)
