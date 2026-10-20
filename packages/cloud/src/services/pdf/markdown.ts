@@ -229,7 +229,21 @@ const INLINE_FORMATTING = new Set([
   "var",
 ]);
 
-const SKIPPED_IN_CELLS = new Set(["svg", "math", "style", "script"]);
+// Graphics and formulas keep their own layout. In raw-text and RCDATA elements
+// a <wbr> would be literal text, not markup.
+const SKIPPED_IN_CELLS = new Set([
+  "svg",
+  "math",
+  "style",
+  "script",
+  "textarea",
+  "title",
+  "xmp",
+  "iframe",
+  "noembed",
+  "noframes",
+  "noscript",
+]);
 
 const breakLongCellRuns = (html: string): string => {
   let skippedDepth = 0;
@@ -269,7 +283,6 @@ const breakLongCellRuns = (html: string): string => {
         carried = 0;
         // Void and self-closing elements have no end tag.
         if (!element.canHaveContent || element.selfClosing) return;
-        // Graphics, formulas, styles and scripts in a cell keep their text.
         const skipped = SKIPPED_IN_CELLS.has(element.tagName);
         if (skipped) skippedDepth += 1;
         // One end tag handler per element: a second registration would replace this one.

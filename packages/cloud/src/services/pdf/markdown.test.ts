@@ -181,7 +181,7 @@ describe("Markdown PDF renderer", () => {
 
   test("leaves SVG, MathML, styles and scripts in cells untouched and resumes after self-closing elements", () => {
     const long = "a".repeat(21);
-    const skipped = `<svg><g><text>${long}</text></g><svg><text>${long}</text></svg></svg><math><mtext>${long}</mtext></math><style>p { color: ${long}; }</style><script>const x = '${long}';</script><svg/><math/>`;
+    const skipped = `<svg><g><text>${long}</text></g><svg><text>${long}</text></svg></svg><math><mtext>${long}</mtext></math><style>p { color: ${long}; }</style><script>const x = '${long}';</script><textarea>${long}</textarea><title>${long}</title><svg/><math/>`;
     const html = buildPresetPdfHtml({ html: `<table><tr><td>${skipped}${long}</td><th>${skipped}${long}</th></tr></table>` });
     expect(html).toContain(`<td>${skipped}${"a".repeat(10)}<wbr>${"a".repeat(10)}<wbr>a</td>`);
     expect(html).toContain(`<th>${skipped}${"a".repeat(10)}<wbr>${"a".repeat(10)}<wbr>a</th>`);
