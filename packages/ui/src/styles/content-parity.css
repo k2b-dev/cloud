@@ -6382,6 +6382,9 @@
 /* The canvas takes arrow keys for panning; its focus shows as the token ring inset on the rounded map, never clipped. */
 .k2b-ui .k2b-map-view .maplibregl-canvas:focus-visible { outline: none; }
 .k2b-ui .k2b-map-view:has(.maplibregl-canvas:focus-visible)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring); pointer-events: none; }
+@media (forced-colors: active) {
+  .k2b-ui .k2b-map-view:has(.maplibregl-canvas:focus-visible)::after { outline: var(--k2b-focus-width) solid Highlight; outline-offset: calc(-1 * var(--k2b-focus-width)); }
+}
 .k2b-ui .k2b-map-view .maplibregl-interactive { cursor: grab; user-select: none; }
 .k2b-ui .k2b-map-view .maplibregl-interactive:active { cursor: grabbing; }
 .k2b-ui .k2b-map-view .maplibregl-cooperative-gestures { touch-action: pan-x pan-y; }
