@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { deflateSync } from "node:zlib";
 import type { BrowserContextOptions, Frame, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { renderComposeContent } from "../../service/compose-renderer";
 import { sanitizeIncomingMailHtml } from "../../service/message-hydration";
 import type {} from "./MailMessageBody.browser-harness";
@@ -109,6 +109,8 @@ const server = Bun.serve({
     const dark = searchParams.get("theme") === "dark";
     return new Response(
       `<!doctype html><html class="${dark ? "dark" : ""}"><head><style>
+      .block { display: block; }
+      .w-full { width: 100%; }
       .bg-white { background-color: white; }
       .bg-transparent, .dark [class~="dark:bg-transparent"] { background-color: transparent; }
     </style></head><body style="margin:0;${dark ? "background:#11151b;color:#f4f4f5" : "background:#ffffff;color:#18181b"}"><div id="root"></div><script src="/harness.js"></script></body></html>`,
@@ -193,21 +195,29 @@ const visibleImages = (frame: Frame, count: number) =>
     count,
   );
 
-// The host's messages reach the frame in order. Reopening the quote through the
-// same channel and seeing its toggle come back proves every earlier message ran.
-const settleFrame = (page: Page) =>
+// Quotes acknowledge ordered host messages. Fixtures without quoted history
+// use a height reply, followed by settled() before reading layout.
+const settleFrame = (page: Page, reply: "quote" | "height" = "quote") =>
   page.evaluate(
-    () =>
+    (reply) =>
       new Promise<void>((resolve) => {
         const target = document.querySelector("iframe")!.contentWindow!;
         const listener = (event: MessageEvent) => {
-          if (event.source !== target || event.data?.type !== "quote") return;
+          if (event.source !== target || event.data?.type !== reply) return;
           removeEventListener("message", listener);
           resolve();
         };
         addEventListener("message", listener);
-        target.postMessage({ source: "cloud-mail-host", channel: "mail-message-Msg001", type: "quotes", value: [0] }, "*");
+        target.postMessage(
+          {
+            source: "cloud-mail-host",
+            channel: "mail-message-Msg001",
+            ...(reply === "quote" ? { type: "quotes", value: [0] } : { type: "measure" }),
+          },
+          "*",
+        );
       }),
+    reply,
   );
 
 const imageStates = (frame: Frame) =>
@@ -929,4 +939,152 @@ describe("HTML mail with Markdown dividers", () => {
       );
     }, 30_000);
   }
+});
+
+const tableMarkdown = [
+  "| Nr. | Artikel | Menge |",
+  "| --- | --- | --- |",
+  `| 100 | ${"https://example.test/".padEnd(120, "x")} | 2 |`,
+  `| 110 | \`${"item".repeat(30)}\` | 3 |`,
+  "",
+  "See [the catalog](https://example.test/catalog).",
+].join("\n");
+
+const expectTablesFit = async (page: Page, frame: Frame) => {
+  await frame.locator("table").first().waitFor();
+  await frame.evaluate(() => document.fonts.ready);
+  await settleFrame(page, "height");
+  await settled(page);
+  const layout = await frame.evaluate(() => {
+    const tables = Array.from(document.querySelectorAll("table"));
+    const tokens = tables.flatMap((table) =>
+      Array.from(table.querySelectorAll("th, td"))
+        .filter((cell) => ["Nr.", "100", "110"].includes(cell.textContent?.trim() ?? ""))
+        .map((cell) => {
+          // Count the text's own line boxes: inline padding of the element adds rects of its own.
+          const text = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT).nextNode();
+          if (!text) throw new Error("Expected a cell text node");
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          return { text: text.textContent, lines: new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top))).size };
+        }),
+    );
+    return {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      tables: tables.map((table) => ({
+        right: table.getBoundingClientRect().right,
+        width: table.getBoundingClientRect().width,
+        marked: table.hasAttribute("data-mail-wrap-anywhere"),
+      })),
+      tokens,
+    };
+  });
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+  for (const table of layout.tables) expect(table.right).toBeLessThanOrEqual(layout.clientWidth + 0.5);
+  return layout;
+};
+const oneLineTableTokens = ["Nr.", "100", "110"].map((text) => ({ text, lines: 1 }));
+
+describe("HTML mail with tables", () => {
+  const rendered = renderComposeContent({
+    body: tableMarkdown,
+    format: "markdown",
+    customCss: "",
+    renderLiquid: false,
+    context: {
+      actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+      mailbox: { name: "Example Team", description: "" },
+      sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+      message: { subject: "Catalog", to: ["grace@example.test"], cc: [] },
+    },
+  });
+  if (!rendered.ok || !rendered.data.html) throw new Error("The table message did not render");
+  const received = sanitizeIncomingMailHtml(rendered.data.html);
+
+  test("keeps short table tokens on one line and long links and code inside the phone reader and print", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        expect((await expectTablesFit(page, frame)).tokens).toEqual(oneLineTableTokens);
+        await page.emulateMedia({ media: "print" });
+        expect((await expectTablesFit(page, frame)).tokens).toEqual(oneLineTableTokens);
+        expect(errors).toEqual([]);
+      },
+      { html: received, attachments: [], viewport: { width: 360, height: 812 }, reducedMotion: "reduce" },
+    );
+  }, 30_000);
+
+  // A newsletter column keeps its own 600px width; a long plain-text token in its footer must not widen it.
+  const newsletter = sanitizeIncomingMailHtml(`
+    <table width="100%"><tr><td align="center">
+      <table width="100%" style="max-width: 600px"><tr><td>
+        <table width="100%"><tr>
+          <td width="50%"><p>A garden update for our readers.</p></td>
+          <td width="50%"><p>Browse the new collection.</p><a href="https://news.example.test/catalog">View catalog</a></td>
+        </tr></table>
+      </td></tr><tr><td>Unsubscribe: ${"https://news.example.test/track/click?id=".padEnd(120, "x")}</td></tr></table>
+    </td></tr></table>`);
+
+  for (const width of [360, 1440]) {
+    test(`keeps a newsletter with a plain-text URL in its width at ${width}px without changing a fitting data table`, async () => {
+      await withOpenedMessage(
+        false,
+        async ({ page, frame, errors }) => {
+          const layout = await expectTablesFit(page, frame);
+          expect(layout.tokens).toEqual(oneLineTableTokens);
+          expect(layout.tables[1]!.width).toBeLessThanOrEqual(600.5);
+          expect(layout.tables.at(-1)!.marked).toBe(false);
+          expect(errors).toEqual([]);
+        },
+        { html: newsletter + received, attachments: [], viewport: { width, height: 900 }, reducedMotion: "reduce" },
+      );
+    }, 30_000);
+  }
+
+  const plainTokenTable = `<table width="100%"><tr><th>Nr.</th><th>Artikel</th></tr>
+    <tr><td>100</td><td>${"x".repeat(120)}</td></tr><tr><td>110</td><td>Garden kit</td></tr></table>`;
+
+  test("lets a table break anywhere only while its plain-text token cannot fit the width", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        const wide = await expectTablesFit(page, frame);
+        expect(wide.tables[0]!.marked).toBe(false);
+        expect(wide.tokens).toEqual(oneLineTableTokens);
+        await page.setViewportSize({ width: 360, height: 900 });
+        await frame.waitForSelector("table[data-mail-wrap-anywhere]", { timeout: 5_000 });
+        expect((await expectTablesFit(page, frame)).tables[0]!.marked).toBe(true);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await frame.waitForSelector("table:not([data-mail-wrap-anywhere])", { timeout: 5_000 });
+        const widened = await expectTablesFit(page, frame);
+        expect(widened.tables[0]!.marked).toBe(false);
+        expect(widened.tokens).toEqual(oneLineTableTokens);
+        expect(errors).toEqual([]);
+      },
+      { html: sanitizeIncomingMailHtml(plainTokenTable), attachments: [], viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" },
+    );
+  }, 30_000);
+
+  test("leaves a hidden quoted table unmarked until the quote opens", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await frame.locator("details.mail-quoted-history").waitFor();
+        await settleFrame(page, "height");
+        await settled(page);
+        expect(await frame.locator("table[data-mail-wrap-anywhere]").count()).toBe(0);
+        await frame.locator("summary").click();
+        await frame.waitForSelector("table[data-mail-wrap-anywhere]", { timeout: 5_000 });
+        await expectTablesFit(page, frame);
+        expect(errors).toEqual([]);
+      },
+      {
+        html: sanitizeIncomingMailHtml(`<blockquote type="cite">${plainTokenTable}</blockquote>`),
+        attachments: [],
+        viewport: { width: 360, height: 812 },
+        reducedMotion: "reduce",
+      },
+    );
+  }, 30_000);
 });

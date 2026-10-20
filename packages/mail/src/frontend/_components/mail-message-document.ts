@@ -65,6 +65,9 @@ export const buildMessageDocument = (
     body { padding: 1px; }
     img { max-width: 100%; height: auto; }
     table { max-width: 100%; border-collapse: collapse; }
+    th, td { overflow-wrap: break-word; }
+    :is(th, td) :is(a, code) { overflow-wrap: anywhere; }
+    [data-mail-wrap-anywhere] :is(th, td) { overflow-wrap: anywhere; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; }
     a { color: #1677c8; }
     details.mail-quoted-history { margin-top: 12px; }
@@ -159,6 +162,20 @@ export const buildMessageDocument = (
         selectionTimer = setTimeout(() => post("selection", String(getSelection()?.toString() || "").trim().slice(0, 10000)), 25);
       });
       const root = document.getElementById("mail-message-root");
+      // break-word keeps short cell values whole, but a long plain-text token can then make its
+      // table wider than anywhere did, past the reader or a newsletter's own width. Such a table
+      // breaks anywhere as before. Closed quoted history is not rendered and is checked once it opens.
+      const fitTables = () => {
+        const tables = [...(root?.querySelectorAll("table") || [])].filter((table) => !table.closest("details:not([open])"));
+        if (!tables.length) return;
+        const mark = (table, on) => table.toggleAttribute("data-mail-wrap-anywhere", on);
+        for (const table of tables) mark(table, false);
+        const breakWord = tables.map((table) => table.getBoundingClientRect().width);
+        for (const table of tables) mark(table, true);
+        const anywhere = tables.map((table) => table.getBoundingClientRect().width);
+        tables.forEach((table, index) => mark(table, breakWord[index] > anywhere[index] + 0.5));
+      };
+      fitTables();
       const reportHeight = () => post("height", Math.ceil((root?.getBoundingClientRect().height || 0) + 2));
       const canvas = document.createElement("canvas");
       canvas.width = canvas.height = 1;
@@ -451,7 +468,15 @@ export const buildMessageDocument = (
         if (data.type === "appearance") setAppearance(data.value);
         if (data.type === "motion") setMotion(data.value);
       });
-      if (root) new ResizeObserver(reportHeight).observe(root);
+      let fitFrame = 0;
+      if (root) new ResizeObserver(() => {
+        reportHeight();
+        // Marking a table inside the callback would resize root during it, which browsers report as a loop error.
+        if (!fitFrame) fitFrame = requestAnimationFrame(() => {
+          fitFrame = 0;
+          fitTables();
+        });
+      }).observe(root);
       reportHeight();
     })();
   </script>
