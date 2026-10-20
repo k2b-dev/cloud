@@ -215,7 +215,7 @@ const poll = async <T>(label: string, probe: () => Promise<T | undefined | false
 
 type Inspect = {
   Id: string;
-  State: { Running: boolean };
+  State: { Running: boolean; ExitCode: number; OOMKilled: boolean };
   Config: { Labels: Record<string, string> };
   NetworkSettings: {
     Ports: Record<string, { HostIp: string; HostPort: string }[] | null>;
@@ -1478,7 +1478,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       served("core", coreB);
       type Sample = { at: number; completedAt: number; phase: string; status: number | null; body?: unknown; error?: string };
       const samples: Sample[] = [];
-      const windows: { phase: string; start: number; completed?: number }[] = [];
+      const windows: { phase: string; start: number; completed?: number; exitState?: Inspect["State"] }[] = [];
       let currentPhase = "before-stop",
         stop = false;
       const sample = async () => {
@@ -1509,11 +1509,20 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       })();
       const retire = async (replica: Replica, name: string) => {
         currentPhase = name;
-        const window: { phase: string; start: number; completed?: number } = { phase: name, start: Date.now() };
+        const window: { phase: string; start: number; completed?: number; exitState?: Inspect["State"] } = {
+          phase: name,
+          start: Date.now(),
+        };
         windows.push(window);
         await docker(["stop", "--time", "30", replica.id], 45_000);
         const completedAt = Date.now();
         window.completed = completedAt;
+        const state = (await inspect([replica.id]))[0]?.State;
+        window.exitState = state;
+        check(
+          state?.Running === false && state.ExitCode === 0 && state.OOMKilled === false,
+          `${name}: Chat replica ${replica.id} did not stop gracefully: ${JSON.stringify(state)}`,
+        );
         await docker(["rm", replica.id], 30_000);
         retired.add(replica.id);
         // Keep observing past a complete 60-second registry refresh interval.

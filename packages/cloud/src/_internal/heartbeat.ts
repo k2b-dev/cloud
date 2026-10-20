@@ -22,7 +22,10 @@ type MembershipRegistry = HeartbeatRegistry<AppInstanceRecord> & {
 };
 
 type MembershipLock = {
-  withLock: <T>(input: { resource: string; ttlMs?: number; signal?: AbortSignal }, fn: () => Promise<T>) => Promise<T | null>;
+  withLock: <T>(
+    input: { resource: string; ttlMs?: number; signal?: AbortSignal },
+    fn: (lock: { expiresAt: Date }) => Promise<T>,
+  ) => Promise<T | null>;
 };
 
 /** One process membership shared by its app and capability heartbeats. Getters stay lazy until use. */
@@ -50,11 +53,11 @@ export const createRegistryMembership = (
   if (!Number.isFinite(writeTimeoutMs) || writeTimeoutMs <= 0) throw new RangeError("Membership write timeout must be positive and finite");
   let left = false;
 
-  const locked = async (write: () => Promise<void>): Promise<void> => {
+  const locked = async (write: (lock: { expiresAt: Date }) => Promise<void>): Promise<void> => {
     const result = await options
       .lock()
-      .withLock({ resource: appId, ttlMs: writeTimeoutMs, signal: AbortSignal.timeout(writeTimeoutMs) }, async () => {
-        await write();
+      .withLock({ resource: appId, ttlMs: writeTimeoutMs, signal: AbortSignal.timeout(writeTimeoutMs) }, async (lock) => {
+        await write(lock);
         return true;
       });
     if (result === null) throw new Error(`Registry membership lock unavailable for app ${appId}`);
@@ -90,8 +93,12 @@ export const createRegistryMembership = (
       // A failed delete must never lead to shared removal: leave routing to its TTL.
       // Repeat the delete even after leaving, to remove a late registration write.
       await options.registry().delete({ key });
-      await locked(async () => {
+      await locked(async (lock) => {
         const snapshot = await options.registry().snapshot({ prefix });
+        // Ephemeral has no conditional delete, so the remaining lease bounds the removal window.
+        if (Date.now() > lock.expiresAt.getTime() - writeTimeoutMs / 2) {
+          throw new Error("membership lease expired during stop; shared entry left to its TTL");
+        }
         if (!snapshot.entries.some((entry) => entry.key !== key)) await remove();
       });
     },

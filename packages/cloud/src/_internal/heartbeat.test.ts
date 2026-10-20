@@ -503,7 +503,7 @@ describe("replica membership", () => {
     const lock = {
       withLock: async <T>(
         { ttlMs = 10_000, signal }: { resource: string; ttlMs?: number; signal?: AbortSignal },
-        fn: () => Promise<T>,
+        fn: (lock: { expiresAt: Date }) => Promise<T>,
       ): Promise<T | null> => {
         const previous = tail;
         const gate = Promise.withResolvers<void>();
@@ -515,10 +515,11 @@ describe("replica membership", () => {
         try {
           if (signal?.aborted || (await Promise.race([previous.then(() => true), aborted.promise])) === null) return null;
           held = true;
+          const expiresAt = new Date(Date.now() + ttlMs);
           // Model a lease, including expiry while a write ignores its timeout.
           const timer = setTimeout(() => gate.resolve(), ttlMs);
           try {
-            return await fn();
+            return await fn({ expiresAt });
           } finally {
             clearTimeout(timer);
             held = false;
@@ -606,6 +607,56 @@ describe("replica membership", () => {
       release.resolve();
     }
     await Promise.all([starting, stopping]);
+    expect(await f.keys()).toEqual(["apps/test", "instances/test/new"]);
+    expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
+  });
+
+  for (const elapsed of [250, 251]) {
+    test(`shared removal requires at least half the membership lease remaining (snapshot took ${elapsed}ms)`, async () => {
+      const f = fixture();
+      const a = f.process("a");
+      await a.start();
+      const snapshot = f.instances.snapshot;
+      let pause = true;
+      f.instances.snapshot = async (input) => {
+        const result = await snapshot(input);
+        if (pause) {
+          pause = false;
+          setSystemTime(new Date(epoch + elapsed));
+        }
+        return result;
+      };
+
+      const stopping = a.app.stop();
+      if (elapsed === 250) {
+        await stopping;
+        expect(await f.keys()).toEqual([]);
+      } else {
+        await expect(stopping).rejects.toThrow("membership lease expired during stop; shared entry left to its TTL");
+        expect(await f.keys()).toEqual(["apps/test"]);
+      }
+      expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
+    });
+  }
+
+  test("a stop with a snapshot stalled past its lease rejects and preserves a new replica's shared entries", async () => {
+    const f = fixture();
+    const old = f.process("old", 20),
+      next = f.process("new");
+    await old.start();
+    const snapshot = f.instances.snapshot;
+    let pause = true;
+    f.instances.snapshot = async (input) => {
+      const result = await snapshot(input);
+      if (pause) {
+        pause = false;
+        setSystemTime(new Date(epoch + 21));
+        await next.start();
+      }
+      return result;
+    };
+
+    await expect(old.stop()).rejects.toThrow("membership lease expired during stop; shared entry left to its TTL");
     expect(await f.keys()).toEqual(["apps/test", "instances/test/new"]);
     expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
   });
