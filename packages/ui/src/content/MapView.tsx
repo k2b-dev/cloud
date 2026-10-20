@@ -45,6 +45,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   const [liveScale, setLiveScale] = createSignal<MapScale>();
   const [measuredWidth, setMeasuredWidth] = createSignal<number>();
   const [zoomFactor, setZoomFactor] = createSignal(1);
+  const [needsReload, setNeedsReload] = createSignal(false);
   // The server picks the scale bar for the widest fit; once the width is known, the bar names a distance that fits it.
   const scale = createMemo((): MapScale | undefined => {
     const f = frame();
@@ -129,8 +130,19 @@ export function MapView(props: MapViewProps): JSX.Element {
       removeMap();
       setState("error");
     };
+    let engine: typeof import("./map-view-live");
     try {
-      const { createMap } = await import("./map-view-live");
+      engine = await import("./map-view-live");
+    } catch {
+      // The map code did not load, for example because the page outlived a release that removed its files.
+      // Importing the same address again cannot help; a reload fetches the current page and its map code.
+      if (disposed || attempt !== generation) return;
+      setNeedsReload(true);
+      fail();
+      return;
+    }
+    try {
+      const { createMap } = engine;
       if (disposed || attempt !== generation) return;
       const f = frame();
       if (!f) return;
@@ -312,8 +324,8 @@ export function MapView(props: MapViewProps): JSX.Element {
             />
             <span>{state() === "loading" ? messages().loading : state() === "error" ? messages().error : messages().noWebgl}</span>
             <Show when={state() === "error"}>
-              <Button size="xs" variant="text" onClick={() => void start()}>
-                {messages().retry}
+              <Button size="xs" variant="text" onClick={() => (needsReload() ? window.location.reload() : void start())}>
+                {needsReload() ? messages().reload : messages().retry}
               </Button>
             </Show>
           </div>

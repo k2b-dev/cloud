@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_PADDING,
   decodePolyline6,
   fitCamera,
   MIN_SPAN,
@@ -149,6 +150,34 @@ describe("MapView geometry", () => {
         `zoom factor ${factor}`,
       ).toBeGreaterThanOrEqual(24);
     }
+  });
+  test("separated pins stay apart at every rendered width, and dense clusters all get their own place", () => {
+    const pins = sortMarkers([marker("stop", "A", 0, 0), marker("hit", 1, -0.001, -0.001), marker("other", 2, 0.001, 0.0252)]);
+    const f = mapFrame({ markers: pins }, 360)!;
+    const offsets = pinOffsets(pins, f);
+    const drawnAt = (width: number, id: string) => {
+      const fitted = Math.max(f.minWidth, Math.min(width - 2 * DEFAULT_PADDING, f.referenceWidth));
+      const p = projectPoint(pins.find((pin) => pin.id === id)!.point);
+      const o = offsets.get(id)!;
+      return { x: ((p.x - f.minX) * fitted) / f.spanX + o.dx, y: ((p.y - f.minY) * fitted) / f.spanX + o.dy };
+    };
+    for (let width = 390; width <= 1600; width += 5) {
+      for (const [a, b, min] of [
+        ["stop", "hit", 20],
+        ["stop", "other", 28],
+        ["hit", "other", 28],
+      ] as const) {
+        const d = Math.hypot(drawnAt(width, a).x - drawnAt(width, b).x, drawnAt(width, a).y - drawnAt(width, b).y);
+        expect(d, `${a}/${b} at ${width}px`).toBeGreaterThanOrEqual(min - 1e-6);
+      }
+    }
+    const cluster = sortMarkers(Array.from({ length: 20 }, (_, index) => marker(`same-${index}`, index + 1, 48.4, 10)));
+    const clusterOffsets = [...pinOffsets(cluster, mapFrame({ markers: cluster }, 360)!).values()];
+    for (let i = 0; i < clusterOffsets.length; i++)
+      for (let j = i + 1; j < clusterOffsets.length; j++)
+        expect(
+          Math.hypot(clusterOffsets[i]!.dx - clusterOffsets[j]!.dx, clusterOffsets[i]!.dy - clusterOffsets[j]!.dy),
+        ).toBeGreaterThanOrEqual(28 - 1e-6);
   });
   test("keeps stops apart and decides separation at phone width", () => {
     // A wide route: C and "+" are a pin apart on a wide screen but would cover each other on a phone.

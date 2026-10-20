@@ -636,6 +636,25 @@ test("a theme style that fails after the map is ready shows the error and retry 
   }
 });
 
+test("map code that no longer loads offers a page reload, which recovers", async () => {
+  const page = await browser.newPage({ reducedMotion: "reduce" });
+  try {
+    // A page that outlived a release: its map chunk is gone from the server.
+    const retired = (url: URL) => lazyChunks.includes(basename(url.pathname));
+    await page.route(retired, (route) => route.fulfill({ status: 404, body: "Gone" }));
+    await page.goto(origin);
+    await page.waitForFunction(() => document.querySelector(".k2b-map-view")?.getAttribute("data-state") === "error", undefined, {
+      timeout: 20_000,
+    });
+    expect(await page.locator(".k2b-map-view__pin").count()).toBe(3);
+    await page.unroute(retired);
+    await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Reload page" }).click()]);
+    await ready(page);
+  } finally {
+    await page.close();
+  }
+});
+
 test("a failing tile while the map loads keeps the map", async () => {
   failedTileRequests = 0;
   const page = await browser.newPage({ reducedMotion: "reduce" });
