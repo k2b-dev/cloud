@@ -6456,6 +6456,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.375rem 0.5rem 0.375rem 0.625rem;
 }
 
+.k2b-ui .k2b-rich-select__trigger > .k2b-choice-trigger__value[data-placeholder="true"] {
+  color: var(--k2b-text-muted);
+}
+
 .k2b-ui .k2b-rich-select__trigger > .k2b-rich-select__visual {
   width: auto;
   height: auto;
