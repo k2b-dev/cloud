@@ -2302,3 +2302,179 @@ test("a traversal restores stored window and region scroll after mounting the ne
   expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')?.scrollTop).toBe(110);
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 240);
 });
+
+const asyncScrollFixture = () => {
+  const region = document.createElement("div");
+  region.dataset.scrollPreserve = "async-list";
+  document.querySelector("[data-nav-root]")!.append(region);
+  install();
+  const first = window.history.state;
+  region.scrollTop = 240;
+  window.history.pushState(null, "", "/app/old?tab=B");
+  const second = window.history.state;
+  region.scrollTop = 400;
+  const completions: Array<() => void> = [];
+  const stop = listenPopState(({ deferScrollRestore }) => completions.push(deferScrollRestore()));
+  return { region, first, second, completions, stop };
+};
+
+test("deferred traversal scroll restores the saved entry after a late DOM commit, once", () => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    expect(f.region.scrollTop).toBe(400);
+    const replacement = f.region.cloneNode() as HTMLElement;
+    f.region.replaceWith(replacement);
+    replacement.scrollTop = 0;
+    f.completions[0]!();
+    expect(replacement.scrollTop).toBe(240);
+    replacement.scrollTop = 60;
+    f.completions[0]!();
+    expect(replacement.scrollTop).toBe(60);
+    arrive(f.second, "/app/old?tab=B");
+    f.completions[1]!();
+    expect(replacement.scrollTop).toBe(400);
+  } finally {
+    f.stop();
+  }
+});
+
+test("deferred traversal scroll keeps the target snapshot through another traversal before commit", () => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    arrive(f.second, "/app/old?tab=B");
+    f.completions[0]!(); // stale completion cannot restore A onto B
+    expect(f.region.scrollTop).toBe(400);
+    f.completions[1]!();
+    arrive(f.first, "/app/old");
+    f.region.scrollTop = 0;
+    f.completions[2]!();
+    expect(f.region.scrollTop).toBe(240); // A was never rendered during the first traversal
+  } finally {
+    f.stop();
+  }
+});
+
+test("deferred traversal scroll rejects an old completion even after returning to the same entry", () => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    arrive(f.second, "/app/old?tab=B");
+    f.completions[1]!();
+    arrive(f.first, "/app/old");
+    f.region.scrollTop = 0;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(0);
+    f.completions[2]!();
+    expect(f.region.scrollTop).toBe(240);
+  } finally {
+    f.stop();
+  }
+});
+
+test.each(["push", "replace", "helper", "wheel", "uninstall"])("deferred traversal scroll yields to %s", (intent) => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    if (intent === "push") window.history.pushState(null, "", "/app/old?new");
+    if (intent === "replace") window.history.replaceState(null, "", "/app/old?new");
+    if (intent === "helper") cancelPageSwap();
+    if (intent === "wheel") window.dispatchEvent(new Event("wheel"));
+    if (intent === "uninstall") uninstall();
+    f.region.scrollTop = 70;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(70);
+  } finally {
+    f.stop();
+  }
+});
+
+test("deferred traversal scroll survives a same-URL state replace and persists its target before a pending reload", () => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    window.history.replaceState({ application: true }, "");
+    window.dispatchEvent(new Event("pagehide"));
+    expect(window.history.state[markerKey].scroll.regions.find((r: { key: string }) => r.key === "async-list").y).toBe(240);
+    f.region.scrollTop = 0;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(240);
+  } finally {
+    f.stop();
+  }
+});
+
+test("deferred traversal scroll without an installed owner is inert", () => {
+  let complete = () => {};
+  const stop = listenPopState(({ deferScrollRestore }) => {
+    complete = deferScrollRestore();
+  });
+  try {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(() => complete()).not.toThrow();
+  } finally {
+    stop();
+  }
+});
+
+test.each([false, true])("deferred traversal scroll yields to an unprevented native form (prevented: %p)", (prevented) => {
+  const f = asyncScrollFixture();
+  const form = document.createElement("form");
+  document.body.append(form);
+  form.addEventListener("submit", (event) => {
+    event.stopPropagation();
+    if (prevented) event.preventDefault();
+  });
+  try {
+    arrive(f.first, "/app/old");
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    f.region.scrollTop = 70;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(prevented ? 240 : 70);
+  } finally {
+    f.stop();
+    form.remove();
+  }
+});
+
+test.each([false, true])("deferred traversal scroll yields to native Navigation API events (prevented: %p)", (prevented) => {
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "current", index: 1 } });
+  Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    if (prevented) navigation.addEventListener("navigate", (event) => event.preventDefault(), { once: true });
+    navigation.dispatchEvent(
+      Object.assign(new Event("navigate", { cancelable: true }), {
+        navigationType: "push",
+        hashChange: false,
+        destination: { key: "new-document", sameDocument: false },
+      }),
+    );
+    f.region.scrollTop = 70;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(prevented ? 240 : 70);
+  } finally {
+    f.stop();
+    uninstall();
+    Reflect.deleteProperty(window, "navigation");
+  }
+});
+
+test("deferred traversal scroll ignores forms targeting another window", () => {
+  const f = asyncScrollFixture();
+  const form = document.createElement("form");
+  form.target = "_blank";
+  document.body.append(form);
+  try {
+    arrive(f.first, "/app/old");
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    f.region.scrollTop = 70;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(240);
+  } finally {
+    f.stop();
+    form.remove();
+  }
+});

@@ -183,9 +183,10 @@ Within the shown page, `listenPopState()` lets islands restore state from the
 URL without fetching. It never reports a traversal to another server page.
 Nav restores window scroll and keyed `data-scroll-preserve` regions from the
 arriving entry once, right after its islands mount; within a page, islands
-still own region scroll. An island that loads its content later keeps its
-own position, for example in its history state, and restores it after loading. A traversal that cannot swap reloads the arriving
-URL.
+still own region scroll. An asynchronous same-page replacement can ask nav to
+[restore the saved position after its DOM commit](#restore-a-list-after-an-asynchronous-history-commit).
+Cross-page islands that load content after mounting still manage that later
+rendering themselves. A traversal that cannot swap reloads the arriving URL.
 
 For a traversal that proceeds to a swap, nav dispatches `ssr:nav-popstate` on
 `window` with the `PopStateEvent` as `detail`, for code that keeps its own history
@@ -304,3 +305,26 @@ not belong in the URL.
 
 Persist workspace geometry only through the shared shell when the product
 needs it. Do not add app-specific cookies for shared layout behavior.
+
+
+## Restore a list after an asynchronous history commit
+
+With page swaps enabled, the shared navigation owner keeps each history entry's
+window and keyed `data-scroll-preserve` positions. If a `listenPopState()` handler
+replaces a list asynchronously, call `deferScrollRestore()` during the handler,
+then invoke its returned completion immediately after committing the new DOM:
+
+```tsx
+onCleanup(listenPopState(({ url, deferScrollRestore }) => {
+  const restore = deferScrollRestore();
+  void replaceList(url).then((committed) => { if (committed) restore(); });
+}));
+```
+
+Here `replaceList` is application code: it must abort or ignore stale responses
+and resolve after its DOM commit. Nav keeps the entry's saved position while it
+loads and restores it once after that commit. A newer navigation, uninstall, or
+user input cancels the replay. Always complete an applied DOM commit, even after
+user input cancelled its replay, so subsequent captures observe the new list.
+Keep the shared history owner; do not add a separate application scroll map for
+this case. Without an installed page swap, the completion does nothing.

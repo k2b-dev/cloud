@@ -8,7 +8,7 @@ type SwapState = {
   uninstall: () => void;
   announcer: HTMLElement;
   active?: AbortController;
-  native?: { event: Event; controller: AbortController };
+  native?: { event: Event; controller?: AbortController };
   token: string;
   counter: number;
   /** Counts started swaps, so deferred history work of an older navigation can tell it was overtaken. */
@@ -18,6 +18,9 @@ type SwapState = {
   /** Traversal moves history before the DOM, so its scroll still belongs to the shown entry. */
   shown: Entry;
   stopRestore: () => void;
+  deferScrollRestore: (event: PopStateEvent) => () => void;
+  /** The arriving entry still shows the departing island DOM until its asynchronous owner commits. */
+  pendingScroll?: { snapshot: ScrollSnapshot };
   scroll: Map<string, ScrollSnapshot>;
   /** Counts pushes and URL-changing replaces through the wrapper: either supersedes a pending traversal for good. */
   moves: number;
@@ -131,6 +134,8 @@ const currentEntry = (state: SwapState): Entry => marker(window.history.state) ?
 // page means a cross-page traversal has not committed, so the DOM still shows the tracked entry.
 const shownEntry = (state: SwapState, current: Entry | undefined = marker(window.history.state)): Entry =>
   current?.page === state.currentPage ? current : state.shown;
+// Until an asynchronous owner commits, the still-visible DOM cannot supply the arriving entry's scroll.
+const captureShownScroll = (state: SwapState, snapshot = captureScroll()): ScrollSnapshot => state.pendingScroll?.snapshot ?? snapshot;
 const persistScroll = (writes: HistoryWrites, entry: Marker, snapshot: ScrollSnapshot): void => {
   if (JSON.stringify(entry.scroll) === JSON.stringify(snapshot)) return;
   try {
@@ -150,7 +155,8 @@ const patchHistory = (): HistoryWrites => {
     state.writes++;
     const departing = currentEntry(state);
     // The island may already show shorter content; a helper's earlier capture is the departing position.
-    const snapshot = state.departure ?? captureScroll();
+    const snapshot = captureShownScroll(state, state.departure);
+    state.stopRestore();
     const shown = shownEntry(state);
     const stored = marker(history.state);
     if (stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);
@@ -158,6 +164,7 @@ const patchHistory = (): HistoryWrites => {
     writes.push.call(history, mergeMarker(value, entry), ...args);
     state.moves++;
     remember(state, shown, snapshot);
+    state.pendingScroll = undefined;
     state.currentEntry = entry;
     state.shown = entry;
   };
@@ -188,7 +195,11 @@ const patchHistory = (): HistoryWrites => {
     }
     const entry = { ...(stored?.page === page ? stored : {}), page, position: stored?.position ?? state.currentEntry.position };
     writes.replace.call(history, mergeMarker(value, entry), ...args);
-    if (moves) state.moves++;
+    if (moves) {
+      state.moves++;
+      state.stopRestore();
+      state.pendingScroll = undefined;
+    }
     // rollback() already restored these trackers to the shown entry, while history has not reached it yet.
     if (rolling) return;
     state.currentEntry = entry;
@@ -200,6 +211,7 @@ const patchHistory = (): HistoryWrites => {
 const stillCurrent = (state: SwapState, traversal: Traversal): boolean =>
   window.location.href === traversal.href && window.navigation?.currentEntry?.key === traversal.key && state.moves === traversal.moves;
 const abort = (state: SwapState): void => {
+  state.stopRestore();
   state.active?.abort();
   state.active = undefined;
 };
@@ -288,8 +300,11 @@ export function installPageSwap(): () => void {
   let stopWaiting: (() => void) | undefined;
   const inputs = ["wheel", "touchstart", "keydown", "pointerdown"];
   let retry = 0;
+  let restoreEpoch = 0;
+  const restorations = new WeakMap<PopStateEvent, () => () => void>();
   // Any newer navigation or user scroll ends pending restoration work.
   const stopRestore = (): void => {
+    restoreEpoch++;
     if (retry) cancelAnimationFrame(retry);
     retry = 0;
     if (!stopWaiting) return;
@@ -309,6 +324,7 @@ export function installPageSwap(): () => void {
     currentEntry: initial ?? { position: basePosition() },
     shown: initial ?? { position: basePosition() },
     stopRestore,
+    deferScrollRestore: (event) => restorations.get(event)?.() ?? (() => {}),
     scroll: holder.scroll,
     moves: 0,
     writes: 0,
@@ -358,7 +374,7 @@ export function installPageSwap(): () => void {
     const link = sameTabAnchor(event);
     if (!link) return;
     // stopPropagation can hide a native click from the bubble listener; wait until handlers can prevent it.
-    if (state.active) state.native = { event, controller: state.active };
+    if (state.active || state.pendingScroll) state.native = { event, controller: state.active };
     let url: URL;
     try {
       url = new URL(link.anchor.href);
@@ -401,7 +417,7 @@ export function installPageSwap(): () => void {
     }
   };
   const submit = (event: SubmitEvent): void => {
-    if (!state.active) return;
+    if (!state.active && !state.pendingScroll) return;
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
     const method = event.submitter?.hasAttribute("formmethod") ? event.submitter.getAttribute("formmethod") : form.getAttribute("method");
@@ -424,12 +440,14 @@ export function installPageSwap(): () => void {
   const onNavigate = (event: NavigateEvent): void => {
     const kind =
       event.navigationType === "traverse" || (event.hashChange && event.navigationType !== "reload") ? event.navigationType : undefined;
+    if ((state.active || state.pendingScroll) && (kind !== undefined || event.destination.sameDocument === false))
+      state.native = { event, controller: state.active };
     const value: unknown = window.history.state;
     // Non-plain island state cannot carry a marker; the wrapper still tracks its shown-page entry.
     const entry = marker(value) ?? (value != null && !plain(value) ? state.currentEntry : { position: basePosition() });
     departure =
       kind === "traverse" || kind === "push" || kind === "replace"
-        ? { kind, key: event.destination.key, from: navigation?.currentEntry?.key, entry, scroll: captureScroll() }
+        ? { kind, key: event.destination.key, from: navigation?.currentEntry?.key, entry, scroll: captureShownScroll(state) }
         : undefined;
   };
   const traverse = (entry: Entry): void => {
@@ -515,13 +533,14 @@ export function installPageSwap(): () => void {
     // A traversal's departure must match the arriving entry; a fragment navigation's popstate follows its navigate.
     const fragmentDeparture = departure && departure.kind !== "traverse" ? departure.kind : undefined;
     const matched = departure && (fragmentDeparture || departure.key === navigation?.currentEntry?.key) ? departure : undefined;
-    const from = matched ?? { entry: state.currentEntry, scroll: captureScroll() };
+    const from = matched ?? { entry: state.currentEntry, scroll: captureShownScroll(state) };
     const shown = shownEntry(state, from.entry);
     // History already left the shown page while its DOM stays: a cross-page traversal has not committed.
     const pending = from.entry.page !== state.currentPage;
     abort(state);
     departure = undefined;
     remember(state, shown, from.scroll);
+    state.pendingScroll = undefined;
     const fragmentMode = navigation
       ? fragmentDeparture
       : event.state === null &&
@@ -562,6 +581,40 @@ export function installPageSwap(): () => void {
             if (here && entryKey(here) === entryKey(entry) && window.scrollX === set.x && window.scrollY === set.y) window.scrollTo(x, y);
           });
       }
+      const epoch = restoreEpoch;
+      const moves = state.moves;
+      const href = window.location.href;
+      const native = state.native;
+      let completion: (() => void) | undefined;
+      const current = () =>
+        shared[swapKey] === state &&
+        restoreEpoch === epoch &&
+        state.moves === moves &&
+        window.location.href === href &&
+        entryKey(currentEntry(state)) === entryKey(entry) &&
+        // Native actions may stop propagation before the bubble listener; after dispatch their default wins.
+        !(state.native !== native && state.native?.event.eventPhase === Event.NONE && !state.native.event.defaultPrevented);
+      restorations.set(event, () => {
+        if (completion) return completion;
+        if (!snapshot || !current()) return () => {};
+        const pending = { snapshot };
+        state.pendingScroll = pending;
+        // Keep the same input cancellation boundary as reload restoration; no timers or polling.
+        stopWaiting = () => {};
+        for (const input of inputs) window.addEventListener(input, stopRestore, { capture: true, passive: true });
+        let completed = false;
+        completion = () => {
+          if (completed) return;
+          completed = true;
+          const restore = current();
+          if (state.pendingScroll === pending) {
+            state.pendingScroll = undefined;
+            stopRestore();
+          }
+          if (restore) restoreScroll(snapshot);
+        };
+        return completion;
+      });
       decisions.set(event, "page");
       return "page";
     }
@@ -611,7 +664,7 @@ export function installPageSwap(): () => void {
   };
   const pagehide = (): void => {
     const shown = shownEntry(state);
-    const snapshot = captureScroll();
+    const snapshot = captureShownScroll(state);
     remember(state, shown, snapshot);
     const entry = marker(window.history.state);
     if (entry && entryKey(entry) === entryKey(shown)) persistScroll(writes, entry, snapshot);
@@ -796,10 +849,11 @@ const commit = (
     } catch {
       // A malformed escape stays as written, as the browser treats it.
     }
-    const snapshot = captureScroll();
+    const snapshot = captureShownScroll(state);
     // The shown page may have scrolled while the swap loaded; this is its last snapshot.
     const shown = shownEntry(state);
     remember(state, shown, snapshot);
+    state.pendingScroll = undefined;
     disposeIslands(context.root);
     if (!owned()) {
       // A cleanup uninstalled the swap or replaced the column: the old islands are gone, so only a load is safe.

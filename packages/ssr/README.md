@@ -347,9 +347,30 @@ Within the shown page, `listenPopState()` lets islands restore state from the
 URL without fetching. It never reports a traversal to another server page.
 Nav restores window scroll and keyed `data-scroll-preserve` regions from the
 arriving entry once, right after its islands mount; within a page, islands
-still own region scroll. An island that loads its content later keeps its
-own position, for example in its history state, and restores it after loading. A traversal that cannot swap reloads the arriving
-URL.
+still own region scroll. For an asynchronous same-page list replacement, call
+`navigation.deferScrollRestore()` synchronously inside `listenPopState()`, then
+call its returned completion after committing the new DOM. Nav restores that
+entry's saved window and keyed regions once; no application history map is needed.
+A newer navigation, uninstall, or user input cancels the replay, and a stale
+completion does nothing. The application must still abort or ignore stale data
+responses before changing its DOM. Existing synchronous handlers are unchanged.
+Without an installed page swap the completion does nothing. Cross-page islands
+that load content after mounting still manage that later rendering themselves.
+A traversal that cannot swap reloads the arriving URL.
+
+```tsx
+onCleanup(listenPopState(({ url, deferScrollRestore }) => {
+  const restore = deferScrollRestore();
+  // This application helper ignores aborted/stale responses and resolves after its DOM commit.
+  void replaceList(url).then((committed) => { if (committed) restore(); });
+}));
+```
+
+While that replacement is pending, nav keeps the target entry's saved snapshot
+instead of recording the departing list under it, including another traversal
+or reload before the response arrives. Call the completion immediately after the
+DOM commit, even if user input cancelled the replay, so later scroll captures
+observe the new list.
 
 For a traversal that proceeds to a swap, nav dispatches `ssr:nav-popstate` on
 `window` with the `PopStateEvent` as `detail`, for code that keeps its own history
