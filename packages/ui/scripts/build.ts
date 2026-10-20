@@ -64,8 +64,15 @@ const compileModules = async (mode: "dom" | "ssr", outputRoot: string): Promise<
     if (!result?.code || !result.map) {
       throw new Error(`@k2b/ui ${mode} transform failed: ${sourcePath}`);
     }
+    let code = result.code;
+    // MapLibre ships its worker as .mjs, which @k2b/ssr does not serve; the browser build uses the .js copy below.
+    if (mode === "dom" && sourceName === "content/map-view-live.ts") {
+      const worker = '"maplibre-gl/dist/maplibre-gl-worker.mjs"';
+      if (!code.includes(worker)) throw new Error("@k2b/ui could not find the MapLibre worker import in map-view-live");
+      code = code.replace(worker, '"./map-view-worker.js"');
+    }
     await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, `${result.code}\n//# sourceMappingURL=${basename(outputPath)}.map\n`);
+    await writeFile(outputPath, `${code}\n//# sourceMappingURL=${basename(outputPath)}.map\n`);
     await writeFile(`${outputPath}.map`, JSON.stringify(result.map));
   }
 };

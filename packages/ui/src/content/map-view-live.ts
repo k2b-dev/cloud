@@ -1,5 +1,7 @@
+/// <reference path="./maplibre-worker.d.ts" />
 import { LngLat, Map, type MapOptions, setWorkerUrl } from "maplibre-gl";
-import workerUrl from "./map-view-worker.js" with { type: "file" };
+// The build points this at a copy named map-view-worker.js, because @k2b/ssr serves only .js files.
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs" with { type: "file" };
 
 export function createMap(options: MapOptions): Map {
   setWorkerUrl(new URL(workerUrl, import.meta.url).href);
