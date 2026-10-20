@@ -10,6 +10,21 @@ updated: 2026-10-20
 
 # Deprecations and migrations
 
+## Missing principals no longer get English placeholder names
+
+`resolveDisplayNames()` no longer invents English names. A deleted or unknown
+person, group, or service account and the `authenticated` and `public`
+audiences now come back without `displayName`, and the return type marks
+`displayName` as optional. Before, these entries read “Unknown User”,
+“All users (incl. guests)”, or “Public” in every language.
+
+Render principals with `principalLabel(entry, locale)` from
+`@k2b/cloud/access/ui` or `@k2b/cloud/shared`. It localizes audiences and
+missing principals and never falls back to an ID. Code that reads
+`entry.displayName` directly must handle the missing value; `PermissionEditor`
+and `PrincipalPicker` already do. See
+[Resource authorization](/en/docs/identity/authorization#show-names-instead-of-ids).
+
 ## The Help panel reader moved to @k2b/cloud/ssr
 
 Replace the former import of `LayoutHelpPanel` or `Layout.HelpPanel`:

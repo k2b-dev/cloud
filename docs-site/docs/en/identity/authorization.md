@@ -426,6 +426,8 @@ account, and changing group membership. Some built-in applications still use
 their own older check; see
 [Resources keep at least one manager](/en/docs/reference/deprecations-and-migrations#resources-keep-at-least-one-manager).
 
+### Show names instead of IDs
+
 Call `resolveDisplayNames()` when adapter entries do not include names. It also
 accepts `{principal}` records for a proposed grant, preserves supplied fields,
 and adds optional `displayName`, optional `avatarHash`, and, for service-account
@@ -449,6 +451,8 @@ Return resolved entries from grant responses too: call
 `resolveDisplayNames([entry])` after authorizing the grant. The editor keeps
 picker metadata when the response omits it; supplied server metadata wins.
 Do not resolve additional identities for viewers who cannot already see them.
+
+### List and pick principals
 
 `listUsersWithAccess()` expands direct user and nested group grants for bounded
 pickers. It supports search, included and excluded user IDs, a minimum
