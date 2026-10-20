@@ -41,6 +41,22 @@ export const liveConnection = () => ({
 
 // One fixed clock for fixtures and page.
 const now = Date.parse("2026-10-17T12:10:00.000Z");
+/** Pins only the page's Date to `at`; timers and animation frames keep running as in a real browser. */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
 const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
 
 type Locale = "de" | "en";
@@ -309,9 +325,9 @@ const open = async (view: View, state: State, options: { theme?: "light" | "dark
     reducedMotion: "reduce",
     locale: state.locale,
   });
+  await context.addInitScript(pinPageClock, now);
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
-  await page.clock.setFixedTime(now);
   const unexpected: string[] = [];
   const sidebarLoads: string[] = [];
   page.on("pageerror", (error) => unexpected.push(`pageerror: ${error.message}`));
