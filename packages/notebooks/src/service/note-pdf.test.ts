@@ -1,11 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { createAllowedNetworkFetch, NetworkTargetBlockedError } from "@k2b/cloud/services";
+import { request as httpRequest } from "node:http";
+import { NetworkTargetBlockedError, requestPublicHttps, resolvePublicNetworkAddresses } from "@k2b/cloud/services";
 import * as pdfModule from "@k2b/cloud/services/pdf";
-import { EMPTY_NETWORK_ALLOWLIST } from "@k2b/cloud/shared";
 import { GotenbergRenderError, MarkdownPdfError, PDF_IMAGE_MAX_INPUT_BYTES, type PdfImageVariant } from "@k2b/cloud/services/pdf";
 import { renderNotebookBook } from "../lib/book-renderer";
-import { notePdfOmissionLabel } from "../lib/pdf-omissions";
 import { DOCUMENTED_IMAGE_FORMS } from "../lib/markdown-image.fixtures";
+import { decodeNotePdfOmissions, encodeNotePdfOmissions, notePdfOmissionLabel } from "../lib/pdf-omissions";
 import type { Attachment } from "./attachments";
 import { buildNotePdfHtml, notePdfPhaseMs, renderNotePdf } from "./note-pdf";
 import { type NotePdfImageDependencies, notePdfImageBoxes, prepareNotePdfImages } from "./note-pdf-images";
@@ -199,7 +199,7 @@ const imageInput = (markdown: string, extra: Partial<Parameters<typeof prepareNo
   };
 };
 const imageDeps = (extra: Partial<NotePdfImageDependencies> = {}): NotePdfImageDependencies => ({
-  fetch: async () => new Response(new Uint8Array([1]), { headers: { "content-type": "image/png" } }),
+  request: async () => ({ status: 200, headers: { "content-type": "image/png" }, body: new Uint8Array([1]) }),
   now: () => 100,
   list: async ({ shortIds }) => shortIds.map((id) => fixtureAttachment(id)),
   content: async ({ id }) => ({ ...fixtureAttachment(id), content: new Uint8Array([1]) }),
@@ -521,7 +521,7 @@ test("non-web, non-attachment image sources are blocked without fetching or read
   const result = await prepareNotePdfImages(
     input,
     imageDeps({
-      fetch: async () => {
+      request: async () => {
         throw new Error("must not fetch");
       },
       content: async () => {
@@ -537,327 +537,203 @@ test("non-web, non-attachment image sources are blocked without fetching or read
   expect(result.html).not.toContain("src=");
 });
 
-// Keep rejected bodies open so cancellation is observable, including before any read.
-const externalResponse = (options: { status?: number; headers?: HeadersInit; chunks?: Uint8Array[]; stall?: boolean } = {}) => {
-  let cancelled = false;
-  let reads = 0;
-  const chunks = [...(options.chunks ?? [new Uint8Array([1, 2, 3])])];
-  const stream = new ReadableStream<Uint8Array>(
-    {
-      pull(controller) {
-        reads++;
-        const chunk = chunks.shift();
-        if (chunk) controller.enqueue(chunk);
-        else if (!options.stall) controller.close();
-      },
-      cancel() {
-        cancelled = true;
-      },
-    },
-    { highWaterMark: 0 },
-  );
-  return {
-    response: new Response(stream, { status: options.status ?? 200, headers: options.headers ?? { "content-type": "image/jpeg" } }),
-    get cancelled() {
-      return cancelled;
-    },
-    get reads() {
-      return reads;
-    },
-  };
-};
-const recordingFetch = (reply: (href: string, init: RequestInit, index: number) => Response | Promise<Response>) => {
-  const calls: { href: string; init: RequestInit }[] = [];
-  const fetch: NotePdfImageDependencies["fetch"] = async (href, init) => {
-    calls.push({ href, init });
-    return reply(href, init, calls.length - 1);
-  };
-  return { calls, fetch };
-};
+type ImageRequestInput = Parameters<NotePdfImageDependencies["request"]>[0];
+const externalReply = () => ({ status: 200, headers: { "content-type": "image/jpeg" }, body: new Uint8Array([1, 2, 3]) });
 
 describe("external images in note PDFs", () => {
-  test("HTTP(S) sources share normalization, sizing and assets, with fresh anonymous headers on every request", async () => {
-    const source = externalResponse({ headers: { "content-type": " Image/JPEG ; charset=binary" } });
-    const network = recordingFetch(() => source.response);
+  test("a repeated HTTPS source is requested once, anonymously, with the input cap and largest placement", async () => {
+    const calls: ImageRequestInput[] = [];
     let preparations = 0;
-    let preparedMaxBytes: number | undefined;
     const input = imageInput("![first](https://images.example.test/a.jpg =100x) ![again](https://images.example.test/a.jpg =600x)");
     const result = await prepareNotePdfImages(
       input,
       imageDeps({
-        fetch: network.fetch,
+        request: async (request) => {
+          calls.push(request);
+          return externalReply();
+        },
         content: async () => {
-          throw new Error("external images must not load attachments");
+          throw new Error("must not load attachments");
         },
         prepare: async (image, options) => {
           preparations++;
           expect(image.data).toEqual(new Uint8Array([1, 2, 3]));
           expect(image.boxes).toEqual(notePdfImageBoxes(input.images, "document"));
-          preparedMaxBytes = image.maxBytes;
           expect(options?.timeoutMs).toBe(9900);
           return { ok: true, variants: [variant(100), variant(70), variant(40)] };
         },
       }),
     );
-    expect(preparedMaxBytes).toBe(Math.min(input.maxHtmlBytes - result.htmlUpperBound, PDF_IMAGE_MAX_INPUT_BYTES));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      url: "https://images.example.test/a.jpg",
+      method: "GET",
+      maxBytes: 1000,
+      headers: { accept: "image/*", "user-agent": "Cloud-Notebooks-PDF/1.0" },
+    });
+    expect(Object.keys(calls[0]!.headers).sort()).toEqual(["accept", "user-agent"]);
+    expect(calls[0]!.signal).toBeInstanceOf(AbortSignal);
     expect(preparations).toBe(1);
-    expect(network.calls).toHaveLength(1);
-    expect(source.cancelled).toBe(false);
     expect(result.assets.map(({ name }) => name)).toEqual(["img-1.jpg"]);
     expect(result.html.match(/src="img-1.jpg"/g)).toHaveLength(2);
     expect(result.omissions).toEqual([]);
-    for (const { init } of network.calls) {
-      expect(init.redirect).toBe("manual");
-      expect(init.signal).toBeInstanceOf(AbortSignal);
-      expect([...new Headers(init.headers)]).toEqual([
-        ["accept", "image/*"],
-        ["user-agent", "Cloud-Notebooks-PDF/1.0"],
-      ]);
-      for (const header of ["cookie", "authorization", "referer"]) expect(new Headers(init.headers).has(header)).toBe(false);
-    }
   });
 
-  test("301 and 302 redirects resolve relative locations, cancel bodies and request each hop separately", async () => {
-    const responses = [
-      externalResponse({ status: 301, headers: { location: "/next/photo" } }),
-      externalResponse({ status: 302, headers: { location: "../final.jpg" } }),
-      externalResponse(),
-    ];
-    const network = recordingFetch((_href, _init, index) => {
-      if (index > 0) expect(responses[index - 1]!.cancelled).toBe(true);
-      return responses[index]!.response;
-    });
+  test("HTTP, credentials and non-web sources are blocked before the transport", async () => {
     const result = await prepareNotePdfImages(
-      imageInput("![photo](http://images.example.test/start)"),
-      imageDeps({ fetch: network.fetch }),
+      imageInput("![http](http://images.example.test/a) ![Map](https://user:pw@host/a.png?token=x#f)"),
+      imageDeps({
+        request: async () => {
+          throw new Error("must not request");
+        },
+      }),
     );
-    expect(result.assets).toHaveLength(1);
-    expect(network.calls.map(({ href }) => href)).toEqual([
-      "http://images.example.test/start",
-      "http://images.example.test/next/photo",
-      "http://images.example.test/final.jpg",
+    expect(result.omissions).toEqual([
+      { kind: "image", code: "blocked", label: "http (http://images.example.test/a)" },
+      { kind: "image", code: "blocked", label: "Map (https://host/a.png)" },
     ]);
-    expect(responses.map(({ cancelled }) => cancelled)).toEqual([true, true, false]);
-    for (const { init } of network.calls) {
-      expect(init.redirect).toBe("manual");
-      expect([...new Headers(init.headers)]).toEqual([
-        ["accept", "image/*"],
-        ["user-agent", "Cloud-Notebooks-PDF/1.0"],
-      ]);
+    for (const secret of ["user", "pw", "token", "#f"]) {
+      expect(result.html).not.toContain(secret);
+      expect(JSON.stringify(result.omissions)).not.toContain(secret);
     }
-    expect(network.calls[0]!.init.headers).not.toBe(network.calls[1]!.init.headers);
   });
 
-  test("redirect targets are revalidated by the helper and the pinned transport", async () => {
-    for (const target of ["http://127.0.0.1/x", "file:///etc/passwd", "https://user:pw@images.example.test/x"]) {
-      const redirect = externalResponse({ status: 302, headers: { location: target } });
-      const network = recordingFetch((href) => {
-        if (new URL(href).hostname === "127.0.0.1") throw new NetworkTargetBlockedError("private target");
-        return redirect.response;
-      });
+  test("URL-bearing alt text uses the redacted source address without exposing confidential parts", async () => {
+    const url = "https://user:pw@images.example.test/a?token=SECRET#frag";
+    const other = "https://other:password@images.example.test/b?key=HIDDEN#part";
+    for (const locale of ["en", "de"]) {
       const result = await prepareNotePdfImages(
-        imageInput("![photo](https://images.example.test/start)"),
-        imageDeps({ fetch: network.fetch }),
+        imageInput(`![Map ${url} ${other}](${url})`, { locale }),
+        imageDeps({
+          request: async () => {
+            throw new Error("must not request credentials");
+          },
+        }),
       );
-      expect(result.omissions[0]!.code).toBe("blocked");
-      expect(network.calls.map(({ href }) => href)).toEqual(
-        target.startsWith("http://127") ? ["https://images.example.test/start", target] : ["https://images.example.test/start"],
-      );
-      expect(redirect.cancelled).toBe(true);
+      expect(result.html).toContain(locale === "en" ? "Image not included –" : "Bild nicht enthalten –");
+      expect(result.html).toContain("(https://images.example.test/a)");
+      for (const secret of ["user", "pw", "token", "SECRET", "#frag", "password", "HIDDEN", "#part"]) {
+        expect(result.html).not.toContain(secret);
+        expect(JSON.stringify(result.omissions)).not.toContain(secret);
+      }
+      expect(new TextEncoder().encode(result.html).byteLength).toBeLessThanOrEqual(result.htmlUpperBound);
     }
   });
 
-  test("20 redirects may print, but the 21st redirect response stops without a 22nd request", async () => {
-    for (const redirects of [20, 21]) {
-      const bodies: ReturnType<typeof externalResponse>[] = [];
-      const network = recordingFetch((_href, _init, index) => {
-        const body = externalResponse(index < redirects ? { status: 302, headers: { location: `/hop-${index + 1}` } } : {});
-        bodies.push(body);
-        return body.response;
-      });
-      const result = await prepareNotePdfImages(
-        imageInput("![photo](https://images.example.test/start)"),
-        imageDeps({ fetch: network.fetch }),
-      );
-      expect(network.calls).toHaveLength(21);
-      expect(result.omissions.map(({ code }) => code)).toEqual(redirects === 20 ? [] : ["unreachable"]);
-      expect(result.assets).toHaveLength(redirects === 20 ? 1 : 0);
-      expect(bodies.slice(0, redirects).every(({ cancelled }) => cancelled)).toBe(true);
-    }
+  test("quoted or whitespace-containing URLs in external alt text do not leave confidential tails", async () => {
+    const urls = [
+      "https://user:'PASSWORD@images.example.test/a?token=SECRET#frag",
+      "https://images.example.test/a?token='SECRET'",
+      'https://images.example.test/a?token="SECRET"',
+      "https://images.example.test/a?token=prefix\u00a0SECRET#frag",
+      "https://user:pw\u00a0PASSWORD@images.example.test/a?token=SECRET#frag",
+      "https://images.example.test/a?token=prefix SECRET#frag",
+      "h\tt\rt\np\ts://user:PASSWORD@images.example.test/a?token=SECRET#frag",
+      "https:\\images.example.test/a?token=SECRET#frag",
+    ];
+    for (const locale of ["en", "de"])
+      for (const url of urls) {
+        const result = await prepareNotePdfImages(
+          imageInput(`![${url}](https://images.example.test/missing)`, { locale }),
+          imageDeps({
+            request: async () => {
+              throw new Error("HTTP_FAILED");
+            },
+          }),
+        );
+        for (const secret of ["PASSWORD", "SECRET", "user", "token", "#frag"]) {
+          expect(result.html).not.toContain(secret);
+          expect(JSON.stringify(result.omissions)).not.toContain(secret);
+        }
+        expect(result.html).toContain("https://images.example.test/missing");
+      }
   });
 
-  test("status, redirect and media-type failures cancel without reading or preparing", async () => {
-    for (const [options, code] of [
-      [{ status: 404 }, "unreachable"],
-      [{ status: 301, headers: {} }, "unreachable"],
-      [{ status: 302, headers: { location: "http://[invalid" } }, "unreachable"],
-      [{ headers: { "content-type": "text/html" } }, "unsupported_format"],
-      [{ headers: { "content-type": " IMAGE/SVG+XML ; charset=utf-8" } }, "unsupported_format"],
-      [{ headers: {} }, "unsupported_format"],
+  test("rejected source URLs cannot restore confidential alt text in placeholders or reports", async () => {
+    for (const locale of ["en", "de"])
+      for (const url of [
+        "https://user:pw PASSWORD@images.example.test/a?token=SECRET#frag",
+        "https:\\images.example.test/a?token=SECRET#frag",
+      ]) {
+        const result = await prepareNotePdfImages(
+          imageInput(`![${url}](<${url}>)`, { locale }),
+          imageDeps({
+            request: async () => {
+              throw new Error("must not request rejected URLs");
+            },
+          }),
+        );
+        expect(result.omissions).toEqual([{ kind: "image", code: "blocked", label: "" }]);
+        expect(result.html).toContain(locale === "en" ? "Image not included –" : "Bild nicht enthalten –");
+        const report = decodeNotePdfOmissions(encodeNotePdfOmissions(result.omissions));
+        for (const secret of ["PASSWORD", "SECRET", "user", "token", "#frag"]) {
+          expect(result.html).not.toContain(secret);
+          expect(JSON.stringify(report)).not.toContain(secret);
+        }
+        expect(new TextEncoder().encode(result.html).byteLength).toBeLessThanOrEqual(result.htmlUpperBound);
+      }
+  });
+
+  test("redirects, HTTP failures, wrong media and SVG never reach the image worker", async () => {
+    for (const [status, mime, code] of [
+      [301, "image/png", "unreachable"],
+      [302, "image/png", "unreachable"],
+      [404, "image/png", "unreachable"],
+      [200, "text/html", "unsupported_format"],
+      [200, "image/svg+xml", "unsupported_format"],
     ] as const) {
-      const body = externalResponse(options);
-      const network = recordingFetch(() => body.response);
+      let requests = 0;
       const result = await prepareNotePdfImages(
         imageInput("![photo](https://images.example.test/a)"),
         imageDeps({
-          fetch: network.fetch,
+          request: async () => {
+            requests++;
+            return { status, headers: { "content-type": mime }, body: new Uint8Array() };
+          },
           prepare: async () => {
-            throw new Error("must not prepare rejected content");
+            throw new Error("must not prepare");
+          },
+        }),
+      );
+      expect(requests).toBe(1);
+      expect(result.assets).toEqual([]);
+      expect(result.omissions[0]!.code).toBe(code);
+    }
+  });
+
+  test("transport failures retain precise omission codes and never disclose error text", async () => {
+    for (const [error, code] of [
+      [new NetworkTargetBlockedError("private token"), "blocked"],
+      [new Error("HTTP_TOO_LARGE"), "too_large"],
+      [new Error("HTTP_FAILED secret"), "unreachable"],
+    ] as const) {
+      const result = await prepareNotePdfImages(
+        imageInput("![photo](https://images.example.test/a?token=secret)"),
+        imageDeps({
+          request: async () => {
+            throw error;
+          },
+          prepare: async () => {
+            throw new Error("must not prepare");
           },
         }),
       );
       expect(result.omissions[0]!.code).toBe(code);
-      expect(body.cancelled).toBe(true);
-      expect(body.reads).toBe(0);
+      expect(result.html).not.toContain("secret");
     }
   });
 
-  test("both length metadata and streamed overflow enforce the input cap and cancel the body", async () => {
-    for (const options of [
-      { headers: { "content-type": "image/png", "content-length": "1001" } },
-      { chunks: [new Uint8Array(600), new Uint8Array(401), new Uint8Array(1)] },
-    ]) {
-      const body = externalResponse(options);
-      const result = await prepareNotePdfImages(
-        imageInput("![photo](https://images.example.test/a)"),
-        imageDeps({
-          fetch: async () => body.response,
-          prepare: async () => {
-            throw new Error("must not prepare oversized content");
-          },
-        }),
-      );
-      expect(result.omissions[0]!.code).toBe("too_large");
-      expect(body.cancelled).toBe(true);
-      expect(body.reads).toBe(options.headers ? 0 : 2);
-    }
-    const body = externalResponse({ headers: { "content-type": "image/png", "content-length": String(PDF_IMAGE_MAX_INPUT_BYTES + 1) } });
-    const result = await prepareNotePdfImages(
-      imageInput("![photo](https://images.example.test/a)", { maxAttachmentBytes: PDF_IMAGE_MAX_INPUT_BYTES * 2 }),
-      imageDeps({ fetch: async () => body.response }),
-    );
-    expect(result.omissions[0]!.code).toBe("too_large");
-    expect(body.cancelled).toBe(true);
-    expect(body.reads).toBe(0);
-  });
-
-  test("generic fetch and read errors, including TypeError, are unreachable", async () => {
-    for (const error of [new Error("could not be resolved"), new TypeError("content encoding"), new Error("TLS failure")]) {
-      const result = await prepareNotePdfImages(
-        imageInput("![photo](https://images.example.test/a)"),
-        imageDeps({
-          fetch: async () => {
-            throw error;
-          },
-        }),
-      );
-      expect(result.omissions[0]!.code).toBe("unreachable");
-    }
-    const stream = new ReadableStream<Uint8Array>(
-      {
-        pull() {
-          throw new Error("read failed");
-        },
-      },
-      { highWaterMark: 0 },
-    );
-    const response = new Response(stream, { headers: { "content-type": "image/png" } });
-    const reader = stream.getReader();
-    const cancel = spyOn(reader, "cancel");
-    const getReader = spyOn(stream, "getReader").mockReturnValue(reader);
-    try {
-      const result = await prepareNotePdfImages(
-        imageInput("![photo](https://images.example.test/a)"),
-        imageDeps({ fetch: async () => response }),
-      );
-      expect(result.omissions[0]!.code).toBe("unreachable");
-      expect(cancel).toHaveBeenCalled();
-    } finally {
-      cancel.mockRestore();
-      getReader.mockRestore();
-    }
-  });
-
-  test("a deadline aborts a slow fetch or stalled body, then later images time out without fetching", async () => {
-    for (const stallBody of [false, true]) {
-      let now = 100;
-      const body = externalResponse({ chunks: [], stall: true });
-      const network = recordingFetch((_href, init) => {
-        const signal = init.signal!;
-        signal.addEventListener(
-          "abort",
-          () => {
-            now = 110;
-          },
-          { once: true },
-        );
-        if (stallBody) return body.response;
-        return new Promise<Response>((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
-      });
-      const result = await prepareNotePdfImages(
-        imageInput("![slow](https://images.example.test/slow) ![later](https://images.example.test/later)", { deadline: 110 }),
-        imageDeps({ now: () => now, fetch: network.fetch }),
-      );
-      expect(result.assets).toEqual([]);
-      expect(result.omissions.map(({ code }) => code)).toEqual(["timed_out", "timed_out"]);
-      expect(network.calls).toHaveLength(1);
-      if (stallBody) expect(body.cancelled).toBe(true);
-    }
-  });
-
-  test("client abort cancels a stalled body and skips subsequent fetches", async () => {
-    const controller = new AbortController();
-    const body = externalResponse({ chunks: [], stall: true });
-    const network = recordingFetch(() => body.response);
-    const timer = setTimeout(() => controller.abort(), 10);
-    try {
-      const result = await prepareNotePdfImages(
-        imageInput("![slow](https://images.example.test/a) ![later](https://images.example.test/b)", { signal: controller.signal }),
-        imageDeps({ fetch: network.fetch }),
-      );
-      expect(result.omissions.map(({ code }) => code)).toEqual(["timed_out", "timed_out"]);
-      expect(network.calls).toHaveLength(1);
-      expect(body.cancelled).toBe(true);
-    } finally {
-      clearTimeout(timer);
-    }
-  });
-
-  test("credentials are blocked before fetching and only the redacted address reaches placeholders and reports", async () => {
-    for (const locale of ["en", "de"]) {
-      const network = recordingFetch(() => {
-        throw new Error("must not fetch credentials");
-      });
-      const result = await prepareNotePdfImages(
-        imageInput("![Map](https://user:pw@host/a.png?token=x#f)", { locale }),
-        imageDeps({ fetch: network.fetch }),
-      );
-      expect(network.calls).toEqual([]);
-      expect(result.omissions).toEqual([{ code: "blocked", kind: "image", label: "Map (https://host/a.png)" }]);
-      expect(result.html).toContain(
-        locale === "en"
-          ? "Image not included: Map – address not allowed (https://host/a.png)"
-          : "Bild nicht enthalten: Map – Adresse nicht erlaubt (https://host/a.png)",
-      );
-      for (const secret of ["user", "pw", "token", "#f"]) {
-        expect(result.html).not.toContain(secret);
-        expect(JSON.stringify(result.omissions)).not.toContain(secret);
-      }
-    }
-  });
-
-  test("external sources load and prepare strictly in document order, sharing attachment tiers and the budget precheck", async () => {
+  test("external sources and attachments prepare in document order with a shared budget", async () => {
     const order: string[] = [];
-    const network = recordingFetch((href) => {
-      order.push(`fetch:${new URL(href).pathname}`);
-      return externalResponse().response;
-    });
     const result = await prepareNotePdfImages(
       imageInput(
-        "![a](http://images.example.test/a) ![attached](attach://ABC123) ![b](https://images.example.test/b) ![later](https://images.example.test/later)",
+        "![a](https://images.example.test/a) ![attached](attach://ABC123) ![b](https://images.example.test/b) ![later](https://images.example.test/later)",
       ),
       imageDeps({
-        fetch: network.fetch,
+        request: async ({ url }) => {
+          order.push(`request:${new URL(url).pathname}`);
+          return externalReply();
+        },
         content: async ({ id }) => {
           order.push("content");
           return { ...fixtureAttachment(id), content: new Uint8Array([9]) };
@@ -868,97 +744,100 @@ describe("external images in note PDFs", () => {
         },
       }),
     );
-    expect(order).toEqual(["fetch:/a", "prepare:external", "content", "prepare:attachment", "fetch:/b", "prepare:external"]);
-    expect(network.calls).toHaveLength(2);
+    expect(order).toEqual(["request:/a", "prepare:external", "content", "prepare:attachment", "request:/b", "prepare:external"]);
     expect(result.assets.map(({ data }) => data.size)).toEqual([4000, 4000]);
     expect(result.omissions.map(({ code }) => code)).toEqual(["over_budget", "over_budget"]);
     expect(result.peakRetainedBytes).toBe(8000);
+  });
 
-    const expired = await prepareNotePdfImages(
-      imageInput("![expired](https://images.example.test/a)", { deadline: 100 }),
+  test("the image input cap also applies when the attachment limit is larger", async () => {
+    let cap = 0;
+    await prepareNotePdfImages(
+      imageInput("![a](https://images.example.test/a)", { maxAttachmentBytes: PDF_IMAGE_MAX_INPUT_BYTES + 1 }),
       imageDeps({
-        fetch: async () => {
-          throw new Error("must not fetch after deadline");
+        request: async (input) => {
+          cap = input.maxBytes;
+          return externalReply();
         },
       }),
     );
-    expect(expired.omissions[0]!.code).toBe("timed_out");
+    expect(cap).toBe(PDF_IMAGE_MAX_INPUT_BYTES);
   });
 
-  test("external placeholders cap alt and redacted URL separately, and every localized result fits its HTML reservation", async () => {
-    const url = `https://images.example.test/${"a".repeat(100)}.png`;
-    const alt = "😀".repeat(90);
-    for (const locale of ["en", "de"]) {
-      for (const label of [alt, ""]) {
-        const input = imageInput(`![${label}](${url}?secret#fragment)`, { locale });
-        for (const code of ["unsupported_format", "unreadable", "too_large", "timed_out"] as const) {
-          const result = await prepareNotePdfImages(input, imageDeps({ prepare: async () => ({ ok: false, code }) }));
-          expect(result.html).toContain(`(${notePdfOmissionLabel(url)})`);
-          if (label) expect(result.html).toContain(notePdfOmissionLabel(label));
-          else expect(result.html).toContain(locale === "en" ? "Image not included –" : "Bild nicht enthalten –");
-          expect(result.omissions).toEqual([{ kind: "image", code, label: notePdfOmissionLabel(label ? `${label} (${url})` : url) }]);
-          expect(new TextEncoder().encode(result.html).byteLength).toBeLessThanOrEqual(result.htmlUpperBound);
-          for (const secret of ["secret", "fragment"]) expect(result.html).not.toContain(secret);
-        }
-      }
-    }
-  });
-
-  test("a slow external host leaves an omission while renderNotePdf still returns the PDF", async () => {
-    const clock = spyOn(Date, "now").mockReturnValue(100);
-    const pdf = new Uint8Array([1, 2, 3]);
-    const render = spyOn(pdfModule, "renderHtmlToPdfWithConfig").mockResolvedValue({ pdf, contentType: "application/pdf" });
-    const network = recordingFetch(
-      (_href, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          init.signal!.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
-        }),
-    );
-    try {
-      const result = await renderNotePdf(
-        {
-          markdown: "![slow](https://images.example.test/slow) ![later](https://images.example.test/later)",
-          notebookId: "notebook",
-          notebookShortId: "ABC123",
-          noteId: "note",
-          locale: "en",
-          title: "Slow host",
-          userId: null,
-          serviceAccountId: null,
-          boundNotebookId: null,
-        },
-        {
-          config: { url: "http://gotenberg.invalid", timeoutMs: 20, maxHtmlBytes: 10000, maxPdfBytes: 10000 },
-          maxAttachmentBytes: 1000,
-          imageDependencies: imageDeps({ fetch: network.fetch }),
-        },
-      );
-      expect(result.pdf).toEqual(pdf);
-      expect(result.omissions.map(({ code }) => code)).toEqual(["timed_out", "timed_out"]);
-      expect(network.calls).toHaveLength(1);
-      expect(render).toHaveBeenCalledTimes(1);
-      expect(render.mock.calls[0]![0].html).toContain(
-        "Image not included: slow – preparation took too long (https://images.example.test/slow)",
-      );
-    } finally {
-      render.mockRestore();
-      clock.mockRestore();
-    }
-  });
-
-  test("the real pinned transport blocks loopback and names resolving to private addresses without a network request", async () => {
-    const lookups: string[] = [];
-    const fetch = createAllowedNetworkFetch(EMPTY_NETWORK_ALLOWLIST, {
-      lookup: async (host) => {
-        lookups.push(host);
-        return [{ address: "10.0.0.5", family: 4 }];
-      },
-    });
+  test("the deadline aborts a stalled request and later images time out without another request", async () => {
+    let now = 100;
+    let calls = 0;
     const result = await prepareNotePdfImages(
-      imageInput("![local](http://127.0.0.1/) ![private](https://images.example.test/a)"),
-      imageDeps({ fetch }),
+      imageInput("![slow](https://images.example.test/a) ![later](https://images.example.test/b)", { deadline: 110 }),
+      imageDeps({
+        now: () => now,
+        request: ({ signal }) =>
+          new Promise((_resolve, reject) => {
+            calls++;
+            signal.addEventListener(
+              "abort",
+              () => {
+                now = 110;
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          }),
+      }),
+    );
+    expect(calls).toBe(1);
+    expect(result.omissions.map(({ code }) => code)).toEqual(["timed_out", "timed_out"]);
+    expect(result.assets).toEqual([]);
+  });
+
+  test("caller cancellation stops the active request", async () => {
+    const controller = new AbortController();
+    const result = await prepareNotePdfImages(
+      imageInput("![slow](https://images.example.test/a)", { signal: controller.signal }),
+      imageDeps({
+        request: ({ signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            controller.abort();
+          }),
+      }),
+    );
+    expect(result.omissions[0]!.code).toBe("timed_out");
+  });
+
+  test("localized placeholders retain alt and redacted address within their HTML reservation", async () => {
+    const url = `https://images.example.test/${"a".repeat(100)}.png`;
+    for (const locale of ["en", "de"])
+      for (const alt of ["😀".repeat(90), ""]) {
+        const result = await prepareNotePdfImages(
+          imageInput(`![${alt}](${url}?secret#fragment)`, { locale }),
+          imageDeps({
+            prepare: async () => ({ ok: false, code: "unreadable" }),
+          }),
+        );
+        expect(result.html).toContain(`(${notePdfOmissionLabel(url)})`);
+        if (alt) expect(result.html).toContain(notePdfOmissionLabel(alt));
+        else expect(result.html).toContain(locale === "en" ? "Image not included –" : "Bild nicht enthalten –");
+        expect(new TextEncoder().encode(result.html).byteLength).toBeLessThanOrEqual(result.htmlUpperBound);
+        for (const secret of ["secret", "fragment"]) expect(result.html).not.toContain(secret);
+      }
+  });
+
+  test("the real public HTTPS transport blocks loopback and private DNS before connecting", async () => {
+    let connections = 0;
+    const request: NotePdfImageDependencies["request"] = (input) =>
+      requestPublicHttps(input, {
+        resolve: (hostname) => resolvePublicNetworkAddresses(hostname, async () => [{ address: "10.0.0.5", family: 4 }]),
+        request: (options, callback) => {
+          connections++;
+          return httpRequest(options, callback);
+        },
+      });
+    const result = await prepareNotePdfImages(
+      imageInput("![local](https://127.0.0.1/) ![private](https://images.example.test/a)"),
+      imageDeps({ request }),
     );
     expect(result.omissions.map(({ code }) => code)).toEqual(["blocked", "blocked"]);
-    expect(lookups).toEqual(["images.example.test"]);
+    expect(connections).toBe(0);
   });
 });

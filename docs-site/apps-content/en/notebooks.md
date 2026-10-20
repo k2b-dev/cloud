@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-16
+updated: 2026-10-20
 ---
 
 # Notebooks
@@ -65,7 +65,7 @@ including from Book view. Use the overview to start from a template.
   images print at 300, 200 or 150 dpi. Preparing images gets the same time as
   the renderer's **Timeout** setting, at most 115 seconds. SVG attachments stay
   available as downloads. External images print when the server can reach them
-  at a public HTTP(S) address.
+  at a public HTTPS address without a redirect.
   Anything left out shows **Image not included: …** in the PDF and is listed in
   the dialog.
 - Add filtered page lists with `:::query` and page contents with `:::toc`, using

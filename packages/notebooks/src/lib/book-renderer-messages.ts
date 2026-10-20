@@ -42,7 +42,7 @@ export const bookRendererMessages = i18n.define({
       omissionHint_too_large: "Use a smaller file or split the note.",
       omissionHint_over_budget: "Use smaller images or split the note. An administrator can raise Max input bytes.",
       omissionHint_unreachable: "Check that the address opens in a browser, try again later, or attach the image.",
-      omissionHint_blocked: "Use an image from a public web address, or attach it to the note.",
+      omissionHint_blocked: "Use a public HTTPS image address without a redirect, or attach the image.",
       omissionHint_timed_out: "Try again later.",
       omissionHint_not_rendered: "Open the note to see it.",
       omissionHint_invalid_block: "Fix it in the note where the PDF marks it, then download again.",
@@ -121,7 +121,7 @@ export const bookRendererMessages = i18n.define({
       omissionHint_over_budget:
         "Verwende kleinere Bilder oder teile die Notiz auf. Die Administration kann die maximale Eingabegröße erhöhen.",
       omissionHint_unreachable: "Prüfe, ob sich die Adresse im Browser öffnet, versuche es später erneut oder hänge das Bild an.",
-      omissionHint_blocked: "Verwende ein Bild von einer öffentlichen Webadresse oder hänge es an die Notiz an.",
+      omissionHint_blocked: "Verwende eine öffentliche HTTPS-Bildadresse ohne Weiterleitung oder hänge das Bild an die Notiz an.",
       omissionHint_timed_out: "Versuche es später erneut.",
       omissionHint_not_rendered: "Öffne die Notiz, um es anzusehen.",
       omissionHint_invalid_block: "Behebe den Fehler in der Notiz an der im PDF markierten Stelle und lade das PDF erneut herunter.",

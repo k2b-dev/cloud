@@ -31,8 +31,8 @@ The PDF marks each missing image with **Image not included: …** and a reason. 
 - **File too large:** Attach a smaller image. The notebook's attachment limit also applies to external images.
 - **No room left in the PDF:** Use smaller images or split the note. Images share **Max input bytes** with the document; an administrator can raise that budget. Large images print at 300, 200 or 150 dpi.
 - **Preparation took too long:** Try again, or use fewer or smaller images. Preparing images gets the same time as the PDF renderer, at most 115 seconds; an administrator can raise the renderer **Timeout**.
-- **Address not allowed:** The address is not public, uses a non-web scheme, contains a user name or password, or redirects to such an address. Use a public image address or attach the image.
-- **Address not reachable:** The server could not reach the address, the host answered with an error, or it redirected more than 20 times. Check that the address opens in a browser, try again later, or attach the image.
+- **Address not allowed:** The address is not public, does not use HTTPS, or contains a user name or password. Use a public HTTPS image address or attach the image.
+- **Address not reachable:** The server could not reach the address, the host answered with an error, or it redirected. Check that the address opens in a browser, try again later, or attach the image.
 :::
 
 ## Check updates {icon="refresh"}

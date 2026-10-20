@@ -1,4 +1,4 @@
-import { createAllowedNetworkFetch } from "@k2b/cloud/services";
+import { requestPublicHttps } from "@k2b/cloud/services";
 import {
   GotenbergRenderError,
   type MarkdownPdfTemplateId,
@@ -7,13 +7,12 @@ import {
   type PdfImageVariant,
   preparePdfImage,
 } from "@k2b/cloud/services/pdf";
-import { EMPTY_NETWORK_ALLOWLIST } from "@k2b/cloud/shared";
 import { highlight } from "@k2b/stdlib";
 import type { BookImagePlacement } from "../lib/book-renderer";
 import { bookRendererMessages } from "../lib/book-renderer-messages";
 import { type NotePdfOmission, type NotePdfOmissionCode, notePdfOmissionLabel } from "../lib/pdf-omissions";
 import * as attachments from "./attachments";
-import { fetchNotePdfExternalImage, type NotePdfImageFetch } from "./note-pdf-external-image";
+import { fetchNotePdfExternalImage, type NotePdfImageRequest } from "./note-pdf-external-image";
 
 // A4 minus the named presets' @page margins in packages/cloud/src/services/pdf/markdown.ts.
 export const NOTE_PDF_PAGE_BOX_MM = {
@@ -68,14 +67,14 @@ function externalLabel(href: string): string | null {
 }
 
 export type NotePdfImageDependencies = {
-  fetch: NotePdfImageFetch;
+  request: NotePdfImageRequest;
   list: typeof attachments.listByShortIds;
   content: typeof attachments.getContentInNotebook;
   prepare: typeof preparePdfImage;
   now: () => number;
 };
 const defaults: NotePdfImageDependencies = {
-  fetch: createAllowedNetworkFetch(EMPTY_NETWORK_ALLOWLIST),
+  request: requestPublicHttps,
   list: attachments.listByShortIds,
   content: attachments.getContentInNotebook,
   prepare: preparePdfImage,
@@ -115,15 +114,22 @@ export async function prepareNotePdfImages(
       ? await deps.list({ shortIds, notebookId: input.notebookId })
       : [];
   const metadata = new Map(rows.filter((row) => row.notebookId === input.notebookId).map((row) => [row.shortId, row]));
+  // A pasted web address is not a prose label. Use the redacted source instead:
+  // guessing its end could leave credential/query tails after quotes or whitespace.
+  // WHATWG URL removes tabs and newlines even inside a scheme.
+  const externalAlt = (image: BookImagePlacement) => (/https?:/iu.test(image.alt.replace(/[\t\r\n]/gu, "")) ? "" : image.alt);
   const label = (image: BookImagePlacement) => {
     const url = externalLabel(image.href);
-    if (url !== null) return notePdfOmissionLabel(image.alt ? `${image.alt} (${url})` : url);
-    return notePdfOmissionLabel(image.alt || metadata.get(attachmentId(image.href) ?? "")?.filename || "");
+    if (url !== null) {
+      const alt = externalAlt(image);
+      return notePdfOmissionLabel(alt ? `${alt} (${url})` : url);
+    }
+    return notePdfOmissionLabel(externalAlt(image) || metadata.get(attachmentId(image.href) ?? "")?.filename || "");
   };
   const placeholder = (image: BookImagePlacement, code: ImageCode) => {
     const url = externalLabel(image.href);
     const text = t.imageNotIncluded({
-      label: url !== null ? notePdfOmissionLabel(image.alt) : label(image),
+      label: url !== null ? notePdfOmissionLabel(externalAlt(image)) : label(image),
       reason: t[`imagePlaceholder_${code}`],
       ...(url !== null ? { url: notePdfOmissionLabel(url) } : {}),
     });
@@ -160,7 +166,7 @@ export async function prepareNotePdfImages(
       const timer = setTimeout(() => controller.abort(), Math.max(0, input.deadline - deps.now()));
       try {
         const fetched = await fetchNotePdfExternalImage(href, {
-          fetch: deps.fetch,
+          request: deps.request,
           maxBytes: Math.min(input.maxAttachmentBytes, PDF_IMAGE_MAX_INPUT_BYTES),
           signal: AbortSignal.any([input.signal, controller.signal]),
         });

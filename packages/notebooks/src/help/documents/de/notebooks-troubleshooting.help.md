@@ -31,8 +31,8 @@ Das PDF markiert jedes fehlende Bild mit **Bild nicht enthalten: …** und einem
 - **Datei zu groß:** Hänge ein kleineres Bild an. Die Größenbegrenzung für Anhänge gilt auch für externe Bilder.
 - **Kein Platz mehr im PDF:** Verwende kleinere Bilder oder teile die Notiz auf. Bilder teilen sich die **Maximale Eingabegröße** mit dem Dokument. Die Administration kann diese Grenze erhöhen. Große Bilder werden mit 300, 200 oder 150 dpi gedruckt.
 - **Vorbereitung dauerte zu lange:** Versuche es erneut oder verwende weniger oder kleinere Bilder. Die Vorbereitung der Bilder bekommt dieselbe Zeit wie der PDF-Renderer, höchstens 115 Sekunden. Die Administration kann das **Zeitlimit** des Renderers erhöhen.
-- **Adresse nicht erlaubt:** Die Adresse ist nicht öffentlich, verwendet kein Web-Protokoll, enthält einen Benutzernamen oder ein Passwort oder leitet zu einer solchen Adresse weiter. Verwende eine öffentliche Bildadresse oder hänge das Bild an die Notiz an.
-- **Adresse nicht erreichbar:** Der Server konnte die Adresse nicht erreichen, der Host hat mit einem Fehler geantwortet oder die Adresse hat mehr als 20-mal weitergeleitet. Prüfe, ob sich die Adresse im Browser öffnet. Versuche es später erneut oder hänge das Bild an die Notiz an.
+- **Adresse nicht erlaubt:** Die Adresse ist nicht öffentlich, verwendet kein HTTPS oder enthält einen Benutzernamen oder ein Passwort. Verwende eine öffentliche HTTPS-Bildadresse oder hänge das Bild an die Notiz an.
+- **Adresse nicht erreichbar:** Der Server konnte die Adresse nicht erreichen, der Host hat mit einem Fehler geantwortet oder die Adresse leitet weiter. Prüfe, ob sich die Adresse im Browser öffnet. Versuche es später erneut oder hänge das Bild an die Notiz an.
 :::
 
 ## Aktualisierungen prüfen {icon="refresh"}

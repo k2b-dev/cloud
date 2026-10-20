@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { createAllowedNetworkFetch, resolveAllowedNetworkAddresses } from "@k2b/cloud/services";
+import { request } from "node:http";
+import { requestPublicHttps, resolvePublicNetworkAddresses } from "@k2b/cloud/services";
 import * as pdfModule from "@k2b/cloud/services/pdf";
-import { EMPTY_NETWORK_ALLOWLIST } from "@k2b/cloud/shared";
 import { type GotenbergConfig, preparePdfImage } from "@k2b/cloud/services/pdf";
 import { sql } from "bun";
 import sharp from "sharp";
@@ -206,6 +206,7 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
 
   test("external JPEGs are fetched once and uploaded; Gotenberg requests no image addresses", async () => {
     const trap = await startGotenbergTrap(config.url);
+    const upload = spyOn(pdfModule, "renderHtmlToPdfWithConfig");
     let server: ReturnType<typeof Bun.serve> | undefined;
     let requests = 0;
     try {
@@ -217,22 +218,28 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
           return new Response(new Uint8Array(jpeg), { headers: { "content-type": "image/jpeg" } });
         },
       });
-      const url = `http://images.example.test:${server.port}/photo.jpg`;
+      const url = `https://images.example.test:${server.port}/photo.jpg`;
       const result = await render(`![photo](${url}) ![again](${url}) ![private](${trap.origin}/x.png)`, {
         imageDependencies: {
-          fetch: createAllowedNetworkFetch(EMPTY_NETWORK_ALLOWLIST, {
-            resolve: async (host) =>
-              host === "images.example.test"
-                ? [{ address: "127.0.0.1", family: 4 }]
-                : resolveAllowedNetworkAddresses(host, EMPTY_NETWORK_ALLOWLIST),
-          }),
+          request: (input) =>
+            requestPublicHttps(input, {
+              resolve: async (host) =>
+                host === "images.example.test" ? [{ address: "127.0.0.1", family: 4 }] : resolvePublicNetworkAddresses(host),
+              // Local HTTP fixture exercises pinned byte transport; production always uses node:https.
+              request: (options, callback) => request({ ...options, protocol: "http:" }, callback),
+            }),
         },
       });
       expect(requests).toBe(1);
-      expect(await pdfImages(result.pdf)).toEqual([expect.objectContaining({ type: "image", width: 480, height: 320, enc: "jpeg" })]);
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(upload.mock.calls[0]![0].assets?.map(({ name }) => name)).toEqual(["img-1.jpg"]);
+      const images = await pdfImages(result.pdf);
+      expect(images.length).toBeGreaterThan(0);
+      for (const image of images) expect(image).toMatchObject({ type: "image", width: 480, height: 320, enc: "jpeg" });
       expect(result.omissions).toEqual([{ code: "blocked", kind: "image", label: `private (${trap.origin}/x.png)` }]);
       expect(await trap.takeRequests()).toEqual([]);
     } finally {
+      upload.mockRestore();
       await server?.stop(true);
       await trap.stop();
     }
