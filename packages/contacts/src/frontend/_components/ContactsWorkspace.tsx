@@ -1,12 +1,12 @@
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { ComponentProps, JSX } from "solid-js";
-import ContactDetailPanel from "./ContactDetailPanel.island";
-import ContactsSidebar from "./ContactsSidebar";
-import ContactsWorkspaceMain, { type ContactsWorkspaceMainProps } from "./ContactsWorkspaceMain";
-import ContactsViewTabs from "./ContactsViewTabs.island";
-import ContactsHeadFilters from "./ContactsHeadFilters.island";
-import ContactsHeadActions from "./ContactsHeadActions.island";
 import { contactsViewHref } from "../contacts-query";
+import ContactDetailPanel from "./ContactDetailPanel.island";
+import ContactsHeadActions from "./ContactsHeadActions.island";
+import ContactsHeadFilters from "./ContactsHeadFilters.island";
+import ContactsSidebar from "./ContactsSidebar";
+import ContactsViewTabs from "./ContactsViewTabs.island";
+import ContactsWorkspaceMain, { type ContactsWorkspaceMainProps } from "./ContactsWorkspaceMain";
 import { contactsPrimaryHref } from "./contacts-primary";
 import { resultsMessages } from "./results-messages";
 

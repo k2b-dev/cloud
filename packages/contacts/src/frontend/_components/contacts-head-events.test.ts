@@ -1,7 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import {
-  connectContactsHead,
   type ContactsHeadState,
+  connectContactsHead,
   publishContactsHeadState,
   subscribeToContactsHeadChanges,
 } from "./contacts-head-events";

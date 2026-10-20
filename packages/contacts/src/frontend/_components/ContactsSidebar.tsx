@@ -4,9 +4,9 @@ import { Show } from "solid-js";
 import type { ContactBook } from "../../service";
 import BookSettingsButton from "./BookSettingsButton.island";
 import { bookMessages } from "./book-messages";
+import ContactsFavoritesHint from "./ContactsFavoritesHint.island";
 import ContactsNavigation from "./ContactsNavigation.island";
 import ContactsSpotlightButton from "./ContactsSpotlightButton.island";
-import ContactsFavoritesHint from "./ContactsFavoritesHint.island";
 import CreateBookButton from "./CreateBookButton.island";
 
 type Props = {

@@ -6,7 +6,8 @@ import { browserName } from "../../../../ui/test/browser";
 
 // The island plugin owns its child process so SSR IDs and browser bundles agree.
 if (process.env.CONTACTS_SHELL_BROWSER_CHILD === "1") {
-  await import("./contacts-shell.browser-suite");
+  const { contactsShellSuite } = await import("./contacts-shell.browser-suite");
+  await contactsShellSuite(process.env.CONTACTS_SHOTS_DIR);
 } else {
   test(`Contacts workspace behaves in ${browserName}`, async () => {
     // Contacts' render-test preload installs a different SSR plugin. Disable it

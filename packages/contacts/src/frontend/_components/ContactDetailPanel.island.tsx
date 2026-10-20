@@ -29,8 +29,8 @@ import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySour
 import { contactFavoriteKey, listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresSelectedContactRefresh } from "./contacts-live";
 import {
-  CONTACT_DETAIL_EVENT,
   backFromContactDetail,
+  CONTACT_DETAIL_EVENT,
   type ContactDetailPayload,
   clearSelectedContactInUrl,
   getSelectedContactFromUrl,

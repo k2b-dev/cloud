@@ -1,8 +1,8 @@
 import { LocaleProvider, PageTrailProvider } from "@k2b/ui";
 import type { Contact, ContactBook, ContactTag } from "../../service";
 import ContactCreateLauncher from "./ContactCreateLauncher.island";
-import DesktopDetailLayoutSync from "./DesktopDetailLayoutSync.island";
 import ContactsWorkspace, { type ContactsWorkspaceProps } from "./ContactsWorkspace";
+import DesktopDetailLayoutSync from "./DesktopDetailLayoutSync.island";
 
 export const TIME = "2026-10-20T10:00:00.000Z";
 export const books: ContactBook[] = [

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { contactsFiltered, contactsViewHref, resetContactsFiltersHref } from "./contacts-query";
 import { contactsPrimaryHref } from "./_components/contacts-primary";
+import { contactsFiltered, contactsViewHref, resetContactsFiltersHref } from "./contacts-query";
 
 for (const query of ["", "?sort=created", "?favorites=true", "?search=%20%20&email=all&phone=all"]) {
   test(`view and sort do not count as filters: ${query}`, () => expect(contactsFiltered(`/app/contacts${query}`)).toBe(false));

@@ -17,9 +17,9 @@ import {
 import ContactCreateLauncher from "../_components/ContactCreateLauncher.island";
 import ContactsLiveEvents from "../_components/ContactsLiveEvents.island";
 import ContactsWorkspace from "../_components/ContactsWorkspace";
-import { contactsFiltered } from "../contacts-query";
-import { contactsFavoritesHintOpen } from "../contacts-hints";
 import DesktopDetailLayoutSync from "../_components/DesktopDetailLayoutSync.island";
+import { contactsFavoritesHintOpen } from "../contacts-hints";
+import { contactsFiltered } from "../contacts-query";
 import {
   CONTACTS_PER_PAGE,
   loadContactBookPermissions,

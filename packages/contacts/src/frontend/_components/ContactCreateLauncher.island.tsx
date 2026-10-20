@@ -5,8 +5,8 @@ import { createEffect, onCleanup, onMount } from "solid-js";
 import { ContactComposeInputSchema } from "../../commands";
 import { CONTACTS_CREATE_QUERY_KEYS, parseContactCreateSeed } from "../../integration";
 import { openContactCreateFlow, type WritableContactBook } from "./ContactCreateFlow";
-import { contactsPrimaryHref, interceptContactsPrimaryClick } from "./contacts-primary";
 import { connectContactsHead } from "./contacts-head-events";
+import { contactsPrimaryHref, interceptContactsPrimaryClick } from "./contacts-primary";
 import { CONTACT_DETAIL_EVENT } from "./context";
 import { detailMessages } from "./detail-messages";
 
