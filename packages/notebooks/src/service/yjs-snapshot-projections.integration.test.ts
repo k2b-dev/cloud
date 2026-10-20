@@ -140,6 +140,7 @@ if (!databaseName) {
           if (!first?.yjsState || !second?.yjsState) throw new Error("Live editor received no binary base");
           expect(first.yjsState).toEqual(second.yjsState);
           const editor = new Y.Doc();
+          let saved: ReturnType<typeof spyOn> | undefined;
           try {
             Y.applyUpdate(editor, first.yjsState);
             const text = editor.getText("codemirror");
@@ -156,19 +157,21 @@ if (!databaseName) {
                 originPeerId: null,
               },
             });
+            const snapshotSaved = Promise.withResolvers<void>();
+            const save = notes.save;
+            saved = spyOn(notes, "save").mockImplementation(async (params) => {
+              const result = await save(params);
+              if (params.noteId === noteId && params.streamCursor === published.cursor) snapshotSaved.resolve();
+              return result;
+            });
             await yjsSnapshotWorker.queueSnapshotSave({ noteId, targetCursor: published.cursor, reason: "unload" });
-            const deadline = Date.now() + 10_000;
-            let persisted = false;
-            while (Date.now() < deadline) {
-              const stored = await notes.getYjsStateWithCursor({ noteId });
-              if (stored?.streamCursor === published.cursor) {
-                expect(stored.contentMd).toBe(text.toString());
-                persisted = true;
-                break;
-              }
-              await Bun.sleep(25);
-            }
-            expect(persisted).toBe(true);
+            // Wait for the real save, bounded by the test timeout. A concurrency-1
+            // worker may first poll the other seven ordered partitions for 1.5s
+            // each; an arbitrary 10s polling deadline races normal delivery.
+            await snapshotSaved.promise;
+            const persisted = await notes.getYjsStateWithCursor({ noteId });
+            expect(persisted?.streamCursor).toBe(published.cursor);
+            expect(persisted?.contentMd).toBe(text.toString());
             expect(
               await notes.editContent({
                 noteId,
@@ -180,6 +183,7 @@ if (!databaseName) {
             expect(updated?.contentMd).toContain("Original + live");
             expect(updated?.contentMd).toContain("AGENT");
           } finally {
+            saved?.mockRestore();
             editor.destroy();
           }
         }
