@@ -51,8 +51,8 @@ While the only Mail replica restarts, Mail pages and API requests return
 **Bad Gateway** until it is ready again. Where availability matters, run at
 least **two Mail replicas** from the release that contains the registry fix
 for [#1561](https://github.com/k2b-dev/cloud/issues/1561) and the Mail memory
-bound from [#1571](https://github.com/k2b-dev/cloud/pull/1571). The number of
-replicas is your decision; see
+bound from [#1571](https://github.com/k2b-dev/cloud/pull/1571), each with the
+memory limit above. The number of replicas is your decision; see
 [Scaling and shutdown](/en/docs/operations/scaling-and-shutdown#what-scales-horizontally-what-must-stay-single-and-why).
 
 ## Prepare for browser confirmation of new access

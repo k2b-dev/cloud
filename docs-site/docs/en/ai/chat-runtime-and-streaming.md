@@ -687,8 +687,9 @@ source or repeat unchanged calls.
 The execution host and its approval waits belong to one Assistant process.
 Keep one Assistant replica for now: a poll or an approval that reaches another
 replica marks the call lost, and temporary JavaScript state is not transferred
-between replicas or recovered after a process restart. Durable call records
-prevent an uncertain operation from being replayed. A new run is required after
+between replicas or recovered after a process restart. This limit belongs to
+the Code Mode host work in [#47](https://github.com/k2b-dev/cloud/issues/47).
+Durable call records prevent an uncertain operation from being replayed. A new run is required after
 host loss. Startup and health checks are bounded independently of the user's
 browser timers.
 

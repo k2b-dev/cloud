@@ -26,7 +26,9 @@ replica.
 The nightly [scale acceptance](/en/docs/contributing/testing#scale-acceptance)
 runs Core, Mail, Chat, and Notebooks with two replicas each in a disposable
 stack. It checks live updates, draft leases, and delivery after one replica is
-killed. Run it locally with Docker:
+killed. It also restarts one Mail replica and stops and surges Chat replicas
+while requests run through the gateway, and fails on any registry gap. Run it
+locally with Docker:
 
 ```bash
 bun run --cwd packages/ui build
@@ -69,8 +71,8 @@ grow with the replica count.
 
 Keep **one Assistant replica** for now. Code Mode hosts and their approval
 waits live in the Assistant process, so a poll or an approval that reaches
-another replica marks the call lost. Durable Code Mode ownership is tracked in
-[#47](https://github.com/k2b-dev/cloud/issues/47).
+another replica marks the call lost. This limit belongs to the Code Mode host
+work in [#47](https://github.com/k2b-dev/cloud/issues/47).
 
 A per-process limit protects one process, not the service behind it. With
 several replicas, Gotenberg, Filegate, the SMTP relay, model providers and
@@ -85,7 +87,10 @@ sockets per viewer on each replica. Workflow slots also count per replica; see
 Where availability matters, run at least **two Mail replicas** from the release
 that contains the registry fix for
 [#1561](https://github.com/k2b-dev/cloud/issues/1561) and the Mail memory bound
-from [#1571](https://github.com/k2b-dev/cloud/pull/1571). While a single Mail
+from [#1571](https://github.com/k2b-dev/cloud/pull/1571). Give each Mail replica
+a container memory limit of at least 1.5 GiB; see
+[Size Mail for large messages](/en/docs/operations/deployment-requirements#size-mail-for-large-messages).
+While a single Mail
 replica restarts, for example after an out-of-memory kill
 ([#1549](https://github.com/k2b-dev/cloud/issues/1549)), Mail pages and API
 requests return **Bad Gateway**. The number of replicas in production is your
@@ -157,8 +162,20 @@ Keep database changes backward-compatible until the rollout completes.
 
 ## Roll out replicas
 
-Stopping one replica no longer removes the application's routes while another
-replica runs; see [Application registration](#application-registration).
+A clean stop of one replica keeps the application routed while another replica
+runs. Short windows remain; see
+[Application registration](#application-registration) and the upgrade note in
+[Verify readiness and upgrades](/en/docs/operations/deployment-requirements#verify-readiness-and-upgrades):
+
+- within 180 seconds after a replica crashed, a clean stop of the last running
+  replica keeps the shared entries until their own 180-second TTL ends, and the
+  gateway answers the app's routes with `502` meanwhile;
+- while replicas of the previous version run, during the rollout to this
+  release and during a rollback, a stopping replica can delete the shared entry
+  once; surviving replicas restore it within 60 seconds;
+- a delete that NATS applies late can remove the entry a new replica has just
+  written; that replica writes it again within 60 seconds.
+
 Replicas of one application can boot together: setup runs on one replica at a
 time, and the later ones wait for it; see
 [Use lifecycle hooks](#use-lifecycle-hooks).
