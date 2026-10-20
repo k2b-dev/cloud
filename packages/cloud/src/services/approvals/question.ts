@@ -1,5 +1,5 @@
 import { listCapabilities } from "../../_internal/registry";
-import { storedActionReview } from "../../ai/action-review";
+import { type AiStoredActionReview, storedActionReview } from "../../ai/action-review";
 import type { ActionCard } from "../../ai/chat/action-card";
 import { approvalCard } from "../../approvals/approval-card";
 import {
@@ -41,6 +41,15 @@ export const loadApprovalActionPolicies = async (
   };
 };
 
+/** Prefer the turn's snapshot, then the linked request's review. */
+export const pendingApprovalReview = (
+  row: Pick<PendingApprovalRow, "storedReview" | "details">,
+  policy?: ApprovalActionPolicy,
+): AiStoredActionReview | null => {
+  const parsed = CapabilityActionReviewDataSchema.safeParse(row.details);
+  return row.storedReview ?? (parsed.success ? storedActionReview(parsed.data, policy ?? undefined) : null);
+};
+
 /** Resolve the recorded question in the language and time zone of its originating turn. */
 export const pendingApprovalCard = (
   row: PendingApprovalRow,
@@ -50,8 +59,7 @@ export const pendingApprovalCard = (
 ): ActionCard => {
   const locale = row.runConfig?.kind === "compact" ? fallbackLocale : (row.runConfig?.locale ?? fallbackLocale);
   const timeZone = row.runConfig?.kind === "compact" ? "UTC" : (row.runConfig?.timeZone ?? "UTC");
-  const parsed = CapabilityActionReviewDataSchema.safeParse(row.details);
-  const review = row.storedReview ?? (parsed.success ? storedActionReview(parsed.data, policy ?? undefined) : null);
+  const review = pendingApprovalReview(row, policy);
   return approvalCard(
     { sentence: row.sentence, action: row.action, appName: appName(row.appId, locale), appIcon: null, review },
     locale,

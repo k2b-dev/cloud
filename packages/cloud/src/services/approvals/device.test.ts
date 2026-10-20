@@ -14,7 +14,7 @@ import type { CapabilityActionCallReview } from "../../contracts/capabilities";
 import { appNameIn } from "../../ssr/runtime";
 import { appActionOffered, appActionSummary, appActionView, pendingApprovalCard } from "./device";
 import type { PendingApprovalRow } from "./list";
-import { loadApprovalActionPolicies } from "./question";
+import { loadApprovalActionPolicies, pendingApprovalReview } from "./question";
 
 const row: PendingApprovalRow = {
   id: "ab811792-7476-4a8c-b676-2c6007bb9b5b",
@@ -62,6 +62,16 @@ const mailReview = (locale = "en"): CapabilityActionCallReview => ({
     body: "Hallo Lea,\ndas Wartungsfenster ist am Dienstag.",
     format: "plain",
   },
+});
+
+test("request reviews inherit the declared reason while stored reviews keep their snapshot", () => {
+  const { ask: _ask, ...review } = mailReview();
+  const input = { details: review, storedReview: null };
+  expect(pendingApprovalReview(input, { ask: "sends" })).toEqual({ ...review, ask: "sends" });
+  expect(pendingApprovalReview(input, null)).toEqual(review);
+  const stored = { ...review, ask: "app_asks" as const };
+  expect(pendingApprovalReview({ ...input, storedReview: stored }, { ask: "sends" })).toBe(stored);
+  expect(pendingApprovalReview({ ...input, details: { invalid: true } })).toBeNull();
 });
 
 test("no-review questions use the card's question, reason and later sentence rows with terminal controls cleaned", async () => {
