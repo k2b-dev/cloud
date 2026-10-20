@@ -854,11 +854,14 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
       const failures: string[] = [];
       for (let run = 0; run < section.runs; run++) {
         setup.signal.throwIfAborted();
+        console.log(`    ${engine} ${profile} sample ${run + 1}/${section.runs} start ${new Date().toISOString()}`);
         try {
           await sample(browser);
         } catch (error) {
           setup.signal.throwIfAborted();
           failures.push(`Run ${run + 1}: ${failure(error)}`);
+        } finally {
+          console.log(`    ${engine} ${profile} sample ${run + 1}/${section.runs} end ${new Date().toISOString()}`);
         }
       }
       if (failures.length) {

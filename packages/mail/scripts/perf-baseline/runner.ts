@@ -231,9 +231,12 @@ export async function run(options: Options) {
       "auto_explain is disabled for timed requests; one extra instrumented pass follows each scenario and is excluded from timings and attribution. Live passes add disposable messages; compose returns fresh seed IDs.",
       "Brotli bytes are a local body recompression, not network bytes. TTFB ends at response headers; total ends at consumed body, excluding compression and HTML inspection.",
       ...(options.skipBuild ? ["--skip-build reused bundles; recorded commit does not prove their provenance."] : []),
+      ...(options.browserOnly
+        ? ["--browser-only skipped server scenarios; both mailbox fixtures were seeded without server-scenario mutations."]
+        : []),
       ...(options.browsers.length
         ? [
-            "Browser part runs after the server scenarios on the same installation. Every load and interaction sample uses a fresh context, so start pages load cold (Chromium cache disabled); interactions then reuse what their start page cached. Local emulation in the run-owned Playwright container, not real phones.",
+            `${options.browserOnly ? "Browser-only run omits server scenarios." : "Browser part runs after the server scenarios on the same installation."} Every load and interaction sample uses a fresh context, so start pages load cold (Chromium cache disabled); interactions then reuse what their start page cached. Local emulation in the run-owned Playwright container, not real phones.`,
             "Interaction times are epoch milliseconds from the trusted input event (live: the ingest worker's commit acknowledgement on the host; the container shares the host clock) to the animation frame in which the end state first holds. A probe checks the end state once per frame.",
           ]
         : []),
@@ -425,6 +428,7 @@ export async function run(options: Options) {
     add("ssr-mailbox-b", "Mailbox switch", async (s) => {
       await request(api, s, pageB, undefined, true);
     });
+    if (options.browserOnly) definitions.length = 0;
     result.scenarios = definitions.map(({ id, group, notes }) => ({
       id,
       group,

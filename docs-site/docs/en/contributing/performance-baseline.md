@@ -586,6 +586,14 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 3 \
   --interactions mailbox-switch,folder-switch --loads none
 ```
 
+For a browser-only remeasurement, add `--browser-only` with `--browser`.
+Both mailboxes are still seeded, but `scenarios` stays empty and no server
+scenario adds messages or draft seeds or warms the server caches. Matching
+fixture digests alone do not establish equivalent cache conditions. Each browser sample logs its UTC
+start and end, including start-page loading, so an external load disturbance
+can be matched to individual samples. Preserve disturbed results and rerun
+only affected measurements; do not silently combine incomplete profiles.
+
 By default, two pages are loaded: the mailbox and the compose page of a fresh draft. For
 each page the result has the eager and lazy JavaScript (Brotli bytes and
 module count) and, per engine and profile, FCP, LCP, TTI, the end of the
@@ -687,9 +695,13 @@ Playwright was 1.64.1, Chromium 156.0.8078.4, and WebKit 27.2.
 These are observations from a busy shared host with 24 logical CPUs, **not
 isolated performance results**. The one-minute load average was 29.9 → 32.7
 for the Chromium before run, 16.4 → 25.7 for the earlier WebKit before run,
-and 32.2 → 24.1 after. Possible overlap with another lane's heavy work was
-still being checked when this checkpoint was recorded. Absolute times and
-percentage changes therefore need that qualification.
+and 32.2 → 24.1 after. Another lane's tests, browser fixtures, and typecheck
+overlapped the after run from 18:03:38 to 18:12:02 UTC. This affects both
+Chromium profiles, WebKit desktop, and the beginning of WebKit phone
+(18:11:55–18:12:40). The original output has no per-sample UTC bounds, so no
+individual WebKit phone sample can be certified as undisturbed. All before
+samples are retained; the after values below are disturbed observations
+awaiting a browser-only remeasurement, not an isolation-qualified comparison.
 
 Each cell is median (min–max), in milliseconds:
 

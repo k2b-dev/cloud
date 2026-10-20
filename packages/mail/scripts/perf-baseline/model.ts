@@ -43,6 +43,7 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
                      recorded connect error.
   --browser-runs N   1..20 cold loads per page, interaction, engine and
                      profile (default 3). Adds roughly 10-30 minutes.
+  --browser-only     Seed both mailboxes but skip server scenarios (requires --browser)
   --interactions ids Comma list of interaction ids (default all; see below)
   --loads pages      Comma list of mailbox,compose, or none (default both)
   --rank <result.json> --bottlenecks <candidates.json>
@@ -86,6 +87,7 @@ export function parseArgs(args: string[]) {
     keep: false,
     browsers: [] as Engine[],
     browserRuns: 3,
+    browserOnly: false,
     interactions: [...interactionIds],
     loads: [...loadPages],
     rank: undefined as string | undefined,
@@ -96,6 +98,7 @@ export function parseArgs(args: string[]) {
     if (flag === "--help") options.help = true;
     else if (flag === "--keep") options.keep = true;
     else if (flag === "--skip-build") options.skipBuild = true;
+    else if (flag === "--browser-only") options.browserOnly = true;
     else if (
       [
         "--messages",
@@ -162,6 +165,7 @@ export function parseArgs(args: string[]) {
   if ((options.rank === undefined) !== (options.bottlenecks === undefined)) throw new Error("--rank and --bottlenecks go together");
   if (options.rank && args.some((arg) => arg.startsWith("--") && !["--rank", "--bottlenecks", "--help"].includes(arg)))
     throw new Error("--rank only takes --bottlenecks; it reads an existing result and starts nothing");
+  if (options.browserOnly && !options.browsers.length) throw new Error("--browser-only requires --browser");
   return options;
 }
 export type Options = ReturnType<typeof parseArgs>;

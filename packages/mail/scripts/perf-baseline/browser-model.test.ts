@@ -40,6 +40,8 @@ test("browser flags: engines, runs and the rank mode", () => {
     browserRuns: 5,
   });
   expect(parseArgs(["--browser", "webkit"]).browsers).toEqual(["webkit"]);
+  expect(parseArgs(["--browser-only", "--browser", "webkit"])).toMatchObject({ browserOnly: true, browsers: ["webkit"] });
+  expect(() => parseArgs(["--browser-only"])).toThrow("--browser-only requires --browser");
   expect(() => parseArgs(["--browser", "firefox"])).toThrow();
   expect(() => parseArgs(["--browser", "chromium,chromium"])).toThrow("duplicates");
   expect(() => parseArgs(["--browser"])).toThrow("Missing value for --browser");
