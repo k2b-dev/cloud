@@ -880,6 +880,44 @@ describe("replica membership", () => {
     expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
   });
 
+  test("an older capability replica preserves a newer app-only replica across repeated refreshes", async () => {
+    const f = fixture();
+    const old = f.process("old", 500, 2),
+      next = f.process("new", 500, 2);
+    await old.start();
+    await next.app.start();
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "new" }, { instanceId: "old" }]);
+
+    const refreshes = new Map<string, number>();
+    const touch = f.instances.touch;
+    f.instances.touch = async (input) => {
+      const result = await touch(input);
+      refreshes.set(input.key, (refreshes.get(input.key) ?? 0) + 1);
+      return result;
+    };
+    const reads: unknown[] = [];
+    const snapshot = f.apps.snapshot;
+    f.apps.snapshot = async (input) => {
+      const result = await snapshot(input);
+      if (input.prefix === "apps/test") reads.push(result.entries[0]?.value);
+      return result;
+    };
+    let writes = 0;
+    for (const registry of [f.apps, f.capabilities]) {
+      const upsert = registry.upsert;
+      registry.upsert = async (input) => {
+        writes++;
+        return upsert(input);
+      };
+    }
+
+    await waitUntil(() => ["old", "new"].every((id) => (refreshes.get(`${appInstancePrefix("test")}${id}`) ?? 0) >= 16));
+    expect(reads.length).toBeGreaterThanOrEqual(32);
+    for (const value of reads) expect(value).toEqual({ ...entry, instanceId: "new" });
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "new" }, { instanceId: "old" }]);
+    expect(writes).toBe(0);
+  });
+
   test("adoption reads each shared key once and snapshots instances only for a complete foreign pair", async () => {
     const f = fixture();
     const a = f.process("vA"),
@@ -1100,6 +1138,29 @@ describe("replica membership", () => {
     await expect(old.stop()).rejects.toThrow("membership lease expired during stop; shared entry left to its TTL");
     expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}new`]);
     expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
+  });
+
+  test("a stop whose first removal stalls past its lease preserves a replacement's shared entries", async () => {
+    const f = fixture();
+    const old = f.process("old", 20),
+      next = f.process("new");
+    await old.start();
+    const remove = f.capabilities.delete;
+    let pause = true;
+    f.capabilities.delete = async (input) => {
+      const result = await remove(input);
+      if (pause) {
+        pause = false;
+        setSystemTime(new Date(epoch + 21));
+        await next.start();
+      }
+      return result;
+    };
+
+    const error = await old.stop().catch((error: unknown) => error);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "new" }, { instanceId: "new" }]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}new`]);
+    expect(error).toEqual(new Error("membership lease expired during stop; shared entry left to its TTL"));
   });
 
   test("a crashed sibling ages out and does not prevent the last live process from removing both entries", async () => {

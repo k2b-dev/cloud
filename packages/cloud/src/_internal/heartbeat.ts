@@ -113,8 +113,8 @@ export const createRegistryMembership = (
     },
     adopt: async (sharedKey: string): Promise<void> => {
       if (left) return;
-      // The stored pair must come from one live process. Late writes after an expired
-      // lease can split it; checking all entries together heals that split.
+      // A live process covers stored state when all read keys it declares match.
+      // Ignore keys it never registered, but heal split pairs when both keys are declared.
       const needsRepublish = async (): Promise<boolean> => {
         const stored = await Promise.all(
           [...sharedEntries].map(async ([key, { read }]) => {
@@ -125,7 +125,11 @@ export const createRegistryMembership = (
         if (stored.some(({ digest }) => digest === undefined)) return false;
         if (stored.every(({ key, digest }) => digest === value.entries[key])) return false;
         const snapshot = await options.registry().snapshot({ prefix });
-        return !snapshot.entries.some(({ value }) => stored.every(({ key, digest }) => value.entries[key] === digest));
+        return !snapshot.entries.some(
+          ({ value }) =>
+            stored.some(({ key }) => key in value.entries) &&
+            stored.every(({ key, digest }) => !(key in value.entries) || value.entries[key] === digest),
+        );
       };
       if (!(await needsRepublish())) return;
       await prepareShared(sharedKey);
@@ -161,7 +165,12 @@ export const createRegistryMembership = (
           throw new Error("membership lease expired during stop; shared entry left to its TTL");
         }
         if (!snapshot.entries.some((entry) => entry.key !== key)) {
-          for (const { remove } of sharedEntries.values()) await remove();
+          for (const { remove } of sharedEntries.values()) {
+            if (Date.now() > lock.expiresAt.getTime() - writeTimeoutMs / 2) {
+              throw new Error("membership lease expired during stop; shared entry left to its TTL");
+            }
+            await remove();
+          }
         }
       });
     },
