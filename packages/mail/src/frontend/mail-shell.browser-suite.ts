@@ -669,6 +669,33 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       }
     });
 
+    test("1440: collapsing the open folder's parent leaves its name in the list heading", async () => {
+      const page = await open(`${boxPath}?folder=Child1`, 1440);
+      try {
+        const heading = page.locator("[data-mail-list-heading]");
+        const childRow = sidebar(page).locator('a[href$="folder=Child1"]');
+        const toggle = sidebar(page).locator(
+          '[role="treeitem"][data-k2b-nav-tree-id="Filed1"] > .k2b-app-workspace__nav-tree-row [data-k2b-nav-tree-toggle]',
+        );
+        await settled(page);
+        expect(await childRow.count()).toBe(1);
+        expect((await heading.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1);
+
+        await toggle.click();
+        await settled(page);
+        expect(await childRow.count()).toBe(0);
+        expect(await heading.textContent()).toBe("Nested");
+        expect((await heading.boundingBox())?.width ?? 0).toBeGreaterThan(20);
+
+        await toggle.click();
+        await settled(page);
+        expect(await childRow.count()).toBe(1);
+        expect((await heading.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1);
+      } finally {
+        await close(page);
+      }
+    });
+
     test("the open mailbox's name stays readable beside its row actions at the default width", async () => {
       const page = await open(boxPath);
       try {

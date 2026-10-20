@@ -342,13 +342,13 @@ describe("Mail workspace folder switches", () => {
     else Reflect.deleteProperty(globalThis, "CSS");
     setSystemTime();
   });
-  const mount = (initialLiveCursor: string | null = data.initialLiveCursor) => {
+  const mount = (initialLiveCursor: string | null = data.initialLiveCursor, overrides: Partial<MailboxPageData> = {}) => {
     dom.window.history.replaceState(null, "", path);
     const m = modules!;
     dispose = render(
       () =>
         createComponent(m.MailWorkspace, {
-          data: { ...snapshotFor(path), initialLiveCursor },
+          data: { ...snapshotFor(path), initialLiveCursor, ...overrides },
           requestPath: path,
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
@@ -415,6 +415,32 @@ describe("Mail workspace folder switches", () => {
     }
     await settle();
   };
+
+  test("a collapsed branch leaves the open folder named by its list heading", () => {
+    mount(null, {
+      folders: [...data.folders, mailTestFolder("Child1", { name: "Nested", parentId: "Filed1" })],
+      folderId: "Child1",
+      listTitle: "Nested",
+    });
+    const listHeading = () => dom.root.querySelector("[data-mail-list-heading]")!;
+    const childRow = () => dom.root.querySelector('[role="treeitem"][data-k2b-nav-tree-id="Child1"]');
+    const toggle = () =>
+      dom.root.querySelector<HTMLElement>(
+        '[role="treeitem"][data-k2b-nav-tree-id="Filed1"] > .k2b-app-workspace__nav-tree-row [data-k2b-nav-tree-toggle]',
+      )!;
+
+    expect(childRow()?.getAttribute("aria-selected")).toBe("true");
+    expect(listHeading().classList.contains("mail-list-heading")).toBe(true);
+
+    toggle().click();
+    expect(childRow()).toBeNull();
+    expect(listHeading().textContent).toBe("Nested");
+    expect(listHeading().classList.contains("mail-list-heading")).toBe(false);
+
+    toggle().click();
+    expect(childRow()?.getAttribute("aria-selected")).toBe("true");
+    expect(listHeading().classList.contains("mail-list-heading")).toBe(true);
+  });
 
   test("a list that arrives with another access scope loads the whole snapshot", async () => {
     // Folders and counts depend on the scope, for example after a group membership change made the reader assigned-only.

@@ -2384,13 +2384,15 @@ function MailWorkspaceView(props: {
       savedViewId: data.savedViewId,
     }),
   );
+  const [openFolderRowHidden, setOpenFolderRowHidden] = createSignal(false);
   const listNamedBy = createMemo(() => {
     if (currentTab() !== null) return "tabs";
     if (
       data.scheduledMode ||
       data.draftsMode ||
       data.activeView === "send_problems" ||
-      flattenMailFolderTree(buildVisibleMailFolderTree(data.folders)).some(({ folder }) => folder.id === data.folderId)
+      (!openFolderRowHidden() &&
+        flattenMailFolderTree(buildVisibleMailFolderTree(data.folders)).some(({ folder }) => folder.id === data.folderId))
     )
       return "sidebar";
     return null;
@@ -2428,6 +2430,7 @@ function MailWorkspaceView(props: {
         preferences={mailboxPreferences}
         // Other mailboxes' counts require the cross-mailbox Focus read; keep mailbox opens fast.
         counts={[]}
+        onOpenFolderRowHiddenChange={setOpenFolderRowHidden}
         open={{
           mailboxId: data.mailbox.id,
           mailboxName: data.mailbox.name,

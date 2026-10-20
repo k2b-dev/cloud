@@ -88,6 +88,8 @@ export default function MailSidebar(
     mobile?: "stacked" | "hidden";
     /** Runs after the person hid a mailbox from the sidebar. */
     onMailboxHidden?: (mailboxId: string) => void;
+    /** Whether a collapsed custom folder branch hides the open folder's row. */
+    onOpenFolderRowHiddenChange?: (hidden: boolean) => void;
   },
 ) {
   const locale = useLocale();
@@ -283,6 +285,16 @@ export default function MailSidebar(
   const customFolderTree = createMemo(() => excludeMailFolderTreeRoles(folderTree(), SYSTEM_FOLDER_ROLES));
   const customFolderBranchIds = createMemo(() => folderBranchIds(customFolderTree()));
   const activeFolderId = () => props.open?.activeFolderId ?? null;
+  const openFolderRowHidden = createMemo(() => {
+    const activeId = activeFolderId();
+    const collapsed = collapsedFolders();
+    const hidden = (nodes: readonly MailFolderTreeNode[], hiddenByParent = false): boolean =>
+      nodes.some(
+        (node) => (node.folder.id === activeId && hiddenByParent) || hidden(node.children, hiddenByParent || collapsed.has(node.folder.id)),
+      );
+    return hidden(customFolderTree());
+  });
+  createEffect(on(openFolderRowHidden, (hidden) => props.onOpenFolderRowHiddenChange?.(hidden)));
   const sendProblemsActive = () => !props.open?.scheduledMode && props.open?.activeView === "send_problems";
   /** A folder, Scheduled, or Send problems is open: the sidebar marks that row instead of the mailbox. */
   const placeActive = () => Boolean(props.open && (props.open.scheduledMode || activeFolderId() || sendProblemsActive()));
