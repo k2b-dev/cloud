@@ -145,6 +145,7 @@
   --k2b-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.1), 3px 0 6px -5px rgb(0 0 0 / 0.1);
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
   --k2b-shadow-toast: 0 8px 24px -12px rgb(9 9 11 / 0.28);
+  --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
   --k2b-shadow-sheet: 0 -14px 36px rgb(9 9 11 / 0.16); /* a sheet rising from the bottom edge */
 
   --stdlib-chart-c1: var(--k2b-accent-500);
@@ -281,6 +282,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.28), 3px 0 6px -5px rgb(0 0 0 / 0.28);
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
+  --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   --k2b-shadow-sheet: 0 -16px 40px rgb(0 0 0 / 0.5);
   color-scheme: dark;
   --k2b-chart-highlight-mix: white;

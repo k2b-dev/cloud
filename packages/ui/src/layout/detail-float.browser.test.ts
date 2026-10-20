@@ -1144,3 +1144,54 @@ describe("floating workspace detail", () => {
     },
   );
 });
+
+// Error class: a downward shadow clipped to its side gives a drawer no clear
+// elevation cue. Compare painted pixels, not just the declared shadow token.
+for (const theme of ["light", "dark"] as const)
+  for (const width of [834, 1194, 1440])
+    test(`${width} ${theme}: a waiting drawer casts its shadow toward the covered content without moving Main`, async () => {
+      const page = await load(width, 900, "request-control&width=lg");
+      try {
+        await page.evaluate((theme) => document.documentElement.classList.toggle("dark", theme === "dark"), theme);
+        if (width === 1194)
+          await page.locator("#app").evaluate((host) => {
+            host.style.width = "834px";
+          });
+        const before = await geometry(page);
+        await openRow(page);
+        const opened = await geometry(page);
+        expect(opened.main).toEqual(before.main);
+        const detail = page.locator(".k2b-app-workspace__detail");
+        expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+        const x = Math.floor(opened.detail.left);
+        const png = await page.screenshot({ clip: { x: x - 140, y: 450, width: 140, height: 8 } });
+        const contrast = await page.evaluate(
+          async (src) => {
+            const image = new Image();
+            image.src = src;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = 140;
+            canvas.height = 8;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0);
+            const mean = (start: number) => {
+              const data = context.getImageData(start, 0, 8, 8).data;
+              let total = 0;
+              for (let i = 0; i < data.length; i += 4) total += (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+              return total / 64;
+            };
+            return mean(12) - mean(132);
+          },
+          `data:image/png;base64,${png.toString("base64")}`,
+        );
+        console.info(`drawer edge ${theme} ${width}: ${contrast.toFixed(2)} luminance levels`);
+        expect(contrast).toBeGreaterThan(theme === "light" ? 15 : 2);
+        const shadow = await detail.evaluate((element) => getComputedStyle(element).boxShadow);
+        expect(shadow).toContain(theme === "light" ? "-14px 0px 36px" : "-16px 0px 40px");
+        await page.keyboard.press("Escape");
+        expect((await geometry(page)).main).toEqual(before.main);
+      } finally {
+        await page.close();
+      }
+    });

@@ -416,6 +416,10 @@ minimum plus the Detail width token plus an 8 px inset:
 | `lg` (480 px) | 808 px |
 | `xl` (544 px) | 872 px |
 
+An open waiting drawer uses `--k2b-shadow-side` to cast a soft shadow toward
+the covered content. The token mirrors the phone sheet: a leftward shadow
+in light and dark, with no change to the drawer size or Main.
+
 The column has no fill, frame, radius, or shadow; it shares the workspace
 surface. Its top, right, and bottom inset is 8 px. This replaces the earlier
 floating-detail appearance.
