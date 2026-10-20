@@ -216,7 +216,7 @@ describe("Mail search builder model", () => {
     for (const [locale, expected] of [
       ["en", "not (Assigned to a specific person)"],
       ["de-CH", "nicht (Einer bestimmten Person zugewiesen)"],
-    ]) {
+    ] as const) {
       const summary = summarizeMailSearchExpression(expression, locale);
       expect(summary).toBe(expected);
       expect(summary).not.toContain(userId);
