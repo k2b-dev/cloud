@@ -2,9 +2,11 @@ import { expect, spyOn, test } from "bun:test";
 import { renderToString } from "solid-js/web";
 import "./ssr-test-plugin";
 import { workspaceFixture } from "./contacts-workspace.fixture";
+
 const { default: ContactsWorkspace } = await import("./ContactsWorkspace");
 const { default: ContactsHeadFilters } = await import("./ContactsHeadFilters.island");
 const { LocaleProvider } = await import("@k2b/ui");
+
 import { createDomTestHarness } from "../../../../ui/test/dom";
 
 const parse = (html: string) => {
@@ -87,7 +89,7 @@ test("tag chips name every tag next to a dot, with book context and no colored T
       const tag = workspaceFixture.tags[index]!;
       expect(chip.textContent).toBe(tag.name);
       expect(chip.querySelector("i.contacts-tag-dot")).not.toBeNull();
-      expect(chip.getAttribute("style")).toContain(`--contacts-tag-color:${tag.color}`);
+      expect(chip.getAttribute("style")).toContain(`--app-contacts-tag-color:${tag.color}`);
       expect(chip.querySelector("a")?.title).toBe(`${tag.name} · Team`);
       expect(chip.querySelector(".k2b-tag")).toBeNull();
     }

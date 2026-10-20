@@ -186,7 +186,7 @@ export default function ContactsList(props: Props) {
                       <For each={visibleTags()}>
                         {(tag) => (
                           // Neutral text beside the tag's color dot: light tag hues stay readable (#1515).
-                          <span class="contacts-tag-label" style={{ "--contacts-tag-color": tag.color }}>
+                          <span class="contacts-tag-label" style={{ "--app-contacts-tag-color": tag.color }}>
                             <i class="contacts-tag-dot" aria-hidden="true" />
                             {tag.name}
                           </span>

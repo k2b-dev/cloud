@@ -180,7 +180,15 @@ const open = async (path: string, width = 1440, seen = true) => {
   });
   try {
     if (seen) await context.addCookies([{ name: "cloud_seen_hints", value: "contacts.favorites-tab", url: server.url.href }]);
-    await page.clock.setFixedTime(new Date(TIME));
+    // Pin Date only; timers, animation frames and performance keep their native browser behavior.
+    await context.addInitScript((at) => {
+      const RealDate = Date;
+      globalThis.Date = new Proxy(RealDate, {
+        construct: (target, args, newTarget) => Reflect.construct(target, args.length ? args : [at], newTarget),
+        apply: () => new RealDate(at).toString(),
+        get: (target, key) => (key === "now" ? () => at : Reflect.get(target, key)),
+      });
+    }, Date.parse(TIME));
     await page.goto(new URL(path, server.url).href);
     await ready(page);
     expect(errors, "No hydration or mount request errors").toEqual([]);

@@ -3,7 +3,7 @@ import { ButtonLink, FilterChip, type FilterChipSection, FilterToggle, TextInput
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ContactTag } from "../../service";
 import { buildContactsQueryHref, contactsFiltered, readContactsQueryOptions, resetContactsFiltersHref } from "../contacts-query";
-import { connectContactsHead, type ContactsHeadState, plainContactsClick } from "./contacts-head-events";
+import { type ContactsHeadState, connectContactsHead, plainContactsClick } from "./contacts-head-events";
 import { buildContactsSearchHref } from "./contacts-search";
 import { type ResultsMessages, resultsMessages } from "./results-messages";
 
@@ -145,7 +145,7 @@ export default function ContactsHeadFilters(props: {
       </form>
       <For each={props.tags}>
         {(tag) => (
-          <span class="contacts-tag-chip" style={{ "--contacts-tag-color": tag.color }}>
+          <span class="contacts-tag-chip" style={{ "--app-contacts-tag-color": tag.color }}>
             <FilterToggle
               label={tag.name}
               icon="contacts-tag-dot"
