@@ -1132,9 +1132,9 @@
   }
 }
 
-/* The reader's details button is pressed while the details show, as a column
-   or as the open drawer; a parked drawer leaves it unpressed. */
-.k2b-ui .mail-reader-toolbar .mail-reader-details[aria-pressed="true"]:not([aria-expanded="false"]) {
+/* The reader's details button looks selected while the details show, as a
+   column or as the open drawer; a parked drawer leaves it plain. */
+.k2b-ui .mail-reader-toolbar .mail-reader-details[aria-expanded="true"] {
   background: var(--ui-selected);
 }
 

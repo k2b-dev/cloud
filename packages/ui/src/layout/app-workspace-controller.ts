@@ -612,9 +612,17 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const syncDetailRequestControls = () => {
     const waitingControls = new Map<HTMLElement, HTMLElement>();
     for (const root of allRoots()) {
+      const waitingDetails = wide?.matches
+        ? rootElements(root, detailSelector).filter((aside) => !aside.hidden && detailWaiting(aside))
+        : [];
+      if (!waitingDetails.length) continue;
       // Only a control that names a Detail can request it.
       for (const control of rootElements(root, "[aria-controls]")) {
-        const aside = requestedWaitingDetail(control);
+        if (control.matches(DETAIL_TOGGLE_SELECTOR) || !eventRoot.contains(control)) continue;
+        const region = control.closest(".k2b-app-workspace__main, .k2b-app-workspace__detail");
+        if (!region || region.closest(ROOT_SELECTOR) !== root) continue;
+        const ids = control.getAttribute("aria-controls")?.split(/\s+/);
+        const aside = waitingDetails.find((aside) => ids?.includes(aside.id));
         if (aside) waitingControls.set(control, aside);
       }
     }
@@ -634,6 +642,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     });
   };
   const onDetailRequestClick = (event: MouseEvent) => {
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const control = eventElement(event)?.closest<HTMLElement>(DETAIL_REQUEST_CONTROL_SELECTOR);
     const aside = control ? requestedWaitingDetail(control) : null;
     if (!control || !aside) return;

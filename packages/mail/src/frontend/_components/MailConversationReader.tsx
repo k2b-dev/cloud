@@ -1264,7 +1264,7 @@ export default function MailConversationReader(props: {
               type="button"
               class="mail-reader-details"
               label={t().toggleDetails}
-              aria-pressed={props.detailsOpen}
+              aria-expanded={props.detailsOpen}
               aria-controls={appWorkspaceDetailElementId(MAIL_CONTEXT_DETAIL_ID)}
               data-mail-details-trigger
               onClick={props.onToggleDetails}

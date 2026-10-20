@@ -2300,6 +2300,39 @@ describe("waiting detail drawers", () => {
     }
   }
 
+  for (const [interaction, init] of [
+    ["Ctrl", { ctrlKey: true }],
+    ["Meta", { metaKey: true }],
+    ["Shift", { shiftKey: true }],
+    ["Alt", { altKey: true }],
+    ["middle button", { button: 1 }],
+    ["secondary button", { button: 2 }],
+    ["already prevented", {}],
+  ] as const) {
+    test(`${interaction} request clicks stay application-owned while waiting`, () => {
+      const { root, main, aside } = waitingWorkspace();
+      const control = document.createElement("a");
+      control.href = "#detail";
+      control.setAttribute("aria-controls", aside.id);
+      main.append(control);
+      let applicationClicks = 0;
+      control.addEventListener("click", () => applicationClicks++);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        flushFrames();
+        const event = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1, ...init });
+        if (interaction === "already prevented") event.preventDefault();
+        control.dispatchEvent(event);
+        expect(applicationClicks).toBe(1);
+        expect(event.defaultPrevented).toBe(interaction === "already prevented");
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        expect(control.getAttribute("aria-expanded")).toBe("false");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
   for (const state of ["column", "closed", "phone", "unlinked", "other workspace", "sidebar", "head", "nested workspace"] as const) {
     test(`a request click stays application-owned in ${state}`, () => {
       const { root, main, aside, sidebar, content } = waitingWorkspace();
@@ -2326,6 +2359,7 @@ describe("waiting detail drawers", () => {
       }
       let applicationClicks = 0;
       control.addEventListener("click", () => applicationClicks++);
+      const expanded = spyOn(control, "setAttribute");
       const dispose = installAppWorkspaceController({ root });
       try {
         flushFrames();
@@ -2335,6 +2369,7 @@ describe("waiting detail drawers", () => {
         expect(event.defaultPrevented).toBe(false);
         expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
         expect(control.hasAttribute("aria-expanded")).toBe(false);
+        expect(expanded.mock.calls.filter(([name]) => name === "aria-expanded")).toHaveLength(0);
       } finally {
         dispose();
       }
