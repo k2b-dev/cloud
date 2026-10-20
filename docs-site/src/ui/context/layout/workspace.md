@@ -42,7 +42,7 @@ views and filters in the head, the detail beside the content.
 | Rule | What it says |
 | --- | --- |
 | R1 Objects, not views | The sidebar shows objects: things you open and go to, such as Spaces, tables, books, and mailboxes. Actions on an object (settings, iCal, share) sit in its head or under "…". An app with only one object has no sidebar. |
-| R2 Views as tabs | Views are tabs in the head, right beside the title. From about five views, "More +n" appears and the selected view stays visible. On the phone they are tabs at the top of the card. The selected view stays in the URL (`?view=`). |
+| R2 Views as tabs | Views are tabs in the head, right beside the title. From about five views, "More +n" appears and the selected view stays visible. On the phone they are tabs at the top of the card, in every app. A tab keeps its full label and count; a strip too narrow for its views scrolls sideways, cut at the card edge, starts with the selected view in view, and fades the edges where more views wait. The selected view stays in the URL (`?view=`). |
 | R3 Filters as chips | Filters are chips in the same row as the tabs when there is room; otherwise they wrap to a second row. The workspace's width decides, not the window's. An active filter is tinted and names its value ("Tags: Customer"; set `showValue`, which toolbars outside the head row do not use yet); while filters are active, "Reset" appears. The count on a tab is enough; a quiet result count appears only while a filter is active and is the first thing to go when space is short. A single on/off filter is a `FilterToggle`. |
 | R4 One surface | Head, filters, and content lie on the same white surface: no gray column trays, no `Paper` box, no line under the head. Space and a clear group heading (dot, name, count) separate groups. |
 | R5 Color from content | Status dots, tag colors, places, and stock carry color. The app color carries only the selection and the one filled primary action. Color is never the only signal; the name always shows. A selection is tinted on white and white on color. |
@@ -107,7 +107,10 @@ import { AppWorkspace, ViewTabs } from "@k2b/ui";
 ```
 
 The server reads `current` from `?view=`. No client measurement changes the
-strip or head layout after mounting. `resetHref` works before JavaScript;
+strip or head layout after mounting. Only the view strip's own scroll position
+is set, by an inline script before the first paint, so a strip that scrolls
+on a phone shows the current view in the first frame
+([ViewTabs](/en/ui/actions/tabs#viewtabs)). `resetHref` works before JavaScript;
 `onReset` handles an interactive reset. With both, the callback handles a
 plain click while the URL remains available to the browser. The result count
 and Reset appear only while `filtered` is true.
