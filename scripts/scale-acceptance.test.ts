@@ -7,12 +7,12 @@ import {
   dockerEnvironment,
   envFileContents,
   HELP,
-  knownMailGatewayGap,
   mailAttachmentBytes,
   mailErrorCode,
   mailLeaseBusy,
   parseOptions,
   type Replica,
+  registryGapAnswer,
   SCALED_APPS,
 } from "./scale-acceptance";
 import { appIds } from "./workspace";
@@ -33,11 +33,11 @@ describe("Mail compose acceptance helpers", () => {
       expect(mailLeaseBusy({ status: 409, body: { code } })).toBe(false);
     }
   });
-  test("#1561 exempts only the exact Core fallthrough or the gateway unmatched response", () => {
+  test("classifies only the exact Core fallthrough or the gateway unmatched response", () => {
     const core = { status: 404, body: { code: "NOT_FOUND", message: "Not found" } };
-    expect(knownMailGatewayGap({ status: 404, body: { code: "NOT_FOUND", message: "Not found" } }, core)).toBe(true);
-    expect(knownMailGatewayGap({ status: 404, body: "404 Not Found" }, { status: 404, body: "404 Not Found" })).toBe(true);
-    expect(knownMailGatewayGap({ status: 502, body: "Bad Gateway — no app registered for this path" }, core)).toBe(true);
+    expect(registryGapAnswer({ status: 404, body: { code: "NOT_FOUND", message: "Not found" } }, core)).toBe(true);
+    expect(registryGapAnswer({ status: 404, body: "404 Not Found" }, { status: 404, body: "404 Not Found" })).toBe(true);
+    expect(registryGapAnswer({ status: 502, body: "Bad Gateway — no app registered for this path" }, core)).toBe(true);
     for (const answer of [
       { status: 404, body: { code: "NOT_FOUND", message: "Editable draft not found" } },
       { status: 404, body: "Mail route not found" },
@@ -46,7 +46,7 @@ describe("Mail compose acceptance helpers", () => {
       { status: 502, body: "Bad Gateway — upstream unavailable" },
       { status: 503, body: "Bad Gateway — no app registered for this path" },
     ])
-      expect(knownMailGatewayGap(answer, core)).toBe(false);
+      expect(registryGapAnswer(answer, core)).toBe(false);
   });
   test("split attachment fixture has stable bytes and SHA-256", () => {
     const bytes = mailAttachmentBytes(1024 * 1024 + 300 * 1024, 0x5ca1e);
@@ -181,4 +181,15 @@ describe("both-replicas-served guard", () => {
     expect(() => assertBothReplicasServed("app-core", evidence, new Set([b.id]), a.id)).not.toThrow();
     expect(() => assertBothReplicasServed("app-core", evidence, new Set(), a.id)).toThrow("no longer running");
   });
+});
+
+test("retired replicas may be absent but must still have served a scenario step", () => {
+  const retired = new Set([a.id, b.id]);
+  expect(() => assertBothReplicasServed("app-chat", { a, b, served: new Set([a.id, b.id]) }, new Set(), undefined, retired)).not.toThrow();
+  expect(() => assertBothReplicasServed("app-chat", { a, b, served: new Set([a.id]) }, new Set(), undefined, retired)).toThrow(
+    "served no scenario step",
+  );
+  expect(() =>
+    assertBothReplicasServed("app-chat", { a, b, served: new Set([a.id, b.id]) }, new Set(), undefined, new Set([a.id])),
+  ).toThrow("no longer running");
 });

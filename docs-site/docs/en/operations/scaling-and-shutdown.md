@@ -38,23 +38,45 @@ Use [Data](/en/docs/data) and
 
 ## Application registration
 
-The registry does not track individual replicas.
+Every reader uses one logical application entry and one capability manifest per
+application ID. Use the same stable `baseUrl` for every replica.
 
-Every replica writes the same application entry. Use the same stable `baseUrl`
-for every replica so the entry stays identical.
+Each process also keeps a small liveness key for its instance. A running
+replica renews its keys every 60 seconds. All keys have the same 180-second TTL.
+Liveness keys share the application registry under `instances/`, so read
+application entries with the `apps/` prefix (`APP_REGISTRY_PREFIX`), as
+`listApps()` and the gateway do.
 
-A running replica refreshes the entry every 60 seconds.
+A clean stop removes only its own liveness key. It removes the shared entries
+only when no other live instance remains. Stopping one replica keeps the app
+registered; the last replica's clean stop removes it at once. A crashed
+instance stops renewing its liveness key, which ages out after 180 seconds.
+Until then, the crashed instance counts as live. If the last running replica
+stops cleanly in that time, the shared entries stay until their own 180-second
+TTL ends, and the gateway answers the app's routes with 502 upstream errors.
+Shared entries also expire after 180 seconds if no replica renews them.
 
-Registry entries expire after 180 seconds if refresh stops. A clean shutdown
-removes the entry immediately.
+During a rollout, the most recently started live instance's entry wins.
+Starting writes the entry. Refresh renews it and writes it again only when it
+is missing, when the instance that wrote it has stopped, or when that instance
+started earlier. So a newer replica takes the entry back within 60 seconds
+after an older one repaired it. When the instance that wrote the current entry
+stops while others run, a remaining replica replaces the entry with its own on
+its next refresh, within 60 seconds. After a crash, this happens once the
+crashed instance's liveness key has aged out. Until then, the departed
+instance's routes and capability manifest stay published. A replica always
+writes its application entry and capability manifest together. If a delayed
+write still leaves the two from different replicas, the next refresh restores a
+matching pair. Start order uses each host's clock, so keep host clocks
+synchronized.
+
+The registry has no conditional delete. If NATS applies a stopping replica's
+delete only after its lock lease ended, the delete can remove an entry that a
+new replica has just written. That replica writes it again within 60 seconds.
 
 The gateway rebuilds its route table when registry entries change. It renews
 its own operations snapshot every five seconds, including when the registry is
 idle, so its 30-second presence lease and request counters stay current.
-
-When one of several replicas shuts down cleanly, it can briefly remove the
-shared entry. Another replica repairs it on its next refresh. Account for this
-window during rolling deployment.
 
 Use the orchestrator, not the Cloud registry, to measure replica health and
 count.
