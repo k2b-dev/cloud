@@ -248,3 +248,25 @@ test("DateTime64 chart labels only the two domain endpoints at full precision", 
     .filter(Boolean);
   expect(labels).toEqual(["08:00:00,001", "11:48:00,002"]);
 });
+
+test("single-instant charts label the real timestamp without a spurious previous date", () => {
+  for (const type of ["Date", "DateTime", "DateTime64(3, 'UTC')"]) {
+    const value = type === "Date" ? "2026-10-20" : "2026-10-20 00:00:00";
+    const result = sqlResultChart(
+      {
+        columns: [
+          { name: "t", type },
+          { name: "v", type: "UInt64" },
+        ],
+        rows: [[value, 1]],
+      },
+      "de",
+    );
+    if (result.kind !== "chart") throw new Error("Missing chart");
+    const svg = charts.line({ width: 480, height: 280, series: result.chart.series, xAxis: result.chart.xAxis });
+    const labels = [...svg.matchAll(/<text class="stdlib-chart-tick-label"[^>]*text-anchor="middle">([^<]*)<\/text>/g)]
+      .map((match) => match[1])
+      .filter(Boolean);
+    expect(labels).toEqual([type === "Date" ? "20.10.2026" : type === "DateTime" ? "00:00:00" : "00:00:00,000"]);
+  }
+});

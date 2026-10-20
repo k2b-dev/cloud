@@ -85,7 +85,7 @@ export const sqlResultChart = (result: Pick<SqlResult, "columns" | "rows">, loca
         domain,
         // Two precise endpoint labels fit the narrow console even when nice ticks add intermediates.
         format: (value) =>
-          domain && value > domain[0] && value < domain[1]
+          (minTime === maxTime ? value !== minTime : domain && value > domain[0] && value < domain[1])
             ? ""
             : (clockTicks && dates.formatDateKey(new Date(value), { timeZone }) === day ? clockFormat : dateFormat).format(value),
       },
