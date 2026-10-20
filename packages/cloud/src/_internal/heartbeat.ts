@@ -96,6 +96,8 @@ export const createRegistryMembership = (
       await locked(async (lock) => {
         const snapshot = await options.registry().snapshot({ prefix });
         // Ephemeral has no conditional delete, so the remaining lease bounds the removal window.
+        // A delete that NATS applies only after the lease expired can still remove a newer
+        // replica's entry; that replica restores it on its next refresh (at most 60 s).
         if (Date.now() > lock.expiresAt.getTime() - writeTimeoutMs / 2) {
           throw new Error("membership lease expired during stop; shared entry left to its TTL");
         }
