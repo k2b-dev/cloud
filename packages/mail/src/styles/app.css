@@ -826,7 +826,7 @@
 
   /* Controls do not print. The message header is a button too, but it carries
      the sender, recipients and date, so it stays on paper. */
-  body.mail-printing-conversation [data-mail-print-root] :where([data-mail-reader-toolbar]) {
+  body.mail-printing-conversation [data-mail-print-root] :where([data-mail-phone-actions], [data-mail-reader-toolbar]) {
     display: none !important;
   }
 
@@ -1103,6 +1103,24 @@
 
 @container mail-reader (width < 23.75rem) {
   .k2b-ui .mail-reader-toolbar-actions > :nth-child(n + 2) {
+    display: none;
+  }
+}
+
+/* Phones: the reader's actions sit in the bottom bar, so its toolbar keeps the
+   way back, "…" and the details; the reply box gives way to the bar's Reply. */
+@media (min-width: 48rem) {
+  .k2b-ui .mail-reader-phone-bar {
+    display: none;
+  }
+}
+
+@media not all and (min-width: 48rem) {
+  .k2b-ui .mail-reader-toolbar :is(.mail-reader-respond, .mail-reader-draft-label, .mail-reader-toolbar-actions) {
+    display: none;
+  }
+
+  .k2b-ui .mail-reader:has(.mail-reader-phone-bar) .mail-reader-reply-box {
     display: none;
   }
 }

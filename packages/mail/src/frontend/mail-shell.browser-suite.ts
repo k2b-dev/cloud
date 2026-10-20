@@ -1038,6 +1038,48 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
 
+      test("phone: Reply, Reply all, Forward and Archive wait at the bottom, work by touch and keyboard, and cover nothing", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
+        try {
+          const bar = page.locator("[data-mail-phone-actions] .k2b-toolbar");
+          await page.waitForFunction(
+            () => !document.querySelector("[data-mail-phone-actions] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
+          );
+          expect(await bar.isVisible()).toBe(true);
+          const names = await bar
+            .locator("button")
+            .evaluateAll((elements) =>
+              elements
+                .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-overflow]"))
+                .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
+            );
+          expect(names).toEqual(["Reply", "Reply all", "Forward", "Archive"]);
+          // The bar is the reader's last row: the scrolled messages end above it.
+          const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
+          const strip = (await bar.boundingBox())!;
+          expect(scroller.y + scroller.height).toBeLessThanOrEqual(strip.y + 0.5);
+          expect(strip.y + strip.height).toBeLessThanOrEqual(844 + 0.5);
+          // The top row keeps the way back, … and the details; the actions live below.
+          expect(
+            await page
+              .locator(".mail-reader-toolbar [data-mail-toolbar-action]")
+              .evaluateAll((elements) => elements.filter((element) => element.getClientRects().length > 0).length),
+          ).toBe(0);
+          expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible()).toBe(true);
+          expect(await page.locator("[data-mail-reply-box]").isVisible()).toBe(false);
+          // Keyboard: the bar is one tab stop with arrow keys inside.
+          await bar.getByRole("button", { name: "Reply", exact: true }).focus();
+          await page.keyboard.press("ArrowRight");
+          expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Reply all");
+          // Touch: Archive sends its command.
+          const archived = page.waitForRequest((request) => request.url().endsWith("/actions") && request.method() === "POST");
+          await bar.getByRole("button", { name: "Archive" }).tap();
+          expect(JSON.stringify((await archived).postDataJSON())).toContain("archive");
+        } finally {
+          await close(page);
+        }
+      });
+
       test("reader: a long conversation shows its newest three messages and n older messages for the rest", async () => {
         const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 900);
         try {
@@ -1058,55 +1100,6 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           await close(page);
         }
       });
-
-      test("scratch parity screenshots", async () => {
-          const out = process.env.MAIL_SCRATCH_SHOTS!;
-          mkdirSync(out, { recursive: true });
-          const shot = async (name: string, path: string, width: number, height: number, act?: (page: Page) => Promise<void>) => {
-            const page = await open(path, width, height as 900);
-            try {
-              if (act) await act(page);
-              await settled(page);
-              await page.screenshot({ path: join(out, `${name}.png`) });
-            } finally {
-              await close(page);
-            }
-          };
-          await shot("01-1440-detail-waits", widePath(), 1440, 900);
-          await shot("02-1440-drawer-open", widePath(), 1440, 900, (page) =>
-            page.locator(".mail-workspace .k2b-app-workspace__detail-toggle").click(),
-          );
-          await shot("03-1440-list-hidden-column", widePath(), 1440, 900, (page) =>
-            page.getByRole("button", { name: "Hide conversation list" }).click(),
-          );
-          await shot("04-1194-detail-waits", widePath(), 1194, 834);
-          await shot("05-1194-list-hidden-still-waits", widePath(), 1194, 834, (page) =>
-            page.getByRole("button", { name: "Hide conversation list" }).click(),
-          );
-          await shot("06-1584-band-waits", widePath(), 1584, 900);
-          await shot("07-1920-detail-column", widePath(), 1920, 1080);
-          await shot("08-1920-panel-waits", widePath({ panel: 416 }), 1920, 1080);
-          await shot("09-2560-detail-column", widePath(), 2560, 1080);
-          await shot("10-2560-panel-column", widePath({ panel: 416 }), 2560, 1080);
-          await shot("11-1440-panel-waits", widePath({ panel: 416 }), 1440, 900);
-          await shot("12-834-reader-actions-in-more", `${boxPath}?conversation=Conv01`, 834, 1194);
-          await shot("13-834-more-open", `${boxPath}?conversation=Conv01`, 834, 1194, (page) =>
-            page.getByRole("button", { name: "More conversation actions" }).click(),
-          );
-          await shot("14-390-phone-bottom-bar", `${boxPath}?conversation=Conv01`, 390, 844);
-          await shot("15-fokus-1194-drawer", widePath({ path: "/app/mail" }), 1194, 834, (page) =>
-            page.locator(".mail-focus-row").first().click(),
-          );
-          await shot("16-fokus-834-drawer", "/app/mail", 834, 1194, (page) => page.locator(".mail-focus-row").first().click());
-          await shot("17-fokus-1440-column", widePath({ path: "/app/mail" }), 1440, 900, (page) =>
-            page.locator(".mail-focus-row").first().click(),
-          );
-          await shot("18-1440-long-conversation", widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 900);
-          await shot("19-1440-custom-toolbar", `${widePath()}&toolbar=reply,forward,archive,trash,move,read,flag,tags`, 1440, 900);
-          await shot("20-dark-1920-detail-column", `${widePath()}&theme=dark`, 1920, 1080);
-          await shot("21-1440-no-selection", widePath({ path: boxPath }), 1440, 900);
-          await shot("22-390-phone-list", boxPath, 390, 844);
-        }, 300_000);
 
       test("rows: three-line rows share one height, a fourth line only for tags or Waiting", async () => {
         const page = await open(widePath(), 1440, 900);

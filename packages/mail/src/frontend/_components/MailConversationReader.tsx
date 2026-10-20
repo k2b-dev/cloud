@@ -20,6 +20,7 @@ import {
   prompts,
   ScrollArea,
   Select,
+  Toolbar,
   Tooltip,
   toast,
   useLocale,
@@ -1465,6 +1466,45 @@ export default function MailConversationReader(props: {
             )}
           </Show>
         </div>
+        {/* Phones: Reply, Reply all, Forward and Archive wait at the bottom, within thumb reach. As the reader's last
+            row the bar takes its own height, so it never covers the last line or a focused control. */}
+        <Show when={canRespondToLatest() || props.canWrite}>
+          <div class="mail-reader-phone-bar" data-mail-phone-actions>
+            <Toolbar label={t().conversationActions} variant="floating">
+              <Show when={canRespondToLatest()}>
+                <Button type="button" class="mail-reader-phone-reply" disabled={composerBusy()} onClick={() => respondToLatest("reply")}>
+                  <i class="ti ti-arrow-back-up" aria-hidden="true" />
+                  {t().reply}
+                </Button>
+                <Show when={canReplyAllToLatest()}>
+                  <Toolbar.Action
+                    label={t().replyAll}
+                    icon="ti ti-arrow-back-up-double"
+                    priority={2}
+                    disabled={composerBusy()}
+                    onClick={() => respondToLatest("reply_all")}
+                  />
+                </Show>
+                <Toolbar.Action
+                  label={t().forward}
+                  icon="ti ti-arrow-forward-up"
+                  priority={2}
+                  disabled={composerBusy()}
+                  onClick={() => respondToLatest("forward")}
+                />
+              </Show>
+              <Show when={props.canWrite}>
+                <Toolbar.Action
+                  label={localizedActionLabel("archive")}
+                  icon={getMailAction("archive").icon}
+                  priority={1}
+                  disabled={props.actionPending}
+                  onClick={() => void props.onAction("archive")}
+                />
+              </Show>
+            </Toolbar>
+          </div>
+        </Show>
       </Show>
     </div>
   );
