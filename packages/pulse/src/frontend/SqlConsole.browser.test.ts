@@ -204,7 +204,7 @@ test("editing SQL hides its old result and a response from an earlier draft", as
   try {
     const editor = tab.getByRole("textbox", { name: "SQL", exact: true });
     await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
-    await tab.getByRole("button", { name: "Abbrechen", exact: true }).waitFor();
+    await tab.locator('[data-sql-region="toolbar"]').getByRole("button", { name: "Abbrechen", exact: true }).waitFor();
     await requestSeen;
     await editor.fill("SELECT 999 AS value");
     reply?.();
@@ -220,3 +220,94 @@ test("editing SQL hides its old result and a response from an earlier draft", as
     await tab.close();
   }
 }, 30_000);
+
+test("SQL time axes remain readable on phone and desktop", async () => {
+  for (const width of [390, 1440]) {
+    const { tab, answer } = await open(width);
+    try {
+      answer({
+        status: 200,
+        json: {
+          ...sqlTestResult,
+          columns: [
+            { name: "time", type: "DateTime('UTC')" },
+            { name: "orders", type: "UInt64" },
+          ],
+          rows: [
+            ["2026-10-20 08:00:00", 1],
+            ["2026-10-20 09:00:00", 2],
+            ["2026-10-20 10:00:00", 3],
+            ["2026-10-20 11:00:00", 4],
+          ],
+        },
+      });
+      await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
+      await tab.locator('[data-sql-region="result"] .stdlib-chart-axis-label').filter({ hasText: "20.10.2026" }).waitFor();
+      const ticks = await tab
+        .locator('[data-sql-region="result"] .stdlib-chart-tick-label[text-anchor="middle"]')
+        .evaluateAll((elements) =>
+          elements
+            .map((element) => ({
+              text: element.textContent ?? "",
+              left: element.getBoundingClientRect().left,
+              right: element.getBoundingClientRect().right,
+            }))
+            .sort((a, b) => a.left - b.left),
+        );
+      expect(ticks.length).toBeGreaterThan(1);
+      for (const [index, tick] of ticks.entries()) {
+        expect(tick.text).toMatch(/\d{2}:\d{2}:\d{2}/);
+        expect(tick.left).toBeGreaterThanOrEqual(0);
+        expect(tick.right).toBeLessThanOrEqual(width);
+        if (index) expect(tick.left).toBeGreaterThan(ticks[index - 1]!.right);
+      }
+    } finally {
+      await tab.close();
+    }
+  }
+}, 60_000);
+
+test("SQL limits are visibly red and running keeps a result-size loading state", async () => {
+  for (const width of [390, 1440]) {
+    const { tab, answer } = await open(width);
+    try {
+      const before = await geometry(tab);
+      for (const code of ["TIME_LIMIT", "MEMORY_LIMIT"]) {
+        answer({ status: 422, json: { code } });
+        await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
+        await tab
+          .getByRole("status")
+          .filter({ hasText: code === "TIME_LIMIT" ? "Zeitlimit erreicht" : "Speichergrenze erreicht" })
+          .waitFor();
+        const colors = await tab.locator('[data-sql-region="limits"]').evaluate((element) => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--k2b-danger-text)";
+          element.append(probe);
+          const expected = getComputedStyle(probe).color;
+          probe.remove();
+          return { actual: getComputedStyle(element).color, expected };
+        });
+        expect(colors.actual).toBe(colors.expected);
+        expect(await geometry(tab)).toEqual(before);
+      }
+      let release: (() => void) | undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await tab.route(`${origin}/api/pulse/bases/*/sql`, async (route) => {
+        await gate;
+        await route.fulfill({ json: sqlTestResult });
+      });
+      try {
+        await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
+        await tab.locator('[data-sql-region="result"] [aria-busy="true"]').waitFor();
+        expect(await geometry(tab)).toEqual(before);
+        expect(await tab.locator('[data-sql-region="result"]').getByRole("button", { name: "Beispiel einsetzen" }).count()).toBe(0);
+      } finally {
+        release?.();
+      }
+    } finally {
+      await tab.close();
+    }
+  }
+}, 60_000);

@@ -1,5 +1,17 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { AutocompleteEditor, Button, Chart, confirmDiscardIfDirty, DataTable, highlightSql, prompts, Tabs, TextInput } from "@k2b/ui";
+import {
+  AutocompleteEditor,
+  Button,
+  Chart,
+  confirmDiscardIfDirty,
+  DataTable,
+  highlightSql,
+  Placeholder,
+  prompts,
+  Tabs,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { usePulseMessages } from "../use-messages";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
@@ -18,6 +30,7 @@ export default function SqlConsoleView(props: {
   canWrite: boolean;
 }) {
   const t = usePulseMessages();
+  const locale = useLocale();
   const lifetime = new AbortController();
   onCleanup(() => lifetime.abort());
   const [tab, setTab] = createSignal<"console" | "saved">("console");
@@ -47,9 +60,13 @@ export default function SqlConsoleView(props: {
     for (const [name, value] of Object.entries(draft.params ?? {})) c.setParameter(name, value);
   });
   const band = () => c.statusBand();
+  const limitExceeded = () => {
+    const state = c.state();
+    return state.kind === "error" && ["MEMORY_LIMIT", "TIME_LIMIT"].includes(state.code);
+  };
   const chart = createMemo(() => {
     const result = c.lastResult();
-    return result ? sqlResultChart(result) : null;
+    return result ? sqlResultChart(result, locale()) : null;
   });
   const markedLine = () => {
     const state = c.state();
@@ -168,24 +185,19 @@ export default function SqlConsoleView(props: {
         </div>
         <p
           data-sql-region="limits"
-          class="h-24 shrink-0 overflow-auto text-xs leading-5 text-secondary sm:h-12"
-          classList={{
-            "text-error": (() => {
-              const state = c.state();
-              return state.kind === "error" && ["MEMORY_LIMIT", "TIME_LIMIT"].includes(state.code);
-            })(),
-          }}
+          class="h-24 shrink-0 overflow-auto text-xs leading-5 sm:h-12"
+          style={{ color: limitExceeded() ? "var(--k2b-danger-text)" : "var(--k2b-text-secondary)" }}
         >
           {c.limitsLine() || c.inputBytes()}
           <Show when={linkTooLong()}>
-            <span class="block text-warning">{t().sqlLinkTooLong}</span>
+            <span class="block text-(--k2b-warning-text)">{t().sqlLinkTooLong}</span>
           </Show>
         </p>
         <div
           data-sql-region="status"
           role="status"
           aria-live="polite"
-          class="flex h-28 shrink-0 sm:h-16 items-start justify-between gap-3 overflow-auto rounded-lg bg-muted p-3 text-sm"
+          class="flex h-28 shrink-0 sm:h-16 items-start justify-between gap-3 overflow-auto rounded-lg bg-(--k2b-surface-muted) p-3 text-sm"
           data-tone={band().kind}
         >
           <span>{band().message}</span>
@@ -199,68 +211,73 @@ export default function SqlConsoleView(props: {
         </div>
         <div data-sql-region="result" class="h-96 min-w-0 shrink-0 overflow-auto">
           <Show
-            when={c.lastResult()}
-            fallback={
-              <div class="flex min-h-80 flex-col items-center justify-center gap-3 text-center text-secondary">
-                <p>{t().sqlEmptyHint}</p>
-                <Button variant="secondary" onClick={example}>
-                  {t().sqlInsertExample}
-                </Button>
-              </div>
-            }
+            when={c.state().kind !== "running"}
+            fallback={<Placeholder state="loading" variant="panel" title={t().sqlRunning} class="min-h-80" />}
           >
-            {(result) => (
-              <>
-                <div class="min-h-60">
-                  {(() => {
-                    const value = chart();
-                    if (!value) return null;
-                    if (value.kind === "none")
-                      return (
-                        <p class="py-4 text-xs text-secondary">
-                          {
-                            {
-                              "no-time-column": t().sqlNoTimeColumn,
-                              "no-numeric-column": t().sqlNoNumericColumn,
-                              "no-rows": t().sqlNoRows,
-                            }[value.reason]
-                          }
-                        </p>
-                      );
-                    return (
-                      <>
-                        <Chart {...value.chart} style={{ height: "12rem" }} />
-                        <Show when={value.truncated}>
-                          <p class="text-xs text-secondary">
-                            {t().sqlChartCut({
-                              seriesShown: String(value.cut.seriesShown),
-                              seriesTotal: String(value.cut.seriesTotal),
-                              pointsShown: String(value.cut.pointsShown),
-                              pointsTotal: String(value.cut.pointsTotal),
-                            })}{" "}
-                            · {t().sqlChartCutHint}
-                          </p>
-                        </Show>
-                      </>
-                    );
-                  })()}
+            <Show
+              when={c.lastResult()}
+              fallback={
+                <div class="flex min-h-80 flex-col items-center justify-center gap-3 text-center text-secondary">
+                  <p>{t().sqlEmptyHint}</p>
+                  <Button variant="secondary" onClick={example}>
+                    {t().sqlInsertExample}
+                  </Button>
                 </div>
-                <DataTable
-                  surface="plain"
-                  rows={result().rows.slice(0, visibleRows())}
-                  columns={result().columns.map((column, index) => ({
-                    id: String(index),
-                    header: column.name,
-                    subtitle: column.type,
-                    value: (row: unknown[]) => row[index],
-                  }))}
-                  ariaLabel={t().sqlResultTable}
-                  hasMore={visibleRows() < result().rows.length}
-                  onLoadMore={() => setVisibleRows((count) => count + 100)}
-                  scrollClass="max-h-96"
-                />
-              </>
-            )}
+              }
+            >
+              {(result) => (
+                <>
+                  <div class="min-h-60">
+                    {(() => {
+                      const value = chart();
+                      if (!value) return null;
+                      if (value.kind === "none")
+                        return (
+                          <p class="py-4 text-xs text-secondary">
+                            {
+                              {
+                                "no-time-column": t().sqlNoTimeColumn,
+                                "no-numeric-column": t().sqlNoNumericColumn,
+                                "no-rows": t().sqlNoRows,
+                              }[value.reason]
+                            }
+                          </p>
+                        );
+                      return (
+                        <>
+                          <Chart {...value.chart} style={{ height: "12rem" }} />
+                          <Show when={value.truncated}>
+                            <p class="text-xs text-secondary">
+                              {t().sqlChartCut({
+                                seriesShown: String(value.cut.seriesShown),
+                                seriesTotal: String(value.cut.seriesTotal),
+                                pointsShown: String(value.cut.pointsShown),
+                                pointsTotal: String(value.cut.pointsTotal),
+                              })}{" "}
+                              · {t().sqlChartCutHint}
+                            </p>
+                          </Show>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <DataTable
+                    surface="plain"
+                    rows={result().rows.slice(0, visibleRows())}
+                    columns={result().columns.map((column, index) => ({
+                      id: String(index),
+                      header: column.name,
+                      subtitle: column.type,
+                      value: (row: unknown[]) => row[index],
+                    }))}
+                    ariaLabel={t().sqlResultTable}
+                    hasMore={visibleRows() < result().rows.length}
+                    onLoadMore={() => setVisibleRows((count) => count + 100)}
+                    scrollClass="max-h-96"
+                  />
+                </>
+              )}
+            </Show>
           </Show>
         </div>
       </Show>

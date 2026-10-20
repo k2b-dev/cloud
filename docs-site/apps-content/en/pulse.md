@@ -113,6 +113,13 @@ The result contains column names and ClickHouse types, compact row arrays,
 10,000-row limit was reached; there may be more**. This flag does not prove
 that another row exists. Results over 4 MiB fail with `RESULT_TOO_LARGE`.
 
+The console charts the first time column against numeric columns, using up to
+8 series and the first 480 rows in returned order. It states when the chart is
+cut. The time axis uses the column's time zone, or UTC if none is specified.
+For a single day, ticks show times and the axis names the date; longer ranges
+show calendar dates. Inspect a point for its full date, time, and UTC offset.
+Date-only columns show dates without a time.
+
 ### Console URLs and Assistant drafts
 
 The console route is `/app/pulse/:baseId/sql`; a saved query adds its ID or
