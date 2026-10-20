@@ -3,7 +3,7 @@ import type { AppRegistryEntry } from "../contracts/registry";
 import { FreeIpaTransportError } from "../server/services/freeipa/transport";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { createHeartbeat, createRegistryMembership } from "./heartbeat";
-import { APP_REGISTRY_TTL_MS } from "./registry";
+import { APP_REGISTRY_TTL_MS, appInstancePrefix } from "./registry";
 
 const entry = {
   id: "test",
@@ -466,6 +466,9 @@ describe("replica membership", () => {
   const fixture = () => {
     // Separate ephemerals share one fake server; instances use the apps ephemeral.
     const stores = new Map<string, Map<string, { value: unknown; expires: number }>>();
+    const assertName = (key: string) => {
+      if (Buffer.byteLength(key, "utf8") > 96) throw new Error("Sync name exceeds 96 bytes");
+    };
     const ephemeral = (id: string) => {
       let store = stores.get(id);
       if (!store) {
@@ -478,17 +481,23 @@ describe("replica membership", () => {
       };
       return {
         upsert: async ({ key, value }: { key: string; value: unknown }) => {
+          assertName(key);
           records.set(key, { value, expires: Date.now() + APP_REGISTRY_TTL_MS });
         },
         touch: async ({ key }: { key: string }) => {
+          assertName(key);
           sweep();
           const row = records.get(key);
           if (!row) return false;
           row.expires = Date.now() + APP_REGISTRY_TTL_MS;
           return true;
         },
-        delete: async ({ key }: { key: string }) => records.delete(key),
+        delete: async ({ key }: { key: string }) => {
+          assertName(key);
+          return records.delete(key);
+        },
         snapshot: async ({ prefix }: { prefix: string }) => {
+          assertName(prefix);
           sweep();
           return { entries: [...records].filter(([key]) => key.startsWith(prefix)).map(([key, row]) => ({ key, value: row.value })) };
         },
@@ -530,8 +539,8 @@ describe("replica membership", () => {
         }
       },
     };
-    const process = (instanceId: string, writeTimeoutMs = 500, intervalMs = 3_600_000) => {
-      const membership = createRegistryMembership("test", {
+    const process = (instanceId: string, writeTimeoutMs = 500, intervalMs = 3_600_000, appId = "test") => {
+      const membership = createRegistryMembership(appId, {
         registry: () => instances,
         lock: () => lock,
         instanceId,
@@ -540,8 +549,8 @@ describe("replica membership", () => {
         writeTimeoutMs,
       });
       const options = { membership, intervalMs, writeTimeoutMs };
-      const app = createHeartbeat("test", { ...entry, instanceId }, { ...options, registry: apps });
-      const capability = createHeartbeat("test", { instanceId }, { ...options, registry: capabilities, key: "capabilities/test" });
+      const app = createHeartbeat(appId, { ...entry, id: appId, instanceId }, { ...options, registry: apps });
+      const capability = createHeartbeat(appId, { instanceId }, { ...options, registry: capabilities, key: `capabilities/${appId}` });
       const stop = async () => {
         await app.stop();
         await capability.stop();
@@ -568,15 +577,28 @@ describe("replica membership", () => {
       b = f.process("b");
     await a.start();
     await b.start();
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/a", "instances/test/b"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}a`, `${appInstancePrefix("test")}b`]);
     await a.stop();
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/b"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}b`]);
     expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
     // A's stop does not replace B's newer entry.
     expect((await f.apps.snapshot({ prefix: "apps/" })).entries[0]?.value).toEqual({ ...entry, instanceId: "b" });
     await b.stop();
     expect(await f.keys()).toEqual([]);
     expect(await f.keys(f.capabilities)).toEqual([]);
+  });
+
+  test("a 91-character app id preserves the shared entry until the last process stops", async () => {
+    const f = fixture();
+    const appId = "a".repeat(91);
+    const a = f.process("a".repeat(16), 500, 3_600_000, appId),
+      b = f.process("b".repeat(16), 500, 3_600_000, appId);
+    await a.app.start();
+    await b.app.start();
+    await a.app.stop();
+    expect(await f.keys()).toEqual([`apps/${appId}`, `${appInstancePrefix(appId)}${"b".repeat(16)}`]);
+    await b.app.stop();
+    expect(await f.keys()).toEqual([]);
   });
 
   test("serializes a surge start behind the old process's paused stop snapshot", async () => {
@@ -607,7 +629,7 @@ describe("replica membership", () => {
       release.resolve();
     }
     await Promise.all([starting, stopping]);
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/new"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}new`]);
     expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
   });
 
@@ -657,7 +679,7 @@ describe("replica membership", () => {
     };
 
     await expect(old.stop()).rejects.toThrow("membership lease expired during stop; shared entry left to its TTL");
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/new"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}new`]);
     expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
   });
 
@@ -669,7 +691,7 @@ describe("replica membership", () => {
     setSystemTime(new Date(epoch + APP_REGISTRY_TTL_MS / 2));
     await b.start();
     setSystemTime(new Date(epoch + APP_REGISTRY_TTL_MS + 1));
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/live"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}live`]);
     await b.stop();
     expect(await f.keys()).toEqual([]);
     expect(await f.keys(f.capabilities)).toEqual([]);
@@ -721,11 +743,11 @@ describe("replica membership", () => {
         await waitUntil(() => deletes >= 2);
         // Observe cleanup itself, rather than depending on a fixed scheduling delay.
         const deadline = performance.now() + 250;
-        while ((await f.keys()).includes("instances/test/late") || (await f.keys()).includes("apps/test") !== sibling) {
+        while ((await f.keys()).includes(`${appInstancePrefix("test")}late`) || (await f.keys()).includes("apps/test") !== sibling) {
           if (performance.now() >= deadline) throw new Error("Late membership write was not cleaned up");
           await Bun.sleep(1);
         }
-        expect(await f.keys()).toEqual(sibling ? ["apps/test", "instances/test/sibling"] : []);
+        expect(await f.keys()).toEqual(sibling ? ["apps/test", `${appInstancePrefix("test")}sibling`] : []);
       });
     }
   }
@@ -754,7 +776,7 @@ describe("replica membership", () => {
       throw new Error("NATS delete failed");
     };
     await expect(a.app.stop()).rejects.toThrow("NATS delete failed");
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/a"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}a`]);
     f.instances.delete = remove;
     const snapshot = f.instances.snapshot;
     f.instances.snapshot = async () => {
@@ -784,7 +806,7 @@ describe("replica membership", () => {
     expect((await f.apps.snapshot({ prefix: "apps/" })).entries[0]?.value).toEqual({ ...entry, instanceId: "b" });
     expect((await f.capabilities.snapshot({ prefix: "capabilities/" })).entries[0]?.value).toEqual({ instanceId: "b" });
     await f.apps.delete({ key: "apps/test" });
-    await f.instances.delete({ key: "instances/test/a" });
+    await f.instances.delete({ key: `${appInstancePrefix("test")}a` });
     let repairs = 0;
     const upsert = f.apps.upsert;
     f.apps.upsert = async (input) => {
@@ -792,9 +814,9 @@ describe("replica membership", () => {
       repairs++;
     };
     await waitUntil(() => repairs > 0);
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/a", "instances/test/b"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}a`, `${appInstancePrefix("test")}b`]);
     await a.stop();
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/b"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}b`]);
   });
 
   test("unstarted heartbeats leave lazy membership resources untouched", async () => {
@@ -819,9 +841,9 @@ describe("replica membership", () => {
     const f = fixture();
     const a = f.process("a");
     await a.start();
-    await f.instances.delete({ key: "instances/test/a" });
+    await f.instances.delete({ key: `${appInstancePrefix("test")}a` });
     await a.membership.renew();
-    expect(await f.keys()).toEqual(["apps/test", "instances/test/a"]);
+    expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}a`]);
     await a.stop();
     await a.membership.renew();
     await a.membership.publish(() => f.apps.upsert({ key: "apps/test", value: entry }));

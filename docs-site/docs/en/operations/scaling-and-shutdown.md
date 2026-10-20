@@ -48,6 +48,9 @@ A clean stop removes only its own liveness key. It removes the shared entries
 only when no other live instance remains. Stopping one replica keeps the app
 registered; the last replica's clean stop removes it at once. A crashed
 instance stops renewing its liveness key, which ages out after 180 seconds.
+Until then, the crashed instance counts as live. If the last running replica
+stops cleanly in that time, the shared entries stay until their own 180-second
+TTL ends, and the gateway answers the app's routes with 502 upstream errors.
 Shared entries also expire after 180 seconds if no replica renews them.
 
 During a rollout, the most recently started instance's entry wins. Starting

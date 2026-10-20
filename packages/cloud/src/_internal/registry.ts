@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
@@ -46,6 +47,12 @@ export const CAPABILITY_REGISTRY_CONFIG = {
 
 export const APP_REGISTRY_PREFIX = "apps/";
 export const APP_INSTANCE_PREFIX = "instances/";
+
+// Fit Sync's 96-byte name limit for every app id that fits apps/<id>; appId stays in the record value.
+export const appInstancePrefix = (appId: string): string => {
+  const segment = createHash("sha256").update(appId).digest("base64url").slice(0, 16);
+  return `${APP_INSTANCE_PREFIX}${segment}/`;
+};
 
 export type AppInstanceRecord = { appId: string; instanceId: string; hostname: string; startedAt: number };
 

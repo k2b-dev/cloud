@@ -593,10 +593,11 @@ the operator supplies it.
 
 ## Verify readiness and upgrades
 
-During the rollout to this release, replicas of the previous version write no
-liveness key. While they run, a replica that stops can still delete the shared
-registry entry once, and surviving replicas restore it within 60 seconds. No
-configuration or rollout order is required.
+During the rollout to this release, and during a rollback to the previous
+version, replicas of the previous version write no liveness key. While they
+run, a replica that stops can still delete the shared registry entry once, and
+surviving replicas restore it within 60 seconds. No configuration or rollout
+order is required.
 
 Check `/_cloud/ready` on each service's **private** origin, then check gateway
 registration and request an owned route through the public origin. The gateway's

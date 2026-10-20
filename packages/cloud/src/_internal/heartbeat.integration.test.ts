@@ -3,7 +3,13 @@ import { expect } from "bun:test";
 import { createSync, type Ephemeral, type EphemeralEvent } from "@k2b/sync";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { createHeartbeat, createRegistryMembership } from "./heartbeat";
-import { APP_MEMBERSHIP_LOCK_CONFIG, APP_REGISTRY_CONFIG, type AppInstanceRecord, CAPABILITY_REGISTRY_CONFIG } from "./registry";
+import {
+  APP_MEMBERSHIP_LOCK_CONFIG,
+  APP_REGISTRY_CONFIG,
+  type AppInstanceRecord,
+  appInstancePrefix,
+  CAPABILITY_REGISTRY_CONFIG,
+} from "./registry";
 
 const integration = testFor("nats");
 const bounded = async <T>(operation: Promise<T>, label: string, timeoutMs = 5_000): Promise<T> => {
@@ -88,8 +94,8 @@ integration(
       await bounded(Promise.all([apps.ready, capabilities.ready]), "Initial registry watch replay");
       await bounded(a.stop(), "Stop A");
       expect(
-        (await bounded(b.instances.snapshot({ prefix: "instances/test/" }), "Instance snapshot")).entries.map(({ key }) => key),
-      ).toEqual(["instances/test/b"]);
+        (await bounded(b.instances.snapshot({ prefix: appInstancePrefix("test") }), "Instance snapshot")).entries.map(({ key }) => key),
+      ).toEqual([`${appInstancePrefix("test")}b`]);
       await Bun.sleep(200);
       for (const watch of [apps, capabilities]) {
         expect(
@@ -98,7 +104,7 @@ integration(
       }
       await bounded(b.stop(), "Stop B");
       await bounded(Promise.all([apps.deleted, capabilities.deleted]), "Last replica delete events");
-      expect((await bounded(b.instances.snapshot({ prefix: "instances/test/" }), "Final instance snapshot")).entries).toEqual([]);
+      expect((await bounded(b.instances.snapshot({ prefix: appInstancePrefix("test") }), "Final instance snapshot")).entries).toEqual([]);
     } finally {
       controller.abort();
       const results = await Promise.allSettled([

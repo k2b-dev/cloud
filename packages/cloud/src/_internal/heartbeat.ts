@@ -2,7 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
-import { APP_INSTANCE_PREFIX, APP_REGISTRY_TTL_MS, type AppInstanceRecord } from "./registry";
+import { APP_REGISTRY_TTL_MS, type AppInstanceRecord, appInstancePrefix } from "./registry";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const HEARTBEAT_WRITE_TIMEOUT_MS = 10_000;
@@ -41,7 +41,7 @@ export const createRegistryMembership = (
   },
 ) => {
   const instanceId = options.instanceId ?? randomBytes(12).toString("base64url");
-  const prefix = `${APP_INSTANCE_PREFIX}${appId}/`;
+  const prefix = appInstancePrefix(appId);
   const key = `${prefix}${instanceId}`;
   const value: AppInstanceRecord = {
     appId,
