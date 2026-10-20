@@ -108,5 +108,6 @@ describe("Mail reviews through the public Cloud card renderer", () => {
       expect(text).toContain(locale === "de" ? "Behalten" : "Keep it");
       expect(html).toMatch(/(?:danger|destructive)/);
       expect(html).toContain("plan.pdf");
+      expect(text).not.toContain(locale === "de" ? "gesendet" : "sent");
     });
 });
