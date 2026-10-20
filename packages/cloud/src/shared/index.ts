@@ -3,6 +3,7 @@
 // Re-export from stdlib for backward compatibility
 // Prefer importing directly from @k2b/stdlib
 export { dates, dates as calendar, encoding, fileIcons, gradients } from "@k2b/stdlib";
+export { principalLabel } from "../access/principal-label";
 export {
   ACCOUNT_ACTION_NOTICE_SAMPLE,
   type AccountActionNoticeInput,

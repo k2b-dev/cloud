@@ -1,3 +1,4 @@
+import { principalLabel } from "@k2b/cloud/shared";
 import type { PublicRecordRevisionPage } from "../api/durable-history";
 import type { PublicGridRecord as GridRecord, PublicGridFile } from "../api/public-dto";
 import type { CombinedAuditPage } from "../service";
@@ -13,6 +14,7 @@ type PublicRecordSnapshotSummary = {
   recordId: string;
   tableId: string;
   createdBy: string | null;
+  createdByName?: string;
   createdAt: string;
 };
 
@@ -35,12 +37,14 @@ export const gridFileRows = (items: GridFile[]) =>
     createdAt: file.createdAt,
   }));
 
-export const snapshotRows = (items: RecordSnapshotListResponse["items"]) =>
+export const snapshotRows = (items: RecordSnapshotListResponse["items"], locale?: string) =>
   items.map((snapshot) => ({
     id: snapshot.id,
     recordId: snapshot.recordId,
     tableId: snapshot.tableId,
-    createdBy: snapshot.createdBy ?? "",
+    createdBy: snapshot.createdBy
+      ? principalLabel({ principal: { type: "user", userId: snapshot.createdBy }, displayName: snapshot.createdByName }, locale)
+      : "",
     createdAt: snapshot.createdAt,
   }));
 
@@ -64,13 +68,15 @@ export const recordRevisionRows = (items: RecordRevisionPage["items"]) =>
     createdAt: revision.createdAt,
   }));
 
-export const combinedAuditRows = (items: CombinedAuditPage["items"]) =>
+export const combinedAuditRows = (items: CombinedAuditPage["items"], locale?: string) =>
   items.map((entry) => ({
     createdAt: entry.createdAt,
     action: entry.action,
     recordId: entry.recordId ?? "",
     source: `${entry.source.baseName} / ${entry.source.tableName}`,
-    actor: entry.userDisplayName ?? (entry.userId ? "deleted user" : "public form"),
+    actor:
+      entry.userDisplayName ??
+      (entry.userId ? principalLabel({ principal: { type: "user", userId: entry.userId } }, locale) : "public form"),
     answers: entry.context?.answers.map((answer) => `${answer.label}: ${answer.optionLabel ?? answer.value}`).join("; ") ?? "",
     changes: entry.diff ? Object.keys(entry.diff).length : 0,
     deleted: entry.recordDeletedAt ? "yes" : "",

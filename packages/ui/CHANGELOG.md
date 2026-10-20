@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.31.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.30.0...npm-ui-v0.31.0) (2026-10-20)
+
+
+### Features
+
+* **assistant:** show 'Wartet auf dich' above the composer and a dot on chats with an open question ([#1579](https://github.com/k2b-dev/cloud/issues/1579)) ([b16523b](https://github.com/k2b-dev/cloud/commit/b16523b8877df50c6dc5a8eda22ad7a1072c6d30))
+* **mail:** a calm reader on wide windows, three-line rows, and reader actions that move into '…' when space is tight ([#1635](https://github.com/k2b-dev/cloud/issues/1635)) ([31d81f0](https://github.com/k2b-dev/cloud/commit/31d81f0791dfccdcfa6a236544428ab0c8075491)), closes [#1545](https://github.com/k2b-dev/cloud/issues/1545) [#1467](https://github.com/k2b-dev/cloud/issues/1467)
+* **ssr:** give history one owner, so Back and Forward swap between server pages and islands keep their own entries ([#1616](https://github.com/k2b-dev/cloud/issues/1616)) ([50192a8](https://github.com/k2b-dev/cloud/commit/50192a883d417c6136659de59e86cf9f320719cf))
+* **ui:** a flat Cloud map style in light and dark, built from the @k2b/ui tokens, with self-served label glyphs ([#1630](https://github.com/k2b-dev/cloud/issues/1630)) ([9c8ae1f](https://github.com/k2b-dev/cloud/commit/9c8ae1f9e49d604122a5945f1a131308dbeda4e6))
+* **ui:** MapView shows numbered places, routes and areas on a flat map that loads only when visible ([#1611](https://github.com/k2b-dev/cloud/issues/1611)) ([12367d7](https://github.com/k2b-dev/cloud/commit/12367d7a10e66e7c4fe21f3d881a4b179d01a3c0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.18.0 to 0.19.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 to ^0.19.0
+
 ## [0.30.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.29.0...npm-ui-v0.30.0) (2026-10-20)
 
 
