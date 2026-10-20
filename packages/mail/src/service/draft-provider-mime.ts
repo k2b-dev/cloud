@@ -1,9 +1,9 @@
 import type { Readable } from "node:stream";
-import { markdown, sanitizeEmailHtml } from "@k2b/cloud/shared";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { z } from "zod";
 import { mailAddressSchema } from "../contracts";
 import { sha256Json } from "./canonical";
+import { mailMarkdownHtml } from "./compose-renderer";
 
 /** Longest header value a MIME line contract accepts (RFC 5322 line limit). */
 const MAX_MIME_LINE_CHARS = 998;
@@ -93,8 +93,7 @@ export const buildDraftProviderMimeStream = (params: {
   date: Date;
   openAttachment: (blobId: string) => Readable;
 }): Readable => {
-  const html =
-    params.content.format === "markdown" ? sanitizeEmailHtml(markdown.renderSync(params.content.body, { links: "plain" })) : undefined;
+  const html = params.content.format === "markdown" ? mailMarkdownHtml(params.content.body) : undefined;
   const composer = new MailComposer({
     from: formatAddress(params.content.from),
     replyTo: params.content.replyTo ?? undefined,

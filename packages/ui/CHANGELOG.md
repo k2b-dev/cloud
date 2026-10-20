@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.30.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.29.0...npm-ui-v0.30.0) (2026-10-20)
+
+
+### Features
+
+* **assistant:** show recently sent references first in the slash menu ([#1531](https://github.com/k2b-dev/cloud/issues/1531)) ([5082c87](https://github.com/k2b-dev/cloud/commit/5082c870415bb020e3d7db161aa342dcda119c28))
+* chosen views, ranges and filters use tabs, segments and chips instead of filled primary buttons ([#1578](https://github.com/k2b-dev/cloud/issues/1578)) ([55490a1](https://github.com/k2b-dev/cloud/commit/55490a149441e533ee285462d75936e8620036cb))
+* **cloud:** open app commands from the slash menu and return to the chat ([#1521](https://github.com/k2b-dev/cloud/issues/1521)) ([397bda5](https://github.com/k2b-dev/cloud/commit/397bda59590ee28289cdbb1e59827f2e6bf38da5))
+* **cloud:** show Assistant questions as one sentence with the thing itself ([#1556](https://github.com/k2b-dev/cloud/issues/1556)) ([a1d1389](https://github.com/k2b-dev/cloud/commit/a1d13895389a010514bd757a917edb30c0e94375))
+* **spaces:** task deadlines are all-day by default, a time is optional ([#1432](https://github.com/k2b-dev/cloud/issues/1432)) ([a4db766](https://github.com/k2b-dev/cloud/commit/a4db766d53e7b6439ebe57582e14abbf43216c95))
+* **ssr:** mount islands in inserted content, and on removal dispose them and close open dialogs ([#1570](https://github.com/k2b-dev/cloud/issues/1570)) ([1c176dd](https://github.com/k2b-dev/cloud/commit/1c176dd731b4854629e5bd39bf7737f32c04e8fe)), closes [#1560](https://github.com/k2b-dev/cloud/issues/1560)
+* **ui:** a minimal table, empty and error states without a box, and a one-time hint for moved paths ([#1508](https://github.com/k2b-dev/cloud/issues/1508)) ([c757e0d](https://github.com/k2b-dev/cloud/commit/c757e0d3c32e576eb9f3da8d9aa4ae07a7a0411d))
+* **ui:** app and shell chrome follow the app host beside the panel, and watchAppHostWidth for scripts ([#1482](https://github.com/k2b-dev/cloud/issues/1482)) ([8208c75](https://github.com/k2b-dev/cloud/commit/8208c759021307bf6e202d9460985e6c35c98582))
+* **ui:** calendars shade the weekend, and one click picks a one-day range ([#1479](https://github.com/k2b-dev/cloud/issues/1479)) ([766c757](https://github.com/k2b-dev/cloud/commit/766c757e6a14f88b07f84f38d8d089dc0bb4ca06))
+* **ui:** darker secondary text and the C Kontrast type scale ([#1415](https://github.com/k2b-dev/cloud/issues/1415)) ([0e14415](https://github.com/k2b-dev/cloud/commit/0e14415e10d8f0d1051ff8702b9e4b57aefbb5ea))
+* **ui:** navigation labels that do not fit fade out instead of ending in an ellipsis ([#1480](https://github.com/k2b-dev/cloud/issues/1480)) ([7b0b36b](https://github.com/k2b-dev/cloud/commit/7b0b36b958d289f5592579d0ca070e3a0ba08b53))
+* **ui:** one white workspace surface, and a detail that keeps Main's minimum and waits behind Details ([#1468](https://github.com/k2b-dev/cloud/issues/1468)) ([e497a3d](https://github.com/k2b-dev/cloud/commit/e497a3d0c72e6613ece7904aedd35609d7a1ec8b))
+* **ui:** open the slash list from + with a search field ([#1540](https://github.com/k2b-dev/cloud/issues/1540)) ([5fe13bf](https://github.com/k2b-dev/cloud/commit/5fe13bf02000c44f92d685650b986c731a6e37e6))
+* **ui:** selected rows and navigation carry the app color ([#1429](https://github.com/k2b-dev/cloud/issues/1429)) ([6bcb69c](https://github.com/k2b-dev/cloud/commit/6bcb69c5069116e46a1442ee8c7ea5e528e5ee86))
+* **ui:** step rows open at their count, and question cards follow the chat's width ([#1532](https://github.com/k2b-dev/cloud/issues/1532)) ([747a852](https://github.com/k2b-dev/cloud/commit/747a8520946eb76d59c13967df5dfc7617a77393))
+* **ui:** views as tabs and filters as chips in one head row that wraps by the workspace's width, with the platform rule 'objects left, views in the head' ([#1493](https://github.com/k2b-dev/cloud/issues/1493)) ([24f6273](https://github.com/k2b-dev/cloud/commit/24f627300b4edda049db22fb300740d762344966))
+
+
+### Bug Fixes
+
+* **cloud:** depend on @k2b/stdlib 0.30.0 ([#1500](https://github.com/k2b-dev/cloud/issues/1500)) ([2342456](https://github.com/k2b-dev/cloud/commit/2342456df0ae93fa79393a722f5586f39a9042a4))
+* **cloud:** mix the selected navigation fill over the white sidebar it sits on ([#1512](https://github.com/k2b-dev/cloud/issues/1512)) ([a45fb98](https://github.com/k2b-dev/cloud/commit/a45fb98f0527483c77fef99f3e11916d995598bc))
+* **ui:** one color and selection guide for Cloud apps, with live states ([#1591](https://github.com/k2b-dev/cloud/issues/1591)) ([540a005](https://github.com/k2b-dev/cloud/commit/540a005f1f6255fb2a7204e64cd3bdc1c4bec420))
+* **ui:** view tabs keep their full labels on phones, and the strip scrolls sideways to the current view ([#1569](https://github.com/k2b-dev/cloud/issues/1569)) ([2d496b7](https://github.com/k2b-dev/cloud/commit/2d496b70c41f12d2ef463db3ccabe1fff544f50d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.17.0 to 0.18.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 to ^0.18.0
+
 ## [0.29.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.28.0...npm-ui-v0.29.0) (2026-10-18)
 
 

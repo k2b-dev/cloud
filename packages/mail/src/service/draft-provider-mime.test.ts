@@ -14,6 +14,39 @@ const attachmentId = "00000000-0000-4000-8000-000000000003";
 const blobId = "00000000-0000-4000-8000-000000000004";
 
 describe("draft provider MIME", () => {
+  test("uses Mail's Markdown divider rule in provider draft copies", async () => {
+    const content = draftProviderContentSchema.parse({
+      revision: 1,
+      senderIdentityId: "00000000-0000-4000-8000-000000000005",
+      from: { name: "Support", address: "support@example.com" },
+      replyTo: null,
+      to: [{ name: null, address: "alice@example.com" }],
+      cc: [],
+      bcc: [],
+      subject: "Divider",
+      body: "Hello\n---\nWorld",
+      format: "markdown",
+      inReplyTo: null,
+      references: [],
+      attachments: [],
+    });
+    const parsed = await simpleParser(
+      buildDraftProviderMimeStream({
+        snapshotId,
+        draftId,
+        content,
+        fingerprint: draftProviderFingerprint(content),
+        messageId: draftProviderMessageId(snapshotId),
+        date: new Date("2026-01-02T03:04:05.000Z"),
+        openAttachment: () => {
+          throw new Error("Unexpected attachment");
+        },
+      }),
+    );
+    expect(parsed.html).toContain("<hr");
+    expect(parsed.html).not.toContain("<h2");
+  });
+
   test("keeps Markdown quotes and code blocks in the HTML projection (#932)", async () => {
     const content = draftProviderContentSchema.parse({
       revision: 1,

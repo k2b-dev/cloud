@@ -35,7 +35,8 @@ export const preloadLayoutHelp = async (c: Context, appId?: string): Promise<Hel
   }
 };
 
-export type LayoutHelpArticle = { payload: HelpDocumentPayload; parts: HelpArticleParts };
+/** Article HTML crosses the island boundary once, as parts. */
+export type LayoutHelpArticle = { payload: Omit<HelpDocumentPayload, "html">; parts: HelpArticleParts };
 
 /** An authorized initial article; failures leave the browser's on-demand reader available. */
 export const preloadLayoutHelpArticle = async (c: Context, appId: string, documentId: string): Promise<LayoutHelpArticle | null> => {
@@ -43,8 +44,8 @@ export const preloadLayoutHelpArticle = async (c: Context, appId: string, docume
   try {
     const article = await createHelpReader(getLocale(c), c.get("actor")).read({ appId, documentId });
     if (!article) return null;
-    const payload = buildHelpDocumentPayload(article, c.req.header("User-Agent") ?? "");
-    return { payload, parts: helpArticlePartsServer(payload.html) };
+    const { html, ...payload } = buildHelpDocumentPayload(article, c.req.header("User-Agent") ?? "");
+    return { payload, parts: helpArticlePartsServer(html) };
   } catch (error) {
     log.warn("Help article unavailable", { appId, documentId, error: error instanceof Error ? error.message : String(error) });
     return null;

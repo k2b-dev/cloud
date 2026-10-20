@@ -71,6 +71,12 @@ test("server and browser split the same lead, body, spoken sections and task ste
     ]) {
       const server = helpArticlePartsServer(html);
       const browser = helpArticleParts(html);
+      const rebuilt = helpArticleParts((server.lead ?? "") + server.body);
+      expect({ ...rebuilt, lead: normalize(rebuilt.lead), body: normalize(rebuilt.body) }).toEqual({
+        ...server,
+        lead: normalize(server.lead),
+        body: normalize(server.body),
+      });
       expect({ ...server, lead: normalize(server.lead), body: normalize(server.body) }).toEqual({
         ...browser,
         lead: normalize(browser.lead),

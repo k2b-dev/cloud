@@ -93,6 +93,7 @@ import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
 import { canonicalRoute, isOwnAppPath } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
+import { runSetupExclusively } from "./setup-lock";
 import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versionedPublicHref } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
 import { WEB_VITALS_ASSET_HREF } from "./web-vitals-asset";
@@ -1005,7 +1006,8 @@ export const defineApp = <
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);
-        await startOpts.lifecycle.setup(cloudCtx);
+        const setup = startOpts.lifecycle.setup;
+        await runSetupExclusively(meta.id, () => setup(cloudCtx));
       }
       if (meta.id === "core") await startOutbox();
 

@@ -8,7 +8,7 @@ describe("MailMessageBody sizing", () => {
 
     expect(document).toContain('<div id="mail-message-root"><p>Short message</p></div>');
     expect(document).toContain("root?.getBoundingClientRect().height");
-    expect(document).toContain("new ResizeObserver(reportHeight).observe(root)");
+    expect(document).toMatch(/new ResizeObserver\(\(\) => \{\s*reportHeight\(\);[\s\S]*?\}\)\.observe\(root\)/);
     expect(document).not.toContain("document.documentElement.scrollHeight");
   });
 

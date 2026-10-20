@@ -27,6 +27,15 @@ const context: ComposeRenderContext = {
   message: { subject: "Hello", to: ["reader@example.test"], cc: [] },
 };
 
+const tableMarkdown = [
+  "| Nr. | Artikel | Menge |",
+  "| --- | --- | --- |",
+  `| 100 | ${"https://example.test/".padEnd(120, "x")} | 2 |`,
+  `| 110 | \`${"item".repeat(30)}\` | 3 |`,
+  "",
+  "See [the catalog](https://example.test/catalog).",
+].join("\n");
+
 const longBody = Array.from({ length: 900 }, (_, i) => `Paragraph ${i}`).join("\n\n");
 const largeMailboxCss = Array.from(
   { length: 40 },
@@ -57,6 +66,228 @@ const expectLiteralText = (rendered: ReturnType<typeof renderComposeContent>, va
   const elements = new Set(rendered.data.html?.match(/<[a-z][a-z0-9]*/gi));
   expect(elements).toEqual(new Set(/[\r\n]/.test(value) ? ["<div", "<p", "<br"] : ["<div", "<p"]));
 };
+
+describe("Markdown tables", () => {
+  test("inlines break-word cells and anywhere links and code only inside cells", () => {
+    const rendered = renderComposeContent({ body: tableMarkdown, format: "markdown", customCss: "", context, renderLiquid: false });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The table message did not render");
+    const html = rendered.data.html;
+    const table = html.match(/<table\b[^>]*>[\s\S]*?<\/table>/)?.[0] ?? "";
+    const cells = Array.from(table.matchAll(/<(?:th|td)\b[^>]*style="([^"]*)"/g), (match) => match[1]!);
+    expect(cells).toHaveLength(9);
+    for (const style of cells) {
+      expect(style).toContain("overflow-wrap:break-word");
+      expect(style).toContain("word-break:normal");
+    }
+    for (const tag of ["a", "code"]) {
+      expect(table).toMatch(new RegExp(`<${tag}\\b[^>]*style="[^"]*overflow-wrap:anywhere[^"]*"`));
+    }
+    const prose = html.slice(html.indexOf("</table>") + "</table>".length);
+    expect(prose).toContain("<a ");
+    expect(prose).not.toContain("overflow-wrap:anywhere");
+    expect(html).toMatch(/^<div\b[^>]*style="[^"]*overflow-wrap:break-word[^"]*"/);
+  });
+});
+
+describe("Markdown dividers", () => {
+  const content = (body: string, options: Partial<Parameters<typeof renderComposeContent>[0]> = {}) => {
+    const result = renderComposeContent({ body, format: "markdown", customCss: "", context, renderLiquid: false, ...options });
+    if (!result.ok) throw new Error(result.error.message);
+    return { ...result.data, html: result.data.html ?? "" };
+  };
+  const divider = "-".repeat(40);
+
+  test.each(["---", "***", "___"])("keeps %s between paragraphs in HTML and text without warnings", (line) => {
+    const body = `a\n\n${line}\n\nb`;
+    const result = content(body);
+    expect(result.html.match(/<hr\b/g)).toHaveLength(1);
+    expect(result.html).toMatch(/<hr style="[^"]*border-top:1px solid #d4d4d8[^"]*"/);
+    expect(result.text).toBe(`a\n\n${divider}\n\nb`);
+    expect(previewFormattingWarnings([], body, "markdown")).toEqual([]);
+  });
+
+  test.each(["a\n---\nb", "a\r\n---\r\nb", "a\nb\n---\nc"])("treats a dash setext underline as a divider: %j", (body) => {
+    const result = content(body);
+    expect(result.html).not.toContain("<h2");
+    expect(result.html).toMatch(/<p[^>]*>a(?:<br \/>b)?<\/p>\s*<hr[^>]*\/>\s*<p[^>]*>[bc]<\/p>/);
+    expect(result.text).toBe(`${body.includes("a\nb") ? "a\nb" : "a"}\n\n${divider}\n\n${body.endsWith("c") ? "c" : "b"}`);
+  });
+
+  test.each(["a\n-", "a\n--", "a\n-\nb", "a\n--\nb", "Thanks\n-- \nAda", "a\n  --\nb"])(
+    "keeps short dash underlines as text: %j",
+    (body) => {
+      const result = content(body);
+      expect(result.html).not.toMatch(/<(?:h[1-6]|hr)\b/);
+      expect(result.html).toContain("<br />");
+      expect(result.text).toBe(body.replace(/ +\n/g, "\n").replace(/\n +/g, "\n"));
+    },
+  );
+
+  test("keeps equals setext and ATX headings, and the shared renderer's dash headings", () => {
+    const result = content("a\n===\nb\n\n## Heading");
+    expect(result.html).toMatch(/<h1[^>]*>a<\/h1>/);
+    expect(result.html).toMatch(/<h2[^>]*>Heading<\/h2>/);
+    expect(content("a\n---\nb").html).not.toContain("<h2");
+    expect(markdown.renderSync("a\n---\nb")).toContain("<h2");
+  });
+
+  test.each(["", "\n"])("keeps block boundaries after escaped short underlines with trailing %j", (ending) => {
+    const paragraph = /<p[^>]*>foo<br \/>--<\/p>/;
+    const divided = content(`foo\n--\n---\nbar${ending}`).html;
+    expect(divided).toMatch(/<p[^>]*>foo<br \/>--<\/p>\s*<hr[^>]*\/>\s*<p[^>]*>bar<\/p>/);
+    expect(divided).not.toContain("<h2");
+    const heading = content(`foo\n--\nbar\n===${ending}`).html;
+    expect(heading).toMatch(paragraph);
+    expect(heading).toMatch(/<h1[^>]*>bar<\/h1>/);
+    const code = content(`foo\n--\n    code${ending}`).html;
+    expect(code).toMatch(paragraph);
+    expect(code).toMatch(/<pre[^>]*>code\n?<\/pre>/);
+    const quote = content(`> foo\n> --\n> ---${ending}`).html;
+    expect(quote).toMatch(/<blockquote[^>]*>\s*<p[^>]*>foo<br \/>--<\/p>\s*<hr[^>]*\/>\s*<\/blockquote>/);
+    expect(quote).not.toContain("<h2");
+  });
+
+  test("keeps dash-line rendering stable across neighboring blocks", () => {
+    const bodies = ["foo\n--\nbar\n===", "foo\n--\n\nbar\n===", "foo\n--\n\n---", "foo\n--\n---\n\n----"];
+    let runs = ["foo"];
+    for (let length = 1; length <= 3; length += 1) {
+      runs = runs.flatMap((body) => [1, 2, 3, 4].map((dashes) => `${body}\n${"-".repeat(dashes)}`));
+      bodies.push(...runs);
+    }
+    for (const body of bodies) {
+      const html = content(body).html;
+      expect(html).not.toContain("<h2");
+      expect(html.match(/<hr\b/g) ?? []).toHaveLength((body.match(/^-{3,}$/gm) ?? []).length);
+    }
+  });
+
+  test.each(["> a\n> ---\n> b", "> > a\n> > ---\n> > b"])("rewrites dash underlines inside quotes: %j", (body) => {
+    const html = content(body).html;
+    expect(html).toMatch(/<blockquote[^>]*>[\s\S]*<p[^>]*>a<\/p>\s*<hr[^>]*\/>\s*<p[^>]*>b<\/p>[\s\S]*<\/blockquote>/);
+    expect(html).not.toContain("<h2");
+  });
+
+  test.each([
+    "```\na\n---\n```",
+    "    a\n    ---",
+    "<pre>a\n---\n</pre>",
+    "<div>\na\n---\n</div>",
+    ":::note\na\n---\n:::",
+    "- a\n  ---",
+    "| a | b |\n| --- | --- |\n| c | d |",
+  ])("leaves opaque blocks byte-identical before rendering: %j", (body) => {
+    const render = spyOn(markdown, "renderSync");
+    try {
+      const result = content(`${body}\n\nx\n---\ny`);
+      expect(render.mock.calls[0]?.[0]).toBe(`${body}\n\nx\n\n---\ny`);
+      expect(result.html).toContain("<hr");
+    } finally {
+      render.mockRestore();
+    }
+  });
+
+  test("inserts spacers on the original source before rewriting setext", () => {
+    const compact = content("a\n---\n\n\nb");
+    expect(compact).toEqual(content("a\n\n---\n\n\nb"));
+    expect(compact.html).toMatch(/<p[^>]*>a<\/p>\s*<hr[^>]*\/>\s*<p class="mail-blank-line"[^>]*> <\/p>\s*<p[^>]*>b<\/p>/);
+    expect(compact.text).toBe(`a\n\n${divider}\n\n\nb`);
+  });
+
+  test("keeps a written hr with the built-in style and no warning", () => {
+    expect(content("<hr>").html).toMatch(/<hr style="[^"]*border-top:1px solid #d4d4d8[^"]*"/);
+    expect(previewFormattingWarnings([], "<hr>", "markdown")).toEqual([]);
+  });
+
+  test("drops written inline styles on hr and p alike", () => {
+    const hr = '<hr style="border-top:2px solid #0f766e">';
+    const paragraph = '<p style="color:#ff0000">a</p>';
+    expect(content(hr).html).toMatch(/<hr style="[^"]*border-top:1px solid #d4d4d8[^"]*"/);
+    expect(content(hr).html).not.toContain("#0f766e");
+    expect(content(paragraph).html).not.toContain("#ff0000");
+    expect(previewFormattingWarnings([], hr, "markdown")).toEqual([{ code: "unsupported_attribute", element: "hr", attribute: "style" }]);
+    expect(previewFormattingWarnings([], paragraph, "markdown")).toEqual([
+      { code: "unsupported_attribute", element: "p", attribute: "style" },
+    ]);
+  });
+
+  test("reports only the class on a written hr", () => {
+    expect(previewFormattingWarnings([], '<hr class="x">', "markdown")).toEqual([
+      { code: "unsupported_attribute", element: "hr", attribute: "class" },
+    ]);
+  });
+
+  test("pins the Markdown elements email intentionally drops", () => {
+    const source = [
+      "Paragraph with `code`, *emphasis*, **strong**, ~~strikethrough~~, [link](https://example.test),",
+      "<https://example.test> and ![Image](https://example.test/image.png).  \nHard line break.",
+      "# Heading one",
+      "## Heading two",
+      "### Heading three",
+      "Setext heading\n===",
+      "> Quote\n>\n> > Nested quote",
+      "- Bullet",
+      "1. Ordered",
+      "- [x] Task",
+      "```text\nFenced code\n```",
+      "    Indented code",
+      "| Column |\n| --- |\n| Cell |",
+      "---",
+      ":::note\nInfo block\n:::",
+    ].join("\n\n");
+    const elements = (html: string) => new Set(Array.from(html.matchAll(/<([a-z][a-z0-9]*)\b/gi), (match) => match[1]));
+    const platform = elements(markdown.renderSync(source, { links: "plain" }));
+    const email = elements(content(source).html);
+    // img/figure/figcaption: body images; input: task checkbox; aside/svg/path: info block shell and icon.
+    // Email keeps their text only. Strikethrough is already removed by the platform Markdown sanitizer.
+    expect([...platform].filter((tag) => !email.has(tag)).sort()).toEqual(["aside", "figcaption", "figure", "img", "input", "path", "svg"]);
+  });
+
+  test("leaves divider-like markup in code and comments untouched while rewriting a real dash heading", () => {
+    const opaque = '```html\n<hr style="color:red">\na\n---\n```\n\n<!-- <hr style="color:red"> -->';
+    const render = spyOn(markdown, "renderSync");
+    try {
+      const result = content(`${opaque}\n\na\n---\nb`);
+      expect(render.mock.calls[0]?.[0]).toBe(`${opaque}\n\na\n\n---\nb`);
+      expect(result.html.match(/<hr\b/g)).toHaveLength(1);
+    } finally {
+      render.mockRestore();
+    }
+  });
+
+  test("rewrites underlines in the body, selected signature and quoted history", () => {
+    const result = content("a\n---\nb\n\nAda wrote:\n> c\n> ---\n> d", { signature: "Name\n---\nPhone" });
+    expect(result.html.match(/<hr\b/g)).toHaveLength(3);
+    expect(result.html).not.toContain("<h2");
+    expect(result.html).toMatch(/class="mail-signature"[\s\S]*<p[^>]*>Name<\/p>\s*<hr/);
+  });
+
+  test("the placeholder fallback still uses Mail's setext rule", () => {
+    const renderSync = markdown.renderSync;
+    const render = spyOn(markdown, "renderSync").mockImplementation((source, options) =>
+      renderSync(source, options).replace(/<p>(MAILBLANKLINE[A-Z0-9]+)<\/p>/g, "<div>$1</div>"),
+    );
+    try {
+      const result = content("a\n---\n\n\nb");
+      expect(result.html).toContain("<hr");
+      expect(result.html).not.toMatch(/<h2|MAILBLANKLINE/);
+      expect(result.text).toBe(`a\n\n${divider}\n\nb`);
+    } finally {
+      render.mockRestore();
+    }
+  });
+
+  test("lets mailbox divider CSS override the built-in design", () => {
+    const customCss = "hr { border-top-color: #0f766e; }";
+    expect(validateComposeCss(customCss).ok).toBe(true);
+    expect(content("a\n---\nb", { customCss }).html).toMatch(/<hr style="[^"]*border-top-color:#0f766e/);
+  });
+
+  test("plain-format signatures keep the name's case and a text divider", () => {
+    const result = content("Hello", { format: "plain", signature: "Name\n---\nPhone" });
+    expect(result.html).toBe("");
+    expect(result.text).toBe(`Hello\n\nName\n\n${divider}\n\nPhone`);
+  });
+});
 
 describe("Markdown blank lines", () => {
   const render = (body: string, options: Partial<Parameters<typeof renderComposeContent>[0]> = {}) =>
@@ -128,12 +359,12 @@ describe("Markdown blank lines", () => {
       const quote = result.html.match(/<blockquote\b[^>]*>[\s\S]*?<\/blockquote>/)?.[0] ?? "";
       expect(spacers(quote)).toHaveLength(1);
       expect(spacers(result.html)).toHaveLength(1);
-      // Mail's sanitizer strips hr; check the Markdown result before sanitization too.
+      // Keep interrupting blocks outside the quote before and after email sanitization.
       const fragment = renderMarkdown.mock.results[0]?.value;
       if (typeof fragment !== "string") throw new Error("Missing rendered Markdown");
       expect(fragment.slice(fragment.indexOf("</blockquote>") + "</blockquote>".length)).toMatch(html);
       expect(quote).not.toMatch(html);
-      if (block === "# h") expect(result.html).toMatch(/<\/blockquote>\s*<h1\b[^>]*>h<\/h1>/);
+      expect(result.html.slice(result.html.indexOf("</blockquote>") + "</blockquote>".length)).toMatch(html);
     } finally {
       renderMarkdown.mockRestore();
     }

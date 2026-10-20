@@ -419,6 +419,23 @@ for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 
+Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
+and assert `expect(errors).toEqual([])`; new tests do not register a
+`pageerror` listener of their own. While a page waits for its next document,
+WebKit refuses every load that the page starts, such as a stream that opens
+again after the navigation cancelled it. It logs the refusal as
+`Fetch API cannot load <url> due to access control checks.`, also for a
+same-origin request whose promise is handled
+([playwright#43120](https://github.com/microsoft/playwright/issues/43120)).
+Playwright reports that log as a page error, so a test that navigates fails at
+random. `pageErrors()` ignores only that report, only in WebKit, only for a URL
+with the origin of the page, and only while a `goto`, `reload`, `goBack`, or
+`goForward` of the test runs. It reports everything else: a real CORS failure,
+which names another origin, an unhandled rejection, a refusal during a
+navigation that the page starts itself, such as after a click, and every other
+error. `packages/ui/test/browser.browser.test.ts` guards these cases in
+Chromium and WebKit.
+
 ### Run WebKit locally
 
 Playwright's WebKit needs system libraries that most Linux machines do not
@@ -1036,6 +1053,11 @@ Compose project with its own PostgreSQL, NATS, Valkey, and SMTP sink. It never
 uses the development stack or `.env`, and it removes every container, volume,
 and built image tag when it ends, also after a failure or a signal.
 
+The gateway and all Core replicas start together. Once Core is ready, all
+replicas of Mail, Chat, and Notebooks start together. After readiness, the
+harness inspects every application container and requires `RestartCount` to
+be zero, reporting the container name and count on failure.
+
 Steps pin requests to one replica through its own published port, except the
 Mail and Chat steps that explicitly use the gateway:
 
@@ -1051,8 +1073,9 @@ Mail and Chat steps that explicitly use the gateway:
 - sending a Mail draft on B removes its editing lease everywhere;
 - Mail A restarts gracefully while editing continues through B and the gateway;
   every routing gap fails the run, with request samples kept as evidence;
-- Chat A stops gracefully and is removed, then a surge adds replacements before
-  the last original Chat replica stops. Gateway requests continue for at least
+- Chat A stops gracefully and is removed, then a surge adds replacements, which
+  must be ready with `RestartCount` 0, before the last original Chat replica
+  stops. Gateway requests continue for at least
   70 seconds after each stop. Registry gaps fail the run. Upstream-unavailable
   502s and network errors during a stop and its next five seconds are counted
   separately as `p4InFlight` (RISK P4); every other failure fails the run;

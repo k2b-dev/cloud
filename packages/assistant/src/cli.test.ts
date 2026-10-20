@@ -474,7 +474,7 @@ describe("assistant CLI", () => {
     expect(requests.every((request) => Boolean(request.idempotencyKey))).toBe(true);
   });
 
-  test("lists a pending approval by what it does in the app's words, with the app's review and the model's reason on the same line", async () => {
+  test("lists a pending approval from an older server as the plain question, its reason, its rows and both commands", async () => {
     const request = createContext(["actions", "list", "chat-1", "turn-1"], async (path) => {
       expect(String(path)).toBe("/api/ai/conversations/chat-1/pending-actions/turn-1");
       return json([
@@ -491,18 +491,43 @@ describe("assistant CLI", () => {
         },
       ]);
     });
-    const rows: unknown[] = [];
-    request.ctx.table = (values) => void rows.push(...values);
+    const printed: string[] = [];
+    request.ctx.print = (value = "") => void printed.push(value);
     await assistantCli.run(request.ctx);
-    expect(rows).toEqual([
-      {
-        call: "call-1",
-        type: "approval_request",
-        name: "mail__action__draft_dot_create",
-        detail:
-          "E-Mail: Entwurf an jana@example.com erstellen · Entwurf „Angebot“ an Jana Berger erstellen. · Warum: Jana hat um das Angebot gebeten.",
-      },
+    expect(printed).toEqual([
+      "? E-Mail: Entwurf an jana@example.com erstellen?",
+      "  I'm asking because Cloud always asks for this.",
+      "  Entwurf „Angebot“ an Jana Berger erstellen.",
+      "  Warum: Jana hat um das Angebot gebeten.",
+      "  E-Mail: Entwurf an jana@example.com erstellen: cld --profile test --server https://cloud.example assistant actions approve -- chat-1 turn-1 call-1",
+      "  Don't run:                                     cld --profile test --server https://cloud.example assistant actions reject -- chat-1 turn-1 call-1",
     ]);
+  });
+
+  test("quotes IDs in the printed approval commands, so copying one runs nothing else", async () => {
+    const request = createContext(["actions", "list", "chat-1", "turn-1"], async () =>
+      json([
+        {
+          type: "approval_request",
+          conversationId: "chat-1",
+          turnId: "turn-1",
+          callId: "call$(id)'x",
+          name: "mail__action__draft_dot_create",
+          args: {},
+          message: "Create draft",
+          allowAlways: false,
+        },
+      ]),
+    );
+    const printed: string[] = [];
+    request.ctx.print = (value = "") => void printed.push(value);
+    await assistantCli.run(request.ctx);
+    expect(printed.at(-2)).toContain(
+      `cld --profile test --server https://cloud.example assistant actions approve -- chat-1 turn-1 'call$(id)'\\''x'`,
+    );
+    // The shell reads the quoted call ID back as exactly itself.
+    const word = printed.at(-1)?.split(" reject -- ")[1] ?? "";
+    expect(Bun.spawnSync(["sh", "-c", `printf %s ${word.split(" ").slice(2).join(" ")}`]).stdout.toString()).toBe("call$(id)'x");
   });
 
   test("shows the task scheduling timezone", async () => {
@@ -1036,7 +1061,9 @@ describe("assistant CLI", () => {
     expect(approvalBody).toEqual({ type: "approval_response", approved: true, remember: "always" });
     expect(prompts.filter((prompt) => prompt.startsWith("Choice"))).toEqual(["Choice [Enter to reject]: ", "Choice [Enter to reject]: "]);
     const printed = stdout.join("");
-    expect(printed).toContain("Approval required: Create draft\\u001b]8;;https://evil.example\\u0007");
+    // The question is plain text: the escape sequence is gone before the terminal sees it.
+    expect(printed).toContain("? Create draft ]8;;https://evil.example ?\n  I'm asking because Cloud always asks for this.\n");
+    expect(printed).not.toContain("\u001b]8;;");
     expect(printed).toContain('"subject": "Hello\\u009b2J\\u202e"');
     expect(printed).toContain("[Input preview is incomplete; deny if you need to see the rest.]");
     expect(printed).not.toContain("x".repeat(16_000));

@@ -1,6 +1,8 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
+import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
+import type { CapabilityActionCallReview } from "@k2b/cloud/contracts/capabilities";
 import { notifications } from "@k2b/cloud/services";
 import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
@@ -121,14 +123,37 @@ suite("Core AI completion notifications", () => {
     if (!user) throw new Error("Missing fixture user");
     const userId = user.id;
     const service = createAiNotificationService(app.notifications);
-    const ask = async (signedInSession = false, linked = true) => {
+    const originalRender = app.notifications.approvalWaiting.render;
+    const rendered: Array<{ locale: string; body?: string }> = [];
+    const render = spyOn(app.notifications.approvalWaiting, "render").mockImplementation(async (data, context) => {
+      const presentation = await originalRender(data, context);
+      rendered.push({ locale: context.locale, body: presentation.body });
+      return presentation;
+    });
+    const ask = async (signedInSession = false, linked = true, locale = "en") => {
       const chat = await aiConversations.createConversation({ ownerUserId: userId });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
         modelProfileId: "mock",
-        runConfig: { kind: "chat", input: "Send", ...(signedInSession ? { signedInSession: true } : {}) },
+        runConfig: {
+          kind: "chat",
+          input: "Send",
+          locale,
+          timeZone: "Europe/Berlin",
+          ...(signedInSession ? { signedInSession: true } : {}),
+        },
         userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
       });
+      const review: CapabilityActionCallReview = {
+        locale,
+        ask: "sends",
+        slots: {},
+        sentence:
+          locale === "de"
+            ? { action: "Mail senden", running: "Mail wird gesendet", done: "Mail gesendet", confirm: "Senden", decline: "Nicht senden" }
+            : { action: "Send mail", running: "Sending mail", done: "Sent mail", confirm: "Send", decline: "Don't send" },
+      };
+      assertCapabilityReview(review);
       const request = await approvals.request({
         appId: "mail",
         action: "draft.send",
@@ -137,6 +162,7 @@ suite("Core AI completion notifications", () => {
         approverUserId: userId,
         assurance: "confirm",
         sentence: "Mail: Send draft",
+        review,
         input: {},
         expiresInMs: 600_000,
       });
@@ -177,18 +203,24 @@ suite("Core AI completion notifications", () => {
       const stale = await ask();
       await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
       expect(await service.notifyApprovalWaiting(stale)).toEqual({ scanned: 0, sent: 0, failed: 0 });
-      const first = await ask();
+      const first = await ask(false, true, "de");
       expect((await service.notifyApprovalWaiting(first)).failed).toBe(0);
       expect(await service.notifyApprovalWaiting(first)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect(rendered.at(-1)).toEqual({ locale: "de", body: "Mail senden?\nIch frage, weil das Cloud verlässt." });
       const second = await ask();
       expect(await service.notifyApprovalWaiting(second)).toEqual({ scanned: 0, sent: 0, failed: 0 });
       expect(await events()).toMatchObject([
-        { title: "Approval waiting", target_href: APPROVALS_PAGE_PATH, idempotency_key: `approval:${first}` },
+        {
+          title: "Freigabe wartet",
+          target_href: APPROVALS_PAGE_PATH,
+          idempotency_key: `approval:${first}`,
+        },
       ]);
       const ageNotices = () => sql`UPDATE notifications.events SET created_at=created_at-interval '16 minutes'
         WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid`;
       await ageNotices();
       expect((await service.notifyApprovalWaiting(second)).failed).toBe(0);
+      expect(rendered.at(-1)).toEqual({ locale: "en", body: "Send mail?\nI'm asking because this leaves Cloud.\nAnd 1 more waiting." });
       expect(await events()).toMatchObject([
         { idempotency_key: `approval:${first}` },
         { title: "2 approvals waiting", idempotency_key: `approval:${second}` },
@@ -212,6 +244,7 @@ suite("Core AI completion notifications", () => {
         { title: "3 approvals waiting", target_href: APPROVALS_PAGE_PATH, idempotency_key: `approval:${fourth}` },
       ]);
     } finally {
+      render.mockRestore();
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
