@@ -1,5 +1,5 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, resolveDisplayNames } from "@k2b/cloud/server";
 import {
   type AuditActionGroup,
   type AuditEvent,
@@ -127,28 +127,36 @@ export default ssr<AuthContext>(async (c) => {
         : target.type === "service_account"
           ? principalLabel({ principal: { type: "service_account", serviceAccountId: target.id ?? "" }, displayName: target.label }, locale)
           : (target.label ?? target.id ?? "-");
-  const actorFilterLabel = state.actor
-    ? principalLabel(
-        {
-          principal: { type: "user", userId: state.actor },
-          displayName: eventsPage.items.find((event) => event.actor.userId === state.actor || event.actor.uid === state.actor)?.actor.uid,
-        },
-        locale,
-      )
-    : "";
+  // Selected filters name their identity even when no event on this page carries it; one batch per kind.
+  const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  const selected = await resolveDisplayNames([
+    ...(isUuid(state.actor) ? [{ principal: { type: "user" as const, userId: state.actor } }] : []),
+    ...(isUuid(state.target)
+      ? [{ principal: { type: "user" as const, userId: state.target } }, { principal: { type: "group" as const, groupId: state.target } }]
+      : []),
+    ...(isUuid(state.serviceAccountId)
+      ? [{ principal: { type: "service_account" as const, serviceAccountId: state.serviceAccountId } }]
+      : []),
+  ]);
+  type Selected = (typeof selected)[number]["principal"];
+  // Only an identity that still exists has a name; the rest keep the localized fallback.
+  const found = (principal: Selected) =>
+    selected.find((entry) => entry.displayName !== undefined && JSON.stringify(entry.principal) === JSON.stringify(principal));
+  const actorFilterLabel = isUuid(state.actor)
+    ? principalLabel(found({ type: "user", userId: state.actor }) ?? { principal: { type: "user", userId: state.actor } }, locale)
+    : state.actor;
   const filteredTarget = eventsPage.items.find((event) => event.target.id === state.target || event.target.label === state.target)?.target;
-  const targetFilterLabel = state.target
-    ? filteredTarget
+  const selectedTarget = found({ type: "user", userId: state.target }) ?? found({ type: "group", groupId: state.target });
+  const targetFilterLabel = selectedTarget
+    ? principalLabel(selectedTarget, locale)
+    : filteredTarget
       ? targetLabel(filteredTarget)
-      : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(state.target)
+      : isUuid(state.target)
         ? principalLabel({ principal: { type: "user", userId: state.target } }, locale)
-        : state.target
-    : "";
+        : state.target;
   const serviceAccountFilterLabel = principalLabel(
-    {
+    found({ type: "service_account", serviceAccountId: state.serviceAccountId }) ?? {
       principal: { type: "service_account", serviceAccountId: state.serviceAccountId },
-      displayName: eventsPage.items.find((event) => event.target.type === "service_account" && event.target.id === state.serviceAccountId)
-        ?.target.label,
     },
     locale,
   );
