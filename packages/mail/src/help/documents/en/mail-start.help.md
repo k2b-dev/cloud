@@ -22,7 +22,7 @@ The email provider stays the source for portable mail state. When you move a mes
 - Choose the crossed-out eye to hide a mailbox that you rarely need, such as a no-reply address. The mailbox leaves the list, and its conversations leave Focus and the Focus counts.
 - Hidden mailboxes wait under **Hidden mailboxes** below the list. Open that section to reach one, and choose the eye to show it again.
 - Your pinned and hidden mailboxes apply on every device where you sign in. They are yours alone. Others with access to a mailbox keep their own.
-- On a large screen, select a Focus row to see its context, summary, workflow fields, and team notes next to the queue. On a smaller screen, the row opens the conversation in its mailbox.
+- On a tablet or a larger screen, select a Focus row to see its context, summary, workflow fields, and team notes. With enough room they stand next to the queue; otherwise they open over the end of the queue, and **Esc** or **Details** puts them away. On a phone, the row opens the conversation in its mailbox.
 - Choose **New mailbox** to connect another email account.
 - A new mailbox starts private. You have **Manage** access, and nobody else has access until you give it in **… → Settings → Access**.
 
@@ -82,9 +82,11 @@ On a phone, open the mailbox title to reach Focus, other mailboxes, and the open
 
 Group rows list the people that the group reaches, as far as your account can see them. Guest accounts see only their own access, the access of their groups, and how many other entries exist. The dialog changes nothing. With **Manage** access, choose **Manage access** to continue in **… → Settings → Access**.
 
-The center list shows one row per conversation. The reader groups the messages of that conversation. It quietly places meaningful status, assignment, tag, summary, and workflow activity at the time it happened. Technical processing events stay out of the reading flow.
+The center list shows one row per conversation: the sender and the time, the subject with marks for attachments, flags, and assignment, and a preview. Tags and **Waiting** get a fourth line. On a wide screen the list grows, and the subject and messages stay in a calm reading column. The reader groups the messages of that conversation. A long conversation shows its newest messages, and **n older messages** shows the rest. It quietly places meaningful status, assignment, tag, summary, and workflow activity at the time it happened. Technical processing events stay out of the reading flow.
 
-Choose **Conversation details** to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. To get more reading space, hide the conversation list.
+**Reply**, **Reply all**, and **Forward** start the reader's toolbar, followed by the actions you chose with **… > Customize toolbar**. When the reader gets narrow, Reply all and Forward show only their icons, then move into **…** with the actions that no longer fit. **…** always lists every action.
+
+Choose **Conversation details** to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. The details stand next to the reader while it keeps enough room. Otherwise they wait behind **Details** and open over the reader's end with one click. To get more reading space, hide the conversation list.
 
 Next to a composer, the conversation history contains only messages. Operational activity does not distract you while you write.
 

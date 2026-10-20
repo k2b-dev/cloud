@@ -21,7 +21,7 @@ Der E-Mail-Anbieter bleibt die Quelle für übertragbare E-Mail-Zustände. Wenn 
 - Wähle das durchgestrichene Auge, um ein selten genutztes Postfach auszublenden, etwa eine No-Reply-Adresse. Das Postfach verschwindet aus der Liste, und seine Unterhaltungen verschwinden aus Fokus und den Zahlen in Fokus.
 - Ausgeblendete Postfächer liegen unter **Ausgeblendet** unterhalb der Liste. Öffne diesen Abschnitt, um eines zu erreichen, und wähle das Auge, um es wieder einzublenden.
 - Deine angehefteten und ausgeblendeten Postfächer gelten auf jedem Gerät, auf dem du dich anmeldest. Sie gelten nur für dich. Andere mit Zugriff auf ein Postfach behalten ihre eigenen.
-- Wähle auf einem großen Bildschirm eine Zeile in Fokus aus, um daneben Kontext, Zusammenfassung, Workflow-Felder und Teamnotizen zu sehen. Auf einem kleineren Bildschirm öffnet die Zeile die Unterhaltung in ihrem Postfach.
+- Wähle auf einem Tablet oder einem größeren Bildschirm eine Zeile in Fokus aus, um Kontext, Zusammenfassung, Workflow-Felder und Teamnotizen zu sehen. Mit genug Platz stehen sie neben der Liste, sonst öffnen sie sich über dem Ende der Liste; **Esc** oder **Details** legt sie wieder weg. Auf einem Telefon öffnet die Zeile die Unterhaltung in ihrem Postfach.
 - Wähle **Neues Postfach**, um ein weiteres E-Mail-Konto zu verbinden.
 - Ein neues Postfach ist zunächst privat. Du hast Zugriff **Verwalten**, und niemand sonst hat Zugriff, bis du ihn unter **… → Einstellungen → Zugriff** gibst.
 
@@ -81,9 +81,11 @@ Auf dem Smartphone öffnest du über den Postfachtitel Fokus, andere Postfächer
 
 Bei Gruppen siehst du die Personen, die die Gruppe erreicht, soweit dein Konto sie sehen darf. Gastkonten sehen nur ihren eigenen Zugriff, den Zugriff ihrer Gruppen und wie viele weitere Einträge es gibt. Der Dialog ändert nichts. Mit Zugriff **Verwalten** wählst du **Zugriff verwalten** und machst unter **… → Einstellungen → Zugriff** weiter.
 
-Die mittlere Liste zeigt eine Zeile pro Unterhaltung. Der Lesebereich gruppiert die Nachrichten dieser Unterhaltung. Er ordnet aussagekräftige Änderungen an Status, Zuweisung, Tags, Zusammenfassung und Workflow ruhig zu dem Zeitpunkt ein, an dem sie geschahen. Technische Verarbeitungsvorgänge bleiben aus dem Lesefluss heraus.
+Die mittlere Liste zeigt eine Zeile pro Unterhaltung: Absender und Zeit, den Betreff mit Zeichen für Anhang, Markierung und Zuweisung, und eine Vorschau. Tags und **Wartet** bekommen eine vierte Zeile. Auf einem breiten Bildschirm wird die Liste breiter, und Betreff und Nachrichten stehen in einer ruhigen Lesespalte. Der Lesebereich gruppiert die Nachrichten dieser Unterhaltung. Eine lange Unterhaltung zeigt ihre neuesten Nachrichten, **n ältere Nachrichten** zeigt den Rest. Er ordnet aussagekräftige Änderungen an Status, Zuweisung, Tags, Zusammenfassung und Workflow ruhig zu dem Zeitpunkt ein, an dem sie geschahen. Technische Verarbeitungsvorgänge bleiben aus dem Lesefluss heraus.
 
-Wähle **Unterhaltungsdetails**, um Teamkontext, lokale Tags, Zuständigkeit, Kommentare, Erinnerungen und die längere Liste der letzten Aktivitäten zu öffnen. Wenn du mehr Platz zum Lesen brauchst, blende die Unterhaltungsliste aus.
+**Antworten**, **Allen antworten** und **Weiterleiten** stehen am Anfang der Werkzeugleiste des Lesebereichs, danach die Aktionen, die du mit **… > Werkzeugleiste anpassen** gewählt hast. Wird der Lesebereich schmal, zeigen Allen antworten und Weiterleiten nur noch ihr Symbol und wandern dann mit den Aktionen, die nicht mehr passen, unter **…**. **…** enthält immer jede Aktion.
+
+Wähle **Unterhaltungsdetails**, um Teamkontext, lokale Tags, Zuständigkeit, Kommentare, Erinnerungen und die längere Liste der letzten Aktivitäten zu öffnen. Die Details stehen neben dem Lesebereich, solange er genug Platz behält. Sonst warten sie hinter **Details** und öffnen sich mit einem Klick über dem Ende des Lesebereichs. Wenn du mehr Platz zum Lesen brauchst, blende die Unterhaltungsliste aus.
 
 Neben einem Editor enthält der Unterhaltungsverlauf nur Nachrichten. Betriebliche Aktivitäten lenken dich beim Schreiben nicht ab.
 

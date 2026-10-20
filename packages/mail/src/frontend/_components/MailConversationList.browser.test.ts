@@ -369,15 +369,16 @@ describe("Mail quick look", () => {
       await page.clock.runFor(201);
       await settle(page);
       const first = (await box(page, card))!;
-      await pointAt(page, row("Cv0005"));
+      // A row with room below it for the whole card, so the card starts at the row (rows are three or four lines).
+      await pointAt(page, row("Cv0004"));
       await page.clock.runFor(89);
       expect(await shown(page)).toBe("Room booking 2");
       await page.clock.runFor(2);
-      expect(await shown(page)).toBe("Room booking 5");
+      expect(await shown(page)).toBe("Room booking 4");
       await settle(page);
       const second = (await box(page, card))!;
       expect([second.width, second.height]).toEqual([first.width, first.height]);
-      expect(Math.round(second.top)).toBe(Math.round((await box(page, row("Cv0005")))!.top));
+      expect(Math.round(second.top)).toBe(Math.round((await box(page, row("Cv0004")))!.top));
 
       await pointAt(page, row("Cv0002"));
       await page.clock.runFor(91);

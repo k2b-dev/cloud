@@ -1,7 +1,7 @@
 import { listenPopState, navigate, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { detailPanel, query as queries } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Placeholder, useLocale, ViewTabs, watchAppHostWidth } from "@k2b/ui";
+import { AppWorkspace, Button, Placeholder, useLocale, ViewTabs } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory-settings";
@@ -28,25 +28,10 @@ type MailFocusOverview = {
 type MailFocusViewPage = MailFocusPage & { excludedMailboxIds: string[] };
 
 const FOCUS_PAGE_SIZE = 50;
+/** F2: Fokus's Detail is a column only while Main keeps this width beside it. */
+const MAIL_FOCUS_MAIN_MIN = 420;
 
 const primaryParticipant = (summary: string, fallback: string): string => summary.split(/\s[·,]\s/u)[0]?.trim() || fallback;
-const participantInitials = (summary: string): string => {
-  const words =
-    summary
-      .split(/\s[·,]\s/u)[0]
-      ?.trim()
-      .split(/\s+/u)
-      .filter(Boolean) ?? [];
-  return (
-    words
-      .slice(0, 2)
-      .map((word) => word[0]?.toLocaleUpperCase())
-      .join("") || "M"
-  );
-};
-const avatarTone = (summary: string): string =>
-  String([...primaryParticipant(summary, "")].reduce((total, character) => total + character.codePointAt(0)!, 0) % 5);
-
 function MailOverviewView(props: {
   mailboxes: MailboxWithPermission[];
   /** Null when the server could not read Focus; `initialFocusError` then says why. */
@@ -178,7 +163,9 @@ function MailOverviewView(props: {
     return counts()[view()] === 0 || !(results.stale() || results.refreshing());
   };
   const [selection, setSelection] = createSignal<MailFocusSelection | null>(props.initialSelection);
-  const [wideLayout, setWideLayout] = createSignal(false);
+  // Fokus has no reader: from 48 rem a chosen conversation opens its Detail, as a column while Main keeps 420 px and
+  // otherwise as the drawer. Phones open the reader instead. A server-rendered selection starts open.
+  const [wideLayout, setWideLayout] = createSignal(true);
   const detailOpen = () => wideLayout() && selection() !== null;
   const closeDetail = () => {
     setSelection(null);
@@ -244,9 +231,12 @@ function MailOverviewView(props: {
     void focusResults().refresh();
   };
 
-  let overview: HTMLDivElement | undefined;
   onMount(() => {
-    if (overview) onCleanup(watchAppHostWidth(overview, 64, setWideLayout));
+    const tablet = window.matchMedia("(min-width: 48rem)");
+    const followViewport = () => setWideLayout(tablet.matches);
+    followViewport();
+    tablet.addEventListener("change", followViewport);
+    onCleanup(() => tablet.removeEventListener("change", followViewport));
     const stop = listenPopState(({ url }) => {
       const parsed = url.searchParams.get("view");
       showView(parsed === "unassigned" || parsed === "waiting" || parsed === "all" ? parsed : "mine");
@@ -281,29 +271,24 @@ function MailOverviewView(props: {
           <span class="sr-only">{messages().loadingFocus}</span>
           <For each={skeletonRows()}>
             {() => (
-              <div class="mail-focus-row" aria-hidden="true">
-                <span class="mail-focus-unread-slot" />
-                <span class="mail-focus-avatar mail-focus-skeleton-shape" />
-                <span class="mail-focus-copy">
-                  <span class="mail-focus-sender">
-                    <span class="mail-focus-skeleton-shape" style={{ width: "8rem" }} />
-                  </span>
-                  <span class="mail-focus-subject">
-                    <span class="mail-focus-skeleton-shape" style={{ width: "60%" }} />
-                  </span>
-                  <span class="mail-focus-preview">
-                    <span class="mail-focus-skeleton-shape" style={{ width: "85%" }} />
-                  </span>
-                  <span class="mail-focus-meta">
-                    <span>
+              <div class="mail-list-entry mail-focus-row" data-lines="4" aria-hidden="true">
+                <span class="mail-list-row">
+                  <span class="mail-row-dot" />
+                  <span class="mail-row-lines">
+                    <span class="mail-row-from">
+                      <span class="mail-focus-skeleton-shape" style={{ width: "8rem" }} />
+                    </span>
+                    <span class="mail-row-subject-line">
+                      <span class="mail-focus-skeleton-shape" style={{ width: "60%" }} />
+                    </span>
+                    <span class="mail-list-preview">
+                      <span class="mail-focus-skeleton-shape" style={{ width: "85%" }} />
+                    </span>
+                    <span class="mail-row-extra">
                       <span class="mail-focus-skeleton-shape" style={{ width: "10rem" }} />
                     </span>
                   </span>
                 </span>
-                <span class="mail-focus-time">
-                  <span class="mail-focus-skeleton-shape" style={{ width: "3rem" }} />
-                </span>
-                <span class="mail-focus-chevron" />
               </div>
             )}
           </For>
@@ -331,53 +316,63 @@ function MailOverviewView(props: {
             {(item) => (
               <a
                 href={`/app/mail/${item.mailboxId}?conversation=${item.id}`}
-                class="mail-focus-row group"
-                classList={{ "is-selected": selection()?.conversationId === item.id && selection()?.mailboxId === item.mailboxId }}
+                class="mail-list-entry mail-focus-row"
+                classList={{
+                  "mail-list-entry-unread": item.unread,
+                  "mail-list-entry-active": selection()?.conversationId === item.id && selection()?.mailboxId === item.mailboxId,
+                }}
+                data-lines="4"
                 aria-current={selection()?.conversationId === item.id && selection()?.mailboxId === item.mailboxId ? "true" : undefined}
                 onClick={(event) => selectConversation(event, { mailboxId: item.mailboxId, conversationId: item.id })}
               >
-                <span class="mail-focus-unread-slot" aria-hidden="true">
-                  <Show when={item.unread}>
-                    <span class="mail-focus-unread-dot" />
-                  </Show>
-                </span>
-                <span class="mail-focus-avatar" data-tone={avatarTone(item.participantSummary)} aria-hidden="true">
-                  {participantInitials(item.participantSummary)}
-                </span>
-                <span class="mail-focus-copy">
-                  <span class="mail-focus-sender">{primaryParticipant(item.participantSummary, messages().unknownSender)}</span>
-                  <span class={`mail-focus-subject ${item.unread ? "mail-focus-subject-unread" : ""}`}>
-                    {item.subject || messages().noSubject}
-                  </span>
-                  <span class="mail-focus-preview">{item.preview || messages().noPreview}</span>
-                  <span class="mail-focus-meta">
-                    <span>
-                      <i class="ti ti-inbox" aria-hidden="true" /> {item.mailboxName}
+                <span class="mail-list-row">
+                  <span class="mail-row-dot" aria-hidden="true" />
+                  <span class="mail-row-lines">
+                    <span class="mail-row-from">
+                      <span class="mail-row-sender">{primaryParticipant(item.participantSummary, messages().unknownSender)}</span>
+                      <time
+                        class="mail-row-time"
+                        dateTime={item.latestMessageAt}
+                        title={dates.formatDateTime(item.latestMessageAt, props.dateConfig)}
+                      >
+                        {dates.formatDateTimeRelative(item.latestMessageAt, props.dateConfig)}
+                      </time>
                     </span>
-                    <span class={item.workStatus === "waiting" ? "mail-focus-status-waiting" : "mail-focus-status-action"}>
-                      <i class={item.workStatus === "waiting" ? "ti ti-clock" : "ti ti-message-exclamation"} aria-hidden="true" />
-                      {item.workStatus === "waiting" ? messages().waiting : messages().needsAction}
+                    <span class="mail-row-subject-line">
+                      <span class="mail-row-subject">{item.subject || messages().noSubject}</span>
+                      <span class="mail-row-marks">
+                        <Show when={item.hasAttachments}>
+                          <span class="mail-row-mark" role="img" aria-label={messages().attachment}>
+                            <i class="ti ti-paperclip" aria-hidden="true" />
+                          </span>
+                        </Show>
+                        <Show when={item.flagged}>
+                          <span class="mail-row-mark mail-row-flag" role="img" aria-label={messages().flagged}>
+                            <i class="ti ti-flag-filled" aria-hidden="true" />
+                          </span>
+                        </Show>
+                        <Show when={item.assigneeUserIds.length > 0}>
+                          <span class="mail-row-mark" role="img" aria-label={messages().assigned}>
+                            <i class="ti ti-user-check" aria-hidden="true" />
+                          </span>
+                        </Show>
+                      </span>
                     </span>
-                    <Show when={item.flagged}>
-                      <span>
-                        <i class="ti ti-flag-filled" aria-hidden="true" /> {messages().flagged}
+                    <span class="mail-list-preview">{item.preview || messages().noPreview}</span>
+                    <span class="mail-row-extra">
+                      <span class="mail-row-mailbox">
+                        <i class="ti ti-inbox" aria-hidden="true" />
+                        {item.mailboxName}
                       </span>
-                    </Show>
-                    <Show when={item.hasAttachments}>
-                      <span>
-                        <i class="ti ti-paperclip" aria-hidden="true" /> {messages().attachment}
-                      </span>
-                    </Show>
+                      <Show when={item.workStatus === "waiting"}>
+                        <span class="mail-row-waiting">
+                          <i class="ti ti-hourglass" aria-hidden="true" />
+                          {messages().waiting}
+                        </span>
+                      </Show>
+                    </span>
                   </span>
                 </span>
-                <time
-                  class="mail-focus-time"
-                  dateTime={item.latestMessageAt}
-                  title={dates.formatDateTime(item.latestMessageAt, props.dateConfig)}
-                >
-                  {dates.formatDateTimeRelative(item.latestMessageAt, props.dateConfig)}
-                </time>
-                <i class="ti ti-chevron-right mail-focus-chevron" aria-hidden="true" />
               </a>
             )}
           </For>
@@ -421,8 +416,13 @@ function MailOverviewView(props: {
         primary={{ label: messages().compose, icon: "ti ti-pencil", href: "/app/mail/compose" }}
       />
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="mail-focus-main" width="content" aria-busy={focusResults().loading() || focusResults().refreshing()}>
-          <div ref={overview} class="mail-overview-page">
+        <AppWorkspace.Main
+          class="mail-focus-main"
+          width="content"
+          minWidth={MAIL_FOCUS_MAIN_MIN}
+          aria-busy={focusResults().loading() || focusResults().refreshing()}
+        >
+          <div class="mail-overview-page">
             <div class="mail-overview-list">{focusPanel()}</div>
           </div>
         </AppWorkspace.Main>
