@@ -167,6 +167,8 @@ export function MapView(props: MapViewProps): JSX.Element {
         attributionControl: false,
         cooperativeGestures: true,
         dragRotate: false,
+        // Shift-drag box zoom needs MapLibre's own stylesheet for its rectangle and starts without an input event.
+        boxZoom: false,
         pitchWithRotate: false,
         touchPitch: false,
         maxPitch: 0,
