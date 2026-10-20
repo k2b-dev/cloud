@@ -5,11 +5,21 @@ const SCROLL_PRESERVE_SELECTOR = "[data-scroll-preserve]";
 /** Where an installed page swap keeps its per-document state (see nav-swap.ts). */
 export const swapKey = Symbol.for("@k2b/ssr/nav-swap");
 
-type SharedSwap = typeof globalThis & { [swapKey]?: { active?: AbortController; started: number } };
+type SharedSwap = typeof globalThis & {
+  [swapKey]?: {
+    active?: AbortController;
+    started: number;
+    decide?: (event: PopStateEvent) => "page" | "nav";
+    stopRestore?: () => void;
+    /** The departing scroll a history helper captured before the island changed the page, for the next push. */
+    departure?: ScrollSnapshot;
+  };
+};
 
-/** Any newer navigation wins over a pending page swap. Without an installed swap this does nothing. */
+/** Any newer navigation wins over a pending page swap and a pending reload scroll replay. Without an installed swap this does nothing. */
 export const cancelPageSwap = (): void => {
   const shared: SharedSwap = globalThis;
+  shared[swapKey]?.stopRestore?.();
   shared[swapKey]?.active?.abort();
 };
 
@@ -95,13 +105,15 @@ export const restoreScroll = (snapshot: ScrollSnapshot, options: { window?: bool
 };
 
 /**
- * Subscribes to browser Back/Forward navigation.
+ * Subscribes to browser Back/Forward within the shown page when page swaps are installed.
  *
  * The application remains responsible for reconciling its island state with
  * the URL. This helper intentionally does not perform route matching.
  */
 export const listenPopState = (handler: (navigation: PopStateNavigationEvent) => void): (() => void) => {
   const listener = (event: PopStateEvent) => {
+    const shared: SharedSwap = globalThis;
+    if (shared[swapKey]?.decide?.(event) === "nav") return;
     handler({ event, url: new URL(window.location.href), state: event.state });
   };
 
@@ -138,7 +150,18 @@ export const navigate = (href: string, options: EnhancedNavigateOptions = {}): v
     const state = hasExplicitState ? options.state : options.replace ? window.history.state : null;
 
     if (options.replace) window.history.replaceState(state, "", target);
-    else window.history.pushState(state, "", target);
+    else {
+      const shared: SharedSwap = globalThis;
+      const swap = shared[swapKey];
+      // Manual scrolling only skips the arrival scroll; a supplied snapshot still records the departure.
+      const departure = options.scrollSnapshot ?? snapshot;
+      if (swap && departure) swap.departure = departure;
+      try {
+        window.history.pushState(state, "", target);
+      } finally {
+        if (swap) swap.departure = undefined;
+      }
+    }
 
     if (!snapshot) return;
     restoreRegionScroll(snapshot);
