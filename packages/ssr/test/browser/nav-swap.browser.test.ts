@@ -1820,6 +1820,18 @@ test("a navigate() push records the departure scroll it captured before the isla
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 900);
 });
 
+test("a non-plain replace during a traversal fetch still lets the traversal commit", async () => {
+  install();
+  const requests = deferredFetch(true);
+  arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new");
+  window.history.replaceState([], "");
+  const done = swapped("new");
+  requests[0]!.resolve(response());
+  await done;
+  expect(window.history.state).toEqual([]);
+  expect(document.title).toBe("new");
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;

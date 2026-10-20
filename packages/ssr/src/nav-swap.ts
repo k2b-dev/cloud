@@ -167,16 +167,9 @@ const patchHistory = (): HistoryWrites => {
   };
   return writes;
 };
-const stillCurrent = (state: SwapState, traversal: Traversal): boolean => {
-  const entry = marker(window.history.state);
-  return (
-    window.location.href === traversal.href &&
-    window.navigation?.currentEntry?.key === traversal.key &&
-    state.pushes === traversal.pushes &&
-    entry?.page === traversal.entry.page &&
-    (entry === undefined || entry.position === traversal.entry.position)
-  );
-};
+// Entry identity, not its state: a replace during the fetch, even one that drops the marker, keeps the same entry.
+const stillCurrent = (state: SwapState, traversal: Traversal): boolean =>
+  window.location.href === traversal.href && window.navigation?.currentEntry?.key === traversal.key && state.pushes === traversal.pushes;
 const abort = (state: SwapState): void => {
   state.active?.abort();
   state.active = undefined;
@@ -671,7 +664,8 @@ const commit = (
     const writes = patchHistory();
     let entry: Marker;
     if (traversal) {
-      entry = marker(window.history.state) ?? { page: newPage(state), position: traversal.entry.position };
+      const { page, position } = traversal.entry;
+      entry = marker(window.history.state) ?? { page: page ?? newPage(state), position };
       if (!marker(window.history.state) && (window.history.state == null || plain(window.history.state))) {
         writes.replace.call(window.history, mergeMarker(window.history.state, entry), "");
         traversal.entry = marker(window.history.state) ?? traversal.entry;

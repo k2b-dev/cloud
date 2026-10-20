@@ -263,7 +263,8 @@ wait for it either. A push through `navigate()` records the departure scroll
 the helper captured before the island changed the page. Cross-page
 and unmarked entries stopImmediatePropagation and fetch the arriving URL in
 the swap transaction without pushing history. Commit and reload recovery must
-still own that URL, marker, and Navigation API entry key; a different final
+still own that entry (same URL, Navigation API key, and no newer push), even
+after a replace that dropped its marker; a different final
 URL reloads, and so does a cleanup that moves history after disposal. Restore window
 and keyed regions from the entry's in-memory snapshot, then its stored scroll,
 otherwise use top/hash scrolling. Snapshots belong to the shown entry: when no
