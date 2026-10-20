@@ -664,12 +664,13 @@ const commit = (
     const writes = patchHistory();
     let entry: Marker;
     if (traversal) {
-      const { page, position } = traversal.entry;
-      entry = marker(window.history.state) ?? { page: page ?? newPage(state), position };
-      if (!marker(window.history.state) && (window.history.state == null || plain(window.history.state))) {
+      // The arriving identity was fixed at the decision; a cleanup's replace may have stamped the departing page.
+      const { page = newPage(state), position } = traversal.entry;
+      const stored = marker(window.history.state);
+      entry = { ...(stored?.page === page ? stored : {}), page, position };
+      if (stored?.page !== page && (window.history.state == null || plain(window.history.state)))
         writes.replace.call(window.history, mergeMarker(window.history.state, entry), "");
-        traversal.entry = marker(window.history.state) ?? traversal.entry;
-      }
+      traversal.entry = entry;
     } else {
       const departing = currentEntry(state);
       const stored = marker(window.history.state);

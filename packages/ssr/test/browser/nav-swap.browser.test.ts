@@ -1832,6 +1832,22 @@ test("a non-plain replace during a traversal fetch still lets the traversal comm
   expect(document.title).toBe("new");
 });
 
+test("a cleanup replace during a traversal commit keeps the arriving page identity", async () => {
+  install();
+  const requests = deferredFetch(true);
+  const dispose = () => window.history.replaceState({ cleanup: 1 }, "");
+  window.addEventListener("ssr:island-dispose", dispose, { once: true });
+  try {
+    arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new");
+    const done = swapped("new");
+    requests[0]!.resolve(response());
+    await done;
+    expect(window.history.state).toEqual({ cleanup: 1, [markerKey]: { page: "other", position: 5 } });
+  } finally {
+    window.removeEventListener("ssr:island-dispose", dispose);
+  }
+});
+
 test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
   install();
   const a0 = window.history.state;
