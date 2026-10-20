@@ -7,11 +7,57 @@ import {
   dockerEnvironment,
   envFileContents,
   HELP,
+  knownMailGatewayGap,
+  mailAttachmentBytes,
+  mailErrorCode,
+  mailLeaseBusy,
   parseOptions,
   type Replica,
   SCALED_APPS,
 } from "./scale-acceptance";
 import { appIds } from "./workspace";
+
+describe("Mail compose acceptance helpers", () => {
+  test("reads flattened respond errors and nested envelopes without trusting JSON", () => {
+    expect(mailErrorCode({ code: "DRAFT_LEASE_HELD", message: "Held" })).toBe("DRAFT_LEASE_HELD");
+    expect(mailErrorCode({ error: { code: "DRAFT_LEASE_NOT_OWNED", message: "Lost" } })).toBe("DRAFT_LEASE_NOT_OWNED");
+    for (const body of [null, undefined, [], "Not found", { code: 409 }, { error: "Held" }, { error: { code: null } }]) {
+      expect(mailErrorCode(body)).toBeUndefined();
+    }
+  });
+  test("only 409 lease BUSY qualifies for the save/heartbeat retry", () => {
+    expect(mailLeaseBusy({ status: 409, body: { code: "DRAFT_LEASE_BUSY" } })).toBe(true);
+    expect(mailLeaseBusy({ status: 409, body: { error: { code: "DRAFT_LEASE_BUSY" } } })).toBe(true);
+    for (const status of [200, 404, 500, 503]) expect(mailLeaseBusy({ status, body: { code: "DRAFT_LEASE_BUSY" } })).toBe(false);
+    for (const code of ["DRAFT_LEASE_HELD", "DRAFT_LEASE_NOT_OWNED", "CONFLICT", undefined]) {
+      expect(mailLeaseBusy({ status: 409, body: { code } })).toBe(false);
+    }
+  });
+  test("#1561 exempts only the exact Core fallthrough or the gateway unmatched response", () => {
+    const core = { status: 404, body: { code: "NOT_FOUND", message: "Not found" } };
+    expect(knownMailGatewayGap({ status: 404, body: { code: "NOT_FOUND", message: "Not found" } }, core)).toBe(true);
+    expect(knownMailGatewayGap({ status: 404, body: "404 Not Found" }, { status: 404, body: "404 Not Found" })).toBe(true);
+    expect(knownMailGatewayGap({ status: 502, body: "Bad Gateway — no app registered for this path" }, core)).toBe(true);
+    for (const answer of [
+      { status: 404, body: { code: "NOT_FOUND", message: "Editable draft not found" } },
+      { status: 404, body: "Mail route not found" },
+      { status: 409, body: { code: "DRAFT_LEASE_HELD" } },
+      { status: 500, body: core.body },
+      { status: 502, body: "Bad Gateway — upstream unavailable" },
+      { status: 503, body: "Bad Gateway — no app registered for this path" },
+    ])
+      expect(knownMailGatewayGap(answer, core)).toBe(false);
+  });
+  test("split attachment fixture has stable bytes and SHA-256", () => {
+    const bytes = mailAttachmentBytes(1024 * 1024 + 300 * 1024, 0x5ca1e);
+    expect(bytes.byteLength).toBe(1_355_776);
+    expect(new Bun.CryptoHasher("sha256").update(bytes).digest("hex")).toBe(
+      "a95e91ce4c40ad8ac6844899eec6ee2e21c2535070e8f1b1c0374f55d033fc95",
+    );
+    expect(mailAttachmentBytes(32, 0x5ca1e)).toEqual(bytes.slice(0, 32));
+    expect(mailAttachmentBytes(32, 1)).not.toEqual(bytes.slice(0, 32));
+  });
+});
 
 describe("scale acceptance configuration", () => {
   test("parses only supported arguments", () => {

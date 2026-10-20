@@ -1024,14 +1024,21 @@ Compose project with its own PostgreSQL, NATS, Valkey, and SMTP sink. It never
 uses the development stack or `.env`, and it removes every container, volume,
 and built image tag when it ends, also after a failure or a signal.
 
-Each scenario step addresses one replica container through its own published
-port, so no step can reach the same replica twice by accident:
+Steps pin requests to one replica through its own published port, except the
+Mail steps that explicitly use the gateway:
 
 - a Chat message posted on replica A reaches a live socket on replica B;
 - a Notebooks Yjs update sent through replica A reaches a client on replica B;
 - one durable outgoing mail is delivered once while two Core replicas run;
-- a Mail draft lease taken on replica A is saved and renewed on replica B;
-- a second acquire of that lease on replica B returns 409 with the holder;
+- Mail compose opens through the gateway; acquiring again on B with the same editor returns A's lease;
+- six Mail autosaves alternate between A and B without lost revisions or recovery copies;
+- Mail heartbeats on B keep the lease while eight concurrent saves run on A;
+- reloading Mail compose releases on one pod and acquires on the other;
+- a Mail takeover on B reaches the old editor live on A and rejects its old token;
+- a Mail attachment upload starts on A, resumes and finishes on B, and downloads intact on A;
+- sending a Mail draft on B removes its editing lease everywhere;
+- Mail A restarts gracefully while editing continues through B and the gateway;
+  gateway routing gaps from #1561 are recorded instead of failed;
 - Core is killed with SIGKILL while it sends a mail, and the other Core
   replica delivers it exactly once after recovery, which takes about five
   minutes.
