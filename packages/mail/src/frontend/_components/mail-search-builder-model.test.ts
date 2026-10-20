@@ -206,4 +206,22 @@ describe("Mail search builder model", () => {
     );
     expect(summarizeMailSearchExpression(expression, "de")).toBe("(In einem bestimmten Ordner) und (Mit einem bestimmten Tag)");
   });
+
+  test("describes assignee filters without exposing principal IDs", () => {
+    const userId = "11111111-1111-4111-8111-111111111111";
+    const expression: MailSearchExpression = {
+      type: "not",
+      expression: { type: "assignee", userId },
+    };
+    for (const [locale, expected] of [
+      ["en", "not (Assigned to a specific person)"],
+      ["de-CH", "nicht (Einer bestimmten Person zugewiesen)"],
+    ] as const) {
+      const summary = summarizeMailSearchExpression(expression, locale);
+      expect(summary).toBe(expected);
+      expect(summary).not.toContain(userId);
+    }
+    expect(summarizeMailSearchExpression({ type: "assignee", userId: null }, "en")).toBe("Unassigned");
+    expect(summarizeMailSearchExpression({ type: "assignee", userId: null }, "de")).toBe("Nicht zugewiesen");
+  });
 });

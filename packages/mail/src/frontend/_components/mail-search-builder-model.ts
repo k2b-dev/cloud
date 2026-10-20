@@ -251,7 +251,7 @@ export const summarizeMailSearchExpression = (
     if (node.type === "work_status") {
       return `${messages.workStatus}: ${messages.automationStatus({ status: node.value })}`;
     }
-    if (node.type === "assignee") return node.userId ? messages.assignedTo({ id: node.userId }) : messages.unassigned;
+    if (node.type === "assignee") return node.userId ? messages.assignedToSpecificPerson : messages.unassigned;
     if (node.type === "snoozed") return node.value ? messages.isSnoozed : messages.isNotSnoozed;
     if (node.type === "folder_id") {
       if (!folderPaths) return messages.inSpecificFolder;
