@@ -12,6 +12,7 @@ import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import type { MailDraft } from "../contracts";
 import * as access from "../service/access";
+import * as reviewReaders from "../service/capability-review-readers";
 import * as drafts from "../service/drafts";
 import * as publicResources from "../service/public-resources";
 
@@ -74,14 +75,14 @@ beforeEach(() => {
   spies.push(spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(draftId));
 });
 
-const request = (locale = "en") =>
+const request = (locale = "en", query = "") =>
   new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
     .use("*", async (c, next) => {
       c.set("runtime", { apps: [] });
       await next();
     })
     .route("/app/mail", mailPages)
-    .request("https://cloud.example.test/app/mail/Box001/drafts/Drf001", { headers: { "accept-language": locale } });
+    .request("https://cloud.example.test/app/mail/Box001/drafts/Drf001" + query, { headers: { "accept-language": locale } });
 
 test("a member who may only read opens the draft without the composer", async () => {
   // The read view never asks for write access; a denied writer check must not matter here.
@@ -118,4 +119,82 @@ test("a draft the caller may not read shows nothing of it", async () => {
 
   expect(response.status).toBe(404);
   expect(await response.text()).not.toContain("Quarterly offer");
+});
+
+test("a send-review link shows the complete rendered revision, sender and generated parts", async () => {
+  const body = "Resolved message and signature\n" + "Complete effective content. ".repeat(1000) + "END OF SIGNATURE";
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok(draft)));
+  const content = spyOn(reviewReaders, "loadSendReviewContent").mockResolvedValue(
+    ok({
+      contentHash: "a".repeat(64),
+      from: { name: "The sender", address: "sender@example.test" },
+      draft: {
+        ...draft,
+        body,
+        format: "plain",
+        attachments: [
+          { filename: "logo.png", byteLength: 200 },
+          { filename: "contact.vcf", byteLength: 80 },
+        ],
+      },
+    }),
+  );
+  spies.push(content);
+  const response = await request("en", "?revision=1&sendContent=" + "a".repeat(64));
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(html).toContain("sender@example.test");
+  expect(html).toContain("END OF SIGNATURE");
+  expect(html).toContain("logo.png");
+  expect(html).toContain("contact.vcf");
+  expect(html).not.toContain("Please find");
+  expect(content.mock.calls[0]?.[0]).toMatchObject({ mailboxId, draft, senderIdentityId: draft.senderIdentityId });
+});
+
+test("an outdated or invalid review link never substitutes the current draft", async () => {
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok(draft)));
+  const content = spyOn(reviewReaders, "loadSendReviewContent");
+  spies.push(content);
+  for (const query of ["?revision=2", "?revision=0", "?revision=abc", "?revision=1.5"]) {
+    const response = await request("de", query);
+    expect(response.status).toBe(409);
+    const html = await response.text();
+    expect(html).not.toContain("Please find");
+    expect(html).toContain("erneut");
+  }
+  expect(content).not.toHaveBeenCalled();
+});
+
+test("a failed effective-content read cannot fall back to the raw draft", async () => {
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok(draft)));
+  spies.push(spyOn(reviewReaders, "loadSendReviewContent").mockResolvedValue(fail(err.badInput("Draft changed"))));
+  const response = await request("en", "?revision=1&sendContent=" + "a".repeat(64));
+  expect(response.status).toBe(400);
+  expect(await response.text()).not.toContain("Please find");
+});
+
+test("ordinary revision links allow recipient-free drafts and do not require a sender", async () => {
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok({ ...draft, to: [], cc: [], bcc: [], senderIdentityId: null })));
+  const content = spyOn(reviewReaders, "loadSendReviewContent");
+  spies.push(content);
+  const response = await request("en", "?revision=1");
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain("our offer");
+  expect(content).not.toHaveBeenCalled();
+});
+
+test("a changed effective send fingerprint never shows a substituted message", async () => {
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok(draft)));
+  spies.push(
+    spyOn(reviewReaders, "loadSendReviewContent").mockResolvedValue(
+      ok({
+        contentHash: "b".repeat(64),
+        from: { address: "sender@example.test" },
+        draft,
+      }),
+    ),
+  );
+  const response = await request("en", "?revision=1&sendContent=" + "a".repeat(64));
+  expect(response.status).toBe(409);
+  expect(await response.text()).not.toContain("Please find");
 });

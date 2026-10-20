@@ -27,6 +27,8 @@ Der Assistant-Chat kopiert die Nachricht nicht in einen separaten Mail-Entwurf u
 
 Wenn der Assistent diesen Entwurf senden möchte, zeigt eine Leiste über dem Entwurf die wartende Anfrage. Prüfe die Anfrage dort. Du kannst sie freigeben oder ablehnen, ohne zum Chat zurückzukehren.
 
+Die Frage zum Senden zeigt Absender, An, Cc und Bcc, Anhänge, Zeitpunkt und die Warnungen von Mail. Öffne ihren Entwurfslink für die vollständige Nachricht mit Signatur und erzeugten Anhängen. Hat sich der Entwurf geändert, lass den Assistant ihn erneut prüfen. Nach deiner Freigabe bestätigt „wird gesendet“ oder „geplant für“ den Auftrag, nicht die Zustellung.
+
 ## Cloud Mail für E-Mail-Links verwenden {icon="link"}
 
 Du kannst den aktuellen Browser bitten, Cloud Mail für normale `mailto:`-Links zu verwenden:

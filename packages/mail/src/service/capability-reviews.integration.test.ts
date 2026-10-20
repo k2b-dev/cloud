@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts } from "@k2b/cloud/services";
@@ -8,8 +8,10 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
-import { draftReviewAudience, grantMailboxAccess, revokeMailboxAccess } from "./access";
+import { draftReviewAudience, grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { loadSendReviewContent } from "./capability-review-readers";
+import { getDraft } from "./drafts";
 import { createLocalTag } from "./local-tags";
 import { createMailbox } from "./mailboxes";
 import { publicIds } from "./public-resources";
@@ -58,7 +60,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     grantIds.push(entry.id);
     return entry.id;
   };
-  const revoke = async (id: string) => unwrap(await revokeMailboxAccess({ context: owner, mailboxId, accessId: id }));
 
   beforeAll(migrate, 30_000);
 
@@ -334,7 +335,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       query: "draft.send.check",
       input: { mailboxId: mailboxShortId, draftId: draftShortId, expectedRevision: 7 },
     });
-    expect(review.links?.[0]?.href).toEndWith("?revision=7");
+    expect(review.links?.[0]?.href).toContain("?revision=7&sendContent=");
     const immediate = unwrap(await mailCapabilities.actions["draft.send"].review({ ...input, scheduledAt: undefined }, context()));
     expect(immediate.consequences?.[0]?.text).toContain("20 Sekunden");
     const noUndo = unwrap(
@@ -353,6 +354,71 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       });
     } finally {
       await sql`UPDATE mail.drafts SET to_addresses = ${[recipient]}::jsonb WHERE id = ${draftId}::uuid`;
+    }
+  }, 30_000);
+
+  test("a signature change beyond the display limit changes the approval digest", async () => {
+    await sql`UPDATE mail.drafts SET body_markdown = ${"Long body. ".repeat(2000)} WHERE id = ${draftId}::uuid`;
+    const input = { mailboxId: mailboxShortId, draftId: draftShortId, senderIdentityId: identityShortId, expectedRevision: 7 };
+    const first = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));
+    await sql`UPDATE mail.compose_templates SET body_template = 'Changed signature', revision = revision + 1
+      WHERE id = (SELECT signature_template_id FROM mail.drafts WHERE id = ${draftId}::uuid)`;
+    const second = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));
+    expect(first.preview).toEqual(second.preview);
+    expect(first.links).not.toEqual(second.links);
+  }, 30_000);
+
+  test("time-dependent content beyond the display limit changes the approval digest", async () => {
+    await sql`UPDATE mail.drafts SET body_markdown = ${"Long body. ".repeat(2000)} WHERE id = ${draftId}::uuid`;
+    const signature = "{{ 'now' | date: '%s' }}";
+    await sql`UPDATE mail.compose_templates SET body_template = ${signature}
+      WHERE id = (SELECT signature_template_id FROM mail.drafts WHERE id = ${draftId}::uuid)`;
+    const input = { mailboxId: mailboxShortId, draftId: draftShortId, senderIdentityId: identityShortId, expectedRevision: 7 };
+    try {
+      setSystemTime(new Date(at));
+      const first = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));
+      setSystemTime(new Date("2026-10-20T06:01:00.000Z"));
+      const second = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));
+      expect(first.preview).toEqual(second.preview);
+      expect(first.links).not.toEqual(second.links);
+    } finally {
+      setSystemTime();
+    }
+  }, 30_000);
+
+  test("a user-delegated API key and its browser user have the same hash for the same rendered message", async () => {
+    if (owner.actor.kind !== "user") throw new Error("Expected fixture owner user");
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, delegated_user_id)
+      VALUES ('Review API key', 'user_delegated', ${ownerId}::uuid) RETURNING id`;
+    if (!account) throw new Error("Missing delegated fixture account");
+    try {
+      const delegated: MailRequestContext = {
+        ...owner,
+        actor: {
+          kind: "service_account",
+          delegatedUser: owner.actor.user,
+          scopes: [],
+          serviceAccount: {
+            id: account.id,
+            name: "Review API key",
+            kind: "user_delegated",
+            status: "active",
+            delegatedUserId: ownerId,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: null,
+            createdAt: at,
+          },
+        },
+      };
+      const draft = unwrap(await getDraft(owner, mailboxId, draftId));
+      const browser = unwrap(await loadSendReviewContent({ context: owner, mailboxId, draft, senderIdentityId: identityId }));
+      const apiKey = unwrap(await loadSendReviewContent({ context: delegated, mailboxId, draft, senderIdentityId: identityId }));
+      expect(apiKey.draft).toEqual(browser.draft);
+      expect(apiKey.contentHash).toBe(browser.contentHash);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${account.id}::uuid`;
     }
   }, 30_000);
 

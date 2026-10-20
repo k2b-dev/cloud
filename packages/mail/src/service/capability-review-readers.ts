@@ -2,9 +2,10 @@
 import type { CapabilityPerson } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import { type DraftPreviewSource, reviewPerson } from "../capability-reviews";
 import type { MailDraft } from "../contracts";
-import { reviewPerson, type DraftPreviewSource } from "../capability-reviews";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { sha256Json } from "./canonical";
 import { renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
 import { mailboxLogoContentId } from "./mailbox-logos";
 
@@ -40,7 +41,7 @@ export const loadSendReviewContent = async (params: {
   mailboxId: string;
   draft: MailDraft;
   senderIdentityId: string;
-}): Promise<Result<{ draft: DraftPreviewSource; from: CapabilityPerson }>> => {
+}): Promise<Result<{ draft: DraftPreviewSource; from: CapabilityPerson; contentHash: string }>> => {
   const actor = actorRefFromRequest(params.context);
   const actorUserId = actor.kind === "user" ? actor.userId : actor.kind === "service_account" ? actor.delegatedUserId : null;
   const accountId = actor.kind === "service_account" ? actor.serviceAccountId : null;
@@ -103,6 +104,15 @@ export const loadSendReviewContent = async (params: {
   if (parts.vcard) attachments.push({ filename: "contact.vcf", byteLength: Buffer.byteLength(parts.vcard) });
   // rendered.text is the MIME text alternative, including the resolved signature and HTML-to-text conversion.
   return ok({
+    // Bind the full effective message, including time-dependent Liquid output and
+    // generated MIME parts. Unused actor metadata must not invalidate the same message.
+    contentHash: sha256Json({
+      draft: d,
+      rendered: rendered.data,
+      from: { name: parts.display_name, address: parts.from_address, replyTo: parts.reply_to },
+      vcard: parts.vcard,
+      logoVersion: parts.logo_id,
+    }),
     from: reviewPerson({ name: parts.display_name, address: parts.from_address }),
     draft: { ...d, body: rendered.data.text, format: "plain", attachments },
   });

@@ -1110,6 +1110,9 @@ envelope. Query data may use `CapabilityActionCheckSchema`, returning
 `{ outcome: "done" | "not_done" | "pending", receipt? }`. Mail uses the dedicated
 `draft.send.check` Query to read the delivery state for an exact draft revision;
 queued or accepted delivery does not claim that the email has been sent.
+Mail send reviews link to a revision-checked read view of the complete rendered
+message, including its signature and generated attachments. A changed draft
+returns a conflict instead of substituting newer content.
 
 The five `CapabilityActionOutcome` states are `running`, `done`, `rejected`,
 `not_run`, and `unknown`. A done result uses its receipt when supplied, otherwise

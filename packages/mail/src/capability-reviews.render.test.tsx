@@ -8,7 +8,7 @@ import type { CapabilityActionCallReview } from "@k2b/cloud/contracts";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { mailActionReviews, buildSendReview, draftPreview, reviewObject, type SendReviewSource } from "./capability-reviews";
+import { buildSendReview, draftPreview, mailActionReviews, reviewObject, type SendReviewSource } from "./capability-reviews";
 
 const root = mkdtempSync(resolve(tmpdir(), "mail-review-render-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -18,6 +18,7 @@ const { AiTurnBlockView, AiChatActionsProvider } = await import("@k2b/cloud/ai/u
 const { LocaleProvider } = await import("@k2b/ui");
 
 const source: SendReviewSource = {
+  contentHash: "a".repeat(64),
   draft: {
     subject: "Update",
     body: "Hello Lea,\nThe maintenance window is confirmed.\n\nValentin",

@@ -390,7 +390,7 @@ const en = {
   "folder.display.set.hidden": {
     action: "Hide the folder {folder} and its mail",
     running: "Hiding the folder {folder} and its mail …",
-    done: "Hidden the folder {folder} and its mail.",
+    done: "The folder {folder} and its mail are hidden.",
     confirm: "Hide folder and mail",
     decline: "Don't change",
     rejected: "Didn't change where mail from the folder {folder} appears.",
@@ -800,6 +800,7 @@ export const mailReviewMessages = (locale?: string) => (mailReviewLocale(locale)
 
 const copy = {
   en: {
+    folderInherited: "Mail in {folder} follows the visibility of {parent}.",
     sharedDraft: "Everyone with access to {mailbox} sees the draft immediately.",
     notified: "{people} will be notified.",
     lostAccess: "{people} will lose access.",
@@ -815,6 +816,7 @@ const copy = {
     missing: (count: number) => ` ${count} missing.`,
   },
   de: {
+    folderInherited: "Mail in {folder} übernimmt die Sichtbarkeit von {parent}.",
     sharedDraft: "Alle mit Zugriff auf {mailbox} sehen den Entwurf sofort.",
     notified: "{people} werden benachrichtigt.",
     lostAccess: "{people} verlieren den Zugriff.",

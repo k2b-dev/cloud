@@ -1,19 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { assertCapabilityReview, checkActionReviewMessages, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
-  CapabilityActionReceiptSchema,
   CapabilityActionCheckSchema,
-  capabilityActionPolicy,
+  CapabilityActionReceiptSchema,
   type CapabilitySlot,
+  capabilityActionPolicy,
 } from "@k2b/cloud/contracts";
 import { mailCapabilities } from "./capabilities";
-import { mailReviewMessages, type MailReviewMessage } from "./capability-review-messages";
+import { type MailReviewMessage, mailReviewMessages } from "./capability-review-messages";
 import {
   batchReceipt,
   buildMailReview,
   buildSendReview,
-  mailActionReviews,
   draftPreview,
+  folderDisplayReceipt,
+  mailActionReviews,
   mailReceipt,
   reviewCount,
   reviewFieldRows,
@@ -21,12 +22,13 @@ import {
   reviewPeople,
   reviewPlace,
   reviewTime,
-  sendReceipt,
   type SendReviewSource,
+  sendReceipt,
 } from "./capability-reviews";
 import { draftSendOutcome } from "./service/capability-review-readers";
 
 export const sendSource: SendReviewSource = {
+  contentHash: "a".repeat(64),
   draft: {
     subject: "Update",
     body: "Hello Lea,\nThe maintenance window is confirmed.\n\nValentin",
@@ -192,7 +194,7 @@ describe("Mail review contract", () => {
     const eight = buildSendReview({ ...sendSource, expectedRevision: 8 }, "en");
     expect(JSON.stringify(seven)).not.toBe(JSON.stringify(eight));
     expect(eight.check?.input.expectedRevision).toBe(8);
-    expect(eight.links?.[0]?.href).toEndWith("?revision=8");
+    expect(eight.links?.[0]?.href).toContain("?revision=8&sendContent=");
   });
   test("valid worst-case Mail content fits the whole review and retains overflow counts", () => {
     for (const locale of ["en", "de"]) {
@@ -320,6 +322,15 @@ describe("Mail review contract", () => {
       );
       assertCapabilityReview(review, { ...reviewContext, policy: capabilityActionPolicy(manifest, "mailing-list.unsubscribe") });
       expect(rows.map((row) => row.value).join("")).toBe(href + address);
+    }
+  });
+  test("folder receipts preserve inherited restrictions instead of promising visibility", () => {
+    for (const locale of ["en", "de"]) {
+      const receipt = folderDisplayReceipt("hidden", reviewPlace("Child"), reviewPlace("Parent"), locale);
+      expect(CapabilityActionReceiptSchema.safeParse(receipt).success).toBeTrue();
+      expect(receipt.text).toContain("{parent}");
+      expect(receipt.text).not.toMatch(/everywhere|überall/);
+      expect(folderDisplayReceipt("hidden", reviewPlace("Child"), undefined, locale).text).toMatch(/hidden|ausgeblendet/i);
     }
   });
   test("recipient-free drafts have page previews; Cc/Bcc-only sends name real recipients", () => {

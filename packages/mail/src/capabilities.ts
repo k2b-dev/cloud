@@ -22,13 +22,17 @@ import type { z } from "zod";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";
 import { mailCapabilityPresentation } from "./capability-presentation";
+import { mailReviewCopy, mailReviewLocale } from "./capability-review-messages";
 import {
-  batchReceipt,
   assignmentReviewMessage,
-  mailActionReviews,
+  batchReceipt,
   commentPreview,
   draftPreview,
+  folderDisplayReceipt,
+  type MailReviewOptions,
+  mailActionReviews,
   mailReceipt,
+  markReviewMessage,
   reviewCount,
   reviewFieldRows,
   reviewLine,
@@ -37,11 +41,7 @@ import {
   reviewPlace,
   reviewTime,
   sendReceipt,
-  markReviewMessage,
-  type MailReviewOptions,
 } from "./capability-reviews";
-import { mailReviewCopy, mailReviewLocale } from "./capability-review-messages";
-import * as reviewReaders from "./service/capability-review-readers";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
 import type { Mailbox, MailDraft, MailSearchExpression, MailSubscriptionSummary } from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
@@ -51,7 +51,6 @@ import {
   collaboration,
   commands,
   composeSafety,
-  composeTemplates,
   conversationAssignments,
   conversationContext,
   conversationKeeps,
@@ -74,6 +73,7 @@ import {
   senderIdentities,
   triage,
 } from "./service";
+import * as reviewReaders from "./service/capability-review-readers";
 import { keepError } from "./service/conversation-keep-rules";
 import { localizeMailError } from "./service/error-messages";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
@@ -243,7 +243,6 @@ const truncateText = (value: string, maxBytes: number): { text: string; truncate
 };
 
 const capabilitySummary = (value: string): string => truncateText(value, 500).text;
-const quotedSubject = (value: string | null | undefined): string => `“${truncateText(value || "(no subject)", 420).text}”`;
 const tagLabel = (value: string): string => (value.startsWith("#") ? value : `#${value}`);
 const joinedLabels = (values: string[], locale?: string): string => {
   const labels = values.map(tagLabel);
@@ -330,7 +329,6 @@ const subscriptionHref = (mailboxId: string, listKey: string): string | null => 
   return href.length <= 2048 ? href : null;
 };
 const openLink = (href: string): CapabilitySemanticLink => ({ rel: "open", href });
-const editLink = (href: string): CapabilitySemanticLink => ({ rel: "edit", href });
 const statusLink = (href: string): CapabilitySemanticLink => ({ rel: "status", href });
 
 const mailSubject = (subject: string | null | undefined, locale?: string): string =>
@@ -4087,9 +4085,12 @@ const actionDefinitions = {
           displayInheritedFromFolderId: inheritedFrom ? requirePublicId(ids, inheritedFrom) : null,
         },
         receipt: {
-          ...mailReceipt(`folder.display.set.${result.data.display}`, context.locale, {
-            folder: reviewPlace(folder.data.path, { type: "mail.folder", id: input.folderId }, "ti ti-folder"),
-          }),
+          ...folderDisplayReceipt(
+            result.data.effectiveDisplay,
+            reviewPlace(folder.data.path, { type: "mail.folder", id: input.folderId }, "ti ti-folder"),
+            inheritedFrom ? reviewPlace(folder.data.paths.get(inheritedFrom) ?? inheritedFrom, undefined, "ti ti-folder") : undefined,
+            context.locale,
+          ),
           preview: {
             kind: "fields" as const,
             rows: [
@@ -4245,7 +4246,6 @@ const actionDefinitions = {
     idempotency: "required",
     policy: { ask: "deletes" },
     review: async (input: z.output<typeof c.TagDeleteInputSchema>, context: CapabilityExecutionContext) => {
-      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);

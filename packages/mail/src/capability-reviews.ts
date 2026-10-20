@@ -1,4 +1,3 @@
-import { CAPABILITY_MAX_REVIEW_BYTES } from "@k2b/cloud/contracts";
 import { actionReview } from "@k2b/cloud/capabilities";
 import type {
   CapabilityActionCallReview,
@@ -8,9 +7,10 @@ import type {
   CapabilitySlot,
   CloudResourceRef,
 } from "@k2b/cloud/contracts";
-import type { MailAddress } from "./contracts";
+import { CAPABILITY_MAX_REVIEW_BYTES } from "@k2b/cloud/contracts";
 import { mailCapabilityMessages } from "./capability-messages";
-import { mailReviewCopy, mailReviewLocale, mailReviewMessages, type MailReviewMessage } from "./capability-review-messages";
+import { type MailReviewMessage, mailReviewCopy, mailReviewLocale, mailReviewMessages } from "./capability-review-messages";
+import type { MailAddress } from "./contracts";
 
 /** Review projections have smaller display bounds than the durable Mail objects. */
 export const reviewLine = (value: string, max = 200): string => value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, " ").slice(0, max);
@@ -205,6 +205,7 @@ export const commentPreview = (text: string, locale?: string, before?: string): 
   ...(before !== undefined && block(before).length <= 2_000 ? { changes: [{ change: "removed", text: block(before) }] } : {}),
 });
 export type SendReviewSource = {
+  contentHash: string;
   draft: DraftPreviewSource;
   from: CapabilityPerson;
   expectedRevision: number;
@@ -246,7 +247,7 @@ export const buildSendReview = (source: SendReviewSource, locale?: string): Capa
     {
       ask: "sends",
       preview: p,
-      links: [{ rel: "open", href: `${source.href}?revision=${source.expectedRevision}` }],
+      links: [{ rel: "open", href: `${source.href}?revision=${source.expectedRevision}&sendContent=${source.contentHash}` }],
       check: {
         query: "draft.send.check",
         input: { mailboxId: source.mailboxId, draftId: source.draftId, expectedRevision: source.expectedRevision },
@@ -285,6 +286,16 @@ export const sendReceipt = (
         slots,
       };
 };
+export const folderDisplayReceipt = (
+  effectiveDisplay: "everywhere" | "folder_only" | "hidden",
+  folder: CapabilitySlot,
+  parent: CapabilitySlot | undefined,
+  locale?: string,
+): CapabilityActionReceipt =>
+  parent
+    ? { text: mailReviewCopy(locale).folderInherited, slots: { folder, parent } }
+    : mailReceipt(`folder.display.set.${effectiveDisplay}`, locale, { folder });
+
 export const batchReceipt = (
   message: MailReviewMessage,
   count: number,
