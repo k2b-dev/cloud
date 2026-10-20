@@ -387,7 +387,10 @@ absorb every popstate before cancellation or restoration: no checks,
 listeners, swaps, scroll changes, or abort of newer work. When the pending
 record has a key, clear and resolve at the matching Navigation API key;
 otherwise use the shown page and position markers, even when the API exists.
-For relative rollback, clear on the first popstate and reload a wrong
+A rollback record keeps the page shown at the veto. If a newer swap committed
+meanwhile (a replace keeps the rollback target alive), its arrival is an
+ordinary traversal away from the newer page: clear the record and decide it
+as usual, so URL and column agree. For relative rollback, clear on the first popstate and reload a wrong
 arrival; rapid traversals can therefore fall back to a reload. Swallow
 `committed` rejection; on `finished` rejection clear rollback and reload,
 unless a newer swap committed since the veto and history ended on its entry.

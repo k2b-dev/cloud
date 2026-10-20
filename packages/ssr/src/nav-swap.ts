@@ -26,7 +26,8 @@ type SwapState = {
   /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
   headBase: string;
   fragment?: { event: MouseEvent; href: string };
-  rollback?: { position: number; key?: string; restored: () => void };
+  /** A vetoed traversal on its way back to the entry of `page`, the page shown at the veto. */
+  rollback?: { page: string; position: number; key?: string; restored: () => void };
 };
 const documentKey = Symbol.for("@k2b/ssr/nav-document");
 const shared: typeof globalThis & {
@@ -437,9 +438,9 @@ export function installPageSwap(): () => void {
     // A dialog-only traversal that another owner hid from nav can leave the tracked entry on a retired one.
     state.currentEntry = shown;
     state.shown = shown;
-    const pending: NonNullable<SwapState["rollback"]> = { position: shown.position, restored };
-    state.rollback = pending;
     const page = state.currentPage;
+    const pending: NonNullable<SwapState["rollback"]> = { page, position: shown.position, restored };
+    state.rollback = pending;
     const failed = (): void => {
       if (state.rollback !== pending) return;
       state.rollback = undefined;
@@ -481,6 +482,9 @@ export function installPageSwap(): () => void {
       if (known === "nav") event.stopImmediatePropagation();
       return known;
     }
+    // A newer swap committed during the rollback: the column shows that page now, so this arrival is an ordinary
+    // traversal away from it, and absorbing it would leave the URL on the vetoed page.
+    if (state.rollback && state.rollback.page !== state.currentPage) state.rollback = undefined;
     if (state.rollback) {
       const pending = state.rollback;
       absorb(event);

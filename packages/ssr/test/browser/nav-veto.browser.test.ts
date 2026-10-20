@@ -259,6 +259,36 @@ test("a failed absolute rollback keeps the entry of a newer swap that committed 
   expect(check).toHaveBeenCalledTimes(1);
 });
 
+test("a rollback that arrives after a newer replace swap committed is an ordinary traversal", async () => {
+  const { navigation } = navigationFixture();
+  const check = mock((event: BeforeLeaveEvent) => event.preventDefault());
+  const stop = register(check);
+  spyOn(window.location, "reload").mockImplementation(() => {});
+  const restored = mock(() => {});
+  const claimed = mock(() => {});
+  window.addEventListener("ssr:nav-popstate", claimed);
+  disposers.push(() => window.removeEventListener("ssr:nav-popstate", claimed));
+  departing(navigation, "B");
+  navigation.currentEntry = { key: "B", index: 1 };
+  arrive("B", 1);
+  void check.mock.calls[0]?.[0].restored.then(restored);
+  stop();
+  const page = (label: string) =>
+    `<!doctype html><html><head><title>${label}</title></head><body><div data-nav-shell="veto" data-nav-scope="/app"><nav></nav><main data-nav-root><h1>${label}</h1></main></div></body></html>`;
+  const html = (label: string) => new Response(page(label), { headers: { "content-type": "text/html" } });
+  const fetch = spyOn(globalThis, "fetch").mockResolvedValueOnce(html("C")).mockResolvedValueOnce(html("A"));
+  await swapPage("/app/C", { replace: true });
+  expect(root().querySelector("h1")?.textContent).toBe("C");
+  // The rollback still reaches A's entry, which the replace left in place.
+  departing(navigation, "A");
+  navigation.currentEntry = { key: "A", index: 2 };
+  arrive("A", 2);
+  expect(claimed).toHaveBeenCalledTimes(1);
+  expect(String(fetch.mock.calls.at(-1)?.[0])).toBe("https://example.test/app/A");
+  await Promise.resolve();
+  expect(restored).not.toHaveBeenCalled();
+});
+
 test.each(["other", "A"])("without Navigation API rollback uses history.go and reloads a wrong arrival (%s)", (page) => {
   disposers.push(installPageSwap());
   const go = spyOn(history, "go").mockImplementation(() => {});
