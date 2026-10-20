@@ -1615,7 +1615,7 @@ export function AssistantChatSidebarPanel(props: {
         }
       }}
     >
-      <DetailPanel class="assistant-context-sidebar__panel">
+      <DetailPanel surface="plain" class="assistant-context-sidebar__panel">
         <header class="assistant-context-sidebar__header">
           <h2
             id={headingId}
@@ -1723,7 +1723,7 @@ export const openAssistantChatSidebarSheet = async (props: {
             }
           />
           <BottomSheet.Body>
-            <DetailPanel class="assistant-context-sheet">
+            <DetailPanel surface="plain" class="assistant-context-sheet">
               <Show when={search.active()}>
                 <SidebarSearchField search={search} onClosed={() => undefined} />
               </Show>
@@ -1766,7 +1766,7 @@ export function AssistantChatSidebarTab(props: {
   const freeze = createReadingFreeze();
   return (
     <div class="assistant-context-tab" {...freeze.handlers}>
-      <DetailPanel>
+      <DetailPanel surface="plain">
         <div class="assistant-context-sidebar__header">
           <SidebarSearchField search={search} onClosed={() => undefined} />
         </div>

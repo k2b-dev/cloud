@@ -81,7 +81,8 @@
   inset-block: 0;
   inset-inline-end: 0;
   width: min(20rem, 100%);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-side);
+  clip-path: inset(0 0 0 -4rem);
 }
 
 @media (max-width: 47.999rem) {
@@ -111,20 +112,20 @@
   }
 }
 
-/* The surface of a workspace detail region: muted, inset, one edge. */
+/* One surface, shared with the chat; sections are separated by space. */
 .k2b-ui .assistant-context-sidebar {
   --k2b-detail-panel-scroll-inset: 0.75rem;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
   padding: 0.75rem 0.75rem 0;
-  border-inline-start: 1px solid var(--k2b-border);
-  background: var(--k2b-surface-muted);
+  border-inline-start: 0;
+  background: var(--k2b-surface);
 }
 .k2b-ui .assistant-context-sidebar__header {
   display: flex;
   min-width: 0;
-  min-height: 2.25rem;
+  height: 2.5rem;
   flex: none;
   align-items: center;
   gap: 0.5rem;
@@ -154,7 +155,7 @@
   min-height: 0;
   flex-direction: column;
   padding: 0.75rem 0.75rem 0;
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .assistant-sidebar-meta { display: inline-flex; align-items: center; gap: 0.25rem; }

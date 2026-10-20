@@ -1244,7 +1244,7 @@ html {
    separated by space and their headings, not by boxes of their own, and they
    start where the header's title does. */
 .k2b-ui
-  .k2b-app-workspace__detail
+  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
   :is(
     .k2b-detail-panel__summary,
     .k2b-detail-panel__group,
@@ -1252,18 +1252,19 @@ html {
     .k2b-detail-panel .k2b-discussion[data-surface="default"]
   ) {
   padding: 0;
+  border-radius: 0;
   background: transparent;
 }
 
 /* One vertical rhythm: every section, discussion, and group sits the body's
    gap apart, and a group's sections keep that gap between them too. */
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__group {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group {
   gap: 1.5rem;
 }
 
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion),
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion),
 .k2b-ui
-  .k2b-app-workspace__detail
+  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
   .k2b-detail-panel__group
   > :is(.k2b-detail-panel__section, .k2b-discussion)
   + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
@@ -1273,11 +1274,11 @@ html {
 /* The body's scrollbar sits on the panel's edge, and its content keeps the
    panel's inset inside the scrollport, so overlay scrollbars never leave the
    text against the rounded edge. */
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__header {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__header {
   scrollbar-width: thin;
 }
 
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__body {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
   gap: 1.5rem;
   padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
   scrollbar-width: thin;

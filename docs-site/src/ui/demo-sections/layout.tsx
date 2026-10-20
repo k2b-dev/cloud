@@ -1530,10 +1530,10 @@ const DetailPanelDemo = () => {
         <article class="ui-detail-panel-pattern">
           <header>
             <strong>Customer request</strong>
-            <span>Request state and customer context form clear, related surfaces.</span>
+            <span>Plain sections share the host surface without nested boxes.</span>
           </header>
           <div class="ui-detail-panel-pattern__frame">
-            <DetailPanel class="ui-detail-panel-grouped">
+            <DetailPanel surface="plain" class="ui-detail-panel-grouped">
               <DetailPanel.Header
                 title="Bug report"
                 subtitle="No preview · 5 minutes ago"
