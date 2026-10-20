@@ -30,7 +30,7 @@ const sentenceRows = (item: ApprovalCardInput) =>
   lines(item)
     .slice(1)
     .map((line) => {
-      const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
+      const match = /^([^:]{1,40}):\s+(\S.*)$/.exec(line);
       return match ? { label: match[1]!, value: match[2] ?? "" } : { label: "", value: line };
     });
 

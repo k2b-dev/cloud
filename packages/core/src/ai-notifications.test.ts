@@ -74,7 +74,7 @@ for (const locale of ["de", "en"]) {
       // The delivered mail keeps the address: the question goes out as escaped HTML, not as HTML-read plain text.
       const delivered = await prepareNotificationEmail(email);
       expect(delivered.text).toBe(
-        `${rendered.body?.replace("\n", " ")} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
+        `${rendered.body?.replaceAll("\n", " ")} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
       );
       expect(delivered.html).toContain("Lea Berg &lt;lea.berg@example.com&gt;");
       for (const count of [2, 3]) {
@@ -85,7 +85,7 @@ for (const locale of ["de", "en"]) {
         const bundledEmail = await AI_NOTIFICATIONS.approvalWaiting.email!(data, { locale });
         expect(bundledEmail.rawHtml).toContain(`<p>${more}</p>`);
         expect((await prepareNotificationEmail(bundledEmail)).text).toBe(
-          `${rendered.body?.replace("\n", " ")} ${more} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
+          `${rendered.body?.replaceAll("\n", " ")} ${more} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
         );
         expect(bundledEmail.rawHtml).toContain("Lea Berg &lt;lea.berg@example.com&gt;");
       }
