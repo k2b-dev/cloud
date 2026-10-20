@@ -84,8 +84,9 @@ the full route. The window must be positive and at most 200 km.
 
 The raw polyline is bounded to 102,400 ASCII characters, matching the provider's
 documented geometry byte budget. Core decodes it, cuts the requested distance
-window, then simplifies it with Douglas–Peucker to at most 2,000 points,
-doubling the tolerance until it fits. A dense full route is allowed within
+window, then reduces it by minimum spacing to at most 4,000 points before
+applying iterative Douglas–Peucker to at most 2,000 points. Each stage doubles
+the tolerance until it fits. A dense full route is allowed within
 the raw string budget. A window starting beyond the route is unsupported;
 a window ending beyond it stops at the route's end.
 
@@ -130,7 +131,7 @@ structured `details`:
 
 | Code | Details and recovery |
 | --- | --- |
-| `GEO_NOT_CONFIGURED` | Ask an administrator to set the Core key. No Valkey, budget, or provider work occurs. |
+| `GEO_NOT_CONFIGURED` | Ask an administrator to set the key or repair/reset unreadable `geo.*` settings in Core settings → Places and addresses. No Valkey, budget, or provider work occurs. |
 | `GEO_FORBIDDEN` | Supply an authenticated actor and access subject. |
 | `GEO_BUDGET_EXHAUSTED` | `scope` (`person` or `cloud`) and `resetsAt`; wait for reset or ask the operator to review the limit. |
 | `GEO_BUSY` | `retryAfterSeconds`; wait, then retry. If it persists, check Valkey and provider capacity. A provider 429 also uses this code. |
@@ -142,7 +143,8 @@ structured `details`:
 
 Provider 429 errors also carry costs after a paid request. Provider bodies and
 transport error text are discarded. `geo.availability` is free, reads only
-the caller's counters, and makes no provider call.
+the caller's counters, and makes no provider call. Missing keys or unreadable
+`geo.*` settings return `configured: false` without reading counters.
 
 ## Keep attribution with results
 
@@ -160,7 +162,8 @@ Cache keys hash normalized input, request language, and adapter version:
 lowercase text with collapsed whitespace and sorted categories. Only the
 autocomplete bias rounds to 0.01°; area, near, and reverse coordinates round
 to five decimal places. Circle radii stay exact.
-Route searches include the simplified line, window, buffer, and categories.
+Route searches hash the full raw polyline6 route and include the window,
+buffer (with its default applied), sorted categories, limit, and request language.
 A cache failure skips the cache. A Valkey admission failure refuses paid calls
 with `GEO_BUSY`.
 

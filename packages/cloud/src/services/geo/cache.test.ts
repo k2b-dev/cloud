@@ -1,6 +1,26 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { createGeoCache, geoCacheKey, normalizeGeoInput, GEO_MAX_JSON_BYTES } from "./cache";
+
+test("along keys hash the exact raw polyline and include every route search parameter", () => {
+  const input = { categories: ["museum", "cafe"], limit: 20, along: { polyline6: "??a?b?", fromKm: 0, toKm: 2, bufferMeters: 1000 } };
+  expect(normalizeGeoInput(input.along, "places", "along")).toMatchObject({
+    polyline6: createHash("sha256").update(input.along.polyline6).digest("hex"),
+  });
+  const key = geoCacheKey("places", input, "en");
+  for (const along of [
+    { ...input.along, polyline6: "??A?b?" },
+    { ...input.along, fromKm: 1 },
+    { ...input.along, toKm: 3 },
+    { ...input.along, bufferMeters: 500 },
+  ])
+    expect(geoCacheKey("places", { ...input, along }, "en")).not.toBe(key);
+  expect(geoCacheKey("places", { ...input, categories: ["museum"] }, "en")).not.toBe(key);
+  expect(geoCacheKey("places", { ...input, limit: 10 }, "en")).not.toBe(key);
+  expect(geoCacheKey("places", input, "de")).not.toBe(key);
+  expect(geoCacheKey("places", { ...input, categories: ["cafe", "museum"] }, "en")).toBe(key);
+});
 
 test("cache uses function TTLs and a short TTL for empty results", async () => {
   const writes: string[][] = [];

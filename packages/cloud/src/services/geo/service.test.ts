@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { GeoGeocodeDataSchema, type GeoPlaceSearchInput, GEO_MAX_POLYLINE_CHARS } from "../../contracts/geo";
+import * as settingsStore from "../settings/store";
 import { createGeoBucket } from "./bucket";
 import { createGeoCache, geoCacheKey } from "./cache";
 import { geoReferenceCost, geoReserveCost } from "./costs";
@@ -8,6 +9,8 @@ import geocode from "./fixtures/geocode.json";
 import places from "./fixtures/places.json";
 import { GeoapifyAdapter } from "./geoapify";
 import { createGeoService } from "./service";
+import { cutGeoWindow, decodePolyline6, simplifyGeoLine } from "./polyline";
+import { readGeoConfig } from "./settings";
 import { encodeGeoTestLine, geoTestConfig, geoTestContext, GEO_TEST_KEY, GEO_TEST_NOW } from "./geo.test-fixture";
 
 const setup = (overrides: Partial<Parameters<typeof createGeoService>[0]> = {}, response: unknown = autocomplete) => {
@@ -21,7 +24,7 @@ const setup = (overrides: Partial<Parameters<typeof createGeoService>[0]> = {}, 
     person: { exhausted: false, resetsAt: "2026-10-20T22:00:00.000Z" },
     cloud: { exhausted: false, resetsAt: "2026-10-31T23:00:00.000Z" },
   }));
-  const cacheGet = mock(async () => null),
+  const cacheGet = mock(async (_key: string) => null),
     cachePut = mock(async () => {});
   const service = createGeoService({
     config: async () => geoTestConfig,
@@ -45,6 +48,45 @@ test("authentication and configuration fail before cache, admission, ledger or p
     fixture.acquire.mock.calls.length,
     fixture.cacheGet.mock.calls.length,
   ]).toEqual([0, 0, 0, 0]);
+});
+test("unreadable monthly budget refuses paid work and reports not configured without infrastructure", async () => {
+  const values: Record<string, unknown> = {
+    "geo.api_key": GEO_TEST_KEY,
+    "geo.plan": geoTestConfig.plan,
+    "geo.custom_rps": geoTestConfig.customRps,
+    "geo.custom_daily_credits": geoTestConfig.customDailyCredits,
+    "geo.monthly_budget_credits": geoTestConfig.monthlyCredits,
+    "geo.person_daily_credits": geoTestConfig.personDailyCredits,
+    "app.timezone": geoTestConfig.timezone,
+  };
+  spyOn(settingsStore, "readStates").mockImplementation(
+    async (keys) =>
+      new Map(
+        keys.map((key) => [
+          key,
+          {
+            stored: key === "geo.monthly_budget_credits" ? "unreadable" : "readable",
+            value: values[key],
+          },
+        ]),
+      ),
+  );
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  const f = setup({ config: readGeoConfig });
+  for (const call of [
+    () => f.service.autocomplete({ text: "Orle" }, geoTestContext),
+    () => f.service.geocode({ text: "Ulm" }, geoTestContext),
+    () => f.service.reverse({ point: { lat: 49, lon: 12 } }, geoTestContext),
+    () => f.service.searchPlaces({ categories: ["museum"], near: { lat: 49, lon: 12 } }, geoTestContext),
+  ]) {
+    warn.mockClear();
+    await expect(call()).rejects.toMatchObject({ code: "GEO_NOT_CONFIGURED" });
+    expect(warn).toHaveBeenCalledTimes(1);
+  }
+  expect(await f.service.availability(geoTestContext)).toMatchObject({ configured: false });
+  for (const dependency of [f.fetch, f.reserve, f.settle, f.recordTransition, f.acquire, f.cacheGet, f.cachePut, f.availability])
+    expect(dependency).not.toHaveBeenCalled();
+  expect(JSON.stringify(warn.mock.calls)).not.toContain(GEO_TEST_KEY);
 });
 test("all input bounds reject with structured recovery before admission or fetch", async () => {
   const f = setup();
@@ -278,6 +320,40 @@ test("along uses window on full-route distance and filters/orders corridor hits"
   expect(result.places.map((p) => p.point.lon)).toEqual([0.4, 0.6, 0.8]);
   expect(result.places[0]!.atMeters).toBeCloseTo(44478, 0);
   expect(result.places.every((p) => p.distanceToRouteMeters! < 1)).toBeTrue();
+});
+test("along cache keys distinguish original routes that simplify to the same line", async () => {
+  const routes = [1, -1].map((direction) =>
+    encodeGeoTestLine(Array.from({ length: 2001 }, (_, i) => ({ lat: i % 2 ? direction * 0.000001 : 0, lon: i * 0.000005 }))),
+  );
+  const simplified = routes.map((route) => simplifyGeoLine(cutGeoWindow(decodePolyline6(route), 0, 2000)).line);
+  expect(simplified[0]).toEqual(simplified[1]);
+  expect(simplified[0]).toHaveLength(2);
+  const f = setup({}, { ...places, features: [] });
+  for (const polyline6 of routes) {
+    const along = { polyline6, fromKm: 0, toKm: 2 };
+    await f.service.searchPlaces({ categories: ["museum", "cafe"], along }, geoTestContext);
+    expect(f.cacheGet.mock.lastCall?.[0]).toBe(
+      geoCacheKey(
+        "places",
+        {
+          categories: ["museum", "cafe"],
+          limit: 20,
+          along: { ...along, bufferMeters: 1000 },
+        },
+        geoTestContext.locale!,
+      ),
+    );
+  }
+  expect(f.cacheGet.mock.calls[0]?.[0]).not.toBe(f.cacheGet.mock.calls[1]?.[0]);
+  await f.service.searchPlaces(
+    {
+      categories: ["cafe", "museum"],
+      limit: 20,
+      along: { polyline6: routes[0]!, fromKm: 0, toKm: 2, bufferMeters: 1000 },
+    },
+    geoTestContext,
+  );
+  expect(f.cacheGet.mock.calls[2]?.[0]).toBe(f.cacheGet.mock.calls[0]?.[0]);
 });
 test("availability is free and not-configured availability touches no infrastructure", async () => {
   const f = setup();

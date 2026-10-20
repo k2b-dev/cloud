@@ -86,6 +86,15 @@ export const locateOnGeoLine = (point: GeoPoint, line: readonly GeoPoint[]) => {
   }
   return { atMeters, distanceToRouteMeters };
 };
+/** Linear minimum-spacing pass before the more expensive Douglas–Peucker stage. */
+const reduceRadialDistance = (points: readonly GeoPoint[], tolerance: number): GeoPoint[] => {
+  const line = [points[0]!];
+  for (let i = 1; i < points.length - 1; i++) {
+    if (geoDistance(line.at(-1)!, points[i]!) > tolerance) line.push(points[i]!);
+  }
+  line.push(points.at(-1)!);
+  return line;
+};
 /** Iterative Douglas–Peucker: no recursion depth depends on untrusted line length. */
 const simplify = (points: readonly GeoPoint[], tolerance: number): GeoPoint[] => {
   const keep = new Set([0, points.length - 1]);
@@ -112,10 +121,17 @@ const simplify = (points: readonly GeoPoint[], tolerance: number): GeoPoint[] =>
 };
 export const simplifyGeoLine = (points: readonly GeoPoint[]) => {
   let toleranceMeters = 0,
-    line = [...points];
-  while (line.length > 2000) {
+    reduced = [...points];
+  // Bound quadratic Douglas–Peucker work independently of the decoded input size.
+  while (reduced.length > 4000) {
     toleranceMeters = toleranceMeters ? toleranceMeters * 2 : 1;
-    line = simplify(points, toleranceMeters);
+    reduced = reduceRadialDistance(points, toleranceMeters);
+  }
+  let line = reduced;
+  while (line.length > 2000) {
+    toleranceMeters ||= 1;
+    line = simplify(reduced, toleranceMeters);
+    if (line.length > 2000) toleranceMeters *= 2;
   }
   return { line, toleranceMeters };
 };

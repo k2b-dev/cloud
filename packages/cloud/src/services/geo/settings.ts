@@ -33,8 +33,11 @@ export const readGeoConfig = async (): Promise<GeoConfig> => {
     "app.timezone",
   ];
   const values = await readStates(keys);
+  const unreadable = keys.filter((key) => key.startsWith("geo.") && values.get(key)?.stored === "unreadable");
+  if (unreadable.length) console.warn("[geo] Unreadable settings; geo is not configured", { keys: unreadable });
   return ConfigSchema.parse({
-    apiKey: values.get("geo.api_key")?.value,
+    // A fallback budget must never admit paid work over an unreadable stored value.
+    apiKey: unreadable.length ? "" : values.get("geo.api_key")?.value,
     plan: values.get("geo.plan")?.value,
     customRps: values.get("geo.custom_rps")?.value,
     customDailyCredits: values.get("geo.custom_daily_credits")?.value,

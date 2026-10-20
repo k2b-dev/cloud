@@ -235,9 +235,7 @@ export const createGeoService = (
         ...value,
         limit: value.limit ?? 20,
         categories: [...new Set(value.categories)],
-        ...(along && simplified
-          ? { along: { line: simplified.line, fromKm: along.fromKm, toKm: along.toKm, bufferMeters: along.bufferMeters ?? 1000 } }
-          : {}),
+        ...(along ? { along: { ...along, bufferMeters: along.bufferMeters ?? 1000 } } : {}),
       };
       return paid(
         "places",

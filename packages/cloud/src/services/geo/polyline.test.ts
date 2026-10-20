@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { GEO_MAX_POLYLINE_CHARS } from "../../contracts/geo";
 import { cutGeoWindow, decodePolyline6, geoDistance, locateOnGeoLine, simplifyGeoLine } from "./polyline";
 import { encodeGeoTestLine } from "./geo.test-fixture";
 test("polyline6 preserves negative coordinates, detects malformed and truncated values", () => {
@@ -43,4 +44,22 @@ test("longitude wrapping follows the short path across the dateline", () => {
   expect(geoDistance(line[0]!, line[1]!)).toBeLessThan(23000);
   const cut = cutGeoWindow(line, 5000, 10000);
   expect(geoDistance(cut[0]!, cut[1]!)).toBeCloseTo(5000, 0);
+});
+test("maximum-size adversarial zigzag simplifies in under two seconds", () => {
+  // Both deltas fit one character: two characters per vertex is the maximum density.
+  // Adjacent vertices exceed the initial 1 m tolerance, forcing worst-case DP splits.
+  const points = Array.from({ length: Math.floor(GEO_MAX_POLYLINE_CHARS / 2) }, (_, i) => ({
+    lat: (i % 2) * 0.000014,
+    lon: i * 0.000001,
+  }));
+  const encoded = encodeGeoTestLine(points);
+  expect(encoded.length).toBe(GEO_MAX_POLYLINE_CHARS);
+  const decoded = decodePolyline6(encoded);
+  const start = performance.now();
+  const result = simplifyGeoLine(decoded);
+  expect(performance.now() - start).toBeLessThan(2000);
+  expect(result.line.length).toBeLessThanOrEqual(2000);
+  expect(result.line[0]).toEqual(decoded[0]);
+  expect(result.line.at(-1)).toEqual(decoded.at(-1));
+  expect(result.toleranceMeters).toBeGreaterThan(0);
 });
