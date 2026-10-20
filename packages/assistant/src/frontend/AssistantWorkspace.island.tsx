@@ -801,9 +801,14 @@ export default function AssistantWorkspace(props: Props) {
   const landOnQuestion = async (anchor: string) => {
     const navigation = navigationRequest;
     const jump = questionJump;
+    const reveal = revealRequest;
     const conversationId = chat.activeConversationId();
-    // A jump the person starts meanwhile wins, also one within this chat.
-    const current = () => navigation === navigationRequest && jump === questionJump && chat.activeConversationId() === conversationId;
+    // A jump the person starts meanwhile wins, also one within this chat, to a question or to a message.
+    const current = () =>
+      navigation === navigationRequest &&
+      jump === questionJump &&
+      reveal === revealRequest &&
+      chat.activeConversationId() === conversationId;
     // After the frame in which the composer takes the page's first focus.
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     if (current()) await waitingFocus.focus(anchor, current);
