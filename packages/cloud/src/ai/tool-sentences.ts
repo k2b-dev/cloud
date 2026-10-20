@@ -124,7 +124,8 @@ export const cloudToolReview = (name: string, args: unknown, locale: string): Ca
       const review = (rows: { label: string; value: string }[]) =>
         actionReview(
           { locale: language, sentence: sentence[name] },
-          { site: { kind: "place", title: url.host } },
+          // A place title holds 200 characters; the address rows keep the whole host.
+          { site: { kind: "place", title: url.host.length > 200 ? `${url.host.slice(0, 99)}…${url.host.slice(-100)}` : url.host } },
           { preview: { kind: "fields", rows } },
         );
       // One address row holds at most 2,000 characters. An address whose encoded form is longer shows as written;

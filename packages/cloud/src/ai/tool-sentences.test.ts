@@ -45,6 +45,11 @@ test("historical malformed inputs do not throw and long file names respect slot 
     expect(cloudToolReview(name, {}, "en")).toBeNull();
   }
   expect(cloudToolReview("web_extract", { url: "bad URL" }, "en")).toBeNull();
+  // A host longer than a place title is cut in the slot only; the address row keeps all of it.
+  const host = `${["a", "b", "c", "d"].map((letter) => letter.repeat(50)).join(".")}.com`;
+  const wide = cloudToolReview("fetch_file", { url: `https://${host}/file.pdf` }, "en");
+  expect(wide?.slots.site?.kind === "place" && wide.slots.site.title.length).toBe(200);
+  expect(wide?.preview?.kind === "fields" && wide.preview.rows[0]?.value).toBe(`https://${host}/file.pdf`);
   // An address longer than one address row continues over numbered rows, so the question asks with all of it.
   const address = `https://example.com/${"x".repeat(2000)}`;
   const long = cloudToolReview("web_extract", { url: address }, "en");

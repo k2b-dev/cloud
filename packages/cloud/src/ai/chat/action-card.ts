@@ -1,6 +1,7 @@
 import {
   type CapabilitySentencePart,
   capabilityAskReasonText,
+  capabilityPersonText,
   capabilityQuestionText,
   capabilityReceiptParts,
   capabilityReviewSentence,
@@ -98,8 +99,12 @@ export type ActionCard = {
   hasCheck: boolean;
   /** The receipt text of an old review's success summary. */
   summary?: string;
-  /** Every slot of a new review, its consequences and rule lines, so plain text can tell what it shortened or left out. */
-  sentenceSlots?: CapabilitySlot[];
+  /**
+   * For plain text: every value a new review's slots stand for (each person with address, title, text, time, count),
+   * also in consequences and rule lines, and whether the app left people out. Plain text that does not show each value
+   * whole is incomplete.
+   */
+  slotValues?: { values: string[]; unlisted: boolean };
 };
 
 const REASON_LOOK: Record<CapabilityAskReason, Omit<ActionReason, "code" | "text">> = {
@@ -196,6 +201,19 @@ const firstObjectHref = (review: CapabilityActionCallReview): string | undefined
     .map((slot) => ((slot.kind === "object" || slot.kind === "place") && slot.ref ? cloudResourceHref(slot.ref) : undefined))
     .find(Boolean);
 
+const slotValues = (slots: CapabilitySlot[], context: { locale: string; timeZone: string }) => ({
+  values: slots.flatMap((slot) =>
+    slot.kind === "person"
+      ? slot.people.map(capabilityPersonText)
+      : slot.kind === "object" || slot.kind === "place"
+        ? [slot.title]
+        : slot.kind === "text"
+          ? [slot.value]
+          : [capabilitySentenceText("{value}", { value: slot }, context)],
+  ),
+  unlisted: slots.some((slot) => slot.kind === "person" && (slot.total ?? slot.people.length) > slot.people.length),
+});
+
 export const reviewActionCard = (review: CapabilityActionCallReview, context: ActionCardContext): ActionCard => {
   const locale = review.locale;
   const tz = { timeZone: context.timeZone };
@@ -261,11 +279,14 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
       : plainText(context.app.name),
     short: capabilityReviewSentence(review, "short", tz),
     hasCheck: Boolean(review.check),
-    sentenceSlots: [
-      review.slots,
-      ...(review.consequences ?? []).map((entry) => entry.slots ?? {}),
-      ...(preview?.kind === "rule" ? [preview.when.slots ?? {}, ...preview.may.map((entry) => entry.slots ?? {})] : []),
-    ].flatMap((slots) => Object.values(slots)),
+    slotValues: slotValues(
+      [
+        review.slots,
+        ...(review.consequences ?? []).map((entry) => entry.slots ?? {}),
+        ...(preview?.kind === "rule" ? [preview.when.slots ?? {}, ...preview.may.map((entry) => entry.slots ?? {})] : []),
+      ].flatMap((slots) => Object.values(slots)),
+      { locale, timeZone: context.timeZone },
+    ),
   };
 };
 

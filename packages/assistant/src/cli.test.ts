@@ -504,6 +504,29 @@ describe("assistant CLI", () => {
     ]);
   });
 
+  test("quotes IDs in the printed approval commands, so copying one runs nothing else", async () => {
+    const request = createContext(["actions", "list", "chat-1", "turn-1"], async () =>
+      json([
+        {
+          type: "approval_request",
+          conversationId: "chat-1",
+          turnId: "turn-1",
+          callId: "call$(id)'x",
+          name: "mail__action__draft_dot_create",
+          args: {},
+          message: "Create draft",
+          allowAlways: false,
+        },
+      ]),
+    );
+    const printed: string[] = [];
+    request.ctx.print = (value = "") => void printed.push(value);
+    await assistantCli.run(request.ctx);
+    expect(printed.at(-2)).toEndWith(`cld assistant actions approve chat-1 turn-1 'call$(id)'\\''x'`);
+    const word = printed.at(-1)?.split(" reject ")[1] ?? "";
+    expect(Bun.spawnSync(["sh", "-c", `printf %s ${word.split(" ").slice(2).join(" ")}`]).stdout.toString()).toBe("call$(id)'x");
+  });
+
   test("shows the task scheduling timezone", async () => {
     const request = createContext(["tasks", "status"], async (path) => {
       expect(String(path)).toBe("/api/ai/tasks/status");

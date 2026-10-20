@@ -397,3 +397,29 @@ test("a question that shortens a long value leaves the text incomplete", () => {
   expect(text.question).toContain("…");
   expect(text.incomplete).toBe(true);
 });
+
+test("a shortened time counts as incomplete even when the people are listed whole", () => {
+  const people = ["a", "b"].map((letter) => ({ name: letter.repeat(100), address: `${letter.repeat(200)}@example.com` }));
+  const review: CapabilityActionCallReview = {
+    locale: "de",
+    ask: "sends",
+    sentence: {
+      action: "An {to} am {at} senden",
+      running: "Wird an {to} gesendet",
+      done: "An {to} gesendet",
+      confirm: "Senden",
+      decline: "Nicht senden",
+    },
+    slots: {
+      to: { kind: "person", people },
+      at: { kind: "time", start: "2026-09-21T10:00:00Z", end: "2026-09-22T10:00:00Z", format: "date-time" },
+    },
+    preview: { kind: "message", from: people[0], to: people, subject: "Hallo", body: "Text", format: "plain" },
+  };
+  const text = actionCardText(
+    reviewActionCard(review, { locale: "de", timeZone: "Europe/Berlin", app: { name: "Mail", icon: "ti ti-mail" } }),
+  );
+  expect(text.rows.find((row) => row.label === "An")?.value).toContain(`${"a".repeat(200)}@example.com`);
+  expect(text.question).not.toContain("22. Sept.");
+  expect(text.incomplete).toBe(true);
+});

@@ -255,6 +255,9 @@ export const assistantChatCommands = [
   }),
 ] as const;
 
+/** One shell word that stands for exactly `value`. */
+const shellArgument = (value: string): string => (/^[A-Za-z0-9_.:@%+=,/-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`);
+
 export const assistantManagementCommands = [
   command("messages list", {
     summary: "List messages in a chat",
@@ -473,7 +476,8 @@ export const assistantManagementCommands = [
         actions.forEach((action, index) => {
           if (index) ctx.print("");
           if (action.type === "approval_request") {
-            const target = `${action.conversationId} ${action.turnId} ${action.callId}`;
+            // IDs come from the server and a model's tool call; quoted, a copied command can never run anything else.
+            const target = [action.conversationId, action.turnId, action.callId].map(shellArgument).join(" ");
             for (const line of pendingActionQuestion(ctx, action, {
               approve: `cld assistant actions approve ${target}`,
               reject: `cld assistant actions reject ${target}`,

@@ -217,14 +217,7 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
   // A long question shortens slot values and names at most three people of a slot, then "N more". The text is
   // complete only when the question or a row shows each value whole; people the app left out are never shown.
   const shown = [card.questionText, ...rows.map((entry) => entry.value)];
-  const whole = (value: string) => shown.some((text) => text.includes(value));
-  for (const slot of card.sentenceSlots ?? []) {
-    if (slot.kind === "person") {
-      if ((slot.total ?? slot.people.length) > slot.people.length || !slot.people.every((person) => whole(capabilityPersonText(person))))
-        incomplete = true;
-    } else if ((slot.kind === "object" || slot.kind === "place") && !whole(slot.title)) incomplete = true;
-    else if (slot.kind === "text" && !whole(slot.value)) incomplete = true;
-  }
+  if (card.slotValues?.unlisted || card.slotValues?.values.some((value) => !shown.some((text) => text.includes(value)))) incomplete = true;
   return {
     locale: card.locale,
     question: card.questionText,
