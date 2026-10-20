@@ -243,7 +243,7 @@ export const runtimeCapabilities = {
       >`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
       if (pending!.count >= LIMITS.pendingRequests) throw new ArtifactError("TOO_MANY_REQUESTS");
       await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
-        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId ?? null}),${request.conversationId ?? null},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify(prepared)}::text)::jsonb)`;
+        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId ?? null}),${conversationId},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify(prepared)}::text)::jsonb)`;
       if (!automatic) {
         const approval = await requestApprovalRecord(request, prepared, actor.id, db, {
           sentence: codeApprovalMessage(response, caller.locale ?? "en"),
