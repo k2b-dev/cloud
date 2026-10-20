@@ -230,15 +230,49 @@ after a history commit it replaces the entry. The click listener sits on
 `window` in the bubble phase, so island and delegated Solid handlers can
 prevent a swap first.
 
-Back and Forward are not swapped yet. Install marks the current entry when
-its state is null; non-null island state stays untouched. Swap entries carry
-their page's marker, and a reload keeps it. A `popstate` onto an entry with
-the shown page's marker, or onto a fresh hash-link entry, stays with islands.
-An unmarked entry stays with islands only on a page loaded normally that has
-not swapped yet; after a swap or a reload it loads the document. An island
-that replaces an entry's state with its own drops the marker, so returning
-to that entry later loads the document. The history slice gives every entry
-its page ID.
+History has one owner while the swap is installed. The reserved state key
+`"@k2b/ssr/nav"` holds `{ page: string, position: number, scroll?: ScrollSnapshot }`.
+Validate it on read; missing, malformed, and old string markers mean another
+page. Reload and back_forward document loads keep a valid page id and restore
+its saved window and region scroll.
+
+Install patches this History object's pushState and replaceState once, with a
+Symbol.for flag. The wrappers remain after uninstall but call the originals
+unchanged. While installed they preserve caller fields in a shallow copy of
+plain-object state, mark null/undefined state, overwrite caller copies of nav's
+key, and leave other state unchanged and unmarked so it fails safe on return.
+Push saves the departing scroll and increments the position; replace retains
+the current marker. Nav's own writes use the saved originals. Positions use
+Navigation API indices when available, otherwise the tracked entry or the
+initial history.length - 1.
+
+One memoized decision per popstate runs before island handlers, through nav's
+capture listener or listenPopState's wrapper. Same-page entries reach islands;
+nav restores their window scroll first, leaving regions to islands. Cross-page
+and unmarked entries stopImmediatePropagation and fetch the arriving URL in
+the swap transaction without pushing history. Commit and reload recovery must
+still own that URL and marker; a different final URL reloads. Restore window
+and keyed regions from the entry's in-memory snapshot, then its stored scroll,
+otherwise use top/hash scrolling. Keep scrollRestoration manual for the whole
+installation and restore the previous value on uninstall.
+
+Install before islands add raw popstate listeners: Chromium uses registration
+order even for capture. listenPopState is safe in any order through the shared
+swap state. Navigation API navigate captures the departing marker and scroll
+before traversal, also when dialog-core hides a dialog-only popstate from nav
+and applications. If nav runs first, inherited page ids keep those traversals
+with the page; nav must not stop them. Keep the fragment-click fallback for
+browsers without the Navigation API. Persisted pageshow aborts pending work and
+checks the arriving marker, swapping a foreign or unmarked entry. pagehide
+persists the current scroll best effort.
+
+History tests cover state merging without mutation, non-plain state, marker
+validation and replacement, push/replace positions, inert single-install
+wrappers, listener ordering, unmarked entries, pageshow/pagehide, manual scroll
+restoration, and traversal ownership and recovery. The real-engine history
+suite covers Back/Forward across pages and island entries, reload equivalence,
+sibling identity, actual dialog-core disposal, raw history writes, listener
+suppression, and window/region scroll in both directions.
 
 A swap does not fire `beforeunload`; an island with unsaved input must prevent
 in-scope link clicks itself (for example, a document capture listener calling

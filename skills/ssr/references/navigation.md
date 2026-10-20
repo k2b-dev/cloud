@@ -65,5 +65,9 @@ onMount(() => onCleanup(installPageSwap()));
 - the newest navigation wins (another swap, Back/Forward, a native link, a native form submission, an enhanced `Link` click, `navigate()`, `documentNavigate()`), and a swap that starts later turns a pending `Link` handler's `push`, `replaceWith`, and `fallback` into no-ops; any failure (status, not HTML, redirect out of scope, signature, module prefix, `<base>`, stylesheet set, module error) loads the requested URL as a document
 - `swapPage(href, { replace })` swaps from code
 - inline scripts in the fetched page do not run; keep page data in island props
-- Back and Forward are not swapped yet: install marks a null-state entry, swap entries carry their page's marker (kept across a reload), and only entries with the shown page's marker, a fresh hash-link entry, or, on a page loaded normally that has not swapped, unmarked island entries stay with islands; any other entry loads the document
+- Back and Forward swap another server page's column fresh from the server; a failure or a different final URL reloads the arriving URL. Same-page traversals reach `listenPopState()` without a fetch; cross-page traversals stay hidden from island listeners
+- install before raw `popstate` listeners, or replace them with `listenPopState()`, which is safe in any order
+- keep history state a plain object or `null`; nav keeps caller fields and reserves `"@k2b/ssr/nav"` for `{ page, position, scroll? }`. Non-plain state stays unchanged and unmarked, so returning to it fetches the page or reloads
+- nav restores window and keyed region scroll from the arriving entry; same-page region scroll remains the island's job. `history.scrollRestoration` is `"manual"` while installed and returns to its previous value on uninstall; the history wrappers remain but become inert
+- reloads keep page identity, bfcache returns check the arriving entry, and dialog-only traversals remain with the dialog history owner
 - a swap does not fire `beforeunload`: an island with unsaved input prevents in-scope link clicks itself (a document capture listener calling `preventDefault()`) or the links carry `data-nav-document`

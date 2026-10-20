@@ -342,14 +342,23 @@ and a module that fails to load or to evaluate. The old column stays until
 then. Inline scripts in the fetched page do not run, and only the title of
 its head is used.
 
-Back and Forward are not swapped yet. Install marks the current entry when
-its state is null; non-null island state stays untouched. Swap entries carry
-their page's marker, and a reload keeps it. A `popstate` onto an entry with
-the shown page's marker, or onto a fresh hash-link entry, stays with islands.
-An unmarked entry stays with islands only on a page loaded normally that has
-not swapped yet; after a swap or a reload it loads the document. An island
-that replaces an entry's state with its own drops the marker, so returning
-to that entry later loads the document.
+Back and Forward fetch another server page's column without a document load.
+Within the shown page, `listenPopState()` lets islands restore state from the
+URL without fetching. It never reports a traversal to another server page.
+Nav restores window scroll and keyed `data-scroll-preserve` regions from the
+arriving entry; within a page, islands still own region scroll. A traversal
+that cannot swap reloads the arriving URL.
+
+Install before islands register raw `popstate` listeners. Prefer
+`listenPopState()`, which is safe in either order. Keep history state a plain
+object or `null`: nav preserves its fields and reserves `"@k2b/ssr/nav"` for
+`{ page, position, scroll? }`. Other state values stay unchanged and unmarked;
+returning to them fetches the server page or reloads the document.
+
+While installed, nav sets `history.scrollRestoration` to `"manual"` and restores
+its previous value on uninstall. The history wrappers stay installed but become
+inert. Reloads retain page identity; bfcache returns check the arriving entry.
+Dialog-only traversals remain with the dialog history owner.
 
 A swap does not fire `beforeunload`; an island with unsaved input must prevent
 in-scope link clicks itself (for example, a document capture listener calling

@@ -7,7 +7,7 @@ import { render } from "solid-js/web";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
 import { disposeIslands } from "../../src/mount";
-import { documentNavigate, installPageSwap, Link, navigate, navigateTo, refreshCurrentPath, swapPage } from "../../src/nav";
+import { documentNavigate, installPageSwap, Link, listenPopState, navigate, navigateTo, refreshCurrentPath, swapPage } from "../../src/nav";
 import { makeTempRoot } from "../temp-root";
 
 let root: string;
@@ -20,6 +20,7 @@ let laterId: string;
 let historyId: string;
 let scrollId: string;
 let previousLoadingSettings: { disableCSSFileLoading: boolean; handleDisabledFileLoadingAsSuccess: boolean };
+let previousScrollY: PropertyDescriptor | undefined;
 let uninstall = () => {};
 const events: string[] = [];
 const lifetime = (event: Event) => {
@@ -136,8 +137,7 @@ beforeAll(async () => {
   await buildIslands({ pattern: "**/*.island.tsx", cwd: root, outdir: prefix, dev: true, verbose: false });
 });
 beforeEach(async () => {
-  // Each fixture represents a fresh document, though Happy DOM keeps the same Document object.
-  Reflect.deleteProperty(globalThis, Symbol.for("@k2b/ssr/nav-swap/swapped"));
+  previousScrollY = Object.getOwnPropertyDescriptor(window, "scrollY");
   const settings = (window as unknown as Window).happyDOM.settings;
   previousLoadingSettings = {
     disableCSSFileLoading: settings.disableCSSFileLoading,
@@ -169,6 +169,8 @@ afterEach(() => {
   document.body.replaceChildren();
   document.head.replaceChildren();
   mock.restore();
+  if (previousScrollY) Object.defineProperty(window, "scrollY", previousScrollY);
+  else Reflect.deleteProperty(window, "scrollY");
   Object.assign((window as unknown as Window).happyDOM.settings, previousLoadingSettings);
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -188,62 +190,48 @@ test("without install anchors stay native and programmatic swap loads one docume
 test("install stamps a null-state entry without adding history", () => {
   const before = window.history.length;
   install();
-  expect(window.history.state["@k2b/ssr/nav"]).toMatch(/:1$/);
+  expect(window.history.state["@k2b/ssr/nav"].page).toMatch(/:1$/);
   expect(window.history.length).toBe(before);
   expect(window.location.pathname).toBe("/app/old");
 });
 
-test("install leaves non-null island state alone", () => {
+test("install preserves island state while marking the entry", () => {
   window.history.replaceState({ island: 1 }, "");
   install();
-  expect(window.history.state).toEqual({ island: 1 });
+  expect(window.history.state).toEqual({ island: 1, "@k2b/ssr/nav": { page: expect.any(String), position: window.history.length - 1 } });
 });
 
-test("reinstall after a swap reloads an unmarked island entry from the earlier page", async () => {
-  const entry = {
-    name: window.location.href,
-    entryType: "navigation",
-    startTime: 0,
-    duration: 0,
-    type: "navigate",
-    toJSON: () => ({}),
-  };
-  spyOn(window.performance, "getEntriesByType").mockReturnValue([entry]);
-  window.history.replaceState({ island: 1 }, "");
+const markerKey = "@k2b/ssr/nav";
+const arrive = (state: unknown, url = "/app/old") => {
+  History.prototype.replaceState.call(window.history, state, "", url);
+  window.dispatchEvent(new PopStateEvent("popstate", { state }));
+};
+const swapped = (label: string): Promise<void> =>
+  new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (document.querySelector("[data-nav-announcer]")?.textContent !== label) return;
+      observer.disconnect();
+      resolve();
+    });
+    observer.observe(document, { subtree: true, childList: true, characterData: true });
+  });
+
+test("reinstall keeps the shown page id and swaps an unmarked entry", async () => {
   install();
   spyOn(globalThis, "fetch").mockResolvedValue(response());
   await swapPage("/app/new");
-  expect(document.title).toBe("new");
+  const page = window.history.state[markerKey].page;
   uninstall();
   install();
-  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
-  window.history.replaceState({ island: 1 }, "", "/app/old");
-  window.dispatchEvent(new PopStateEvent("popstate", { state: { island: 1 } }));
-  expect(reload).toHaveBeenCalledTimes(1);
+  expect(window.history.state[markerKey].page).toBe(page);
+  const done = swapped("old");
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("old"), {}, "https://example.test/app/old"));
+  arrive({ island: 1 });
+  await done;
+  expect(window.history.state.island).toBe(1);
+  expect(window.history.state[markerKey].page).not.toBe(page);
   expect(assign).not.toHaveBeenCalled();
   expect(replace).not.toHaveBeenCalled();
-});
-
-test("an unmarked popstate after a reload loads the document", () => {
-  const entry = {
-    name: window.location.href,
-    entryType: "navigation",
-    startTime: 0,
-    duration: 0,
-    type: "reload",
-    toJSON: () => ({}),
-  };
-  const entries = spyOn(window.performance, "getEntriesByType").mockReturnValue([entry]);
-  try {
-    // A reload may start on island-owned state without a page marker.
-    window.history.replaceState({ island: 1 }, "");
-    install();
-    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
-    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
-    expect(reload).toHaveBeenCalledTimes(1);
-  } finally {
-    entries.mockRestore();
-  }
 });
 
 test("rapid A then B aborts A and only B mounts and commits", async () => {
@@ -358,7 +346,7 @@ test("success disposes, mounts, copies attributes, commits history, focuses and 
     spyOn(globalThis, "fetch").mockResolvedValue(response());
     await swapPage("/app/new");
     expect(document.title).toBe("new");
-    expect(window.history.state["@k2b/ssr/nav"]).toMatch(/:2$/);
+    expect(window.history.state["@k2b/ssr/nav"].page).toMatch(/:2$/);
     expect(window.history.length).toBe(before + 1);
     expect(document.querySelector("[data-nav-shell]")!.getAttribute("data-mode")).toBe("new");
     expect(document.querySelector("[data-nav-shell]")!.hasAttribute("data-obsolete")).toBe(false);
@@ -409,23 +397,21 @@ test("50 sequential swaps keep listener counts flat and dispose every previous i
   expect(events.filter((event) => event.startsWith("cleanup:"))).toHaveLength(50);
 });
 
-test("popstate preserves island history until a swap, then reloads other pages and aborts pending swaps", async () => {
+test("same-page popstate stays with islands; cross-page popstate aborts a pending swap", async () => {
   install();
   const reload = spyOn(window.location, "reload").mockImplementation(() => {});
-  window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
-  expect(reload).not.toHaveBeenCalled();
-  spyOn(globalThis, "fetch").mockResolvedValue(response());
-  await swapPage("/app/new");
   window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
   expect(reload).not.toHaveBeenCalled();
   const requests = deferredFetch();
   const pending = swapPage("/app/A");
-  // Back onto a URL with a hash: replacing that same URL would only scroll, so recovery must reload.
-  window.history.replaceState(null, "", "/app/A#section");
-  window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+  const done = swapped("B");
+  arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/B#section");
   await pending;
   expect(requests[0]!.aborted).toBe(true);
-  expect(reload).toHaveBeenCalledTimes(1);
+  requests[1]!.resolve(response(html("B"), {}, "https://example.test/app/B"));
+  await done;
+  expect(window.history.state[markerKey]).toEqual({ page: "other", position: 5 });
+  expect(reload).not.toHaveBeenCalled();
   expect(replace).not.toHaveBeenCalled();
   expect(assign).not.toHaveBeenCalled();
 });
@@ -640,14 +626,9 @@ test("in-scope clicks are prevented and same-URL clicks replace history", async 
   const requests = deferredFetch();
   const before = window.history.length;
   expect(click("/app/old").defaultPrevented).toBe(true);
-  const committed = Promise.withResolvers<void>();
-  const push = window.history.replaceState.bind(window.history);
-  spyOn(window.history, "replaceState").mockImplementation((...args) => {
-    push(...args);
-    committed.resolve();
-  });
+  const committed = swapped("new");
   requests[0]!.resolve(response(html("new"), {}, "https://example.test/app/old"));
-  await committed.promise;
+  await committed;
   expect(window.history.length).toBe(before);
   expect(document.querySelector("main b")!.textContent).toBe("new");
   expect(assign).not.toHaveBeenCalled();
@@ -871,7 +852,7 @@ test("a malformed hash escape commits without document navigation", async () => 
   expect(replace).not.toHaveBeenCalled();
 });
 
-test("a late commit failure replaces even when a new island overwrites the history marker", async () => {
+test("a late commit failure replaces even when a new island replaces history state", async () => {
   install();
   spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", wrapper("new", historyId))));
   const focus = spyOn(HTMLElement.prototype, "focus").mockImplementation(() => {
@@ -879,8 +860,7 @@ test("a late commit failure replaces even when a new island overwrites the histo
   });
   const before = window.history.length;
   await swapPage("/app/requested");
-  // Fallback must use the local commit flag: the island has removed the page marker.
-  expect(window.history.state).toEqual({ island: 1 });
+  expect(window.history.state).toEqual({ island: 1, [markerKey]: { page: expect.any(String), position: expect.any(Number) } });
   expect(window.history.length).toBe(before + 1);
   expect(focus).toHaveBeenCalledTimes(1);
   expect(console.error).toHaveBeenCalledTimes(1);
@@ -927,11 +907,10 @@ test("both page bases resolve relative stylesheets while history commits an abso
   document.head.prepend(base);
   document.querySelector('link[rel="stylesheet"]')!.setAttribute("href", "base.css");
   const next = html("new").replace("<head>", '<head><base href="https://other.test/">').replace('href="/base.css"', 'href="base.css"');
-  const push = spyOn(window.history, "pushState");
   spyOn(globalThis, "fetch").mockResolvedValue(response(next));
   await swapPage("https://example.test/app/new");
   // Happy DOM resolves relative history URLs against location instead of <base>; require the browser-safe absolute input.
-  expect(push).toHaveBeenCalledWith({ "@k2b/ssr/nav": expect.any(String) }, "", "https://example.test/app/new");
+  expect(window.history.state[markerKey]).toEqual({ page: expect.any(String), position: window.history.length - 1 });
   expect(window.location.href).toBe("https://example.test/app/new");
   expect(document.title).toBe("new");
   expect(document.querySelector("main b")!.textContent).toBe("new");
@@ -1156,14 +1135,14 @@ test.each([false, true])("an early 403 for a different hash reloads with replace
   install();
   window.history.replaceState(window.history.state, "", "/app/old#old");
   const before = window.history.length;
-  const state = window.history.state;
+  const page = window.history.state[markerKey].page;
   const reload = spyOn(window.location, "reload").mockImplementation(() => {});
   spyOn(globalThis, "fetch").mockResolvedValue(response("", { status: 403 }, "https://example.test/app/old#new"));
   await swapPage("/app/old#new", { replace: replaceEntry });
   expect(reload).toHaveBeenCalledTimes(1);
   expect(window.location.hash).toBe("#new");
   expect(window.history.length).toBe(before + (replaceEntry ? 0 : 1));
-  expect(window.history.state).toEqual(state);
+  expect(window.history.state[markerKey].page).toBe(page);
   expect(document.title).toBe("old");
   expect(assign).not.toHaveBeenCalled();
   expect(replace).not.toHaveBeenCalled();
@@ -1210,12 +1189,12 @@ test("a same-page hash link stays native and aborts a pending swap", async () =>
   expect(assign).not.toHaveBeenCalled();
 });
 
-test.each(["native", "stopped", "prevented"])("a %s hash-link popstate after a swap checks the click before stamping", async (kind) => {
+test.each(["native", "stopped", "prevented"])("a %s hash-link popstate checks the click before stamping", async (kind) => {
   install();
   spyOn(globalThis, "fetch").mockResolvedValue(response());
   await swapPage("/app/new");
-  const current = window.history.state;
-  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  const current = window.history.state[markerKey];
+  const requests = deferredFetch();
   const anchor = document.createElement("a");
   anchor.href = "#later";
   anchor.addEventListener("click", (event) => {
@@ -1223,15 +1202,13 @@ test.each(["native", "stopped", "prevented"])("a %s hash-link popstate after a s
     if (kind === "prevented") event.preventDefault();
   });
   document.body.append(anchor);
-  const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
-  anchor.dispatchEvent(event);
-  expect(event.defaultPrevented).toBe(kind === "prevented");
-  // Activation runs with eventPhase NONE; Happy DOM needs its null-state popstate emulated.
-  expect(event.eventPhase).toBe(Event.NONE);
-  window.history.replaceState(null, "", "/app/new#later");
-  window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
-  expect(reload).toHaveBeenCalledTimes(kind === "prevented" ? 1 : 0);
-  expect(window.history.state).toEqual(kind === "prevented" ? null : current);
+  anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  // Happy DOM needs native fragment history and its null-state popstate emulated.
+  arrive(null, "/app/new#later");
+  expect(requests).toHaveLength(kind === "prevented" ? 1 : 0);
+  expect(window.history.state).toEqual(
+    kind === "prevented" ? null : { [markerKey]: { page: current.page, position: current.position + 1 } },
+  );
 });
 
 test("a deferred navigate() commit that a newer swap overtook does not push its URL", async () => {
@@ -1249,7 +1226,7 @@ test("a deferred navigate() commit that a newer swap overtook does not push its 
     await pending[0]!();
     expect(window.location.pathname).toBe("/app/new");
     expect(window.location.search).toBe("");
-    expect(window.history.state["@k2b/ssr/nav"]).toMatch(/:2$/);
+    expect(window.history.state["@k2b/ssr/nav"].page).toMatch(/:2$/);
     // A navigate() from the new page still commits after its own deferral.
     navigate("/app/new?tab=3");
     await pending[1]!();
@@ -1300,4 +1277,322 @@ test("an async Link handler that a newer swap overtook neither moves history nor
   } finally {
     dispose();
   }
+});
+
+test.each([null, undefined, { island: 1 }, Object.assign(Object.create(null), { island: 1 })])(
+  "history writes merge plain or empty state without mutating it: %j",
+  (value: unknown) => {
+    install();
+    const initial = window.history.state[markerKey];
+    window.history.pushState(value, "", "/app/old?tab=1");
+    expect(window.history.state).toEqual({ ...(value ?? {}), [markerKey]: { page: initial.page, position: initial.position + 1 } });
+    window.history.replaceState(value, "", "/app/old?tab=2");
+    expect(window.history.state[markerKey]).toEqual({ page: initial.page, position: initial.position + 1 });
+    if (value && typeof value === "object") expect(Object.hasOwn(value, markerKey)).toBe(false);
+  },
+);
+
+test.each(
+  [
+    [],
+    "state",
+    12,
+    false,
+    new Map([["island", 1]]),
+    new Date("2026-10-20T00:00:00Z"),
+    new (class State {
+      island = 1;
+    })(),
+  ].map((value) => [value]),
+)("non-plain state passes through without a marker: %j", (value) => {
+  // Compare with native storage too: Happy DOM normalizes false to null.
+  History.prototype.replaceState.call(window.history, value, "");
+  const native = window.history.state;
+  install();
+  window.history.pushState(value, "", "/app/old?tab=1");
+  expect(window.history.state).toEqual(native);
+  expect(Object.hasOwn(Object(window.history.state), markerKey)).toBe(false);
+  window.history.replaceState(value, "", "/app/old?tab=2");
+  expect(window.history.state).toEqual(native);
+});
+
+test("push overwrites a copied or caller-provided marker; replace preserves the entry's marker and scroll", () => {
+  const existing = { page: "existing", position: 17, scroll: { window: { x: 0, y: 22 }, regions: [] } };
+  window.history.replaceState({ [markerKey]: existing, island: 1 }, "");
+  install();
+  const value = { island: 2, [markerKey]: { page: "fake", position: 99 } };
+  window.history.replaceState(value, "");
+  expect(window.history.state).toEqual({ island: 2, [markerKey]: existing });
+  window.history.pushState(value, "");
+  expect(window.history.state).toEqual({ island: 2, [markerKey]: { page: "existing", position: 18 } });
+  expect(value[markerKey]).toEqual({ page: "fake", position: 99 });
+});
+
+test("wrappers are own properties installed once and stay inert after uninstall", () => {
+  install();
+  const { pushState, replaceState } = window.history;
+  expect(Object.hasOwn(window.history, "pushState")).toBe(true);
+  expect(Object.hasOwn(window.history, "replaceState")).toBe(true);
+  installPageSwap();
+  expect(window.history.pushState).toBe(pushState);
+  uninstall();
+  window.history.pushState(null, "", "/app/old?tab=1");
+  expect(window.history.state).toBeNull();
+  window.history.replaceState({ island: 1 }, "");
+  expect(window.history.state).toEqual({ island: 1 });
+  install();
+  expect(window.history.pushState).toBe(pushState);
+  expect(window.history.replaceState).toBe(replaceState);
+});
+
+test("scroll restoration is manual for the whole install and restores the previous setting", () => {
+  window.history.scrollRestoration = "auto";
+  install();
+  expect(String(window.history.scrollRestoration)).toBe("manual");
+  uninstall();
+  expect(String(window.history.scrollRestoration)).toBe("auto");
+  window.history.scrollRestoration = "manual";
+  install();
+  uninstall();
+  expect(String(window.history.scrollRestoration)).toBe("manual");
+  window.history.scrollRestoration = "auto";
+});
+
+test("listenPopState installed before nav handles same-page entries and hides cross-page entries", async () => {
+  const handler = mock(() => {});
+  const stop = listenPopState(handler);
+  try {
+    install();
+    const entry = window.history.state;
+    window.dispatchEvent(new PopStateEvent("popstate", { state: entry }));
+    expect(handler).toHaveBeenCalledTimes(1);
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(response());
+    const done = swapped("new");
+    arrive({ [markerKey]: { page: "other", position: 12 } }, "/app/new");
+    await done;
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+  }
+});
+
+test("persisted pageshow on a foreign entry starts a traversal swap", async () => {
+  install();
+  const fetch = spyOn(globalThis, "fetch").mockResolvedValue(response());
+  History.prototype.replaceState.call(window.history, { [markerKey]: { page: "cached", position: 3 } }, "", "/app/new");
+  const done = swapped("new");
+  const event = new Event("pageshow");
+  Object.defineProperty(event, "persisted", { value: true });
+  window.dispatchEvent(event);
+  await done;
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(window.history.state[markerKey]).toEqual({ page: "cached", position: 3 });
+});
+
+test("an unpatched unmarked push swaps on popstate and gains a new page id", async () => {
+  install();
+  const before = window.history.state[markerKey].page;
+  History.prototype.pushState.call(window.history, null, "", "/app/new");
+  const fetch = spyOn(globalThis, "fetch").mockResolvedValue(response());
+  const done = swapped("new");
+  window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+  await done;
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(window.history.state[markerKey].page).not.toBe(before);
+});
+
+test.each([
+  "old-string",
+  { page: "", position: 1 },
+  { page: "other", position: "1" },
+  { page: "other", position: NaN },
+  { page: "other", position: 1, scroll: { window: { x: 0, y: 0 }, regions: [{}] } },
+])("invalid marker fails safe on traversal: %j", async (invalid) => {
+  install();
+  spyOn(globalThis, "fetch").mockResolvedValue(response());
+  const done = swapped("new");
+  arrive({ [markerKey]: invalid }, "/app/new");
+  await done;
+  expect(window.history.state[markerKey]).toEqual({ page: expect.any(String), position: expect.any(Number) });
+});
+
+test.each(["push", "replace to another URL"])("an island %s during a traversal fetch drops it without reload", async (mode) => {
+  install();
+  const requests = deferredFetch(true);
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new");
+  if (mode === "push") window.history.pushState(null, "", "/app/new");
+  else window.history.replaceState({}, "", "/app/new?moved");
+  const result = response();
+  const read = spyOn(result, "text");
+  requests[0]!.resolve(result);
+  // The fetch continuation is queued before this continuation.
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(read).not.toHaveBeenCalled();
+  expect(document.title).toBe("old");
+  expect(reload).not.toHaveBeenCalled();
+  expect(assign).not.toHaveBeenCalled();
+});
+
+test("an island replace that keeps the arriving URL still lets the traversal commit", async () => {
+  install();
+  const requests = deferredFetch(true);
+  const done = swapped("new");
+  arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new");
+  window.history.replaceState({ island: 1 }, "", "/app/new");
+  requests[0]!.resolve(response());
+  await done;
+  expect(window.history.state).toEqual({ island: 1, [markerKey]: { page: "other", position: 5 } });
+});
+
+test("a traversal redirect inside scope reloads the arriving URL without changing history", async () => {
+  install();
+  const done = Promise.withResolvers<void>();
+  const reload = spyOn(window.location, "reload").mockImplementation(() => done.resolve());
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("redirected"), {}, "https://example.test/app/redirected"));
+  const before = window.history.length;
+  arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new#section");
+  await done.promise;
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(window.history.length).toBe(before);
+  expect(window.location.href).toBe("https://example.test/app/new#section");
+  expect(document.title).toBe("old");
+});
+
+test("pagehide persists scroll; reload restores window and keyed regions", () => {
+  const snapshot = { window: { x: 0, y: 220 }, regions: [{ key: "list", x: 0, y: 80 }] };
+  document.querySelector("main")!.insertAdjacentHTML("beforeend", '<div data-scroll-preserve="list"></div>');
+  const region = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
+  region.scrollTop = 80;
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => 220 });
+  install();
+  window.dispatchEvent(new Event("pagehide"));
+  expect(window.history.state[markerKey].scroll).toEqual(snapshot);
+  const page = window.history.state[markerKey].page;
+  uninstall();
+  region.scrollTop = 0;
+  const timing = { name: window.location.href, entryType: "navigation", startTime: 0, duration: 0, type: "reload", toJSON: () => ({}) };
+  spyOn(window.performance, "getEntriesByType").mockReturnValue([timing]);
+  install();
+  expect(window.history.state[markerKey].page).toBe(page);
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 220);
+  expect(region.scrollTop).toBe(80);
+});
+
+test("Navigation API supplies base and arriving positions and captures the departing entry before popstate", async () => {
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 71 } });
+  Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+  try {
+    install();
+    const initial = window.history.state[markerKey];
+    expect(initial.position).toBe(71);
+    let y = 310;
+    Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+    navigation.dispatchEvent(
+      Object.assign(new Event("navigate"), { navigationType: "traverse", destination: { key: "arrival" }, hashChange: false }),
+    );
+    y = 990;
+    navigation.currentEntry = { key: "arrival", index: 65 };
+    spyOn(globalThis, "fetch").mockResolvedValue(response());
+    const done = swapped("new");
+    arrive(null, "/app/new");
+    await done;
+    expect(window.history.state[markerKey].position).toBe(65);
+    const back = swapped("old");
+    spyOn(globalThis, "fetch").mockResolvedValue(response(html("old"), {}, "https://example.test/app/old"));
+    arrive({ [markerKey]: initial });
+    await back;
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 310);
+  } finally {
+    uninstall();
+    Reflect.deleteProperty(window, "navigation");
+  }
+});
+
+test("a rejected push keeps the tracked position even when the current state is unmarked", () => {
+  install();
+  const initial = window.history.state[markerKey];
+  window.history.replaceState([], "");
+  const length = window.history.length;
+  expect(() => window.history.pushState(null, "", "https://other.test/")).toThrow(DOMException);
+  expect(window.history.length).toBe(length);
+  expect(window.history.state).toEqual([]);
+  window.history.pushState(null, "", "/app/old?tab=1");
+  expect(window.history.state[markerKey]).toEqual({ page: initial.page, position: initial.position + 1 });
+});
+
+test("an old uninstall cannot change scroll restoration after a new install", () => {
+  window.history.scrollRestoration = "auto";
+  install();
+  const oldUninstall = uninstall;
+  uninstall();
+  install();
+  oldUninstall();
+  expect(String(window.history.scrollRestoration)).toBe("manual");
+  uninstall();
+  expect(String(window.history.scrollRestoration)).toBe("auto");
+});
+
+test.each(failures)("a traversal's %s failure reloads only the arriving entry", async (_name, make) => {
+  install();
+  const done = Promise.withResolvers<void>();
+  const reload = spyOn(window.location, "reload").mockImplementation(() => done.resolve());
+  spyOn(globalThis, "fetch").mockResolvedValue(make());
+  const before = window.history.length;
+  arrive({ [markerKey]: { page: "other", position: 7 } }, "/app/new");
+  await done.promise;
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(window.history.length).toBe(before);
+  expect(document.title).toBe("old");
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test("a late failure after marking an unmarked traversal still reloads", async () => {
+  install();
+  const done = Promise.withResolvers<void>();
+  const reload = spyOn(window.location, "reload").mockImplementation(() => done.resolve());
+  spyOn(globalThis, "fetch").mockResolvedValue(response());
+  spyOn(HTMLElement.prototype, "focus").mockImplementation(() => {
+    throw new Error("focus failed");
+  });
+  arrive(null, "/app/new");
+  await done.promise;
+  expect(window.history.state[markerKey]).toEqual({ page: expect.any(String), position: expect.any(Number) });
+  expect(reload).toHaveBeenCalledTimes(1);
+});
+
+test("same-page traversal restores window before the island and leaves region scroll to it", () => {
+  const snapshot = { window: { x: 0, y: 130 }, regions: [{ key: "list", x: 0, y: 90 }] };
+  window.history.replaceState({ [markerKey]: { page: "same", position: 3, scroll: snapshot } }, "");
+  install();
+  window.history.pushState(null, "", "/app/old?tab=1");
+  document.querySelector("main")!.insertAdjacentHTML("beforeend", '<div data-scroll-preserve="list"></div>');
+  const region = document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')!;
+  region.scrollTop = 12;
+  const stop = listenPopState(() => {
+    // The departure map takes precedence over the older persisted snapshot.
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0);
+    expect(region.scrollTop).toBe(12);
+    window.scrollTo(0, 777);
+  });
+  try {
+    arrive({ [markerKey]: { page: "same", position: 3, scroll: snapshot } });
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 777);
+  } finally {
+    stop();
+  }
+});
+
+test("a traversal restores stored window and region scroll after mounting the new island", async () => {
+  install();
+  const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", wrapper("new", scrollId))));
+  const done = swapped("new");
+  arrive({ [markerKey]: { page: "other", position: 4, scroll: snapshot } }, "/app/new");
+  await done;
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')?.scrollTop).toBe(110);
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 240);
 });

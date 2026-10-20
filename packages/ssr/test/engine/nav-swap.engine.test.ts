@@ -232,7 +232,7 @@ test(`${browserName}: a Solid handler prevents the page swap`, async () => {
   }
 });
 
-test(`${browserName}: success focuses and announces; Back loads the previous document once`, async () => {
+test(`${browserName}: success focuses and announces; Back swaps the previous page`, async () => {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
@@ -253,7 +253,7 @@ test(`${browserName}: success focuses and announces; Back loads the previous doc
         document.documentElement.dataset.ready === "yes" &&
         document.querySelector("main [data-mounted]")?.textContent === "old",
     );
-    expect(documents).toEqual([`${origin}/app/old`]);
+    expect(documents).toEqual([]);
   } finally {
     await context.close();
   }
@@ -287,7 +287,7 @@ test(`${browserName}: a same-page hash link after a swap stays native`, async ()
   }
 });
 
-test(`${browserName}: Back across an island push after a reload loads the right page`, async () => {
+test(`${browserName}: Back across an island push after a reload swaps the right page`, async () => {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
@@ -307,7 +307,7 @@ test(`${browserName}: Back across an island push after a reload loads the right 
         document.documentElement.dataset.ready === "yes" &&
         document.querySelector("main [data-mounted]")?.textContent === "old",
     );
-    expect(documents).toEqual([`${origin}/app/old`]);
+    expect(documents).toEqual([]);
   } finally {
     await context.close();
   }
@@ -330,7 +330,7 @@ test(`${browserName}: a relative URL in the swapped column resolves against the 
   }
 });
 
-test(`${browserName}: Back after reloading a swapped page loads the previous page`, async () => {
+test(`${browserName}: Back after reloading a swapped page swaps the previous page`, async () => {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
@@ -349,13 +349,13 @@ test(`${browserName}: Back after reloading a swapped page loads the previous pag
         document.documentElement.dataset.ready === "yes" &&
         document.querySelector("main [data-mounted]")?.textContent === "old",
     );
-    expect(documents).toEqual([`${origin}/app/old`]);
+    expect(documents).toEqual([]);
   } finally {
     await context.close();
   }
 });
 
-test(`${browserName}: Back onto a URL with a hash after a swap loads that page`, async () => {
+test(`${browserName}: Back onto a URL with a hash after a swap swaps that page`, async () => {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
@@ -372,7 +372,7 @@ test(`${browserName}: Back onto a URL with a hash after a swap loads that page`,
         document.querySelector("main [data-mounted]")?.textContent === "old",
     );
     // The request carries no fragment; location.hash above shows the URL kept it.
-    expect(documents).toEqual([`${origin}/app/old`]);
+    expect(documents).toEqual([]);
   } finally {
     await context.close();
   }

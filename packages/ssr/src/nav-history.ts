@@ -5,7 +5,9 @@ const SCROLL_PRESERVE_SELECTOR = "[data-scroll-preserve]";
 /** Where an installed page swap keeps its per-document state (see nav-swap.ts). */
 export const swapKey = Symbol.for("@k2b/ssr/nav-swap");
 
-type SharedSwap = typeof globalThis & { [swapKey]?: { active?: AbortController; started: number } };
+type SharedSwap = typeof globalThis & {
+  [swapKey]?: { active?: AbortController; started: number; decide: (event: PopStateEvent) => "page" | "nav" };
+};
 
 /** Any newer navigation wins over a pending page swap. Without an installed swap this does nothing. */
 export const cancelPageSwap = (): void => {
@@ -95,13 +97,15 @@ export const restoreScroll = (snapshot: ScrollSnapshot, options: { window?: bool
 };
 
 /**
- * Subscribes to browser Back/Forward navigation.
+ * Subscribes to browser Back/Forward within the shown page when page swaps are installed.
  *
  * The application remains responsible for reconciling its island state with
  * the URL. This helper intentionally does not perform route matching.
  */
 export const listenPopState = (handler: (navigation: PopStateNavigationEvent) => void): (() => void) => {
   const listener = (event: PopStateEvent) => {
+    const shared: SharedSwap = globalThis;
+    if (shared[swapKey]?.decide(event) === "nav") return;
     handler({ event, url: new URL(window.location.href), state: event.state });
   };
 
