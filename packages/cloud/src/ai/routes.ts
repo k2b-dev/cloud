@@ -1354,10 +1354,12 @@ export const aiRoutes = (() => {
         const turn = await loadTurn(conversation, c.req.param("turnId"));
         if (!turn) return notFound(c);
         const scope = { conversationId: conversation.id, turnId: turn.id };
-        const [actions, records, messages, config] = await Promise.all([
-          listPendingAiTurnActions(scope),
+        const actions = await listPendingAiTurnActions(scope);
+        if (!actions.some((action) => action.type === "approval_request"))
+          return respond(c, ok(actions.map((action) => publicPendingAction(action, conversation.shortId, turn.shortId))));
+        const [records, reviews, config] = await Promise.all([
           aiConversations.listPendingActionRecords(scope),
-          aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id, includeCompacted: true }),
+          aiConversations.listTurnToolReviews(scope),
           aiConversations.getTurnRunConfig(scope),
         ]);
         const locale = config?.kind !== "compact" ? (config?.locale ?? getLocale(c)) : getLocale(c);
@@ -1368,9 +1370,7 @@ export const aiRoutes = (() => {
             const record = records.find((record) => record.callId === action.callId);
             const request = record?.approvalId ? await approvals.get(record.approvalId) : null;
             const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
-            const stored = messages.toReversed().find((message) => message.meta?.toolReviews?.[reviewCallId])?.meta?.toolReviews?.[
-              reviewCallId
-            ];
+            const stored = reviews.get(reviewCallId);
             const appId = request?.appId;
             const app = appId && appId !== "assistant" ? await getApp(appId) : null;
             return {

@@ -1044,6 +1044,8 @@ export type AiConversationService = {
   getPendingTurnAction(input: { conversationId: string; turnId: string; callId: string }): Promise<AiPendingTurnActionRecord | null>;
   findPendingTurnActionByApproval(input: { approvalId: string; ownerUserId: string }): Promise<AiPendingTurnActionRecord | null>;
   listPendingActionRecords(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnActionRecord[]>;
+  /** The reviews Cloud stored with a turn's tool calls, keyed by call ID; the newest message wins. */
+  listTurnToolReviews(input: { conversationId: string; turnId: string }): Promise<Map<string, AiStoredActionReview>>;
   listResolvedPendingActions(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnActionRecord[]>;
   resolvePendingTurnAction(input: {
     conversationId: string;

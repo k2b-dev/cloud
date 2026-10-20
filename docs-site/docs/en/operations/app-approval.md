@@ -618,15 +618,15 @@ The row labels follow the question's language. The main labels are:
 | Preview | German / English labels |
 | --- | --- |
 | Message | Von / From, An / To, Cc, Bcc, Betreff / Subject, Senden am / Send at, Warnung / Warning, Anhänge / Attachments, Text |
-| Event | Wann / When, Wo / Where, Mit / With, Wiederholung / Repeats, Text |
-| Task | Fällig / Due, Zuständig / Assignees, Text |
-| File | Ordner / Folder, Größe / Size, Ziel / To |
-| Page | Ort / Place, Text, Neu / Added, Entfernt / Removed |
-| Rule | Startet / Starts, Darf / May, Text |
+| Event | Titel / Title, Wann / When, Wo / Where, Mit / With, Wiederholung / Repeats, Text |
+| Task | Titel / Title, Ort / Place, Fällig / Due, Zuständig / Assignees, Status, Checkliste / Checklist, Tags, Text |
+| File | Name, Ordner / Folder, Größe / Size, Ziel / To |
+| Page | Titel / Title, Ort / Place, Text, Neu / Added, Entfernt / Removed |
+| Rule | Startet / Starts, Text, Darf / May, Hinweis / Note when the rule cannot see the chat |
 | Fields | The app's labels; previous values add `(vorher)` / `(before)` |
 
-Message scheduling and warnings, event recurrence, and task or event text
-appear when supplied. Consequences follow the preview as Folge / Also,
+Rows appear only when the preview supplies their value. A title or file name
+that the question already says gets no row of its own. Consequences follow the preview as Folge / Also,
 Neu / Added, or Entfernt / Removed. Rule permission changes use
 Darf (neu) / May (added) and Darf (entfernt) / May (removed).
 Legacy reviews keep their literal question and detail rows; Markdown becomes
@@ -646,7 +646,8 @@ end, then shortens the message.
 A truncated question with reason `sends` is browser-only: it is absent from
 the device inbox and detail endpoint and triggers no device push. It still
 counts in `moreActions`. The person decides in Cloud, where the full message
-is visible. Other truncated questions remain available on the device; show
+is visible. To fill the inbox past such questions, one inbox call reads at
+most the newest 100 open requests. Other truncated questions remain available on the device; show
 that their complete content is available in Cloud.
 
 The device protocol and `cloud-action-v1` digest do not change. Existing

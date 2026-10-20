@@ -3,6 +3,7 @@ import { capabilityPersonText, capabilitySentenceText } from "../../_internal/ca
 import type { CapabilityAskReason, CapabilityPerson, CapabilitySentence } from "../../contracts/capabilities";
 import { formatBytes } from "../../shared/format";
 import type { ActionCard } from "./action-card";
+import { actionMessages } from "./action-messages";
 
 export type ActionTextRow = { label: string; value: string; format?: "date" | "date-time"; block?: true };
 export type ActionQuestionText = {
@@ -51,6 +52,8 @@ const messages = i18n.define({
       mayRemoved: "May (removed)",
       also: "Also",
       readAll: "Read all",
+      title: "Title",
+      name: "Name",
       note: "Note",
       before: ({ label }: { label: string }) => `${label} (before)`,
       more: ({ count }: { count: number }) => `${count.toLocaleString("en")} more`,
@@ -86,6 +89,8 @@ const messages = i18n.define({
       mayRemoved: "Darf (entfernt)",
       also: "Folge",
       readAll: "Ganz lesen",
+      title: "Titel",
+      name: "Name",
       note: "Hinweis",
       before: ({ label }) => `${label} (vorher)`,
       more: ({ count }) => `${count.toLocaleString("de")} weitere`,
@@ -112,6 +117,10 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
     return new Intl.ListFormat(card.locale, { type: "conjunction" }).format(values);
   };
   const people = (values: CapabilityPerson[] | undefined, more = 0) => list((values ?? []).map(capabilityPersonText), more);
+  // The thing's own name, unless the question already says it.
+  const named = (label: string, value: string) => {
+    if (!card.questionText.includes(value)) row(label, value);
+  };
   const model = card.preview;
   if (model?.kind === "legacy") {
     rows.push(...model.rows);
@@ -142,6 +151,7 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
         row(t.text, preview.body, { block: true });
         break;
       case "event": {
+        named(t.title, preview.title);
         const format = preview.allDay || /^\d{4}-\d{2}-\d{2}$/.test(preview.start) ? "date" : "date-time";
         const { start, end } = preview;
         if (end && format === "date" && (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end))) {
@@ -161,6 +171,7 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
         break;
       }
       case "task":
+        named(t.title, preview.title);
         row(t.place, preview.place);
         row(t.due, preview.due, { format: /^\d{4}-\d{2}-\d{2}$/.test(preview.due ?? "") ? "date" : "date-time" });
         row(t.assignees, people(preview.assignees));
@@ -170,20 +181,24 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
         row(t.text, preview.description, { block: true });
         break;
       case "file":
+        named(t.name, preview.name);
         row(t.folder, preview.place ?? preview.path);
         row(t.size, preview.size === undefined ? undefined : formatBytes(preview.size, { locale: card.locale }));
         row(t.target, preview.to);
         break;
       case "page":
+        named(t.title, preview.title);
         row(t.place, preview.place);
         row(t.text, preview.body, { block: true });
         for (const change of preview.changes ?? []) row(change.change === "added" ? t.added : t.removed, change.text);
         break;
       case "rule":
         row(t.starts, sentence(preview.when));
+        row(t.text, preview.does, { block: true });
         for (const may of preview.may)
           row(may.mark === "added" ? t.mayAdded : may.mark === "removed" ? t.mayRemoved : t.may, sentence(may));
-        row(t.text, preview.does, { block: true });
+        // The card's fixed line: a routine knows only its instruction, never this chat.
+        if (!preview.seesChat) row(t.note, actionMessages(card.locale).ruleBlindToChat);
         break;
       case "fields":
         for (const field of preview.rows) {

@@ -104,6 +104,7 @@ describe("plain question blocks", () => {
     expect(actionQuestionLines(textFor("de", event), { timeZone: "Europe/Berlin" })).toEqual([
       "? Nachricht senden?",
       "  Ich frage, weil das Cloud verlässt.",
+      "  Titel:        Retro",
       "  Wann:         21. Okt. 2026, 18:00 – 21. Okt. 2026, 20:00",
       "  Wo:           Team Ops · Raum 2",
       "  Mit:          Lea Berg <lea.berg@example.com>",
@@ -115,6 +116,7 @@ describe("plain question blocks", () => {
     expect(actionQuestionLines(textFor("en", event), { timeZone: "America/New_York" })).toEqual([
       "? Send message?",
       "  I'm asking because this leaves Cloud.",
+      "  Title:   Retro",
       "  When:    Oct 21, 2026, 18:00 – Oct 21, 2026, 20:00",
       "  Where:   Team Ops · Raum 2",
       "  With:    Lea Berg <lea.berg@example.com>",
@@ -132,10 +134,11 @@ describe("plain question blocks", () => {
       "? Nachricht senden?",
       "  Ich frage, weil das Cloud verlässt.",
       "  Startet:         Lea Berg <lea.berg@example.com> fragt",
-      "  Darf (neu):      Lea Berg <lea.berg@example.com> schreiben",
-      "  Darf (entfernt): Löschen",
       "  Zusammenfassen",
       "  Berichten",
+      "  Darf (neu):      Lea Berg <lea.berg@example.com> schreiben",
+      "  Darf (entfernt): Löschen",
+      "  Hinweis:         Kennt diesen Chat nicht. Sie weiß nur, was oben steht.",
       "  Folge:           Lea Berg <lea.berg@example.com> erfährt es",
     ]);
   });
@@ -151,10 +154,11 @@ describe("plain question blocks", () => {
       "? Send message?",
       "  I'm asking because this leaves Cloud.",
       "  Starts:        Lea Berg <lea.berg@example.com> fragt",
-      "  May (added):   Lea Berg <lea.berg@example.com> schreiben",
-      "  May (removed): Löschen",
       "  Zusammenfassen",
       "  Berichten",
+      "  May (added):   Lea Berg <lea.berg@example.com> schreiben",
+      "  May (removed): Löschen",
+      "  Note:          Doesn't know this chat. It only knows what is written above.",
       "  Removed:       Notify Lea Berg <lea.berg@example.com>",
     ]);
   });
@@ -199,6 +203,7 @@ test("task, file, page and fields retain their typed values and changes", () => 
       description: "Work",
     }).rows,
   ).toEqual([
+    { label: "Titel", value: "Task" },
     { label: "Ort", value: "Team Ops" },
     { label: "Fällig", value: "2026-10-21", format: "date" },
     { label: "Zuständig", value: "Lea Berg <lea.berg@example.com>" },
@@ -208,11 +213,28 @@ test("task, file, page and fields retain their typed values and changes", () => 
     { label: "Text", value: "Work", block: true },
   ]);
   expect(textFor("en", { kind: "file", name: "one.pdf", path: "/drafts", size: 84_000, to: "/archive" }).rows).toEqual([
+    { label: "Name", value: "one.pdf" },
     { label: "Folder", value: "/drafts" },
     { label: "Size", value: "84 KB" },
     { label: "To", value: "/archive" },
   ]);
-  expect(textFor("de", { kind: "file", name: "one.pdf", to: "/archive" }).rows).toEqual([{ label: "Ziel", value: "/archive" }]);
+  // A question that names the file already gets no Name row.
+  expect(
+    textFor(
+      "de",
+      { kind: "file", name: "one.pdf", to: "/archive" },
+      {
+        slots: { file: { kind: "object", title: "one.pdf" } },
+        sentence: {
+          action: "{file} verschieben",
+          running: "{file} wird verschoben",
+          done: "{file} verschoben",
+          confirm: "Verschieben",
+          decline: "Nicht verschieben",
+        },
+      },
+    ).rows,
+  ).toEqual([{ label: "Ziel", value: "/archive" }]);
   const page = textFor("de", {
     kind: "page",
     title: "Page",
@@ -227,6 +249,7 @@ test("task, file, page and fields retain their typed values and changes", () => 
   });
   expect(page.incomplete).toBe(true);
   expect(page.rows).toEqual([
+    { label: "Titel", value: "Page" },
     { label: "Ort", value: "Notes" },
     { label: "Text", value: "Body", block: true },
     { label: "Neu", value: "New" },
@@ -242,12 +265,19 @@ test("task, file, page and fields retain their typed values and changes", () => 
 
 test("single dates stay typed and calendar dates stay on their day west of UTC", () => {
   const date = textFor("en", { kind: "event", title: "Day", start: "2026-10-21", allDay: true });
-  expect(date.rows).toEqual([{ label: "When", value: "2026-10-21", format: "date" }]);
-  expect(actionQuestionLines(date, { timeZone: "America/Los_Angeles" })).toContain("  When: Oct 21, 2026");
+  // The question does not name the event, so its title is a row of its own.
+  expect(date.rows).toEqual([
+    { label: "Title", value: "Day" },
+    { label: "When", value: "2026-10-21", format: "date" },
+  ]);
+  expect(actionQuestionLines(date, { timeZone: "America/Los_Angeles" })).toContain("  When:  Oct 21, 2026");
+  const when = (text: ReturnType<typeof textFor>) => text.rows.filter((row) => row.label === "When");
   expect(
-    textFor("en", { kind: "event", title: "Day", allDay: true, start: "2026-10-21T00:00:00+14:00", end: "2026-10-22T00:00:00+14:00" }).rows,
+    when(
+      textFor("en", { kind: "event", title: "Day", allDay: true, start: "2026-10-21T00:00:00+14:00", end: "2026-10-22T00:00:00+14:00" }),
+    ),
   ).toEqual([{ label: "When", value: "Oct 20, 2026 – Oct 21, 2026" }]);
-  expect(textFor("en", { kind: "event", title: "Meeting", start: "2026-10-21T16:00:00Z" }).rows).toEqual([
+  expect(when(textFor("en", { kind: "event", title: "Meeting", start: "2026-10-21T16:00:00Z" }))).toEqual([
     { label: "When", value: "2026-10-21T16:00:00Z", format: "date-time" },
   ]);
 });
