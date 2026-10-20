@@ -109,6 +109,15 @@ describe("Markdown PDF renderer", () => {
     }
   });
 
+  test("counts an unknown reference-like name as one unit only up to the longest reference name", () => {
+    const html = buildPresetPdfHtml({
+      html: `<table><tr><td>&CounterClockwiseContourIntegral;</td><td>&${"a".repeat(80)};</td></tr></table>`,
+    });
+    const a = (count: number) => "a".repeat(count);
+    expect(html).toContain("<td>&CounterClockwiseContourIntegral;</td>");
+    expect(html).toContain(`<td>&${a(41)}<wbr>${a(10)}<wbr>${a(10)}<wbr>${a(10)}<wbr>${a(9)};</td>`);
+  });
+
   test("treats a raw no-break space as part of the run", () => {
     const html = buildPresetPdfHtml({ html: `<table><tr><td>${"a".repeat(10)}\u00a0${"b".repeat(10)}</td></tr></table>` });
     expect(html).toContain(`<td>${"a".repeat(10)}<wbr>\u00a0${"b".repeat(9)}<wbr>b</td>`);

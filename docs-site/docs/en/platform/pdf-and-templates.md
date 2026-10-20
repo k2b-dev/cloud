@@ -132,7 +132,9 @@ In every document (each preset, no template, or custom CSS only), table cells
 keep words whole so short values such as `Nr.` stay on one line; custom CSS
 can override the cell rule. Words of up to 20 characters stay whole; a longer
 run without a space, such as a long URL or code, gets a break opportunity every
-10 characters so the table fits the page.
+10 characters so the table fits the page. Because words stay whole, a table
+with many columns of long words can still be wider than the page; split it or
+let custom CSS break cells anywhere.
 
 The result renders offline like any other HTML: the offline policy replaces
 the Content Security Policy that `buildPresetPdfHtml()` writes. `html` and
