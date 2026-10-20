@@ -44,6 +44,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { accessRevision, isAppSessionActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { type AuditActor, accountsAppService, audit } from "@k2b/cloud/services";
+import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
@@ -1083,7 +1084,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             message: t.skillAccessChange({ name: skill.name, id: input.skillId }),
             details: [
-              { label: t.recipient, value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
+              { label: t.recipient, value: `${principalLabel(recipient!, context.locale)} — ${JSON.stringify(principal)}` },
               { label: t.before, value: previous ? level(previous.permission) : t.noAccess },
               { label: t.after, value: input.permission ? level(input.permission) : t.removeAccess },
               { label: t.appAccess, value: t.appAccessUnchanged },

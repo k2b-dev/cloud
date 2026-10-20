@@ -317,8 +317,8 @@ export const aiUsage = {
             : field === "appId"
               ? sql`e.app_id`
               : sql`e.task`;
-    const label = field === "userId" ? sql`COALESCE(NULLIF(u.display_name,''),u.uid,sa.name,e.user_id::text)` : key;
-    return sql<{ id: string; label: string }[]>`SELECT DISTINCT ${key} AS id,${label} AS label FROM (${events(since, until)}) e
+    const label = field === "userId" ? sql`COALESCE(NULLIF(u.display_name,''),u.uid,sa.name)` : key;
+    return sql<{ id: string; label: string | null }[]>`SELECT DISTINCT ${key} AS id,${label} AS label FROM (${events(since, until)}) e
       LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id WHERE ${key} IS NOT NULL
       AND (position(lower(${search}) in lower(${label}))>0 OR ${key}=${search} OR (${field === "userId"} AND position(lower(${search}) in lower(COALESCE(u.uid,'')))>0))
       ORDER BY label,id LIMIT ${query.perPage}`;

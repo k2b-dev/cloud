@@ -1270,3 +1270,144 @@ describe("PermissionEditor caller refreshes", () => {
     }
   });
 });
+
+describe("PermissionEditor principal names", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const id = (n: number) => `11111111-1111-4111-8111-${String(n).padStart(12, "0")}`;
+  const assertNoIds = (root: HTMLElement) => {
+    expect(root.textContent).not.toMatch(uuid);
+    for (const element of root.querySelectorAll("[aria-label], [aria-description], [title]")) {
+      for (const attribute of ["aria-label", "aria-description", "title"]) expect(element.getAttribute(attribute) ?? "").not.toMatch(uuid);
+    }
+  };
+  for (const locale of ["en", "de"] as const) {
+    test(`${locale}: unnamed principals have localized labels, named rows keep names and initials`, async () => {
+      const dom = createDomTestHarness();
+      dom.document.documentElement.lang = locale;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = Object.assign(async () => Response.json({ items: [], pagination: { total: 0, has_next: false } }), {
+        preconnect: originalFetch.preconnect,
+      });
+      const { default: PermissionEditor } = await import("./PermissionEditor");
+      const entries: AccessEntry[] = [
+        { id: id(1), principal: { type: "user", userId: id(2) }, permission: "read", createdAt: "2026-10-20T12:00:00.000Z" },
+        { id: id(3), principal: { type: "group", groupId: id(4) }, permission: "read", createdAt: "2026-10-20T12:00:00.000Z" },
+        {
+          id: id(5),
+          principal: { type: "service_account", serviceAccountId: id(6) },
+          serviceAccountKind: "agent",
+          permission: "admin",
+          createdAt: "2026-10-20T12:00:00.000Z",
+        },
+        { id: id(7), principal: { type: "authenticated" }, permission: "read", createdAt: "2026-10-20T12:00:00.000Z" },
+        { id: id(8), principal: { type: "public" }, permission: "read", createdAt: "2026-10-20T12:00:00.000Z" },
+        {
+          id: id(9),
+          principal: { type: "user", userId: id(10) },
+          displayName: "Ada Example",
+          permission: "admin",
+          createdAt: "2026-10-20T12:00:00.000Z",
+        },
+        {
+          id: id(11),
+          principal: { type: "group", groupId: id(12) },
+          displayName: "finance-team",
+          permission: "read",
+          createdAt: "2026-10-20T12:00:00.000Z",
+        },
+      ];
+      const dispose = render(
+        () => (
+          <PermissionEditor
+            initialEntries={entries}
+            grantAccess={async () => {
+              throw new Error("unused");
+            }}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        assertNoIds(dom.root);
+        for (const label of locale === "en"
+          ? ["Unknown person", "Deleted group", "Unknown agent", "All users (including guests)", "Public", "finance-team"]
+          : [
+              "Unbekannte Person",
+              "Gelöschte Gruppe",
+              "Unbekannter Agent",
+              "Alle Benutzer einschließlich Gäste",
+              "Öffentlich",
+              "Finance-Team",
+            ])
+          expect(dom.root.textContent).toContain(label);
+        const row = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) =>
+          row.textContent?.includes("Ada Example"),
+        )!;
+        expect(row.textContent).toContain("AE");
+        const unknown = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"))[0]!;
+        expect(unknown.textContent).toContain("UP");
+      } finally {
+        dispose();
+        globalThis.fetch = originalFetch;
+        dom.cleanup();
+      }
+    });
+
+    test(`${locale}: an unresolved grant retains the picked name and avatar`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      dom.document.documentElement.lang = locale;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = Object.assign(
+        async () =>
+          Response.json({
+            items: [
+              { kind: "user", user: { id: id(20), uid: "ada", displayName: "Ada Example", avatarHash: "avatar-revision", mail: null } },
+            ],
+          }),
+        { preconnect: originalFetch.preconnect },
+      );
+      setSystemTime(new Date("2026-10-20T12:00:00.000Z"));
+      const { default: PermissionEditor } = await import("./PermissionEditor");
+      delegateEvents(["input", "click"], dom.document);
+      let granted = false;
+      const dispose = render(
+        () => (
+          <PermissionEditor
+            initialEntries={[]}
+            allowAuthenticated={false}
+            grantAccess={async (principal, permission) => {
+              granted = true;
+              return { id: id(21), principal, permission, createdAt: "2026-10-20T12:00:00.000Z" };
+            }}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.value = "Ada";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await waitFor(() => !!dom.root.querySelector("[role=option]"), "the picked person");
+        dom.root.querySelector<HTMLButtonElement>("[role=option]")!.click();
+        await waitFor(() => granted && !!dom.root.querySelector(".group\\/access-row:not([aria-busy])"), "the saved row");
+        assertNoIds(dom.root);
+        expect(dom.root.textContent).toContain("Ada Example");
+        expect(dom.root.querySelector("img")?.getAttribute("src")).toContain("avatar-revision");
+      } finally {
+        dispose();
+        globalThis.fetch = originalFetch;
+        setSystemTime();
+        dom.cleanup();
+      }
+    });
+  }
+});
