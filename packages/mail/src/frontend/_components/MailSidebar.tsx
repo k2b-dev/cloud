@@ -88,6 +88,8 @@ export default function MailSidebar(
     mobile?: "stacked" | "hidden";
     /** Runs after the person hid a mailbox from the sidebar. */
     onMailboxHidden?: (mailboxId: string) => void;
+    /** Opt in to island-owned mailbox navigation; Focus keeps ordinary document links. */
+    onOpenMailbox?: (nav: LinkNavigateEvent) => void | Promise<void>;
     /** Whether the person collapsed what holds the open place's row: Hidden mailboxes or a folder branch. */
     onOpenPlaceRowHiddenChange?: (hidden: boolean) => void;
   },
@@ -514,6 +516,9 @@ export default function MailSidebar(
       <>
         <AppWorkspace.SidebarItem
           href={`/app/mail/${mailbox.id}`}
+          navigation={props.onOpenMailbox ? "enhanced" : undefined}
+          scroll={props.onOpenMailbox ? "preserve" : undefined}
+          onNavigate={props.onOpenMailbox}
           title={[mailboxName(mailbox), mailboxOverviewSubtitle(current(), locale()), ...countLabels()].join(" · ")}
           active={Boolean(rowOpen()) && !placeActive()}
           class="mail-sidebar-mailbox"
@@ -666,6 +671,8 @@ export default function MailSidebar(
       label: mailboxName(mailbox),
       icon: props.preferences.isPinned(mailbox.id) ? "ti ti-flag" : "ti ti-mail",
       href: `/app/mail/${mailbox.id}`,
+      navigation: props.onOpenMailbox ? "enhanced" : undefined,
+      scroll: props.onOpenMailbox ? "preserve" : undefined,
       active: Boolean(open) && !placeActive(),
       badge: stats(mailbox.id).needsAction || undefined,
       ...(open ? { children: folderEntries(open), defaultExpanded: true } : {}),
@@ -682,7 +689,13 @@ export default function MailSidebar(
         ? [{ id: "new-mailbox", label: messages().newMailbox, icon: "ti ti-mail-plus", action: "new-mailbox", disabled: creating() }]
         : []),
     ],
-    onNavigate: (event) => props.open?.onNavigate(event),
+    onNavigate: (event) => {
+      const url = new URL(event.href, window.location.origin);
+      const mailboxRow =
+        props.mailboxes.some((mailbox) => url.pathname === `/app/mail/${mailbox.id}`) &&
+        (url.pathname !== `/app/mail/${props.open?.mailboxId}` || !url.search);
+      return mailboxRow && props.onOpenMailbox ? props.onOpenMailbox(event) : props.open?.onNavigate(event);
+    },
     onAction: (action) => {
       if (action === "new-mailbox") void createMailbox();
     },

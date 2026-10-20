@@ -91,7 +91,7 @@ const pageHtml = (url: URL) => {
   const locale = url.searchParams.get("locale") === "de" ? "de" : "en";
   const html = renderToString(() => createComponent(Fixture, { source: `${url.pathname}${url.search}`, locale, theme }));
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
-  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}<script>${controller}</script><script type="module">
+  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button>' : ""}<script>${controller}</script><script type="module">
     const geometry=${geometrySource};
     const strip=${stripSource};
     const step=(name)=>{document.documentElement.dataset.mailShellStep=name};
@@ -123,13 +123,35 @@ beforeAll(async () => {
   for (const build of builds) if (!build.success) throw new AggregateError(build.logs, "Mail shell CSS failed");
   css = (await Promise.all(builds.flatMap((build) => build.outputs.map((output) => output.text())))).join("\n");
   const entry = join(root, "controller.ts");
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const built = await Bun.build({
     entrypoints: [entry],
     files: {
-      [entry]: `import {installAppWorkspaceController} from ${JSON.stringify(join(ui, "browser/index.js"))};installAppWorkspaceController();`,
+      [entry]: `import {installAppWorkspaceController} from ${JSON.stringify(join(ui, "browser/index.js"))};import {openCloudMobileMenu} from "@k2b/cloud/ssr/MobileNavigation";installAppWorkspaceController();document.getElementById("mailbox-navigation-test")?.addEventListener("click",()=>void openCloudMobileMenu({apps:[],legalLinks:[]}));`,
     },
     target: "browser",
     format: "iife",
+    conditions: ["browser"],
+    // The synthetic shell uses Cloud's real phone sheet and its history handling, outside the Mail island bundle.
+    plugins: [
+      {
+        name: "mail-shell-mobile-navigation",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            if (!result?.code) throw new Error(`Could not compile ${path}`);
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
   });
   if (!built.success) throw new AggregateError(built.logs, "Workspace controller failed");
   controller = await built.outputs[0]!.text();
@@ -328,6 +350,92 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         } finally {
           await close(page);
         }
+      }
+    });
+
+    // These two cases belong to the existing behavior child (their names deliberately omit the geometry-matrix pattern).
+    test("mailbox switch preserves the document, sidebar and head through Back, Forward and reload", async () => {
+      const page = await open(boxPath);
+      const destination = "/app/mail/Box002";
+      let navigations = 0;
+      // Same-document history changes also emit framenavigated; count actual document requests.
+      page.on("request", (request) => {
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) ++navigations;
+      });
+      const marked = async () =>
+        expect(
+          await page.evaluate(() => [
+            Reflect.get(window, "mailboxSwitchMarker"),
+            Reflect.get(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker"),
+          ]),
+        ).toEqual(["kept", "kept"]);
+      const frame = async () =>
+        (await geometry(page)).filter(({ part }) =>
+          part.split(" ").some((name) => name === "mail-sidebar" || name === "k2b-app-workspace__head"),
+        );
+      try {
+        await page.evaluate(() => {
+          Reflect.set(window, "mailboxSwitchMarker", "kept");
+          Reflect.set(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker", "kept");
+        });
+        const before = await frame();
+        await sidebar(page).locator(`a[href="${destination}"]`).first().click();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await page.getByText("Example dispatch: Example request 1", { exact: true }).waitFor({ state: "visible" });
+        await ready(page);
+        await marked();
+        assertFrame(before, await frame(), "mailbox switch frame");
+        const switched = await geometry(page);
+        await page.goBack();
+        await page.waitForURL(new URL(boxPath, server.url).href);
+        await page.getByText("Example request 1", { exact: true }).first().waitFor({ state: "visible" });
+        await ready(page);
+        await marked();
+        await page.goForward();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await page.getByText("Example dispatch: Example request 1", { exact: true }).waitFor({ state: "visible" });
+        await ready(page);
+        await marked();
+        expect(navigations).toBe(0);
+        await page.reload();
+        await ready(page);
+        expect(new URL(page.url()).pathname).toBe(destination);
+        const serverFrame = await recordedFrame(page, "server");
+        assertFrame(switched, serverFrame, "B reload server");
+        assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "B reload hydrated");
+        assertFrame(serverFrame, await geometry(page), "B reload settled");
+      } finally {
+        await close(page);
+      }
+    });
+
+    test("phone mailbox navigation sheet switches in place, closes, and Back returns to A", async () => {
+      const source = `${boxPath}?navigation=1`;
+      const page = await open(source, 390);
+      let navigations = 0;
+      // Same-document history changes also emit framenavigated; count actual document requests.
+      page.on("request", (request) => {
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) ++navigations;
+      });
+      try {
+        await page.evaluate(() => Reflect.set(window, "mailboxSwitchMarker", "kept"));
+        await page.getByRole("button", { name: "Open mailbox navigation", exact: true }).tap();
+        const menu = page.locator("dialog .k2b-navigation");
+        await menu.waitFor({ state: "visible" });
+        await menu.locator('a[href="/app/mail/Box002"]').tap();
+        await page.waitForURL(new URL("/app/mail/Box002", server.url).href);
+        await page.getByText("Example dispatch: Example request 1", { exact: true }).waitFor({ state: "visible" });
+        await menu.waitFor({ state: "hidden" });
+        await ready(page);
+        expect(await page.evaluate(() => Reflect.get(window, "mailboxSwitchMarker"))).toBe("kept");
+        await page.goBack();
+        await page.waitForURL(new URL(source, server.url).href);
+        await page.getByText("Example request 1", { exact: true }).first().waitFor({ state: "visible" });
+        await ready(page);
+        expect(await page.evaluate(() => Reflect.get(window, "mailboxSwitchMarker"))).toBe("kept");
+        expect(navigations).toBe(0);
+      } finally {
+        await close(page);
       }
     });
 

@@ -103,6 +103,16 @@ describe("Mail sidebar", () => {
     ]);
   });
 
+  test("mailbox navigation is enhanced only when its island owns mailbox switches", () => {
+    for (const enhanced of [false, true]) {
+      const html = renderSidebar({ open: openMailboxFixture(), onOpenMailbox: enhanced ? () => {} : undefined });
+      const snapshot = JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)![1]!);
+      const entry = snapshot.items.find((item: { id: string }) => item.id === "mailboxes").children[0];
+      expect(entry.navigation).toBe(enhanced ? "enhanced" : undefined);
+      expect(entry.scroll).toBe(enhanced ? "preserve" : undefined);
+    }
+  });
+
   test("a hidden open mailbox stays expanded, and a folder marks its own row instead of the mailbox", async () => {
     const html = renderSidebar({
       preferences: createMailboxPreferences({ pinnedMailboxIds: [], hiddenMailboxIds: ["Box001"] }),

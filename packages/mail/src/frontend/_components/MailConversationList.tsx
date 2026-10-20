@@ -114,6 +114,8 @@ export default function MailConversationList(props: {
   onManageTags: (item: MailListItem) => void | Promise<void>;
   onMergeItem?: (item: MailListItem) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
+  /** A new search intent can supersede a pending mailbox switch before its debounce fires. */
+  onNavigationStart?: () => void;
   onSearchControls?: (controls: { cancelPending: () => void }) => void;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
@@ -264,6 +266,7 @@ export default function MailConversationList(props: {
   const replaceLiveSearchRoute = () => requestUrl().searchParams.has("q");
 
   const updateSearchValue = (next: string) => {
+    if (next.trim() !== props.query.trim()) props.onNavigationStart?.();
     setSearchValue(next);
     if (!next.trim()) {
       quickSearch.trigger("", searchFields(), replaceLiveSearchRoute());
@@ -281,6 +284,7 @@ export default function MailConversationList(props: {
     const allowed = new Set<string>(MAIL_QUICK_SEARCH_FIELDS);
     const selected = next.filter((field): field is MailQuickSearchField => allowed.has(field));
     const normalized = selected.length > 0 ? selected : [...DEFAULT_MAIL_QUICK_SEARCH_FIELDS];
+    if (searchValue().trim() && normalized.join(",") !== searchFields().join(",")) props.onNavigationStart?.();
     setSearchFields(normalized);
     if (searchValue().trim()) quickSearch.trigger(searchValue(), normalized, replaceLiveSearchRoute());
     else quickSearch.cancel();
