@@ -171,6 +171,13 @@ without a warning: its fixes, features, and `BREAKING CHANGE:` footer reach
 neither the changelog nor the version bump. The `check` job never sees it,
 because no pull request carries it.
 
+The advisory's pull request compares the fork branch with the fork's own
+`main`, which GitHub does not keep current, so it can show no conflict while
+the branch conflicts with `main`. Before the maintainer merges it,
+fast-forward the fork's `main` to `main`, merge `main` into the fork branch,
+push both to the fork only, and check that
+`git merge-tree --write-tree origin/main HEAD` reports no conflict.
+
 Before the release, open a small pull request with a real change and put a
 `BEGIN_COMMIT_OVERRIDE` block in its body. release-please then reads the
 block instead of that pull request's own commit message:

@@ -387,6 +387,9 @@ const copyFamily = async (tx: SQL, from: string, to: { sid: string; authEpoch: n
 };
 
 /** Ends other sign-ins and moves the chosen browser to a new session id with its sign-in time and expiry.
+ * The epoch change ends the account's other browser sessions, its OAuth sign-ins and access tokens, and pending
+ * Cloud Login pairings and device changes; mobile app phones are revoked with an audit entry per phone. Unlike
+ * `revokeAllForUser`, Cloud Login devices stay paired. API keys, passkeys and mandates stay valid.
  * `keep` is the browser sign-in the request authenticated, with the epoch it was authenticated at. The kept
  * family is revoked and replaced, so every check by session id rejects old copies of its cookie, and a
  * request that a concurrent change already ended keeps nothing.
@@ -615,6 +618,8 @@ export const session = {
     return clientToken;
   },
 
+  /** Sets the `session_token` cookie the way `create` does. Use it for the token that `endOtherSignIns` keeps:
+   * the max age runs to `expiresAt`, so that browser keeps its original expiry. */
   setWebCookie: (c: Context, token: string, expiresAt: Date): void => {
     setCookie(c, "session_token", token, {
       httpOnly: true,
