@@ -187,6 +187,14 @@ describe("Markdown PDF renderer", () => {
     expect(html).toContain(`<th>${skipped}${"a".repeat(10)}<wbr>${"a".repeat(10)}<wbr>a</th>`);
   });
 
+  test("treats raw-text elements written as self-closing HTML like their open form", () => {
+    // HTML ignores the self-closing flag on non-void HTML elements, so their content stays raw text.
+    const long = "a".repeat(34);
+    const skipped = `<textarea/>${long}</textarea><title/>${long}</title><style/>p { color: ${long}; }</style>`;
+    const html = buildPresetPdfHtml({ html: `<table><tr><td>${skipped}${long}</td></tr></table>` });
+    expect(html).toContain(`<td>${skipped}${"a".repeat(10)}<wbr>${"a".repeat(10)}<wbr>${"a".repeat(10)}<wbr>aaaa</td>`);
+  });
+
   test("builds standalone CSP-protected preset, layered, and custom documents", () => {
     const html = buildMarkdownPdfHtml({
       markdown: "# Report\n\n| A | B |\n| - | - |\n| 1 | 2 |",

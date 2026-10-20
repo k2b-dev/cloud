@@ -281,8 +281,9 @@ const breakLongCellRuns = (html: string): string => {
       element(element) {
         if (INLINE_FORMATTING.has(element.tagName)) return;
         carried = 0;
-        // Void and self-closing elements have no end tag.
-        if (!element.canHaveContent || element.selfClosing) return;
+        // Void elements and self-closing foreign elements have no end tag. HTML
+        // ignores the self-closing flag elsewhere: <textarea/> still opens raw text.
+        if (!element.canHaveContent) return;
         const skipped = SKIPPED_IN_CELLS.has(element.tagName);
         if (skipped) skippedDepth += 1;
         // One end tag handler per element: a second registration would replace this one.
