@@ -3,6 +3,7 @@ import { err, fail, ok } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { createDashboard, listDashboards } from "./dashboard-management";
 import { getDashboardSnapshot } from "./public-dashboard-snapshot";
 
@@ -17,6 +18,7 @@ postgresTest(
       await sql`INSERT INTO auth.users(uid,provider,profile,display_name) VALUES(${`pulse-dashboard-${baseId}`},'local','user','Dashboard test') RETURNING id`;
     const [access] = await sql`INSERT INTO auth.access(user_id,permission) VALUES(${user.id}::uuid,'admin') RETURNING id`;
     await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Dashboard test')`;
+    await seedActiveBaseStore(baseId);
     await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${baseId}::uuid,${access.id}::uuid)`;
     await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${sourceShortId},${baseId}::uuid,'http_ingest','Probe')`;
     try {

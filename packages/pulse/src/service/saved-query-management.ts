@@ -82,39 +82,45 @@ export const createSavedQuery = async (params: {
 }): Promise<Result<PulseSavedQuery>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(params.baseId);
-  if (!active.ok) return fail(active.error);
-  const name = params.name.trim();
-  const query = params.query.trim();
-  if (!name) return fail(err.badInput("Query name is required"));
-  if (!query) return fail(err.badInput("Query is required"));
-  const compiled = compilePulseQueryText(params.baseId, query);
-  if (!compiled.ok) return fail(compiled.error);
-  if (compiled.data.sourceId && !(await resolveBasePublicId("sources", params.baseId, compiled.data.sourceId))) {
-    return fail(err.badInput("Query references an unknown Source ID"));
-  }
-  const row = await withShortId("saved_query", async (shortId) => {
-    const [created] = await sql<SavedQueryRow[]>`
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(params.baseId, db);
+    if (!active.ok) return fail(active.error);
+    const name = params.name.trim();
+    const query = params.query.trim();
+    if (!name) return fail(err.badInput("Query name is required"));
+    if (!query) return fail(err.badInput("Query is required"));
+    const compiled = compilePulseQueryText(params.baseId, query);
+    if (!compiled.ok) return fail(compiled.error);
+    if (compiled.data.sourceId && !(await resolveBasePublicId("sources", params.baseId, compiled.data.sourceId))) {
+      return fail(err.badInput("Query references an unknown Source ID"));
+    }
+    const row = await withShortId("saved_query", async (shortId) =>
+      db.savepoint(async (insert) => {
+        const [created] = await insert<SavedQueryRow[]>`
       INSERT INTO pulse.saved_queries (short_id, base_id, name, description, query, created_by)
       VALUES (${shortId}, ${params.baseId}::uuid, ${name}, ${params.description?.trim() || null}, ${query}, ${userIdForScope(params.user)}::uuid)
       RETURNING id, base_id, name, description, query, created_at, updated_at
     `;
-    return created;
+        return created;
+      }),
+    );
+    if (!row) return fail(err.internal("Failed to save query"));
+    return ok(mapSavedQuery(row));
   });
-  if (!row) return fail(err.internal("Failed to save query"));
-  return ok(mapSavedQuery(row));
 };
 
 export const deleteSavedQuery = async (params: { baseId: string; queryId: string; user: AccessScope }): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(params.baseId);
-  if (!active.ok) return fail(active.error);
-  const deleted = await sql`
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(params.baseId, db);
+    if (!active.ok) return fail(active.error);
+    const deleted = await db`
     DELETE FROM pulse.saved_queries
     WHERE base_id = ${params.baseId}::uuid
       AND id = ${params.queryId}::uuid
   `;
-  if (deleted.count === 0) return fail(err.notFound("Saved query"));
-  return ok();
+    if (deleted.count === 0) return fail(err.notFound("Saved query"));
+    return ok();
+  });
 };

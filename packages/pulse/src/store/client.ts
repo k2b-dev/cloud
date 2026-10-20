@@ -23,6 +23,8 @@ export type QueryOptions = {
   signal?: AbortSignal;
   timeoutMs: number;
   format?: "JSON" | "TabSeparated";
+  /** Response body cap; the default fits service queries. Read users' answers are bounded by their profile. */
+  maxResponseBytes?: number;
   transport?: (input: string, init: RequestInit) => Promise<Response>;
 };
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -65,7 +67,7 @@ export const clickhouseQuery = async (options: QueryOptions): Promise<Record<str
           const { done, value } = await reader.read();
           if (done) break;
           length += value.byteLength;
-          if (length > MAX_RESPONSE_BYTES) throw new StoreQueryError("unreachable");
+          if (length > (options.maxResponseBytes ?? MAX_RESPONSE_BYTES)) throw new StoreQueryError("unreachable");
           chunks.push(value);
         }
     } finally {

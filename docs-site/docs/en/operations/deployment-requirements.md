@@ -176,7 +176,7 @@ Per replica, the built-in applications reserve:
 | Contacts | 0 | `cloud:live:contacts` 65 MiB, previous contact events 1 GiB until a later release removes them | 1.1 GiB |
 | Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |
 | Spaces | 0 | `cloud:live:spaces` 65 MiB, previous item events 1 GiB until a later release removes them | 1.1 GiB |
-| Pulse | 5 | none | 330 MiB |
+| Pulse | 6 | none | 396 MiB |
 | IPA Hosts | 1 | none | 66 MiB |
 
 Together, that is about 16 GiB per replica for every built-in application.
@@ -380,7 +380,7 @@ or mutate real data without approval.
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
-| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; ClickHouse is optional in this release | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) can be connected now for later releases; current telemetry stays in Postgres. Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
+| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
 
 ### Work applications
 
@@ -441,8 +441,10 @@ Operators can allow internal administrator-configured endpoints with
 public targets only), `GEO_ALLOWED_TARGETS` in `app-weather` (default `geo`),
 `ASSISTANT_RSQL_ALLOWED_TARGETS` in `app-assistant` (default `rsql`), and
 `OUTGOING_MAIL_ALLOWED_TARGETS` in `app-core` (default empty, covering both SMTP
-and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs; an
-explicit value replaces the default. Empty Compose passthrough values use the
+and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs.
+`host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
+leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
+include a port. An explicit value replaces the default. Empty Compose passthrough values use the
 default. Invalid entries, including `/0`, stop the owning process at startup.
 The HTTP transports for these endpoints never follow redirects; health
 webhooks previously followed them. They request identity encoding and reject
@@ -461,29 +463,20 @@ and logs `GEO_ALLOWED_TARGETS`; mail delivery policy refusals remain retryable
 until the message deadline. Use narrow entries and retain `geo` or `rsql` in an
 explicit list if the shipped containers must stay reachable.
 
-Pulse operators can allow internal metrics targets with `PULSE_SCRAPE_ALLOWED_TARGETS`
-in the Pulse container environment. Use the narrowest entry: an exact host name,
-a single IP address, or the smallest required CIDR range. A host entry trusts all
-addresses returned for that exact name. A network entry permits addresses in
-that range; reserved names such as `localhost` and `.internal` names still need
-an exact host entry. Redirect targets use the same policy. Entries are not
-limited to a port or path: an entry lets base editors reach every HTTP service
-on that host or in that range. A `/0` entry is refused because it would turn the
-check off.
-
-After this update, existing metrics sources that point at internal addresses
-fail with a clear reason until the operator adds their targets to
-`PULSE_SCRAPE_ALLOWED_TARGETS`. The source rows remain stored. Scrapes now
-request uncompressed responses (`Accept-Encoding: identity`). An endpoint or
-proxy that compresses the response anyway fails with an unsupported content
-encoding error; turn off forced compression for `/metrics`.
+Cloud admins release internal metrics targets per Pulse base under
+**Administration → Pulse → Internal targets**, or with `cld pulse admin targets`.
+Use an exact host/IP, a host with one port (`web-01:9100`, `[fd00::5]:9100`), or
+the smallest required CIDR range. A bare host or range covers all ports. `/0`
+is refused. Exact host entries trust all validated addresses for that name;
+reserved names need an exact host entry. Pulse checks at save time, every
+scrape and every redirect (at most three) and pins each connection. Revocation
+takes effect on the next scrape. Responses must be uncompressed.
 
 Notebooks operators can allow internal S3-compatible storage with
 `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` in the Notebooks container environment.
 Use the narrowest entry: an exact host name, one IP address, or the smallest
 required CIDR range. Host entries trust all validated addresses for that exact
-name; reserved names need a host entry. Each entry covers every port and path
-on the host or range. `/0` and other invalid entries stop Notebooks at startup.
+name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries stop Notebooks at startup.
 Failed and empty lookups still refuse an upload, even for listed names.
 
 After this update, existing snapshot configurations that point at internal
@@ -559,8 +552,8 @@ For the **normal** read profile, plan at least **10 GB RAM**: three concurrent
 reads at 2 GB, 1 GB for maintenance, and reserve. Choose **klein** (small) on
 smaller servers. The setup script also creates **groß** (large); each read
 profile has fixed memory, execution, scan and result limits that readers cannot
-override. This release installs the profiles but does not yet expose read-profile
-selection for bases.
+override. A Cloud admin selects each base’s read profile and limits under
+**Administration → Pulse → Bases**.
 
 A Cloud admin opens **Administration → Pulse → Data store** (`/admin/pulse`),
 chooses the service password and requests the setup script. Run that script as
@@ -592,10 +585,14 @@ the internal network that Cloud can connect to.
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
-**In this release, Pulse does not yet store data in ClickHouse.** Without a
-connection, Pulse keeps working as before and both Cloud and Pulse report ready.
-Later releases require this store. Production Compose does not provision it;
-the operator supplies it.
+Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
+answer `503 PULSE_STORE_NOT_CONFIGURED`. Administration remains available for
+setup. Production Compose does not provision ClickHouse; the operator supplies it.
+
+After a restore, Pulse compares each database’s checkpoint with Postgres and
+blocks measurement writes if they differ or the database is missing. A Cloud
+admin can recheck a corrected restore or recreate an empty database. Recreating
+removes measurements while preserving sources, source credentials and dashboards.
 
 ## Verify readiness and upgrades
 

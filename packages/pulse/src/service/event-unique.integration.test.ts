@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import type { EventQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { queryEventAggregateData } from "./query-execution";
 
 const dbTest = testFor("database");
@@ -14,6 +15,7 @@ dbTest(
     const sources = [crypto.randomUUID(), crypto.randomUUID()];
     const start = Math.floor(Date.now() / 86_400_000) * 86_400_000 - 2 * 86_400_000;
     await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Unique identities')`;
+    await seedActiveBaseStore(baseId);
     try {
       const rows = [
         { day: 0, source: 0, actor: "same", session: "same", group: "main" },

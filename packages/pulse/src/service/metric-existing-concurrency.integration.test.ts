@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { requireBaseActive } from "./access-control";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { prepareIngestBatch, writePreparedIngestBatchInTransaction } from "./ingest-bulk";
 import { ingestBatch } from "./ingest-writer";
 
@@ -18,6 +19,7 @@ dbTest(
       metrics: [{ name: "shared", unit: "count", value, ts, resource: { type: "server", id } }],
     });
     await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Concurrent existing metrics')`;
+    await seedActiveBaseStore(baseId);
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -76,6 +78,7 @@ dbTest(
     const baseId = crypto.randomUUID();
     const sources = [crypto.randomUUID(), crypto.randomUUID()];
     await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Concurrent metric definitions')`;
+    await seedActiveBaseStore(baseId);
     try {
       for (const source of sources)
         await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name)

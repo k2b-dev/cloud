@@ -1,5 +1,5 @@
 import { hasRole } from "@k2b/cloud/contracts";
-import { type AuthContext, userFromActor } from "@k2b/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
@@ -17,8 +17,8 @@ export class StoreAdminError extends Error {
     super(code);
   }
 }
-const admin = (identity: StoreIdentity) => {
-  const user = userFromActor(identity.actor);
+export const requireStoreAdmin = (identity: StoreIdentity) => {
+  const user = identity.actor.kind === "user" ? identity.actor.user : null;
   if (!user || identity.accessSubject.type !== "user" || identity.accessSubject.userId !== user.id || !hasRole(user, "admin"))
     throw new StoreAdminError("ACCESS_DENIED", 403);
 };
@@ -51,23 +51,23 @@ const publicConfig = (value: Awaited<ReturnType<typeof config>>): StoreConfig =>
 
 export const createStoreAdmin = ({ prefix = "pulse_", clock = () => new Date() }: { prefix?: string; clock?: () => Date } = {}) => ({
   async read(identity: StoreIdentity): Promise<StoreConfig> {
-    admin(identity);
+    requireStoreAdmin(identity);
     return publicConfig(await config());
   },
   async status(identity: StoreIdentity, signal?: AbortSignal): Promise<StoreStatus> {
-    admin(identity);
+    requireStoreAdmin(identity);
     const current = await config(),
       visible = publicConfig(current);
     return { ...visible, status: visible.configured ? await checkStore({ ...current, prefix, clock, mode: "connection", signal }) : null };
   },
   async check(identity: StoreIdentity, signal?: AbortSignal) {
-    admin(identity);
+    requireStoreAdmin(identity);
     const current = await config();
     if (!publicConfig(current).configured) throw new StoreAdminError("STORE_NOT_CONFIGURED", 409);
     return checkStore({ ...current, prefix, clock, mode: "full", signal });
   },
   async save(identity: StoreIdentity, input: unknown, signal?: AbortSignal): Promise<StoreStatus> {
-    admin(identity);
+    requireStoreAdmin(identity);
     const parsed = StoreSaveInput.safeParse(input);
     if (!parsed.success) throw new StoreAdminError("INVALID_INPUT");
     const next = parsed.data;
@@ -90,7 +90,7 @@ export const createStoreAdmin = ({ prefix = "pulse_", clock = () => new Date() }
     });
   },
   async setupSql(identity: StoreIdentity, input: unknown) {
-    admin(identity);
+    requireStoreAdmin(identity);
     const parsed = StoreSetupInput.safeParse(input);
     if (!parsed.success) throw new StoreAdminError("INVALID_INPUT");
     const user = parsed.data.user ?? (await config()).user;
@@ -99,3 +99,10 @@ export const createStoreAdmin = ({ prefix = "pulse_", clock = () => new Date() }
   },
 });
 export const storeAdmin = createStoreAdmin();
+
+/** Server-only cached reader; never return this tuple through an API. */
+export const storeConnection = async () => {
+  const value = await config();
+  return publicConfig(value).configured ? value : null;
+};
+export const pulseStoreConfigured = async (): Promise<boolean> => (await storeConnection()) !== null;

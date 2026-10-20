@@ -146,6 +146,12 @@ cld pulse update \
   --sensitive-retention-hours 24
 ```
 
+Shortening retention first prints a preview with the retention kind, new duration
+(days for raw and rollup, hours for sensitive), cutoff, rows, and bytes, then
+fails without changing the base. Review it and rerun the same update with
+`--confirm-shorter-retention` to allow removal. The CLI never confirms automatically.
+Use `--json` for a structured preview.
+
 Use a separate base when access, retention, ownership, or reporting context should differ. A base is not tied to one technical domain.
 
 Raw retention controls how long detailed metrics, events, and state changes remain available. Rollup retention controls how long long-range metric summaries remain available. Sensitive retention clears only the `sensitive` object from older events; the non-sensitive event remains until raw retention expires.
@@ -581,7 +587,7 @@ cld pulse get [base]
 cld pulse create <name> [--description <text>] [--use]
 cld pulse update [base] [--name <name>] [--description <text>]
   [--raw-retention-days <1-3650>] [--rollup-retention-days <1-3650>]
-  [--sensitive-retention-hours <1-8760>]
+  [--sensitive-retention-hours <1-8760>] [--confirm-shorter-retention]
 cld pulse delete [base] --yes
 cld pulse clear-data [base] --yes
 cld pulse overview [base] [--include-inventory]

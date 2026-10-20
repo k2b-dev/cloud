@@ -2,13 +2,9 @@ import { lazySync } from "@k2b/cloud";
 import { trace } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
-import {
-  resumePulseBaseDataClearJobs,
-  resumePulseBaseDeletionJobs,
-  startPulseBaseJobs,
-  stopPulseBaseDataClearJob,
-  stopPulseBaseDeletionJob,
-} from "./base-lifecycle";
+import { pulseStoreConfigured } from "../store/service";
+import { startPulseBaseJobs, stopPulseBaseJobs } from "./base-lifecycle";
+import { startBaseMaintenance, stopBaseMaintenance } from "./base-maintenance-runtime";
 import { pruneCatalogBatch } from "./catalog-retention";
 import { scrapeMetricsSource } from "./index";
 import { runHourlyRollup, sealExpiredMetricHour } from "./metric-rollups";
@@ -51,7 +47,7 @@ const clearExpiredEventSensitiveChunk = async (baseId?: string): Promise<number>
           AND e.sensitive <> '{}'::jsonb
         LIMIT ${RETENTION_DELETE_BATCH_SIZE}
       ) e
-      WHERE b.deletion_started_at IS NULL
+      WHERE EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
@@ -95,8 +91,9 @@ const deleteExpiredMetricSamplesChunk = async (baseId?: string): Promise<number>
         WHERE ms.base_id=b.id AND ms.ts>=h.hour AND ms.ts<h.hour+interval '1 hour'
         LIMIT ${RETENTION_DELETE_BATCH_SIZE}
       ) ms
-      WHERE h.state='sealed' AND h.hour < date_bin('1 hour',now() - (b.retention_days * interval '1 day'),'1970-01-01'::timestamptz)
-        AND b.deletion_started_at IS NULL
+      WHERE EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND h.state='sealed' AND h.hour < date_bin('1 hour',now() - (b.retention_days * interval '1 day'),'1970-01-01'::timestamptz)
+        AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL)
+      AND b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
@@ -124,7 +121,7 @@ const deleteExpiredMetricRollupsChunk = async (baseId?: string): Promise<number>
           AND mr.bucket < date_bin('1 hour',now() - (b.rollup_retention_days * interval '1 day'),'1970-01-01'::timestamptz)
         LIMIT ${RETENTION_DELETE_BATCH_SIZE}
       ) mr
-      WHERE b.deletion_started_at IS NULL
+      WHERE EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
@@ -151,7 +148,7 @@ const deleteExpiredEventsChunk = async (baseId?: string): Promise<number> => {
         WHERE e.base_id=b.id AND e.ts < now() - (b.retention_days * interval '1 day')
         LIMIT ${RETENTION_DELETE_BATCH_SIZE}
       ) e
-      WHERE b.deletion_started_at IS NULL
+      WHERE EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
@@ -174,8 +171,9 @@ const deleteExpiredStateChangesChunk = async (baseId?: string): Promise<number> 
       SELECT sc.id
       FROM pulse.state_changes sc
       JOIN pulse.bases b ON b.id = sc.base_id
-      WHERE sc.changed_at < now() - (b.retention_days * interval '1 day')
-        AND b.deletion_started_at IS NULL
+      WHERE EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND sc.changed_at < now() - (b.retention_days * interval '1 day')
+        AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL)
+      AND b.deletion_started_at IS NULL
         AND (
           b.data_clear_started_at IS NULL
           OR b.data_clear_completed_at IS NOT NULL
@@ -197,7 +195,7 @@ const deleteExpiredIdempotencyChunk = async (baseId?: string): Promise<number> =
       SELECT item.source_id, item.idempotency_key
       FROM pulse.ingest_idempotency item
       JOIN pulse.sources source ON source.id = item.source_id
-      WHERE item.expires_at <= now()
+      WHERE EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=source.base_id AND store.state='active') AND item.expires_at <= now()
         AND (${scopedBaseId}::uuid IS NULL OR source.base_id = ${scopedBaseId}::uuid)
       LIMIT ${RETENTION_DELETE_BATCH_SIZE}
     )
@@ -276,6 +274,7 @@ export const dueMetricsSources = async (slotTs: number) => sql<{ id: string; sho
       AND s.enabled = TRUE
       AND s.endpoint_url IS NOT NULL
       AND s.scrape_interval_seconds IS NOT NULL
+      AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL)
       AND b.deletion_started_at IS NULL
       AND (
         b.data_clear_started_at IS NULL
@@ -288,6 +287,7 @@ export const dueMetricsSources = async (slotTs: number) => sql<{ id: string; sho
   `;
 
 const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> => {
+  if (!(await pulseStoreConfigured())) return { submitted: 0 };
   const rows = await dueMetricsSources(slotTs);
   for (const row of rows) {
     await scrapeJob().submit({
@@ -398,6 +398,7 @@ export const pulseRuntime = {
       misfire: "latest",
       meta: { appId: "pulse", family: "pulse:rollups", label: "Pulse hourly rollup", source: "pulse:rollup:hourly" },
       process: async (context) => {
+        if (!(await pulseStoreConfigured())) return;
         await hourlyRollupJob().submit({ key: `slot:${context.slot.getTime()}`, input: undefined });
       },
     });
@@ -407,20 +408,20 @@ export const pulseRuntime = {
       misfire: "latest",
       meta: { appId: "pulse", family: "pulse:retention", label: "Pulse retention", source: "pulse:retention" },
       process: async (context) => {
+        if (!(await pulseStoreConfigured())) return;
         await retentionJob().submit({ key: `slot:${context.slot.getTime()}`, input: undefined });
       },
     });
     workers.push(await pulseScheduler().process());
     await startPulseBaseJobs();
-    await resumePulseBaseDeletionJobs();
-    await resumePulseBaseDataClearJobs();
+    await startBaseMaintenance();
     started = true;
   },
   stop: async (): Promise<void> => {
     await Promise.all(workers.map((worker) => worker.drain()));
     workers = [];
-    await stopPulseBaseDeletionJob();
-    await stopPulseBaseDataClearJob();
+    await stopPulseBaseJobs();
+    await stopBaseMaintenance();
     started = false;
   },
 };

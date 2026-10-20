@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch } from "./ingest-writer";
 import { listRecentEvents, listResourceEvents } from "./signal-catalog";
 
@@ -18,6 +19,7 @@ dbTest(
     const [access] = await sql`INSERT INTO auth.access(user_id,permission) VALUES(${user.id}::uuid,'admin') RETURNING id`;
     try {
       await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Event paging test')`;
+      await seedActiveBaseStore(baseId);
       await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${baseId}::uuid,${access.id}::uuid)`;
       await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Paging source')`;
       // One batch is one transaction: every event ties on ts and on recorded_at.

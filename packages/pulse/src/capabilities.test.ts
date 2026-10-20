@@ -1,4 +1,4 @@
-import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -20,7 +20,20 @@ import {
   SourceReadInputSchema,
 } from "./capability-contracts";
 import { newShortId } from "./lib/short-id";
+import { seedActiveBaseStore } from "./service/base-store.test-fixture";
+import { fixturePolicy } from "./store/base-store.test-fixture";
+import { settingsFixture } from "./store/settings.test-fixture";
 
+let settings: ReturnType<typeof settingsFixture>;
+beforeAll(() => {
+  settings = settingsFixture();
+  settings.values["pulse.clickhouse_connection"] = JSON.stringify({
+    url: "http://127.0.0.1:1",
+    user: "fixture",
+    password: "fixture-password",
+  });
+});
+afterAll(() => settings.restore());
 const userContext = (user: User): CapabilityExecutionContext => ({
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId: user.id },
@@ -122,6 +135,16 @@ describe("Pulse capabilities", () => {
     expect(
       BaseListDataSchema.safeParse([
         {
+          store: {
+            state: "active",
+            operation: null,
+            errorCode: null,
+            errorAt: null,
+            writeBlockReason: null,
+            profile: "normal",
+            limits: fixturePolicy.defaultLimits,
+            usage: null,
+          },
           id: "Base01",
           ref: { type: "pulse.base", id: "Base01" },
           name: "Telemetry",
@@ -163,6 +186,7 @@ describe("Pulse capabilities", () => {
 
     try {
       await sql`INSERT INTO pulse.bases (id, short_id, name, description) VALUES (${baseId}::uuid, ${baseShortId}, 'Agent telemetry', 'Capability fixture')`;
+      await seedActiveBaseStore(baseId);
       const [access] = await sql<{ id: string }[]>`
         INSERT INTO auth.access (user_id, permission) VALUES (${user.id}::uuid, 'admin') RETURNING id
       `;
@@ -406,6 +430,7 @@ describe("Pulse capabilities", () => {
           (${grantedBaseId}::uuid, ${grantedBaseShortId}, 'Granted agent telemetry'),
           (${otherBaseId}::uuid, ${otherBaseShortId}, 'Other agent telemetry')
       `;
+      await seedActiveBaseStore(grantedBaseId, otherBaseId);
       const [access] = await sql<{ id: string }[]>`
         INSERT INTO auth.access (service_account_id, permission)
         VALUES (${agent.id}::uuid, 'write'::auth.permission_level)

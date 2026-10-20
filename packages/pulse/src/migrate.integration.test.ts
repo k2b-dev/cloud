@@ -47,6 +47,7 @@ describe("versioned Pulse migrations", () => {
       await Promise.all([migrate(), migrate()]);
       expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM pulse.schema_migrations ORDER BY version`).toEqual([
         { version: 1, name: "baseline" },
+        { version: 2, name: "base_stores" },
       ]);
       await sql`INSERT INTO pulse.bases (short_id, name) VALUES ('Test01', 'Preserved')`;
       await migrate();
@@ -76,17 +77,31 @@ describe("versioned Pulse migrations", () => {
   );
 
   databaseTest("adopts an old installation without replaying baseline DDL", async () => {
+    await sql`DROP TABLE pulse.base_internal_targets,pulse.base_stores,pulse.store_instance`.simple();
     await sql`DROP TABLE pulse.schema_migrations`.simple();
     await sql`INSERT INTO pulse.bases (short_id, name) VALUES ('Old001', 'Sentinel')`;
     await sql`DROP INDEX pulse.idx_pulse_bases_created_by`.simple();
     await migrate();
     expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM pulse.schema_migrations`).toEqual([
       { version: 1, name: "baseline" },
+      { version: 2, name: "base_stores" },
     ]);
     const [row] = await sql`SELECT name FROM pulse.bases WHERE short_id='Old001'`;
     expect(row?.name).toBe("Sentinel");
     const [index] = await sql`SELECT to_regclass('pulse.idx_pulse_bases_created_by') IS NULL AS absent`;
     expect(index?.absent).toBe(true);
+  });
+
+  databaseTest("upgrades a version-one ledger without backfilling existing bases", async () => {
+    await sql`DROP TABLE pulse.base_internal_targets,pulse.base_stores,pulse.store_instance`.simple();
+    await sql`DELETE FROM pulse.schema_migrations WHERE version=2`;
+    await migrate();
+    expect(await sql<{ version: number; name: string }[]>`SELECT version,name FROM pulse.schema_migrations ORDER BY version`).toEqual([
+      { version: 1, name: "baseline" },
+      { version: 2, name: "base_stores" },
+    ]);
+    const [count] = await sql`SELECT count(*)::int AS n FROM pulse.base_stores`;
+    expect(count?.n).toBe(0);
   });
 
   databaseTest("refuses a future ledger version without changing data or the ledger", async () => {

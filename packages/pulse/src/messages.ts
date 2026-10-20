@@ -6,7 +6,7 @@ export const pulseMessages = i18n.define({
     en: {
       appName: "Pulse",
       scrapeTargetBlocked:
-        "This endpoint is on an internal network. Pulse scrapes only public endpoints unless an operator allows this target.",
+        "is an internal server and not released for this base. A Cloud admin can release it under Administration -> Pulse -> Internal targets.",
       appDescription: "Metrics, events, states, and real-time dashboards.",
       start: "Start",
       notFound: "Not found",
@@ -524,7 +524,7 @@ export const pulseMessages = i18n.define({
     de: {
       appName: "Pulse",
       scrapeTargetBlocked:
-        "Dieser Endpunkt liegt in einem internen Netz. Pulse ruft nur öffentliche Endpunkte ab, außer ein Betreiber gibt dieses Ziel frei.",
+        "ist ein interner Server und für diese Base nicht freigegeben. Ein Cloud-Admin kann ihn unter Verwaltung -> Pulse -> Interne Ziele freigeben.",
       appDescription: "Metriken, Ereignisse, Zustände und Echtzeit-Dashboards.",
       start: "Start",
       notFound: "Nicht gefunden",
@@ -1054,4 +1054,6 @@ export const pulseMessages = i18n.define({
 export const resolvePulseMessages = (locale?: string) => pulseMessages.resolve(locale ? [locale] : []);
 
 export const localizedSourceError = (value: string | null, t: { scrapeTargetBlocked: string }): string | null =>
-  value === resolvePulseMessages("en").t.scrapeTargetBlocked ? t.scrapeTargetBlocked : value;
+  value?.endsWith(resolvePulseMessages("en").t.scrapeTargetBlocked)
+    ? value.slice(0, -resolvePulseMessages("en").t.scrapeTargetBlocked.length) + t.scrapeTargetBlocked
+    : value;

@@ -5,6 +5,7 @@ import { SQL, sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { resolvePulseMessages } from "../messages";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
 import { dueMetricsSources } from "./runtime";
@@ -28,6 +29,8 @@ beforeAll(async () => {
   baseId = crypto.randomUUID();
   sourceId = crypto.randomUUID();
   await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Scraper outcome smoke')`;
+  await seedActiveBaseStore(baseId);
+  await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${baseId}::uuid,'127.0.0.1')`;
   await sql`
     INSERT INTO pulse.sources (id, short_id, base_id, kind, name, endpoint_url)
     VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'metrics'::pulse.source_kind, 'Probe', ${`http://127.0.0.1:${endpoint.port}/metrics`})
@@ -93,6 +96,8 @@ postgresTest(
     });
     const database = new SQL({ url: process.env.DATABASE_URL!, max: 1 });
     await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${base}::uuid,${newShortId()},'Scrape cadence')`;
+    await seedActiveBaseStore(base);
+    await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${base}::uuid,'127.0.0.1')`;
     await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name,endpoint_url,scrape_interval_seconds) VALUES(${source}::uuid,${newShortId()},${base}::uuid,'metrics','Probe',${`http://127.0.0.1:${server.port}`},60)`;
     try {
       const start = Math.floor(Date.now() / 60000) * 60000;
@@ -144,6 +149,7 @@ postgresTest("refused scrapes retain their rows and store the English catalog me
   const base = crypto.randomUUID(),
     source = crypto.randomUUID();
   await sql`INSERT INTO pulse.bases(id, short_id, name) VALUES(${base}::uuid, ${newShortId()}, 'Blocked scrape')`;
+  await seedActiveBaseStore(base);
   await sql`INSERT INTO pulse.sources(id, short_id, base_id, kind, name, endpoint_url) VALUES(${source}::uuid, ${newShortId()}, ${base}::uuid, 'metrics', 'Internal', 'http://127.0.0.1:1/metrics')`;
   try {
     const result = await runMetricsSourceScrape(
@@ -155,7 +161,7 @@ postgresTest("refused scrapes retain their rows and store the English catalog me
         },
       },
     );
-    const message = resolvePulseMessages("en").t.scrapeTargetBlocked;
+    const message = `127.0.0.1 ${resolvePulseMessages("en").t.scrapeTargetBlocked}`;
     expect(result).toMatchObject({ ok: false, error: { code: "PULSE_SCRAPE_TARGET_BLOCKED", message } });
     const [row] = await sql`SELECT last_error FROM pulse.sources WHERE id=${source}::uuid`;
     expect(row.last_error).toBe(message);

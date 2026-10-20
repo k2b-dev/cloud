@@ -193,20 +193,22 @@ export const createSource = async (params: {
   }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(params.baseId);
-  if (!active.ok) return fail(active.error);
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(params.baseId, db);
+    if (!active.ok) return fail(active.error);
 
-  const encryptedBearer = params.bearerToken?.trim() ? await encryptSecret(params.bearerToken.trim()) : null;
-  const endpointUrl = normalizeEndpointUrl(params.endpointUrl);
-  if (params.kind === "metrics" && !endpointUrl) return fail(err.badInput("A valid metrics endpoint URL is required"));
+    const encryptedBearer = params.bearerToken?.trim() ? await encryptSecret(params.bearerToken.trim()) : null;
+    const endpointUrl = normalizeEndpointUrl(params.endpointUrl);
+    if (params.kind === "metrics" && !endpointUrl) return fail(err.badInput("A valid metrics endpoint URL is required"));
 
-  if (params.kind === "metrics" && endpointUrl) {
-    const target = await checkScrapeTarget(endpointUrl);
-    if (!target.ok) return target;
-  }
+    if (params.kind === "metrics" && endpointUrl) {
+      const target = await checkScrapeTarget(endpointUrl, params.baseId, undefined, undefined, db);
+      if (!target.ok) return target;
+    }
 
-  const row = await withShortId("source", async (shortId) => {
-    const [created] = await sql<SourceRow[]>`
+    const row = await withShortId("source", async (shortId) =>
+      db.savepoint(async (insert) => {
+        const [created] = await insert<SourceRow[]>`
     INSERT INTO pulse.sources (
       short_id,
       base_id,
@@ -227,18 +229,20 @@ export const createSource = async (params: {
     )
     RETURNING *
   `;
-    return created;
+        return created;
+      }),
+    );
+    if (!row) return fail(err.internal("Failed to create Pulse source"));
+    return ok(mapSource(row));
   });
-  if (!row) return fail(err.internal("Failed to create Pulse source"));
-  return ok(mapSource(row));
 };
 
 export const removeSource = async (params: { baseId: string; sourceId: string; user: AccessScope }): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(params.baseId);
-  if (!active.ok) return fail(active.error);
-  const result = await sql.begin(async (tx) => {
+  const result = await sql.begin(async (tx): Promise<Result<number>> => {
+    const active = await requireBaseActive(params.baseId, tx);
+    if (!active.ok) return active;
     await tx`
       DELETE FROM auth.service_accounts account
       USING pulse.sources source
@@ -254,9 +258,10 @@ export const removeSource = async (params: { baseId: string; sourceId: string; u
       WHERE id = ${params.sourceId}::uuid
         AND base_id = ${params.baseId}::uuid
     `;
-    return deleted.count ?? 0;
+    return ok(deleted.count ?? 0);
   });
-  if (result === 0) return fail(err.notFound("Pulse source"));
+  if (!result.ok) return result;
+  if (result.data === 0) return fail(err.notFound("Pulse source"));
   return ok();
 };
 
@@ -271,18 +276,31 @@ const sourceUpdateBearerToken = async (existing: SourceRow, bearerToken: string 
   return trimmed ? encryptSecret(trimmed) : null;
 };
 
-const normalizeSourceUpdateValues = async (params: UpdateSourceParams, existing: SourceRow): Promise<Result<SourceUpdateValues>> => {
+const normalizeSourceUpdateValues = async (
+  params: UpdateSourceParams,
+  existing: SourceRow,
+  db: typeof sql,
+): Promise<Result<SourceUpdateValues>> => {
   const endpointUrl = sourceUpdateEndpointUrl(existing, params.endpointUrl);
   if (existing.kind === "metrics" && !endpointUrl) return fail(err.badInput("A valid metrics endpoint URL is required"));
+  // A changed address is checked against the base's internal targets; every scrape checks again anyway.
   if (existing.kind === "metrics" && endpointUrl && endpointUrl !== existing.endpoint_url) {
-    const target = await checkScrapeTarget(endpointUrl);
+    const target = await checkScrapeTarget(endpointUrl, params.baseId, undefined, undefined, db);
     if (!target.ok) return target;
   }
   return ok({
     name: sourceUpdateName(existing, params.name),
     enabled: params.enabled ?? existing.enabled,
     endpointUrl,
-    bearerTokenEncrypted: await sourceUpdateBearerToken(existing, params.bearerToken),
+    bearerTokenEncrypted: await sourceUpdateBearerToken(
+      existing,
+      endpointUrl &&
+        existing.endpoint_url &&
+        new URL(endpointUrl).origin !== new URL(existing.endpoint_url).origin &&
+        params.bearerToken === undefined
+        ? null
+        : params.bearerToken,
+    ),
     scrapeIntervalSeconds: params.scrapeIntervalSeconds === undefined ? existing.scrape_interval_seconds : params.scrapeIntervalSeconds,
   });
 };
@@ -299,20 +317,21 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
   }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(params.baseId);
-  if (!active.ok) return fail(active.error);
-  const [existing] = await sql<SourceRow[]>`
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(params.baseId, db);
+    if (!active.ok) return fail(active.error);
+    const [existing] = await db<SourceRow[]>`
     SELECT *
     FROM pulse.sources
     WHERE id = ${params.sourceId}::uuid
       AND base_id = ${params.baseId}::uuid
   `;
-  if (!existing) return fail(err.notFound("Pulse source"));
+    if (!existing) return fail(err.notFound("Pulse source"));
 
-  const values = await normalizeSourceUpdateValues(params, existing);
-  if (!values.ok) return fail(values.error);
+    const values = await normalizeSourceUpdateValues(params, existing, db);
+    if (!values.ok) return fail(values.error);
 
-  const [row] = await sql<SourceRow[]>`
+    const [row] = await db<SourceRow[]>`
     UPDATE pulse.sources
     SET
       name = ${values.data.name},
@@ -325,8 +344,9 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
       AND base_id = ${params.baseId}::uuid
     RETURNING *
   `;
-  if (!row) return fail(err.internal("Failed to update Pulse source"));
-  return ok(mapSource(row));
+    if (!row) return fail(err.internal("Failed to update Pulse source"));
+    return ok(mapSource(row));
+  });
 };
 
 export const listSourceApiKeys = async (params: {
@@ -368,38 +388,40 @@ export const createSourceApiKey = async (params: {
 }): Promise<Result<{ credential: PulseSourceApiKey; token: string }>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(params.baseId);
-  if (!active.ok) return fail(active.error);
-  const source = await ensureHttpIngestSource({ baseId: params.baseId, sourceId: params.sourceId });
-  if (!source.ok) return fail(source.error);
-  const name = params.name.trim();
-  if (!name) return fail(err.badInput("API key name is required"));
-  if (params.permission !== "write") return fail(err.badInput("Source API keys can only use ingest permission"));
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(params.baseId, db);
+    if (!active.ok) return fail(active.error);
+    const source = await ensureHttpIngestSource({ baseId: params.baseId, sourceId: params.sourceId });
+    if (!source.ok) return fail(source.error);
+    const name = params.name.trim();
+    if (!name) return fail(err.badInput("API key name is required"));
+    if (params.permission !== "write") return fail(err.badInput("Source API keys can only use ingest permission"));
 
-  const serviceAccount = await serviceAccounts.getOrCreateResourceBound({
-    name: `${source.data.source.name} ingest API keys`,
-    appId: PULSE_APP_ID,
-    resourceType: PULSE_SOURCE_RESOURCE_TYPE,
-    resourceId: source.data.shortId,
-    createdBy: params.user.id,
-  });
-  if (!serviceAccount.ok) return fail(serviceAccount.error);
+    const serviceAccount = await serviceAccounts.getOrCreateResourceBound({
+      name: `${source.data.source.name} ingest API keys`,
+      appId: PULSE_APP_ID,
+      resourceType: PULSE_SOURCE_RESOURCE_TYPE,
+      resourceId: source.data.shortId,
+      createdBy: params.user.id,
+    });
+    if (!serviceAccount.ok) return fail(serviceAccount.error);
 
-  const created = await serviceAccountCredentials.createResourceApiToken({
-    serviceAccountId: serviceAccount.data.id,
-    actor: params.user,
-    name,
-    expiresAt: params.expiresAt ?? null,
-    scopes: [PULSE_INGEST_SCOPE, "write"],
-  });
-  if (!created.ok) return fail(created.error);
+    const created = await serviceAccountCredentials.createResourceApiToken({
+      serviceAccountId: serviceAccount.data.id,
+      actor: params.user,
+      name,
+      expiresAt: params.expiresAt ?? null,
+      scopes: [PULSE_INGEST_SCOPE, "write"],
+    });
+    if (!created.ok) return fail(created.error);
 
-  return ok({
-    credential: {
-      ...created.data.credential,
-      permission: sourceApiKeyPermission(created.data.credential.scopes),
-    },
-    token: created.data.token,
+    return ok({
+      credential: {
+        ...created.data.credential,
+        permission: sourceApiKeyPermission(created.data.credential.scopes),
+      },
+      token: created.data.token,
+    });
   });
 };
 
@@ -411,12 +433,14 @@ export const removeSourceApiKey = async (params: {
 }): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(params.baseId);
-  if (!active.ok) return fail(active.error);
-  const keys = await listSourceApiKeys(params);
-  if (!keys.ok) return fail(keys.error);
-  if (!keys.data.some((key) => key.id === params.credentialId)) return fail(err.notFound("API key"));
-  return serviceAccountCredentials.revoke({ credentialId: params.credentialId, actor: params.user });
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(params.baseId, db);
+    if (!active.ok) return fail(active.error);
+    const keys = await listSourceApiKeys(params);
+    if (!keys.ok) return fail(keys.error);
+    if (!keys.data.some((key) => key.id === params.credentialId)) return fail(err.notFound("API key"));
+    return serviceAccountCredentials.revoke({ credentialId: params.credentialId, actor: params.user });
+  });
 };
 
 export const resolveIngestSourceForServiceAccount = async (
@@ -437,7 +461,7 @@ export const resolveIngestSourceForServiceAccount = async (
     WHERE s.short_id = ${serviceAccount.resourceId}
       AND s.kind = 'http_ingest'::pulse.source_kind
       AND s.enabled = TRUE
-      AND b.deletion_started_at IS NULL
+      AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL) AND b.deletion_started_at IS NULL
       AND (
         b.data_clear_started_at IS NULL
         OR b.data_clear_completed_at IS NOT NULL

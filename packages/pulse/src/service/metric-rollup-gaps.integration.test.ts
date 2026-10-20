@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch } from "./ingest-writer";
 import { runHourlyRollup } from "./metric-rollups";
 import { queryMetricData } from "./query-execution";
@@ -16,6 +17,7 @@ dbTest(
     const start = Math.floor(Date.now() / 3_600_000) * 3_600_000 - 6 * 3_600_000;
     const time = (hour: number, minute = 0) => new Date(start + hour * 3_600_000 + minute * 60_000).toISOString();
     await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Rollup gaps')`;
+    await seedActiveBaseStore(baseId);
     try {
       await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Test')`;
       const write = async (hour: number, minute: number, value: number, resource = "a") => {

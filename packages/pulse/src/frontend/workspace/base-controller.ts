@@ -1,10 +1,12 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { prompts, toast } from "@k2b/ui";
+import { prompts, toast, useLocale } from "@k2b/ui";
 import { type Accessor, onCleanup, type Setter } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
 import { type BaseSettingsSaveResult, openPulseBaseSettingsDialog } from "./base-settings-dialog";
+import { baseStoreMessages } from "./base-store-messages";
+import { baseUpdateError, confirmShorterRetention, RetentionConfirmationError } from "./retention-confirmation";
 
 type BaseControllerDeps = {
   bases: Accessor<PulseBase[]>;
@@ -21,6 +23,7 @@ type BaseControllerDeps = {
 
 export const createBaseController = (deps: BaseControllerDeps) => {
   const t = usePulseMessages();
+  const locale = useLocale();
   let disposed = false;
   type SettingsIntent = {
     baseId: string;
@@ -29,14 +32,21 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     rawRetentionDays: number;
     rollupRetentionDays: number;
     sensitiveRetentionHours: number;
+    /** Set only after the person confirmed the date and amount a shorter retention removes. */
+    confirmShorterRetention?: true;
   };
   const updateMutation = mutation.create<PulseBase, SettingsIntent>({
     mutation: ({ baseId, ...body }, { abortSignal }) =>
-      jsonFetch<PulseBase>(`/api/pulse/bases/${baseId}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-        signal: abortSignal,
-      }),
+      jsonFetch<PulseBase>(
+        `/api/pulse/bases/${baseId}`,
+        { method: "PATCH", body: JSON.stringify(body), signal: abortSignal },
+        "Request failed",
+        baseUpdateError,
+      ),
+  });
+  const retryMutation = mutation.create<PulseBase, string>({
+    mutation: (baseId, { abortSignal }) =>
+      jsonFetch<PulseBase>(`/api/pulse/bases/${baseId}/retry`, { method: "POST", signal: abortSignal }),
   });
   const clearMutation = mutation.create<void, string>({
     mutation: (baseId, { abortSignal }) =>
@@ -48,6 +58,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   onCleanup(() => {
     disposed = true;
     updateMutation.abort();
+    retryMutation.abort();
     clearMutation.abort();
     deleteMutation.abort();
   });
@@ -96,15 +107,23 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     }
     deps.setLoading(true);
     try {
-      await updateMutation.mutate({
+      const intent: SettingsIntent = {
         baseId: base.id,
         name,
         description: input.description.trim() || null,
         rawRetentionDays: input.rawRetentionDays,
         rollupRetentionDays: input.rollupRetentionDays,
         sensitiveRetentionHours: input.sensitiveRetentionHours,
-      });
+      };
+      await updateMutation.mutate(intent);
       if (disposed) return "failed";
+      const refused = updateMutation.error();
+      if (refused instanceof RetentionConfirmationError) {
+        // A shorter retention deletes data: save only after the person saw from when and how much.
+        if (!(await confirmShorterRetention(refused.preview, locale())) || disposed) return "failed";
+        await updateMutation.mutate({ ...intent, confirmShorterRetention: true });
+        if (disposed) return "failed";
+      }
       if (updateMutation.error()) throw updateMutation.error();
       if (
         !(await reconcile(
@@ -174,6 +193,24 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     }
   };
 
+  const retryStore = async (base: PulseBase): Promise<PulseBase | null> => {
+    deps.setLoading(true);
+    try {
+      await retryMutation.mutate(base.id);
+      if (disposed) return null;
+      if (retryMutation.error()) throw retryMutation.error();
+      const next = retryMutation.data() ?? null;
+      await reconcile(deps.refreshBases, t().settingsSavedRefreshFailed);
+      if (!disposed) toast.success(baseStoreMessages.resolve([locale()]).t.retryStarted);
+      return next;
+    } catch {
+      if (!disposed) toast.error(baseStoreMessages.resolve([locale()]).t.retryFailed);
+      return null;
+    } finally {
+      deps.setLoading(false);
+    }
+  };
+
   const openSettings = async () => {
     if (deps.settingsDialogOpen()) return;
     const base = deps.selectedBase();
@@ -185,6 +222,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
         loading: deps.loading,
         writeBlocked: deps.writeBlocked,
         updateBaseSettings: updateSettings,
+        retryStore: () => retryStore(base),
         clearBaseData: () => clearData(base),
         deleteBase: () => deleteBase(base),
       });

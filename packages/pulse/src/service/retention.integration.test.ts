@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { runRetentionBatch } from "./runtime";
 
 const dbTest = testFor("database");
@@ -21,6 +22,7 @@ dbTest(
         await sql`INSERT INTO pulse.bases(id,short_id,name,retention_days,rollup_retention_days,sensitive_retention_hours,
         deletion_started_at,data_clear_started_at) VALUES(${base}::uuid,${newShortId()},'Retention proof',${index === 1 ? 30 : 1},
         ${index === 1 ? 30 : 2},${index === 1 ? 48 : 1},${index === 2 ? new Date() : null},${index === 3 ? new Date() : null})`;
+        await seedActiveBaseStore(base);
         const [metric] = await sql`INSERT INTO pulse.metric_defs(base_id,name) VALUES(${base}::uuid,'retention') RETURNING id`;
         const [series] = await sql`INSERT INTO pulse.metric_series(base_id,metric_id,series_key,dimensions_hash)
         VALUES(${base}::uuid,${metric.id}::uuid,'retention','retention') RETURNING id`;

@@ -1,4 +1,5 @@
 import { arg, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
+import { z } from "zod";
 import type { PulseBase } from "../contracts";
 import { PULSE_BASE_DEFAULT_KEY, requireDefaultBaseRef, resolveBase, resolveBaseFromCommand } from "./context";
 import { baseFlag } from "./flags";
@@ -83,6 +84,10 @@ export const baseCommands = [
     summary: "Update a Pulse base",
     flags: {
       ...baseFlag,
+      confirmShorterRetention: flag.boolean({
+        name: "confirm-shorter-retention",
+        description: "Confirm data removal by shorter retention",
+      }),
       name: flag.string({ description: "New base name" }),
       description: flag.string({ description: "New base description" }),
       rawRetentionDays: flag.int({ name: "raw-retention-days", min: 1, max: 3650, description: "Raw telemetry retention in days" }),
@@ -108,8 +113,41 @@ export const baseCommands = [
         rawRetentionDays: flags.rawRetentionDays,
         rollupRetentionDays: flags.rollupRetentionDays,
         sensitiveRetentionHours: flags.sensitiveRetentionHours,
+        confirmShorterRetention: flags.confirmShorterRetention || undefined,
       };
-      const updated = await readApi<PulseBase>(ctx, `/bases/${encodeURIComponent(base.id)}`, jsonRequest("PATCH", patch));
+      const response = await ctx.fetch(`/api/pulse/bases/${encodeURIComponent(base.id)}`, jsonRequest("PATCH", patch));
+      if (response.status === 409) {
+        const confirmation = z
+          .object({
+            code: z.literal("PULSE_RETENTION_CONFIRMATION_REQUIRED"),
+            preview: z.array(
+              z.object({
+                kind: z.enum(["raw", "rollup", "sensitive"]),
+                retention: z.number(),
+                cutoff: z.string(),
+                rows: z.number(),
+                bytes: z.number(),
+              }),
+            ),
+          })
+          .safeParse(
+            await response
+              .clone()
+              .json()
+              .catch(() => null),
+          );
+        if (confirmation.success) {
+          printJsonOrTable(ctx, confirmation.data, confirmation.data.preview, [
+            { key: "kind" },
+            { key: "retention" },
+            { key: "cutoff" },
+            { key: "rows" },
+            { key: "bytes" },
+          ]);
+          throw new Error("Shorter retention removes data. Review the preview, then rerun with --confirm-shorter-retention to confirm.");
+        }
+      }
+      const updated = await ctx.readJson<PulseBase>(response);
       if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.base", updated)))
         ctx.print(`Updated Pulse base ${updated.name} (${updated.id}).`);
     },

@@ -4,7 +4,7 @@ import { resolveMailHost } from "./resolve-host";
 import type { resolveMailCredentials } from "./store";
 
 export const resolveMailTransport = async (profile: Awaited<ReturnType<typeof resolveMailCredentials>>, signal?: AbortSignal) => {
-  const target = await resolveMailHost(profile.smtpHost, signal);
+  const target = await resolveMailHost(profile.smtpHost, signal, undefined, profile.smtpPort);
   signal?.throwIfAborted();
   const count = target.addresses.length;
   return {
