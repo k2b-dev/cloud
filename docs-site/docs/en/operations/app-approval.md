@@ -644,11 +644,12 @@ If the full JSON still exceeds 8 KiB in UTF-8, Cloud drops details from the
 end, then shortens the message.
 
 A question whose review names no reason takes it from the Action's declared
-policy, as the approvals page does; if Cloud cannot read that policy, or the
-app is not registered at that moment, a truncated question counts as a
-`sends` question. Dates and times stay typed rows, an event's end too, so the
-device shows them in its own time zone. A truncated question with
-reason `sends` is browser-only: it is absent from
+policy, as the approvals page does. Dates and times stay typed rows, an event's
+end too, so the device shows them in its own time zone. A truncated question
+is browser-only when its reason or the Action's declared policy is `sends`,
+even when the call names another reason. An incomplete question also stays in
+the browser when Cloud cannot read the declared policy, including when the
+app is not registered. A browser-only question is absent from
 the device inbox and detail endpoint and triggers no device push. It still
 counts in `moreActions`. The person decides in Cloud, where the full message
 is visible. To fill the inbox past such questions, one inbox call reads at

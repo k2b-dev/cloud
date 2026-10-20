@@ -220,7 +220,7 @@ suite("Core AI completion notifications", () => {
         WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid`;
       await ageNotices();
       expect((await service.notifyApprovalWaiting(second)).failed).toBe(0);
-      expect(rendered.at(-1)).toEqual({ locale: "en", body: "Send mail?\nI'm asking because this leaves Cloud." });
+      expect(rendered.at(-1)).toEqual({ locale: "en", body: "Send mail?\nI'm asking because this leaves Cloud.\nAnd 1 more waiting." });
       expect(await events()).toMatchObject([
         { idempotency_key: `approval:${first}` },
         { title: "2 approvals waiting", idempotency_key: `approval:${second}` },

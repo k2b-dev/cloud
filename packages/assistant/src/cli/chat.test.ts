@@ -198,8 +198,8 @@ test("actions list prints the shared question block with absolute links and exac
         "  Hello Lea,",
         "  Maintenance is on Tuesday.",
         "  Read all: http://example.test/mail/drafts/draft-1?revision=7",
-        "  Send to Lea: cld assistant actions approve chat-7 turn-8 call-9 --profile test --server http://example.test",
-        "  Don't send:  cld assistant actions reject chat-7 turn-8 call-9 --profile test --server http://example.test",
+        "  Send to Lea: cld --profile test --server http://example.test assistant actions approve -- chat-7 turn-8 call-9",
+        "  Don't send:  cld --profile test --server http://example.test assistant actions reject -- chat-7 turn-8 call-9",
       ]);
       expect(tables).toEqual([]);
     }

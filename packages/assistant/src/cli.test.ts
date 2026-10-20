@@ -499,8 +499,8 @@ describe("assistant CLI", () => {
       "  I'm asking because Cloud always asks for this.",
       "  Entwurf „Angebot“ an Jana Berger erstellen.",
       "  Warum: Jana hat um das Angebot gebeten.",
-      "  E-Mail: Entwurf an jana@example.com erstellen: cld assistant actions approve chat-1 turn-1 call-1 --profile test --server https://cloud.example",
-      "  Don't run:                                     cld assistant actions reject chat-1 turn-1 call-1 --profile test --server https://cloud.example",
+      "  E-Mail: Entwurf an jana@example.com erstellen: cld --profile test --server https://cloud.example assistant actions approve -- chat-1 turn-1 call-1",
+      "  Don't run:                                     cld --profile test --server https://cloud.example assistant actions reject -- chat-1 turn-1 call-1",
     ]);
   });
 
@@ -522,9 +522,11 @@ describe("assistant CLI", () => {
     const printed: string[] = [];
     request.ctx.print = (value = "") => void printed.push(value);
     await assistantCli.run(request.ctx);
-    expect(printed.at(-2)).toContain(`cld assistant actions approve chat-1 turn-1 'call$(id)'\\''x' --profile test`);
+    expect(printed.at(-2)).toContain(
+      `cld --profile test --server https://cloud.example assistant actions approve -- chat-1 turn-1 'call$(id)'\\''x'`,
+    );
     // The shell reads the quoted call ID back as exactly itself.
-    const word = printed.at(-1)?.split(" reject ")[1]?.split(" --profile ")[0] ?? "";
+    const word = printed.at(-1)?.split(" reject -- ")[1] ?? "";
     expect(Bun.spawnSync(["sh", "-c", `printf %s ${word.split(" ").slice(2).join(" ")}`]).stdout.toString()).toBe("call$(id)'x");
   });
 

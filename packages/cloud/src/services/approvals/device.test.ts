@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { compileReviewFixture } from "../../_internal/capability-review.test-fixture";
 import * as registry from "../../_internal/registry";
 import { actionCardText } from "../../ai/chat/action-text";
 import { assertCapabilityReview } from "../../capabilities/testing";
@@ -276,18 +277,68 @@ test("a relayed review without its own reason takes the declared policy, and an 
   expect(appActionOffered(other, pendingApprovalCard(relayed, options.appName, { ask: "app_asks" }), { ask: "app_asks" })).toBe(true);
 });
 
-test("the declared policy is unknown while the registry fails or lacks the app, and not needed when the review says why", async () => {
+for (const stored of [false, true])
+  test(`declared sends keeps a truncated question off the device despite its own reason: stored ${stored}`, async () => {
+    const review = mailReview();
+    if (review.preview?.kind !== "message") throw new Error("Expected message fixture");
+    review.ask = "involves_people";
+    review.preview.body = "x".repeat(APP_ACTION_LIMITS.valueChars + 1);
+    assertCapabilityReview(review);
+    const input = {
+      ...row,
+      appId: "demo",
+      action: "send",
+      details: stored ? null : review,
+      storedReview: stored ? review : null,
+    };
+    const capabilities = spyOn(registry, "listCapabilities").mockResolvedValue([
+      {
+        appId: "demo",
+        appName: "Demo",
+        appIcon: "ti ti-mail",
+        appDescription: "Demo",
+        endpoint: "http://demo:3000",
+        manifest: compileReviewFixture({ ask: "sends" }).manifest,
+      },
+    ]);
+    try {
+      const policy = (await loadApprovalActionPolicies([input]))(input);
+      expect(policy).toEqual({ ask: "sends" });
+      const card = pendingApprovalCard(input, options.appName, policy);
+      const view = await appActionView(input, { ...options, policy });
+      expect(card.reason.code).toBe("involves_people");
+      expect(view.message).toBe(card.reason.text);
+      expect(view.truncated).toBe(true);
+      expect(appActionOffered(view, card, policy)).toBe(false);
+      expect(appActionOffered(view, actionCardText(card), policy)).toBe(false);
+      expect(appActionOffered(view, card, null)).toBe(false);
+      expect(appActionOffered(view, card, { ask: "app_asks" })).toBe(true);
+      expect(appActionOffered({ ...view, truncated: false }, card, policy)).toBe(true);
+    } finally {
+      capabilities.mockRestore();
+    }
+  });
+
+test("new-shape rows load policy even with their own reason or stored review; legacy rows need none", async () => {
   const { ask: _ask, ...withoutAsk } = mailReview();
   const relayed = { ...row, details: withoutAsk, storedReview: null };
   const reasoned = { ...row, details: mailReview(), storedReview: null };
+  const stored = { ...row, storedReview: mailReview() };
+  const legacy = { ...row, details: { message: "Send this letter?" } };
+  const storedLegacy = { ...row, storedReview: { legacy: { question: "Send this letter?", rows: [] } } };
   const capabilities = spyOn(registry, "listCapabilities").mockResolvedValue([]);
   try {
-    expect((await loadApprovalActionPolicies([relayed, reasoned]))(relayed)).toBeNull();
-    expect((await loadApprovalActionPolicies([relayed, reasoned]))(reasoned)).toBeUndefined();
+    const missing = await loadApprovalActionPolicies([relayed, reasoned, stored, legacy]);
+    for (const input of [relayed, reasoned, stored]) expect(missing(input)).toBeNull();
+    expect(missing(legacy)).toBeUndefined();
+    expect(missing(storedLegacy)).toBeUndefined();
     capabilities.mockRejectedValue(new Error("registry down"));
-    expect((await loadApprovalActionPolicies([relayed]))(relayed)).toBeNull();
+    const failed = await loadApprovalActionPolicies([relayed, reasoned, stored]);
+    for (const input of [relayed, reasoned, stored]) expect(failed(input)).toBeNull();
     capabilities.mockClear();
-    expect((await loadApprovalActionPolicies([reasoned]))(reasoned)).toBeUndefined();
+    const unnecessary = await loadApprovalActionPolicies([legacy, storedLegacy]);
+    expect(unnecessary(legacy)).toBeUndefined();
+    expect(unnecessary(storedLegacy)).toBeUndefined();
     expect(capabilities).not.toHaveBeenCalled();
   } finally {
     capabilities.mockRestore();

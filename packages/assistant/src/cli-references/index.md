@@ -293,8 +293,8 @@ If a turn needs an approval or frontend tool result that was not supplied, the c
 
 ```bash
 cld assistant actions list <chat-id> <turn-id>
-cld assistant actions approve <chat-id> <turn-id> <call-id>
-cld assistant actions reject <chat-id> <turn-id> <call-id>
+cld assistant actions approve -- <chat-id> <turn-id> <call-id>
+cld assistant actions reject -- <chat-id> <turn-id> <call-id>
 cld assistant actions submit <chat-id> <turn-id> <call-id> --result-file result.json
 cld assistant turns watch <chat-id> <turn-id>
 ```
@@ -312,12 +312,12 @@ the question's locale controls labels. For example:
   Subject: Maintenance
   Hello Lea, maintenance starts on Tuesday.
   Read all: https://cloud.example/mail/drafts/7?revision=2
-  Send to Lea Berg: cld assistant actions approve <chat> <turn> <call> --profile work --server https://cloud.example
-  Don't send:       cld assistant actions reject <chat> <turn> <call> --profile work --server https://cloud.example
+  Send to Lea Berg: cld --profile work --server https://cloud.example assistant actions approve -- <chat> <turn> <call>
+  Don't send:       cld --profile work --server https://cloud.example assistant actions reject -- <chat> <turn> <call>
 ```
 
-The printed commands name the profile and server of the listing and quote
-every ID, so a copied command decides exactly this question.
+The printed commands put the listing's profile and server before the module
+name and quote every ID, so a copied command decides exactly this question.
 
 Long bodies show up to eight lines, followed by `…`, only when **Read all**
 opens the complete version; otherwise the whole text shows. Interactive mode

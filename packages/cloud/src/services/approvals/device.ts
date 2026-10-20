@@ -36,7 +36,12 @@ export const appApprovalText = (value: string, limit: number): string => cut(pla
  * rule out `sends`, so an incomplete question then stays in the browser too.
  */
 export const appActionOffered = (view: AppActionView, question: ActionCard | ActionQuestionText, policy?: ApprovalActionPolicy): boolean =>
-  !(view.truncated && (policy === null || ("reasonCode" in question ? question.reasonCode : question.reason.code) === "sends"));
+  !(
+    view.truncated &&
+    (policy === null ||
+      ("reasonCode" in question ? question.reasonCode : question.reason.code) === "sends" ||
+      (policy && "ask" in policy && policy.ask === "sends"))
+  );
 
 /** A deterministic, plain-text snapshot; the digest binds the device's choice to everything it shows. */
 export const appActionView = async (

@@ -34,6 +34,7 @@ const notificationMessages = i18n.define({
       costBody: ({ cost, unit }: { cost: string; unit: string }) =>
         `Reference costs over the last 24 hours: ${cost} ${unit}. Review Usage rules and the contributing workflows.`,
       approvalWaiting: ({ count }: { count: number }) => (count === 1 ? "Approval waiting" : `${count} approvals waiting`),
+      approvalMore: ({ count }: { count: number }) => `And ${count} more waiting.`,
       approvalOpen: ({ target }: { target: string }) => `Open it at ${target}`,
       approvalBody: "An Action waits for your approval. Nothing happens until you decide.",
       approvalEmail: ({ target }: { target: string }) =>
@@ -49,6 +50,7 @@ const notificationMessages = i18n.define({
       costBody: ({ cost, unit }) =>
         `Referenzkosten der letzten 24 Stunden: ${cost} ${unit}. Prüfe die Usage-Regeln und die verursachenden Workflows.`,
       approvalWaiting: ({ count }) => (count === 1 ? "Freigabe wartet" : `${count} Freigaben warten`),
+      approvalMore: ({ count }) => (count === 1 ? "Und 1 weitere wartet." : `Und ${count} weitere warten.`),
       approvalOpen: ({ target }) => `Öffne sie unter ${target}`,
       approvalBody: "Eine Aktion wartet auf deine Freigabe. Bis du entscheidest, passiert nichts.",
       approvalEmail: ({ target }) =>
@@ -91,7 +93,9 @@ export const AI_NOTIFICATIONS = {
     }),
     render: ({ count, question, reason }, { locale }) => ({
       title: text(locale).approvalWaiting({ count }),
-      body: question ? [question, reason].filter(Boolean).join("\n") : text(locale).approvalBody,
+      body: question
+        ? [question, reason, count > 1 ? text(locale).approvalMore({ count: count - 1 }) : undefined].filter(Boolean).join("\n")
+        : text(locale).approvalBody,
       targetHref: APPROVALS_PAGE_PATH,
     }),
     email: async ({ count, question, reason }, { locale }) => {
@@ -99,7 +103,12 @@ export const AI_NOTIFICATIONS = {
       const target = await absoluteUrl(APPROVALS_PAGE_PATH);
       if (!question) return { subject, content: text(locale).approvalEmail({ target }) };
       // Escaped HTML, because plain content is read as HTML and would drop "<lea@example.com>" from the question.
-      const lines = [question, reason, text(locale).approvalOpen({ target })].filter((line): line is string => Boolean(line));
+      const lines = [
+        question,
+        reason,
+        count > 1 ? text(locale).approvalMore({ count: count - 1 }) : undefined,
+        text(locale).approvalOpen({ target }),
+      ].filter((line): line is string => Boolean(line));
       return { subject, rawHtml: lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("") };
     },
   }),

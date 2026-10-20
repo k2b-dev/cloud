@@ -77,6 +77,18 @@ for (const locale of ["de", "en"]) {
         `${rendered.body?.replace("\n", " ")} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
       );
       expect(delivered.html).toContain("Lea Berg &lt;lea.berg@example.com&gt;");
+      for (const count of [2, 3]) {
+        const data = { count, question: card.questionText, reason: card.reason.text };
+        const more = locale === "de" ? (count === 2 ? "Und 1 weitere wartet." : "Und 2 weitere warten.") : `And ${count - 1} more waiting.`;
+        const bundled = await AI_NOTIFICATIONS.approvalWaiting.render(data, { locale });
+        expect(bundled.body).toBe(`${rendered.body}\n${more}`);
+        const bundledEmail = await AI_NOTIFICATIONS.approvalWaiting.email!(data, { locale });
+        expect(bundledEmail.rawHtml).toContain(`<p>${more}</p>`);
+        expect((await prepareNotificationEmail(bundledEmail)).text).toBe(
+          `${rendered.body?.replace("\n", " ")} ${more} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
+        );
+        expect(bundledEmail.rawHtml).toContain("Lea Berg &lt;lea.berg@example.com&gt;");
+      }
       const oldEmail = await AI_NOTIFICATIONS.approvalWaiting.email!({ count: 1 }, { locale });
       expect(oldEmail.content).toBe(`${old.body} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`);
     } finally {

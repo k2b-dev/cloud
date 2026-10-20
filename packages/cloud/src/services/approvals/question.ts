@@ -17,14 +17,14 @@ import type { PendingApprovalRow } from "./list";
  */
 
 /**
- * The declared policy of a row's Action, needed when neither a stored review nor the app's review names why it asks:
+ * The declared policy of a row's Action, needed for new-shape reviews' device eligibility and fallback reason:
  * `undefined` when none is needed or declared, `null` when the registry could not say.
  */
 export type ApprovalActionPolicy = CapabilityActionPolicy | null | undefined;
 const needsPolicy = (row: PendingApprovalRow): boolean => {
-  if (row.storedReview && "sentence" in row.storedReview) return false;
+  if (row.storedReview && "sentence" in row.storedReview) return true;
   const review = CapabilityActionCallReviewSchema.safeParse(row.details);
-  return review.success && !review.data.ask;
+  return review.success;
 };
 /** Reads the registry once for the rows that need their Action's declared policy, as the approvals page does. */
 export const loadApprovalActionPolicies = async (

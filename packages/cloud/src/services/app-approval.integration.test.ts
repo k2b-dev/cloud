@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { type Server, sql } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
@@ -6,12 +6,15 @@ import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { withActiveIdentitySigner } from "./identity";
 import "../../../../scripts/fixtures/authorization-preload";
+import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
+import * as registry from "../_internal/registry";
 import { migrateCloudAi } from "../ai/migrate";
 import { aiConversations } from "../ai/store";
 import { createAppApprovalRoutes } from "../api/app-approval";
 import { createDeviceActions } from "../api/app-approval-actions";
 import { assertCapabilityReview } from "../capabilities/testing";
 import {
+  APP_ACTION_LIMITS,
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
   AppActionViewSchema,
@@ -2313,6 +2316,22 @@ suite("isolated app approval protocol", () => {
     "valkey",
   )("Cloud Login Actions", () => {
     beforeAll(migrateCloudAi, 30_000);
+    const manifest = compileReviewFixture({ ask: "app_asks" }).manifest;
+    const registeredMail = {
+      appId: "mail",
+      appName: "Mail",
+      appIcon: "ti ti-mail",
+      appDescription: "Mail",
+      endpoint: "http://mail:3000",
+      manifest: { ...manifest, appId: "mail", policies: { "draft.send": { ask: "app_asks" as const } } },
+    };
+    const restores: Array<{ mockRestore: () => void }> = [];
+    beforeEach(() => {
+      restores.push(spyOn(registry, "listCapabilities").mockResolvedValue([registeredMail]));
+    });
+    afterEach(() => {
+      for (const spy of restores.splice(0).reverse()) spy.mockRestore();
+    });
     const askAction = async (
       owner: Awaited<ReturnType<typeof account>>,
       options: { assurance?: "standard" | "confirm"; signedInSession?: true; review?: CapabilityActionCallReview } = {},
@@ -2454,6 +2473,36 @@ suite("isolated app approval protocol", () => {
         }),
       ).toBe(false);
       expect(await approvals.get(browserOnly.id)).toMatchObject({ status: "pending" });
+    });
+
+    test("declared sends with another review reason stays out of inbox, view, decide and device push", async () => {
+      restores.push(
+        spyOn(registry, "listCapabilities").mockResolvedValue([
+          { ...registeredMail, manifest: { ...registeredMail.manifest, policies: { "draft.send": { ask: "sends" } } } },
+        ]),
+      );
+      const owner = await account();
+      const review = reviewFixture();
+      if (review.preview?.kind !== "message") throw new Error("Expected message fixture");
+      review.ask = "involves_people";
+      review.preview.body = "x".repeat(APP_ACTION_LIMITS.valueChars + 1);
+      const waiting = await askAction(owner, { review });
+      const inbox = await deviceActions.inbox({ userId: owner.id, issuer: cfg.issuer });
+      expect(inbox.actions).toEqual([]);
+      expect(inbox.moreActions).toBe(1);
+      expect(await deviceActions.view({ userId: owner.id, issuer: cfg.issuer, actionId: waiting.id })).toBeNull();
+      expect(await deviceOffersApproval(waiting.id)).toBe(false);
+      expect(
+        await deviceActions.decide({
+          userId: owner.id,
+          deviceId: crypto.randomUUID(),
+          issuer: cfg.issuer,
+          actionId: waiting.id,
+          digest: "A".repeat(43),
+          approved: true,
+        }),
+      ).toBe(false);
+      expect(await approvals.get(waiting.id)).toMatchObject({ status: "pending" });
     });
 
     test("the inbox reads past a full page of browser-only questions to older ones a device may decide", async () => {

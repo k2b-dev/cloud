@@ -478,20 +478,11 @@ export const assistantManagementCommands = [
           if (action.type === "approval_request") {
             // IDs come from the server and a model's tool call; quoted, a copied command can never run anything else.
             // The same Cloud and profile as this listing, so a copied command decides this question and no other.
-            const target = [
-              action.conversationId,
-              action.turnId,
-              action.callId,
-              "--profile",
-              ctx.options.profile,
-              "--server",
-              ctx.options.server,
-            ]
-              .map(shellArgument)
-              .join(" ");
+            const cloud = ["--profile", ctx.options.profile, "--server", ctx.options.server].map(shellArgument).join(" ");
+            const target = [action.conversationId, action.turnId, action.callId].map(shellArgument).join(" ");
             for (const line of pendingActionQuestion(ctx, action, {
-              approve: `cld assistant actions approve ${target}`,
-              reject: `cld assistant actions reject ${target}`,
+              approve: `cld ${cloud} assistant actions approve -- ${target}`,
+              reject: `cld ${cloud} assistant actions reject -- ${target}`,
             }).lines)
               ctx.print(line);
           } else {
