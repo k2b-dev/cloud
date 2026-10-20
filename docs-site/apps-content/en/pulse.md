@@ -140,8 +140,10 @@ snapshot without adding history.
 
 A keyed retry completes its original state history even if newer batches have
 arrived. Their newer current states remain current. An unkeyed resend of a
-failed state batch still records its change once, at the time Pulse first
-accepted it.
+failed state batch still records its change once, with the time of the
+observation that first carried the new value. If a different value arrives
+before the resend, only the newer change is recorded; send state batches with
+an `Idempotency-Key` to keep every change.
 
 Hourly metric values keep count, sum, minimum, maximum, last value and its
 timestamp, and counter increase. A counter reset contributes its new value;
