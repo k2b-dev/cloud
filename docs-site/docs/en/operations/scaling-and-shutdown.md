@@ -53,7 +53,7 @@ grow with the replica count.
 | FAQ (`faq`) | Yes | Postgres only | None |
 | Files (`filesv2`) | Yes | NATS mutexes and Postgres reservations for operations and uploads | 4 uploads |
 | Gateway operations (`gateway-ops`) | Yes | NATS scheduler and slot-keyed jobs; one durable NATS consumer for telemetry | Metrics collected by every replica |
-| Grids (`grids`) | Yes | Postgres outbox claims, NATS mutexes and schedulers | 10 workflow slots, a query pool of 12 Postgres connections, +4 Postgres connections for number series |
+| Grids (`grids`) | Yes | Postgres outbox claims, NATS mutexes and schedulers | 10 workflow slots; extra Postgres pools of up to 12 connections for queries, 10 for workflow effects and 4 for number series |
 | Hosts (`ipa-hosts`) | Yes | NATS scheduler and slot-keyed sync job | None |
 | Mail (`mail`) | Yes | NATS lease for IMAP IDLE, NATS draft leases, NATS jobs and Postgres claims | 4 provider jobs per kind, 2 workflow slots |
 | Notebooks (`notebooks`) | Yes | Shared NATS document log; snapshot job partitioned by note | 2 PDF conversions |
@@ -75,8 +75,9 @@ another replica marks the call lost. Durable Code Mode ownership is tracked in
 A per-process limit protects one process, not the service behind it. With
 several replicas, Gotenberg, Filegate, the SMTP relay, model providers and
 Postgres see the limit once per replica: two Core replicas run up to 16 AI
-turns and 16 SMTP sessions. Size those services for the replica count. A
-shared budget is tracked in
+turns and 16 SMTP sessions. Every replica also opens its own Postgres pool of
+up to 10 connections, plus the extra pools in the table. Size those services
+for the replica count. A shared budget is tracked in
 [#1626](https://github.com/k2b-dev/cloud/issues/1626). Live updates allow 16
 sockets per viewer on each replica. Workflow slots also count per replica; see
 [Emit events and start runs](/en/docs/automation/emit-events-and-start-runs).
