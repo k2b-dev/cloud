@@ -166,13 +166,13 @@ module uses an import with `type: "file"` to emit its module worker as a `.js`
 asset. Serve that asset alongside the JavaScript chunks from the same origin.
 MapLibre and its worker stay outside the initial static import closure.
 
-Measured with MapLibre 6.15.0 and Bun 1.4.2 in minified builds, gzip at level 6, in KiB:
+Measured with MapLibre 6.14.0 and Bun 1.4.2 in minified builds, gzip at level 6, in KiB:
 
 | Part | Raw | gzip | Loaded |
 | --- | --- | --- | --- |
 | MapView in the island (static imports) | 23.5 | 9.2 | with the island |
-| MapLibre chunk | 1,024 | 283 | when the map becomes visible |
-| MapLibre worker (`map-view-worker-<hash>.js`) | 507 | 146 | when the map becomes visible |
+| MapLibre chunk | 1,006 | 277 | when the map becomes visible |
+| MapLibre worker (`map-view-worker-<hash>.js`) | 496 | 143 | when the map becomes visible |
 | MapLibre CSS | 0 | 0 | not loaded; `@k2b/ui` styles the few MapLibre elements itself |
 
 A page without a map loads none of these.
@@ -185,7 +185,7 @@ places the fit box, pins, and scale bar with `style` attributes, so the policy
 must allow them, for example with `style-src-attr 'unsafe-inline'`; without
 that, the server frame shows no geometry until the island renders in the browser.
 
-In MapLibre 6.15, `workerFactory` starts a same-origin URL directly with
+In MapLibre 6.14, `workerFactory` starts a same-origin URL directly with
 `new Worker(url, { type: "module" })`. Its image loader uses
 `createImageBitmap` for fetched image data in browsers that support it, so
 that path needs no `img-src blob:`. The fallback for browsers without
