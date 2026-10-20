@@ -5,9 +5,7 @@ import { coreGeo } from "@k2b/cloud/services";
 import { GeoError } from "@k2b/cloud/services/geo/errors";
 import { GEO_TEST_NOW, geoTestContext } from "@k2b/cloud/services/geo/geo.test-fixture";
 import { geoProvenance } from "@k2b/cloud/services/geo/geoapify";
-import { buildAiCapabilityCatalog } from "../../cloud/src/ai/capabilities";
 import { aiCapabilities } from "./capabilities";
-import { geoCapabilities } from "./geo-capabilities";
 import { geoCapabilityMessages } from "./geo-capability-messages";
 import { geoCapabilityPresentation } from "./geo-capability-presentation";
 
@@ -40,25 +38,10 @@ test("Core registers all five queries with shared schemas and en/de presentation
     }
   }
 });
-test("Core geo queries enter the generic Assistant tool catalog", () => {
-  const manifest = compileCapabilityManifest("core", aiCapabilities);
-  const catalog = buildAiCapabilityCatalog([
-    {
-      appId: "core",
-      appName: "Core",
-      appIcon: "ti ti-cloud",
-      appDescription: "Core",
-      endpoint: "http://core.invalid/capabilities",
-      manifest,
-    },
-  ]);
-  for (const value of Object.values(geoContract))
-    expect(catalog.some((tool) => tool.name === `core.${value.id}` && tool.kind === "query")).toBeTrue();
-});
 test("service accounts retain their access subject and request locale", async () => {
   const provenance = geoProvenance(GEO_TEST_NOW);
   const call = spyOn(coreGeo, "autocomplete").mockResolvedValue({ suggestions: [], provenance });
-  const result = await geoCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, context);
+  const result = await aiCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, context);
   expect(result).toEqual({ ok: true, data: { data: { suggestions: [], provenance } } });
   expect(call).toHaveBeenCalledWith({ text: "Orle" }, context);
   if (result.ok) capabilityResultSchema(geoContract.autocomplete.data).parse(result.data);
@@ -67,8 +50,8 @@ test("stable errors preserve structured details and localize only their message"
   spyOn(coreGeo, "autocomplete").mockRejectedValue(
     new GeoError("GEO_BUDGET_EXHAUSTED", { scope: "person", resetsAt: "2026-10-20T22:00:00.000Z" }),
   );
-  const en = await geoCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, context);
-  const de = await geoCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, { ...context, locale: "de" });
+  const en = await aiCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, context);
+  const de = await aiCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, { ...context, locale: "de" });
   expect(de).toMatchObject({
     ok: false,
     error: { code: "GEO_BUDGET_EXHAUSTED", details: { scope: "person", resetsAt: "2026-10-20T22:00:00.000Z" } },

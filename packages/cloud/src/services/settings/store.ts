@@ -22,7 +22,10 @@ import { toPgTextArray } from "../postgres";
 import { requestCacheRedis } from "../request-cache-redis";
 import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
+import { SettingUnreadableError } from "./errors";
 import { assertGeoBudgetPair } from "./geo-budget";
+
+export { SettingUnreadableError } from "./errors";
 
 const REDIS_KEY = (k: string) => `settings:${k}`;
 
@@ -30,16 +33,6 @@ type SqlClient = typeof sql;
 
 export type StoredSettingState = "none" | "readable" | "unreadable";
 export type SettingRead = { value: unknown; stored: StoredSettingState };
-
-export class SettingUnreadableError extends HTTPException {
-  readonly code = "setting_unreadable" as const;
-
-  constructor(readonly key: string) {
-    const message = `The stored value of setting "${key}" cannot be read by this application. Replace it with a new value or reset it to the default.`;
-    super(409, { message, res: Response.json({ code: "setting_unreadable", message }, { status: 409 }) });
-    this.name = "SettingUnreadableError";
-  }
-}
 
 /**
  * Forget cached values so every container re-reads on next access.
