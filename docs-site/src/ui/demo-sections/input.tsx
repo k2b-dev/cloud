@@ -489,13 +489,20 @@ const sharingItems: RichSelectItem[] = [
 ];
 
 const RichSelectDemo = () => {
-  const [state, setState] = createSignal<"normal" | "loading" | "error" | "empty">("normal");
+  const [state, setState] = createSignal<"normal" | "loading" | "error" | "empty" | "noperm">("normal");
   const [sender, setSender] = createSignal<string | null>("mara");
   const [access, setAccess] = createSignal<string | null>("manage");
   const [movedTo, setMovedTo] = createSignal<string>();
   const status = (): RichSelectStatus => (state() === "loading" ? "loading" : state() === "error" ? "error" : "ready");
   const reset = () => setState("normal");
   const selectedSender = () => senderItems.find((item) => item.value === sender());
+  // Without permission every option except the one that stays possible shows why it cannot be chosen.
+  const shown = (items: RichSelectItem[], keep: string | null, reason: string) =>
+    state() === "empty"
+      ? []
+      : state() === "noperm"
+        ? items.map((item) => (item.value === keep ? item : { ...item, disabledReason: reason }))
+        : items;
   return (
     <DemoGrid>
       <SegmentedControl
@@ -507,6 +514,7 @@ const RichSelectDemo = () => {
           { value: "loading", label: "Loading" },
           { value: "error", label: "Error" },
           { value: "empty", label: "Empty" },
+          { value: "noperm", label: "No permission" },
         ]}
       />
       <DemoCard
@@ -534,7 +542,7 @@ const RichSelectDemo = () => {
           placeholder="Move to …"
           value={null}
           onValueChange={setMovedTo}
-          items={state() === "empty" ? [] : moveTargets}
+          items={shown(moveTargets, "archive", "No write access")}
           status={status()}
           onRetry={reset}
           empty="No targets are set up for this space."
@@ -565,7 +573,7 @@ const RichSelectDemo = () => {
           value={sender}
           onValueChange={setSender}
           triggerLabel={selectedSender() ? `${selectedSender()?.label} · ${selectedSender()?.description}` : undefined}
-          items={state() === "empty" ? [] : senderItems}
+          items={shown(senderItems, "mara", "No permission to send")}
           status={status()}
           onRetry={reset}
           empty="No senders are set up for this space."
@@ -589,7 +597,7 @@ const RichSelectDemo = () => {
           title="Your access"
           value={access}
           onValueChange={setAccess}
-          items={state() === "empty" ? [] : sharingItems}
+          items={shown(sharingItems, access(), "Only managers change access")}
           status={status()}
           onRetry={reset}
           empty="No sharing levels are available."

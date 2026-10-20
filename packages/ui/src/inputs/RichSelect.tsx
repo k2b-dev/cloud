@@ -351,7 +351,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
     setActive(startIndex());
     // The preview popover keeps one height while it is open, so moving
     // through rows, filtering, or the end of loading never resizes it.
-    const rowsTall = status() === "ready" ? props.items.length : RICH_SELECT_SEARCH_FROM;
+    const rowsTall = status() === "ready" ? props.items.length : PLACEHOLDER_ROWS;
     const rem = Math.min(27.5, Math.max(18.75, rowsTall * 3.625 + 1.5));
     setHeight(props.size?.height ?? (withPreview() ? `${rem}rem` : undefined));
     popover.show();

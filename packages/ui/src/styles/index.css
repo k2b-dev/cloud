@@ -6576,7 +6576,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-rich-select__option[aria-disabled="true"] .k2b-rich-select__label {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-placeholder-color);
 }
 
 .k2b-ui .k2b-rich-select__option[aria-disabled="true"] .k2b-rich-select__visual {
@@ -6913,6 +6913,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-rich-select__preview[data-level="detail"] {
+  flex-grow: 1;
   margin: 0;
 }
 
