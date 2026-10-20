@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { ComposeFormattingWarning } from "../../contracts";
 import { renderComposeContent } from "../../service/compose-renderer";
 import type { MailComposerEditorHarnessOptions, MailComposerHarnessOptions } from "./MailComposerEditor.browser-harness";
@@ -480,6 +480,75 @@ describe("Mail composer preview with Markdown dividers", () => {
           expect(divider.above).toBeGreaterThanOrEqual(8);
           expect(divider.below).toBeGreaterThanOrEqual(8);
         }
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+});
+
+const tableMarkdown = [
+  "| Nr. | Artikel | Menge |",
+  "| --- | --- | --- |",
+  `| 100 | ${"https://example.test/".padEnd(120, "x")} | 2 |`,
+  `| 110 | \`${"item".repeat(30)}\` | 3 |`,
+  "",
+  "See [the catalog](https://example.test/catalog).",
+].join("\n");
+
+describe("Mail composer preview with a table", () => {
+  const previewWithTable = () => {
+    const rendered = renderComposeContent({
+      body: tableMarkdown,
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
+        mailbox: { name: "Example Team", description: "" },
+        sender: { display_name: "Example Team", email: "team@example.test", reply_to: "" },
+        message: { subject: "Catalog", to: ["grace@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok || !rendered.data.html) throw new Error("The table preview did not render");
+    return rendered.data.html;
+  };
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`keeps short tokens on one line and long links and code inside the preview on ${label}`, async () => {
+      const page = await load({ context: { ...context, reducedMotion: "reduce" }, theme: "light", locale: "en" });
+      try {
+        await page.waitForSelector('iframe[sandbox=""]');
+        await page.evaluate((html) => window.setPreviewHtml(html), previewWithTable());
+        const frame = page.frameLocator('iframe[sandbox=""]');
+        await frame.locator("table").waitFor();
+        await frame.locator("html").evaluate((element) => element.ownerDocument.fonts.ready);
+        await settled(page);
+        const layout = await frame.locator("table").evaluate((table) => {
+          const document = table.ownerDocument;
+          const tokens = Array.from(table.querySelectorAll("th, td"))
+            .filter((cell) => ["Nr.", "100", "110"].includes(cell.textContent?.trim() ?? ""))
+            .map((cell) => {
+              // Count the text's own line boxes: inline padding of the element adds rects of its own.
+              const text = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT).nextNode();
+              if (!text) throw new Error("Expected a cell text node");
+              const range = document.createRange();
+              range.selectNodeContents(text);
+              return { text: text.textContent, lines: new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top))).size };
+            });
+          return {
+            clientWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            right: table.getBoundingClientRect().right,
+            tokens,
+          };
+        });
+        expect(layout.tokens).toEqual(["Nr.", "100", "110"].map((text) => ({ text, lines: 1 })));
+        expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+        expect(layout.right).toBeLessThanOrEqual(layout.clientWidth + 0.5);
         expect(page.errors).toEqual([]);
       } finally {
         await page.context().close();
