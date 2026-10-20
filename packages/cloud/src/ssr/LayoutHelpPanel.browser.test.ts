@@ -238,6 +238,48 @@ for (const width of [1440, 390])
       await context.close();
     }
   });
+// 320 px is the narrowest panel column (20 rem); 1440 is a top-level provider document at desktop width.
+for (const width of [1440, 320])
+  test(`${width}: a panel opened on ?topic= keeps the server article frame and reuses the seeded article`, async () => {
+    const { context, page } = await fixture(width, 900, false);
+    try {
+      const fetched: string[] = [];
+      page.on("request", (request) => {
+        if (new URL(request.url()).pathname.startsWith("/api/help/")) fetched.push(request.url());
+      });
+      await page.goto(`${origin}/panel?topic=spaces-share`);
+      await page.waitForFunction(() => document.documentElement.dataset.helpMounted === "true");
+      await page.locator(".help-document h2").waitFor();
+      await settled(page);
+      const server = await page.evaluate(() => document.documentElement.dataset.helpServerFrame ?? "");
+      expect(JSON.parse(server)[2]).not.toBeNull();
+      expect(await page.evaluate(() => document.documentElement.dataset.helpFirstFrame)).toBe(server);
+      expect(JSON.stringify(await page.evaluate(helpPanelGeometry))).toBe(server);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect(fetched).toEqual([]);
+      // The title sits on the app gradient: a stronger app colour than 30 % light / 15 % dark stays at that cap.
+      const tint = (strength: string, dark: boolean) =>
+        page.evaluate(
+          ([strength, dark]) => {
+            const head = document.querySelector<HTMLElement>(".help-article-head")!;
+            document.documentElement.classList.toggle("dark", dark);
+            head.style.setProperty("--app-canvas-strength", strength);
+            head.style.setProperty("--app-canvas-dark-strength", strength);
+            return getComputedStyle(head).backgroundImage;
+          },
+          [strength, dark] as const,
+        );
+      for (const [dark, cap] of [
+        [false, "30%"],
+        [true, "15%"],
+      ] as const) {
+        expect(await tint(cap, dark)).not.toBe(await tint("0%", dark));
+        expect(await tint("100%", dark)).toBe(await tint(cap, dark));
+      }
+    } finally {
+      await context.close();
+    }
+  });
 test("an article opened from the panel start grows its head only downwards once the article arrives", async () => {
   const { context, page } = await fixture(1440, 900);
   try {

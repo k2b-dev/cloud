@@ -857,7 +857,8 @@
 /* The article head names the app whose Help this is: the app's own canvas gradient (the same tokens and strength as
    the app background, over the reader's surface), without a border or a shadow, and the article's icon in the flat
    shared tile. Without app colours it stays the plain surface. The embedded readers (Grids, Pulse) sit inside the
-   app's own chrome, which already names the app: their head stays flat. */
+   app's own chrome, which already names the app: their head stays flat. Text sits on this gradient, so its tint stays at
+   most 30 % light and 15 % dark, as on the phone shell: then the title and the lead read at 4.5:1 on any app colour. */
 .help-article-head {
   margin-bottom: 2rem;
 }
@@ -871,18 +872,18 @@
   padding: 1.5rem;
   background: linear-gradient(
     var(--app-canvas-angle, 135deg),
-    color-mix(in srgb, var(--app-canvas-from, var(--k2b-surface)) var(--app-canvas-strength, 0%), var(--k2b-surface)),
-    color-mix(in srgb, var(--app-canvas-via, var(--k2b-surface)) var(--app-canvas-strength, 0%), var(--k2b-surface)) 50%,
-    color-mix(in srgb, var(--app-canvas-to, var(--k2b-surface)) var(--app-canvas-strength, 0%), var(--k2b-surface))
+    color-mix(in srgb, var(--app-canvas-from, var(--k2b-surface)) min(var(--app-canvas-strength, 0%), 30%), var(--k2b-surface)),
+    color-mix(in srgb, var(--app-canvas-via, var(--k2b-surface)) min(var(--app-canvas-strength, 0%), 30%), var(--k2b-surface)) 50%,
+    color-mix(in srgb, var(--app-canvas-to, var(--k2b-surface)) min(var(--app-canvas-strength, 0%), 30%), var(--k2b-surface))
   );
 }
 
 .dark .help-article:not([data-surface="embedded"]) .help-article-head {
   background: linear-gradient(
     var(--app-canvas-angle, 135deg),
-    color-mix(in srgb, var(--app-canvas-from, var(--k2b-surface)) var(--app-canvas-dark-strength, 0%), var(--k2b-surface)),
+    color-mix(in srgb, var(--app-canvas-from, var(--k2b-surface)) min(var(--app-canvas-dark-strength, 0%), 15%), var(--k2b-surface)),
     var(--k2b-surface) 50%,
-    color-mix(in srgb, var(--app-canvas-to, var(--k2b-surface)) var(--app-canvas-dark-strength, 0%), var(--k2b-surface))
+    color-mix(in srgb, var(--app-canvas-to, var(--k2b-surface)) min(var(--app-canvas-dark-strength, 0%), 15%), var(--k2b-surface))
   );
 }
 
