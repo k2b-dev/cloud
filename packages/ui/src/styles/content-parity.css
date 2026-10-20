@@ -6309,7 +6309,8 @@
 .k2b-ui .k2b-map-view__line[data-tone="preview"] .k2b-map-view__stroke { stroke: var(--k2b-map-second); stroke-width: 4px; stroke-dasharray: 7 5; }
 .k2b-ui .k2b-map-view__line[data-tone="previous"] .k2b-map-view__stroke { stroke: var(--k2b-map-line-muted); stroke-width: 3px; stroke-opacity: .55; stroke-dasharray: 3 6; }
 .k2b-ui .k2b-map-view__accuracy { fill: var(--k2b-map-me); fill-opacity: .14; }
-.k2b-ui .k2b-map-view__me { box-sizing: border-box; position: absolute; width: 17px; height: 17px; border: 2.5px solid var(--k2b-map-surface); border-radius: 50%; background: var(--k2b-map-me); transform: translate(-50%, -50%); }
+/* As in the mockup: a fixed 22 px halo marks the person's place even on a route line of a similar blue. */
+.k2b-ui .k2b-map-view__me { box-sizing: border-box; position: absolute; width: 17px; height: 17px; border: 2.5px solid var(--k2b-map-surface); border-radius: 50%; background: var(--k2b-map-me); box-shadow: 0 0 0 13.5px color-mix(in srgb, var(--k2b-map-me) 14%, transparent); transform: translate(-50%, -50%); }
 .k2b-ui .k2b-map-view__pin {
   position: absolute;
   display: grid;
