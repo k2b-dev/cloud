@@ -465,7 +465,8 @@ const slotText = (slot: CapabilitySlot, context: CapabilitySlotSentenceContext, 
     }
     case "person": {
       const total = slot.total ?? slot.people.length;
-      if (mode === "button") return total === 1 ? (slot.people[0]!.name ?? slot.people[0]!.address ?? "") : t.people({ count: total });
+      if (mode === "button")
+        return total === 1 ? plain(slot.people[0]!.name ?? slot.people[0]!.address ?? "", 24, "middle") : t.people({ count: total });
       const shown = mode === "full" ? slot.people : slot.people.slice(0, 3);
       const list = shown.map((person) =>
         mode === "chip" ? plain(person.name ?? person.address ?? "", 40, "middle") : capabilityPersonText(person),
