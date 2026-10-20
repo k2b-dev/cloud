@@ -62,7 +62,7 @@ style declares its own attribution.
 | `fit` | `all` (default) fits all vertices and location; `markers` fits pins, falling back to all geometry when there are no pins. |
 | `selectedId` | Controlled selection; otherwise the first marker with `selected: true` is selected. |
 | `onSelect` | Receives a marker ID from a pin click or keyboard selection. |
-| `infoTile` | Renders the selected marker at the bottom left above the scale bar. It lies over the map, so keep it short; a host with its own list can show details there instead. When the tile would cover the selected pin, also after its content grows, the live map moves the pin into the free space above it. |
+| `infoTile` | Renders the selected marker at the bottom left above the scale bar. The tile is kept while the selected id stays the same; marker fields read in JSX follow marker refreshes. It lies over the map, so keep it short; a host with its own list can show details there instead. When the tile would cover the selected pin, also after its content grows, the live map moves the pin into the free space above it. |
 | `notice` | Host message above the map at the top left. |
 | `empty` | Host sentence centered when there is no geometry. |
 | `onLocate` | Shows the location button. The host obtains and supplies the location. |

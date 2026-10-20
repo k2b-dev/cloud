@@ -1,5 +1,5 @@
 import type { Map as LiveMap } from "maplibre-gl";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { children, createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { prefersReducedMotion } from "../motion";
 import { MapFootRow, MapGeometry, type MapScale, referenceScale, selectedMarker } from "./MapViewFrame";
@@ -15,7 +15,7 @@ import {
   unprojectPoint,
 } from "./map-view-geometry";
 import { useMapViewMessages } from "./map-view-messages";
-import type { MapViewProps, MapViewStyle } from "./map-view-types";
+import type { MapViewMarker, MapViewProps, MapViewStyle } from "./map-view-types";
 
 export type { MapViewProps } from "./map-view-types";
 
@@ -39,6 +39,9 @@ export function MapView(props: MapViewProps): JSX.Element {
   const messages = useMapViewMessages();
   const frame = createMemo(() => mapFrame(props, props.height, props.padding ?? DEFAULT_PADDING));
   const selected = createMemo(() => selectedMarker(props.markers ?? [], props.selectedId));
+  const selectedId = createMemo(() => selected()?.id);
+  const notice = children(() => props.notice);
+  const empty = children(() => props.empty);
   const [state, setState] = createSignal<MapState>("static");
   const [dark, setDark] = createSignal(false);
   const [boxStyle, setBoxStyle] = createSignal<JSX.CSSProperties>();
@@ -339,8 +342,8 @@ export function MapView(props: MapViewProps): JSX.Element {
         when={frame()}
         fallback={
           <div class="k2b-map-view__empty">
-            <Show when={props.empty}>
-              <span>{props.empty}</span>
+            <Show when={empty()}>
+              <span>{empty()}</span>
             </Show>
           </div>
         }
@@ -350,8 +353,8 @@ export function MapView(props: MapViewProps): JSX.Element {
         )}
       </Show>
       <div class="k2b-map-view__messages">
-        <Show when={props.notice}>
-          <div class="k2b-map-view__notice">{props.notice}</div>
+        <Show when={notice()}>
+          <div class="k2b-map-view__notice">{notice()}</div>
         </Show>
         <Show when={state() === "loading" || state() === "error" || state() === "no-webgl"}>
           <div class="k2b-map-view__status" role="status">
@@ -391,8 +394,33 @@ export function MapView(props: MapViewProps): JSX.Element {
       </div>
       <div class="k2b-map-view__foot">
         <div ref={info} class="k2b-map-view__info" aria-live="polite">
-          <Show when={selected()} keyed>
-            {(marker) => props.infoTile?.(marker)}
+          <Show when={selectedId()} keyed>
+            {(_id) => {
+              // Keep the tile's state and focus for this selection while its marker data refreshes.
+              const initial = selected();
+              const current = () => selected() ?? initial;
+              const marker: MapViewMarker = {
+                get id() {
+                  return current()!.id;
+                },
+                get point() {
+                  return current()!.point;
+                },
+                get mark() {
+                  return current()!.mark;
+                },
+                get label() {
+                  return current()!.label;
+                },
+                get tone() {
+                  return current()!.tone;
+                },
+                get selected() {
+                  return current()!.selected;
+                },
+              };
+              return props.infoTile?.(marker);
+            }}
           </Show>
         </div>
         <MapFootRow scale={scale()}>{props.attribution}</MapFootRow>
