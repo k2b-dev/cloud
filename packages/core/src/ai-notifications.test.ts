@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { CHAT_TASK_REASON_CODES, chatTaskReasonSentence, chatTaskReasonState } from "@k2b/cloud/ai";
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import { coreSettings } from "@k2b/cloud/services";
+import { prepareNotificationEmail } from "@k2b/cloud/services/notifications/email-frame";
 import { AI_NOTIFICATIONS } from "./ai-notifications";
 
 for (const locale of ["de", "en"])
@@ -66,10 +67,13 @@ for (const locale of ["de", "en"]) {
         { count: 1, question: card.questionText, reason: card.reason.text },
         { locale },
       );
-      expect(email).toEqual({
-        subject: rendered.title,
-        content: `${rendered.body}\n${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
-      });
+      expect(email.subject).toBe(rendered.title);
+      // The delivered mail keeps the address: the question goes out as escaped HTML, not as HTML-read plain text.
+      const delivered = await prepareNotificationEmail(email);
+      expect(delivered.text).toBe(
+        `${rendered.body?.replace("\n", " ")} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`,
+      );
+      expect(delivered.html).toContain("Lea Berg &lt;lea.berg@example.com&gt;");
       const oldEmail = await AI_NOTIFICATIONS.approvalWaiting.email!({ count: 1 }, { locale });
       expect(oldEmail.content).toBe(`${old.body} ${locale === "de" ? "Öffne sie unter" : "Open it at"} https://cloud.example/me/approvals`);
     } finally {

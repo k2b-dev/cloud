@@ -61,6 +61,8 @@ const notificationMessages = i18n.define({
   },
 });
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 const absoluteUrl = async (path: string): Promise<string> => {
   const configured = String((await coreSettings.get<string>("app.url")) || "").trim();
@@ -92,12 +94,14 @@ export const AI_NOTIFICATIONS = {
       body: question ? [question, reason].filter(Boolean).join("\n") : text(locale).approvalBody,
       targetHref: APPROVALS_PAGE_PATH,
     }),
-    email: async ({ count, question, reason }, { locale }) => ({
-      subject: text(locale).approvalWaiting({ count }),
-      content: question
-        ? [question, reason, text(locale).approvalOpen({ target: await absoluteUrl(APPROVALS_PAGE_PATH) })].filter(Boolean).join("\n")
-        : text(locale).approvalEmail({ target: await absoluteUrl(APPROVALS_PAGE_PATH) }),
-    }),
+    email: async ({ count, question, reason }, { locale }) => {
+      const subject = text(locale).approvalWaiting({ count });
+      const target = await absoluteUrl(APPROVALS_PAGE_PATH);
+      if (!question) return { subject, content: text(locale).approvalEmail({ target }) };
+      // Escaped HTML, because plain content is read as HTML and would drop "<lea@example.com>" from the question.
+      const lines = [question, reason, text(locale).approvalOpen({ target })].filter((line): line is string => Boolean(line));
+      return { subject, rawHtml: lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("") };
+    },
   }),
   backgroundCosts: notification({
     recipient: "user",

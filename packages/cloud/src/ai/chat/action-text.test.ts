@@ -423,3 +423,27 @@ test("a shortened time counts as incomplete even when the people are listed whol
   expect(text.question).not.toContain("22. Sept.");
   expect(text.incomplete).toBe(true);
 });
+
+test("a shortened time stays complete when typed rows hold both of its ends", () => {
+  const people = ["a", "b"].map((letter) => ({ name: letter.repeat(100), address: `${letter.repeat(200)}@example.com` }));
+  const start = "2026-09-21T10:00:00Z";
+  const end = "2026-09-22T10:00:00Z";
+  const review: CapabilityActionCallReview = {
+    locale: "de",
+    ask: "involves_people",
+    sentence: {
+      action: "{to} am {at} einladen",
+      running: "Lädt {to} ein",
+      done: "{to} eingeladen",
+      confirm: "Einladen",
+      decline: "Nicht einladen",
+    },
+    slots: { to: { kind: "person", people }, at: { kind: "time", start, end, format: "date-time" } },
+    preview: { kind: "event", title: "Retro", start, end, attendees: people },
+  };
+  const text = actionCardText(
+    reviewActionCard(review, { locale: "de", timeZone: "Europe/Berlin", app: { name: "Spaces", icon: "ti ti-calendar" } }),
+  );
+  expect(text.question).not.toContain("22. Sept.");
+  expect(text.incomplete).toBe(false);
+});
