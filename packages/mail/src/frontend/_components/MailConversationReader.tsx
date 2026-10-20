@@ -285,6 +285,9 @@ export default function MailConversationReader(props: {
       if (disposed || props.selectionKey !== options.selectionKey || !historyScroller) return;
       if (options.scrollTop !== undefined) {
         historyScroller.scrollTop = options.scrollTop;
+      } else if (options.messageId && options.messageId === props.messages.at(-1)?.id) {
+        // The newest message comes first, right below the subject and the reply box, so the start shows all three.
+        historyScroller.scrollTo({ top: 0, behavior: options.behavior ?? "auto" });
       } else if (options.messageId) {
         const message = historyScroller.querySelector<HTMLElement>(`[data-mail-message-id="${CSS.escape(options.messageId)}"]`);
         if (message) {

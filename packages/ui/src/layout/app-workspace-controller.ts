@@ -636,7 +636,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     cancelPendingDetail();
     cancelTitle();
     clearActivation();
-    if (detailDrawer(aside)) parkDetailDrawer(aside);
+    // A control inside the drawer leaves with it, so focus goes to Details.
+    if (detailDrawer(aside)) parkDetailDrawer(aside, aside.contains(ownerDocument.activeElement));
     else {
       openDetailDrawer(aside);
       if (event.detail === 0) requestTitle(aside);

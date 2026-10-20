@@ -1109,6 +1109,21 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
 
+      test("reader: a conversation taller than the reader opens at its start, with the subject in view", async () => {
+        const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 480 as 900);
+        try {
+          const scroller = page.locator(".mail-reader-scroll");
+          expect(await scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+          expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0);
+          expect(await page.locator("[data-mail-reader-heading]").isVisible()).toBe(true);
+          const server = await recordedFrame(page, "server");
+          const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
+          assertFrame(read(server), read(await geometry(page)), "tall conversation settled");
+        } finally {
+          await close(page);
+        }
+      });
+
       test("rows: three-line rows share one height, a fourth line only for tags or Waiting", async () => {
         const page = await open(widePath(), 1440, 900);
         try {

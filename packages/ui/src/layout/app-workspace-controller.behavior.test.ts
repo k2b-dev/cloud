@@ -2244,6 +2244,8 @@ describe("waiting detail drawers", () => {
           click();
           expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
           expect(control.getAttribute("aria-expanded")).toBe("false");
+          // A control inside the parked drawer leaves with it; focus goes to Details.
+          expect(document.activeElement === (region === "Detail" ? toggle : control)).toBe(true);
           click();
           title.focus();
           detailKey(title, "Escape");
