@@ -119,7 +119,7 @@ describe("Markdown PDF renderer", () => {
     }
   });
 
-  test("counts each character reference as one non-whitespace unit without splitting it", () => {
+  test("keeps each non-whitespace reference piece whole without changing its spelling", () => {
     for (const entity of [
       "&amp;",
       "&#160;",
@@ -127,9 +127,11 @@ describe("Markdown PDF renderer", () => {
       "&nbsp;",
       "&#65",
       "&amp",
+      "&ampx",
       "&#x41",
       "&#X41",
       "&foo",
+      "&foo;",
       "&#00000000065;",
       "&#x0000000041",
     ]) {
@@ -173,9 +175,27 @@ describe("Markdown PDF renderer", () => {
     }
   });
 
-  test("treats a raw no-break space as part of the run", () => {
-    const html = buildPresetPdfHtml({ html: `<table><tr><td>${"a".repeat(10)}\u00a0${"b".repeat(10)}</td></tr></table>` });
-    expect(html).toContain(`<td>${"a".repeat(10)}<wbr>\u00a0${"b".repeat(9)}<wbr>b</td>`);
+  test("keeps named combining accents and emoji joiners in their graphemes", () => {
+    for (const grapheme of ["e&DownBreve;", "&#x1F469;&zwj;&#x1F4BB;"]) {
+      const html = buildPresetPdfHtml({
+        html: `<table><tr><td>${"a".repeat(9)}${grapheme}${"b".repeat(12)}</td></tr></table>`,
+      });
+      expect(html).toContain(`<td>${"a".repeat(9)}${grapheme}<wbr>${"b".repeat(10)}<wbr>bb</td>`);
+    }
+  });
+
+  test("treats literal and referenced no-break spaces as part of the run", () => {
+    for (const space of ["\u00a0", "&nbsp;", "&#160;"]) {
+      const html = buildPresetPdfHtml({ html: `<table><tr><td>${"a".repeat(10)}${space}${"b".repeat(10)}</td></tr></table>` });
+      expect(html).toContain(`<td>${"a".repeat(10)}<wbr>${space}${"b".repeat(9)}<wbr>b</td>`);
+    }
+  });
+
+  test("ends runs at named Unicode whitespace so short numbers stay whole", () => {
+    const value = `${"a".repeat(17)}&ensp;100&emsp;${"b".repeat(21)}`;
+    const expected = `<td>${"a".repeat(17)}&ensp;100&emsp;${"b".repeat(10)}<wbr>${"b".repeat(10)}<wbr>b</td>`;
+    expect(buildPresetPdfHtml({ html: `<table><tr><td>${value}</td></tr></table>` })).toContain(expected);
+    expect(buildMarkdownPdfHtml({ markdown: `| Value |\n| --- |\n| ${value} |` })).toContain(expected);
   });
 
   test("treats ASCII whitespace references as word boundaries without changing their spelling", () => {

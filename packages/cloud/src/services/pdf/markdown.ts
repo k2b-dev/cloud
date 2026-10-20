@@ -1,4 +1,5 @@
 import { markdownInfoBlocks, markdownLinkReference, renderMarkdownLink } from "@k2b/ui";
+import { decodeHTML } from "entities";
 import { Marked, Renderer, type Tokens } from "marked";
 import postcss from "postcss";
 import {
@@ -181,32 +182,29 @@ th, td { overflow-wrap: break-word; word-break: normal; }
 const MAX_WHOLE_CELL_RUN = 20;
 const CELL_RUN_BREAK_STEP = 10;
 
-// Segment decoded code points into graphemes, keeping references and literal
-// code points as whole raw pieces. Numeric references decode valid scalars;
-// names, invalid values and bare & use a neutral U+FFFD. References may omit
-// a semicolon and keep all digits, including leading zeros; &nbsp; is not
-// whitespace. Names are limited to 32 characters, the longest HTML reference
-// name, so over-matching text such as &foo keeps only a short piece unbroken.
+// References (including semicolonless ones) and literal code points are raw
+// pieces. Decode for whitespace and grapheme boundaries, but preserve spelling.
+// Limit names to 32 characters, the longest HTML reference name.
 const CHARACTER_REFERENCE = /&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]{0,31});?/gu;
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-const runUnits = (run: string): string[] => {
-  const pieces = run.match(new RegExp(`${CHARACTER_REFERENCE.source}|.`, "gsu")) ?? [];
-  const decoded = pieces
-    .map((piece) => {
-      if (!piece.startsWith("&")) return piece;
-      if (!piece.startsWith("&#")) return "\uFFFD";
-      const hex = /^&#[xX]/u.test(piece);
-      const point = Number.parseInt(piece.slice(hex ? 3 : 2), hex ? 16 : 10);
-      return point > 0 && point <= 0x10ffff && (point < 0xd800 || point > 0xdfff) ? String.fromCodePoint(point) : "\uFFFD";
-    })
-    .join("");
+const runUnits = (pieces: { raw: string; decoded: string }[]): string[] => {
+  const decoded = pieces.map((piece) => piece.decoded).join("");
+  const ends = new Set(Array.from(GRAPHEMES.segment(decoded), ({ index, segment }) => index + segment.length));
+  const units: string[] = [];
   let at = 0;
-  return Array.from(GRAPHEMES.segment(decoded), ({ segment }) => {
-    const start = at;
-    at += Array.from(segment).length;
-    return pieces.slice(start, at).join("");
-  });
+  let unit = "";
+  // A boundary must end both a grapheme and a raw piece, even if it decodes
+  // to several graphemes (such as &ampx or an unknown reference-like name).
+  for (const piece of pieces) {
+    unit += piece.raw;
+    at += piece.decoded.length;
+    if (ends.has(at)) {
+      units.push(unit);
+      unit = "";
+    }
+  }
+  return units;
 };
 
 // Inline formatting does not end a run: `aaa**bbb**ccc` prints one unbroken
@@ -253,34 +251,37 @@ const breakLongCellRuns = (html: string): string => {
   let buffer = "";
   // Units of the run that the previous text node in the cell ended with.
   let carried = 0;
-  // Only complete ASCII whitespace references end a run; keep their original spelling.
-  const whitespaceReference = /&(?:#(?:0*(?:9|10|12|13|32)(?![0-9])|[xX]0*(?:9|[aAcCdD]|20)(?![0-9a-fA-F]));?|Tab;|NewLine;)/u.source;
-  // A raw no-break space joins a run: it is no line break opportunity.
-  const pieces = new RegExp(
-    String.raw`((?:${whitespaceReference}|[^\S\u00a0\u2007\u202f\ufeff])+)|(?:(?!${whitespaceReference})(?:\S|[\u00a0\u2007\u202f\ufeff]))+`,
-    "gu",
-  );
+  const pieces = new RegExp(`(${CHARACTER_REFERENCE.source})|.`, "gsu");
   const breakText = (text: string): string => {
     let output = "";
-    for (const [piece, whitespace] of text.matchAll(pieces)) {
-      if (whitespace !== undefined) {
-        carried = 0;
-        output += piece;
-        continue;
-      }
-      const units = runUnits(piece);
+    let run: { raw: string; decoded: string }[] = [];
+    const flushRun = () => {
+      const units = runUnits(run);
+      run = [];
       const start = carried;
       carried += units.length;
       // A run that continues in a later text node is counted when it gets
       // there; earlier nodes stay as written, so at most 30 units stay whole.
       if (carried <= MAX_WHOLE_CELL_RUN) {
-        output += piece;
-        continue;
+        output += units.join("");
+        return;
       }
       output += units
         .map((unit, index) => ((start + index) % CELL_RUN_BREAK_STEP === 0 && start + index > 0 ? `<wbr>${unit}` : unit))
         .join("");
+    };
+    for (const [raw, reference] of text.matchAll(pieces)) {
+      const decoded = reference === undefined ? raw : decodeHTML(raw);
+      // Literal and referenced whitespace end runs, except no-break characters.
+      if (/^[^\S\u00a0\u2007\u202f\ufeff]+$/u.test(decoded)) {
+        flushRun();
+        carried = 0;
+        output += raw;
+      } else {
+        run.push({ raw, decoded });
+      }
     }
+    flushRun();
     return output;
   };
 
