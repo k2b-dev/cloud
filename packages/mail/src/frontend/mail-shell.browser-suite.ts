@@ -1121,6 +1121,14 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           await settled(page);
           expect(await cards.count()).toBe(6);
           expect(await header.evaluate((element) => element === document.activeElement)).toBe(true);
+          // Another conversation and Back to the same link: the conversation stays unfolded.
+          await page.locator('.mail-workspace [data-conversation-id="Conv01"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+          await settled(page);
+          await page.goBack();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("message") === "Long02");
+          await settled(page);
+          expect(await cards.count()).toBe(6);
         } finally {
           await close(page);
         }

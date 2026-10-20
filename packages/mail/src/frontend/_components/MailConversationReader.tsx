@@ -263,7 +263,7 @@ export default function MailConversationReader(props: {
     scrollPositions.set(selectionKey, scrollTop);
     expandedBySelection.delete(selectionKey);
     expandedBySelection.set(selectionKey, new Set(expanded));
-    if (showOlder()) olderShownBySelection.add(selectionKey);
+    if (showOlder() || olderPinnedFor === selectionKey) olderShownBySelection.add(selectionKey);
     else olderShownBySelection.delete(selectionKey);
     if (scrollPositions.size <= 50) return;
     const oldest = scrollPositions.keys().next().value;
