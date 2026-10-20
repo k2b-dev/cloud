@@ -387,6 +387,22 @@ export default function ContactDetailPanel(props: Props) {
               ]
             : []),
         ];
+        const orgTreeFeedback = (
+          <Show when={actions.orgTreeLoading() || actions.orgTreeError()}>
+            <div class="h-16 shrink-0 overflow-y-auto">
+              <Show when={actions.orgTreeError()} fallback={<InlineGuidance loading>{t().loadingOrganization}</InlineGuidance>}>
+                {(error) => (
+                  <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                    {error().message}{" "}
+                    <Button variant="text" size="xs" onClick={() => void actions.retryOrgTree()}>
+                      {t().retry}
+                    </Button>
+                  </InlineGuidance>
+                )}
+              </Show>
+            </div>
+          </Show>
+        );
         return (
           <Show
             when={detailMode() === "tree" && actions.orgTree()}
@@ -674,23 +690,7 @@ export default function ContactDetailPanel(props: Props) {
                           </>
                         }
                       >
-                        <Show when={actions.orgTreeLoading() || actions.orgTreeError()}>
-                          <div class="h-16 shrink-0 overflow-y-auto">
-                            <Show
-                              when={actions.orgTreeError()}
-                              fallback={<InlineGuidance loading>{t().loadingOrganization}</InlineGuidance>}
-                            >
-                              {(error) => (
-                                <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
-                                  {error().message}{" "}
-                                  <Button variant="text" size="xs" onClick={() => void actions.retryOrgTree()}>
-                                    {t().retry}
-                                  </Button>
-                                </InlineGuidance>
-                              )}
-                            </Show>
-                          </div>
-                        </Show>
+                        {orgTreeFeedback}
                         <div class="flex flex-col gap-1">
                           <Show when={c().parent}>
                             {(parent) => (

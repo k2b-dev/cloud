@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
@@ -24,6 +24,7 @@ describe("Contact editing feedback", () => {
   const writes: Array<{ url: string; body: unknown }> = [];
   const previousFetch = globalThis.fetch;
   beforeEach(() => {
+    setSystemTime(new Date("2026-10-03T10:00:00.000Z"));
     dom = createDomTestHarness();
     status = 500;
     writes.length = 0;
@@ -51,6 +52,7 @@ describe("Contact editing feedback", () => {
     dialogCore.close();
     toast.dismissAll();
     dom.cleanup();
+    setSystemTime();
   });
   const click = (text: string) => {
     const button = [...dom.document.querySelectorAll<HTMLButtonElement>("button")].find((entry) => entry.textContent?.trim() === text);

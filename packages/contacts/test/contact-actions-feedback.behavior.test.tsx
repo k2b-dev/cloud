@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent, createRoot, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
@@ -20,6 +20,7 @@ describe("Contact action recovery", () => {
   const bodies: unknown[] = [];
   let status = 500;
   beforeEach(() => {
+    setSystemTime(new Date("2026-10-03T10:00:00.000Z"));
     dom = createDomTestHarness();
     bodies.length = 0;
     status = 500;
@@ -36,6 +37,7 @@ describe("Contact action recovery", () => {
     dispose = () => {};
     globalThis.fetch = originalFetch;
     dom.cleanup();
+    setSystemTime();
   });
 
   const detailActions = async () => {
