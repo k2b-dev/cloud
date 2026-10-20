@@ -59,6 +59,13 @@ if (!databaseName) {
       await sql`CREATE SCHEMA auth`.simple();
       await sql`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
       await sql`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
+      // The real worker logs to Core's table in this isolated database too.
+      await sql`CREATE SCHEMA logging`.simple();
+      await sql`CREATE TABLE logging.entries (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        level TEXT NOT NULL DEFAULT 'info', source TEXT NOT NULL, message TEXT NOT NULL,
+        metadata JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`.simple();
       const { migrate } = await import("../migrate");
       await migrate();
       const workspace = await import("./workspace-events");
@@ -131,14 +138,22 @@ if (!databaseName) {
         await yjsSnapshotWorker.start();
         for (const anchored of [false, true]) {
           const noteId = crypto.randomUUID();
-          const cursor = anchored ? await createYjsTopic().head() : null;
-          await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, content_md, yjs_stream_cursor, created_at)
-            VALUES (${noteId}::uuid, ${anchored ? "seed01" : "seed02"}, ${notebookId}::uuid, '', 'Original', ${cursor}, '2020-01-01')`;
+          const topic = createYjsTopic();
+          const cursor = anchored ? await topic.head() : null;
+          // Runtime writers persist the cursor and its numeric fence together.
+          const sequence = cursor === null ? null : topic.cursorSequence(cursor);
+          await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, content_md, yjs_stream_cursor, yjs_stream_seq, created_at)
+            VALUES (${noteId}::uuid, ${anchored ? "seed01" : "seed02"}, ${notebookId}::uuid, '', 'Original', ${cursor}, ${sequence}, '2020-01-01')`;
           const [first, second] = await Promise.all([notes.getAnchoredYjsState({ noteId }), notes.getAnchoredYjsState({ noteId })]);
           // This is the binary state sent by the real socket's initial syncPush.
           // A text-only row must not let the live editor start from an empty doc.
-          if (!first?.yjsState || !second?.yjsState) throw new Error("Live editor received no binary base");
+          if (!first?.yjsState || !second?.yjsState || !first.streamCursor)
+            throw new Error("Live editor received no binary base or anchored cursor");
           expect(first.yjsState).toEqual(second.yjsState);
+          const [coordinates] = await sql<{ cursor: string | null; seq: string | null }[]>`
+            SELECT yjs_stream_cursor AS cursor, yjs_stream_seq::text AS seq
+            FROM notebooks.notes WHERE id = ${noteId}::uuid`;
+          expect(coordinates).toEqual({ cursor: first.streamCursor, seq: String(topic.cursorSequence(first.streamCursor)) });
           const editor = new Y.Doc();
           let saved: ReturnType<typeof spyOn> | undefined;
           try {
@@ -157,18 +172,18 @@ if (!databaseName) {
                 originPeerId: null,
               },
             });
-            const snapshotSaved = Promise.withResolvers<void>();
+            const snapshotSaved = Promise.withResolvers<Awaited<ReturnType<typeof notes.save>>>();
             const save = notes.save;
             saved = spyOn(notes, "save").mockImplementation(async (params) => {
               const result = await save(params);
-              if (params.noteId === noteId && params.streamCursor === published.cursor) snapshotSaved.resolve();
+              if (params.noteId === noteId && params.streamCursor === published.cursor) snapshotSaved.resolve(result);
               return result;
             });
             await yjsSnapshotWorker.queueSnapshotSave({ noteId, targetCursor: published.cursor, reason: "unload" });
             // Wait for the real save, bounded by the test timeout. A concurrency-1
             // worker may first poll the other seven ordered partitions for 1.5s
             // each; an arbitrary 10s polling deadline races normal delivery.
-            await snapshotSaved.promise;
+            expect(await snapshotSaved.promise).toMatchObject({ ok: true });
             const persisted = await notes.getYjsStateWithCursor({ noteId });
             expect(persisted?.streamCursor).toBe(published.cursor);
             expect(persisted?.contentMd).toBe(text.toString());
