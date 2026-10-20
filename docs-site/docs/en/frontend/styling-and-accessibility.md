@@ -4,8 +4,8 @@ navTitle: Styling and accessibility
 section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
-tags: [css, accessibility, themes, design]
-updated: 2026-10-19
+tags: [css, accessibility, themes, design, colors, selection]
+updated: 2026-10-20
 ---
 
 # Styling and accessibility
@@ -117,15 +117,22 @@ An app accent must not recolor every primary button. A red app must not make
 normal navigation look destructive. Status color must not identify an app.
 
 A selected navigation row or a row for an opened or picked object or place
-uses the app's selection fill and ink. Tabs, view tabs, segmented controls, and
-active filter chips share the navigation fill. Other controls and options keep
-the platform selection color: select options, keyboard-active options, pressed
-toolbar buttons, and checked cards. Status keeps its status colors. In the
-Cloud repository, the `selection-tokens` check rejects new platform fills,
-raw `--app-accent` color mixes, and the raw `--app-accent` as text ink, border
-color, or focus outline. App ink uses `--ui-app-accent-text`, and focus rings
-use the platform focus. Control and status uses belong in its allowlist with a
-reason.
+uses the app's selection fill and ink. A selected tab, view tab, or segment and
+an active filter chip share the navigation fill: like a selected row, they mark
+where the person is or what they picked. Controls keep platform blue: buttons,
+inputs, checkboxes, radios, switches, and focus rings, plus select and
+keyboard-active options, pressed toolbar buttons, and checked cards. Link text
+stays body ink; only its underline follows the app ink. Only the
+one main action is a filled button; a chosen view or filter is never drawn as
+one. Status keeps its status colors. [Colors and selection](/en/ui/surfaces/color)
+lists every state and its primitive.
+
+In the Cloud repository, the `selection-tokens` check rejects new platform
+fills, raw `--app-accent` color mixes, the raw `--app-accent` as text ink,
+border color, or focus outline, and a button whose variant switches to
+`primary` when it is chosen. App ink uses `--ui-app-accent-text`, and focus
+rings use the platform focus. Control and status uses belong in its allowlist
+with a reason.
 
 ## Use shared components first
 
