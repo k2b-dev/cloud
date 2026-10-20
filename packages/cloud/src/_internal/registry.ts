@@ -1,4 +1,5 @@
-import type { EphemeralConfig } from "@k2b/sync";
+import { createHash } from "node:crypto";
+import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
@@ -45,6 +46,32 @@ export const CAPABILITY_REGISTRY_CONFIG = {
 } as const satisfies EphemeralConfig;
 
 export const APP_REGISTRY_PREFIX = "apps/";
+export const APP_INSTANCE_PREFIX = "instances/";
+
+// Fit Sync's 96-byte name limit for every app id that fits apps/<id>; appId stays in the record value.
+export const appInstancePrefix = (appId: string): string => {
+  const segment = createHash("sha256").update(appId).digest("base64url").slice(0, 16);
+  return `${APP_INSTANCE_PREFIX}${segment}/`;
+};
+
+export type AppInstanceRecord = {
+  appId: string;
+  instanceId: string;
+  hostname: string;
+  startedAt: number;
+  entries: Record<string, string>;
+};
+
+// The id and owner are a cross-version contract: all replicas must use the same lock.
+// TTL and retry are local budgets; Sync's drift identity is [id, owner, replicas].
+export const APP_MEMBERSHIP_LOCK_CONFIG = {
+  id: "cloud-app-membership",
+  owner: REGISTRY_OWNER,
+  retry: { delayMs: 200, maxAttempts: 50 },
+} as const satisfies MutexConfig;
+
+export const appInstanceRegistry = lazySync((sync) => sync.ephemeral<AppInstanceRecord>(APP_REGISTRY_CONFIG));
+export const appMembershipLock = lazySync((sync) => sync.mutex(APP_MEMBERSHIP_LOCK_CONFIG));
 
 export type CapabilityRegistryRecord = { appId: string; manifest: CapabilityManifest; presentation?: CapabilityPresentationCatalog };
 

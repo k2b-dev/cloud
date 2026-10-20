@@ -615,8 +615,11 @@ Use the automatic Layout and full-page surfaces for ordinary application Help.
 Add a specialized consumer only when its surrounding workflow needs a distinct
 presentation.
 
-Core's provider document uses `Layout.HelpPanel` (also exported as
-`LayoutHelpPanel` with `LayoutHelpPanelProps`) from `@k2b/cloud/ssr/islands`.
+Core's provider document uses `LayoutHelpPanel` with `LayoutHelpPanelProps`
+from `@k2b/cloud/ssr`. Render it in a server page, such as inside `PanelLayout`,
+never inside an island. It renders the start and initial article as server HTML
+and mounts small islands for interaction. Search, menus, Markdown copy, and
+the client article reader load on demand.
 It receives the authorized documents, app identity and appearance, filtered
 view IDs, keyboard platform, and optional topic from the server. It reads no
 host shell data and follows context and shortcuts through the panel API.
@@ -624,8 +627,9 @@ Application authors normally use the automatic registration above.
 
 Pass the result of `preloadLayoutHelpArticle(c, appId, documentId)` from
 `@k2b/cloud/ssr/help` as `initialArticle` alongside a manifest-validated
-`initialTopic` to `Layout.HelpPage` or `Layout.HelpPanel` to render the article
-in the first frame; if the helper returns `null`, omit the prop to load on demand.
+`initialTopic` to `Layout.HelpPage` or `LayoutHelpPanel`. This renders the
+article in the first frame. If the helper returns `null`, omit the prop to load
+on demand.
 
 `Layout.HelpPage` with `embedded` renders no Help head: the host's own window
 names the reader and chooses its article. Its start keeps only the search.

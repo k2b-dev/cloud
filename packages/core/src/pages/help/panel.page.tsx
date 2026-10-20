@@ -2,12 +2,11 @@ import { PANEL_HELP_ID_MAX_LENGTH } from "@k2b/cloud/contracts/panel-context";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { canReadAppHelp } from "@k2b/cloud/services/help";
 import { HELP_VIEW_LIMIT } from "@k2b/cloud/shared";
-import { getLocalizedRuntimeContext, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
+import { getLocalizedRuntimeContext, LayoutHelpPanel, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { layoutHelpFailed, preloadLayoutHelp, preloadLayoutHelpArticle } from "@k2b/cloud/ssr/help";
 import { keyboardPlatform } from "@k2b/ui";
 import { ssr } from "../../config";
-import CoreLayoutHelpPanel from "../CoreLayoutHelpPanel.island";
 import { corePageMessages } from "../messages";
 
 export default ssr<AuthContext>(async (c) => {
@@ -35,7 +34,7 @@ export default ssr<AuthContext>(async (c) => {
   const platform = keyboardPlatform(c.req.header("User-Agent") ?? "");
   return () => (
     <PanelLayout c={c} title={t.help}>
-      <CoreLayoutHelpPanel
+      <LayoutHelpPanel
         documents={documents}
         app={app ? { id: app.id, name: app.name, icon: app.icon } : undefined}
         appearance={app ? appAppearanceStyle(app.appearance) : undefined}

@@ -982,7 +982,7 @@ Slots are typed values:
 | `count` | Integer `value` (0–1,000,000,000) and localized `noun` forms; `other` required |
 | `text` | `value` (1–200) rendered as ordinary text |
 
-Person names have at most 120 characters and addresses 320. Icons use
+Person names have at most 200 characters, as long as a mail display name, and addresses 320. Icons use
 `ti ti-<name>`. Each noun form has 1–40 characters. `gone` is valid only on an
 object. A chip shows at most 40 characters, cut in the middle to preserve file
 extensions. People show up to three names plus a count of the rest. Plain text
@@ -1072,8 +1072,9 @@ also checks:
   each name every slot.
 - At most six slots and three chip occurrences in `action`. Templates have at
   most 200 characters; `short` has at most 60. Each button names at most one
-  slot and renders to at most 40 characters. Button object titles are cut to
-  24 characters; a group of people renders as a count.
+  slot and renders to at most 40 characters. Button object titles and the
+  name of a single person are cut to 24 characters; a group of people renders
+  as a count.
 - Sentence forms, slot strings, consequences and single-line preview fields
   reject controls, invisible format characters and line separators. Multiline
   preview fields allow newline and tab, and reject the other unsafe characters.

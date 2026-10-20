@@ -25,6 +25,7 @@ import {
 } from "./capabilities";
 import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases, reviewFixture } from "./capability-review.test-fixture";
 import { actionReview, capabilityActionReviewIssues, capabilityReviewRememberScope, capabilityReviewView } from "./capability-reviews";
+import { capabilityReviewSentence } from "./capability-sentences";
 
 const context = {
   actor: {
@@ -319,6 +320,29 @@ describe("review helpers", () => {
     expect(actionReview({ ...forms, sentence: { ...forms.sentence, done: dynamicDone } }, slots).slots).toEqual(slots);
     const dynamic: string = "{invalid.path}";
     expect(() => actionReview({ ...forms, sentence: { ...forms.sentence, action: dynamic } }, slots)).toThrow();
+  });
+  test("a long person name fits a button and a mail display name fits a person", () => {
+    // A valid recipient must never make the question itself invalid: buttons cut one person's name like an object title.
+    const name = `Lea ${"Berg-".repeat(38)}Ende-x`;
+    expect(name.length).toBe(200);
+    const review = actionReview(
+      {
+        locale: "de",
+        sentence: {
+          action: "Mail {subject} an {to} senden",
+          running: "Mail {subject} an {to} wird gesendet …",
+          done: "Mail {subject} an {to} wird gesendet.",
+          confirm: "An {to} senden",
+          decline: "Nicht an {to} senden",
+        },
+      },
+      { subject: { kind: "object", title: "Wartungsfenster" }, to: { kind: "person", people: [{ name, address: "lea@example.com" }] } },
+    );
+    expect(capabilityReviewSentence(review, "confirm", { timeZone: "UTC" })).toBe("An Lea Berg-Ber…Berg-Ende-x senden");
+    expect(Array.from(capabilityReviewSentence(review, "decline", { timeZone: "UTC" })).length).toBeLessThanOrEqual(40);
+    expect(() =>
+      actionReview({ ...review, sentence: review.sentence }, { ...review.slots, to: { kind: "person", people: [{ name: `${name}x` }] } }),
+    ).toThrow();
   });
   test("assertion and localized catalog checks", () => {
     const review = reviewFixture();

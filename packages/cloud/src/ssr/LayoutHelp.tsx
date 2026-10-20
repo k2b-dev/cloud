@@ -7,7 +7,6 @@ import {
   Dropdown,
   dialogCore,
   IconButton,
-  type KeyboardPlatform,
   MarkdownView,
   NoticeCard,
   Placeholder,
@@ -20,8 +19,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
-import { getContext, onContextChange, openPanel } from "../browser/panel";
-import { onPanelShortcutsChange, panelShortcutsReceived, readPanelShortcuts } from "../browser/panel-shortcuts";
+import { openPanel } from "../browser/panel";
 import { HELP_ACCESS_LEVELS, HELP_KINDS } from "../shared/help";
 import { appAccentStyle } from "./app-appearance";
 import type { LayoutHelpArticle } from "./help";
@@ -33,15 +31,7 @@ import { HELP_TOPICS_EVENT, type HelpTopic, registry } from "./layout-help-regis
 import { searchHelpTopics } from "./layout-help-search";
 import { type HelpShortcutCommand, helpShortcutGroups, helpStart } from "./layout-help-start";
 import { helpLinkTarget, layoutHelpTopicHref } from "./layout-help-url";
-import {
-  HelpArticleView,
-  HelpHead,
-  HelpNotAvailableView,
-  HelpResultsView,
-  HelpShortcutsView,
-  HelpStartView,
-  type HelpSurface,
-} from "./layout-help-views";
+import { HelpArticleView, HelpHead, HelpResultsView, HelpShortcutsView, HelpStartView, type HelpSurface } from "./layout-help-views";
 import { platformMessages } from "./platform-messages";
 import { readShellData, useShellData } from "./shell-data";
 import { shellShortcuts } from "./shell-shortcuts";
@@ -57,22 +47,6 @@ export type LayoutHelpPageProps = {
   embedded?: boolean;
   /** Canonical full-page Help route owned by the current app. */
   pageBase?: string;
-};
-
-export type LayoutHelpPanelProps = {
-  documents: readonly HelpDocumentManifest[];
-  /** Absent when the context selected Help the reader may not see. */
-  app?: { id: string; name: string; icon?: string };
-  /** appAppearanceStyle() of the app, from the server. */
-  appearance?: string;
-  /** Server-filtered For this view ids. */
-  view?: readonly string[];
-  initialTopic?: string;
-  /** Authorized article and server-parsed parts for an identical first frame. */
-  initialArticle?: LayoutHelpArticle;
-  pageBase?: string;
-  platform: KeyboardPlatform;
-  state?: "failed" | "unavailable";
 };
 
 type HelpView = "hub" | "article";
@@ -116,31 +90,22 @@ const mergeTopics = (registered: readonly HelpTopic[], documents: readonly HelpD
  * first client render on, also before the shell has registered them. The groups reserve their height and place in CSS,
  * so the ones the browser adds fill space that is already there.
  */
-const StartShortcuts = (props: { appName?: string; panel?: boolean; platform?: KeyboardPlatform }) => {
+const StartShortcuts = (props: { appName?: string }) => {
   const locale = useLocale();
-  const shell = props.panel ? undefined : useShellData();
-  const seed: HelpShortcutCommand[] =
-    props.panel || shell ? shellShortcuts(platformMessages.resolve([locale()]).t, { panel: props.panel || !!shell?.panel }) : [];
+  const shell = useShellData();
+  const seed: HelpShortcutCommand[] = shell ? shellShortcuts(platformMessages.resolve([locale()]).t, { panel: !!shell.panel }) : [];
   const read = (): HelpShortcutCommand[] => {
-    // Once received, the host list is authoritative: omitted shortcuts must stay omitted.
-    if (props.panel) return panelShortcutsReceived() && getContext() !== null ? readPanelShortcuts() : seed;
     const commands = contextCommandsWithShortcuts();
     return [...seed.filter((command) => !commands.some((other) => other.id === command.id)), ...commands];
   };
-  const [commands, setCommands] = createSignal<HelpShortcutCommand[]>(props.panel ? seed : read());
+  const [commands, setCommands] = createSignal<HelpShortcutCommand[]>(read());
   onMount(() => {
     const update = () => setCommands(read());
-    if (props.panel) {
-      onCleanup(onPanelShortcutsChange(update));
-      onCleanup(onContextChange(update));
-    }
     update();
-    if (!props.panel) {
-      window.addEventListener(COMMANDS_CHANGED, update);
-      onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
-    }
+    window.addEventListener(COMMANDS_CHANGED, update);
+    onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
   });
-  return <HelpShortcutsView groups={helpShortcutGroups(commands())} appName={props.appName} platform={props.platform ?? shell?.platform} />;
+  return <HelpShortcutsView groups={helpShortcutGroups(commands())} appName={props.appName} platform={shell?.platform} />;
 };
 
 const HelpShell = (props: {
@@ -154,18 +119,16 @@ const HelpShell = (props: {
   /** The app's canvas colours for a reader outside the app canvas. */
   appearance?: string;
   surface: HelpSurface;
-  panel?: LayoutHelpPanelProps;
   syncPageUrl?: boolean;
 }) => {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
   // Links to this app's Help, by its own route or Core's `/help/apps/<id>`, open in place.
-  const shell = props.surface === "panel" ? undefined : useShellData();
-  const appId = props.panel?.app?.id ?? shell?.appId;
+  const shell = useShellData();
+  const appId = shell?.appId;
   const app = shell?.apps.find((candidate) => candidate.id === appId);
-  const appName = props.panel?.app?.name ?? app?.label;
-  const [viewIds, setViewIds] = createSignal(props.panel?.view ?? []);
-  const registeredTopics = () => (props.surface === "panel" ? [] : sortedTopics());
+  const appName = app?.label;
+  const registeredTopics = () => sortedTopics();
   const [externalTopics, setExternalTopics] = createSignal(mergeTopics(registeredTopics(), props.documents));
   const [view, setView] = createSignal<HelpView>(props.session.view);
   const [query, setQuery] = createSignal(props.session.query);
@@ -225,7 +188,7 @@ const HelpShell = (props: {
   };
 
   const restoreArticleScroll = () => {
-    if ((props.surface !== "modal" && props.surface !== "panel") || pendingNavigation || pendingHash) return;
+    if (props.surface !== "modal" || pendingNavigation || pendingHash) return;
     requestAnimationFrame(() => {
       if (scrollArea && view() === "article") scrollArea.scrollTop = props.session.articleScrollTop;
     });
@@ -270,9 +233,7 @@ const HelpShell = (props: {
   };
 
   const topics = externalTopics;
-  const start = createMemo(() =>
-    helpStart(topics(), props.surface === "panel" ? viewIds() : props.surface === "modal" ? shell?.help : undefined),
-  );
+  const start = createMemo(() => helpStart(topics(), props.surface === "modal" ? shell?.help : undefined));
   const activeTopic = createMemo(() => topics().find((topic) => topic.id === activeId()) ?? null);
   // Reuse the serialized parts for the initial object on both sides of the island boundary.
   const articleParts = createMemo(() => {
@@ -368,10 +329,7 @@ const HelpShell = (props: {
   createEffect(syncSession);
 
   onMount(() => {
-    if (props.surface === "panel") {
-      onCleanup(onContextChange((context) => setViewIds(context && context.app === appId ? (context.help ?? []) : [])));
-    }
-    if (props.surface === "panel" || props.surface === "modal") {
+    if (props.surface === "modal") {
       const key = (event: KeyboardEvent) => {
         if (event.defaultPrevented || event.isComposing) return;
         const target = event.target;
@@ -404,7 +362,7 @@ const HelpShell = (props: {
     const onScroll = () => {
       if (view() === "article" && scrollArea) props.session.articleScrollTop = scrollArea.scrollTop;
     };
-    if (props.surface === "modal" || props.surface === "panel") scrollArea?.addEventListener("scroll", onScroll, { passive: true });
+    if (props.surface === "modal") scrollArea?.addEventListener("scroll", onScroll, { passive: true });
     // Layout's breakpoints move page scrolling between its main column and the window; the contents follow.
     let resizeFrame: number | undefined;
     const onResize = () => {
@@ -672,8 +630,8 @@ const HelpShell = (props: {
       </ScrollArea>
     );
 
-  // The dialog and the panel copy from their ⋯ menu; only the page repeats the copy action beside the article.
-  const copyInMenu = props.surface === "modal" || props.surface === "panel";
+  // The dialog copies from its ⋯ menu; only the page repeats the copy action beside the article.
+  const copyInMenu = props.surface === "modal";
   const pageHref = () => (props.pageBase ? layoutHelpTopicHref(props.pageBase, view() === "article" ? activeId() : null) : undefined);
   const menuItems = () => [
     {
@@ -689,31 +647,22 @@ const HelpShell = (props: {
   return (
     <div
       ref={root}
-      class={
-        props.surface === "panel"
-          ? "help-shell app-accent-scope flex h-full min-h-0 flex-col"
-          : `help-shell app-accent-scope flex min-h-0 flex-col ${props.surface === "page" ? "" : "bg-[var(--ui-surface-raised)]"} ${
-              props.surface === "modal"
-                ? "h-[min(48rem,var(--ui-dialog-available-height))] overflow-hidden panel-dialog-shell [box-shadow:var(--ui-shadow-float)]"
-                : props.surface === "page"
-                  ? ""
-                  : "h-full"
-            }`
-      }
+      class={`help-shell app-accent-scope flex min-h-0 flex-col ${props.surface === "page" ? "" : "bg-[var(--ui-surface-raised)]"} ${
+        props.surface === "modal"
+          ? "h-[min(48rem,var(--ui-dialog-available-height))] overflow-hidden panel-dialog-shell [box-shadow:var(--ui-shadow-float)]"
+          : props.surface === "page"
+            ? ""
+            : "h-full"
+      }`}
       data-surface={props.surface}
-      style={
-        props.surface === "panel"
-          ? props.panel?.appearance
-          : [appAccentStyle(props.accent), props.appearance].filter(Boolean).join(";") || undefined
-      }
+      style={[appAccentStyle(props.accent), props.appearance].filter(Boolean).join(";") || undefined}
     >
-      {/* Help the reader may not see gets no head either: the slot already names the panel, and there is nothing to search. */}
-      <Show when={(props.surface !== "embedded" || view() === "hub") && props.panel?.state !== "unavailable"}>
+      <Show when={props.surface !== "embedded" || view() === "hub"}>
         <HelpHead
           row={props.surface !== "embedded"}
           back={view() === "article"}
-          tile={props.panel?.app?.icon ?? app?.iconClass ?? "ti ti-help-circle"}
-          title={appName ? (props.surface === "panel" ? appName : t().helpFor({ app: appName })) : t().help}
+          tile={app?.iconClass ?? "ti ti-help-circle"}
+          title={appName ? t().helpFor({ app: appName }) : t().help}
           menu={
             <Dropdown.Root label={t().moreActions} position="bottom-left" items={menuItems()}>
               <Dropdown.Trigger iconOnly label={t().moreActions} variant="ghost" data-help-menu="">
@@ -733,136 +682,134 @@ const HelpShell = (props: {
       </Show>
 
       <ReaderContent>
-        <Show when={props.panel?.state !== "unavailable"} fallback={<HelpNotAvailableView />}>
-          <Show when={view() === "hub"}>
-            <div ref={resultsRegion} data-help-results="" class="help-start help-measure" style={{ "min-height": resultsMinHeight() }}>
-              <Show
-                when={normalizedQuery()}
-                fallback={
-                  <HelpStartView
-                    start={start()}
-                    empty={topics().length === 0}
-                    failed={props.panel?.state === "failed" || !!shell?.helpFailed}
-                    onOpen={openTopic}
-                    onReload={() => location.reload()}
-                    shortcuts={
-                      <Show when={props.includeShortcuts !== false}>
-                        <StartShortcuts appName={appName} panel={props.surface === "panel"} platform={props.panel?.platform} />
-                      </Show>
-                    }
+        <Show when={view() === "hub"}>
+          <div ref={resultsRegion} data-help-results="" class="help-start help-measure" style={{ "min-height": resultsMinHeight() }}>
+            <Show
+              when={normalizedQuery()}
+              fallback={
+                <HelpStartView
+                  start={start()}
+                  empty={topics().length === 0}
+                  failed={!!shell?.helpFailed}
+                  onOpen={openTopic}
+                  onReload={() => location.reload()}
+                  shortcuts={
+                    <Show when={props.includeShortcuts !== false}>
+                      <StartShortcuts appName={appName} />
+                    </Show>
+                  }
+                />
+              }
+            >
+              <HelpResultsView
+                results={results()}
+                searching={searching()}
+                failed={searchFailed()}
+                onRetry={() => setSearchAttempt((value) => value + 1)}
+                onOpen={openTopic}
+              />
+            </Show>
+          </div>
+        </Show>
+
+        <Show when={view() === "article" && activeTopic()}>
+          {(topic) => (
+            <article
+              class="help-article"
+              data-surface={props.surface}
+              ref={(element) => {
+                // Delegated from the article: its body, table of contents, and end hold the links.
+                element.addEventListener("click", followHelpLink);
+                onCleanup(() => element.removeEventListener("click", followHelpLink));
+              }}
+            >
+              <HelpArticleView
+                surface={props.surface}
+                topic={topic()}
+                appName={appName}
+                appId={appId}
+                parts={articleParts()}
+                document={payload()}
+                Markdown={MarkdownView}
+                showTools={articleSections().length > 0 || !copyInMenu}
+                sectionMenu={
+                  <Show when={articleSections().length > 0}>
+                    <Dropdown.Root
+                      label={t().onThisPage}
+                      position="bottom-left"
+                      items={articleSections().map((section) => ({
+                        label: section.label,
+                        choice: "radio" as const,
+                        checked: () => activeSectionId() === section.id,
+                        action: () => openArticleSection(section),
+                      }))}
+                    >
+                      <Dropdown.Trigger label={t().onThisPage} size="sm" tooltip={false} variant="secondary">
+                        <i class="ti ti-list" aria-hidden="true" />
+                        <span>{t().onThisPage}</span>
+                        <i class="ti ti-chevron-down" aria-hidden="true" />
+                      </Dropdown.Trigger>
+                    </Dropdown.Root>
+                  </Show>
+                }
+                copyButton={
+                  <Show when={!copyInMenu}>
+                    <IconButton
+                      class="help-article-tools-copy"
+                      disabled={!payload()}
+                      label={articleClipboard.wasCopied() ? t().articleCopied : t().copyArticle}
+                      title={articleClipboard.wasCopied() ? t().copied : t().copyArticle}
+                      onClick={() => void copyArticle(topic(), payload())}
+                    >
+                      <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
+                    </IconButton>
+                  </Show>
+                }
+                loading={
+                  <Show when={loading()}>
+                    <div class="min-h-[24rem]">
+                      <Placeholder state="loading" variant="panel" title={t().loading} />
+                    </div>
+                  </Show>
+                }
+                failure={
+                  <Show when={loadError()}>
+                    {(message) => (
+                      <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
+                        <Button size="sm" variant="secondary" onClick={() => setLoadAttempt((value) => value + 1)}>
+                          {t().tryAgain}
+                        </Button>
+                      </NoticeCard>
+                    )}
+                  </Show>
+                }
+                toc={
+                  <TableOfContents
+                    items={articleSections()}
+                    title={t().onThisPage}
+                    scrollRoot={tocScrollRoot}
+                    contentRoot={() => articleContent}
+                    onActiveChange={(id) => setActiveSectionId(id ?? null)}
                   />
                 }
-              >
-                <HelpResultsView
-                  results={results()}
-                  searching={searching()}
-                  failed={searchFailed()}
-                  onRetry={() => setSearchAttempt((value) => value + 1)}
-                  onOpen={openTopic}
-                />
-              </Show>
-            </div>
-          </Show>
-
-          <Show when={view() === "article" && activeTopic()}>
-            {(topic) => (
-              <article
-                class="help-article"
-                data-surface={props.surface}
-                ref={(element) => {
-                  // Delegated from the article: its body, table of contents, and end hold the links.
-                  element.addEventListener("click", followHelpLink);
-                  onCleanup(() => element.removeEventListener("click", followHelpLink));
+                copyAction={
+                  <Show when={!copyInMenu}>
+                    <Button size="sm" variant="ghost" disabled={!payload()} onClick={() => void copyArticle(topic(), payload())}>
+                      <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
+                      {articleClipboard.wasCopied() ? t().copied : t().copyMarkdown}
+                    </Button>
+                  </Show>
+                }
+                headingRef={(element) => {
+                  articleHeading = element;
                 }}
-              >
-                <HelpArticleView
-                  surface={props.surface}
-                  topic={topic()}
-                  appName={appName}
-                  appId={appId}
-                  parts={articleParts()}
-                  document={payload()}
-                  Markdown={MarkdownView}
-                  showTools={articleSections().length > 0 || !copyInMenu}
-                  sectionMenu={
-                    <Show when={articleSections().length > 0}>
-                      <Dropdown.Root
-                        label={t().onThisPage}
-                        position="bottom-left"
-                        items={articleSections().map((section) => ({
-                          label: section.label,
-                          choice: "radio" as const,
-                          checked: () => activeSectionId() === section.id,
-                          action: () => openArticleSection(section),
-                        }))}
-                      >
-                        <Dropdown.Trigger label={t().onThisPage} size="sm" tooltip={false} variant="secondary">
-                          <i class="ti ti-list" aria-hidden="true" />
-                          <span>{t().onThisPage}</span>
-                          <i class="ti ti-chevron-down" aria-hidden="true" />
-                        </Dropdown.Trigger>
-                      </Dropdown.Root>
-                    </Show>
-                  }
-                  copyButton={
-                    <Show when={!copyInMenu}>
-                      <IconButton
-                        class="help-article-tools-copy"
-                        disabled={!payload()}
-                        label={articleClipboard.wasCopied() ? t().articleCopied : t().copyArticle}
-                        title={articleClipboard.wasCopied() ? t().copied : t().copyArticle}
-                        onClick={() => void copyArticle(topic(), payload())}
-                      >
-                        <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
-                      </IconButton>
-                    </Show>
-                  }
-                  loading={
-                    <Show when={loading()}>
-                      <div class="min-h-[24rem]">
-                        <Placeholder state="loading" variant="panel" title={t().loading} />
-                      </div>
-                    </Show>
-                  }
-                  failure={
-                    <Show when={loadError()}>
-                      {(message) => (
-                        <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
-                          <Button size="sm" variant="secondary" onClick={() => setLoadAttempt((value) => value + 1)}>
-                            {t().tryAgain}
-                          </Button>
-                        </NoticeCard>
-                      )}
-                    </Show>
-                  }
-                  toc={
-                    <TableOfContents
-                      items={articleSections()}
-                      title={t().onThisPage}
-                      scrollRoot={tocScrollRoot}
-                      contentRoot={() => articleContent}
-                      onActiveChange={(id) => setActiveSectionId(id ?? null)}
-                    />
-                  }
-                  copyAction={
-                    <Show when={!copyInMenu}>
-                      <Button size="sm" variant="ghost" disabled={!payload()} onClick={() => void copyArticle(topic(), payload())}>
-                        <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
-                        {articleClipboard.wasCopied() ? t().copied : t().copyMarkdown}
-                      </Button>
-                    </Show>
-                  }
-                  headingRef={(element) => {
-                    articleHeading = element;
-                  }}
-                  contentRef={(element) => {
-                    articleContent = element;
-                  }}
-                  onBack={goBack}
-                />
-              </article>
-            )}
-          </Show>
+                contentRef={(element) => {
+                  articleContent = element;
+                }}
+                onBack={goBack}
+              />
+            </article>
+          )}
         </Show>
         <span class="sr-only" aria-live="polite">
           {articleClipboard.wasCopied() ? t().articleCopiedAnnouncement : ""}
@@ -908,22 +855,6 @@ export function LayoutHelpPage(props: LayoutHelpPageProps) {
       surface={props.embedded ? "embedded" : "page"}
       pageBase={props.pageBase}
       syncPageUrl={!props.embedded && !!props.pageBase}
-    />
-  );
-}
-
-/** Help inside a provider document; the server snapshot also owns the first browser render. */
-export function LayoutHelpPanel(props: LayoutHelpPanelProps) {
-  const session = createSession(props.initialTopic);
-  return (
-    <HelpShell
-      session={session}
-      initialArticle={props.initialTopic ? props.initialArticle : undefined}
-      close={() => {}}
-      documents={props.documents}
-      pageBase={props.pageBase}
-      surface="panel"
-      panel={props}
     />
   );
 }

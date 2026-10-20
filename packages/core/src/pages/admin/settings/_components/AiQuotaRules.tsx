@@ -1,4 +1,4 @@
-import { PrincipalPicker, principalKey } from "@k2b/cloud/access/ui";
+import { PrincipalPicker, principalLabel } from "@k2b/cloud/access/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaRule, hasBillableAiPricing } from "@k2b/cloud/shared";
 import {
@@ -161,7 +161,7 @@ export default function AiQuotaRules(props: {
                     <div class="ai-quota-grant">
                       <AiQuotaIdentity
                         type={grant().principal.type}
-                        label={grant().displayName || principalKey(grant().principal)}
+                        label={principalLabel(grant(), locale())}
                         kind={grant().serviceAccountKind}
                       />
                       <div class="flex flex-wrap items-center gap-2">
@@ -196,7 +196,7 @@ export default function AiQuotaRules(props: {
                         </Show>
                         <IconButton
                           size="sm"
-                          label={`${t().remove}: ${grant().principal.type === "authenticated" ? t().allUsers : grant().displayName || principalKey(grant().principal)}`}
+                          label={`${t().remove}: ${principalLabel(grant(), locale())}`}
                           tooltip={t().remove}
                           onClick={() =>
                             update((r) => {
@@ -305,11 +305,7 @@ export default function AiQuotaRules(props: {
                   <For each={row.grants.slice(0, 2)} fallback={<span class="text-xs text-dimmed">{t().emptyGrants}</span>}>
                     {(g) => (
                       <div class="flex items-center justify-between gap-4">
-                        <AiQuotaIdentity
-                          type={g.principal.type}
-                          label={g.displayName || principalKey(g.principal)}
-                          kind={g.serviceAccountKind}
-                        />
+                        <AiQuotaIdentity type={g.principal.type} label={principalLabel(g, locale())} kind={g.serviceAccountKind} />
                         <span class="text-xs tabular-nums text-dimmed">
                           {g.limit === null
                             ? t().unlimited
