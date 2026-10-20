@@ -66,8 +66,6 @@ export const gridsAdminMessages = i18n.define({
       minutesOld: ({ value }: { value: number }) => `${value}m old`,
       hoursOld: ({ value }: { value: number }) => `${value}h old`,
       loadPermissionsFailed: "Failed to load base permissions.",
-      signedInUsers: "Signed-in users",
-      public: "Public",
       revokeAppFailed: "Failed to revoke app access.",
       appAccessRevoked: "App access revoked",
       baseGrantDescription: "Base grants control direct access to every table, view, form, and document in this base.",
@@ -194,8 +192,6 @@ export const gridsAdminMessages = i18n.define({
       minutesOld: ({ value }) => `${value} min alt`,
       hoursOld: ({ value }) => `${value} h alt`,
       loadPermissionsFailed: "Berechtigungen der Base konnten nicht geladen werden.",
-      signedInUsers: "Angemeldete Benutzer",
-      public: "Öffentlich",
       revokeAppFailed: "App-Zugriff konnte nicht entzogen werden.",
       appAccessRevoked: "App-Zugriff entzogen",
       baseGrantDescription:

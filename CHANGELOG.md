@@ -3,6 +3,37 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.48.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.47.0...cloud-v0.48.0) (2026-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cloud:** The Help panel reader `LayoutHelpPanel` and its `LayoutHelpPanelProps` now come from `@k2b/cloud/ssr` and render in a server page, not inside an island. `@k2b/cloud/ssr/islands` no longer exports `Layout.HelpPanel`, `LayoutHelpPanel` or `LayoutHelpPanelProps`, and there is no alias. Applications that get Help in the panel through the automatic registration need no change.
+
+### Features
+
+* **assistant:** show 'Wartet auf dich' above the composer and a dot on chats with an open question ([#1579](https://github.com/k2b-dev/cloud/issues/1579)) ([b16523b](https://github.com/k2b-dev/cloud/commit/b16523b8877df50c6dc5a8eda22ad7a1072c6d30))
+* **cloud:** Help in the panel draws its start and articles on the server and loads only small islands ([#1639](https://github.com/k2b-dev/cloud/issues/1639)) ([01d11e6](https://github.com/k2b-dev/cloud/commit/01d11e6f9cabfac64b5fa2e988e117574df3b209))
+* **cloud:** keep an app routed while one of its replicas stops ([#1631](https://github.com/k2b-dev/cloud/issues/1631)) ([b4bae47](https://github.com/k2b-dev/cloud/commit/b4bae47c5bd029a0536452b2941f37ce03c88caf))
+* **cloud:** run an app's startup setup on one replica at a time ([#1620](https://github.com/k2b-dev/cloud/issues/1620)) ([a5ffac9](https://github.com/k2b-dev/cloud/commit/a5ffac96e9aeb3b25d9e5f680a7f34c066f32262))
+* **cloud:** word Assistant questions the same way in cld, notifications, Cloud Login and for Cloud tools ([#1612](https://github.com/k2b-dev/cloud/issues/1612)) ([3d4a857](https://github.com/k2b-dev/cloud/commit/3d4a8578462248edaf8ef85686ef5bf26a4a3fe2))
+* **core:** end other sign-ins when a person changes their password ([4375a88](https://github.com/k2b-dev/cloud/commit/4375a883cd927c9017bd36fa2d9cddc2defbdcd7))
+* **mail:** a calm reader on wide windows, three-line rows, and reader actions that move into '…' when space is tight ([#1635](https://github.com/k2b-dev/cloud/issues/1635)) ([31d81f0](https://github.com/k2b-dev/cloud/commit/31d81f0791dfccdcfa6a236544428ab0c8075491)), closes [#1545](https://github.com/k2b-dev/cloud/issues/1545) [#1467](https://github.com/k2b-dev/cloud/issues/1467)
+* **ssr:** give history one owner, so Back and Forward swap between server pages and islands keep their own entries ([#1616](https://github.com/k2b-dev/cloud/issues/1616)) ([50192a8](https://github.com/k2b-dev/cloud/commit/50192a883d417c6136659de59e86cf9f320719cf))
+* **ssr:** let islands veto a page swap, and roll Back and Forward back when they do ([#1628](https://github.com/k2b-dev/cloud/issues/1628)) ([fc6520f](https://github.com/k2b-dev/cloud/commit/fc6520fa955a3b184f3191f8434f1d9225fa899a))
+* **ui:** a flat Cloud map style in light and dark, built from the @k2b/ui tokens, with self-served label glyphs ([#1630](https://github.com/k2b-dev/cloud/issues/1630)) ([9c8ae1f](https://github.com/k2b-dev/cloud/commit/9c8ae1f9e49d604122a5945f1a131308dbeda4e6))
+* **ui:** MapView shows numbered places, routes and areas on a flat map that loads only when visible ([#1611](https://github.com/k2b-dev/cloud/issues/1611)) ([12367d7](https://github.com/k2b-dev/cloud/commit/12367d7a10e66e7c4fe21f3d881a4b179d01a3c0))
+
+
+### Bug Fixes
+
+* **assistant:** `cld assistant code check` works with the chat's short id ([#1638](https://github.com/k2b-dev/cloud/issues/1638)) ([479b481](https://github.com/k2b-dev/cloud/commit/479b481a3b50a13cabf36848b4b093a117ddde5f))
+* **cloud:** a Help article named in the address travels once in the page props ([#1606](https://github.com/k2b-dev/cloud/issues/1606)) ([9db1ad1](https://github.com/k2b-dev/cloud/commit/9db1ad12aedd543962151e678e5e74a0199dbf87))
+* **cloud:** a mail draft question no longer says the mail is sent ([#1640](https://github.com/k2b-dev/cloud/issues/1640)) ([0266608](https://github.com/k2b-dev/cloud/commit/02666083b4e371ab147559ebe918e4f33ccc0473))
+* **cloud:** keep a question valid for every mail recipient name ([#1636](https://github.com/k2b-dev/cloud/issues/1636)) ([843caa1](https://github.com/k2b-dev/cloud/commit/843caa15f1381608213c0cf0832eff9dec5e3b71))
+* **cloud:** PDF tables keep short columns such as 'Nr.' on one line in every template ([#1627](https://github.com/k2b-dev/cloud/issues/1627)) ([9795e33](https://github.com/k2b-dev/cloud/commit/9795e33177c2cd10ab041e430f8c24048c4f6a6e))
+* **mail:** table columns in mail keep short values such as numbers on one line ([#1608](https://github.com/k2b-dev/cloud/issues/1608)) ([8f5a2a2](https://github.com/k2b-dev/cloud/commit/8f5a2a27f4601fb1b613ae0713b5fef19ba7c4cd))
+
 ## [0.47.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.46.0...cloud-v0.47.0) (2026-10-20)
 
 

@@ -94,14 +94,12 @@ const mapAccessRow = (row: DbNotebookAccess): AccessEntry => {
 
   const displayName =
     principal.type === "user"
-      ? row.user_display_name || row.user_uid || "Unknown User"
+      ? row.user_display_name || row.user_uid || undefined
       : principal.type === "group"
-        ? row.group_name || "Unknown Group"
+        ? row.group_name || undefined
         : principal.type === "service_account"
-          ? row.service_account_name || "Unknown Service Account"
-          : principal.type === "authenticated"
-            ? "All users (incl. guests)"
-            : "Public";
+          ? row.service_account_name || undefined
+          : undefined;
 
   return {
     id: row.access_id,

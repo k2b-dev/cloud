@@ -2,19 +2,22 @@ import { resolve } from "node:path";
 import { transform } from "../../packages/ssr/src/transform";
 
 /** Source inputs reachable without loading an on-demand chunk. */
-export const staticImportClosure = async (entries: string[]): Promise<string[]> => {
+export const buildIslandClosure = async (entries: string[], files?: Record<string, string>) => {
   const result = await Bun.build({
+    files,
     entrypoints: entries,
     target: "browser",
     conditions: ["browser", "production"],
     metafile: true,
+    minify: true,
+    define: { "process.env.NODE_ENV": '"production"' },
     splitting: true,
     plugins: [
       {
         name: "island-closure-solid-dom",
         setup(build) {
           build.onLoad({ filter: /\.(tsx|jsx)$/ }, async ({ path }) => ({
-            contents: await transform(await Bun.file(path).text(), path, "dom"),
+            contents: await transform(files?.[path] ?? (await Bun.file(path).text()), path, "dom"),
             loader: "js",
           }));
         },
@@ -22,6 +25,13 @@ export const staticImportClosure = async (entries: string[]): Promise<string[]> 
     ],
   });
   if (!result.success) throw new AggregateError(result.logs, "Could not build island import closure");
+  if (!result.metafile) throw new Error("Island import closure build returned no metafile");
+  return result;
+};
+
+/** Source inputs reachable without loading an on-demand chunk. */
+export const staticImportClosure = async (entries: string[]): Promise<string[]> => {
+  const result = await buildIslandClosure(entries);
   if (!result.metafile) throw new Error("Island import closure build returned no metafile");
   const inputs = new Map(Object.entries(result.metafile.inputs).map(([path, input]) => [resolve(path), { path, input }]));
   const visited = new Set<string>();

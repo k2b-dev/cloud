@@ -172,6 +172,12 @@ open, a regular page can scroll its last row above it.
 
 ## Loading and message boundaries
 
+Readiness must not wait for on-demand code. Render a provider's static content
+as server HTML and keep its islands small; load heavy controls when the reader
+first reaches for them or when the browser is idle. `PanelRuntime` defers
+nothing: the ready mark and message, keyboard forwarding, link routing, theme
+sync, the context receiver, and the workspace controller stay eager.
+
 `PanelLayout` posts `{ type: "cloud.panel.ready", v: 1, provider: appId }` to the
 parent with `location.origin` as the target origin, and marks its own document
 as ready. When the server rendered the slot open, the provider can be ready

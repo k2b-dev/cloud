@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Chat runtime and streaming
@@ -684,11 +684,14 @@ server-run code tools report it to the agent as a tool error. Host failures
 carry guidance to report them rather than rewrite otherwise valid application
 source or repeat unchanged calls.
 
-The execution host belongs to one Assistant process. Run this alpha with one
-Assistant replica: temporary JavaScript state is not transferred between replicas
-or recovered after a process restart. Durable call records prevent an uncertain
-operation from being replayed. A new run is required after host loss. Startup and
-health checks are bounded independently of the user's browser timers.
+The execution host and its approval waits belong to one Assistant process.
+Keep one Assistant replica for now: a poll or an approval that reaches another
+replica marks the call lost, and temporary JavaScript state is not transferred
+between replicas or recovered after a process restart. This limit belongs to
+the Code Mode host work in [#47](https://github.com/k2b-dev/cloud/issues/47).
+Durable call records prevent an uncertain operation from being replayed. A new run is required after
+host loss. Startup and health checks are bounded independently of the user's
+browser timers.
 
 Complete active-turn snapshots replace the observed block baseline when their
 attempt and sequence are current. Older snapshots cannot restore obsolete

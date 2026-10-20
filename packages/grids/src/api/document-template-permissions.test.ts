@@ -232,7 +232,7 @@ describe("document template permission surfaces", () => {
     spyOn(gridsService.document, "listTemplatesForTable").mockImplementation(async (id) => (id === tableId ? [template] : []) as never);
     spyOn(gridsService.document, "listSnapshotsForRecord").mockImplementation(async () => {
       snapshotListCalls += 1;
-      return [snapshot] as never;
+      return [{ ...snapshot, createdByName: user.displayName }] as never;
     });
     spyOn(gridsService.document, "createRecordSnapshot").mockImplementation(async (input) => {
       snapshotCreateCalls += 1;
@@ -362,7 +362,7 @@ describe("document template permission surfaces", () => {
 
     expect(response.status).toBe(200);
     const { root: _root, graph: _graph, ...publicSnapshotSummary } = publicSnapshot;
-    expect(await response.json()).toEqual({ items: [publicSnapshotSummary] });
+    expect(await response.json()).toEqual({ items: [{ ...publicSnapshotSummary, createdByName: user.displayName }] });
     expect(snapshotListCalls).toBe(1);
   });
 
