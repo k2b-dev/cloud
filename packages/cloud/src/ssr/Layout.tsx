@@ -378,7 +378,11 @@ export default function Layout(props: LayoutProps) {
             {user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />}
             <PageTrailProvider trail={pageTrail}>
               <PageTrailRow trail={pageTrail} />
-              <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
+              <main
+                class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}
+                data-scroll-preserve={swap ? "cloud-main" : undefined}
+                data-scroll-page={swap ? "" : undefined}
+              >
                 <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
               </main>
             </PageTrailProvider>

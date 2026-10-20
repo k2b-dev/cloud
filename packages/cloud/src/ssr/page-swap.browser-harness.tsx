@@ -101,7 +101,16 @@ export const server = new Hono<FixtureEnvironment>()
     "/app/fixture/:page?",
     ...probe.ssr<FixtureEnvironment>((c) => {
       const page = c.req.param("page") ?? "A";
-      const label = page === "B" ? "Full page B" : page === "focus" ? "Focus editor" : page === "order" ? "Order probe" : "Regular page A";
+      const label =
+        page === "B"
+          ? "Full page B"
+          : page === "focus"
+            ? "Focus editor"
+            : page === "order"
+              ? "Order probe"
+              : page === "C"
+                ? "Regular page C"
+                : "Regular page A";
       return () => (
         <Layout
           c={c}
@@ -119,6 +128,9 @@ export const server = new Hono<FixtureEnvironment>()
           </a>
           <a id="to-B" href="/app/fixture/B">
             B
+          </a>
+          <a id="to-C" href="/app/fixture/C">
+            C
           </a>
           <a id="to-order" href="/app/fixture/order">
             Order

@@ -158,6 +158,10 @@ import { onCleanup, onMount } from "solid-js";
 onMount(() => onCleanup(installPageSwap()));
 ```
 
+In a swap host, the loader mounts islands outside the column first, so an
+installer outside the column precedes column islands that write history;
+`listenPopState()` remains safe in either installation order.
+
 A click that an island handler prevented is never swapped. Modifier keys,
 `target`, `download`, `rel="external"`, other origins, links outside the
 scope, and hash links on the same page stay native. `swapPage(href, {
@@ -187,6 +191,10 @@ arriving entry once, right after its islands mount; within a page, islands
 still own region scroll. An island that loads its content later keeps its
 own position, for example in its history state, and restores it after loading. A traversal that cannot swap reloads the arriving
 URL.
+
+Add `data-scroll-page` to a keyed region to restore it on Back/Forward and
+reload recovery while starting push and replace swaps at the top or hash
+target, without copying the departing page's position.
 
 For a traversal that proceeds to a swap, nav dispatches `ssr:nav-popstate` on
 `window` with the `PopStateEvent` as `detail`, for code that keeps its own history
@@ -220,12 +228,17 @@ It replaces the header, banners, warnings, page trail, main content, footer,
 and the page's shell data and Help ids. Regular and full-page layouts can
 swap between each other.
 
+Back and Forward restore the page scroller; a link opens the next page at the
+top, or at its hash target.
+
 `focusMode` pages and links outside the current app route prefix load a
 document. A changed user, session kind, locale, page theme, panel provider set,
 visible navigation app set, or build also loads a document. Every swap fetch
 passes through the same server route policies as a reload.
 
 Column islands use `listenPopState()` and `navigate()` for their own URL state.
+The loader mounts the shell islands outside the column first, so Cloud installs
+page swaps before column islands write history.
 `listenPopState()` is safe regardless of installation order and reports only
 same-page traversals. Shell code follows `ssr:nav-popstate` for cross-page
 traversals and `ssr:nav-swapped` for the committed content.

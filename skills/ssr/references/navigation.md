@@ -58,6 +58,7 @@ import { installPageSwap } from "@k2b/ssr/nav";
 onMount(() => onCleanup(installPageSwap()));
 ```
 
+- in a swap host, the loader mounts islands outside the column first, so an installer outside the column precedes column islands that write history; `listenPopState()` remains safe in either order
 - `data-nav-shell` is an opaque signature; a fetched page with a different one loads as a document, so put app, user, locale, layout kind, and build into it
 - `data-nav-scope` is a path prefix (`/demo` takes `/demo/x`, not `/demobox`); `data-nav-root` is the replaced column; `data-nav-attributes` lists shell attributes the fetched page sets or removes
 - `data-nav-document` on a link keeps document navigation; prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too
@@ -71,6 +72,7 @@ onMount(() => onCleanup(installPageSwap()));
 - keep history state a plain object or `null`; nav keeps caller fields and reserves `"@k2b/ssr/nav"` for `{ page, position, scroll? }`. Non-plain state stays unchanged and unmarked, so returning to it fetches the page or reloads
 - nav restores window and keyed region scroll from the arriving entry once, right after its islands mount; an island that loads its content later restores its own position, and same-page region scroll remains the island's job. `history.scrollRestoration` is `"manual"` while installed; uninstall restores the previous value for the current entry only, entries created meanwhile stay manual; the history wrappers remain but become inert
 - reloads keep page identity, bfcache returns check the arriving entry, and dialog-only traversals remain with the dialog history owner
+- add `data-scroll-page` to a keyed `data-scroll-preserve` region to restore it on Back/Forward and reload recovery without carrying the departing page's position into push or replace swaps; those start at the top or hash target
 
 ## Protect unsaved input
 

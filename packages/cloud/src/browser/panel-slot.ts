@@ -4,7 +4,13 @@ import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import type { PanelPageContext } from "../contracts/panel-context";
-import { isPanelShortcut, PANEL_CONTEXT_PARAM, panelProviderNeedsConsent, withPanelContext } from "../contracts/panel-context-plain";
+import {
+  isPanelPageContext,
+  isPanelShortcut,
+  PANEL_CONTEXT_PARAM,
+  panelProviderNeedsConsent,
+  withPanelContext,
+} from "../contracts/panel-context-plain";
 import { helpShortcutGroups } from "../ssr/layout-help-start";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
@@ -58,6 +64,18 @@ export function installPanelSlot(): () => void {
   let pageRoot = document.querySelector("[data-nav-root]");
   let documentPageId = context?.pageId;
   let lastSeq = context?.seq ?? 0;
+  // The retained provider may have locked onto this document before a swap and this lazy installer.
+  try {
+    const raw = frame && new URL(frame.src, location.href).searchParams.get(PANEL_CONTEXT_PARAM);
+    const initial: unknown = raw ? JSON.parse(raw) : null;
+    if (isPanelPageContext(initial)) {
+      documentPageId = initial.pageId;
+      lastSeq = context?.pageId === documentPageId ? Math.max(lastSeq, initial.seq) : initial.seq;
+      if (context && context.pageId !== documentPageId) context = { ...context, pageId: documentPageId, seq: ++lastSeq };
+    }
+  } catch {
+    // A malformed or absent URL context leaves the shown page's context in charge.
+  }
   // Set when a swapped page's context has not been delivered yet; cleared by the next delivery.
   let pageUnsent = false;
   const followPage = () => {

@@ -67,6 +67,7 @@ beforeAll(async () => {
         <button id="replace" onClick={() => { history.replaceState({}, "", '/app/' + props.label + '?tab=3'); showUrl(); }}>Replace</button>
         <button id="dialog" onClick={() => void dialogCore.open(() => <p>Transient dialog</p>, { history: true, ariaLabel: "History dialog" })}>Dialog</button>
         <div data-scroll-preserve="column" style="height:100px;overflow:auto"><div style="height:1400px">{props.label} region</div></div>
+        <div data-scroll-preserve="page" data-scroll-page style="height:100px;overflow:auto"><div style="height:1400px">{props.label} page</div></div>
       </section>;
     }`,
   );
@@ -353,25 +354,35 @@ test(`${browserName}: Back and Forward restore each entry's window and keyed col
     await page.evaluate(() => {
       window.scrollTo(0, 620);
       document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')!.scrollTop = 180;
+      document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')!.scrollTop = 240;
     });
     await page.waitForFunction(() => scrollY === 620);
     // A programmatic link activation keeps the departure scroll untouched by Playwright's scroll-into-view.
     await page.locator("#B").evaluate((element) => element instanceof HTMLElement && element.click());
     await column(page, "B");
+    expect(await page.locator('[data-scroll-preserve="page"]').evaluate((element) => element.scrollTop)).toBe(0);
+    expect(await page.locator('[data-scroll-preserve="column"]').evaluate((element) => element.scrollTop)).toBe(180);
     await page.evaluate(() => {
       window.scrollTo(0, 930);
       document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')!.scrollTop = 410;
+      document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')!.scrollTop = 360;
     });
     await page.waitForFunction(() => scrollY === 930);
     await page.goBack();
     await column(page, "A");
     await page.waitForFunction(
-      () => scrollY === 620 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 180,
+      () =>
+        scrollY === 620 &&
+        document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 180 &&
+        document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')?.scrollTop === 240,
     );
     await page.goForward();
     await column(page, "B");
     await page.waitForFunction(
-      () => scrollY === 930 && document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 410,
+      () =>
+        scrollY === 930 &&
+        document.querySelector<HTMLElement>('[data-scroll-preserve="column"]')?.scrollTop === 410 &&
+        document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')?.scrollTop === 360,
     );
     expect([...swaps]).toEqual([
       ["/app/B", 2],

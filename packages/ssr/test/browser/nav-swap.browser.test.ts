@@ -2303,6 +2303,27 @@ test("a traversal restores stored window and region scroll after mounting the ne
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 240);
 });
 
+test.each([false, true])("page-owned regions start at the top on a swap (replace: %p)", async (replace) => {
+  const content = '<div data-scroll-preserve="page" data-scroll-page></div><div data-scroll-preserve="shared"></div>';
+  document.querySelector("[data-nav-root]")!.insertAdjacentHTML("beforeend", content);
+  document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')!.scrollTop = 240;
+  document.querySelector<HTMLElement>('[data-scroll-preserve="shared"]')!.scrollTop = 80;
+  install();
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", content)));
+  await swapPage("/app/new", { replace });
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')?.scrollTop).toBe(0);
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="shared"]')?.scrollTop).toBe(80);
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0);
+  if (!replace) {
+    spyOn(globalThis, "fetch").mockResolvedValue(response(html("old", content), {}, "https://example.test/app/old"));
+    const back = swapped("old");
+    window.history.back();
+    await back;
+    expect(document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')?.scrollTop).toBe(240);
+    expect(document.querySelector<HTMLElement>('[data-scroll-preserve="shared"]')?.scrollTop).toBe(80);
+  }
+});
+
 test("committed swap signal follows mount, scroll, focus and announcement for click, replace and Back", async () => {
   install();
   const signals: Element[] = [];

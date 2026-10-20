@@ -853,7 +853,14 @@ const commit = (
     const restored = traversal ? savedScroll(state, entry) : undefined;
     if (restored) restoreScroll(restored);
     else {
-      if (!traversal) restoreScroll(snapshot, { window: false });
+      if (!traversal) {
+        const pageKeys = new Set(
+          [root, ...root.querySelectorAll("[data-scroll-page]")]
+            .filter((region) => region.hasAttribute("data-scroll-page"))
+            .map((region) => region.getAttribute("data-scroll-preserve")),
+        );
+        restoreScroll({ ...snapshot, regions: snapshot.regions.filter((region) => !pageKeys.has(region.key)) }, { window: false });
+      }
       window.scrollTo(0, 0);
       if (hashId) document.getElementById(hashId)?.scrollIntoView();
     }

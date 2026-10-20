@@ -183,7 +183,11 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
       : "";
     // Hydration script - dynamically loads island/client bundles based on DOM
     const loaderData = ` data-ssr-assets="${Bun.escapeHTML(assetPath)}"${shared.length ? ` data-ssr-preload="${Bun.escapeHTML(shared.join(" "))}"` : ""}`;
-    const hydrationScript = `<script type="module"${loaderData}>const p=${JSON.stringify(assetPath)};${preload}document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
+    // Swap installers outside the column must run before column islands can write history.
+    const loader = /\sdata-nav-root(?:=|\s|>)/.test(body)
+      ? "const e=[...document.querySelectorAll('solid-island,solid-client')],r=document.querySelector('[data-nav-shell] [data-nav-root]');if(!r)e.forEach(e=>import(p+'/'+e.dataset.id+'.js'));else{const u=e=>p+'/'+e.dataset.id+'.js',c=[...new Set(e.filter(e=>r.contains(e)).map(u))];c.forEach(h=>{const l=document.createElement('link');l.rel='modulepreload';l.href=h;document.head.append(l)});Promise.allSettled([...new Set(e.filter(e=>!r.contains(e)).map(u))].map(h=>import(h))).then(()=>c.forEach(h=>import(h)))}"
+      : "document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));";
+    const hydrationScript = `<script type="module"${loaderData}>const p=${JSON.stringify(assetPath)};${preload}${loader}</script>`;
 
     // Framework-injected assets
     let scripts = `${islandDisplayStyle}\n${hydrationScript}`;

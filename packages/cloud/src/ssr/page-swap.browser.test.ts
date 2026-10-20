@@ -81,15 +81,19 @@ beforeAll(async () => {
   const styles = await Bun.build({ entrypoints: [resolve(rootDir, "../../styles.css")], plugins: [tailwind] });
   if (!styles.success) throw new AggregateError(styles.logs, "Could not compile page swap fixture styles");
   const css = await styles.outputs[0]!.text();
-  const shellId = islandIdFromFile(resolve(import.meta.dir, "ShellRuntime.island.tsx"), rootDir);
+  const shellEntry = `${islandIdFromFile(resolve(import.meta.dir, "ShellRuntime.island.tsx"), rootDir)}.js`;
   served = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/fixture.css") return new Response(css, { headers: { "content-type": "text/css" } });
-      if (url.pathname.startsWith("/_ssr/v1/")) {
-        const file = Bun.file(join(output, url.pathname.split("/").at(-1)!));
+      // The shipped loader asks for <prefix>/<entry>.js; every prefix serves this one build.
+      if (url.pathname.startsWith("/_ssr/")) {
+        const name = url.pathname.split("/").at(-1)!;
+        // The shell entry arrives last, so only the loader's order can put nav before the column islands.
+        if (name === shellEntry) await Bun.sleep(400);
+        const file = Bun.file(join(output, name));
         return (await file.exists())
           ? new Response(file, { headers: { "content-type": "text/javascript" } })
           : new Response("missing", { status: 404 });
@@ -111,21 +115,13 @@ beforeAll(async () => {
       if (url.pathname === "/app/provider/panel" && request.headers.get("sec-fetch-dest") === "iframe") providerRequests++;
       const response = await server.fetch(request);
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
+      // Keep the shipped island loader (it orders shell before column islands); drop the other module scripts.
       let html = (await response.text())
-        .replace(/<script type="module"[^>]*>[\s\S]*?<\/script>/g, "")
+        .replace(/<script type="module"(?![^>]*data-ssr-assets)[^>]*>[\s\S]*?<\/script>/g, "")
         .replace(/<link\b[^>]*rel="stylesheet"[^>]*>/g, "")
         .replace("</head>", '<link rel="stylesheet" href="/fixture.css"></head>');
       if (request.headers.get("cookie")?.includes("fixture_build=2"))
         html = html.replace(/data-nav-shell="[^"]*"/, 'data-nav-shell="changed-build"');
-      // @k2b/ssr does not fix module arrival order. Load the shell runtime first so nav owns history
-      // before column islands register raw listeners or write their first entry.
-      const loader = `<script type="module" data-ssr-assets="/_ssr/v1">
-const wrappers=[...document.querySelectorAll('solid-island,solid-client')];
-if(wrappers.some(e=>e.dataset.id===${JSON.stringify(shellId)})) await import('/_ssr/v1/${shellId}.js');
-for(const id of new Set(wrappers.map(e=>e.dataset.id))) if(id!==${JSON.stringify(shellId)}) await import('/_ssr/v1/'+id+'.js');
-document.documentElement.dataset.fixtureReady='true';
-</script>`;
-      html = html.replace("</body>", `${loader}</body>`);
       return new Response(html, { status: response.status, headers: response.headers });
     },
   });
@@ -150,8 +146,11 @@ afterAll(async () => {
 const column = (page: Page, name: string) =>
   page.waitForFunction(
     (name) =>
+      // Set by the column island once it mounted; the server-rendered output alone does not prove that.
+      document.documentElement.dataset.columnMounted === name &&
       document.querySelector("output[data-column-mounted]")?.textContent === name &&
-      document.documentElement.dataset.fixtureReady === "true",
+      // ShellRuntime installed the swap: nav's live region exists.
+      document.querySelector("[data-nav-announcer]") !== null,
     name,
   );
 const trackDocuments = (page: Page) => {
@@ -390,6 +389,34 @@ for (const [name, value] of [
   });
 }
 
+test("Back and Forward restore the page scroller; a link opens the next page at the top", async () => {
+  const f = await fixture();
+  try {
+    const main = () => f.page.locator("main.layout-content-main").evaluate((element) => element.scrollTop);
+    await f.page.locator("main.layout-content-main").evaluate((element) => {
+      element.scrollTop = 240;
+    });
+    // A pointer click would scroll the link into view first.
+    await f.page.locator("#to-C").evaluate((link) => {
+      if (link instanceof HTMLElement) link.click();
+    });
+    await column(f.page, "C");
+    expect(await main()).toBe(0);
+    await f.page.locator("main.layout-content-main").evaluate((element) => {
+      element.scrollTop = 120;
+    });
+    await f.page.goBack();
+    await column(f.page, "A");
+    await f.page.waitForFunction(() => document.querySelector("main.layout-content-main")?.scrollTop === 240);
+    await f.page.goForward();
+    await column(f.page, "C");
+    await f.page.waitForFunction(() => document.querySelector("main.layout-content-main")?.scrollTop === 120);
+    expect(f.documents).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+
 test("Alt+Up swaps to the remembered parent, restores main scroll and marks the row", async () => {
   const f = await fixture();
   try {
@@ -434,7 +461,7 @@ for (const destination of ["protected-login", "forbidden", "revoked"]) {
       const fresh = await f.context.newPage();
       fresh.on("pageerror", (error) => f.errors.push(error.message));
       await fresh.goto(url);
-      await fresh.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
+      await fresh.waitForLoadState("load");
       expect({ title: await fresh.title(), text: await fresh.locator("main").innerText(), path: new URL(fresh.url()).pathname }).toEqual(
         actual,
       );
@@ -460,19 +487,29 @@ test("a phone sheet opened after a swap closes on cross-page Back", async () => 
   }
 });
 
-test("shell install marks column mount history before raw listeners, including cross-page Back", async () => {
-  const f = await fixture();
+test("the shipped loader installs nav before column islands write their first entry", async () => {
+  // The column island pushes an entry while it mounts, on the first document load, and the shell entry arrives last.
+  const f = await fixture(1440, "/app/fixture/order");
   try {
-    await swapTo(f.page, "order");
+    const fetches: string[] = [];
+    f.page.on("request", (request) => {
+      if (request.resourceType() === "fetch" && new URL(request.url()).pathname.startsWith("/app/fixture/")) fetches.push(request.url());
+    });
     expect(
-      await f.page.evaluate(() => history.state?.fixtureColumn === true && typeof history.state?.["@k2b/ssr/nav"]?.page === "string"),
-    ).toBe(true);
-    await f.page.goBack();
-    await f.page.waitForURL("**/app/fixture/order"); // Same-page column entry.
+      await f.page.evaluate(() => [location.search, history.state?.fixtureColumn, typeof history.state?.["@k2b/ssr/nav"]?.page]),
+    ).toEqual(["?entry=column", true, "string"]);
     const before = await f.page.evaluate(() => Number(document.documentElement.dataset.rawPops ?? 0));
+    // Same page: the island reconciles its own entry; nav neither fetches nor remounts the column.
     await f.page.goBack();
-    await column(f.page, "A");
-    expect(await f.page.evaluate(() => Number(document.documentElement.dataset.rawPops ?? 0))).toBe(before);
+    await f.page.waitForFunction((before) => Number(document.documentElement.dataset.rawPops ?? 0) === before + 1, before);
+    expect(await f.page.evaluate(() => location.search)).toBe("");
+    // Cross page: nav swaps; the raw listener of the leaving column never sees it.
+    await swapTo(f.page, "A");
+    const raw = await f.page.evaluate(() => Number(document.documentElement.dataset.rawPops ?? 0));
+    await f.page.goBack();
+    await column(f.page, "order");
+    expect(await f.page.evaluate(() => Number(document.documentElement.dataset.rawPops ?? 0))).toBe(raw);
+    expect(fetches).toEqual([`${origin}/app/fixture/A`, `${origin}/app/fixture/order`]);
     expect(f.documents).toEqual([]);
   } finally {
     await f.close();

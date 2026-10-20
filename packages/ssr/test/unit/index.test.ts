@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { Window } from "happy-dom";
+import { createComponent } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { createConfig } from "../../src/index";
 
 describe("createConfig() cache busting", () => {
@@ -55,5 +58,75 @@ describe("createConfig() cache busting", () => {
 
     // @ts-expect-error the runtime guard rejects what the type already forbids
     await expect(html(async () => "content")).rejects.toThrow("html() expects a synchronous render function");
+  });
+});
+
+describe("swap-host loader", () => {
+  const renderLoader = async (body: string, dev = true) => {
+    const { html } = createConfig({ dev, template: ({ scripts }) => scripts });
+    const output = await (await html(() => createComponent(Dynamic, { component: "div", innerHTML: body }))).text();
+    const loader = output.match(/<script type="module"[^>]*>([^<]+)<\/script>/)?.[1];
+    if (!loader) throw new Error("Missing loader");
+    return loader;
+  };
+  const wrapper = (id: string) => `<solid-island data-id="${id}"></solid-island>`;
+
+  test("keeps the original loader unless the body declares the data-nav-root attribute", async () => {
+    const original =
+      "const p=\"/_ssr\";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));";
+    for (const body of ["", '<main data-nav-root-extra="">', '<main class="data-nav-root">'])
+      expect(await renderLoader(body)).toBe(original);
+    for (const dev of [false, true]) {
+      for (const attr of ['data-nav-root=""', "data-nav-root", 'data-nav-root class="column"']) {
+        const loader = await renderLoader(`<main ${attr}></main>`, dev);
+        expect(loader).toStartWith(`const p="/_ssr${dev ? "" : "/0"}";`);
+        expect(loader).toContain("Promise.allSettled");
+        expect(loader).toContain("[data-nav-shell] [data-nav-root]");
+      }
+    }
+  });
+
+  test("preloads distinct column entries but evaluates them only after all shell imports settle", async () => {
+    const body = `<div data-nav-shell>${wrapper("shell")}${wrapper("shell")}${wrapper("broken")}<main data-nav-root>${wrapper("column")}${wrapper("column")}</main></div>`;
+    const loader = await renderLoader(body);
+    const dom = new Window({ settings: { disableCSSFileLoading: true } });
+    try {
+      dom.document.body.innerHTML = body;
+      const sequence: string[] = [];
+      const shell = Promise.withResolvers<void>();
+      const column = Promise.withResolvers<void>();
+      // Replace only the import operation; execute the shipped control flow against Happy DOM.
+      new Function("document", "load", loader.replaceAll("import(", "load("))(dom.document, (url: string) => {
+        sequence.push(url);
+        expect([...dom.document.head.querySelectorAll("link")].map((link) => link.getAttribute("href"))).toEqual(["/_ssr/column.js"]);
+        if (url === "/_ssr/shell.js") return shell.promise;
+        if (url === "/_ssr/broken.js") return Promise.reject(new Error("shell failed"));
+        column.resolve();
+        return Promise.resolve();
+      });
+      await Promise.resolve();
+      expect(sequence).toEqual(["/_ssr/shell.js", "/_ssr/broken.js"]);
+      shell.resolve();
+      await column.promise;
+      expect(sequence).toEqual(["/_ssr/shell.js", "/_ssr/broken.js", "/_ssr/column.js"]);
+    } finally {
+      await dom.happyDOM.close();
+    }
+  });
+
+  test("without a column inside a shell, imports every wrapper as before", async () => {
+    const body = `<main data-nav-root>${wrapper("column")}${wrapper("column")}</main>${wrapper("shell")}`;
+    const dom = new Window();
+    try {
+      dom.document.body.innerHTML = body;
+      const entries: string[] = [];
+      new Function("document", "load", (await renderLoader(body)).replaceAll("import(", "load("))(dom.document, (url: string) => {
+        entries.push(url);
+      });
+      expect(entries).toEqual(["/_ssr/column.js", "/_ssr/column.js", "/_ssr/shell.js"]);
+      expect(dom.document.head.querySelectorAll("link")).toHaveLength(0);
+    } finally {
+      await dom.happyDOM.close();
+    }
   });
 });

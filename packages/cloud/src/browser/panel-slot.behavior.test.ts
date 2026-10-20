@@ -3,7 +3,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { PanelPageContext } from "../contracts/panel-context";
-import { isPanelContextMessage } from "../contracts/panel-context-plain";
+import { isPanelContextMessage, PANEL_CONTEXT_PARAM } from "../contracts/panel-context-plain";
 import { type ContextAwareCommand, registerContextAwareCommand } from "./command-bridge";
 
 if (isServer) test.skip("requires browser conditions and solid-dom-preload", () => {});
@@ -499,6 +499,44 @@ else {
   const commandBurst = () => {
     for (let i = 0; i < 20; i++) window.dispatchEvent(new Event(COMMANDS_CHANGED));
   };
+
+  test("a lazy installer keeps the SSR frame's document identity after a page swap", () => {
+    const initial = { ...pageContext, seq: 7, help: ["mail-help"] };
+    const next: PanelPageContext = {
+      ...pageContext,
+      seq: 20,
+      pageId: "22222222-2222-4222-8222-222222222222",
+      app: "files",
+      scope: { type: "files.folder", id: "folder2" },
+      help: ["files-help"],
+    };
+    const h = setup(
+      1440,
+      true,
+      true,
+      undefined,
+      false,
+      (id) => `/app/${id}/panel?${new URLSearchParams({ [PANEL_CONTEXT_PARAM]: JSON.stringify(initial) })}`,
+      { context: next, consent: false, providerIds: ["core", "fixture"] },
+    );
+    const post = spyFrame(h);
+    ready(h);
+    const first = post.mock.calls.map(([data]) => data).find(isPanelContextMessage)?.context;
+    expect(first).toEqual({ ...next, pageId: initial.pageId, seq: initial.seq + 1 });
+    if (!h.serverFrame) throw new Error("Expected an SSR iframe");
+    expect(h.frame()).toBe(h.serverFrame);
+  });
+
+  test.each(["{", '{"pageId":"invalid","seq":7}'])("a malformed SSR frame context is ignored: %s", (raw) => {
+    const h = setup(1440, true, true, undefined, false, (id) => `/app/${id}/panel?${new URLSearchParams({ [PANEL_CONTEXT_PARAM]: raw })}`, {
+      context: pageContext,
+      consent: false,
+      providerIds: ["core", "fixture"],
+    });
+    const post = spyFrame(h);
+    ready(h);
+    expect(post.mock.calls.map(([data]) => data).find(isPanelContextMessage)?.context).toEqual(pageContext);
+  });
 
   test("a swapped column follows server context with the document pageId and increasing seq", () => {
     const h = setupCore();

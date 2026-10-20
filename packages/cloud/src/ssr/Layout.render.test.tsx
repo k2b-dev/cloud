@@ -612,7 +612,8 @@ test("page swap replaces only the content column and its page data", async () =>
       expect(column.lastElementChild?.hasAttribute("data-print-fallback")).toBe(true);
       expect(window.document.querySelectorAll("#cloud-shell-data")).toHaveLength(1);
       // Not a keyed region: nav keeps keyed regions across pushes, and a new page starts at the top as after a load.
-      expect(column.querySelector("main")?.hasAttribute("data-scroll-preserve")).toBe(false);
+      expect(column.querySelector("main")?.getAttribute("data-scroll-preserve")).toBe("cloud-main");
+      expect(column.querySelector("main")?.getAttribute("data-scroll-page")).toBe("");
       for (const selector of ["#cloud-panel", ".layout-rail", ".cloud-tab-bar", ".cloud-shell-reveal"]) {
         expect(canvas.querySelector(selector)).not.toBeNull();
         expect(column.querySelector(selector)).toBeNull();

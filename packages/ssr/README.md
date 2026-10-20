@@ -325,6 +325,10 @@ keys, other buttons, `target`, `download`, `rel="external"`, other origins,
 links outside the scope, and hash links on the same page stay native.
 `swapPage(href, { replace })` starts the same swap from code.
 
+In a swap host, the loader mounts islands outside the column first, so an
+island outside the column can install page swaps before column islands write
+history; `listenPopState()` stays safe in either installation order.
+
 A swap fetches the page, then loads its island modules, and only then disposes
 the old islands. It pushes history, replaces the column, sets the title and
 the declared attributes, mounts the new islands, scrolls to the top or to
@@ -350,6 +354,10 @@ arriving entry once, right after its islands mount; within a page, islands
 still own region scroll. An island that loads its content later keeps its
 own position, for example in its history state, and restores it after loading. A traversal that cannot swap reloads the arriving
 URL.
+
+Add `data-scroll-page` to a keyed region to restore it on Back/Forward and
+reload recovery while starting push and replace swaps at the top or hash
+target, without copying the departing page's position.
 
 For a traversal that proceeds to a swap, nav dispatches `ssr:nav-popstate` on
 `window` with the `PopStateEvent` as `detail`, for code that keeps its own history

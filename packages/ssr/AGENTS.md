@@ -288,13 +288,15 @@ position after loading. Snapshots belong to the shown entry: when no
 cross-page traversal is pending, derive it from the current entry if it belongs
 to the shown page, even if nav never saw that entry's traversal. During a
 pending traversal, keep attributing snapshots to the tracked shown entry.
+Keyed regions with `data-scroll-page` restore on Back/Forward and reload recovery,
+but push and replace swaps do not carry the departing page's position into them.
 Keep scrollRestoration manual for the whole installation and restore the
 previous value on uninstall. The setting belongs to each entry, and pushes copy
 it, so entries created while installed stay manual after uninstall; uninstall
 is a teardown path, not a way to hand a running page back to the browser.
-Entries written before install keep the browser's own restoration: on a Back
-onto one, Chromium may scroll the still-shown column before the swap commits,
-so that page's last snapshot can be off. Install before islands write history.
+In a swap host, the loader mounts islands outside the column first, so an
+installer outside the column precedes column islands that write history;
+column entry fetches start through modulepreload while outside imports settle.
 
 Install before islands add raw popstate listeners: Chromium uses registration
 order even for capture. listenPopState is safe in any order through the shared
