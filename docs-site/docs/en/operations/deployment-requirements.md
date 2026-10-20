@@ -84,6 +84,31 @@ Older versions still discover the Actions through derived approval metadata,
 but reject the new response shapes. Existing apps need no migration in this
 release. See [Action contract migration](/en/docs/platform/capabilities#migrate-an-application).
 
+## Enable addresses and places
+
+Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
+`api-eu.geoapify.com`. Store the Geoapify key as the secret `geo.api_key` in
+Core settings. There is no endpoint setting or new environment variable.
+Choose `geo.plan`, then review the monthly and per-person daily credit limits.
+Core creates its durable geo ledger during startup migrations.
+
+Search text, addresses, coordinates, categories, and route corridor geometry
+leave the installation for Geoapify when a cache miss is admitted. In the
+Assistant, the AI provider also sees the person's question and tool results.
+The key travels only in the outbound `x-api-key` header. Caller cookies and
+credentials are not forwarded to Geoapify.
+
+The operator must establish a legal basis and assess the required processor
+agreement with KEPTAGO LTD. A signed agreement is available on request.
+Geoapify permits the Free plan in production only “with some limitations”;
+check the applicable terms and clarify those limits with the provider.
+Keep the required attribution with saved results and near displayed lists.
+
+Without a key, paid Queries return `GEO_NOT_CONFIGURED`. Without healthy
+Valkey admission, paid calls are refused with `GEO_BUSY`; there is no
+unlimited fallback. Availability checks remain free. Cache failures alone do
+not fail a request that admission accepts.
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |

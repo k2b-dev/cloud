@@ -24,6 +24,7 @@ do not copy files into an application or take ownership of its data model.
 
 | Need | Application contributes | Cloud provides |
 | --- | --- | --- |
+| [Addresses and places](/en/docs/platform/places-and-maps) | Query input and caller identity | Fixed EU provider, shared credit budgets, caching, provenance, and attribution |
 | Runtime configuration | Typed setting declarations and defaults | Validation, encrypted persistence, caching, and request snapshots |
 | [Outgoing mail](/en/docs/platform/outgoing-mail) | A `mail:send` or `mail:read` declaration | Sender profiles, a searchable send log, and operator-controlled application access |
 | Operational events | A source, message, and structured metadata | Console output, redaction, persistence, retention, and operations views |

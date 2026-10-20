@@ -50,6 +50,7 @@ import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { geoCapabilities } from "./geo-capabilities";
 import { taskGrantReview } from "./task-grant-presentation";
 
 const CORE_APP_ID = "core";
@@ -694,6 +695,7 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    ...geoCapabilities.queries,
     "entities.search": {
       title: "Find access recipients",
       description:

@@ -155,3 +155,17 @@ The event includes the request ID when known.
 
 No chat content, tool input, or model reason is stored. Deleting a chat or a
 Studio app ends its approvals without separate audit events.
+
+## Geo service transitions
+
+Core records `core.geo.provider_key_rejected` (`failed`) on a provider 401/403,
+and `core.geo.monthly_budget_exhausted` (`denied`) on the first reservation
+that cannot fit the Cloud monthly budget. Each event is recorded at most once
+per local calendar month, across Core replicas. The transition marker and
+audit row commit together; a failed audit write rolls back the marker.
+
+The actor is the request actor, including service accounts, and `requestId`
+links the event to its capability execution. Metadata contains only the month.
+There is no per-call geo audit event and no address, search text, coordinates,
+provider body, or key in these rows. See
+[Places and maps](/en/docs/platform/places-and-maps) for budgets and recovery.

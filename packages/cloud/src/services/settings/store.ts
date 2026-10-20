@@ -21,6 +21,7 @@ import { stripImageDataUrlMetadata } from "../image-metadata";
 import { toPgTextArray } from "../postgres";
 import { requestCacheRedis } from "../request-cache-redis";
 import { decryptValue, encryptValue } from "./crypto";
+import { isGeoBudgetKey, validateGeoBudgetChange } from "./geo-budget";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
 
 const REDIS_KEY = (k: string) => `settings:${k}`;
@@ -93,6 +94,12 @@ export const readKeyState = async (key: string): Promise<SettingRead> => {
 export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
   const result = new Map<string, unknown>();
   if (keys.length === 0) return result;
+  if (keys.includes("geo.api_key")) {
+    const privateState = await readKeyState("geo.api_key");
+    const rest = await bulkRead(keys.filter((key) => key !== "geo.api_key"));
+    rest.set("geo.api_key", privateState.value);
+    return rest;
+  }
   let cached: Array<string | null>;
   try {
     cached = await (await requestCacheRedis()).mget(...keys.map(REDIS_KEY));
@@ -244,6 +251,7 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
     def.kind === "image" && typeof validated.value === "string" ? stripImageDataUrlMetadata(validated.value) : validated.value;
   const encrypted = await encryptValue(storedValue);
   const write = async (tx: SqlClient) => {
+    await validateGeoBudgetWrite(tx, key, validated.value);
     for (let attempt = 0; attempt < 3; attempt++) {
       let [row] = await tx<{ value: string }[]>`UPDATE settings.entries SET value = value WHERE key = ${key} RETURNING value`;
       if (!row) {
@@ -281,9 +289,46 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
   if (!db) await invalidateSettingsCache([key]);
 };
 
+const validateGeoBudgetWrite = async (tx: SqlClient, key: string, value: unknown) => {
+  if (!isGeoBudgetKey(key)) return;
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.geo.budget-settings', 0))`;
+  await validateGeoBudgetChange(key, value, async (other) => {
+    const [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key=${other}`;
+    if (!row) return SETTINGS_MAP.get(other)?.default;
+    try {
+      return await decryptValue(row.value);
+    } catch {
+      throw new SettingUnreadableError(other);
+    }
+  });
+};
+
+/** Keep bulk budget saves independent of field order while each ordinary write still validates. */
+export const orderGeoBudgetMutations = async (tx: SqlClient, updates: Record<string, unknown>, resets: readonly string[]) => {
+  const keys = [...Object.keys(updates), ...resets];
+  if (!keys.some(isGeoBudgetKey)) return keys;
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.geo.budget-settings', 0))`;
+  const monthKey = "geo.monthly_budget_credits";
+  const [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key=${monthKey}`;
+  const currentMonth = row ? await decryptValue(row.value) : SETTINGS_MAP.get(monthKey)?.default;
+  const nextMonth =
+    monthKey in updates ? updates[monthKey] : resets.includes(monthKey) ? SETTINGS_MAP.get(monthKey)?.default : currentMonth;
+  const monthFirst = typeof nextMonth === "number" && typeof currentMonth === "number" && nextMonth >= currentMonth;
+  const first = monthFirst ? monthKey : "geo.person_daily_credits";
+  return [
+    ...keys.filter(isGeoBudgetKey).sort((a, b) => (a === b ? 0 : a === first ? -1 : 1)),
+    ...keys.filter((key) => !isGeoBudgetKey(key)),
+  ];
+};
+
 /** Delete the DB row and invalidate Redis. See writeKey for the `db` contract. */
 export const deleteKey = async (key: string, db?: SqlClient): Promise<void> => {
-  await (db ?? sql)`DELETE FROM settings.entries WHERE key = ${key}`;
+  const remove = async (tx: SqlClient) => {
+    await validateGeoBudgetWrite(tx, key, SETTINGS_MAP.get(key)?.default);
+    await tx`DELETE FROM settings.entries WHERE key = ${key}`;
+  };
+  if (db) await remove(db);
+  else await sql.begin(remove);
   if (!db) await invalidateSettingsCache([key]);
 };
 
