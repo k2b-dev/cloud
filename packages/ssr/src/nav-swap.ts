@@ -9,6 +9,8 @@ type SwapState = {
   native?: { event: Event; controller: AbortController };
   token: string;
   counter: number;
+  /** Counts started swaps, so deferred history work of an older navigation can tell it was overtaken. */
+  started: number;
   /** The page marker of the shown server page; island-owned state may leave it undefined. */
   currentPage: unknown;
   trusted: boolean;
@@ -125,6 +127,7 @@ export function installPageSwap(): () => void {
     // Only tells this document's entries apart from a reloaded one's; crypto.randomUUID needs a secure context.
     token: Math.random().toString(36).slice(2),
     counter: 0,
+    started: 0,
     // A reload keeps the entry's marker; that document then also shares history with other server pages.
     currentPage: marker(window.history.state),
     // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
@@ -248,7 +251,10 @@ export function installPageSwap(): () => void {
 export async function swapPage(href: string, options: { replace?: boolean } = {}): Promise<void> {
   if (typeof window === "undefined") return;
   const state = shared[swapKey];
-  if (state) abort(state);
+  if (state) {
+    abort(state);
+    state.started++;
+  }
   let requested: URL;
   try {
     requested = new URL(href, document.baseURI || window.location.href);

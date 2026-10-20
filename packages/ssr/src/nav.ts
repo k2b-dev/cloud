@@ -15,6 +15,7 @@ import {
   resolveNavigationUrl,
   restoreScroll,
   startViewTransition,
+  swapOvertakes,
 } from "./nav-history";
 
 export {
@@ -127,6 +128,8 @@ export function Link(props: LinkProps) {
     event.preventDefault();
     // The island owns this navigation now; a pending page swap must not commit while onNavigate loads.
     cancelPageSwap();
+    // A page swap started while onNavigate loads is the newer navigation: this handler no longer moves history.
+    const overtaken = swapOvertakes();
 
     let navigationOutcome: "none" | "history" | "document" = "none";
     const runNavigation = async () => {
@@ -138,6 +141,7 @@ export function Link(props: LinkProps) {
           replace,
           scroll,
           push: (nextHref = url.href, options = {}) => {
+            if (overtaken()) return;
             navigate(nextHref, {
               ...options,
               replace: false,
@@ -148,6 +152,7 @@ export function Link(props: LinkProps) {
             navigationOutcome = "history";
           },
           replaceWith: (nextHref = url.href, options = {}) => {
+            if (overtaken()) return;
             navigate(nextHref, {
               ...options,
               replace: true,
@@ -158,6 +163,7 @@ export function Link(props: LinkProps) {
             navigationOutcome = "history";
           },
           fallback: (nextHref = url.href) => {
+            if (overtaken()) return;
             documentNavigate(resolveNavigationUrl(nextHref).href, { replace });
             navigationOutcome = "document";
           },
@@ -167,7 +173,7 @@ export function Link(props: LinkProps) {
         });
       } catch (error) {
         console.error("[@k2b/ssr/nav] onNavigate failed; falling back to document navigation.", error);
-        if (navigationOutcome === "document") return;
+        if (navigationOutcome === "document" || overtaken()) return;
         const historyCommitted = navigationOutcome === "history";
         const fallbackHref = historyCommitted ? window.location.href : url.href;
         documentNavigate(fallbackHref, { replace: historyCommitted || replace });

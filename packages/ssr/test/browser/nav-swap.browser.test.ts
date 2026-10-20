@@ -1258,3 +1258,46 @@ test("a deferred navigate() commit that a newer swap overtook does not push its 
     Reflect.deleteProperty(document, "startViewTransition");
   }
 });
+
+test("an async Link handler that a newer swap overtook neither moves history nor loads a document", async () => {
+  install();
+  const linkRoot = document.createElement("div");
+  document.querySelector("nav")!.append(linkRoot);
+  const steps = [Promise.withResolvers<void>(), Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+  let calls = 0;
+  const dispose = render(
+    () =>
+      Link({
+        href: "/app/old?tab=2",
+        onNavigate: async ({ push, replaceWith, fallback }) => {
+          const step = steps[calls++]!;
+          await step.promise;
+          if (calls === 1) push();
+          else if (calls === 2) replaceWith();
+          else fallback();
+          if (calls === 3) throw new Error("late handler failed");
+        },
+        children: "tab",
+      }),
+    linkRoot,
+  );
+  const activate = () =>
+    linkRoot.querySelector("a")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  try {
+    spyOn(globalThis, "fetch").mockImplementation(Object.assign(async () => response(), { preconnect: fetch.preconnect }));
+    for (const step of steps) {
+      activate();
+      await swapPage("/app/new");
+      expect(document.title).toBe("new");
+      const before = window.history.length;
+      step.resolve();
+      for (let tick = 0; tick < 5; tick++) await Promise.resolve();
+      expect(`${window.location.pathname}${window.location.search}`).toBe("/app/new");
+      expect(window.history.length).toBe(before);
+    }
+    expect(assign).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  } finally {
+    dispose();
+  }
+});
