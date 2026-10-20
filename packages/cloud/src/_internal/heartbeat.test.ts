@@ -541,7 +541,12 @@ describe("replica membership", () => {
         }
       },
     };
-    const process = (instanceId: string, writeTimeoutMs = 500, intervalMs = 3_600_000, appId = "test") => {
+    const process = (
+      instanceId: string,
+      writeTimeoutMs = 500,
+      intervalMs: number | { app: number; capability: number } = 3_600_000,
+      appId = "test",
+    ) => {
       const membership = createRegistryMembership(appId, {
         registry: () => instances,
         lock: () => lock,
@@ -550,9 +555,26 @@ describe("replica membership", () => {
         startedAt: epoch,
         writeTimeoutMs,
       });
-      const options = { membership, intervalMs, writeTimeoutMs };
-      const app = createHeartbeat(appId, { ...entry, id: appId, instanceId }, { ...options, registry: apps });
-      const capability = createHeartbeat(appId, { instanceId }, { ...options, registry: capabilities, key: `capabilities/${appId}` });
+      const options = { membership, writeTimeoutMs };
+      const app = createHeartbeat(
+        appId,
+        { ...entry, id: appId, instanceId },
+        {
+          ...options,
+          intervalMs: typeof intervalMs === "number" ? intervalMs : intervalMs.app,
+          registry: apps,
+        },
+      );
+      const capability = createHeartbeat(
+        appId,
+        { instanceId },
+        {
+          ...options,
+          intervalMs: typeof intervalMs === "number" ? intervalMs : intervalMs.capability,
+          registry: capabilities,
+          key: `capabilities/${appId}`,
+        },
+      );
       const stop = async () => {
         await app.stop();
         await capability.stop();
@@ -595,6 +617,49 @@ describe("replica membership", () => {
       };
     }
     await waitUntil(() => adopted.size === 2);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vA" }]);
+  });
+
+  test("mixed-version survivors adopt a consistent pair and keep it over staggered refresh intervals", async () => {
+    const f = fixture();
+    // A's app and B's capability run first; their other heartbeats run later.
+    const a = f.process("vA", 500, { app: 2, capability: 17 }),
+      b = f.process("vB", 500, { app: 19, capability: 3 }),
+      c = f.process("vC");
+    await a.start();
+    await b.start();
+    await c.start();
+    await c.stop();
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vC" }, { instanceId: "vC" }]);
+
+    const refreshes = new Map<string, number>();
+    const touch = f.instances.touch;
+    f.instances.touch = async (input) => {
+      const result = await touch(input);
+      refreshes.set(input.key, (refreshes.get(input.key) ?? 0) + 1);
+      return result;
+    };
+    const refreshed = (count: number) => ["vA", "vB"].every((id) => (refreshes.get(`${appInstancePrefix("test")}${id}`) ?? 0) >= count);
+    await waitUntil(() => refreshed(40), 1_000);
+    const adopted = await f.values();
+    const winner = adopted[0]?.instanceId;
+    expect(["vA", "vB"]).toContain(winner);
+    expect(adopted).toEqual([{ ...entry, instanceId: winner }, { instanceId: winner }]);
+
+    refreshes.clear();
+    await waitUntil(() => refreshed(40), 1_000);
+    expect(await f.values()).toEqual(adopted);
+  });
+
+  test("interleaved joins publish both entries of the last joining process", async () => {
+    const f = fixture();
+    const a = f.process("vA"),
+      b = f.process("vB");
+    await a.capability.start();
+    await b.capability.start();
+    await b.app.start();
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
+    await a.app.start();
     expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vA" }]);
   });
 
@@ -778,11 +843,12 @@ describe("replica membership", () => {
       if (elapsed === 250) {
         await stopping;
         expect(await f.keys()).toEqual([]);
+        expect(await f.keys(f.capabilities)).toEqual([]);
       } else {
         await expect(stopping).rejects.toThrow("membership lease expired during stop; shared entry left to its TTL");
         expect(await f.keys()).toEqual(["apps/test"]);
+        expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
       }
-      expect(await f.keys(f.capabilities)).toEqual(["capabilities/test"]);
     });
   }
 
@@ -832,6 +898,67 @@ describe("replica membership", () => {
   });
 
   for (const sibling of [false, true]) {
+    test(`cleans every shared key after an app join's late capability write (live sibling: ${sibling})`, async () => {
+      const f = fixture();
+      const survivor = sibling ? f.process("sibling") : undefined;
+      await survivor?.start();
+      const late = f.process("late", 10);
+      await late.capability.start();
+      const upsert = f.capabilities.upsert;
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      let pause = true;
+      f.capabilities.upsert = async (input) => {
+        if (pause) {
+          pause = false;
+          entered.resolve();
+          await release.promise;
+        }
+        return upsert(input);
+      };
+      let appWrites = 0;
+      const upsertApp = f.apps.upsert;
+      f.apps.upsert = async (input) => {
+        appWrites++;
+        return upsertApp(input);
+      };
+      let deletes = 0;
+      const removeInstance = f.instances.delete;
+      f.instances.delete = async (input) => {
+        deletes++;
+        return removeInstance(input);
+      };
+      const rejected = expect(late.app.start()).rejects.toThrow("timed out");
+      await entered.promise;
+      let stoppedDeletes = 0;
+      try {
+        await rejected;
+        await late.stop();
+        stoppedDeletes = deletes;
+      } finally {
+        release.resolve();
+      }
+      await waitUntil(() => deletes > stoppedDeletes);
+      const expectedKeys = sibling ? ["apps/test", `${appInstancePrefix("test")}sibling`] : [];
+      const expectedCapabilities = sibling ? ["capabilities/test"] : [];
+      const deadline = performance.now() + 250;
+      while (
+        (await f.keys()).includes(`${appInstancePrefix("test")}late`) ||
+        (await f.keys()).includes("apps/test") !== sibling ||
+        (await f.keys(f.capabilities)).includes("capabilities/test") !== sibling
+      ) {
+        if (performance.now() >= deadline) throw new Error("Late capability write was not cleaned up");
+        await Bun.sleep(1);
+      }
+      expect(await f.keys()).toEqual(expectedKeys);
+      expect(await f.keys(f.capabilities)).toEqual(expectedCapabilities);
+      expect(appWrites).toBe(0);
+      if (survivor) {
+        await survivor.membership.publish();
+        expect(await f.values()).toEqual([{ ...entry, instanceId: "sibling" }, { instanceId: "sibling" }]);
+      }
+    });
+
     for (const stalled of ["shared", "instance"] as const) {
       test(`cleans a late ${stalled} write after stop (live sibling: ${sibling})`, async () => {
         const f = fixture();
@@ -915,7 +1042,7 @@ describe("replica membership", () => {
     }
   });
 
-  test("refresh preserves a newer entry and repairs missing shared and instance keys", async () => {
+  test("refresh preserves a newer entry and repairs a missing app with its matching capability and instance", async () => {
     const f = fixture();
     const a = f.process("a", 500, 2),
       b = f.process("b");
@@ -940,6 +1067,7 @@ describe("replica membership", () => {
     };
     await waitUntil(() => repairs > 0);
     expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}a`, `${appInstancePrefix("test")}b`]);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "a" }, { instanceId: "a" }]);
     await a.stop();
     expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}b`]);
   });
@@ -971,7 +1099,7 @@ describe("replica membership", () => {
     expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}a`]);
     await a.stop();
     await a.membership.renew();
-    await a.membership.publish("apps/test", entry, () => f.apps.upsert({ key: "apps/test", value: entry }));
+    await a.membership.publish();
     expect(await f.keys()).toEqual([]);
   });
 });

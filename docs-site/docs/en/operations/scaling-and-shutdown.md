@@ -59,7 +59,9 @@ is missing. When the instance that wrote the current entry stops while others
 run, a remaining replica replaces the entry with its own on its next refresh,
 within 60 seconds. After a crash, this happens once the crashed instance's
 liveness key has aged out. Until then, the departed instance's routes and
-capability manifest stay published.
+capability manifest stay published. A replica always writes its application
+entry and capability manifest together, so the two never come from different
+replicas.
 
 The gateway rebuilds its route table when registry entries change. It renews
 its own operations snapshot every five seconds, including when the registry is

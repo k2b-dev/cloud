@@ -57,6 +57,7 @@ export const createRegistryMembership = (
   const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;
   if (!Number.isFinite(writeTimeoutMs) || writeTimeoutMs <= 0) throw new RangeError("Membership write timeout must be positive and finite");
   let left = false;
+  const sharedEntries = new Map<string, { write: () => Promise<unknown>; remove: () => Promise<unknown> }>();
 
   const locked = async (write: (lock: { expiresAt: Date }) => Promise<void>): Promise<void> => {
     const result = await options
@@ -68,26 +69,33 @@ export const createRegistryMembership = (
     if (result === null) throw new Error(`Registry membership lock unavailable for app ${appId}`);
   };
   const upsert = () => options.registry().upsert({ key, value });
+  const publishShared = async (): Promise<void> => {
+    if (left) return;
+    await upsert();
+    // Never mix entries from different processes: the capability catalog rejects mismatched manifests.
+    for (const { write } of sharedEntries.values()) {
+      if (left) return;
+      await write();
+    }
+  };
 
   return {
-    join: async (sharedKey: string, sharedValue: unknown, write: () => Promise<unknown>): Promise<void> => {
+    join: async (sharedKey: string, sharedValue: unknown, write: () => Promise<unknown>, remove: () => Promise<unknown>): Promise<void> => {
       left = false;
       await locked(async () => {
         value.entries[sharedKey] = entryDigest(sharedValue);
-        await upsert();
-        await write();
+        sharedEntries.set(sharedKey, { write, remove });
+        await publishShared();
       });
     },
-    publish: async (sharedKey: string, sharedValue: unknown, write: () => Promise<unknown>): Promise<void> => {
+    publish: async (): Promise<void> => {
       if (left) return;
       await locked(async () => {
         if (left) return;
-        value.entries[sharedKey] = entryDigest(sharedValue);
-        await upsert();
-        await write();
+        await publishShared();
       });
     },
-    adopt: async (sharedKey: string, read: () => Promise<{ value: unknown } | undefined>, write: () => Promise<unknown>): Promise<void> => {
+    adopt: async (sharedKey: string, read: () => Promise<{ value: unknown } | undefined>): Promise<void> => {
       if (left) return;
       // A departed publisher must not pin its manifest forever; a live publisher keeps newest-start precedence.
       const orphaned = async (): Promise<boolean> => {
@@ -106,8 +114,7 @@ export const createRegistryMembership = (
         if (Date.now() > lock.expiresAt.getTime() - writeTimeoutMs / 2) {
           throw new Error("membership lease expired during adoption; shared entry left to its TTL");
         }
-        await upsert();
-        await write();
+        await publishShared();
       });
     },
     renew: async (): Promise<void> => {
@@ -118,7 +125,7 @@ export const createRegistryMembership = (
         });
       }
     },
-    leave: async (remove: () => Promise<unknown>): Promise<void> => {
+    leave: async (): Promise<void> => {
       left = true;
       // A failed delete must never lead to shared removal: leave routing to its TTL.
       // Repeat the delete even after leaving, to remove a late registration write.
@@ -131,7 +138,9 @@ export const createRegistryMembership = (
         if (Date.now() > lock.expiresAt.getTime() - writeTimeoutMs / 2) {
           throw new Error("membership lease expired during stop; shared entry left to its TTL");
         }
-        if (!snapshot.entries.some((entry) => entry.key !== key)) await remove();
+        if (!snapshot.entries.some((entry) => entry.key !== key)) {
+          for (const { remove } of sharedEntries.values()) await remove();
+        }
       });
     },
   };
@@ -179,12 +188,12 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
     staleReported = false;
   };
 
-  const remove = () => (options.membership ? options.membership.leave(() => registry.delete({ key })) : registry.delete({ key }));
+  const remove = () => (options.membership ? options.membership.leave() : registry.delete({ key }));
   const upsert = () => registry.upsert({ key, value: entry });
 
   const register = async (): Promise<void> => {
     await options.beforeWrite?.();
-    if (options.membership) await options.membership.join(key, entry, upsert);
+    if (options.membership) await options.membership.join(key, entry, upsert, () => registry.delete({ key }));
     else await upsert();
     noteSuccess();
   };
@@ -198,14 +207,12 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
     await options.membership?.renew();
     const touched = await registry.touch({ key });
     if (!touched) {
-      if (options.membership) await options.membership.publish(key, entry, upsert);
+      if (options.membership) await options.membership.publish();
       else await upsert();
     } else if (options.membership) {
       const registry = options.registry;
-      await options.membership.adopt(
-        key,
-        async () => (await registry.snapshot({ prefix: key })).entries.find((candidate) => candidate.key === key),
-        upsert,
+      await options.membership.adopt(key, async () =>
+        (await registry.snapshot({ prefix: key })).entries.find((candidate) => candidate.key === key),
       );
     }
     noteSuccess();
