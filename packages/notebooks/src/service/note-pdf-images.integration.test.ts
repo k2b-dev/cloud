@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { createAllowedNetworkFetch, resolveAllowedNetworkAddresses } from "@k2b/cloud/services";
 import * as pdfModule from "@k2b/cloud/services/pdf";
+import { EMPTY_NETWORK_ALLOWLIST } from "@k2b/cloud/shared";
 import { type GotenbergConfig, preparePdfImage } from "@k2b/cloud/services/pdf";
 import { sql } from "bun";
 import sharp from "sharp";
@@ -196,8 +198,42 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
       );
       expect(await trap.takeRequests()).toEqual([]);
       expect((await pdfImages(result.pdf)).filter(({ type }) => type === "image")).toHaveLength(1);
-      expect(result.omissions.map(({ code }) => code)).toEqual(["not_rendered", "blocked"]);
+      expect(result.omissions.map(({ code }) => code)).toEqual(["blocked", "blocked"]);
     } finally {
+      await trap.stop();
+    }
+  }, 60000);
+
+  test("external JPEGs are fetched once and uploaded; Gotenberg requests no image addresses", async () => {
+    const trap = await startGotenbergTrap(config.url);
+    let server: ReturnType<typeof Bun.serve> | undefined;
+    let requests = 0;
+    try {
+      server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch() {
+          requests++;
+          return new Response(new Uint8Array(jpeg), { headers: { "content-type": "image/jpeg" } });
+        },
+      });
+      const url = `http://images.example.test:${server.port}/photo.jpg`;
+      const result = await render(`![photo](${url}) ![again](${url}) ![private](${trap.origin}/x.png)`, {
+        imageDependencies: {
+          fetch: createAllowedNetworkFetch(EMPTY_NETWORK_ALLOWLIST, {
+            resolve: async (host) =>
+              host === "images.example.test"
+                ? [{ address: "127.0.0.1", family: 4 }]
+                : resolveAllowedNetworkAddresses(host, EMPTY_NETWORK_ALLOWLIST),
+          }),
+        },
+      });
+      expect(requests).toBe(1);
+      expect(await pdfImages(result.pdf)).toEqual([expect.objectContaining({ type: "image", width: 480, height: 320, enc: "jpeg" })]);
+      expect(result.omissions).toEqual([{ code: "blocked", kind: "image", label: `private (${trap.origin}/x.png)` }]);
+      expect(await trap.takeRequests()).toEqual([]);
+    } finally {
+      await server?.stop(true);
       await trap.stop();
     }
   }, 60000);

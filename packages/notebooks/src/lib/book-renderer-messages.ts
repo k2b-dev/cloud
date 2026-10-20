@@ -6,8 +6,8 @@ export const bookRendererMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      imageNotIncluded: ({ label, reason }: { label: string; reason: string }) =>
-        `Image not included${label ? `: ${label}` : ""} – ${reason}`,
+      imageNotIncluded: ({ label, reason, url }: { label: string; reason: string; url?: string }) =>
+        `Image not included${label ? `: ${label}` : ""} – ${reason}${url ? ` (${url})` : ""}`,
       imagePlaceholder_not_found: "file not found",
       imagePlaceholder_unsupported_format: "format cannot be printed",
       imagePlaceholder_unreadable: "file could not be read",
@@ -15,7 +15,6 @@ export const bookRendererMessages = i18n.define({
       imagePlaceholder_over_budget: "no room left in the PDF",
       imagePlaceholder_timed_out: "preparation took too long",
       imagePlaceholder_blocked: "address not allowed",
-      imagePlaceholder_not_rendered: "not printed in PDFs yet",
       imagePlaceholder_unreachable: "address not reachable",
 
       omissionKind_image: "Image",
@@ -42,8 +41,8 @@ export const bookRendererMessages = i18n.define({
       omissionHint_unreadable: "Check the file, then attach it again.",
       omissionHint_too_large: "Use a smaller file or split the note.",
       omissionHint_over_budget: "Use smaller images or split the note. An administrator can raise Max input bytes.",
-      omissionHint_unreachable: "Try again later.",
-      omissionHint_blocked: "Use an attachment instead.",
+      omissionHint_unreachable: "Check that the address opens in a browser, try again later, or attach the image.",
+      omissionHint_blocked: "Use an image from a public web address, or attach it to the note.",
       omissionHint_timed_out: "Try again later.",
       omissionHint_not_rendered: "Open the note to see it.",
       omissionHint_invalid_block: "Fix it in the note where the PDF marks it, then download again.",
@@ -86,7 +85,7 @@ export const bookRendererMessages = i18n.define({
       image: ({ alt }: { alt: string }) => (alt ? `Image: ${alt}` : "Image"),
     },
     de: {
-      imageNotIncluded: ({ label, reason }) => `Bild nicht enthalten${label ? `: ${label}` : ""} – ${reason}`,
+      imageNotIncluded: ({ label, reason, url }) => `Bild nicht enthalten${label ? `: ${label}` : ""} – ${reason}${url ? ` (${url})` : ""}`,
       imagePlaceholder_not_found: "Datei nicht gefunden",
       imagePlaceholder_unsupported_format: "Format kann nicht gedruckt werden",
       imagePlaceholder_unreadable: "Datei konnte nicht gelesen werden",
@@ -94,7 +93,6 @@ export const bookRendererMessages = i18n.define({
       imagePlaceholder_over_budget: "kein Platz mehr im PDF",
       imagePlaceholder_timed_out: "Vorbereitung dauerte zu lange",
       imagePlaceholder_blocked: "Adresse nicht erlaubt",
-      imagePlaceholder_not_rendered: "wird noch nicht im PDF gedruckt",
       imagePlaceholder_unreachable: "Adresse nicht erreichbar",
 
       omissionKind_image: "Bild",
@@ -122,8 +120,8 @@ export const bookRendererMessages = i18n.define({
       omissionHint_too_large: "Verwende eine kleinere Datei oder teile die Notiz auf.",
       omissionHint_over_budget:
         "Verwende kleinere Bilder oder teile die Notiz auf. Die Administration kann die maximale Eingabegröße erhöhen.",
-      omissionHint_unreachable: "Versuche es später erneut.",
-      omissionHint_blocked: "Verwende stattdessen einen Anhang.",
+      omissionHint_unreachable: "Prüfe, ob sich die Adresse im Browser öffnet, versuche es später erneut oder hänge das Bild an.",
+      omissionHint_blocked: "Verwende ein Bild von einer öffentlichen Webadresse oder hänge es an die Notiz an.",
       omissionHint_timed_out: "Versuche es später erneut.",
       omissionHint_not_rendered: "Öffne die Notiz, um es anzusehen.",
       omissionHint_invalid_block: "Behebe den Fehler in der Notiz an der im PDF markierten Stelle und lade das PDF erneut herunter.",

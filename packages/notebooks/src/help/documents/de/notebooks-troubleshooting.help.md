@@ -26,14 +26,13 @@ Das PDF markiert jedes fehlende Bild mit **Bild nicht enthalten: …** und einem
 
 :::reference
 - **Datei nicht gefunden:** Hänge die Datei erneut an dieses Notizbuch an. Ein Anhang aus einem anderen Notizbuch ist hier nicht verfügbar.
-- **Format kann nicht gedruckt werden:** Verwende JPEG, PNG, WebP oder GIF. SVG-Dateien bleiben als Download verfügbar.
+- **Format kann nicht gedruckt werden:** Verwende JPEG, PNG, WebP oder GIF. Externe Adressen müssen ein Bild in einem dieser Formate zurückgeben. SVG-Dateien bleiben als Download verfügbar.
 - **Datei konnte nicht gelesen werden:** Öffne und prüfe die Datei. Exportiere sie erneut und hänge die neue Kopie an.
-- **Datei zu groß:** Hänge ein kleineres Bild an. Die Größenbegrenzung für Anhänge gilt auch für Bilder im PDF.
+- **Datei zu groß:** Hänge ein kleineres Bild an. Die Größenbegrenzung für Anhänge gilt auch für externe Bilder.
 - **Kein Platz mehr im PDF:** Verwende kleinere Bilder oder teile die Notiz auf. Bilder teilen sich die **Maximale Eingabegröße** mit dem Dokument. Die Administration kann diese Grenze erhöhen. Große Bilder werden mit 300, 200 oder 150 dpi gedruckt.
 - **Vorbereitung dauerte zu lange:** Versuche es erneut oder verwende weniger oder kleinere Bilder. Die Vorbereitung der Bilder bekommt dieselbe Zeit wie der PDF-Renderer, höchstens 115 Sekunden. Die Administration kann das **Zeitlimit** des Renderers erhöhen.
-- **Adresse nicht erlaubt:** Hänge das Bild an dieses Notizbuch an und verwende seinen Anhang-Link.
-- **Wird noch nicht im PDF gedruckt:** Externe HTTP(S)-Bilder werden noch nicht aufgenommen. Hänge das Bild stattdessen an oder öffne die Notiz, um es anzusehen.
-- **Adresse nicht erreichbar:** Prüfe die Adresse oder versuche es später erneut.
+- **Adresse nicht erlaubt:** Die Adresse ist nicht öffentlich, verwendet kein Web-Protokoll, enthält einen Benutzernamen oder ein Passwort oder leitet zu einer solchen Adresse weiter. Verwende eine öffentliche Bildadresse oder hänge das Bild an die Notiz an.
+- **Adresse nicht erreichbar:** Der Server konnte die Adresse nicht erreichen, der Host hat mit einem Fehler geantwortet oder die Adresse hat mehr als 20-mal weitergeleitet. Prüfe, ob sich die Adresse im Browser öffnet. Versuche es später erneut oder hänge das Bild an die Notiz an.
 :::
 
 ## Aktualisierungen prüfen {icon="refresh"}
