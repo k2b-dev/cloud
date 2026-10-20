@@ -645,36 +645,34 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
               <div class="k2b-rich-select__body">
                 <div class="k2b-rich-select__column">
                   <Show when={searchable()}>
-                    {() => {
-                      onCleanup(() => {
-                        if (document.activeElement === searchRef)
-                          queueMicrotask(() => {
-                            if (popover.open()) popover.trigger()?.focus();
+                    <div class="k2b-choice-search k2b-rich-select__search">
+                      <i class="ti ti-search" aria-hidden="true" />
+                      <input
+                        ref={(input) => {
+                          searchRef = input;
+                          onCleanup(() => {
+                            if (document.activeElement === input)
+                              queueMicrotask(() => {
+                                if (popover.open()) popover.trigger()?.focus();
+                              });
                           });
-                      });
-                      return (
-                        <div class="k2b-choice-search k2b-rich-select__search">
-                          <i class="ti ti-search" aria-hidden="true" />
-                          <input
-                            ref={searchRef}
-                            type="search"
-                            role="combobox"
-                            aria-expanded={popover.open()}
-                            aria-autocomplete="list"
-                            value={query()}
-                            placeholder={props.searchPlaceholder ?? messages().search}
-                            aria-label={props.searchPlaceholder ?? messages().search}
-                            aria-controls={listboxId}
-                            aria-activedescendant={activeItem() ? optionId(active()) : undefined}
-                            autocomplete="off"
-                            onInput={(event) => {
-                              setQuery(event.currentTarget.value);
-                              setActive(visible().length > 0 ? 0 : -1);
-                            }}
-                          />
-                        </div>
-                      );
-                    }}
+                        }}
+                        type="search"
+                        role="combobox"
+                        aria-expanded={popover.open()}
+                        aria-autocomplete="list"
+                        value={query()}
+                        placeholder={props.searchPlaceholder ?? messages().search}
+                        aria-label={props.searchPlaceholder ?? messages().search}
+                        aria-controls={listboxId}
+                        aria-activedescendant={activeItem() ? optionId(active()) : undefined}
+                        autocomplete="off"
+                        onInput={(event) => {
+                          setQuery(event.currentTarget.value);
+                          setActive(visible().length > 0 ? 0 : -1);
+                        }}
+                      />
+                    </div>
                   </Show>
                   <div
                     id={listboxId}
