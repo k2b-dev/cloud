@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { launchBrowser } from "../../../ui/test/browser";
 import { buildWorkspaceHarness, origin, workspaceFixture } from "./PulseWorkspace.browser-fixture";
+import { sqlTestLimits } from "./workspace/sql-test-fixtures";
 import type { PulseWorkspaceProps } from "./workspace/types";
 
 // The post-cut base page: sources with their status, one source in detail, and the in-place hint where
@@ -142,13 +143,19 @@ describe("Pulse base page after the cut", () => {
       views[1]!,
       { ...workspaceFixture, initialBases: [clearing], initialRouteState: { view: "coming-back", sourceId: "" } },
       "de",
-      (url) => (new URL(url).pathname === "/api/pulse/bases" ? { status: 200, json: [failed] } : { status: 500, json: {} }),
+      (url) => {
+        const path = new URL(url).pathname;
+        if (path === "/api/pulse/bases") return { status: 200, json: [failed] };
+        if (path.endsWith("/sql/limits")) return { status: 200, json: sqlTestLimits };
+        return { status: 500, json: {} };
+      },
     );
     try {
       await tab.getByRole("button", { name: "Einstellungen" }).click();
       const settings = tab.locator("dialog[open]");
       const retry = settings.getByRole("button", { name: "Erneut versuchen" });
       await settings.getByText("Allgemein").first().waitFor();
+      await settings.getByRole("tab", { name: "Nutzung und Grenzen", exact: true }).click();
       expect(await retry.count()).toBe(0);
       await tab.clock.runFor(5_100);
       await retry.waitFor();
