@@ -53,9 +53,13 @@ stops cleanly in that time, the shared entries stay until their own 180-second
 TTL ends, and the gateway answers the app's routes with 502 upstream errors.
 Shared entries also expire after 180 seconds if no replica renews them.
 
-During a rollout, the most recently started instance's entry wins. Starting
-writes the entry; refresh only renews it. Repair writes it only when it is
-missing.
+During a rollout, the most recently started live instance's entry wins.
+Starting writes the entry; refresh only renews it. Repair writes it only when it
+is missing. When the instance that wrote the current entry stops while others
+run, a remaining replica replaces the entry with its own on its next refresh,
+within 60 seconds. After a crash, this happens once the crashed instance's
+liveness key has aged out. Until then, the departed instance's routes and
+capability manifest stay published.
 
 The gateway rebuilds its route table when registry entries change. It renews
 its own operations snapshot every five seconds, including when the registry is

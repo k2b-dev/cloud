@@ -47,16 +47,20 @@ integration(
         const lock = sync.mutex(APP_MEMBERSHIP_LOCK_CONFIG);
         await bounded(sync.ready(), "Sync ready");
         const membership = createRegistryMembership("test", { registry: () => instances, lock: () => lock, instanceId, startedAt: 0 });
-        const options = { membership, intervalMs: 3_600_000 };
+        const options = { membership, intervalMs: 300 };
         const app = createHeartbeat("test", { instanceId }, { ...options, registry: apps });
         const capability = createHeartbeat("test", { instanceId }, { ...options, registry: capabilities, key: "capabilities/test" });
         heartbeats.push(app, capability);
-        await bounded(capability.start(), "Capability start");
-        await bounded(app.start(), "App start");
+        const start = async () => {
+          await bounded(capability.start(), "Capability start");
+          await bounded(app.start(), "App start");
+        };
+        await start();
         return {
           apps,
           instances,
           capabilities,
+          start,
           stop: async () => {
             await app.stop();
             await capability.stop();
@@ -92,11 +96,41 @@ integration(
       const apps = observe(b.apps, "apps/"),
         capabilities = observe(b.capabilities, "capabilities/");
       await bounded(Promise.all([apps.ready, capabilities.ready]), "Initial registry watch replay");
+      const values = async () =>
+        Promise.all(
+          ([a.apps, a.capabilities] as const).map(async (registry, index) => {
+            const key = index === 0 ? "apps/test" : "capabilities/test";
+            const snapshot = await bounded(registry.snapshot({ prefix: key }), "Shared entry snapshot");
+            return snapshot.entries.find((entry) => entry.key === key)?.value;
+          }),
+        );
+      await bounded(Bun.sleep(900), "Multiple live refresh intervals");
+      expect(await values()).toEqual([{ instanceId: "b" }, { instanceId: "b" }]);
+      await bounded(b.stop(), "Stop publisher B");
+      const adoptionDeadline = performance.now() + 5_000;
+      await bounded(
+        (async () => {
+          while (!(await values()).every((value) => value?.instanceId === "a")) {
+            if (performance.now() >= adoptionDeadline) throw new Error("A did not adopt both orphaned entries");
+            await bounded(Bun.sleep(25), "Adoption poll interval");
+          }
+        })(),
+        "A adopts both orphaned entries",
+        6_000,
+      );
+      expect(await values()).toEqual([{ instanceId: "a" }, { instanceId: "a" }]);
+      for (const watch of [apps, capabilities]) {
+        expect(
+          watch.events.filter((event) => event.type === "delete" || event.type === "expire" || event.type === "resync_required"),
+        ).toEqual([]);
+      }
+      // Repeat the original stop ordering after B returns, preserving the last-replica watch assertions.
+      await bounded(b.start(), "Restart B");
       await bounded(a.stop(), "Stop A");
       expect(
         (await bounded(b.instances.snapshot({ prefix: appInstancePrefix("test") }), "Instance snapshot")).entries.map(({ key }) => key),
       ).toEqual([`${appInstancePrefix("test")}b`]);
-      await Bun.sleep(200);
+      await bounded(Bun.sleep(200), "Survivor watch observation");
       for (const watch of [apps, capabilities]) {
         expect(
           watch.events.filter((event) => event.type === "delete" || event.type === "expire" || event.type === "resync_required"),

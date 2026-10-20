@@ -54,7 +54,13 @@ export const appInstancePrefix = (appId: string): string => {
   return `${APP_INSTANCE_PREFIX}${segment}/`;
 };
 
-export type AppInstanceRecord = { appId: string; instanceId: string; hostname: string; startedAt: number };
+export type AppInstanceRecord = {
+  appId: string;
+  instanceId: string;
+  hostname: string;
+  startedAt: number;
+  entries: Record<string, string>;
+};
 
 // The id and owner are a cross-version contract: all replicas must use the same lock.
 // TTL and retry are local budgets; Sync's drift identity is [id, owner, replicas].

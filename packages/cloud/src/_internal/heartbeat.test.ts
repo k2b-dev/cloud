@@ -465,7 +465,7 @@ describe("replica membership", () => {
 
   const fixture = () => {
     // Separate ephemerals share one fake server; instances use the apps ephemeral.
-    const stores = new Map<string, Map<string, { value: unknown; expires: number }>>();
+    const stores = new Map<string, Map<string, { value: string; expires: number }>>();
     const assertName = (key: string) => {
       if (Buffer.byteLength(key, "utf8") > 96) throw new Error("Sync name exceeds 96 bytes");
     };
@@ -482,7 +482,7 @@ describe("replica membership", () => {
       return {
         upsert: async ({ key, value }: { key: string; value: unknown }) => {
           assertName(key);
-          records.set(key, { value, expires: Date.now() + APP_REGISTRY_TTL_MS });
+          records.set(key, { value: JSON.stringify(value), expires: Date.now() + APP_REGISTRY_TTL_MS });
         },
         touch: async ({ key }: { key: string }) => {
           assertName(key);
@@ -499,7 +499,9 @@ describe("replica membership", () => {
         snapshot: async ({ prefix }: { prefix: string }) => {
           assertName(prefix);
           sweep();
-          return { entries: [...records].filter(([key]) => key.startsWith(prefix)).map(([key, row]) => ({ key, value: row.value })) };
+          return {
+            entries: [...records].filter(([key]) => key.startsWith(prefix)).map(([key, row]) => ({ key, value: JSON.parse(row.value) })),
+          };
         },
       };
     };
@@ -568,8 +570,131 @@ describe("replica membership", () => {
       };
     };
     const keys = async (registry = apps, prefix = "") => (await registry.snapshot({ prefix })).entries.map(({ key }) => key).sort();
-    return { apps, capabilities, instances, lock, contended, process, keys };
+    const values = async () => [
+      (await apps.snapshot({ prefix: "apps/test" })).entries.find(({ key }) => key === "apps/test")?.value,
+      (await capabilities.snapshot({ prefix: "capabilities/test" })).entries.find(({ key }) => key === "capabilities/test")?.value,
+    ];
+    return { apps, capabilities, instances, lock, contended, process, keys, values };
   };
+
+  test("an older replica adopts both differing manifests after the newer publisher stops", async () => {
+    const f = fixture();
+    const a = f.process("vA", 500, 2),
+      b = f.process("vB");
+    await a.start();
+    await b.start();
+    await b.stop();
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
+
+    const adopted = new Set<string>();
+    for (const registry of [f.apps, f.capabilities]) {
+      const upsert = registry.upsert;
+      registry.upsert = async (input) => {
+        await upsert(input);
+        adopted.add(input.key);
+      };
+    }
+    await waitUntil(() => adopted.size === 2);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vA" }]);
+  });
+
+  test("different live replicas never flip the newer publisher's shared entries on refresh", async () => {
+    const f = fixture();
+    const a = f.process("vA", 500, 2),
+      b = f.process("vB", 500, 2);
+    await a.start();
+    await b.start();
+    const reads: unknown[] = [];
+    const refreshes = new Map<string, number>();
+    const touch = f.instances.touch;
+    f.instances.touch = async (input) => {
+      const result = await touch(input);
+      refreshes.set(input.key, (refreshes.get(input.key) ?? 0) + 1);
+      return result;
+    };
+    for (const registry of [f.apps, f.capabilities]) {
+      const snapshot = registry.snapshot;
+      registry.snapshot = async (input) => {
+        const result = await snapshot(input);
+        if (input.prefix === "apps/test" || input.prefix === "capabilities/test") reads.push(result.entries[0]?.value);
+        return result;
+      };
+    }
+    // Both heartbeats of both replicas refresh through several complete intervals.
+    await waitUntil(() => ["vA", "vB"].every((id) => (refreshes.get(`${appInstancePrefix("test")}${id}`) ?? 0) >= 8));
+    expect(reads.length).toBeGreaterThanOrEqual(16);
+    for (const value of reads) expect(value).toHaveProperty("instanceId", "vB");
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
+  });
+
+  test("a crashed publisher's entries are adopted only after its liveness TTL expires", async () => {
+    const f = fixture();
+    const a = f.process("vA", 500, 2),
+      b = f.process("vB");
+    await a.start();
+    await b.start();
+    // As in the crash tests below, B's long timers never fire and it never leaves.
+    setSystemTime(new Date(epoch + APP_REGISTRY_TTL_MS - 1));
+    const touched = new Set<string>();
+    for (const registry of [f.apps, f.capabilities]) {
+      const touch = registry.touch;
+      registry.touch = async (input) => {
+        const result = await touch(input);
+        if (result) touched.add(input.key);
+        return result;
+      };
+    }
+    await waitUntil(() => touched.size === 2);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
+    const adopted = new Set<string>();
+    for (const registry of [f.apps, f.capabilities]) {
+      const upsert = registry.upsert;
+      registry.upsert = async (input) => {
+        await upsert(input);
+        adopted.add(input.key);
+      };
+    }
+    setSystemTime(new Date(epoch + APP_REGISTRY_TTL_MS + 1));
+    await waitUntil(() => adopted.size === 2);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vA" }]);
+  });
+
+  test("adoption rechecks an orphan under the lock so a concurrent newer start wins", async () => {
+    const f = fixture();
+    const a = f.process("vA", 500, 2),
+      b = f.process("vB"),
+      c = f.process("vC");
+    await a.start();
+    await b.start();
+    await b.stop();
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const snapshot = f.instances.snapshot;
+    let pause = true;
+    f.instances.snapshot = async (input) => {
+      const result = await snapshot(input);
+      if (pause) {
+        pause = false;
+        entered.resolve();
+        await release.promise;
+      }
+      return result;
+    };
+    await entered.promise;
+    try {
+      await c.start();
+    } finally {
+      release.resolve();
+    }
+    let refreshes = 0;
+    const touch = f.apps.touch;
+    f.apps.touch = async (input) => {
+      refreshes++;
+      return touch(input);
+    };
+    await waitUntil(() => refreshes >= 2);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vC" }, { instanceId: "vC" }]);
+  });
 
   test("stopping one process preserves both entries; the last stop removes both and all instance keys", async () => {
     const f = fixture();
@@ -846,7 +971,7 @@ describe("replica membership", () => {
     expect(await f.keys()).toEqual(["apps/test", `${appInstancePrefix("test")}a`]);
     await a.stop();
     await a.membership.renew();
-    await a.membership.publish(() => f.apps.upsert({ key: "apps/test", value: entry }));
+    await a.membership.publish("apps/test", entry, () => f.apps.upsert({ key: "apps/test", value: entry }));
     expect(await f.keys()).toEqual([]);
   });
 });

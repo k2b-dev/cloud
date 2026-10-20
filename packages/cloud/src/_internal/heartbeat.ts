@@ -1,6 +1,6 @@
 /** Keep an app discoverable even when the ephemeral registry is recreated. */
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { APP_REGISTRY_TTL_MS, type AppInstanceRecord, appInstancePrefix } from "./registry";
 
@@ -17,9 +17,13 @@ type HeartbeatRegistry<T> = {
   delete: (input: { key: string }) => Promise<unknown>;
 };
 
-type MembershipRegistry = HeartbeatRegistry<AppInstanceRecord> & {
-  snapshot: (input: { prefix: string }) => Promise<{ entries: { key: string }[] }>;
+type SnapshotRegistry<T> = {
+  snapshot: (input: { prefix: string }) => Promise<{ entries: { key: string; value: T }[] }>;
 };
+
+type MembershipRegistry = HeartbeatRegistry<AppInstanceRecord> & SnapshotRegistry<AppInstanceRecord>;
+
+const entryDigest = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("base64url");
 
 type MembershipLock = {
   withLock: <T>(
@@ -48,6 +52,7 @@ export const createRegistryMembership = (
     instanceId,
     hostname: options.hostname ?? hostname(),
     startedAt: options.startedAt ?? Date.now(),
+    entries: {},
   };
   const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;
   if (!Number.isFinite(writeTimeoutMs) || writeTimeoutMs <= 0) throw new RangeError("Membership write timeout must be positive and finite");
@@ -65,17 +70,42 @@ export const createRegistryMembership = (
   const upsert = () => options.registry().upsert({ key, value });
 
   return {
-    join: async (write: () => Promise<unknown>): Promise<void> => {
+    join: async (sharedKey: string, sharedValue: unknown, write: () => Promise<unknown>): Promise<void> => {
       left = false;
       await locked(async () => {
+        value.entries[sharedKey] = entryDigest(sharedValue);
         await upsert();
         await write();
       });
     },
-    publish: async (write: () => Promise<unknown>): Promise<void> => {
+    publish: async (sharedKey: string, sharedValue: unknown, write: () => Promise<unknown>): Promise<void> => {
       if (left) return;
       await locked(async () => {
         if (left) return;
+        value.entries[sharedKey] = entryDigest(sharedValue);
+        await upsert();
+        await write();
+      });
+    },
+    adopt: async (sharedKey: string, read: () => Promise<{ value: unknown } | undefined>, write: () => Promise<unknown>): Promise<void> => {
+      if (left) return;
+      // A departed publisher must not pin its manifest forever; a live publisher keeps newest-start precedence.
+      const orphaned = async (): Promise<boolean> => {
+        const stored = await read();
+        if (!stored) return false;
+        const digest = entryDigest(stored.value);
+        if (digest === value.entries[sharedKey]) return false;
+        const snapshot = await options.registry().snapshot({ prefix });
+        return !snapshot.entries.some(({ value }) => value.entries[sharedKey] === digest);
+      };
+      if (!(await orphaned())) return;
+      await locked(async (lock) => {
+        if (left) return;
+        const stillOrphaned = await orphaned();
+        if (left || !stillOrphaned) return;
+        if (Date.now() > lock.expiresAt.getTime() - writeTimeoutMs / 2) {
+          throw new Error("membership lease expired during adoption; shared entry left to its TTL");
+        }
         await upsert();
         await write();
       });
@@ -108,8 +138,6 @@ export const createRegistryMembership = (
 };
 
 type HeartbeatOptions<T> = {
-  registry: HeartbeatRegistry<T>;
-  membership?: ReturnType<typeof createRegistryMembership>;
   key?: string;
   /** Publish dependent data before advertising or renewing the app. */
   beforeWrite?: () => Promise<void>;
@@ -119,7 +147,10 @@ type HeartbeatOptions<T> = {
   writeTimeoutMs?: number;
   onError?: (error: unknown) => void;
   onStale?: (error: unknown) => void;
-};
+} & (
+  | { registry: HeartbeatRegistry<T>; membership?: undefined }
+  | { registry: HeartbeatRegistry<T> & SnapshotRegistry<T>; membership: ReturnType<typeof createRegistryMembership> }
+);
 
 export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOptions<T>) => {
   const intervalMs = options.intervalMs ?? HEARTBEAT_INTERVAL_MS;
@@ -153,22 +184,29 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
 
   const register = async (): Promise<void> => {
     await options.beforeWrite?.();
-    if (options.membership) await options.membership.join(upsert);
+    if (options.membership) await options.membership.join(key, entry, upsert);
     else await upsert();
     noteSuccess();
   };
 
   const refresh = async (): Promise<void> => {
     // Touch renews the existing entry (and emits a registry invalidation).
-    // Newest start wins: refresh only touches; only a missing entry is republished.
     // Avoid rebuilding the manifest here. A missing entry is repaired
-    // immediately, preserving restart-free registry recovery.
+    // immediately, preserving restart-free registry recovery. The newest live
+    // publisher wins; an entry whose publisher left is replaced by this one.
     await options.beforeWrite?.();
     await options.membership?.renew();
     const touched = await registry.touch({ key });
     if (!touched) {
-      if (options.membership) await options.membership.publish(upsert);
+      if (options.membership) await options.membership.publish(key, entry, upsert);
       else await upsert();
+    } else if (options.membership) {
+      const registry = options.registry;
+      await options.membership.adopt(
+        key,
+        async () => (await registry.snapshot({ prefix: key })).entries.find((candidate) => candidate.key === key),
+        upsert,
+      );
     }
     noteSuccess();
   };
