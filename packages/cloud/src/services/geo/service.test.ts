@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { GeoGeocodeDataSchema, type GeoPlaceSearchInput, GEO_MAX_POLYLINE_CHARS } from "../../contracts/geo";
+import { z } from "zod";
+import { GeoGeocodeDataSchema, GeoPlaceSearchDataSchema, type GeoPlaceSearchInput, GEO_MAX_POLYLINE_CHARS } from "../../contracts/geo";
 import * as settingsStore from "../settings/store";
 import { createGeoBucket } from "./bucket";
 import { createGeoCache, geoCacheKey } from "./cache";
@@ -9,7 +10,7 @@ import geocode from "./fixtures/geocode.json";
 import places from "./fixtures/places.json";
 import { GeoapifyAdapter } from "./geoapify";
 import { createGeoService } from "./service";
-import { cutGeoWindow, decodePolyline6, simplifyGeoLine } from "./polyline";
+import { cutGeoWindow, decodePolyline6, locateOnGeoLine, simplifyGeoLine } from "./polyline";
 import { readGeoConfig } from "./settings";
 import { encodeGeoTestLine, geoTestConfig, geoTestContext, GEO_TEST_KEY, GEO_TEST_NOW } from "./geo.test-fixture";
 
@@ -320,6 +321,53 @@ test("along uses window on full-route distance and filters/orders corridor hits"
   expect(result.places.map((p) => p.point.lon)).toEqual([0.4, 0.6, 0.8]);
   expect(result.places[0]!.atMeters).toBeCloseTo(44478, 0);
   expect(result.places.every((p) => p.distanceToRouteMeters! < 1)).toBeTrue();
+});
+test("along widens the provider corridor for simplification and filters against the original route", async () => {
+  const route = Array.from({ length: 3001 }, (_, i) => ({ lat: (i % 2) * 0.0001, lon: i * 0.000005 }));
+  const along = { polyline6: encodeGeoTestLine(route), fromKm: 0, toKm: 100, bufferMeters: 100 };
+  const cut = cutGeoWindow(decodePolyline6(along.polyline6), 0, 100000);
+  const features = [92, 108].map((distance) => ({
+    ...places.features[0]!,
+    properties: {
+      ...places.features[0]!.properties,
+      lat: 0.0001 + (distance / 6_371_008.8) * (180 / Math.PI),
+      lon: route[1001]!.lon,
+      place_id: `corridor-${distance}`,
+    },
+  }));
+  let providerBuffer = 0,
+    providerHits = 0;
+  const f = setup({
+    adapter: new GeoapifyAdapter({
+      now: () => GEO_TEST_NOW,
+      fetch: async (_url, init) => {
+        const { filter } = z
+          .object({
+            filter: z.object({
+              buffer: z.number(),
+              geometry: z.object({ coordinates: z.array(z.tuple([z.number(), z.number()])) }),
+            }),
+          })
+          .parse(JSON.parse(String(init.body)));
+        const line = filter.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
+        expect(line.length).toBeLessThanOrEqual(2000);
+        const point = features[0]!.properties;
+        expect(locateOnGeoLine(point, cut).distanceToRouteMeters).toBeCloseTo(92, 0);
+        expect(locateOnGeoLine(point, line).distanceToRouteMeters).toBeGreaterThan(100);
+        providerBuffer = filter.buffer;
+        const hits = features.filter((feature) => locateOnGeoLine(feature.properties, line).distanceToRouteMeters <= filter.buffer);
+        providerHits = hits.length;
+        return Response.json({ ...places, features: hits });
+      },
+    }),
+  });
+  const result = GeoPlaceSearchDataSchema.parse(await f.service.searchPlaces({ categories: ["museum"], along }, geoTestContext));
+  expect(result.simplificationToleranceMeters).toBeGreaterThan(0);
+  expect(providerBuffer).toBe(132);
+  expect(providerHits).toBe(2);
+  expect(result.places.map((place) => place.id)).toEqual(["corridor-92"]);
+  expect(result.places[0]!.distanceToRouteMeters).toBeCloseTo(92, 0);
+  expect(along.bufferMeters).toBe(100);
 });
 test("along cache keys distinguish original routes that simplify to the same line", async () => {
   const routes = [1, -1].map((direction) =>

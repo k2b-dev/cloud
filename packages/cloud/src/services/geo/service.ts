@@ -244,7 +244,19 @@ export const createGeoService = (
         settings,
         GeoPlaceSearchDataSchema,
         async (signal) => {
-          const result = await adapter.places(value, settings.apiKey, context.locale ?? "en", signal, simplified?.line);
+          // Radial reduction and Douglas–Peucker can each move the line by one tolerance.
+          // Widen the provider corridor to cover the original cut; filter locally with the requested buffer.
+          const providerInput =
+            along && simplified
+              ? {
+                  ...value,
+                  along: {
+                    ...along,
+                    bufferMeters: Math.min(100000, Math.ceil((along.bufferMeters ?? 1000) + 2 * simplified.toleranceMeters)),
+                  },
+                }
+              : value;
+          const result = await adapter.places(providerInput, settings.apiKey, context.locale ?? "en", signal, simplified?.line);
           if (!cut || !along) return result;
           const places = result.places
             .map((place) => {

@@ -90,7 +90,9 @@ the tolerance until it fits. A dense full route is allowed within
 the raw string budget. A window starting beyond the route is unsupported;
 a window ending beyond it stops at the route's end.
 
-Core sends a Places POST with `filter.type: "polyline"` and the buffer.
+Core sends a Places POST with `filter.type: "polyline"`, widening the provider
+buffer by twice the simplification tolerance (rounded up, capped at 100,000 m),
+then filters hits against the original window with the requested buffer.
 It orders hits by `atMeters`, the position on the full route, and returns
 `distanceToRouteMeters`, a straight-line distance rather than a driving detour.
 The result includes `simplificationToleranceMeters`.

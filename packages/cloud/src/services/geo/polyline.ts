@@ -38,10 +38,19 @@ export const decodePolyline6 = (encoded: string): GeoPoint[] => {
   if (points.length < 2) throw new GeoError("GEO_UNSUPPORTED_OPTION");
   return points;
 };
-const interpolate = (a: GeoPoint, b: GeoPoint, t: number): GeoPoint => ({
-  lat: a.lat + (b.lat - a.lat) * t,
-  lon: longitudeDelta(a.lon + longitudeDelta(b.lon - a.lon) * t),
-});
+const interpolate = (a: GeoPoint, b: GeoPoint, t: number): GeoPoint => {
+  if (t === 0) return a;
+  if (t === 1) return b;
+  const angle = geoDistance(a, b) / R;
+  if (!angle) return a;
+  // Spherical linear interpolation uses the same great-circle distance as the window.
+  const from = Math.sin((1 - t) * angle) / Math.sin(angle),
+    to = Math.sin(t * angle) / Math.sin(angle);
+  const x = from * Math.cos(a.lat * rad) * Math.cos(a.lon * rad) + to * Math.cos(b.lat * rad) * Math.cos(b.lon * rad),
+    y = from * Math.cos(a.lat * rad) * Math.sin(a.lon * rad) + to * Math.cos(b.lat * rad) * Math.sin(b.lon * rad),
+    z = from * Math.sin(a.lat * rad) + to * Math.sin(b.lat * rad);
+  return { lat: Math.atan2(z, Math.hypot(x, y)) / rad, lon: Math.atan2(y, x) / rad };
+};
 export const cutGeoWindow = (points: readonly GeoPoint[], fromMeters: number, toMeters: number): GeoPoint[] => {
   const output: GeoPoint[] = [];
   let at = 0;
@@ -67,7 +76,13 @@ const segmentProjection = (point: GeoPoint, a: GeoPoint, b: GeoPoint) => {
   const px = longitudeDelta(point.lon - a.lon) * rad * R * scale,
     py = (point.lat - a.lat) * rad * R;
   const t = x || y ? Math.max(0, Math.min(1, (px * x + py * y) / (x * x + y * y))) : 0;
-  return { t, distance: geoDistance(point, interpolate(a, b, t)) };
+  return {
+    t,
+    distance: geoDistance(point, {
+      lat: a.lat + (b.lat - a.lat) * t,
+      lon: longitudeDelta(a.lon + longitudeDelta(b.lon - a.lon) * t),
+    }),
+  };
 };
 export const locateOnGeoLine = (point: GeoPoint, line: readonly GeoPoint[]) => {
   let at = 0,

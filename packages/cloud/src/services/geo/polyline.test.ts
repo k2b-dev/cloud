@@ -25,6 +25,17 @@ test("window interpolation and route position are in meters", () => {
   expect(locateOnGeoLine({ lat: 0, lon: 0.3 }, points).atMeters).toBeCloseTo(33358.5, 0);
   expect(() => cutGeoWindow(points, 200000, 250000)).toThrow();
 });
+test("window interpolation follows great-circle distance on long diagonal segments", () => {
+  const cut = cutGeoWindow(
+    [
+      { lat: 0, lon: 0 },
+      { lat: 80, lon: 80 },
+    ],
+    0,
+    100000,
+  );
+  expect(Math.abs(geoDistance(cut[0]!, cut[1]!) - 100000)).toBeLessThanOrEqual(1);
+});
 test("cut first and simplify dense lines to at most 2,000 points", () => {
   const points = Array.from({ length: 10001 }, (_, i) => ({ lat: 49 + Math.sin(i) * 0.0001, lon: 12 + i * 0.00001 }));
   const decoded = decodePolyline6(encodeGeoTestLine(points));
