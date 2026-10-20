@@ -24,6 +24,7 @@ type SnapshotRegistry<T> = {
 type MembershipRegistry = HeartbeatRegistry<AppInstanceRecord> & SnapshotRegistry<AppInstanceRecord>;
 
 type SharedEntry = {
+  read: () => Promise<{ value: unknown } | undefined>;
   write: () => Promise<unknown>;
   remove: () => Promise<unknown>;
   prepare: (() => Promise<void>) | undefined;
@@ -110,23 +111,28 @@ export const createRegistryMembership = (
         await publishShared();
       });
     },
-    adopt: async (sharedKey: string, read: () => Promise<{ value: unknown } | undefined>): Promise<void> => {
+    adopt: async (sharedKey: string): Promise<void> => {
       if (left) return;
-      // A departed publisher must not pin its manifest forever; a live publisher keeps newest-start precedence.
-      const orphaned = async (): Promise<boolean> => {
-        const stored = await read();
-        if (!stored) return false;
-        const digest = entryDigest(stored.value);
-        if (digest === value.entries[sharedKey]) return false;
+      // The stored pair must come from one live process. Late writes after an expired
+      // lease can split it; checking all entries together heals that split.
+      const needsRepublish = async (): Promise<boolean> => {
+        const stored = await Promise.all(
+          [...sharedEntries].map(async ([key, { read }]) => {
+            const entry = await read();
+            return { key, digest: entry ? entryDigest(entry.value) : undefined };
+          }),
+        );
+        if (stored.some(({ digest }) => digest === undefined)) return false;
+        if (stored.every(({ key, digest }) => digest === value.entries[key])) return false;
         const snapshot = await options.registry().snapshot({ prefix });
-        return !snapshot.entries.some(({ value }) => value.entries[sharedKey] === digest);
+        return !snapshot.entries.some(({ value }) => stored.every(({ key, digest }) => value.entries[key] === digest));
       };
-      if (!(await orphaned())) return;
+      if (!(await needsRepublish())) return;
       await prepareShared(sharedKey);
       await locked(async (lock) => {
         if (left) return;
-        const stillOrphaned = await orphaned();
-        if (left || !stillOrphaned) return;
+        const stillNeedsRepublish = await needsRepublish();
+        if (left || !stillNeedsRepublish) return;
         if (Date.now() > lock.expiresAt.getTime() - writeTimeoutMs / 2) {
           throw new Error("membership lease expired during adoption; shared entry left to its TTL");
         }
@@ -209,13 +215,15 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
 
   const register = async (): Promise<void> => {
     await options.beforeWrite?.();
-    if (options.membership)
+    if (options.membership) {
+      const registry = options.registry;
       await options.membership.join(key, entry, {
+        read: async () => (await registry.snapshot({ prefix: key })).entries.find((candidate) => candidate.key === key),
         write: upsert,
         remove: () => registry.delete({ key }),
         prepare: options.beforeWrite,
       });
-    else await upsert();
+    } else await upsert();
     noteSuccess();
   };
 
@@ -231,10 +239,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
       if (options.membership) await options.membership.publish(key);
       else await upsert();
     } else if (options.membership) {
-      const registry = options.registry;
-      await options.membership.adopt(key, async () =>
-        (await registry.snapshot({ prefix: key })).entries.find((candidate) => candidate.key === key),
-      );
+      await options.membership.adopt(key);
     }
     noteSuccess();
   };

@@ -749,6 +749,108 @@ describe("replica membership", () => {
     expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vA" }]);
   });
 
+  test("refresh heals a split pair after an adopting app write outlives its lock lease", async () => {
+    const f = fixture();
+    const errors: unknown[] = [];
+    // Scale the production 10 s lease down; the fake lock still expires on its timer.
+    const a = f.process("vA", 30, { app: 3_600_000, capability: 5 }, "test", {
+      onCapabilityError: (error) => errors.push(error),
+    });
+    const departed = f.process("departed"),
+      b = f.process("vB");
+    await a.start();
+    await departed.start();
+    await departed.stop();
+
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>(),
+      landed = Promise.withResolvers<void>(),
+      resume = Promise.withResolvers<void>();
+    const upsert = f.apps.upsert;
+    let pause = true;
+    f.apps.upsert = async (input) => {
+      const stalled = pause;
+      if (stalled) {
+        pause = false;
+        entered.resolve();
+        await release.promise;
+      }
+      await upsert(input);
+      if (stalled) landed.resolve();
+    };
+    let refreshes = 0;
+    const touch = f.capabilities.touch;
+    try {
+      await entered.promise;
+      // Hold retries until the late write lands so the split is observable.
+      f.capabilities.touch = async (input) => {
+        await resume.promise;
+        refreshes++;
+        return touch(input);
+      };
+      const joining = b.start();
+      await f.contended.promise;
+      await joining;
+      await waitUntil(() => errors.length > 0);
+      expect(errors[0]).toEqual(new Error("Registry write timed out after 30ms"));
+      expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
+      release.resolve();
+      await landed.promise;
+      expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vB" }]);
+
+      resume.resolve();
+      await waitUntil(() => refreshes >= 8);
+      expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vA" }]);
+      refreshes = 0;
+      await waitUntil(() => refreshes >= 8);
+      expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vA" }]);
+    } finally {
+      release.resolve();
+      resume.resolve();
+    }
+  });
+
+  test("refresh heals entries from different live joiners and keeps the resulting pair stable", async () => {
+    const f = fixture();
+    const a = f.process("vA", 500, { app: 2, capability: 17 }),
+      b = f.process("vB", 500, { app: 19, capability: 3 });
+    await a.capability.start();
+    await b.capability.start();
+    await b.app.start();
+    await a.app.start();
+    // Model late writes from interleaved joins: both digests have live owners.
+    await f.apps.upsert({ key: "apps/test", value: { ...entry, instanceId: "vA" } });
+    await f.capabilities.upsert({ key: "capabilities/test", value: { instanceId: "vB" } });
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vA" }, { instanceId: "vB" }]);
+
+    const refreshes = new Map<string, number>();
+    const touch = f.instances.touch;
+    f.instances.touch = async (input) => {
+      const result = await touch(input);
+      refreshes.set(input.key, (refreshes.get(input.key) ?? 0) + 1);
+      return result;
+    };
+    const refreshed = () => ["vA", "vB"].every((id) => (refreshes.get(`${appInstancePrefix("test")}${id}`) ?? 0) >= 16);
+    await waitUntil(refreshed);
+    const adopted = await f.values();
+    const winner = adopted[0]?.instanceId;
+    expect(["vA", "vB"]).toContain(winner);
+    expect(adopted).toEqual([{ ...entry, instanceId: winner }, { instanceId: winner }]);
+
+    let writes = 0;
+    for (const registry of [f.apps, f.capabilities]) {
+      const upsert = registry.upsert;
+      registry.upsert = async (input) => {
+        writes++;
+        return upsert(input);
+      };
+    }
+    refreshes.clear();
+    await waitUntil(refreshed);
+    expect(await f.values()).toEqual(adopted);
+    expect(writes).toBe(0);
+  });
+
   test("different live replicas never flip the newer publisher's shared entries on refresh", async () => {
     const f = fixture();
     const a = f.process("vA", 500, 2),
@@ -775,6 +877,46 @@ describe("replica membership", () => {
     await waitUntil(() => ["vA", "vB"].every((id) => (refreshes.get(`${appInstancePrefix("test")}${id}`) ?? 0) >= 8));
     expect(reads.length).toBeGreaterThanOrEqual(16);
     for (const value of reads) expect(value).toHaveProperty("instanceId", "vB");
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
+  });
+
+  test("adoption reads each shared key once and snapshots instances only for a complete foreign pair", async () => {
+    const f = fixture();
+    const a = f.process("vA"),
+      b = f.process("vB");
+    await a.start();
+    const reads: string[] = [];
+    for (const registry of [f.apps, f.capabilities]) {
+      const snapshot = registry.snapshot;
+      registry.snapshot = async (input) => {
+        reads.push(input.prefix);
+        return snapshot(input);
+      };
+    }
+    let instanceReads = 0;
+    const snapshot = f.instances.snapshot;
+    f.instances.snapshot = async (input) => {
+      instanceReads++;
+      return snapshot(input);
+    };
+
+    await a.membership.adopt("apps/test");
+    expect(reads.sort()).toEqual(["apps/test", "capabilities/test"]);
+    expect(instanceReads).toBe(0);
+
+    await f.capabilities.delete({ key: "capabilities/test" });
+    reads.length = 0;
+    await a.membership.adopt("apps/test");
+    expect(reads.sort()).toEqual(["apps/test", "capabilities/test"]);
+    expect(instanceReads).toBe(0);
+    // Adoption leaves missing entries to their heartbeat's whole-pair publish.
+    expect((await f.capabilities.snapshot({ prefix: "capabilities/test" })).entries).toEqual([]);
+
+    await b.start();
+    reads.length = 0;
+    await a.membership.adopt("capabilities/test");
+    expect(reads.sort()).toEqual(["apps/test", "capabilities/test"]);
+    expect(instanceReads).toBe(1);
     expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
   });
 
