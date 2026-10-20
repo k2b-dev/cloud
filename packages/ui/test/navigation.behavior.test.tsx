@@ -58,13 +58,19 @@ test("container context updates in place without selecting or disabling a destin
 describe("Navigation", () => {
   test("keeps row focus across snapshots and performs actions only after host dismissal", async () => {
     const dom = createDomTestHarness();
+    // Importing a cached component does not register its delegated click on a new document.
+    delegateEvents(["click"], dom.document);
     const { default: Navigation } = await import("../src/layout/Navigation");
     const [items, setItems] = createSignal<NavigationItem[]>([{ id: "new", label: "New", action: "new", badge: 1 }]);
     const events: string[] = [];
+    const dismissal = Promise.withResolvers<void>();
+    const actionFinished = Promise.withResolvers<void>();
+    let dismissing = false;
     const nav = createNavigation({
       items,
       onAction: (action) => {
         events.push(action);
+        actionFinished.resolve();
       },
     });
     const dispose = render(
@@ -72,26 +78,35 @@ describe("Navigation", () => {
         <Navigation
           navigation={nav}
           label="App"
-          beforeSelect={() => {
+          beforeSelect={async () => {
+            dismissing = true;
+            await dismissal.promise;
             events.push("closed");
           }}
         />
       ),
       dom.root,
     );
-    const button = dom.root.querySelector<HTMLButtonElement>("button")!;
-    button.focus();
-    setItems([{ id: "new", label: "New", action: "new", badge: 2 }]);
-    expect(dom.document.activeElement).toBe(button);
-    expect(button.textContent).toContain("2");
-    button.click();
-    await Bun.sleep(0);
-    expect(events).toEqual(["closed", "new"]);
-    setItems([{ id: "new", label: "New", action: "new", disabled: true }]);
-    await nav.activate("new");
-    expect(events).toEqual(["closed", "new"]);
-    dispose();
-    dom.cleanup();
+    try {
+      const button = dom.root.querySelector<HTMLButtonElement>("button")!;
+      button.focus();
+      setItems([{ id: "new", label: "New", action: "new", badge: 2 }]);
+      expect(dom.document.activeElement).toBe(button);
+      expect(button.textContent).toContain("2");
+      button.click();
+      expect(dismissing).toBe(true);
+      expect(events).toEqual([]);
+      dismissal.resolve();
+      await actionFinished.promise;
+      expect(events).toEqual(["closed", "new"]);
+      setItems([{ id: "new", label: "New", action: "new", disabled: true }]);
+      await nav.activate("new");
+      expect(events).toEqual(["closed", "new"]);
+    } finally {
+      dismissal.resolve();
+      dispose();
+      dom.cleanup();
+    }
   });
 
   test("parent links and disclosure are separate; modified clicks stay native", async () => {
