@@ -269,9 +269,15 @@ One memoized decision per popstate runs before island handlers, through nav's
 capture listener or listenPopState's wrapper. Same-page entries reach islands;
 nav restores their window scroll first, leaving regions to islands; if the
 departing content clamped it, nav retries once in the next frame unless an
-island scrolled meanwhile. An island that renders the entry asynchronously
-restores its own scroll afterwards, as the browser's restoration would not
-wait for it either. A push through `navigate()` records the departure scroll
+island scrolled meanwhile. An island that renders the entry asynchronously can call
+`deferScrollRestore()` during its `listenPopState` handler and invoke the returned
+completion immediately after its guarded DOM commit. The shared owner keeps the
+arriving snapshot while pending, including another traversal or pagehide before
+commit, and restores it once. New navigation, user input, or uninstall invalidates
+the completion; a same-URL raw replace keeps it. The application still owns data
+cancellation. Without an installed swap the completion is inert. Existing handlers
+remain unchanged; do not introduce an application history map for this case.
+A push through `navigate()` records the departure scroll
 the helper captured before the island changed the page. Allowed cross-page
 and unmarked entries dispatch `ssr:nav-popstate` on window with the
 PopStateEvent as `detail`, so history owners that must see every traversal
