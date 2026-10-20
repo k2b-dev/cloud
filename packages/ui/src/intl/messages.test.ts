@@ -40,6 +40,7 @@ const catalogs = {
   Timeline: (await import("../content/timeline-messages")).checkTimelineMessages,
   Viewport: (await import("../content/viewport-messages")).checkViewportMessages,
   Select: (await import("../inputs/select-messages")).checkSelectMessages,
+  RichSelect: (await import("../inputs/rich-select-messages")).checkRichSelectMessages,
   Completion: (await import("../inputs/completion-messages")).checkCompletionMessages,
   Tag: (await import("../inputs/tag-messages")).checkTagMessages,
   Input: (await import("../inputs/input-messages")).checkInputMessages,
