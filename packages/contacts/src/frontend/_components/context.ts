@@ -51,6 +51,23 @@ export const syncContactDetailFromUrl = () => {
 
 type ContactHistoryMode = "push" | "replace";
 
+const CONTACT_SELECTION_STATE = "contacts.selection";
+let selectionDocumentId: string | undefined;
+
+/** A reloaded or directly linked selection has no matching marker in this document. */
+export const backFromContactDetail = () => {
+  const state: unknown = history.state;
+  if (
+    selectionDocumentId &&
+    state &&
+    typeof state === "object" &&
+    CONTACT_SELECTION_STATE in state &&
+    state[CONTACT_SELECTION_STATE] === selectionDocumentId
+  )
+    history.back();
+  else clearSelectedContactInUrl("replace");
+};
+
 const commitSelectedContactUrl = (contactId: string | null, bookId: string | null, historyMode: ContactHistoryMode) => {
   const url = new URL(window.location.href);
   if (contactId) {
@@ -63,7 +80,15 @@ const commitSelectedContactUrl = (contactId: string | null, bookId: string | nul
   } else {
     url.searchParams.delete("contactBook");
   }
-  if (url.toString() !== window.location.href) history[historyMode === "replace" ? "replaceState" : "pushState"]({}, "", url.toString());
+  if (url.toString() !== window.location.href) {
+    const previousState: unknown = history.state;
+    const state: Record<string, unknown> = { ...(previousState && typeof previousState === "object" ? previousState : {}) };
+    if (historyMode === "push" && contactId) {
+      selectionDocumentId ??= crypto.randomUUID();
+      state[CONTACT_SELECTION_STATE] = selectionDocumentId;
+    } else if (!contactId) delete state[CONTACT_SELECTION_STATE];
+    history[historyMode === "replace" ? "replaceState" : "pushState"](state, "", url.toString());
+  }
 };
 
 /** Updates detail params without navigation and notifies detail/list islands. */

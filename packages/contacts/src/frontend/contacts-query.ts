@@ -49,3 +49,25 @@ export const buildContactsQueryHref = (href: string, patch: ContactsQueryPatch):
   url.searchParams.delete("contactBook");
   return `${url.pathname}${url.search}`;
 };
+
+/** Sort and the favorites view do not narrow the object's result set. */
+export const contactsFiltered = (href: string): boolean => {
+  const url = new URL(href, "http://contacts.local");
+  const options = readContactsQueryOptions(href);
+  return Boolean(
+    url.searchParams.get("search")?.trim() || url.searchParams.get("tag_id") || options.email !== "all" || options.phone !== "all",
+  );
+};
+
+export const contactsViewHref = (href: string, favorites: boolean): string => {
+  const url = new URL(href, "http://contacts.local");
+  for (const key of ["favorites", "page", "contact", "contactBook"]) url.searchParams.delete(key);
+  if (favorites) url.searchParams.set("favorites", "true");
+  return `${url.pathname}${url.search}`;
+};
+
+export const resetContactsFiltersHref = (href: string): string => {
+  const url = new URL(href, "http://contacts.local");
+  for (const key of ["search", "tag_id", "email", "phone", "page", "contact", "contactBook"]) url.searchParams.delete(key);
+  return `${url.pathname}${url.search}`;
+};

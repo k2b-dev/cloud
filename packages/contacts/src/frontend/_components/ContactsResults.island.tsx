@@ -1,12 +1,12 @@
 import { documentNavigate, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
-import { query as queries, timed } from "@k2b/stdlib/solid";
-import { Button, FilterChip, type FilterChipSection, InlineGuidance, Pagination, ScrollArea, Tag, TextInput, useLocale } from "@k2b/ui";
+import { query as queries } from "@k2b/stdlib/solid";
+import { Button, InlineGuidance, Pagination, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { Contact, ContactPresenceFilter, ContactSort, ContactTag } from "../../service";
-import { buildContactsQueryHref, readContactsQueryOptions } from "../contacts-query";
+import type { Contact, ContactTag } from "../../service";
+import { contactsFiltered, readContactsQueryOptions } from "../contacts-query";
 import { readErrorMessage } from "./api";
-import { openContactDuplicatesDialog } from "./ContactDuplicatesDialog";
+import { publishContactsHeadState, subscribeToContactsHeadChanges } from "./contacts-head-events";
 import ContactsBulkActions from "./ContactsBulkActions";
 import ContactsList from "./ContactsList";
 import CreateBookAction from "./CreateBookAction";
@@ -14,20 +14,13 @@ import { type ContactsScope, contactsEmptyState } from "./contacts-empty-state";
 import { listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresContactsResultsRefresh } from "./contacts-live";
 import { createContactsResultsNavigation, selectContactsResultsSnapshot } from "./contacts-results-navigation";
-import {
-  buildContactsPageHref,
-  buildContactsPaginationBaseHref,
-  buildContactsSearchHref,
-  contactsResultHref,
-  contactsResultSignature,
-} from "./contacts-search";
+import { buildContactsPageHref, buildContactsPaginationBaseHref, contactsResultHref, contactsResultSignature } from "./contacts-search";
 import { syncContactDetailFromUrl } from "./context";
-import { type ResultsMessages, resultsMessages } from "./results-messages";
+import { resultsMessages } from "./results-messages";
 
 type Props = {
   scope: ContactsScope;
   bookId?: string;
-  initialSearch: string;
   initialHref: string;
   initialContacts: Contact[];
   initialTotal: number;
@@ -38,10 +31,7 @@ type Props = {
   showBookNames?: boolean;
   initialSelectedContactId: string | null;
   initialSelectedBookId: string | null;
-  searchPlaceholder: string;
   tags?: ContactTag[];
-  activeTagId?: string | null;
-  filtersBasePath?: string;
   initialFavoriteKeys: string[];
   canWrite: boolean;
   writableBooks: Array<{ id: string; name: string }>;
@@ -58,48 +48,6 @@ type ContactsResultsSnapshot = {
 };
 
 const pathWithQuery = () => `${window.location.pathname}${window.location.search}`;
-
-const filterHref = (href: string, search: string, tagId?: string) => {
-  const url = new URL(href, "http://contacts.local");
-  if (search.trim()) url.searchParams.set("search", search.trim());
-  else url.searchParams.delete("search");
-  if (tagId) url.searchParams.set("tag_id", tagId);
-  else url.searchParams.delete("tag_id");
-  url.searchParams.delete("page");
-  url.searchParams.delete("contact");
-  url.searchParams.delete("contactBook");
-  return `${url.pathname}${url.search}`;
-};
-
-const sortOptions = (t: ResultsMessages): FilterChipSection[] => [
-  {
-    options: [
-      { value: "name", label: t.sortName, icon: "ti ti-sort-ascending-letters" },
-      { value: "updated", label: t.sortRecentlyUpdated, icon: "ti ti-history" },
-      { value: "created", label: t.sortRecentlyCreated, icon: "ti ti-clock-plus" },
-      { value: "company", label: t.sortCompany, icon: "ti ti-building" },
-    ],
-  },
-];
-
-const reachOptions = (t: ResultsMessages): FilterChipSection[] => [
-  {
-    label: t.emailGroup,
-    options: [
-      { value: "email:all", label: t.anyEmail },
-      { value: "email:yes", label: t.hasEmail, icon: "ti ti-mail-check" },
-      { value: "email:no", label: t.noEmail, icon: "ti ti-mail-off" },
-    ],
-  },
-  {
-    label: t.phoneGroup,
-    options: [
-      { value: "phone:all", label: t.anyPhone },
-      { value: "phone:yes", label: t.hasPhone, icon: "ti ti-phone-check" },
-      { value: "phone:no", label: t.noPhone, icon: "ti ti-phone-off" },
-    ],
-  },
-];
 
 const fetchContactsResults = async (props: Pick<Props, "bookId" | "perPage">, href: string, signal: AbortSignal, errorFallback: string) => {
   const url = new URL(href, window.location.origin);
@@ -165,8 +113,6 @@ export default function ContactsResults(props: Props) {
     totalPages: props.initialTotalPages,
   };
   const [source, setSource] = createSignal(initialSource);
-  const [query, setQuery] = createSignal(props.initialSearch);
-  const [focused, setFocused] = createSignal(false);
   const [selectionMode, setSelectionMode] = createSignal(false);
   const [selectedIds, setSelectedIds] = createSignal<string[]>([]);
   const [failedSource, setFailedSource] = createSignal<string | null>(null);
@@ -247,23 +193,12 @@ export default function ContactsResults(props: Props) {
     });
   };
 
-  const debounce = timed.debounce((value: string) => {
-    void navigateHref(buildContactsSearchHref(pathWithQuery(), value));
-  }, 200);
-
-  createEffect(() => {
-    if (!focused() && !debounce.isPending() && !results.loading()) {
-      setQuery(new URL(currentHref(), "http://contacts.local").searchParams.get("search") ?? "");
-    }
-  });
-
   createEffect(() => {
     const loaded = results.data();
     if (!loaded || loaded.source !== source() || results.stale()) return;
     const applied = navigation.apply(loaded.source, loaded.href, () => {
       const visibleIds = new Set(loaded.contacts.map((contact) => contact.id));
       setSelectedIds((selected) => selected.filter((id) => visibleIds.has(id)));
-      setQuery(new URL(loaded.href, window.location.origin).searchParams.get("search") ?? "");
     });
     if (applied) return;
 
@@ -288,26 +223,10 @@ export default function ContactsResults(props: Props) {
   onMount(() => {
     window.addEventListener("popstate", handlePopState);
     onCleanup(() => {
-      debounce.cancel();
       window.removeEventListener("popstate", handlePopState);
       navigation.dispose();
     });
   });
-
-  const commitImmediately = (value: string) => {
-    debounce.cancel();
-    navigation.supersede();
-    void navigateHref(buildContactsSearchHref(pathWithQuery(), value));
-  };
-
-  const updateOptions = (patch: Parameters<typeof buildContactsQueryHref>[1]) => {
-    const href = buildContactsQueryHref(currentHref(), patch);
-    if (!props.bookId && patch.favorites !== undefined) {
-      documentNavigate(href, { replace: true });
-      return;
-    }
-    void navigateHref(href);
-  };
 
   const clearSelection = () => {
     setSelectedIds([]);
@@ -319,8 +238,34 @@ export default function ContactsResults(props: Props) {
   const selectVisible = () => setSelectedIds(current()?.contacts.map((contact) => contact.id) ?? []);
   const refreshResults = () => results.invalidate({ type: "contacts.changed" });
 
+  const publishHead = () =>
+    publishContactsHeadState({
+      source: currentHref(),
+      requestedSource: source(),
+      busy: results.loading() || results.refreshing(),
+      total: current()?.total ?? props.initialTotal,
+      filtered: contactsFiltered(currentHref()),
+      selectionMode: selectionMode(),
+    });
+  createEffect(publishHead);
+  onMount(() => {
+    onCleanup(
+      subscribeToContactsHeadChanges(
+        (change) => {
+          void navigateHref(change.href);
+        },
+        () => {
+          if (!props.bookId || !props.canWrite) return;
+          if (selectionMode()) clearSelection();
+          else setSelectionMode(true);
+        },
+        publishHead,
+      ),
+    );
+    publishHead();
+  });
+
   const committedSearch = () => new URL(currentHref(), "http://contacts.local").searchParams.get("search") ?? "";
-  const formAction = () => new URL(props.initialHref, "http://contacts.local").pathname;
   const resultCopy = () =>
     !current()
       ? t().loadingContacts
@@ -330,136 +275,10 @@ export default function ContactsResults(props: Props) {
 
   return (
     <div class="flex min-h-0 flex-1 flex-col">
-      <div class="shrink-0 px-3 pb-3 sm:px-4">
-        <p class="mb-2 text-xs text-dimmed" aria-live="polite">
-          <span class="tabular-nums text-secondary">{resultCopy()}</span>
-        </p>
-        <form
-          role="search"
-          action={formAction()}
-          method="get"
-          onSubmit={(event) => {
-            event.preventDefault();
-            commitImmediately(query());
-          }}
-          onFocusIn={() => setFocused(true)}
-          onFocusOut={() => setFocused(false)}
-        >
-          <TextInput
-            name="search"
-            type="search"
-            aria-label={t().filterContacts}
-            placeholder={props.searchPlaceholder}
-            icon="ti ti-search"
-            activeIcon="ti ti-search"
-            value={query}
-            onValueChange={(value) => {
-              navigation.supersede();
-              setQuery(value);
-              debounce.debouncedFn(value);
-            }}
-            clearable
-            clearLabel={t().clearSearch}
-            onClear={() => {
-              setQuery("");
-              commitImmediately("");
-            }}
-            suffix={
-              debounce.isPending() || results.loading() || results.refreshing() ? (
-                <i class="ti ti-loader-2 animate-spin text-dimmed" aria-hidden="true" />
-              ) : undefined
-            }
-          />
-          <Show when={props.activeTagId}>{(tagId) => <input type="hidden" name="tag_id" value={tagId()} />}</Show>
-          <Show when={readContactsQueryOptions(currentHref()).sort !== "name"}>
-            <input type="hidden" name="sort" value={readContactsQueryOptions(currentHref()).sort} />
-          </Show>
-          <Show when={readContactsQueryOptions(currentHref()).email !== "all"}>
-            <input type="hidden" name="email" value={readContactsQueryOptions(currentHref()).email} />
-          </Show>
-          <Show when={readContactsQueryOptions(currentHref()).phone !== "all"}>
-            <input type="hidden" name="phone" value={readContactsQueryOptions(currentHref()).phone} />
-          </Show>
-          <Show when={readContactsQueryOptions(currentHref()).favorites}>
-            <input type="hidden" name="favorites" value="true" />
-          </Show>
-        </form>
-        <Show when={(props.tags?.length ?? 0) > 0 && props.filtersBasePath}>
-          <nav aria-label={t().filterContactsByTag} class="mt-2 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
-            <a
-              href={filterHref(currentHref(), query())}
-              aria-current={!props.activeTagId ? "page" : undefined}
-              class="inline-flex shrink-0 transition-opacity hover:opacity-80"
-            >
-              <Tag selected={!props.activeTagId} size="lg">
-                {t().allTagsChip}
-              </Tag>
-            </a>
-            {props.tags?.map((tag) => (
-              <a
-                href={filterHref(currentHref(), query(), tag.id)}
-                aria-current={props.activeTagId === tag.id ? "page" : undefined}
-                title={
-                  props.showBookNames
-                    ? t().tagInBookTitle({ tagName: tag.name, bookName: props.bookNames[tag.bookId] ?? t().contactBookFallback })
-                    : undefined
-                }
-                class="inline-flex shrink-0 transition-opacity hover:opacity-80"
-              >
-                <Tag color={tag.color} icon="ti ti-point" selected={props.activeTagId === tag.id} size="lg">
-                  {tag.name}
-                </Tag>
-              </a>
-            ))}
-          </nav>
-        </Show>
-        <div class="no-scrollbar mt-2 flex items-center gap-2 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible">
-          <FilterChip
-            label={t().sortLabel}
-            icon="ti ti-arrows-sort"
-            options={sortOptions(t())}
-            value={[readContactsQueryOptions(currentHref()).sort]}
-            defaultValue={["name"]}
-            isActive={readContactsQueryOptions(currentHref()).sort !== "name"}
-            onValueChange={(value) => updateOptions({ sort: (value[0] ?? "name") as ContactSort })}
-          />
-          <FilterChip
-            label={t().contactInfoLabel}
-            icon="ti ti-address-book"
-            options={reachOptions(t())}
-            value={[`email:${readContactsQueryOptions(currentHref()).email}`, `phone:${readContactsQueryOptions(currentHref()).phone}`]}
-            defaultValue={["email:all", "phone:all"]}
-            isActive={readContactsQueryOptions(currentHref()).email !== "all" || readContactsQueryOptions(currentHref()).phone !== "all"}
-            onValueChange={(value) =>
-              updateOptions({
-                email: (value.find((entry) => entry.startsWith("email:"))?.slice(6) ?? "all") as ContactPresenceFilter,
-                phone: (value.find((entry) => entry.startsWith("phone:"))?.slice(6) ?? "all") as ContactPresenceFilter,
-              })
-            }
-          />
-          <Show when={props.canWrite && props.bookId}>
-            <span class="ml-auto flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => {
-                  const changed = await openContactDuplicatesDialog(props.bookId!);
-                  if (changed) documentNavigate(currentHref(), { replace: true });
-                }}
-              >
-                <i class="ti ti-users-group" /> {t().duplicates}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-pressed={selectionMode()}
-                onClick={() => (selectionMode() ? clearSelection() : setSelectionMode(true))}
-              >
-                <i class="ti ti-list-check" /> {t().select}
-              </Button>
-            </span>
-          </Show>
-        </div>
+      <p class="sr-only" aria-live="polite">
+        {resultCopy()}
+      </p>
+      <div class="contacts-results-actions">
         <Show when={selectionMode() && props.bookId}>
           <ContactsBulkActions
             bookId={props.bookId!}
@@ -474,7 +293,11 @@ export default function ContactsResults(props: Props) {
         </Show>
       </div>
 
-      <ScrollArea class="flex-1 px-3 pb-3 sm:px-4" scrollPreserveKey="contacts-main-list">
+      <ScrollArea
+        aria-busy={results.loading() || results.refreshing()}
+        class="flex-1 px-3 pb-3 sm:px-4"
+        scrollPreserveKey="contacts-main-list"
+      >
         <Show when={results.error()}>
           {(error) => (
             <div class="mb-2 flex items-center justify-between gap-2">
@@ -487,7 +310,25 @@ export default function ContactsResults(props: Props) {
             </div>
           )}
         </Show>
-        <Show when={current()} fallback={<p class="py-8 text-center text-sm text-dimmed">{t().loadingContacts}</p>}>
+        <Show
+          when={current()}
+          fallback={
+            <>
+              <ul class="contacts-list-skeleton" aria-hidden="true">
+                {Array.from({ length: 8 }, () => (
+                  <li class="contacts-list-skeleton__row">
+                    <span class="contacts-list-skeleton__avatar" />
+                    <span class="contacts-list-skeleton__lines">
+                      <span />
+                      <span />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <span class="sr-only">{t().loadingContacts}</span>
+            </>
+          }
+        >
           {(snapshot) => (
             <>
               <ContactsList

@@ -20,7 +20,6 @@ describe("Contacts pages message catalog", () => {
     expect(locale).toBe("de");
     expect(t.askAdminDescription).toBe("Wende dich an eine Person, die dieses Kontaktbuch verwaltet.");
     expect(t.bookNotFoundTitle).toBe("Kontaktbuch nicht gefunden");
-    expect(t.allContactsTitle).toBe("Alle Kontakte");
     expect(t.filterBookPlaceholder({ name: "Lieferanten" })).toBe("Lieferanten filtern...");
     expect(t.booksCount({ count: 2, total: 5 })).toBe("2 von 5 Kontaktbüchern");
     expect(t.emptyFiltered({ search: "Team" })).toBe("Keine Kontaktbücher passen zu „Team“.");

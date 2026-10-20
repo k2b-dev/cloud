@@ -5,6 +5,9 @@ import { createEffect, onCleanup, onMount } from "solid-js";
 import { ContactComposeInputSchema } from "../../commands";
 import { CONTACTS_CREATE_QUERY_KEYS, parseContactCreateSeed } from "../../integration";
 import { openContactCreateFlow, type WritableContactBook } from "./ContactCreateFlow";
+import { contactsPrimaryHref, interceptContactsPrimaryClick } from "./contacts-primary";
+import { connectContactsHead } from "./contacts-head-events";
+import { CONTACT_DETAIL_EVENT } from "./context";
 import { detailMessages } from "./detail-messages";
 
 const contactHref = (bookId: string, contactId: string): string =>
@@ -55,6 +58,25 @@ export default function ContactCreateLauncher(props: { writableBooks: WritableCo
     );
   });
   onMount(() => {
+    onCleanup(
+      interceptContactsPrimaryClick(document, () => {
+        void create(props.defaultBookId);
+      }),
+    );
+    const syncPrimary = () => {
+      document
+        .querySelector("a[data-workspace-primary]")
+        ?.setAttribute("href", contactsPrimaryHref(`${window.location.pathname}${window.location.search}`, props.defaultBookId));
+    };
+    const bridge = connectContactsHead(syncPrimary);
+    onCleanup(bridge.dispose);
+    syncPrimary();
+    window.addEventListener("popstate", syncPrimary);
+    window.addEventListener(CONTACT_DETAIL_EVENT, syncPrimary);
+    onCleanup(() => {
+      window.removeEventListener("popstate", syncPrimary);
+      window.removeEventListener(CONTACT_DETAIL_EVENT, syncPrimary);
+    });
     onCleanup(
       registerCommandHandler("contacts.contact.compose", ContactComposeInputSchema, (input) => create(input.bookId ?? props.defaultBookId)),
     );

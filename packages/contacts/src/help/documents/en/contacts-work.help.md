@@ -13,20 +13,24 @@ The Contacts overview is a working view, not only a list of books. Search all bo
 :::reference
 - **All contacts:** Searches the books that you can access and shows the book name next to each result.
 - **Book view:** Open one book to use its tags, add a contact, review duplicates, or change the book settings.
-- **Search:** Finds a name, company, email address, or phone number. Clear the search to return to the current book or the overview.
+- **Search and filters:** Search, tags, **Sort**, and **Contact info** sit in the head row. Search finds a name, company, email address, or phone number.
+- **Reset:** Clears search, tags, email, and phone filters. It keeps the tab and sort order. A result count appears while filters are active.
 - **Tags:** Filter by the tags that the current scope shows. Tags belong to a book, so the same label in two books stays two separate tags.
-- **Favorites:** Mark the contacts that you use often, then switch the overview to **Favorites**.
+- **Tabs:** **All** and **Favorites** are available for all books together and inside each book. Their counts ignore search and filters. Mark a contact with the star to add it to **Favorites**.
+- **Book actions:** Open **…** inside a book. With edit access, choose **Duplicates** or **Select**. With manage access, you can also open **Book settings**. Use **Stop selecting** to leave selection mode.
 :::
 
 ## Work in the detail panel {icon="route"}
 
 :::steps
-1. Select a row to open the contact. The list keeps its position.
+1. Select a row to open the contact.
 2. Choose **Email** or **Call** to use a primary contact point, if the contact has one.
 3. Choose **Quick edit** for common fields, or **Edit all fields** for the complete contact form.
 4. Add a comment for lasting context that belongs to the contact.
 5. Use the action menu to move, duplicate, or delete the contact, if these actions are available.
 :::
+
+The list keeps its position. On a phone, the contact opens as its own page. Choose **Contacts** to return to the list.
 
 You can edit or delete your own comment for 10 minutes after you post it. You cannot change the comments of other people, even with **Manage** access to the book.
 
@@ -39,7 +43,8 @@ You can edit or delete your own comment for 10 minutes after you post it. You ca
 
 ## Find a missing contact {icon="lifebuoy"}
 
-- Clear the search, tag, favorite, and sort filters.
+- Choose **Reset** to clear search and filters.
+- Choose the **All** tab to include contacts outside your favorites.
 - Check whether you search **All contacts** or one specific book.
 - Check that you still have access to the book.
 - After an import, open the target book and review the import result or the duplicates before you import the file again.

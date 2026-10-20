@@ -1,7 +1,7 @@
 import type { ContactPresenceFilter } from "../../service";
 import type { ResultsMessages } from "./results-messages";
 
-export type ContactsScope = "all" | "favorites" | "book" | "noBooks";
+export type ContactsScope = "all" | "book" | "noBooks";
 
 type EmptyStateInput = {
   scope: ContactsScope;
@@ -23,15 +23,10 @@ export function contactsEmptyState(
   if (input.search.trim()) {
     return { title: t.noMatchingContacts, description: t.noMatchingContactsHint, action: null };
   }
-  if (
-    input.tagId ||
-    input.email !== "all" ||
-    input.phone !== "all" ||
-    (input.favorites && (input.scope === "book" || input.scope === "all"))
-  ) {
+  if (input.tagId || input.email !== "all" || input.phone !== "all") {
     return { title: t.noMatchingContacts, description: t.noMatchingFiltersHint, action: null };
   }
-  if (input.scope === "favorites") {
+  if (input.favorites) {
     return { title: t.emptyFavoritesTitle, description: t.emptyFavoritesHint, action: null };
   }
   if (input.scope === "book") {

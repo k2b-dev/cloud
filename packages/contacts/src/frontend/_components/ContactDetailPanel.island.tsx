@@ -30,6 +30,7 @@ import { contactFavoriteKey, listenForContactFavoriteChanges } from "./contacts-
 import { listenForContactsLiveInvalidation, requiresSelectedContactRefresh } from "./contacts-live";
 import {
   CONTACT_DETAIL_EVENT,
+  backFromContactDetail,
   type ContactDetailPayload,
   clearSelectedContactInUrl,
   getSelectedContactFromUrl,
@@ -390,7 +391,15 @@ export default function ContactDetailPanel(props: Props) {
             fallback={
               <DetailPanel>
                 <DetailPanel.Header
-                  leading={<Avatar name={resolveContactName(c(), t().unnamedContact)} fallback={resolveContactInitials(c())} size="sm" />}
+                  leading={
+                    <>
+                      <Button variant="ghost" class="contacts-detail-back" onClick={backFromContactDetail}>
+                        <i class="ti ti-arrow-left" aria-hidden="true" />
+                        {t().backToContacts}
+                      </Button>
+                      <Avatar name={resolveContactName(c(), t().unnamedContact)} fallback={resolveContactInitials(c())} size="sm" />
+                    </>
+                  }
                   title={resolveContactName(c(), t().unnamedContact)}
                   subtitle={[c().jobTitle, c().companyName, props.bookNames[c().bookId]].filter(Boolean).join(" · ")}
                   primaryActions={
