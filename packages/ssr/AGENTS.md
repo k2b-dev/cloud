@@ -257,7 +257,10 @@ One memoized decision per popstate runs before island handlers, through nav's
 capture listener or listenPopState's wrapper. Same-page entries reach islands;
 nav restores their window scroll first, leaving regions to islands; if the
 departing content clamped it, nav retries once in the next frame unless an
-island scrolled meanwhile. Cross-page
+island scrolled meanwhile. An island that renders the entry asynchronously
+restores its own scroll afterwards, as the browser's restoration would not
+wait for it either. A push through `navigate()` records the departure scroll
+the helper captured before the island changed the page. Cross-page
 and unmarked entries stopImmediatePropagation and fetch the arriving URL in
 the swap transaction without pushing history. Commit and reload recovery must
 still own that URL, marker, and Navigation API entry key; a different final

@@ -21,6 +21,7 @@ type SwapState = {
   /** Counts history pushes through the wrapper: a newer entry supersedes a pending traversal even without markers. */
   pushes: number;
   decide: (event: PopStateEvent) => "page" | "nav";
+  departure?: ScrollSnapshot;
   /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
   headBase: string;
   fragment?: { event: MouseEvent; href: string };
@@ -138,7 +139,8 @@ const patchHistory = (): HistoryWrites => {
     const state = shared[swapKey];
     if (!state || state.document !== document) return writes.push.call(history, value, ...args);
     const departing = currentEntry(state);
-    const snapshot = captureScroll();
+    // The island may already show shorter content; a helper's earlier capture is the departing position.
+    const snapshot = state.departure ?? captureScroll();
     const shown = shownEntry(state);
     const stored = marker(history.state);
     if (stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);

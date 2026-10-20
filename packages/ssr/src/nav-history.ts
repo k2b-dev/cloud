@@ -11,6 +11,8 @@ type SharedSwap = typeof globalThis & {
     started: number;
     decide: (event: PopStateEvent) => "page" | "nav";
     stopRestore: () => void;
+    /** The departing scroll a history helper captured before the island changed the page, for the next push. */
+    departure?: ScrollSnapshot;
   };
 };
 
@@ -148,7 +150,16 @@ export const navigate = (href: string, options: EnhancedNavigateOptions = {}): v
     const state = hasExplicitState ? options.state : options.replace ? window.history.state : null;
 
     if (options.replace) window.history.replaceState(state, "", target);
-    else window.history.pushState(state, "", target);
+    else {
+      const shared: SharedSwap = globalThis;
+      const swap = shared[swapKey];
+      if (swap && snapshot) swap.departure = snapshot;
+      try {
+        window.history.pushState(state, "", target);
+      } finally {
+        if (swap) swap.departure = undefined;
+      }
+    }
 
     if (!snapshot) return;
     restoreRegionScroll(snapshot);
