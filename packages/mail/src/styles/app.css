@@ -383,7 +383,7 @@
   }
 
   .k2b-ui .mail-sidebar-mailbox:not([data-open="true"]) :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
-    color: var(--k2b-text-secondary);
+    color: var(--k2b-text-muted);
   }
 
   .mail-sidebar-health {

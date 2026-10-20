@@ -31,7 +31,7 @@ and contrast floors are in [Ink hierarchy](/en/ui/surfaces/utilities#ink-hierarc
 
 Keep the current container and its destinations easy to distinguish from
 other selectable containers: use strong ink for the current container and
-readable secondary ink for the others' names and icons. Preserve status
+the readable muted text tone for the others' names and icons. Preserve status
 colors and active destination fills. Do not fade an entire navigation subtree
 or make another container look disabled. [Navigation's optional context
 marker](/en/ui/layout/navigation#container-context) expresses this without

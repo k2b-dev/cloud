@@ -13744,7 +13744,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Container context belongs only to this row; nested destinations and status keep their own ink. */
 .k2b-ui .k2b-navigation__row[data-context="false"]:not([data-active]) > .k2b-navigation__control > i,
 .k2b-ui .k2b-navigation__row[data-context="false"]:not([data-active]) > .k2b-navigation__control > .k2b-navigation__copy > span {
-  color: var(--k2b-text-secondary);
+  color: var(--k2b-text-muted);
 }
 .k2b-ui .k2b-navigation__row[data-context="true"] > .k2b-navigation__control > .k2b-navigation__copy > span {
   font-weight: 600;

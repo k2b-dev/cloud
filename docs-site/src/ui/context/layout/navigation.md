@@ -14,7 +14,7 @@ Active rows use `--k2b-app-workspace-selected` with `--k2b-app-workspace-active`
 Use `context: true` on the current container, such as a mailbox whose folder
 is the active destination. Its name stays semibold while the folder alone
 keeps `active` and `aria-current="page"`. Set `context: false` on other
-containers to show their names and icons in readable secondary ink. Omit
+containers to show their names and icons in the readable muted text tone. Omit
 `context` to keep the existing appearance.
 
 This presentation applies only to the marked row. Children, status colors,

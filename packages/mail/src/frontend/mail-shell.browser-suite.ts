@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 
@@ -94,7 +94,7 @@ const pageHtml = (url: URL) => {
   return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button>' : ""}<script>${controller}</script><script type="module">
     const geometry=${geometrySource};
     const strip=${stripSource};
-    const step=(name)=>{document.documentElement.dataset.mailShellStep=name};
+    const step=(name)=>{document.documentElement.dataset.mailShellStep=name;performance.mark('mail-shell:'+name)};
     step('fonts');
     await document.fonts.ready;
     step('first frame');
@@ -107,8 +107,11 @@ const pageHtml = (url: URL) => {
     step('hydrated frame');
     // The first frame the browser paints after hydration, as a person sees it.
     await new Promise(resolve=>requestAnimationFrame(resolve));
+    step('hydrated geometry');
     document.documentElement.dataset.hydratedGeometry=JSON.stringify(geometry());
+    step('hydrated strip');
     document.documentElement.dataset.hydratedStrip=JSON.stringify(strip());
+    step('ready');
     document.documentElement.dataset.mailShellReady='true';
     </script></body></html>`;
 };
@@ -211,12 +214,19 @@ const ready = async (page: Page) => {
   try {
     await page.waitForFunction(() => document.documentElement.dataset.mailShellReady === "true");
   } catch (error) {
-    // Name the page script's step that never finished, so a stall points at fonts, the first frame or the islands.
-    const step = await page
-      .locator("html")
-      .getAttribute("data-mail-shell-step", { timeout: 1000 })
+    const evidence = await page
+      .evaluate(() => ({
+        step: document.documentElement.dataset.mailShellStep ?? "page script not started",
+        ready: document.documentElement.dataset.mailShellReady,
+        visibility: document.visibilityState,
+        now: performance.now(),
+        phases: performance
+          .getEntriesByType("mark")
+          .filter((entry) => entry.name.startsWith("mail-shell:"))
+          .map((entry) => ({ name: entry.name, at: entry.startTime })),
+      }))
       .catch(() => "unreadable");
-    throw new Error(`Mail shell page never got ready (stopped at: ${step ?? "page script not started"})`, { cause: error });
+    throw new Error(`Mail shell page never got ready: ${JSON.stringify({ evidence, errors: pageErrors.get(page) })}`, { cause: error });
   }
   await page.waitForFunction(
     () => !Array.from(document.querySelectorAll(".k2b-app-workspace__main")).some((main) => main.getAttribute("aria-busy") === "true"),
@@ -323,11 +333,13 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             locator.evaluate((element) => {
               const style = getComputedStyle(element);
               const probe = document.createElement("span");
-              probe.style.color = "var(--k2b-text-secondary)";
+              probe.style.color = "var(--k2b-text-muted)";
+              probe.style.backgroundColor = "var(--k2b-surface-muted)";
               element.append(probe);
-              const secondary = getComputedStyle(probe).color;
+              const muted = getComputedStyle(probe).color;
+              const background = getComputedStyle(probe).backgroundColor;
               probe.remove();
-              return { color: style.color, secondary, weight: style.fontWeight };
+              return { color: style.color, muted, background, weight: style.fontWeight };
             });
           try {
             for (const part of ["sender", "subject"]) {
@@ -349,8 +361,22 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             const otherInk = await appearance(other.locator(label));
             expect(currentInk.weight).toBe("600");
             expect(otherInk.weight).toBe("400");
-            expect(otherInk.color).toBe(otherInk.secondary);
+            expect(otherInk.color).toBe(otherInk.muted);
             expect(otherInk.color).not.toBe(currentInk.color);
+            const luminance = (color: string) => {
+              const [red, green, blue] = color
+                .match(/[\d.]+/g)!
+                .slice(0, 3)
+                .map((value) => {
+                  const channel = Number(value) / 255;
+                  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+                });
+              return red! * 0.2126 + green! * 0.7152 + blue! * 0.0722;
+            };
+            const ink = luminance(otherInk.color);
+            const background = luminance(otherInk.background);
+            // The shared muted-text contract retains 7:1 contrast even on the darker muted surface.
+            expect((Math.max(ink, background) + 0.05) / (Math.min(ink, background) + 0.05)).toBeGreaterThanOrEqual(7);
             expect(await current.getAttribute("aria-current")).toBeNull();
             expect(await other.getAttribute("aria-disabled")).toBeNull();
             const folder = navigation.locator(`a[href="${boxPath}?folder=Inbox1"]`);
@@ -365,6 +391,23 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             if (screenshots) {
               mkdirSync(resolve(screenshots), { recursive: true });
               await page.screenshot({ path: join(resolve(screenshots), `mailbox-context-${theme}-${width}.png`) });
+              writeFileSync(
+                join(resolve(screenshots), `mailbox-context-${theme}-${width}.json`),
+                JSON.stringify(
+                  {
+                    currentInk,
+                    otherInk,
+                    phases: await page.evaluate(() =>
+                      performance
+                        .getEntriesByType("mark")
+                        .filter((entry) => entry.name.startsWith("mail-shell:"))
+                        .map((entry) => ({ name: entry.name, at: entry.startTime })),
+                    ),
+                  },
+                  null,
+                  2,
+                ),
+              );
             }
             // A quieter selectable mailbox keeps native keyboard activation, also in the real phone sheet.
             await other.focus();
