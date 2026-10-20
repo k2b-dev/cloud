@@ -17,8 +17,8 @@ for (const locale of ["en", "de"] as const) {
         canWrite: true,
       });
       try {
-        const deadline = Date.now() + 2_000;
-        while (!dom.document.querySelector("dialog") && Date.now() < deadline) await Bun.sleep(10);
+        const deadline = performance.now() + 2_000;
+        while (!dom.document.querySelector("dialog") && performance.now() < deadline) await Bun.sleep(10);
         const dialog = dom.document.querySelector("dialog");
         expect(dialog).not.toBeNull();
         expect(dialog!.textContent).not.toContain(userId);
