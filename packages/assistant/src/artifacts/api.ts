@@ -242,7 +242,8 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     )
     .post("/runtime/check/gate", v("json", z.object({ id: CodeResourceId, conversationId: ChatReference }).strict()), async (c) => {
       const input = c.req.valid("json");
-      const chat = await requireToolChat(input.conversationId, identity(c), "code_run");
+      // Only the code_open tool (operation "open") reaches the gate; scoped chats grant it separately from code_run.
+      const chat = await requireToolChat(input.conversationId, identity(c), "code_open");
       const opened = await sql.begin(async (db) => {
         await databaseConfigLock(db);
         const { row, permission } = await requireArtifact(db, input.id, identity(c), "read");

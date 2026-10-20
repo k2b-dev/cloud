@@ -352,3 +352,13 @@ test("Assistant chat inputs never narrow public references to UUIDs", async () =
   }
   await scan(root);
 });
+
+test("check gate follows the code_open grant, not code_run", async () => {
+  for (const [allowedTools, status] of [
+    [["code_check", "code_open"], 200],
+    [["code_check", "code_run"], 403],
+  ] as const) {
+    state.short.mockResolvedValue({ ...conversation, allowedTools: [...allowedTools] });
+    expect((await request("/runtime/check/gate", { id: bundle.id, conversationId: conversation.shortId })).status).toBe(status);
+  }
+});
