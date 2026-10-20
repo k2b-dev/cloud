@@ -85,6 +85,11 @@ export function MapView(props: MapViewProps): JSX.Element {
   let resize: ResizeObserver | undefined;
   const themes: MutationObserver[] = [];
 
+  // From the person's first camera change on, the camera stays theirs; pin separation follows its zoom.
+  const touch = () => {
+    touched = true;
+    if (map) setChosenZoom(map.getZoom());
+  };
   const removeMap = () => {
     generation++;
     const previous = map;
@@ -194,7 +199,7 @@ export function MapView(props: MapViewProps): JSX.Element {
         refit();
       });
       instance.on("movestart", (event) => {
-        if (event.originalEvent) touched = true;
+        if (event.originalEvent) touch();
       });
       instance.on("move", syncOverlay);
       // Pin separation is decided again once a zoom ends, not on every animation frame.
@@ -275,8 +280,10 @@ export function MapView(props: MapViewProps): JSX.Element {
       const x = p.x + (offset?.dx ?? 0);
       const y = p.y + (offset?.dy ?? 0);
       if (x >= 16 && x <= root.clientWidth - 16 && y >= 16 && y <= root.clientHeight - 16) return;
-      touched = true;
-      const camera = { center: [lon, marker.point.lat] satisfies [number, number] };
+      touch();
+      // Center the pin as it is drawn, offset included, so a pin moved aside by its neighbours comes into view too.
+      const target = map.unproject([x, y]);
+      const camera = { center: [target.lng, target.lat] satisfies [number, number] };
       if (prefersReducedMotion()) map.jumpTo(camera);
       else map.easeTo(camera);
     });
@@ -290,7 +297,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   });
   const zoom = (direction: "in" | "out") => {
     if (!map || state() !== "ready") return;
-    touched = true;
+    touch();
     const options = { animate: !prefersReducedMotion() };
     if (direction === "in") map.zoomIn(options);
     else map.zoomOut(options);
