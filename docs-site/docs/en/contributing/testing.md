@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Testing
@@ -23,8 +23,8 @@ bun run test
 
 `bun run check` verifies dependencies, import boundaries, package cycles,
 service API contracts, localization, capability presentation, CSS
-architecture, formatting, the application set, the CI gate's job list, and
-every package typecheck. A package typecheck covers its
+architecture, formatting, fixture short IDs, the application set, the CI gate's
+job list, and every package typecheck. A package typecheck covers its
 `scripts/` as well as `src/`, so a package's build, smoke, and verification
 scripts break the gate when they drift from the code they drive. The only
 exceptions are scripts a package excludes by name in its `tsconfig.json` and
@@ -893,6 +893,18 @@ Give each caller its own address, for example from `uniqueCallerAddress()` in
 `scripts/fixtures/caller-address`, a fresh address in the IPv6 documentation
 range `2001:db8::/32`. Reuse one address only when the test exercises the
 limit itself.
+
+### Fixture short IDs
+
+Raw fixture inserts bypass the service's collision retry. Take short IDs from
+`testShortId()` in `scripts/fixtures/test-short-id`, passing the column's
+length when it differs from the default six characters. Its counter is
+deterministic per process; the `o` mark never appears in `readableId()` output,
+so fixture IDs stay apart from service-generated IDs.
+
+Never cut a random UUID or `Math.random()` to short-ID length: the small space
+repeats and fails a unique index at random. `bun run check` flags this with the
+`test-short-ids` rule.
 
 ## Request cache checks
 

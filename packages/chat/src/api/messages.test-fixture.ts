@@ -5,6 +5,7 @@ import { createTestSession } from "@k2b/cloud/services/session/session.test-fixt
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrate } from "../migrate";
 import type { ChatContext } from "../service/access";
@@ -72,7 +73,7 @@ export const messageFixtures = () => {
     return result.data.id;
   };
   const fixture = async (owner: Person, members: { person: Person; permission: "read" | "write" | "admin" }[] = []) => {
-    const shortId = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+    const shortId = testShortId();
     const [row] = await sql<{ id: string }[]>`INSERT INTO chat.conversations (short_id, created_by_type, created_by_id)
       VALUES (${shortId}, 'user', ${owner.id}::uuid) RETURNING id`;
     if (!row) throw new Error("Missing fixture chat");

@@ -2,6 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { notebooksService } from "../service";
 import { listNotebookAccess } from "../service/access";
@@ -9,8 +10,6 @@ import notebooksApi from ".";
 
 const suite = databaseSuite();
 setDefaultTimeout(30_000);
-
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 6);
 
 const insertAccount = async (name: string, notebookId?: string) => {
   const [row] = notebookId
@@ -48,8 +47,8 @@ const listedIds = async (response: Response) => ((await response.json()) as { da
 suite("Notebooks REST access for standalone agents", () => {
   test("an agent reads and writes only inside its direct grant and within its scopes; resource-bound keys stay bound", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
-    const granted = { id: crypto.randomUUID(), shortId: shortId() };
-    const other = { id: crypto.randomUUID(), shortId: shortId() };
+    const granted = { id: crypto.randomUUID(), shortId: testShortId() };
+    const other = { id: crypto.randomUUID(), shortId: testShortId() };
     await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES
       (${granted.id}::uuid, ${granted.shortId}, ${`Agent granted ${suffix}`}), (${other.id}::uuid, ${other.shortId}, ${`Agent other ${suffix}`})`;
     const accountIds: string[] = [];

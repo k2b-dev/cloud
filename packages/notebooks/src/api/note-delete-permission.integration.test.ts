@@ -2,6 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { NOTE_DELETE_ADMIN_ONLY, NOTE_LOCK_ADMIN_ONLY } from "../lib/note-delete-permission";
 import { notebooksService } from "../service";
@@ -9,8 +10,6 @@ import notebooksApi from ".";
 
 const suite = databaseSuite();
 setDefaultTimeout(30_000);
-
-const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 6);
 
 const grant = async (notebookId: string, principal: { userId: string } | { serviceAccountId: string }, permission: "write" | "admin") => {
   const [access] =
@@ -43,7 +42,7 @@ const apiAs = async (serviceAccountId: string, scopes: string[]) => {
 suite("Notebooks note deletion and locking rule", () => {
   test("admins can reserve deleting and locking notes for themselves; writers and agents with write still edit but cannot delete or lock", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
-    const notebook = { id: crypto.randomUUID(), shortId: shortId() };
+    const notebook = { id: crypto.randomUUID(), shortId: testShortId() };
     await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebook.id}::uuid, ${notebook.shortId}, ${`Delete rule ${suffix}`})`;
     const userIds: string[] = [];
     const accountIds: string[] = [];
@@ -175,7 +174,7 @@ suite("Notebooks note deletion and locking rule", () => {
   });
 
   test("a writer's update that read the notebook before an admin reserved deleting keeps the admin's rule", async () => {
-    const notebook = { id: crypto.randomUUID(), shortId: shortId() };
+    const notebook = { id: crypto.randomUUID(), shortId: testShortId() };
     await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebook.id}::uuid, ${notebook.shortId}, 'Before')`;
     // The admin's change holds the row lock, so the writer's rename reads the old rule and waits to write.
     const admin = await sql.reserve();
