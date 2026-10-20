@@ -52,7 +52,7 @@ export type Finished = {
 } | void;
 
 // May only shrink; the freeze test fails if this list grows.
-export const PENDING_MIGRATION = [
+export const PENDING_MIGRATION = Object.freeze([
   "files.upload_session",
   "files.write_bytes",
   "files.rename",
@@ -67,7 +67,7 @@ export const PENDING_MIGRATION = [
   "sharing.inbox_session",
   "lifecycle.operation",
   "lifecycle.admin_delete_version",
-] as const;
+] as const);
 export type PendingMigrationKey = (typeof PENDING_MIGRATION)[number];
 export type Mutation =
   | "mkdir"
@@ -81,7 +81,7 @@ export type Mutation =
   | "updateVersion"
   | "deleteVersion"
   | "remove";
-export const PENDING_MIGRATION_METHODS: Record<PendingMigrationKey, readonly Mutation[]> = {
+export const PENDING_MIGRATION_METHODS: Readonly<Record<PendingMigrationKey, readonly Mutation[]>> = Object.freeze({
   "files.upload_session": ["createSession", "commitSession", "abortSession"],
   "files.write_bytes": ["put"],
   "files.rename": ["transfer"],
@@ -96,13 +96,52 @@ export const PENDING_MIGRATION_METHODS: Record<PendingMigrationKey, readonly Mut
   "sharing.inbox_session": ["createSession", "commitSession", "abortSession"],
   "lifecycle.operation": ["mkdir", "transfer", "remove"],
   "lifecycle.admin_delete_version": ["deleteVersion"],
-};
-export type GuardScope =
+});
+for (const methods of Object.values(PENDING_MIGRATION_METHODS)) Object.freeze(methods);
+type GuardScope =
   | { kind: "activity"; id: string; intent: Intent; closed: boolean; sent: number; refused: unknown }
   | { kind: "pending"; key: PendingMigrationKey }
   | { kind: "exception"; name: "lifecycle.probe" };
 const scopes = new AsyncLocalStorage<GuardScope>();
-export const currentScope = (): GuardScope | undefined => scopes.getStore();
+export const currentActivityId = (): string | null => {
+  const scope = scopes.getStore();
+  return scope?.kind === "activity" ? scope.id : null;
+};
+
+/** Check and account for a write without exposing the mutable authorization state. */
+export async function filegateMutation<T>(
+  serverUrl: string,
+  root: string,
+  method: Mutation,
+  path: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const scope = scopes.getStore();
+  if (!scope || (scope.kind === "activity" && scope.closed)) throw new FilesError("activity_scope_missing", 500);
+  if (scope.kind === "pending" && !PENDING_MIGRATION_METHODS[scope.key].includes(method))
+    throw new FilesError("activity_scope_mismatch", 500);
+  if (scope.kind === "exception" && !(["mkdir", "remove"].includes(method) && path.split("/").at(-1)?.startsWith(".filesv2-owner-")))
+    throw new FilesError("activity_scope_mismatch", 500);
+  if (scope.kind === "activity") {
+    const intent = scope.intent;
+    if (
+      intent.serverUrl !== serverUrl ||
+      intent.root !== root ||
+      intent.action !== "folder.create" ||
+      method !== "mkdir" ||
+      !intent.pathAfter ||
+      !(path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`))
+    )
+      throw new FilesError("activity_scope_mismatch", 500);
+    scope.sent++;
+  }
+  try {
+    return await run();
+  } catch (error) {
+    if (scope.kind === "activity" && error instanceof FilegateError) scope.refused = error;
+    throw error;
+  }
+}
 export function pendingMigration<T>(key: PendingMigrationKey, run: () => Promise<T>): Promise<T> {
   return scopes.run({ kind: "pending", key }, run);
 }
@@ -125,11 +164,13 @@ function certainNoChange(scope: Extract<GuardScope, { kind: "activity" }>, error
 
 export async function fileAction<T>(
   call: FilesCall,
-  intent: Intent,
+  input: Intent,
   effect: () => Promise<T>,
   finish: (tx: TransactionSQL, result: T) => Promise<Finished>,
   options?: { heartbeatMs?: number },
 ): Promise<T> {
+  // The guard must authorize the values committed below, even if the caller later changes its object.
+  const intent = { ...input };
   const id = Bun.randomUUIDv7();
   const userId = call.kind === "user" ? (call.actor.kind === "user" ? call.actor.user.id : (call.actor.delegatedUser?.id ?? null)) : null;
   const detail = { ...intent.detail, ...(call.kind === "system" ? { job: call.job } : {}) };

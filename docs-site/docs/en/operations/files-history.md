@@ -63,6 +63,12 @@ clients keep the same guard. Folder creation needs an open activity scope
 matching the server, root, action, and path. Missing, closed, or mismatched
 scopes fail before a request is sent.
 
+Activity scopes and write accounting stay private to the history module. The
+facade asks that module to check each mutation; callers can read only the
+activity ID. The guard uses a copy of the committed intent, so changing the
+caller's object cannot redirect an authorized write. The temporary migration
+permissions are immutable as well.
+
 Unconverted writes use named `PENDING_MIGRATION` entries. That list may only
 shrink. Each entry permits only its listed facade methods, and the number of
 places that use an entry may only shrink as well. A separate `lifecycle.probe` exception permits only owner-probe folder

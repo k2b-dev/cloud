@@ -1,6 +1,5 @@
-import { Filegate, FilegateError, type RootClient } from "@k2b/filegate";
-import { type ActivityAction, currentScope, type Intent, type Mutation, PENDING_MIGRATION_METHODS } from "./activity";
-import { FilesError } from "./errors";
+import { Filegate, type RootClient } from "@k2b/filegate";
+import { filegateMutation, type Mutation } from "./activity";
 
 /** Tree operations walk whole roots; upload commits copy all received bytes. */
 const SLOW_CALL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -25,11 +24,6 @@ export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch 
     { preconnect: transport.preconnect },
   );
 }
-
-const actionRules: Record<ActivityAction, (intent: Intent, method: Mutation, path: string) => boolean> = {
-  "folder.create": (intent, method, path) =>
-    method === "mkdir" && !!intent.pathAfter && (path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`)),
-};
 
 export function connectFilegate(config: { url: string; token: string }, transport?: typeof fetch): FilesFilegate {
   return FilesFilegate.connect(config, transport);
@@ -82,28 +76,8 @@ export class FilesRoot {
   as(...args: Parameters<RootClient["as"]>): FilesRoot {
     return new FilesRoot(this.#client.as(...args), this.serverUrl);
   }
-  async #mutate<T>(method: Mutation, path: string, run: () => Promise<T>): Promise<T> {
-    const scope = currentScope();
-    if (!scope || (scope.kind === "activity" && scope.closed)) throw new FilesError("activity_scope_missing", 500);
-    if (scope.kind === "pending" && !PENDING_MIGRATION_METHODS[scope.key].includes(method))
-      throw new FilesError("activity_scope_mismatch", 500);
-    if (scope.kind === "exception" && !(["mkdir", "remove"].includes(method) && path.split("/").at(-1)?.startsWith(".filesv2-owner-")))
-      throw new FilesError("activity_scope_mismatch", 500);
-    if (scope.kind === "activity") {
-      if (
-        scope.intent.serverUrl !== this.serverUrl ||
-        scope.intent.root !== this.name ||
-        !actionRules[scope.intent.action](scope.intent, method, path)
-      )
-        throw new FilesError("activity_scope_mismatch", 500);
-      scope.sent++;
-    }
-    try {
-      return await run();
-    } catch (error) {
-      if (scope.kind === "activity" && error instanceof FilegateError) scope.refused = error;
-      throw error;
-    }
+  #mutate<T>(method: Mutation, path: string, run: () => Promise<T>): Promise<T> {
+    return filegateMutation(this.serverUrl, this.name, method, path, run);
   }
   info(...args: Parameters<RootClient["info"]>) {
     return this.#client.info(...args);

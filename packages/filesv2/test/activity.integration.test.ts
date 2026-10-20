@@ -11,7 +11,7 @@ import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
 import { migrate } from "../src/migrate";
 import { createFilesService, filesService } from "../src/service";
-import { currentScope, fileAction, type Intent, purgeActivity, recoverActivity } from "../src/service/activity";
+import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity } from "../src/service/activity";
 import { FilesError } from "../src/service/errors";
 import { connectFilegate, type FilesFilegate } from "../src/service/filegate-facade";
 import { testActor, testCall } from "./files-call";
@@ -230,6 +230,112 @@ suite("Files activity with real storage", () => {
       connect: connectFilegate,
     };
   }
+  function guardedTransport() {
+    let sent = 0;
+    const transport: typeof fetch = Object.assign(
+      async () => {
+        sent++;
+        return Response.json({ path: `${home}/guarded`, directory: true });
+      },
+      { preconnect: fetch.preconnect },
+    );
+    return { client: connectFilegate(config, transport), transport, sent: () => sent };
+  }
+  test.each(["target", "parent", "ancestor"])("persisted folder intent permits its %s", async (part) => {
+    const f = guardedTransport();
+    const path = part === "target" ? `${home}/guarded` : part === "parent" ? home : prefix;
+    await fileAction(
+      testCall(actor),
+      intent("guarded"),
+      () => f.client.as({ uid: 31001, gid: 32001 }).root("cloud").as({ uid: 31001, gid: 32001 }).mkdir(path),
+      async () => {},
+    );
+    expect(f.sent()).toBe(1);
+    expect((await sql`SELECT state FROM filesv2.activity`)[0]).toMatchObject({ state: "done" });
+  });
+  test.each(["sibling", "child", "prefix", "root", "server"])("persisted folder intent refuses a different %s", async (part) => {
+    const f = guardedTransport();
+    const root =
+      part === "server"
+        ? connectFilegate({ ...config, url: "https://other.test" }, f.transport).root("cloud")
+        : f.client.root(part === "root" ? "freeipa" : "cloud");
+    const path =
+      part === "sibling"
+        ? `${home}/sibling`
+        : part === "child"
+          ? `${home}/guarded/child`
+          : part === "prefix"
+            ? `${home}-other`
+            : `${home}/guarded`;
+    await expect(
+      fileAction(
+        testCall(actor),
+        intent("guarded"),
+        () => root.mkdir(path),
+        async () => {},
+      ),
+    ).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+    expect(f.sent()).toBe(0);
+  });
+  test("persisted folder intent refuses every other mutation before transport", async () => {
+    const f = guardedTransport();
+    const root = f.client.root("cloud");
+    const path = `${home}/guarded`;
+    const mutations = [
+      () => root.put(path, new Blob(["data"])),
+      () => root.createSession(path, 4),
+      () => root.commitSession("session"),
+      () => root.abortSession("session"),
+      () => root.transfer(path, "cloud", `${home}/other`),
+      () => root.restore(path, "version"),
+      () => root.copyVersion(path, "version", "cloud", `${home}/other`),
+      () => root.updateVersion(path, "version", { pinned: false }),
+      () => root.deleteVersion(path, "version"),
+      () => root.remove(path),
+    ];
+    await fileAction(
+      testCall(actor),
+      intent("guarded"),
+      async () => {
+        for (const mutate of mutations) await expect(mutate()).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+      },
+      async () => {},
+    );
+    expect(f.sent()).toBe(0);
+  });
+  test("changing the caller's intent cannot redirect a persisted scope", async () => {
+    const f = guardedTransport();
+    const input = intent("guarded");
+    await fileAction(
+      testCall(actor),
+      input,
+      async () => {
+        input.pathAfter = `${home}/victim`;
+        await expect(f.client.root("cloud").mkdir(input.pathAfter)).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+        await f.client.root("cloud").mkdir(`${home}/guarded`);
+      },
+      async () => {},
+    );
+    expect(f.sent()).toBe(1);
+    expect((await sql`SELECT path_after FROM filesv2.activity`)[0]).toMatchObject({ path_after: `${home}/guarded` });
+  });
+  test("a closed persisted scope refuses an inherited asynchronous write", async () => {
+    const f = guardedTransport();
+    const release = Promise.withResolvers<void>();
+    let stray: Promise<unknown> = Promise.resolve();
+    await fileAction(
+      testCall(actor),
+      intent("guarded"),
+      async () => {
+        stray = release.promise.then(() => f.client.root("cloud").mkdir(`${home}/guarded`));
+      },
+      async () => {},
+    );
+    const refused = expect(stray).rejects.toMatchObject({ code: "activity_scope_missing" });
+    release.resolve();
+    await refused;
+    expect(f.sent()).toBe(0);
+  });
   test("a terminal finish is idempotent, including xmin and finished_at", async () => {
     let id = "";
     let before: Row | undefined;
@@ -238,9 +344,8 @@ suite("Files activity with real storage", () => {
       testCall(actor),
       intent("terminal"),
       async () => {
-        const scope = currentScope();
-        if (scope?.kind !== "activity") throw new Error("missing activity");
-        id = scope.id;
+        id = currentActivityId() ?? "";
+        if (!id) throw new Error("missing activity");
         await sql`UPDATE filesv2.activity SET state='done',finished_at=${now} WHERE id=${id}::uuid`;
         before = await row(id);
         return "answer";
@@ -430,10 +535,10 @@ suite("Files activity with real storage", () => {
       intent("late"),
       async () => {
         const node = await facade.root("cloud").mkdir(`${home}/late`);
-        const scope = currentScope();
-        if (scope?.kind !== "activity") throw new Error("missing activity");
-        await sql`UPDATE filesv2.activity SET started_at=${new Date(now.getTime() - day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${now} WHERE id=${scope.id}::uuid`;
-        ready.resolve(scope.id);
+        const id = currentActivityId();
+        if (!id) throw new Error("missing activity");
+        await sql`UPDATE filesv2.activity SET started_at=${new Date(now.getTime() - day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${now} WHERE id=${id}::uuid`;
+        ready.resolve(id);
         await release.promise;
         return node;
       },
@@ -551,9 +656,8 @@ suite("Files activity with real storage", () => {
           testCall(actor),
           intent(`refused-${state}`),
           async () => {
-            const scope = currentScope();
-            if (scope?.kind !== "activity") throw new Error("missing activity");
-            id = scope.id;
+            id = currentActivityId() ?? "";
+            if (!id) throw new Error("missing activity");
             // Simulate recovery (or a terminal result) arriving before the owner's refusal.
             await sql`UPDATE filesv2.activity SET state=${state},started_at=${now},heartbeat_at=${now},next_check_at=${now},finished_at=${state === "unclear" ? null : now} WHERE id=${id}::uuid`;
             before = await row(id);
