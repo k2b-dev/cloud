@@ -76,12 +76,12 @@ export async function helpPanelServerBrowserFixture() {
       })
       .get("/", (c) =>
         c.html(
-          `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div class="cloud-app-canvas" data-panel="open" data-panel-sheet="open" style="position:relative;display:flex;height:100dvh"><main data-cloud-app-area style="flex:1">Host app</main><aside class="cloud-panel" data-state="ready"><div class="cloud-panel__card"><header class="cloud-panel__head">Help</header><div class="cloud-panel__body"><iframe class="cloud-panel__frame" title="Help" src="/panel${c.req.url.includes("topic=") ? "?topic=share" : ""}"></iframe></div></div></aside></div></body></html>`,
+          `<!doctype html><html lang="en"${themeClass(c.req.query("theme"))}><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div class="cloud-app-canvas" data-panel="open" data-panel-sheet="open" style="position:relative;display:flex;height:100dvh"><main data-cloud-app-area style="flex:1">Host app</main><aside class="cloud-panel" data-state="ready"><div class="cloud-panel__card"><header class="cloud-panel__head">Help</header><div class="cloud-panel__body"><iframe class="cloud-panel__frame" title="Help" src="/panel?${new URLSearchParams({ ...(c.req.query("topic") ? { topic: "share" } : {}), theme: c.req.query("theme") ?? "light" })}"></iframe></div></div></aside></div></body></html>`,
         ),
       )
       .get("/panel", (c) =>
         c.html(
-          `<!doctype html><html lang="en"><head><style>${css}</style><style>html,body{margin:0;height:100%}*,*::before,*::after{animation:none!important;transition:none!important}</style></head><body class="k2b-ui"><div class="cloud-panel-page" data-cloud-panel-page><script id="cloud-panel-context" type="application/json">{"v":1,"seq":0,"pageId":"22222222-2222-4222-8222-222222222222","app":"spaces","help":["share"]}</script><solid-island data-id="${runtimeId}" data-props="${runtimeProps}"></solid-island>${renderer.render({ ...panelFixtureProps, ...(c.req.query("topic") ? { initialTopic: "share", initialArticle } : {}) })}</div><script>document.documentElement.dataset.serverGeometry=JSON.stringify((${panelGeometry.toString()})());</script><script type="module">${JSON.stringify(scripts)}.forEach((file)=>import("/assets/"+file))</script></body></html>`,
+          `<!doctype html><html lang="en"${themeClass(c.req.query("theme"))}><head><style>${css}</style><style>html,body{margin:0;height:100%}*,*::before,*::after{animation:none!important;transition:none!important}</style></head><body class="k2b-ui"><div class="cloud-panel-page" data-cloud-panel-page><script id="cloud-panel-context" type="application/json">{"v":1,"seq":0,"pageId":"22222222-2222-4222-8222-222222222222","app":"spaces","help":["share"]}</script><solid-island data-id="${runtimeId}" data-props="${runtimeProps}"></solid-island>${renderer.render({ ...panelFixtureProps, ...(c.req.query("topic") ? { initialTopic: "share", initialArticle } : {}) })}</div><script>document.documentElement.dataset.serverGeometry=JSON.stringify((${panelGeometry.toString()})());</script><script type="module">${JSON.stringify(scripts)}.forEach((file)=>import("/assets/"+file))</script></body></html>`,
         ),
       )
       .get("/api/help/search", (c) => c.json({ ids: ["share"] }))
@@ -110,6 +110,9 @@ export async function helpPanelServerBrowserFixture() {
     throw error;
   }
 }
+
+/** Cloud's theme script sets `dark` on the root; the fixture renders that class on the server for both documents. */
+const themeClass = (theme: string | undefined) => (theme === "dark" ? ' class="dark"' : "");
 
 /** First-frame geometry is the assertion subject, so callers also take it while action chunks are held. */
 export function panelGeometry() {

@@ -62,35 +62,39 @@ for (const [width, height] of [
   [834, 1194],
   [390, 844],
 ] as const) {
-  for (const article of [false, true])
-    test(`${browserName} ${width}: ${article ? "article" : "start"} is ready and stable with all on-demand chunks held`, async () => {
-      const context = await newContext({ viewport: { width, height }, locale: "en", reducedMotion: "reduce" });
-      const page = await context.newPage();
-      const held = await holdChunks(page, fixture.dynamicChunks);
-      try {
-        await page.goto(`${fixture.origin}/${article ? "?topic=share" : ""}`, { waitUntil: "domcontentloaded" });
-        const frame = await provider(page);
-        await ready(frame);
-        await mounted(frame);
-        await held.firstRequest;
-        expect(await frame.locator(article ? "[data-help-server-article]" : "[data-help-tasks]").isVisible()).toBe(true);
-        // settled: action chunks are deliberately held; the first server frame is the assertion subject.
-        const server = await frame.evaluate(() => JSON.parse(document.documentElement.dataset.serverGeometry ?? "null"));
-        expect(await frame.evaluate(panelGeometry)).toEqual(server);
-        const finished = page.waitForResponse((response) =>
-          fixture.dynamicChunks.includes(new URL(response.url()).pathname.split("/").at(-1) ?? ""),
-        );
-        held.release();
-        await finished;
-        await settled(page);
-        expect(await frame.evaluate(panelGeometry)).toEqual(server);
-        expect(await frame.locator("[data-help-search]").count()).toBe(1);
-      } finally {
-        held.release();
-        await page.unrouteAll({ behavior: "wait" });
-        await context.close();
-      }
-    });
+  for (const theme of ["light", "dark"] as const)
+    for (const article of [false, true])
+      test(`${browserName} ${width} ${theme}: ${article ? "article" : "start"} is ready and stable with all on-demand chunks held`, async () => {
+        const context = await newContext({ viewport: { width, height }, locale: "en", reducedMotion: "reduce", colorScheme: theme });
+        const page = await context.newPage();
+        const held = await holdChunks(page, fixture.dynamicChunks);
+        try {
+          await page.goto(`${fixture.origin}/?${new URLSearchParams({ ...(article ? { topic: "share" } : {}), theme })}`, {
+            waitUntil: "domcontentloaded",
+          });
+          const frame = await provider(page);
+          await ready(frame);
+          await mounted(frame);
+          expect(await frame.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(theme === "dark");
+          await held.firstRequest;
+          expect(await frame.locator(article ? "[data-help-server-article]" : "[data-help-tasks]").isVisible()).toBe(true);
+          // settled: action chunks are deliberately held; the first server frame is the assertion subject.
+          const server = await frame.evaluate(() => JSON.parse(document.documentElement.dataset.serverGeometry ?? "null"));
+          expect(await frame.evaluate(panelGeometry)).toEqual(server);
+          const finished = page.waitForResponse((response) =>
+            fixture.dynamicChunks.includes(new URL(response.url()).pathname.split("/").at(-1) ?? ""),
+          );
+          held.release();
+          await finished;
+          await settled(page);
+          expect(await frame.evaluate(panelGeometry)).toEqual(server);
+          expect(await frame.locator("[data-help-search]").count()).toBe(1);
+        } finally {
+          held.release();
+          await page.unrouteAll({ behavior: "wait" });
+          await context.close();
+        }
+      });
 }
 
 test(`${browserName}: typing while search loads preserves the static field, text, focus, caret and reserved height`, async () => {
