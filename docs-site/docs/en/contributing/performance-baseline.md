@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Measure production page performance
@@ -496,7 +496,7 @@ verify the probe and verdict contracts, not production performance.
 `packages/mail/scripts/perf-baseline.ts` measures the Mail server and its APIs
 at a realistic mailbox size. It reuses this page's isolated production stack.
 With `--browser`, it also measures client cost and interaction times in
-Chromium and WebKit on the same seeded mailbox:
+Chromium and WebKit on the same two seeded mailboxes:
 
 ```bash
 bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
@@ -506,18 +506,25 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts --browser chromium,webk
 The script needs Docker and takes the machine-wide heavy lock. It creates and
 removes only its own labelled containers, publishes them on free loopback
 ports, and never uses port 3000 or the development database. Builds and
-startup take 5–15 minutes, seeding 20,000 messages takes about 2 minutes, and
-measuring takes 2–5 minutes; a busy host takes longer. The browser part adds
+startup take 5–15 minutes. Seeding 20,000 messages takes about 2 minutes per
+mailbox, and measuring takes 2–5 minutes; a busy host takes longer. The browser part adds
 roughly 10–30 minutes. `--help` lists every flag without starting Docker.
 
 ### Fixture
 
-`packages/mail/test/fixtures/large-mailbox.ts` builds the mailbox from a fixed
+The runner creates two readable mailboxes, A and B, for the same user through
+`POST /api/mail/mailboxes`; B appears in A's sidebar. Both are always seeded,
+even when browser measurements are filtered.
+`packages/mail/test/fixtures/large-mailbox.ts` builds each mailbox from a fixed
 seed and a frozen anchor date (`2026-10-01T00:00:00Z`), so two runs with the
-same flags seed the same rows. The defaults are 20,000 messages, 3,000
+same flags seed the same rows. The defaults per mailbox are 20,000 messages, 3,000
 conversations, and 30 folders; `--messages` (up to 100,000),
 `--conversations`, `--folders`, and `--seed` change them. Use
-`--folders 350` for the folder scale reported in #1268.
+`--folders 350` for the folder scale reported in #1268. B has the same requested
+shape with seed + 1 (wrapping to 0 after 4294967295), different content, and
+short IDs reserved against A to prevent global unique-key collisions.
+Metadata records B's fixture parameters, digest, and seed duration separately;
+`seedDurationMs` continues to describe A.
 
 The shape follows a real shared mailbox: large Inbox and Archive, many small
 folders in a tree, 70% of threads with 1–3 messages, a tail up to 99, and one
@@ -541,7 +548,10 @@ view counts, a message arriving live, and opening compose for a new message
 and a reply. `list-paging-workspace` loads page 1 through `workspace-route`
 as an untimed cursor prerequisite, then measures list pages 2–5 through
 `workspace-list`. `folder-medium-list` measures page 1 of the medium folder
-through `workspace-list`.
+through `workspace-list`. The Mailbox switch group adds
+`mailbox-switch-route`, a GET of B's `workspace-route?href=/app/mail/<B>`,
+and `ssr-mailbox-b`, a document GET of `/app/mail/<B>`. The other scenarios
+continue to target A.
 
 For each scenario the run records cold, median, and p95 times, response and
 island props bytes, Server-Timing phases, and the statement count and
@@ -563,7 +573,20 @@ engine. `--browser-runs N` (1–20, default 3) sets the cold loads per page,
 interaction, engine, and profile. WebKit may skip with a recorded connection
 error, as on the page baseline.
 
-Two pages are loaded: the mailbox and the compose page of a fresh draft. For
+`--interactions <ids>` selects a comma-separated list from the interaction
+table below (default: all eight). `--loads mailbox,compose` selects standalone
+page-load measurements (default: both); `--loads none` skips them. Unknown or
+duplicate IDs fail before startup; `none` cannot be combined with page IDs.
+These flags leave server scenarios and seeding unchanged. For a focused
+before/after run:
+
+```bash
+bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 3 \
+  --browser chromium,webkit --browser-runs 5 \
+  --interactions mailbox-switch,folder-switch --loads none
+```
+
+By default, two pages are loaded: the mailbox and the compose page of a fresh draft. For
 each page the result has the eager and lazy JavaScript (Brotli bytes and
 module count) and, per engine and profile, FCP, LCP, TTI, the end of the
 last initial island mount, the island render time (the union of the initial
@@ -579,12 +602,13 @@ The Document transfer column shows the HTML body download time
 (`responseEnd - responseStart`), its transferred bytes, and its content
 encoding. An absent `content-encoding` header is recorded as `identity`.
 
-Seven interactions share one definition for both engines and both profiles.
+Eight interactions share one definition for both engines and both profiles.
 Each sample opens its start page in its own fresh page, waits for TTI, and
 then times one action:
 
 | Interaction | Action | Ends when |
 | --- | --- | --- |
+| `mailbox-switch` | From A's Inbox, click B in the sidebar; on the phone, open the app navigation sheet first | B's first Inbox row from workspace-route page 1 is on screen, the pathname is `/app/mail/<B>`, the workspace island containing the row has mounted, and the list/main pane is not busy |
 | `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
 | `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader; an HTML body also needs its message frame to report its laid-out height |
 | `conversation-open-large` | Start with a mailbox-wide exact subject search for conversation 0 (`Project correspondence 0`, newest first), then click its conversation row. This isolates `plan.shape.largestThreadId` on page 1 without scrolling; live arrivals have different subjects. Before each sample, the workspace API must return that row on page 1 or the sample fails with the start href | The reader loads the newest 100 messages of the thread (180 messages by default). The newest message's body is on screen, with a body-format marker; an HTML body also needs its frame to report its laid-out height. A missing newest body fails the sample |
@@ -610,12 +634,36 @@ take it. An interaction sample also fails on an uncaught error or rejection
 or on an island error in any of the app's documents during the sample, so an
 error in the start page still counts after compose navigated away. Errors
 inside the sandboxed message frame do not count.
+
+`mailbox-switch` uses the same end state for a full document load and an
+in-place workspace fetch. It uses the load probe's existing runtime mount
+signal, so SSR rows cannot finish the timer before MailWorkspace mounts;
+an already mounted workspace also works when switching in place. The watch
+persists in sessionStorage and the probe runs in the destination document.
+
 Each interaction records the requests that started from the
 action until its end state, with their encoded response bytes and content
 encoding (`identity` when the header is absent); a request
 that a navigation cancels counts with its error and no bytes. The summary
 shows the API requests and bytes, and lists request encodings. Failed or
-unsettled requests have `null` encoding.
+unsettled requests have `null` encoding. For mailbox and folder switches,
+`mainRequest` identifies the destination document or workspace-route/workspace-list
+fetch. Samples and the summary include its server time (`responseStart -
+requestStart` from Playwright request timing), transfer time (`responseEnd -
+responseStart`), encoded body bytes, and encoding. These times exclude
+connection setup; bytes for the other request totals still include headers.
+
+Definitions with `trace: true` (`mailbox-switch` and `folder-switch`) add one
+extra traced Chromium sample per profile, excluded from timing samples.
+The **Interaction breakdown** table shows elapsed total, main-request server
+and transfer time, and main-thread task time split into JavaScript execution,
+parse/compile, island render, style/layout, and other, with shares of busy
+time. Busy time is the union of those main-thread task windows. The task window runs from the action to the end state. Renderer main
+threads are selected from the page's frame metadata, including a replacement
+renderer after navigation. Island render is the union of mount windows in
+that interval (zero when no island mounts); it owns nested JS, compile, and
+layout work. Remaining compile and layout work take precedence over JS, so
+these interaction shares do not overlap.
 
 Every sample uses a fresh browser context, so each start page loads cold.
 The interaction then reuses what that load cached, as for a person who just
@@ -638,7 +686,10 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts \
 The `metric` names a measured time in that result, for example
 `interaction.folder-switch.chromium.phone.median`,
 `load.mailbox.webkit.desktop.ttiMs`,
-`trace.compose.chromium.phone.styleLayoutMs`, or
+`trace.compose.chromium.phone.styleLayoutMs`,
+`interactionTrace.mailbox-switch.chromium.phone.styleLayoutMs` (also
+`scriptMs`, `parseCompileMs`, `islandRenderMs`, `otherMs`, `busyMs`, and
+`totalMs`), or
 `server.search-common.totalMs.median`. The command prints the five entries
 with the largest measured times as a Markdown table. It refuses an entry
 whose location is not an existing file and line, or whose metric has no

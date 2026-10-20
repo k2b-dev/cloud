@@ -14,7 +14,7 @@ import {
   worktreePath,
 } from "../../../../scripts/perf-baseline/runtime";
 import { Api, waitForRoutes } from "../../../../scripts/perf-baseline/seed";
-import { anchor, digestPlan, planLargeMailbox, seedLargeMailbox } from "../../test/fixtures/large-mailbox";
+import { anchor, digestPlan, fixtureShortIds, planLargeMailbox, seedLargeMailbox } from "../../test/fixtures/large-mailbox";
 import { Arrival } from "./arrival";
 import { measureBrowsers } from "./browser";
 import {
@@ -184,6 +184,7 @@ export async function run(options: Options) {
     conversations: options.conversations,
     folders: options.folders,
   });
+  const planB = planLargeMailbox({ ...plan.parameters, seed: (options.seed + 1) >>> 0 }, fixtureShortIds(plan));
   const result: Result = {
     schemaVersion: 1,
     kind: "mail",
@@ -201,6 +202,7 @@ export async function run(options: Options) {
       fixtureDigest: digestPlan(plan),
       shape: plan.shape,
       seedDurationMs: null,
+      mailboxB: { fixture: planB.parameters, fixtureDigest: digestPlan(planB), seedDurationMs: null },
       bm25: null,
       pgTextsearch: null,
       postgresVersion: null,
@@ -291,6 +293,14 @@ export async function run(options: Options) {
       seedLargeMailbox(seedDb, plan, { mailboxId: mailboxRow.id, userIds: [userId] }),
     );
     result.metadata.seedDurationMs = performance.now() - start;
+    const mailboxB = resourceSchema.parse(
+      await api.request("/api/mail/mailboxes", "POST", { ...mailboxBody(), name: `${mailboxBody().name} B` }),
+    );
+    const [mailboxBRow] = await db<{ id: string }[]>`SELECT id FROM mail.mailboxes WHERE short_id = ${mailboxB.id}`;
+    if (!mailboxBRow) throw new Error("Created mailbox B not found by short_id");
+    const startB = performance.now();
+    await seedWithAbort(seedDb, controller.signal, () => seedLargeMailbox(seedDb, planB, { mailboxId: mailboxBRow.id, userIds: [userId] }));
+    result.metadata.mailboxB!.seedDurationMs = performance.now() - startB;
     const [pg] = await db<
       { version: string; bm25: boolean; pg_textsearch: boolean }[]
     >`SELECT version(), to_regclass('mail.message_contents_bm25_idx') IS NOT NULL AS bm25, EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_textsearch') AS pg_textsearch`;
@@ -408,6 +418,13 @@ export async function run(options: Options) {
         "Two draft-seed POSTs (new and reply), each followed by its /compose/local/<seedId> SSR page. This measures the server shell, not client seed-store mounting.",
       ],
     );
+    const pageB = `/app/mail/${mailboxB.id}`;
+    add("mailbox-switch-route", "Mailbox switch", async (s) => {
+      await request(api, s, `/api/mail/mailboxes/${mailboxB.id}/workspace-route?href=${encodeURIComponent(pageB)}`);
+    });
+    add("ssr-mailbox-b", "Mailbox switch", async (s) => {
+      await request(api, s, pageB, undefined, true);
+    });
     result.scenarios = definitions.map(({ id, group, notes }) => ({
       id,
       group,
@@ -491,6 +508,9 @@ export async function run(options: Options) {
           plan,
           fixture,
           mailbox: { shortId: mailbox.id, uuid: mailboxRow.id },
+          mailboxB: { shortId: mailboxB.id },
+          interactions: options.interactions,
+          loads: options.loads,
           nextUid: () => arrival++,
         },
         result.browser,

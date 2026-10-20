@@ -13,7 +13,15 @@ export const browserProfiles = ["desktop", "phone"] as const;
  */
 export const interactions = [
   {
+    id: "mailbox-switch",
+    trace: true,
+    start: "Mailbox A's Inbox",
+    action: "Click mailbox B in the sidebar (phone: inside the opened app menu)",
+    end: "B's first Inbox row is in the viewport, the pathname is B's mailbox, its workspace island has mounted and the list is not busy",
+  },
+  {
     id: "folder-switch",
+    trace: true,
     start: "Inbox",
     action: "Click the fixture's first custom folder in the navigation (phone: inside the opened app menu)",
     end: "The list heading names that folder and its first conversation row is in the viewport",
@@ -63,6 +71,18 @@ export type LoadPage = (typeof loadPages)[number];
 export function parseBrowsers(value: string): Engine[] {
   const list = z.array(z.enum(engines)).min(1).parse(value.split(","));
   if (new Set(list).size !== list.length) throw new Error("--browser contains duplicates");
+  return list;
+}
+
+export function parseInteractions(value: string): InteractionId[] {
+  const list = z.array(z.enum(interactionIds)).min(1).parse(value.split(","));
+  if (new Set(list).size !== list.length) throw new Error("--interactions contains duplicates");
+  return list;
+}
+export function parseLoads(value: string): LoadPage[] {
+  if (value === "none") return [];
+  const list = z.array(z.enum(loadPages)).min(1).parse(value.split(","));
+  if (new Set(list).size !== list.length) throw new Error("--loads contains duplicates");
   return list;
 }
 
@@ -130,6 +150,10 @@ export const interactionRequestSchema = z.object({
   bytes: count,
   /** The browser's error text when the request failed, for example when a navigation cancelled it. */
   failure: z.string().nullable(),
+  /** Request timing excludes connection setup; unavailable for failures and older results. */
+  serverMs: ms.optional(),
+  transferMs: ms.optional(),
+  encodedBytes: count.optional(),
 });
 export const interactionSampleSchema = z.object({
   durationMs: ms,
@@ -137,17 +161,33 @@ export const interactionSampleSchema = z.object({
   apiRequests: count,
   apiBytes: count,
   totalBytes: count,
+  /** Document navigation or the destination mailbox workspace fetch. */
+  mainRequest: interactionRequestSchema.optional(),
 });
 export type InteractionSample = z.infer<typeof interactionSampleSchema>;
 const interactionMetricsSchema = z.object({
   durationMs: z.object({ median: ms, p95: ms, min: ms, max: ms }),
   apiRequests: ms,
   apiBytes: ms,
+  serverMs: ms.optional(),
+  transferMs: ms.optional(),
+  encodedBytes: ms.optional(),
 });
+export const interactionTraceSchema = traceSchema.extend({
+  totalMs: ms,
+  scriptMs: ms,
+  otherMs: ms,
+  scriptShare: ms,
+  otherShare: ms,
+  mainRequest: interactionRequestSchema.optional(),
+});
+export type InteractionTrace = z.infer<typeof interactionTraceSchema>;
 export const interactionProfileSchema = z.object({
   ...engineStatus,
   samples: z.array(interactionSampleSchema),
   metrics: interactionMetricsSchema.nullable(),
+  trace: interactionTraceSchema.nullable().optional(),
+  traceError: z.string().nullable().optional(),
 });
 export type InteractionProfile = z.infer<typeof interactionProfileSchema>;
 export const interactionResultSchema = z.object({
@@ -168,7 +208,11 @@ export const browserSectionSchema = z.object({
 export type BrowserSection = z.infer<typeof browserSectionSchema>;
 
 /** Builds one sample; the API share counts requests to /api/. */
-export function interactionSample(durationMs: number, requests: z.infer<typeof interactionRequestSchema>[]): InteractionSample {
+export function interactionSample(
+  durationMs: number,
+  requests: z.infer<typeof interactionRequestSchema>[],
+  targetPath?: string,
+): InteractionSample {
   const api = requests.filter((request) => request.path.startsWith("/api/"));
   return interactionSampleSchema.parse({
     durationMs: Number(durationMs.toFixed(1)),
@@ -176,7 +220,27 @@ export function interactionSample(durationMs: number, requests: z.infer<typeof i
     apiRequests: api.length,
     apiBytes: api.reduce((sum, request) => sum + request.bytes, 0),
     totalBytes: requests.reduce((sum, request) => sum + request.bytes, 0),
+    ...(targetPath ? { mainRequest: mainInteractionRequest(requests, targetPath) } : {}),
   });
+}
+
+export function mainInteractionRequest(requests: z.infer<typeof interactionRequestSchema>[], targetPath: string) {
+  const workspace = `/api/mail/mailboxes/${targetPath.split("/").at(-1)}`;
+  return requests.find((request) => {
+    const path = request.path.split("?")[0];
+    return (
+      request.failure === null &&
+      request.method === "GET" &&
+      ((request.type === "document" && path === targetPath) ||
+        ((request.type === "fetch" || request.type === "xhr") &&
+          (path === `${workspace}/workspace-route` || path === `${workspace}/workspace-list`)))
+    );
+  });
+}
+
+export function interactionRequestTiming(timing: { requestStart: number; responseStart: number; responseEnd: number }) {
+  if (timing.requestStart < 0 || timing.responseStart < timing.requestStart || timing.responseEnd < timing.responseStart) return {};
+  return { serverMs: timing.responseStart - timing.requestStart, transferMs: timing.responseEnd - timing.responseStart };
 }
 
 function percentile(sorted: number[], p: number) {
@@ -200,6 +264,12 @@ export function summarizeInteraction(samples: InteractionSample[]): z.infer<type
     },
     apiRequests: median(samples.map((sample) => sample.apiRequests)),
     apiBytes: median(samples.map((sample) => sample.apiBytes)),
+    ...Object.fromEntries(
+      (["serverMs", "transferMs", "encodedBytes"] as const).flatMap((key) => {
+        const values = samples.flatMap((sample) => (sample.mainRequest?.[key] === undefined ? [] : [sample.mainRequest[key]]));
+        return values.length ? [[key, median(values)]] : [];
+      }),
+    ),
   };
 }
 export function summarizeLoads(samples: LoadSample[]) {
@@ -236,7 +306,7 @@ export function islandRenderMs(timing: { mountStarts: number[]; mountTimes: numb
 }
 
 export const syncMark = "cloud-mail-perf-sync";
-const styleLayoutEvents = new Set(["UpdateLayoutTree", "RecalculateStyles", "Layout", "ParseAuthorStyleSheet"]);
+const styleLayoutEvents = new Set(["UpdateLayoutTree", "RecalculateStyles", "RecalcStyle", "Layout", "ParseAuthorStyleSheet"]);
 const parseCompileEvent = /^(v8\.(compile|parse|produce|deserialize)|V8\.(Compile|Parse)|CompileScript$|CompileCode$)/;
 const traceEventSchema = z.looseObject({
   name: z.string(),
@@ -246,6 +316,7 @@ const traceEventSchema = z.looseObject({
   tid: z.number(),
   ts: z.number(),
   dur: z.number().optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -297,6 +368,125 @@ export function traceBreakdown(
     islandRenderShare: share(island),
     styleLayoutShare: share(style),
     parseCompileShare: share(compile),
+  });
+}
+
+/** Epoch times keep the action, mounts and sync mark comparable across documents. */
+export function interactionTraceBreakdown(
+  trace: unknown,
+  timing: {
+    markTimeMs: number;
+    actionAt: number;
+    hitAt: number;
+    mountWindows: Interval[];
+    frameIds: string[];
+  },
+): InteractionTrace {
+  const raw = z.object({ traceEvents: z.array(z.unknown()) }).parse(trace);
+  const events = raw.traceEvents.flatMap((value) => {
+    const parsed = traceEventSchema.safeParse(value);
+    return parsed.success ? [parsed.data] : [];
+  });
+  const mark = events.find((event) => event.name === syncMark && (event.cat ?? "").includes("blink.user_timing"));
+  if (!mark) throw new Error(`Trace has no ${syncMark} user-timing mark`);
+  const actionTraceUs = mark.ts + (timing.actionAt - timing.markTimeMs) * 1000;
+  const pagePids = new Set<number>();
+  const frameSchema = z.object({ frame: z.string(), processId: z.number(), parent: z.string().optional() });
+  const frames = events.flatMap((event) => {
+    const data = event.args?.data;
+    if (event.name === "TracingStartedInBrowser") {
+      const parsed = z.object({ frames: z.array(frameSchema) }).safeParse(data);
+      return parsed.success ? parsed.data.frames : [];
+    }
+    if (event.name === "FrameCommittedInBrowser") {
+      const parsed = frameSchema.safeParse(data);
+      return parsed.success ? [parsed.data] : [];
+    }
+    return [];
+  });
+  const pageFrames = new Set(timing.frameIds);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const frame of frames)
+      if (frame.parent && pageFrames.has(frame.parent) && !pageFrames.has(frame.frame)) {
+        pageFrames.add(frame.frame);
+        added = true;
+      }
+  }
+  for (const frame of frames) if (pageFrames.has(frame.frame)) pagePids.add(frame.processId);
+  // The mark identifies the original renderer; frame commits identify a replacement renderer.
+  pagePids.add(mark.pid);
+  const threads = new Set(
+    events
+      .filter((event) => event.name === "thread_name" && event.args?.name === "CrRendererMain" && pagePids.has(event.pid))
+      .map((event) => `${event.pid}:${event.tid}`),
+  );
+  threads.add(`${mark.pid}:${mark.tid}`);
+  const totals = { busyMs: 0, islandRenderMs: 0, styleLayoutMs: 0, parseCompileMs: 0, scriptMs: 0, otherMs: 0 };
+  const scriptEvent = /^(EvaluateScript|EvaluateModule|FunctionCall|EventDispatch|v8\.run|V8\.Execute)$/;
+  const spans = events
+    .filter((event) => threads.has(`${event.pid}:${event.tid}`) && event.ph === "X" && event.dur !== undefined)
+    .map((event) => ({
+      name: event.name,
+      start: Math.max(timing.actionAt, timing.actionAt + (event.ts - actionTraceUs) / 1000),
+      end: Math.min(timing.hitAt, timing.actionAt + (event.ts + event.dur! - actionTraceUs) / 1000),
+    }))
+    .filter((span) => span.end > span.start);
+  type Category = "busyMs" | "islandRenderMs" | "parseCompileMs" | "styleLayoutMs" | "scriptMs";
+  const edges: { time: number; key: Category; delta: number }[] = [];
+  const add = (start: number, end: number, key: Category) => {
+    start = Math.max(start, timing.actionAt);
+    end = Math.min(end, timing.hitAt);
+    if (end > start) edges.push({ time: start, key, delta: 1 }, { time: end, key, delta: -1 });
+  };
+  for (const span of spans) {
+    const key =
+      span.name === "RunTask" || span.name === "ThreadControllerImpl::RunTask"
+        ? "busyMs"
+        : parseCompileEvent.test(span.name)
+          ? "parseCompileMs"
+          : styleLayoutEvents.has(span.name)
+            ? "styleLayoutMs"
+            : scriptEvent.test(span.name)
+              ? "scriptMs"
+              : null;
+    if (key) add(span.start, span.end, key);
+  }
+  for (const [start, end] of timing.mountWindows) add(start, end, "islandRenderMs");
+  const active = { busyMs: 0, islandRenderMs: 0, parseCompileMs: 0, styleLayoutMs: 0, scriptMs: 0 };
+  let previous = timing.actionAt;
+  for (const edge of edges.sort((a, b) => a.time - b.time)) {
+    const duration = edge.time - previous;
+    if (active.busyMs > 0) {
+      totals.busyMs += duration;
+      // Disjoint attribution: the mount window owns its nested JS/layout/compile work.
+      const key =
+        active.islandRenderMs > 0
+          ? "islandRenderMs"
+          : active.parseCompileMs > 0
+            ? "parseCompileMs"
+            : active.styleLayoutMs > 0
+              ? "styleLayoutMs"
+              : active.scriptMs > 0
+                ? "scriptMs"
+                : "otherMs";
+      totals[key] += duration;
+    }
+    active[edge.key] += edge.delta;
+    previous = edge.time;
+  }
+  if (totals.busyMs <= 0) throw new Error("Trace has no page main-thread tasks in the interaction window");
+  const shares = Object.fromEntries(
+    (["islandRender", "styleLayout", "parseCompile", "script", "other"] as const).map((key) => [
+      `${key}Share`,
+      Number((totals[`${key}Ms`] / totals.busyMs).toFixed(4)),
+    ]),
+  );
+  return interactionTraceSchema.parse({
+    ...Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, Number(value.toFixed(1))])),
+    ...shares,
+    totalMs: Number((timing.hitAt - timing.actionAt).toFixed(1)),
   });
 }
 
@@ -353,6 +543,7 @@ export function renderBrowserSummary(section: BrowserSection) {
   );
   for (const definition of interactions) {
     const result = section.interactions.find((item) => item.id === definition.id);
+    if (!result) continue;
     lines.push(
       `### ${definition.id}`,
       "",
@@ -369,6 +560,17 @@ export function renderBrowserSummary(section: BrowserSection) {
       );
       if (profile.reason) lines.push(`| ↳ reason: ${cell(profile.reason.slice(0, 500))} | | | | | |`);
     }
+    if (result.profiles.some((profile) => profile.samples.some((sample) => sample.mainRequest))) {
+      lines.push(
+        "",
+        "| Engine / profile | Main request server | Transfer | Encoded body | Encoding |",
+        "| --- | ---: | ---: | ---: | --- |",
+      );
+      for (const profile of result.profiles)
+        lines.push(
+          `| ${profile.browser} ${profile.profile} | ${fmt(profile.metrics?.serverMs)} | ${fmt(profile.metrics?.transferMs)} | ${kb(profile.metrics?.encodedBytes)} | ${[...new Set(profile.samples.flatMap((sample) => (sample.mainRequest?.encoding ? [sample.mainRequest.encoding] : [])))].join("/") || "—"} |`,
+        );
+    }
     const requests = result?.profiles.find((profile) => profile.samples.length)?.samples.at(-1)?.requests ?? [];
     if (requests.length)
       lines.push(
@@ -377,6 +579,28 @@ export function renderBrowserSummary(section: BrowserSection) {
           .map((request) => `${request.method} ${request.path.split("?")[0]} ${kb(request.bytes)} ${request.encoding ?? "—"}`)
           .join("; ")}.`,
       );
+    lines.push("");
+  }
+  const traced = section.interactions.flatMap((entry) =>
+    entry.profiles.filter((profile) => profile.trace || profile.traceError).map((profile) => ({ id: entry.id, profile })),
+  );
+  if (traced.length) {
+    lines.push(
+      "## Interaction breakdown",
+      "",
+      "One extra Chromium sample per opted-in interaction and profile; excluded from timing samples. Total is elapsed ms; busy time is the union of page main-thread tasks; categories are disjoint ms (share of busy task time). Island render owns work inside mount windows; server and transfer are the main request in the traced sample.",
+      "",
+      "| Interaction | Profile | Total | Server time | Transfer | JS | Parse/compile | Island render | Style/layout | Other |",
+      "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    );
+    for (const { id, profile } of traced) {
+      const t = profile.trace;
+      const part = (ms: number | undefined, share: number | undefined) => `${fmt(ms)} (${pct(share)})`;
+      lines.push(
+        `| ${id} | ${profile.browser} ${profile.profile} | ${fmt(t?.totalMs)} | ${fmt(t?.mainRequest?.serverMs)} | ${fmt(t?.mainRequest?.transferMs)} | ${part(t?.scriptMs, t?.scriptShare)} | ${part(t?.parseCompileMs, t?.parseCompileShare)} | ${part(t?.islandRenderMs, t?.islandRenderShare)} | ${part(t?.styleLayoutMs, t?.styleLayoutShare)} | ${part(t?.otherMs, t?.otherShare)} |`,
+      );
+      if (profile.traceError) lines.push(`Trace error (${id}, ${profile.profile}): ${cell(profile.traceError)}`, "");
+    }
     lines.push("");
   }
   for (const error of section.errors) lines.push(`- Browser error: ${cell(error)}`);
@@ -430,6 +654,13 @@ export function timeMetrics(result: {
       if (profile.status === "ok" && profile.metrics) {
         index.set(`interaction.${interaction.id}.${profile.browser}.${profile.profile}.median`, profile.metrics.durationMs.median);
         index.set(`interaction.${interaction.id}.${profile.browser}.${profile.profile}.p95`, profile.metrics.durationMs.p95);
+        for (const key of ["serverMs", "transferMs"] as const) {
+          const value = profile.metrics[key];
+          if (value !== undefined) index.set(`interaction.${interaction.id}.${profile.browser}.${profile.profile}.${key}`, value);
+        }
+        if (profile.trace)
+          for (const key of ["totalMs", "busyMs", "scriptMs", "parseCompileMs", "islandRenderMs", "styleLayoutMs", "otherMs"] as const)
+            index.set(`interactionTrace.${interaction.id}.${profile.browser}.${profile.profile}.${key}`, profile.trace[key]);
       }
   return index;
 }
