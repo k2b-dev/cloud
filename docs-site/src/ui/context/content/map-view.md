@@ -65,7 +65,7 @@ tinted, large protected areas are not.
 | `boundary` | `#aea89c` | `#4f5763` | `--k2b-map-boundary` |
 | `label` | `#52525b` | `#a1a1aa` | `--k2b-map-label` |
 | `labelStrong` | `#27272a` | `#e4e4e7` | `--k2b-map-label-strong` |
-| `waterLabel` | `#3f6a8a` | `#8fb5d3` | `--k2b-map-water-label` |
+| `waterLabel` | `#3a6383` | `#8fb5d3` | `--k2b-map-water-label` |
 
 MapLibre cannot read CSS, so the style uses `mapPalette`. The CSS tokens
 mirror it for map art drawn by the host, and a test keeps them equal.
@@ -86,10 +86,19 @@ The `{fontstack}` segment arrives URL-encoded, for example
 scripts outside the shipped ranges are drawn locally by MapLibre.
 
 The glyphs cover the Latin, Latin Extended, Vietnamese, Greek, and Cyrillic
-characters that IBM Plex Sans draws. Only ranges with glyphs ship: 12 range
-files and `OFL.txt`, **345.7 KiB raw** and **184.3 KiB gzip** at level 6,
-licence included. A German or English map usually loads only `0-255`
-(about 75 KiB raw) and a few small ranges.
+characters that IBM Plex Sans draws: 9 range files and `OFL.txt`,
+**343.7 KiB raw** and **183.3 KiB gzip** at level 6, licence included. A German
+or English map usually loads only `0-255` (about 75 KiB raw) and a few small
+ranges.
+
+MapLibre draws a character locally only when its whole range is missing. A
+shipped range that lacks a character drops it from the label. So ranges where
+Plex draws only a character or two (`1280-1535` with Armenian and Hebrew,
+`65024-65279`, `65280-65535` with fullwidth forms) are left out and drawn
+locally. Shipped ranges still have gaps: Latin Extended Additional
+`U+1E00`–`U+1E7F` (for example `ḥ`, `ṣ`, `ḍ`) is not drawn by Plex, and those
+letters are dropped.
+
 Regenerate them from the repository root:
 
 ```bash

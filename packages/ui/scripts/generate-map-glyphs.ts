@@ -7,6 +7,8 @@ const require = createRequire(import.meta.url);
 const fontstack = "IBM Plex Sans Medium";
 const subsets = ["latin", "latin-ext", "vietnamese", "greek", "cyrillic", "cyrillic-ext"] as const;
 const defaultOut = resolve(import.meta.dir, "../map-glyphs");
+// Unshipped ranges fall back to the browser's local font; shipped partial ranges drop the letters they lack.
+export const skippedRangeStarts = [1280, 65024, 65280];
 
 type Fontnik = {
   load(font: Buffer, callback: (error: Error | null, faces: { points: number[] }[]) => void): void;
@@ -170,7 +172,9 @@ export async function generateMapGlyphs(outDir = defaultOut) {
     if (!faces[0]) throw new Error(`No font face in ${subset}`);
     fonts.push({ font, ranges: new Set(faces[0].points.map((point) => Math.floor(point / 256) * 256)) });
   }
-  const starts = [...new Set(fonts.flatMap(({ ranges }) => [...ranges]))].sort((a, b) => a - b);
+  const starts = [...new Set(fonts.flatMap(({ ranges }) => [...ranges]))]
+    .filter((start) => !skippedRangeStarts.includes(start))
+    .sort((a, b) => a - b);
   const directory = join(outDir, fontstack);
   await mkdir(directory, { recursive: true });
   for (const file of (await readdir(directory)).sort()) {
@@ -209,7 +213,9 @@ export async function generateMapGlyphs(outDir = defaultOut) {
 if (import.meta.main) {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === "--help") {
-    console.log("Usage: bun packages/ui/scripts/generate-map-glyphs.ts [--out <dir>]\nDefault output: packages/ui/map-glyphs");
+    console.log(
+      "Usage: bun packages/ui/scripts/generate-map-glyphs.ts [--out <dir>]\nDefault output: packages/ui/map-glyphs\nCommitted assets are generated on linux-x64.",
+    );
   } else if (args.length === 0 || (args.length === 2 && args[0] === "--out" && args[1] && !args[1].startsWith("--"))) {
     try {
       const sizes = await generateMapGlyphs(args[1] ? resolve(args[1]) : defaultOut);

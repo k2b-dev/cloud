@@ -2,7 +2,7 @@
 export type MapPaletteColors = {
   /** Background land, also behind the server frame before the map image arrives. */
   land: string;
-  /** Woods, grass, parks, and protected areas. */
+  /** Woods, grass, and city green; large protected areas stay plain land. */
   green: string;
   water: string;
   building: string;
@@ -39,7 +39,7 @@ export const mapPalette = {
     boundary: "#aea89c",
     label: "#52525b",
     labelStrong: "#27272a",
-    waterLabel: "#3f6a8a",
+    waterLabel: "#3a6383",
   },
   dark: {
     land: "#1a1f26",

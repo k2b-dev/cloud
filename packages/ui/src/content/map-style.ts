@@ -82,7 +82,7 @@ const labelText = (locale: string): ExpressionSpecification => {
   return ["coalesce", ...names];
 };
 
-const roads = (colors: MapPaletteColors): LayerSpecification[] => {
+const roads = (theme: MapTheme, colors: MapPaletteColors): LayerSpecification[] => {
   const casing = (id: string, filter: FilterSpecification, stops: Stops, minzoom: number, color: string): LayerSpecification => ({
     id: `${id}-casing`,
     type: "line",
@@ -109,8 +109,10 @@ const roads = (colors: MapPaletteColors): LayerSpecification[] => {
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": color, "line-width": zoomed(stops), "line-opacity": tunnelOpacity },
   });
-  // Far out, a white road disappears on light land, so roads start in the casing tone and turn into roads with edges.
-  const road: ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 11, colors.roadCasing, 12.5, colors.road];
+  // Far out, roads take whichever tone stands out more from land: on light land a white road disappears, so it
+  // starts in the casing tone; on dark land the casing tone is the weaker one. Edges appear as roads widen.
+  const far = theme === "light" ? colors.roadCasing : colors.road;
+  const road: ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 11, far, 12.5, colors.road];
   return [
     {
       id: "path",
@@ -399,7 +401,7 @@ export function mapStyle(options: MapStyleOptions): StyleSpecification {
           ]),
         },
       },
-      ...roads(colors),
+      ...roads(theme, colors),
       ...labels(colors, text),
     ],
   };

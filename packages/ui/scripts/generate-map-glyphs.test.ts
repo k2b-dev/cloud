@@ -38,7 +38,9 @@ test("two pinned generations equal the committed assets and remove stale ranges"
     expect(firstSizes.fileCount).toBeGreaterThan(1);
     expect(firstSizes.rawBytes).toBeGreaterThan(firstSizes.gzipBytes);
     expect(await fingerprint(first)).toBe(await fingerprint(second));
-    expect(await fingerprint(first)).toBe(await fingerprint(resolve(import.meta.dir, "../map-glyphs")));
+    if (process.platform === "linux" && process.arch === "x64") {
+      expect(await fingerprint(first)).toBe(await fingerprint(resolve(import.meta.dir, "../map-glyphs")));
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

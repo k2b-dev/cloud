@@ -3,6 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
+import { skippedRangeStarts } from "../../scripts/generate-map-glyphs";
+import { mapPalette } from "./map-palette";
 import { mapAttribution, mapStyle } from "./map-style";
 
 const options = {
@@ -91,10 +93,13 @@ describe("mapStyle", () => {
     for (const stack of stacks) {
       const directory = join(glyphRoot, stack);
       expect(statSync(directory).isDirectory()).toBe(true);
-      for (const start of [0, 256, 512, 768, 1024, 1280, 8192]) {
+      for (const start of [0, 256, 512, 768, 1024, 8192]) {
         expect(statSync(join(directory, `${start}-${start + 255}.pbf`)).size).toBeGreaterThan(0);
       }
       const ranges = new Set(readdirSync(directory));
+      for (const start of skippedRangeStarts) {
+        expect(ranges.has(`${start}-${start + 255}.pbf`)).toBe(false);
+      }
       for (const subset of ["latin", "latin-ext", "vietnamese", "greek", "cyrillic", "cyrillic-ext"]) {
         const font = readFileSync(join(fontRoot, "files", `ibm-plex-sans-${subset}-500-normal.woff`));
         const faces = await new Promise<{ points: number[] }[]>((done, fail) =>
@@ -104,6 +109,7 @@ describe("mapStyle", () => {
         expect(points.length, subset).toBeGreaterThan(0);
         for (const point of points) {
           const rangeStart = Math.floor(point / 256) * 256;
+          if (skippedRangeStarts.includes(rangeStart)) continue;
           expect(
             ranges.has(`${rangeStart}-${rangeStart + 255}.pbf`),
             `${subset}: U+${point.toString(16)} requires ${rangeStart}-${rangeStart + 255}.pbf`,
@@ -112,6 +118,40 @@ describe("mapStyle", () => {
       }
     }
   });
+
+  // WCAG relative luminance contrast; both themes are tuned, not only the one a comment was written for.
+  const contrast = (a: string, b: string) => {
+    const luminance = (hex: string) => {
+      const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => {
+        const value = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
+  };
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`${theme} labels are readable and far roads take the stronger tone`, () => {
+      const colors = mapPalette[theme];
+      const style = mapStyle({ ...options, theme });
+      for (const layer of style.layers) {
+        if (layer.type !== "symbol") continue;
+        const color = layer.paint?.["text-color"];
+        const halo = layer.paint?.["text-halo-color"];
+        if (typeof color !== "string" || typeof halo !== "string") throw new Error(`${layer.id}: expected literal label colours`);
+        expect(contrast(color, halo), layer.id).toBeGreaterThanOrEqual(4.5);
+      }
+      const road = style.layers.find((layer) => layer.id === "road-major");
+      const tone = road?.type === "line" ? road.paint?.["line-color"] : undefined;
+      if (!Array.isArray(tone)) throw new Error("Expected a zoomed road tone");
+      const far = tone[4];
+      if (typeof far !== "string") throw new Error("Expected a literal far road tone");
+      const best = Math.max(contrast(colors.road, colors.land), contrast(colors.roadCasing, colors.land));
+      expect(contrast(far, colors.land)).toBe(best);
+    });
+  }
 
   test("attribution has the three required links in display order", () => {
     expect(mapAttribution).toEqual([
