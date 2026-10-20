@@ -582,6 +582,19 @@ describe("Mail quick look", () => {
     }
   }, 30_000);
 
+  test("tag chips that shorten long names keep every full name in their tooltip", async () => {
+    const page = await load();
+    try {
+      await pointAt(page, `${row("Cv0000")} .mail-row-tags`);
+      await page.clock.runFor(1000);
+      const tips = page.locator('[role="tooltip"]').filter({ hasText: "Event, Offer, Accounting, Members" });
+      await tips.first().waitFor({ state: "attached" });
+      expect(await tips.evaluateAll((elements) => elements.some((element) => element.checkVisibility()))).toBe(true);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
   test("shows no card and starts no request in selection mode, where a click selects", async () => {
     const page = await load({ selectionMode: true });
     try {

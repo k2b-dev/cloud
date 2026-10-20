@@ -36,6 +36,7 @@ import type {
   MailDraftSeed,
   SenderIdentity,
 } from "../../contracts";
+import { deriveReplyAddressObjects } from "../../reply-recipients";
 import type { MailActivityEvent } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
@@ -998,9 +999,11 @@ export default function MailConversationReader(props: {
         section.actions.map((action, position) => ({ action, section: section.id, first: index > 0 && position === 0 })),
       ),
   );
-  const latestSenderName = () => {
-    const sender = latestMessage()?.from[0];
-    return sender?.name || sender?.address || t().unknownSender;
+  // The reply box names whom Reply writes to: Reply-To, or the original recipients of a message this mailbox sent.
+  const latestReplyNames = () => {
+    const message = latestMessage();
+    const to = message ? deriveReplyAddressObjects(message, "reply", props.identities).to : [];
+    return to.length ? to.map((item) => item.name || item.address).join(", ") : t().unknownSender;
   };
   const customizeToolbar = async () => {
     const next = await openMailConversationToolbarDialog(props.toolbarActions);
@@ -1366,7 +1369,7 @@ export default function MailConversationReader(props: {
                   onClick={() => respondToLatest("reply")}
                 >
                   <i class="ti ti-arrow-back-up" aria-hidden="true" />
-                  <span class="min-w-0 truncate">{t().replyTo({ name: latestSenderName() })}</span>
+                  <span class="min-w-0 truncate">{t().replyTo({ name: latestReplyNames() })}</span>
                 </button>
               </Show>
               <div class="flex w-full flex-col gap-2" data-mail-conversation-messages>

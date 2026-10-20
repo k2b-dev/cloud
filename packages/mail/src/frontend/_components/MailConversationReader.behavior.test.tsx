@@ -50,6 +50,46 @@ const envelopeOnly: MessageDetail = {
   attachments: [],
 };
 
+const supportIdentity: SenderIdentity = {
+  id: "Send01",
+  mailboxId: "Box001",
+  label: "Support",
+  displayName: "Support",
+  fromAddress: "support@example.com",
+  replyTo: null,
+  defaultCc: [],
+  defaultBcc: [],
+  defaultFormat: "markdown",
+  defaultPriority: "normal",
+  defaultDeliveryReceipt: false,
+  defaultReadReceipt: false,
+  vcard: null,
+  envelopeSender: null,
+  defaultSignatureTemplateId: null,
+  transport: {
+    mode: "mailbox",
+    host: null,
+    port: null,
+    tlsMode: null,
+    username: null,
+    secret: { kind: null, isSet: false },
+    revision: 0,
+    status: "active",
+    capabilities: { dsn: false, size: false, maxMessageBytes: null },
+    lastVerifiedAt: null,
+    lastError: null,
+  },
+  authenticationPolicy: { automation: "mailbox" },
+  sentFolderId: null,
+  draftsFolderId: null,
+  isDefault: true,
+  status: "unverified",
+  statusReason: "sent_folder_missing",
+  pendingVerificationCommandId: null,
+  createdAt: now,
+  updatedAt: now,
+};
+
 const waitFor = async (condition: () => boolean) => {
   for (let attempt = 0; attempt < 100; attempt++) {
     if (condition()) return;
@@ -435,45 +475,7 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
   const error = spyOn(prompts, "error").mockResolvedValue(undefined);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(async () => Response.json([]), { preconnect: originalFetch.preconnect });
-  const identity: SenderIdentity = {
-    id: "Send01",
-    mailboxId: "Box001",
-    label: "Support",
-    displayName: "Support",
-    fromAddress: "support@example.com",
-    replyTo: null,
-    defaultCc: [],
-    defaultBcc: [],
-    defaultFormat: "markdown",
-    defaultPriority: "normal",
-    defaultDeliveryReceipt: false,
-    defaultReadReceipt: false,
-    vcard: null,
-    envelopeSender: null,
-    defaultSignatureTemplateId: null,
-    transport: {
-      mode: "mailbox",
-      host: null,
-      port: null,
-      tlsMode: null,
-      username: null,
-      secret: { kind: null, isSet: false },
-      revision: 0,
-      status: "active",
-      capabilities: { dsn: false, size: false, maxMessageBytes: null },
-      lastVerifiedAt: null,
-      lastError: null,
-    },
-    authenticationPolicy: { automation: "mailbox" },
-    sentFolderId: null,
-    draftsFolderId: null,
-    isDefault: true,
-    status: "unverified",
-    statusReason: "sent_folder_missing",
-    pendingVerificationCommandId: null,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const identity = supportIdentity;
   const { MailConversationReader } = modules!;
   let opened = 0;
   const [canAdmin, setCanAdmin] = createSignal(true);
@@ -893,6 +895,39 @@ test.skipIf(isServer)("a new message moves the fold without unmounting the messa
     await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg007"]') !== null);
     expect(header.isConnected).toBe(true);
     expect(dom.document.activeElement).toBe(header);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("the reply box names whom Reply writes to, also when this mailbox sent the newest message", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const later = new Date(Date.parse(now) + 60_000).toISOString();
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        identities: [supportIdentity],
+        messages: [
+          envelopeOnly,
+          {
+            ...envelopeOnly,
+            id: "Msg002",
+            internalDate: later,
+            sentAt: later,
+            from: [{ name: "Support", address: "support@example.com" }],
+            to: [{ name: "Grace Hopper", address: "grace@example.com" }],
+          },
+        ],
+      }),
+    dom.root,
+  );
+  try {
+    const box = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-box]");
+    await waitFor(() => box() !== null);
+    expect(box()!.textContent?.trim()).toBe("Reply to Grace Hopper…");
   } finally {
     dispose();
     dom.cleanup();

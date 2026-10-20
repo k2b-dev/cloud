@@ -225,7 +225,14 @@
   }
 
   /* Tags give way before "+n" and "Waiting", which always keep their room. */
-  .mail-row-extra > .mail-row-tag {
+  .mail-row-extra > .mail-row-tags {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    gap: 0.375rem;
+  }
+
+  .mail-row-tags > .mail-row-tag {
     flex: 0 1 auto;
     min-width: 2.5rem;
   }

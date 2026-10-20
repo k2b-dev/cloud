@@ -249,13 +249,18 @@ export default function MailConversationRow(props: {
           </Show>
           <Show when={fourthLine()}>
             <span class="mail-row-extra">
-              <For each={props.item.localTags.slice(0, MAX_ROW_TAGS)}>
-                {(tag) => (
-                  <span class="mail-row-tag" style={{ "--mail-tag": tag.color }}>
-                    {tag.name}
-                  </span>
-                )}
-              </For>
+              <Show when={props.item.localTags.length > 0}>
+                {/* Long tag names shorten; the group's tooltip keeps every full name. */}
+                <Tooltip.Anchor class="mail-row-tags" content={t().tagNames({ names: tagLabel() })}>
+                  <For each={props.item.localTags.slice(0, MAX_ROW_TAGS)}>
+                    {(tag) => (
+                      <span class="mail-row-tag" style={{ "--mail-tag": tag.color }}>
+                        {tag.name}
+                      </span>
+                    )}
+                  </For>
+                </Tooltip.Anchor>
+              </Show>
               <Show when={props.item.localTags.length > MAX_ROW_TAGS}>
                 <Tooltip.Anchor content={t().tagNames({ names: tagLabel() })}>
                   <span class="mail-row-tag-more" role="img" aria-label={t().tagNames({ names: tagLabel() })}>
