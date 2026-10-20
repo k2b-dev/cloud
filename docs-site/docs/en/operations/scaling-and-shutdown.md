@@ -44,7 +44,7 @@ grow with the replica count.
 | Application | Several replicas | Coordinated by | Per-process limits that multiply |
 |---|---|---|---|
 | Gateway (`gateway`) | Yes | No registry entry; each process builds its route table from the shared registry. Give each replica its own `GATEWAY_INSTANCE_ID` or `HOSTNAME`, or their operations snapshots overwrite each other | None |
-| Core (`core`) | Yes | NATS schedulers and keyed jobs with Postgres claims for AI turns, outgoing mail and notifications | 8 AI turn workers, 8 SMTP send workers, 4 notification workers, 2 chat PDF conversions |
+| Core (`core`) | Yes | NATS schedulers and keyed jobs with Postgres claims for AI turns, outgoing mail and notifications | 8 AI turn workers, 8 SMTP send workers plus 4 bulk send workers, 4 notification workers, 2 chat PDF conversions |
 | Accounts (`accounts`) | Yes | Postgres draft rows and recipient claims | None |
 | API Docs (`api-docs`) | Yes | Specs built per request from the shared registry | None |
 | Assistant (`assistant`) | **No, one replica** | Code Mode hosts and their approval waits live in the Assistant process ([#47](https://github.com/k2b-dev/cloud/issues/47)) | +1 Postgres connection per replica |
@@ -55,7 +55,7 @@ grow with the replica count.
 | FAQ (`faq`) | Yes | Postgres only | None |
 | Files (`filesv2`) | Yes | NATS mutexes and Postgres reservations for operations and uploads | 4 uploads |
 | Gateway operations (`gateway-ops`) | Yes | NATS scheduler and slot-keyed jobs; one durable NATS consumer for telemetry | Metrics collected by every replica |
-| Grids (`grids`) | Yes | Postgres outbox claims, NATS mutexes and schedulers | 10 workflow slots; extra Postgres pools of up to 12 connections for queries, 10 for workflow effects and 4 for number series |
+| Grids (`grids`) | Yes | Postgres outbox claims, NATS mutexes and schedulers | Workflow slots (`grids.workflow_concurrency`, default 10); extra Postgres pools for queries (`grids.query_pool_size`, default 12 connections), workflow effects (10) and number series (4) |
 | Hosts (`ipa-hosts`) | Yes | NATS scheduler and slot-keyed sync job | None |
 | Mail (`mail`) | Yes | NATS lease for IMAP IDLE, NATS draft leases, NATS jobs and Postgres claims | 4 provider jobs per kind, 2 workflow slots |
 | Notebooks (`notebooks`) | Yes | Shared NATS document log; snapshot job partitioned by note | 2 PDF conversions |
@@ -77,7 +77,7 @@ work in [#47](https://github.com/k2b-dev/cloud/issues/47).
 A per-process limit protects one process, not the service behind it. With
 several replicas, Gotenberg, Filegate, the SMTP relay, model providers and
 Postgres see the limit once per replica: two Core replicas run up to 16 AI
-turns and 16 SMTP sessions. Every replica also opens its own Postgres pool of
+turns and 24 SMTP sessions. Every replica also opens its own Postgres pool of
 up to 10 connections, plus the extra pools in the table. Size those services
 for the replica count. A shared budget is tracked in
 [#1626](https://github.com/k2b-dev/cloud/issues/1626). Live updates allow 16
