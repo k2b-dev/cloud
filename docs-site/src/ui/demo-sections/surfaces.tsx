@@ -297,14 +297,21 @@ const ColorDemo = () => (
       { kind: "asset", name: "global.css", from: "@k2b/ui/global.css" },
     ]}
     description="Two hosts set the selection hooks and the link accent from a teal and a yellow app color, as Cloud does. Selected rows, views, segments, and filters take that color with readable ink; buttons, toggles, focus, and status do not change. The theme follows this site."
-    code={`<div
-  class="k2b-ui"
-  style={{
-    "--k2b-app-workspace-selected": "#e8f8f6",
-    "--k2b-app-workspace-active": "#0d7b6f",
-    "--k2b-row-selected": "#effaf9",
-  }}
->
+    code={`/* CSS: the hooks for light and dark mode */
+.teal-app {
+  --k2b-app-workspace-selected: #e8f8f6;
+  --k2b-app-workspace-active: #0d7b6f;
+  --k2b-row-selected: #effaf9;
+}
+.k2b-ui[data-theme="dark"] .teal-app,
+.dark .k2b-ui .teal-app {
+  --k2b-app-workspace-selected: #123133;
+  --k2b-app-workspace-active: #14b8a6;
+  --k2b-row-selected: #112c2e;
+}
+
+/* Inside a .k2b-ui scope */
+<div class="teal-app">
   <AppWorkspace.SidebarItem variant="object" icon="ti ti-briefcase" active>Customer work</AppWorkspace.SidebarItem>
   <ViewTabs label="Views" current="board" items={views} />
   <SegmentedControl ariaLabel="Range" value={range} onValueChange={setRange} options={ranges} />

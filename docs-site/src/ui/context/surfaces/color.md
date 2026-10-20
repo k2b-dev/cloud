@@ -185,17 +185,28 @@ code, and follow the light and dark theme of the `.k2b-ui` scope.
 
 ## Example
 
+Set the hooks for light and dark mode on an element inside the `.k2b-ui`
+scope, so selected text stays readable in both themes:
+
+```css
+.teal-app {
+  --k2b-app-workspace-selected: #e8f8f6;
+  --k2b-app-workspace-active: #0d7b6f;
+  --k2b-row-selected: #effaf9;
+}
+
+.k2b-ui[data-theme="dark"] .teal-app,
+.dark .k2b-ui .teal-app {
+  --k2b-app-workspace-selected: #123133;
+  --k2b-app-workspace-active: #14b8a6;
+  --k2b-row-selected: #112c2e;
+}
+```
+
 ```tsx
 import { Button, FilterToggle, ViewTabs } from "@k2b/ui";
 
-<div
-  class="k2b-ui"
-  style={{
-    "--k2b-app-workspace-selected": "#e8f8f6",
-    "--k2b-app-workspace-active": "#0d7b6f",
-    "--k2b-row-selected": "#effaf9",
-  }}
->
+<div class="teal-app">
   <ViewTabs
     label="Views"
     current="board"
