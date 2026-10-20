@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-10-15
+updated: 2026-10-20
 ---
 
 # Application CLI modules
@@ -645,7 +645,10 @@ explicitly enables them. Principal search uses the same Accounts endpoint as
 `resource-bound`. JSON output always contains every entry. Return entries
 from `resolveDisplayNames()`, or set `serviceAccountKind` yourself, so the
 table can tell these accounts apart. An entry without `serviceAccountKind` is
-shown as `service account`.
+shown as `service account`. Human output uses
+[`principalLabel()`](/en/docs/identity/authorization#create-and-change-grants)
+with the CLI locale: missing names show a localized fallback, never a principal
+ID. Structured output keeps the original entries.
 
 The CLI package also exports the helpers used by the generated commands:
 

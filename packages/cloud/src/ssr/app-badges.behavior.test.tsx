@@ -6,6 +6,7 @@ import { refreshAppBadges } from "../browser/app-badges";
 import { APPROVAL_COUNTS_PATH } from "../contracts/approvals";
 import { APP_BADGE_INTERVAL_MS, appBadgeCount, approvalCount, watchAppBadges } from "./app-badges";
 import type { RailApp } from "./rail-navigation";
+import type { ShellData } from "./shell-data";
 
 const apps: RailApp[] = [
   {
@@ -82,6 +83,43 @@ const mountRail = async () => {
   const { default: RailApps } = await import("./RailApps");
   return render(() => createComponent(RailApps, { apps, settings, currentPath: "/app/mail" }), dom.root);
 };
+
+test.each(["rail", "phone bar"])("the retained %s follows the arriving page's rail preferences", async (surface) => {
+  const { default: CloudShell } = await import("./CloudShell.island");
+  const data: ShellData = { apps, rail: settings, legalLinks: [], profile: { name: "Fixture" }, theme: "system", searchLinks: {} };
+  const script = document.createElement("script");
+  script.id = "cloud-shell-data";
+  script.type = "application/json";
+  script.textContent = JSON.stringify(data);
+  const bar = document.createElement("div");
+  bar.className = "cloud-tab-bar__row";
+  const mount = document.createElement("div");
+  dom.root.append(script, bar, mount);
+  const dispose = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), mount);
+  try {
+    expect(mount.querySelector('[data-cloud-rail-apps] a[href="/app/mail"]')).not.toBeNull();
+    expect(bar.querySelector(".cloud-tab-bar__live")).toBeNull();
+    const arriving = document.createElement("script");
+    arriving.id = script.id;
+    arriving.type = script.type;
+    arriving.textContent = JSON.stringify({
+      ...data,
+      rail: {
+        revision: 1,
+        visibility: { mail: false },
+        shortcuts: [{ id: "custom", kind: "link", title: "Custom", href: "/custom", icon: "ti ti-link" }],
+      },
+    });
+    script.replaceWith(arriving);
+    window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: dom.root } }));
+    const root = surface === "rail" ? mount : bar;
+    const links = surface === "rail" ? "[data-cloud-rail-apps]" : ".cloud-tab-bar__live";
+    expect(root.querySelector(`${links} a[href="/app/mail"]`) === null).toBe(true);
+    expect(root.querySelector(`${links} a[href="/custom"]`) !== null).toBe(true);
+  } finally {
+    dispose();
+  }
+});
 
 test("the rail reads each declared badge once after hydration and shows only positive counts", async () => {
   const dispose = await mountRail();

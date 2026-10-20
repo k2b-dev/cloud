@@ -45,6 +45,9 @@ workspace as the page's own content, not inside a wrapper element, so it fills
 the app area and its frame shows in the card spacing. A page without a
 workspace shows its content on the app background, so scroll the content in a
 `ScrollArea` and do not wrap it in an opaque surface that fills the app area.
+When the sidebar is hidden, also together with the app bar, the work area
+takes its column and rounds its start corners with the card, so nothing in the
+workspace paints past the card's corners.
 
 From 768 px the app bar holds Home, the button that hides the sidebar, the
 apps, the app grid, search, help, and the profile avatar. Its controls are

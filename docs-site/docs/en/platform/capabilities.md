@@ -1539,6 +1539,32 @@ non-idempotent Action has been dispatched, a lost, unreadable, oversized, or
 schema-invalid response is reported as `ACTION_OUTCOME_UNKNOWN`; clients must
 not offer an automatic retry.
 
+## Deadlines and cancellation
+
+Synchronous Queries have one **45-second** dispatch budget. It starts when
+Cloud's shared dispatcher receives the invocation and includes the live
+registry lookup, input validation, invocation authority, app request, and
+complete JSON response read. Preparation consumes the same budget; an expired
+invocation cannot start a later app request. Action reviews keep **15 seconds**
+and Actions keep **30 seconds**. Short discovery and recent-resource reads,
+and Command resolution, keep their separate 15-second budgets.
+
+Cloud forwards caller cancellation and the dispatch deadline to the app's
+`context.signal`. Pass it to downstream reads, queue admission, and expensive
+work, and check it before starting work after an await. Stop cancelled work
+and bound any cleanup. A caller cancellation returns HTTP 499
+`REQUEST_CANCELLED`; an expired budget returns HTTP 504 `DEADLINE_EXCEEDED`.
+A dispatched non-idempotent Action retains `ACTION_OUTCOME_UNKNOWN` when its
+outcome is uncertain. Cancellation does not undo a committed effect.
+
+The budget does not extend an application's own resource or execution limits.
+Cloud's JSON invocation endpoints keep their HTTP connection open for the
+operation budget plus transport headroom, then restore the normal idle timeout.
+If your own SSR or HTTP handler awaits a server-side capability call, it owns
+its request's idle timeout: use
+[`setRequestTimeout()`](/en/docs/server/http#answer-slow-requests) and restore it
+when answering. Streaming responses own their separate lifecycle.
+
 ## Invoke capabilities
 
 Core reads the live capability registry and dispatches every generic client

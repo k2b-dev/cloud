@@ -3,3 +3,9 @@ export const PULSE_EXTERNAL_INGEST_BATCH_LIMIT = 1_500;
 export const PULSE_INTERNAL_INGEST_BATCH_LIMIT = 50_000;
 export const PULSE_INGEST_IDEMPOTENCY_KEY_MAX_LENGTH = 200;
 export const PULSE_INGEST_IDEMPOTENCY_TTL_HOURS = 24;
+
+export const PULSE_SOURCE_CONFIG_MAX_BYTES = 16 * 1024;
+// 100 filters × (128 characters + 3 JSON bytes) = 13,100 bytes, leaving room in 16 KiB.
+export const PULSE_METRIC_FILTERS_MAX = 100;
+export const PULSE_METRIC_FILTER_MAX_LENGTH = 128;
+export const PULSE_METRIC_FILTER_PATTERN = /^[a-zA-Z_:][a-zA-Z0-9_:]*\*?$/;

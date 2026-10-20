@@ -30,6 +30,7 @@ export function openMobileMenu(view: (beforeSelect: () => Promise<boolean>) => D
       abort.abort();
     };
     window.addEventListener("popstate", pop);
+    window.addEventListener("ssr:nav-popstate", pop);
     window.addEventListener("pagehide", leaving);
     mobile.addEventListener("change", resized);
     try {
@@ -44,6 +45,7 @@ export function openMobileMenu(view: (beforeSelect: () => Promise<boolean>) => D
       );
     } finally {
       window.removeEventListener("popstate", pop);
+      window.removeEventListener("ssr:nav-popstate", pop);
       window.removeEventListener("pagehide", leaving);
       mobile.removeEventListener("change", resized);
       if (!leavingPage && history.state?.[marker] === id) {
@@ -51,9 +53,11 @@ export function openMobileMenu(view: (beforeSelect: () => Promise<boolean>) => D
           const returned = () => {
             window.removeEventListener("pagehide", returned);
             window.removeEventListener("popstate", returned);
+            window.removeEventListener("ssr:nav-popstate", returned);
             resolve();
           };
           window.addEventListener("popstate", returned, { once: true });
+          window.addEventListener("ssr:nav-popstate", returned, { once: true });
           window.addEventListener("pagehide", returned, { once: true });
           history.back();
         });

@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { clickhouseQuery, type QueryOptions, StoreQueryError, storeAllowlist } from "./client";
+import {
+  CLICKHOUSE_MAX_URL_BYTES,
+  CLICKHOUSE_UUID_CHUNK_SIZE,
+  clickhouseQuery,
+  type QueryOptions,
+  StoreQueryError,
+  storeAllowlist,
+} from "./client";
 
 const marker = "REMOTE_BODY_MUST_NEVER_LEAK";
 const requests: Request[] = [];
@@ -72,4 +79,29 @@ test("POSTs SQL as body, parameter values as parameters and UTF8 credentials onl
 test("a caller abort becomes an unreachable error without the abort reason", async () => {
   const signal = AbortSignal.abort(new Error(marker));
   await expect(clickhouseQuery({ ...options, query: "SELECT version()", signal })).rejects.toMatchObject({ kind: "unreachable" });
+});
+
+test("rejects oversized encoded parameters and settings before transport", async () => {
+  for (const field of ["params", "settings"] as const) {
+    const before = requests.length;
+    await expect(
+      clickhouseQuery({ ...options, query: "SELECT 1", [field]: { value: "é".repeat(CLICKHOUSE_MAX_URL_BYTES / 6) } }),
+    ).rejects.toThrow("ClickHouse request URL exceeds the 262144-byte budget; chunk query parameters");
+    expect(requests).toHaveLength(before);
+  }
+});
+test("a full UUID and Int64 pair chunk fits the URL budget with transport overhead", async () => {
+  const ids = Array.from({ length: CLICKHOUSE_UUID_CHUNK_SIZE }, () => "ffffffff-ffff-4fff-8fff-ffffffffffff");
+  await clickhouseQuery({
+    ...options,
+    query: "SELECT 1",
+    params: {
+      series: `[${ids.map((id) => `'${id}'`).join(",")}]`,
+      times: `[${ids.map(() => "-9223372036854775808").join(",")}]`,
+      minTime: "-9223372036854775808",
+      cutoff: "-9223372036854775808",
+    },
+    settings: { insert_deduplicate: 0, async_insert: 0 },
+  });
+  expect(new TextEncoder().encode(requests.at(-1)!.url).byteLength).toBeLessThan(CLICKHOUSE_MAX_URL_BYTES);
 });

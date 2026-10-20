@@ -1,28 +1,30 @@
-import { AccessEntrySchema } from "@k2b/cloud/contracts";
-import { type AuthContext, getLocale, jsonResponse, respond, respondMessage, v } from "@k2b/cloud/server";
+import { AccessEntrySchema, hasRole } from "@k2b/cloud/contracts";
+import {
+  type AuthContext,
+  getLocale,
+  jsonResponse,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  respond,
+  respondMessage,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { pulseService } from "../../service";
+import { retryBase } from "../../service/base-admin";
 import { projectBases } from "../../service/public-resources";
+import { RetentionStoreUnavailable } from "../../store/retention";
 import { BaseSchema, CreateBaseSchema, GrantBaseAccessSchema, MessageSchema, UpdateBaseAccessSchema, UpdateBaseSchema } from "../schemas";
-import { projectResult, requestAccessScope, requirePublicIdParam, requireUserBackedActor, requireUuidParam } from "../shared";
+import { projectResult, requestAccessScope, requirePublicIdParam, requireUuidParam } from "../shared";
 
 const routes = new Hono<AuthContext>()
-  .get(
-    "/capabilities",
-    describeRoute({
-      tags: ["Pulse"],
-      summary: "Get Pulse deployment capabilities",
-      responses: {
-        200: jsonResponse(
-          z.object({ timescaleEnabled: z.boolean(), timeBucketAvailable: z.boolean(), continuousAggregatesAvailable: z.boolean() }),
-          "Capabilities",
-        ),
-      },
-    }),
-    async (c) => respond(c, pulseService.capabilities()),
-  )
+  .onError((error, c) => {
+    if (error instanceof RetentionStoreUnavailable)
+      return c.json({ code: "STORE_UNAVAILABLE", message: "The data store is unavailable. Retry the retention preview." }, 503);
+    throw error;
+  })
   .get(
     "/bases",
     describeRoute({
@@ -45,14 +47,38 @@ const routes = new Hono<AuthContext>()
     }),
     v("json", CreateBaseSchema),
     async (c) => {
-      const user = requireUserBackedActor(c);
-      if (!user.ok) return respond(c, user);
+      const actor = c.get("actor");
+      const isCloudAdmin = actor.kind === "user" && hasRole(actor.user, "admin");
       return respond(
         c,
-        projectResult(pulseService.base.create({ ...c.req.valid("json"), user: user.data }), (item) =>
-          projectBases([item]).then(([value]) => value!),
+        projectResult(
+          pulseService.base.create({
+            ...c.req.valid("json"),
+            user: requestAccessScope(c),
+            isCloudAdmin,
+            agent: actor.kind === "service_account",
+          }),
+          (item) => projectBases([item]).then(([value]) => value!),
         ),
         201,
+      );
+    },
+  )
+  .post(
+    "/bases/:baseId/retry",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Retry a failed base operation",
+      responses: { 200: jsonResponse(BaseSchema, "Pulse base") },
+    }),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const result = await retryBase(baseId.value, requestAccessScope(c));
+      if (!result.ok) return respond(c, result);
+      return respond(
+        c,
+        projectResult(pulseService.base.get(baseId.value, requestAccessScope(c)), (item) => projectBases([item]).then(([value]) => value!)),
       );
     },
   )
@@ -75,11 +101,29 @@ const routes = new Hono<AuthContext>()
     async (c) => {
       const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
       if (!baseId.ok) return respond(c, baseId.result);
+      // A shorter retention first previews what it removes: a few ClickHouse scans in sequence, each bounded to 30 s.
+      setRequestTimeout(c, 240);
+      const result = await pulseService.base
+        .update({ baseId: baseId.value, user: requestAccessScope(c), ...c.req.valid("json") })
+        .finally(() => setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS));
+      if (
+        !result.ok &&
+        result.error.code === "PULSE_RETENTION_CONFIRMATION_REQUIRED" &&
+        "preview" in result.error &&
+        "previewedFrom" in result.error
+      )
+        return c.json(
+          {
+            code: result.error.code,
+            message: result.error.message,
+            preview: result.error.preview,
+            previewedFrom: result.error.previewedFrom,
+          },
+          409,
+        );
       return respond(
         c,
-        projectResult(pulseService.base.update({ baseId: baseId.value, user: requestAccessScope(c), ...c.req.valid("json") }), (item) =>
-          projectBases([item]).then(([value]) => value!),
-        ),
+        projectResult(result, (item) => projectBases([item]).then(([value]) => value!)),
       );
     },
   )

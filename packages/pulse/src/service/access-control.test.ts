@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
 import { listBaseIdsVisibleTo, type ResourceScope, requireBaseAccess } from "./access-control";
@@ -107,6 +108,7 @@ suite("Pulse base access", () => {
         INSERT INTO pulse.bases (id, short_id, name)
         VALUES (${baseId}::uuid, ${baseShortId}, 'Pulse access test'), (${noneBaseId}::uuid, ${newShortId()}, 'Pulse none access test')
       `;
+      await seedActiveBaseStore(baseId, noneBaseId);
       await sql`
         INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
         VALUES (${sourceId}::uuid, ${sourceShortId}, ${baseId}::uuid, 'http_ingest'::pulse.source_kind, 'Pulse access source')

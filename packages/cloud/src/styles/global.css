@@ -75,6 +75,14 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
   overscroll-behavior: none;
 }
 
+/* A full page binds the canvas to the window at every width. The attribute
+   carries it, not a class: a page swap copies the attribute and keeps the
+   canvas element, so a regular page and a full page can follow each other. */
+.cloud-app-canvas[data-layout-full-page="true"] {
+  height: 100dvh;
+  overflow: hidden;
+}
+
 .cloud-app-canvas > :is(.layout-rail, .layout-shell-content) {
   gap: var(--ui-space-shell);
 }
@@ -788,14 +796,14 @@ solid-island {
 }
 
 /* The navigation leaves like a hidden sidebar: its track, its resize handle,
-   and navigation panes go, and the work area rounds its start corners with
-   the card. An island may wrap the sidebar or Main, as in Grids. This follows
-   the app's host, as the sidebar column does: in a host below 64 rem, such as
-   the app beside the panel column, the navigation is an overlay behind the
-   workspace head's button and stays there. */
+   and navigation panes go. With the sidebar space at 0, the workspace rounds
+   the work area's start corners with the card itself. An island may wrap the
+   sidebar or Main, as in Grids. This follows the app's host, as the sidebar
+   column does: in a host below 64 rem, such as the app beside the panel
+   column, the navigation is an overlay behind the workspace head's button and
+   stays there. */
 @container k2b-app-area (min-width: 64rem) {
   .cloud-app-canvas[data-shell-focus] .k2b-app-workspace:not(.k2b-app-workspace *) {
-    --k2b-workspace-start-radius: var(--k2b-workspace-inner-radius);
     --k2b-workspace-sidebar-space: 0px;
   }
   .cloud-app-canvas[data-shell-focus]

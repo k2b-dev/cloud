@@ -1,4 +1,5 @@
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
+import { installPageSwap } from "@k2b/ssr/nav";
 import {
   followPageTrail,
   installAppWorkspaceController,
@@ -9,6 +10,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { isServer } from "solid-js/web";
 import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
@@ -69,6 +71,7 @@ const searchItems = () => {
 };
 
 export default function ShellRuntime(props: ShellRuntimeProps) {
+  if (!isServer && document.querySelector(".cloud-app-canvas[data-nav-shell]")) onCleanup(installPageSwap());
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   onMount(() => syncTimezoneCookie(true));
@@ -132,7 +135,7 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
   if (props.workspace) {
     onMount(() => {
       const appId = props.workspace?.appId;
-      onCleanup(
+      const install = () =>
         installAppWorkspaceController({
           readState: () => readAppWorkspaceLayoutCookie(document.cookie, appId),
           writeState: (state) => {
@@ -140,8 +143,18 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
             const secure = window.location.protocol === "https:" ? "; Secure" : "";
             document.cookie = `${appWorkspaceCookieName(appId)}=${serializeAppWorkspaceLayoutState(state)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
           },
-        }),
-      );
+        });
+      let dispose = install();
+      // The controller reads the saved layout once; a swapped page may carry sizes another tab saved since.
+      const swapped = () => {
+        dispose();
+        dispose = install();
+      };
+      window.addEventListener("ssr:nav-swapped", swapped);
+      onCleanup(() => {
+        window.removeEventListener("ssr:nav-swapped", swapped);
+        dispose();
+      });
     });
   }
   if (props.pageTrail) {

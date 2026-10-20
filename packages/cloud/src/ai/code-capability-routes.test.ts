@@ -357,3 +357,30 @@ test("background callbacks stop after cancellation, mandate revocation, scope ch
   expect((await f.app.fetch(request(jwt))).status).toBe(403);
   expect(f.dispatch).not.toHaveBeenCalled();
 });
+
+test("Code Mode keeps its JSON socket raised until dispatch settles and resets after failure", async () => {
+  for (const fail of [false, true]) {
+    const fixtureState = fixture();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const calls: number[] = [];
+    fixtureState.dispatch.mockImplementation(async () => {
+      entered.resolve();
+      await release.promise;
+      if (fail) throw new Error("dispatch failed");
+      return Response.json({ data: { found: true } });
+    });
+    fixtureState.app.onError((_error, c) => c.text("failed", 500));
+    const pending = fixtureState.app.fetch(request(await token()), {
+      timeout: (_request: Request, seconds: number) => calls.push(seconds),
+    });
+    try {
+      await entered.promise;
+      expect(calls).toEqual([55]);
+    } finally {
+      release.resolve();
+    }
+    expect((await pending).status).toBe(fail ? 500 : 200);
+    expect(calls).toEqual([55, 10]);
+  }
+});

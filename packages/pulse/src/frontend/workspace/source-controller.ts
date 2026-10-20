@@ -14,11 +14,10 @@ type SourceControllerDeps = {
   selectedBaseId: Accessor<string>;
   loading: Accessor<boolean>;
   setLoading: Setter<boolean>;
-  setSelectedSourceId: Setter<string>;
+  selectedSourceId: Accessor<string>;
   navigate: (state: { view: WorkspaceView; sourceId?: string }) => void;
   refreshBaseData: () => Promise<void>;
   refreshSourceDetail: () => Promise<void>;
-  refreshDashboard: () => Promise<void>;
   writeBlocked: Accessor<boolean>;
 };
 
@@ -159,8 +158,7 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (disposed) return;
       if (scrapeMutation.error()) throw scrapeMutation.error();
       const counts = scrapeMutation.data()!;
-      if (!(await reconcile([deps.refreshBaseData, deps.refreshSourceDetail, deps.refreshDashboard], t().sourceChangedRefreshFailed)))
-        return;
+      if (!(await reconcile([deps.refreshBaseData, deps.refreshSourceDetail], t().sourceChangedRefreshFailed))) return;
       toast.success(t().metricsScraped({ counts: t().ingestCounts(counts) }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t().scrapeFailed);
@@ -179,7 +177,7 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (disposed) return;
       if (toggleMutation.error()) throw toggleMutation.error();
       const updated = toggleMutation.data()!;
-      if (!(await reconcile([deps.refreshBaseData, deps.refreshDashboard], t().sourceChangedRefreshFailed))) return;
+      if (!(await reconcile([deps.refreshBaseData], t().sourceChangedRefreshFailed))) return;
       toast.success(updated.enabled ? t().sourceResumed : t().sourcePaused);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t().sourceUpdateFailed);
@@ -222,8 +220,8 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       await removeMutation.mutate({ baseId, sourceId: source.id });
       if (disposed) return;
       if (removeMutation.error()) throw removeMutation.error();
-      if (!(await reconcile([deps.refreshBaseData, deps.refreshDashboard], t().sourceRemovedRefreshFailed))) return;
-      deps.setSelectedSourceId((current) => (current === source.id ? "" : current));
+      if (!(await reconcile([deps.refreshBaseData], t().sourceRemovedRefreshFailed))) return;
+      if (deps.selectedSourceId() === source.id) deps.navigate({ view: "sources" });
       toast.success(t().sourceRemoved);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t().sourceRemoveFailed);

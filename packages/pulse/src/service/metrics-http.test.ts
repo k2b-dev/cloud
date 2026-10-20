@@ -8,7 +8,12 @@ const metrics = "# TYPE probe gauge\nprobe 42\n";
 const local = parseNetworkAllowlist(["127.0.0.0/8"]);
 const blocked = {
   ok: false,
-  error: { code: "PULSE_SCRAPE_TARGET_BLOCKED", status: 400, message: resolvePulseMessages("en").t.scrapeTargetBlocked },
+  // The message names the refused host first, then how a Cloud admin releases it.
+  error: {
+    code: "PULSE_SCRAPE_TARGET_BLOCKED",
+    status: 400,
+    message: expect.stringContaining(resolvePulseMessages("en").t.scrapeTargetBlocked),
+  },
 } as const;
 
 describe("guarded Pulse metrics transport", () => {

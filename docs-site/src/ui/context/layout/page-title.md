@@ -101,6 +101,8 @@ server-rendered title of the host's trail that has no browser code follows
 live title takes the same place, element, class, and subtitle, and the
 head's hidden heading follows. When a way-up link of the server title has
 focus, the matching link of the live title takes it over.
+The document-wide follower keeps live titles across page swaps and disposes
+titles removed from the document when the next trail is published.
 
 ## Collapse paths outside components
 

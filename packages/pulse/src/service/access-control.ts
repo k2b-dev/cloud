@@ -106,7 +106,8 @@ export const requireBaseAccess = async (
 
 export const listBaseIdsVisibleTo = async (
   scope: AccessScope,
-  params: { query?: string | null; limit?: number; offset?: number } = {},
+  /** `deleting` lists only bases in deletion that the scope administers, so their admin can follow or resume it. */
+  params: { query?: string | null; limit?: number; offset?: number; deleting?: boolean } = {},
 ): Promise<string[]> => {
   const visibility = readableScopeFilter(scope);
   if (!visibility) return [];
@@ -134,7 +135,7 @@ export const listBaseIdsVisibleTo = async (
       WHERE ${principalMatch}
         AND a.permission <> 'none'
         AND (${visibility.boundBaseShortId}::text IS NULL OR b.short_id = ${visibility.boundBaseShortId})
-        AND b.deletion_started_at IS NULL
+        AND ${params.deleting ? sql`b.deletion_started_at IS NOT NULL AND a.permission = 'admin'` : sql`b.deletion_started_at IS NULL`}
         AND (${pattern}::text IS NULL OR b.name ILIKE ${pattern} ESCAPE '\\' OR b.description ILIKE ${pattern} ESCAPE '\\')
     ) visible
     ORDER BY visible.updated_at DESC, visible.name ASC, visible.id ASC
@@ -145,23 +146,22 @@ export const listBaseIdsVisibleTo = async (
 };
 
 export const requireBaseActive = async (baseId: string, db: typeof sql = sql): Promise<Result<void>> => {
-  const [row] = await db<
-    {
-      deletion_started_at: Date | string | null;
-      data_clear_started_at: Date | string | null;
-      data_clear_completed_at: Date | string | null;
-      data_clear_failed_at: Date | string | null;
-    }[]
-  >`
-    SELECT deletion_started_at, data_clear_started_at, data_clear_completed_at, data_clear_failed_at
-    FROM pulse.bases
-    WHERE id = ${baseId}::uuid
-    FOR SHARE
-  `;
-  if (!row) return fail(err.notFound("Pulse base"));
-  if (row.deletion_started_at) return fail(err.conflict("Pulse base is being deleted"));
-  if (row.data_clear_started_at && !row.data_clear_completed_at) {
-    return fail(err.conflict("Pulse base data is being cleared"));
-  }
-  return ok();
+  const [base] = await db`SELECT id FROM pulse.bases WHERE id=${baseId}::uuid FOR SHARE`;
+  if (!base) return fail(err.notFound("Pulse base"));
+  const [row] = await db<{ state: string }[]>`SELECT state FROM pulse.base_stores WHERE base_id=${baseId}::uuid FOR SHARE`;
+  return row?.state === "active"
+    ? ok()
+    : fail(err.conflict("Pulse base is not active. Wait for its operation or retry the failed operation."));
+};
+export const requireBaseWritable = async (baseId: string, db: typeof sql = sql): Promise<Result<void>> => {
+  const active = await requireBaseActive(baseId, db);
+  if (!active.ok) return active;
+  const [row] = await db`SELECT write_block_reason FROM pulse.base_stores WHERE base_id=${baseId}::uuid FOR SHARE`;
+  return row?.write_block_reason
+    ? fail({
+        code: "PULSE_BASE_WRITE_BLOCKED",
+        status: 409,
+        message: "Pulse base writes are blocked. A Cloud admin must recheck or recreate its data store.",
+      })
+    : ok();
 };

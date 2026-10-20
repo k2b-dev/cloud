@@ -1,104 +1,68 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
-import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import type { PulseMetric } from "../contracts";
-import { newShortId } from "../lib/short-id";
-import { ingestBatch } from "./ingest-writer";
-import { PULSE_METRIC_SERIES_LIMIT } from "./metric-cardinality";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { installFixtureStore } from "../store/base-store.test-fixture";
+import { deterministicRowId } from "./ingest-bulk";
+import { createIngestWriter } from "./ingest-writer";
+import { assertWrite, writeFixture } from "./write.test-fixture";
 
-const runDbSmoke = testInfra.database !== undefined;
-const postgresTest = runDbSmoke ? test : test.skip;
-
-beforeAll(async () => {
-  if (!runDbSmoke) return;
-  const { migrate } = await import("../migrate");
-  await migrate();
-}, 60_000);
-
-describe("Pulse metric cardinality Postgres smoke", () => {
-  postgresTest(
-    "admits one concurrent final series and keeps existing series writable",
-    async () => {
-      const baseId = crypto.randomUUID();
-      const sourceId = crypto.randomUUID();
-      const otherSourceId = crypto.randomUUID();
-      const metricName = "cardinality.concurrent";
-      await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Metric cardinality smoke')`;
-      await sql`
-      INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
-      VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'http_ingest'::pulse.source_kind, 'Metric cardinality source')
-    `;
-      await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name)
-        VALUES(${otherSourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Other source')`;
-
-      try {
-        const [definition] = await sql<{ id: string }[]>`
-        INSERT INTO pulse.metric_defs (base_id, name, unit, type)
-        VALUES (${baseId}::uuid, ${metricName}, 'count', 'gauge'::pulse.metric_type)
-        RETURNING id
-      `;
-        if (!definition) throw new Error("Metric definition fixture was not created");
-        await sql`
-        INSERT INTO pulse.metric_series (
-          base_id, metric_id, source_id, resource_key, series_key, dimensions_hash, dimensions, last_seen_at
-        )
-        SELECT
-          ${baseId}::uuid,
-          ${definition.id}::uuid,
-          ${sourceId}::uuid,
-          'seed-' || value,
-          'seed-' || value,
-          'seed-' || value,
-          '{}'::jsonb,
-          now()
-        FROM generate_series(1, ${PULSE_METRIC_SERIES_LIMIT - 1}) value
-      `;
-
-        const candidates: PulseMetric[] = [
-          { name: metricName, value: 1, unit: "count", resource: { type: "host", id: "candidate-a" }, dimensions: { shard: "a" } },
-          { name: metricName, value: 1, unit: "count", resource: { type: "host", id: "candidate-b" }, dimensions: { shard: "b" } },
-        ];
-        await sql`INSERT INTO pulse.metric_hours(base_id,hour,state)
-          VALUES(${baseId}::uuid,date_bin('1 hour',now(),'1970-01-01'::timestamptz),'dirty')`;
-        const candidateSources = [sourceId, otherSourceId];
-        const results = await Promise.all(
-          candidates.map((metric, index) => ingestBatch({ baseId, sourceId: candidateSources[index]!, batch: { metrics: [metric] } })),
-        );
-
-        expect(results.filter((result) => result.ok)).toHaveLength(1);
-        const rejected = results.find((result) => !result.ok);
-        expect(rejected?.error.message).toContain(`limit of ${PULSE_METRIC_SERIES_LIMIT} series`);
-
-        const [seriesCount] = await sql<{ count: number }[]>`
-        SELECT COUNT(*)::int AS count
-        FROM pulse.metric_series
-        WHERE metric_id = ${definition.id}::uuid
-      `;
-        expect(seriesCount?.count).toBe(PULSE_METRIC_SERIES_LIMIT);
-
-        const acceptedIndex = results.findIndex((result) => result.ok);
-        const repeated = await ingestBatch({
-          baseId,
-          sourceId: candidateSources[acceptedIndex]!,
-          batch: { metrics: [candidates[acceptedIndex]!] },
-        });
-        expect(repeated.ok).toBe(true);
-        const newSingle = await ingestBatch({
-          baseId,
-          sourceId,
-          batch: {
-            metrics: [
-              { name: metricName, value: 1, unit: "count", resource: { type: "host", id: "candidate-c" }, dimensions: { shard: "c" } },
-            ],
-          },
-        });
-        expect(newSingle.ok).toBe(false);
-        if (newSingle.ok) throw new Error("Expected a metric cardinality failure");
-        expect(newSingle.error.message).toContain(`limit of ${PULSE_METRIC_SERIES_LIMIT} series`);
-      } finally {
-        await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse control-plane registry caps", () => {
+  beforeAll(installFixtureStore, 30000);
+  test("series per metric/base, kinds, keys, and write blocking refuse whole batches", async () => {
+    const f = await writeFixture("caps");
+    try {
+      await sql`UPDATE pulse.base_stores SET max_series=1,max_event_kinds=1,max_state_keys=1 WHERE base_id=${f.base.id}::uuid`;
+      assertWrite(
+        await f.write({ metrics: [{ name: "load", value: 1 }], events: [{ kind: "opened" }], states: [{ key: "door", value: true }] }),
+      );
+      for (const batch of [
+        { metrics: [{ name: "other", value: 1 }] },
+        { events: [{ kind: "other" }] },
+        { states: [{ key: "other", value: true }] },
+      ]) {
+        expect(await f.write(batch)).toMatchObject({ ok: false, error: { status: 400, message: expect.stringContaining("limit of 1") } });
       }
-    },
-    60_000,
-  );
+      expect(await sql<{ kind: string }[]>`SELECT kind FROM pulse.event_kinds WHERE base_id=${f.base.id}::uuid`).toEqual([
+        { kind: "opened" },
+      ]);
+      await sql`UPDATE pulse.base_stores SET max_series=20000 WHERE base_id=${f.base.id}::uuid`;
+      const [def] = await sql<{ id: string }[]>`SELECT id FROM pulse.metric_defs WHERE base_id=${f.base.id}::uuid AND name='load'`;
+      await sql`INSERT INTO pulse.metric_series(base_id,metric_id,source_id,series_key,created_at)
+        SELECT ${f.base.id}::uuid,${def!.id}::uuid,${f.sourceId}::uuid,'seed-'||i,${f.clock()} FROM generate_series(1,9999) i`;
+      expect(await f.write({ metrics: [{ name: "load", value: 2, dimensions: { new: "series" } }] })).toMatchObject({
+        ok: false,
+        error: { status: 400, message: expect.stringContaining("10000 series") },
+      });
+      await sql`UPDATE pulse.base_stores SET write_block_reason='checkpoint_mismatch' WHERE base_id=${f.base.id}::uuid`;
+      expect(await f.write({ events: [{ kind: "opened" }] })).toMatchObject({ ok: false, error: { code: "PULSE_BASE_WRITE_BLOCKED" } });
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
+  test("two source instances racing for the final series cap admit only one", async () => {
+    const f = await writeFixture("cap-race");
+    try {
+      await sql`UPDATE pulse.base_stores SET max_series=1 WHERE base_id=${f.base.id}::uuid`;
+      const sourceB = deterministicRowId(f.sourceId, "cap-race", "source", 1);
+      await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name,created_at,updated_at)
+        VALUES(${sourceB}::uuid,${sourceB.replaceAll("-", "").slice(0, 6)},${f.base.id}::uuid,'http_ingest','Other source',${f.clock()},${f.clock()})`;
+      const writeOtherSource = createIngestWriter({ store: f.other, clock: f.clock });
+      const values = await Promise.all([
+        f.write({ metrics: [{ name: "load", value: 1, dimensions: { key: "a" } }] }),
+        writeOtherSource({
+          baseId: f.base.id,
+          sourceId: sourceB,
+          batch: { metrics: [{ name: "load", value: 1, dimensions: { key: "b" } }] },
+        }),
+      ]);
+      expect(values.filter((r) => r.ok)).toHaveLength(1);
+      expect(values.find((r) => !r.ok)).toMatchObject({ ok: false, error: { status: 400 } });
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
 });

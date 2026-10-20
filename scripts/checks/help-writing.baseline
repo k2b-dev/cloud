@@ -200,13 +200,6 @@ packages/proxy-auth/src/help/documents/en/proxy-auth-troubleshooting.help.md | f
 packages/proxy-auth/src/help/documents/en/proxy-auth-troubleshooting.help.md | term | login
 packages/proxy-auth/src/help/documents/en/proxy-auth-troubleshooting.help.md | term | login
 packages/proxy-auth/src/help/documents/en/proxy-auth-troubleshooting.help.md | term | login
-packages/pulse/src/help/documents/en/pulse-dashboard-dsl.help.md | frontmatter | kind
-packages/pulse/src/help/documents/en/pulse-data-model.help.md | frontmatter | kind
-packages/pulse/src/help/documents/en/pulse-find-data.help.md | frontmatter | kind
-packages/pulse/src/help/documents/en/pulse-operate.help.md | frontmatter | kind
-packages/pulse/src/help/documents/en/pulse-query-dsl.help.md | frontmatter | kind
-packages/pulse/src/help/documents/en/pulse-reference.help.md | frontmatter | kind
-packages/pulse/src/help/documents/en/pulse-start.help.md | frontmatter | kind
 packages/tools/src/help/documents/en/tools-choose.help.md | frontmatter | kind
 packages/tools/src/help/documents/en/tools-document-markdown.help.md | frontmatter | kind
 packages/tools/src/help/documents/en/tools-image-converter.help.md | frontmatter | kind

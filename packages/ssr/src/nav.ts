@@ -55,6 +55,11 @@ export type PopStateNavigationEvent = {
   event: PopStateEvent;
   url: URL;
   state: unknown;
+  /** Call during the handler, then call the returned completion after an asynchronous DOM commit.
+   * With an installed page swap, restores this entry's scroll once, unless newer navigation or user input won.
+   * Without an installed page swap it does nothing. It does not guard the application's data commit.
+   */
+  deferScrollRestore: () => () => void;
 };
 
 export type LinkNavigateEvent = {

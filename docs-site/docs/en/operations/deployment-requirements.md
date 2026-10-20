@@ -176,8 +176,16 @@ Per replica, the built-in applications reserve:
 | Contacts | 0 | `cloud:live:contacts` 65 MiB, previous contact events 1 GiB until a later release removes them | 1.1 GiB |
 | Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |
 | Spaces | 0 | `cloud:live:spaces` 65 MiB, previous item events 1 GiB until a later release removes them | 1.1 GiB |
-| Pulse | 5 | none | 330 MiB |
+| Pulse | 6 | none | 396 MiB |
 | IPA Hosts | 1 | none | 66 MiB |
+
+Pulse's six default jobs are `pulse:metrics:scrape`, `pulse:rollup:hourly`,
+`pulse:retention`, `pulse:base-lifecycle`, `pulse:base-usage`, and
+`pulse:base-checkpoint`. Its scheduler `pulse` checks due scrapes every minute,
+submits hourly calculation at minute 23, and runs retention at 03:17 UTC.
+Scheduler `pulse:stores` sweeps unfinished lifecycle work every minute,
+measures usage every five minutes, and writes checkpoints on the hour.
+Scheduler definitions are separate from the six jobs in the reservation table.
 
 Together, that is about 16 GiB per replica for every built-in application.
 Size `max_file_store` for the applications you deploy with headroom for
@@ -380,7 +388,7 @@ or mutate real data without approval.
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
-| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; ClickHouse is optional in this release | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) can be connected now for later releases; current telemetry stays in Postgres. Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
+| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. The release workflow publishes the Pulse image. | Ingest a disposable batch through its source credential and inspect source health. |
 
 ### Work applications
 
@@ -391,7 +399,7 @@ or mutate real data without approval.
 | [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.0 (tested) or Filegate 6.1, which does not report stable file IDs (`stableIds`), with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Cloud storage requires local Linux identities; FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses notifications as app `core` and requires a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
-| [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. BM25 ranking is optional; see [Optional BM25 search ranking](#optional-bm25-search-ranking). | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
+| [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. External images additionally require outbound HTTPS from the Notebooks container to a public image address without redirects. An export reveals the server's egress address and the export time to the image host. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. BM25 ranking is optional; see [Optional BM25 search ranking](#optional-bm25-search-ranking). | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
 | [Spaces](/en/apps/spaces) (`spaces`) | Baseline | Live updates require WebSockets. Attachments use Postgres. Mail-backed invitations require Mail and an authorized sender/mailbox. Calendar weather uses the shared weather service; the Weather app UI is not required for that in-process feature. | Create a disposable item/event, verify live updates and reload; test invitations only if configured. |
 | [Venues](/en/apps/venue) (`venue`) | Baseline | No additional external service for venue records, hours, shifts and feedback. | Create a test venue and verify its public status page and intended staff-only access. |
 
@@ -428,7 +436,7 @@ allowlist as described below. Files (`filesv2`) uses
 the Filegate root and lease API of Filegate 6.1 or 7.0; see [Files](/en/apps/filesv2).
 
 Cloud refuses person- and administrator-chosen outbound requests from the Webhook Tester,
-workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, health webhooks, Geo city search, Assistant rsql, and outgoing mail SMTP and bounce IMAP connections to
+workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, Notebook PDF external images, health webhooks, Geo city search, Assistant rsql, and outgoing mail SMTP and bounce IMAP connections to
 loopback, private, link-local, shared, and other reserved addresses, including
 names that resolve there. A failed DNS lookup also refuses the request. An
 address in the well-known NAT64 prefix `64:ff9b::/96` is judged by the IPv4
@@ -441,8 +449,10 @@ Operators can allow internal administrator-configured endpoints with
 public targets only), `GEO_ALLOWED_TARGETS` in `app-weather` (default `geo`),
 `ASSISTANT_RSQL_ALLOWED_TARGETS` in `app-assistant` (default `rsql`), and
 `OUTGOING_MAIL_ALLOWED_TARGETS` in `app-core` (default empty, covering both SMTP
-and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs; an
-explicit value replaces the default. Empty Compose passthrough values use the
+and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs.
+`host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
+leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
+include a port. An explicit value replaces the default. Empty Compose passthrough values use the
 default. Invalid entries, including `/0`, stop the owning process at startup.
 The HTTP transports for these endpoints never follow redirects; health
 webhooks previously followed them. They request identity encoding and reject
@@ -461,29 +471,20 @@ and logs `GEO_ALLOWED_TARGETS`; mail delivery policy refusals remain retryable
 until the message deadline. Use narrow entries and retain `geo` or `rsql` in an
 explicit list if the shipped containers must stay reachable.
 
-Pulse operators can allow internal metrics targets with `PULSE_SCRAPE_ALLOWED_TARGETS`
-in the Pulse container environment. Use the narrowest entry: an exact host name,
-a single IP address, or the smallest required CIDR range. A host entry trusts all
-addresses returned for that exact name. A network entry permits addresses in
-that range; reserved names such as `localhost` and `.internal` names still need
-an exact host entry. Redirect targets use the same policy. Entries are not
-limited to a port or path: an entry lets base editors reach every HTTP service
-on that host or in that range. A `/0` entry is refused because it would turn the
-check off.
-
-After this update, existing metrics sources that point at internal addresses
-fail with a clear reason until the operator adds their targets to
-`PULSE_SCRAPE_ALLOWED_TARGETS`. The source rows remain stored. Scrapes now
-request uncompressed responses (`Accept-Encoding: identity`). An endpoint or
-proxy that compresses the response anyway fails with an unsupported content
-encoding error; turn off forced compression for `/metrics`.
+Cloud admins release internal metrics targets per Pulse base under
+**Administration → Pulse → Internal targets**, or with `cld pulse admin targets`.
+Use an exact host/IP, a host with one port (`web-01:9100`, `[fd00::5]:9100`), or
+the smallest required CIDR range. A bare host or range covers all ports. `/0`
+is refused. Exact host entries trust all validated addresses for that name;
+reserved names need an exact host entry. Pulse checks at save time, every
+scrape and every redirect (at most three) and pins each connection. Revocation
+takes effect on the next scrape. Responses must be uncompressed.
 
 Notebooks operators can allow internal S3-compatible storage with
 `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` in the Notebooks container environment.
 Use the narrowest entry: an exact host name, one IP address, or the smallest
 required CIDR range. Host entries trust all validated addresses for that exact
-name; reserved names need a host entry. Each entry covers every port and path
-on the host or range. `/0` and other invalid entries stop Notebooks at startup.
+name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries stop Notebooks at startup.
 Failed and empty lookups still refuse an upload, even for listed names.
 
 After this update, existing snapshot configurations that point at internal
@@ -555,12 +556,13 @@ own persistent volume. Keep the instance dedicated to Pulse: ClickHouse user
 management is instance-wide, so the service user can alter any user, including
 ClickHouse admins. Whoever operates ClickHouse as admin can read all Pulse data.
 
-For the **normal** read profile, plan at least **10 GB RAM**: three concurrent
-reads at 2 GB, 1 GB for maintenance, and reserve. Choose **klein** (small) on
-smaller servers. The setup script also creates **groß** (large); each read
-profile has fixed memory, execution, scan and result limits that readers cannot
-override. This release installs the profiles but does not yet expose read-profile
-selection for bases.
+Budget memory for the selected read profile and expected parallel work:
+**small** allows 1 GB per read, **normal** 2 GB, and **large** 4 GB. The
+maintenance profile allows 1 GB. Leave additional memory for ClickHouse itself
+and storage merges; the per-read limit is not an instance-wide memory budget.
+Each read profile has fixed execution, scan, and result limits that readers
+cannot override. A Cloud admin selects the profile and base limits under
+**Administration → Pulse → Bases**.
 
 A Cloud admin opens **Administration → Pulse → Data store** (`/admin/pulse`),
 chooses the service password and requests the setup script. Run that script as
@@ -589,13 +591,39 @@ Remote response bodies are never echoed in errors. The answer time can still
 tell a closed port from an open one, so the Cloud admin role carries reach into
 the internal network that Cloud can connect to.
 
+Pulse shares per-base value and byte quotas through Cloud Valkey across all
+replicas and write paths. Buckets hold one minute’s allowance and refill
+continuously. Throttled ingest returns `429 PULSE_BASE_THROTTLED` with
+`Retry-After`; unavailable Valkey returns `503 PULSE_QUOTA_UNAVAILABLE` with
+`Retry-After: 30`. Scrapes record the refusal and wait for the next tick.
+
+Every five minutes, Pulse measures storage and disk. A base at its storage
+threshold refuses new values with `409 PULSE_BASE_STORAGE_FULL`; a base admin
+can shorten retention or a Cloud admin can raise the threshold. Below 10% free
+instance disk, all bases refuse new values with `503 PULSE_STORE_DISK_LOW` and
+`Retry-After: 300`. Existing data stays readable. Pulse queues one notification
+per crossing to direct user base admins (storage) or effective Cloud admins
+(disk). Group base grants are not expanded. Delivery follows user preferences.
+
+An unreachable store returns `503 PULSE_STORE_UNAVAILABLE` and
+`Retry-After: 30`. The first failed write or disk measurement opens one outage
+and queues a notification for each Cloud admin. A successful disk measurement
+closes it and records recovery. Notification outbox rows commit with each
+transition and are dispatched afterwards; background notifications use the
+operator’s `app.locale` setting, and request-triggered outages retain the
+request locale.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
-**In this release, Pulse does not yet store data in ClickHouse.** Without a
-connection, Pulse keeps working as before and both Cloud and Pulse report ready.
-Later releases require this store. Production Compose does not provision it;
-the operator supplies it.
+Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
+answer `503 PULSE_STORE_NOT_CONFIGURED`, and the Pulse page shows **Pulse is not
+set up yet**. Administration remains available for setup. Production Compose does not provision ClickHouse; the operator supplies it.
+
+After a restore, Pulse compares each database’s checkpoint with Postgres and
+blocks measurement writes if they differ or the database is missing. A Cloud
+admin can recheck a corrected restore or recreate an empty database. Recreating
+removes measurements while preserving sources, source credentials, settings, and access.
 
 ## Verify readiness and upgrades
 
@@ -641,15 +669,16 @@ applications need.
 
 ### Prepare Pulse's new data store
 
-This release adds an optional ClickHouse connection and versioned Pulse
-Postgres migrations. A complete existing Pulse installation is adopted without
-replaying its baseline; older images must not start against ledger versions
-they do not recognize. An incomplete Alpha schema still requires an explicit
-reset and is never upgraded automatically.
+This update deletes all existing Pulse data without confirmation: bases,
+members, sources, source tokens, measurements, dashboards, and saved queries.
+Read [Pulse requires ClickHouse and starts empty](/en/docs/reference/deprecations-and-migrations#pulse-requires-clickhouse-and-starts-empty)
+for the preparation steps, removed commands, and lack of an old-measurement
+export path. Stop old Pulse replicas before starting the new image.
 
-Provision and [connect ClickHouse](#provide-clickhouse-for-pulse) before the
-later releases that move telemetry there. No data moves in this release, and
-an unset store does not change startup or existing Pulse features.
+Provide and [connect ClickHouse](#provide-clickhouse-for-pulse) before resuming
+collection. A fresh or reset installation creates no Postgres extension.
+Measurements live in each base's ClickHouse database; Postgres keeps control
+data and write reservations. Later starts preserve the new data.
 
 ### Upgrade Spaces task deadlines
 

@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { announce, Button, InlineGuidance, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef } from "../../service";
@@ -44,6 +44,8 @@ export default function ContactQuickEdit(props: Props) {
   const [parentRef, setParentRef] = createSignal<ContactRef | null>(initial.parentRef);
   const [tagIds, setTagIds] = createSignal(initial.tagIds);
 
+  const [saveError, setSaveError] = createSignal<string | null>(null);
+
   const saveMutation = mutations.create<Contact, { bookId: string; contactId: string; payload: ReturnType<typeof buildContactPayload> }>({
     mutation: async ({ bookId, contactId, payload }, { abortSignal }) => {
       const response = await apiClient.books[":bookId"].contacts[":contactId"].$patch(
@@ -57,15 +59,17 @@ export default function ContactQuickEdit(props: Props) {
       return await response.json();
     },
     onSuccess: (contact) => {
-      toast.success(t().contactUpdated);
       props.onSaved(contact);
+      announce(t().contactUpdated);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => setSaveError(error.message),
   });
 
   onCleanup(() => saveMutation.abort());
 
   const save = () => {
+    if (saveMutation.loading()) return;
+    setSaveError(null);
     try {
       const payload = buildContactPayload(
         applyQuickEditFields(
@@ -90,7 +94,7 @@ export default function ContactQuickEdit(props: Props) {
         payload: { ...payload, tagIds: [...(payload.tagIds ?? [])] },
       });
     } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : t().prepareContactUpdateFailed);
+      setSaveError(error instanceof Error ? error.message : t().prepareContactUpdateFailed);
     }
   };
 
@@ -165,6 +169,15 @@ export default function ContactQuickEdit(props: Props) {
         </div>
       </div>
 
+      <div class="h-16 shrink-0 overflow-y-auto" tabindex={saveError() ? 0 : undefined}>
+        <Show when={saveError()}>
+          {(error) => (
+            <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+              {error()}
+            </InlineGuidance>
+          )}
+        </Show>
+      </div>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" size="sm" class="text-dimmed" onClick={props.onEditAll}>
           {t().editAllFields} <i class="ti ti-arrow-up-right" />

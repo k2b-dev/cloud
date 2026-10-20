@@ -5,10 +5,10 @@ import { scrapeTargetBlocked } from "../service/scrape-target";
 import { localizedScrapeResult } from "./source-errors";
 
 test("API transport localizes a blocked result into German and preserves its code and status", async () => {
-  const result = await localizedScrapeResult(fail(scrapeTargetBlocked()), "de");
+  const result = await localizedScrapeResult(fail(scrapeTargetBlocked("127.0.0.1")), "de");
   expect(result).toMatchObject({
     ok: false,
-    error: { code: "PULSE_SCRAPE_TARGET_BLOCKED", status: 400, message: resolvePulseMessages("de").t.scrapeTargetBlocked },
+    error: { code: "PULSE_SCRAPE_TARGET_BLOCKED", status: 400, message: `127.0.0.1 ${resolvePulseMessages("de").t.scrapeTargetBlocked}` },
   });
   const success = ok("unchanged");
   expect(await localizedScrapeResult(success, "de")).toBe(success);

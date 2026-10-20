@@ -1,6 +1,7 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Button, useLocale } from "@k2b/ui";
 import { openContactCreateFlow, type WritableContactBook } from "./ContactCreateFlow";
+import { contactOutcomeHref } from "./contact-outcome";
 import { detailMessages } from "./detail-messages";
 
 type Props = {
@@ -20,7 +21,7 @@ export default function CreateContactButton(props: Props) {
       chooseBook: props.chooseBook,
       locale: locale(),
     });
-    if (result) navigateTo(`/app/contacts/${result.bookId}?contact=${result.contact.id}&contactBook=${result.bookId}`);
+    if (result) navigateTo(contactOutcomeHref(result.contact, "created"));
   };
 
   return (

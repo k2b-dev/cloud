@@ -4,11 +4,11 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
-import { groupDisplayName } from "../shared/account-display";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
 import PrincipalPicker, { principalKey } from "./PrincipalPicker";
+import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ type PermissionEditorProps = {
   grantAccess: (
     principal: Principal,
     permission: GrantableLevel,
-    display?: { displayName: string; serviceAccountKind?: ServiceAccountKind },
+    display?: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind },
     scope?: string,
   ) => Promise<AccessEntry>;
 
@@ -145,16 +145,6 @@ const resolveEntryDisplay = (
   return defaults[permission] ?? defaults.none;
 };
 
-const getEntryDisplayName = (entry: AccessEntry, t: ReturnType<typeof accessMessages.resolve>["t"], locale: string): string => {
-  // Audiences always use the localized label; a server-supplied name is not translated.
-  if (entry.principal.type === "authenticated") return t.allUsers;
-  if (entry.principal.type === "public") return t.public;
-  if (entry.displayName) return entry.principal.type === "group" ? groupDisplayName(entry.displayName, locale) : entry.displayName;
-  if (entry.principal.type === "user") return entry.principal.userId;
-  if (entry.principal.type === "service_account") return entry.principal.serviceAccountId;
-  return entry.principal.groupId;
-};
-
 const getPrincipalIcon = (entry: AccessEntry, t: ReturnType<typeof accessMessages.resolve>["t"]): string => {
   switch (entry.principal.type) {
     case "user":
@@ -204,7 +194,10 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     }
   }
 
-  const grant = async (principal: Principal, display: { displayName: string; serviceAccountKind?: ServiceAccountKind }) => {
+  const grant = async (
+    principal: Principal,
+    display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind },
+  ) => {
     if (disposed || grantPending() || updateMut.loading() || revokeMut.loading()) return;
     const key = principalKey(principal);
     if (entries.some((entry) => principalKey(entry.principal) === key)) return;
@@ -224,8 +217,14 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       const entry = await props.grantAccess(principal, first.level, display, first.scope);
       if (disposed) return;
       const index = entries.findIndex((entry) => entry.id === id);
-      if (index !== -1) setEntries(index, reconcile({ ...entry }));
-      announce(t().accessGranted({ name: display.displayName }));
+      const saved = {
+        ...entry,
+        displayName: entry.displayName ?? display.displayName,
+        avatarHash: entry.avatarHash !== undefined ? entry.avatarHash : display.avatarHash,
+        serviceAccountKind: entry.serviceAccountKind ?? display.serviceAccountKind,
+      };
+      if (index !== -1) setEntries(index, reconcile(saved));
+      announce(t().accessGranted({ name: principalLabel(saved, locale()) }));
     } catch (err) {
       if (!disposed) setEntries((current) => current.filter((entry) => entry.id !== id));
       // Prompts are global, so a grant that fails after its dialog closed still says so.
@@ -264,7 +263,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
 
   const revokeMut = mutation.create<string | null, AccessEntry>({
     mutation: async (entry) => {
-      const displayName = getEntryDisplayName(entry, t(), locale());
+      const displayName = principalLabel(entry, locale());
       const confirmed = await prompts.confirm(t().removeAccessConfirm({ name: displayName }), {
         title: t().removeAccess,
         variant: "danger",
@@ -395,7 +394,7 @@ function AccessEntryRow(props: {
 }) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
-  const displayName = () => getEntryDisplayName(props.entry, t(), locale());
+  const displayName = () => principalLabel(props.entry, locale());
   const entryKey = () => levelKey(props.entry.permission, props.entry.scope);
   const display = () => resolveEntryDisplay(props.entry.permission, props.entry.scope, props.allowed, t());
   const manageLabel = () => resolveEntryDisplay("admin", undefined, props.allowed, t()).label;

@@ -12,6 +12,8 @@ import { bindings } from "../src/data/bases";
 import { withRootLock } from "../src/data/operations";
 import { migrate } from "../src/migrate";
 import { createFilesService } from "../src/service";
+import { connectFilegate } from "../src/service/filegate-facade";
+import { testCall } from "./files-call";
 import { assertPrivateDatabase, localFilegateToken } from "./private-database";
 
 // These tests create and remove their own prefix in both roots.
@@ -26,7 +28,7 @@ suite("real Filegate directory lifecycle", () => {
   let admin: RequestActor;
   let ipaUser: RequestActor;
   let groupId: string;
-  let configuration: Configuration & { token: string; tokenConfigured: boolean };
+  let configuration: Configuration & { token: string; tokenConfigured: boolean; unreadable: boolean };
   const name = (actor: RequestActor) => (actor.kind === "user" ? actor.user.uid : "");
   const id = (actor: RequestActor) => (actor.kind === "user" ? actor.user.id : "");
   const set = async (key: string, value: unknown) => {
@@ -100,9 +102,11 @@ suite("real Filegate directory lifecycle", () => {
     );
     await set("freeipa.enable", true);
     configuration = {
+      activityRetentionDays: 365,
       url: testInfra.filegate!,
       token,
       tokenConfigured: true,
+      unreadable: false,
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
       cloud: {
         enabled: true,
@@ -142,10 +146,11 @@ suite("real Filegate directory lifecycle", () => {
       displayNames: resolveDisplayNames,
       bindings,
       readConfiguration: async () => configuration,
+      resetConfiguration: async () => {},
       writeConfiguration: async (value) => {
-        configuration = { ...value, token: value.token || token, tokenConfigured: true };
+        configuration = { ...value, token: value.token || token, tokenConfigured: true, unreadable: false };
       },
-      connect: () => client,
+      connect: () => connectFilegate(configuration),
       publicOrigin: async () => "http://localhost:3000",
       userById: async (userId) => (ipaUser.kind === "user" && ipaUser.user.id === userId ? ipaUser.user : null),
       transfer: fetch,
@@ -167,8 +172,8 @@ suite("real Filegate directory lifecycle", () => {
     const root = client.root("freeipa");
     const home = `${prefix}/home/${name(ipaUser)}`;
     const groupPath = `${prefix}/groups/files-lifecycle-group`;
-    await service.provision(admin, { area: "freeipa", kind: "users", identityId: id(ipaUser) });
-    await service.provision(admin, { area: "freeipa", kind: "groups", identityId: groupId });
+    await service.provision(testCall(admin), { area: "freeipa", kind: "users", identityId: id(ipaUser) });
+    await service.provision(testCall(admin), { area: "freeipa", kind: "groups", identityId: groupId });
     expect(await root.stat(home)).toMatchObject({ uid, gid, mode: "0700", directory: true });
     expect(await root.stat(groupPath)).toMatchObject({ gid, mode: "2770", directory: true });
     expect((await root.getACL(groupPath, "default")).entries).toContainEqual({ tag: "owningGroup", permissions: "rwx" });
@@ -177,7 +182,7 @@ suite("real Filegate directory lifecycle", () => {
     expect(Number.parseInt(file.mode, 8) & 0o777).toBe(0o660);
     expect(Number.parseInt((await root.mkdir(`${groupPath}/nested`)).mode, 8) & 0o2777).toBe(0o2770);
 
-    const archive = await service.archive(admin, { area: "freeipa", kind: "groups", name: "files-lifecycle-group" });
+    const archive = await service.archive(testCall(admin), { area: "freeipa", kind: "groups", name: "files-lifecycle-group" });
     expect(archive.state).toBe("complete");
     const wrapper = archive.path.split("/").slice(0, -1).join("/");
     expect(Number.parseInt((await root.stat(wrapper)).mode, 8) & 0o777).toBe(0o700);
@@ -201,37 +206,48 @@ suite("real Filegate directory lifecycle", () => {
       expect(readAsMember.exitCode).not.toBe(0);
       expect(readAsMember.stderr.toString()).toContain("Permission denied");
     }
-    const entries = await service.adminList(admin, { area: "freeipa", archiveId: archive.id, path: "" });
+    const entries = await service.adminList(testCall(admin), { area: "freeipa", archiveId: archive.id, path: "" });
     expect(entries.items.map((item) => item.name)).toContain("document.txt");
-    const lease = await service.adminDownload(admin, { area: "freeipa", archiveId: archive.id, path: "document.txt" });
+    const lease = await service.adminDownload(testCall(admin), { area: "freeipa", archiveId: archive.id, path: "document.txt" });
     expect(await (await fetch(lease.url)).text()).toBe("group document");
-    await expect(service.adminList(ipaUser, { area: "freeipa", archiveId: archive.id, path: "" })).rejects.toThrow();
-    await expect(service.restore(admin, archive.id, { confirmPath: "wrong" })).rejects.toThrow();
+    await expect(service.adminList(testCall(ipaUser), { area: "freeipa", archiveId: archive.id, path: "" })).rejects.toThrow();
+    await expect(service.restore(testCall(admin), archive.id, { confirmPath: "wrong" })).rejects.toThrow();
     await root.mkdir(groupPath);
-    await expect(service.restore(admin, archive.id, { confirmPath: groupPath })).rejects.toThrow();
+    await expect(service.restore(testCall(admin), archive.id, { confirmPath: groupPath })).rejects.toThrow();
     await root.remove(groupPath);
-    await service.restore(admin, archive.id, { confirmPath: groupPath });
+    await service.restore(testCall(admin), archive.id, { confirmPath: groupPath });
     expect(await root.stat(groupPath)).toMatchObject({ gid, mode: "2770" });
     expect(await root.getACL(groupPath, "default")).toEqual(await root.getACL(`${groupPath}/nested`, "default"));
 
     await root.mkdir(`${home}/trash`);
     await root.put(`${home}/trash/removed.txt`, new Blob(["discarded"]));
     const baseId = `freeipa:users:${id(ipaUser)}`;
-    expect((await service.list(ipaUser, { baseId })).items.some((item) => item.name === "trash")).toBe(false);
-    const trash = await service.adminList(admin, { area: "freeipa", kind: "users", name: name(ipaUser), path: "trash" });
+    expect((await service.list(testCall(ipaUser), { baseId })).items.some((item) => item.name === "trash")).toBe(false);
+    const trash = await service.adminList(testCall(admin), { area: "freeipa", kind: "users", name: name(ipaUser), path: "trash" });
     expect(trash.items[0]?.name).toBe("removed.txt");
     await expect(
-      service.adminDelete(admin, { area: "freeipa", kind: "users", name: name(ipaUser), path: "trash/removed.txt", confirmPath: "wrong" }),
+      service.adminDelete(testCall(admin), {
+        area: "freeipa",
+        kind: "users",
+        name: name(ipaUser),
+        path: "trash/removed.txt",
+        confirmPath: "wrong",
+      }),
     ).rejects.toThrow();
-    await service.adminDelete(admin, {
+    await service.adminDelete(testCall(admin), {
       area: "freeipa",
       kind: "users",
       name: name(ipaUser),
       path: "trash/removed.txt",
       confirmPath: `${home}/trash/removed.txt`,
     });
-    expect((await service.bases(ipaUser)).items.find((item) => item.id === baseId)?.status).toBe("existing");
-    await service.deleteDirectory(admin, { area: "freeipa", kind: "groups", name: "files-lifecycle-group", confirmPath: groupPath });
+    expect((await service.bases(testCall(ipaUser))).items.find((item) => item.id === baseId)?.status).toBe("existing");
+    await service.deleteDirectory(testCall(admin), {
+      area: "freeipa",
+      kind: "groups",
+      name: "files-lifecycle-group",
+      confirmPath: groupPath,
+    });
     await expect(root.stat(groupPath)).rejects.toThrow();
     const auditEvents = await sql<
       { action: string; outcome: string }[]
@@ -255,7 +271,7 @@ suite("real Filegate directory lifecycle", () => {
         const pair = await Promise.all(
           [0, 1].map(async (tab) => {
             const blob = new Blob([`tab ${tab}, file ${index}`]);
-            const upload = await service.upload(ipaUser, {
+            const upload = await service.upload(testCall(ipaUser), {
               baseId,
               path: `${folder}/tab-${tab}-${index}.txt`,
               size: blob.size,
@@ -268,20 +284,20 @@ suite("real Filegate directory lifecycle", () => {
             return upload;
           }),
         );
-        const settled = await Promise.allSettled(pair.map((upload) => service.commitUpload(ipaUser, { baseId, id: upload.id })));
+        const settled = await Promise.allSettled(pair.map((upload) => service.commitUpload(testCall(ipaUser), { baseId, id: upload.id })));
         settled.forEach((result, tab) => {
           if (result.status === "fulfilled") uncommitted.delete(pair[tab]!.id);
           else failures.push(`tab-${tab}-${index}: ${(result.reason as { code?: string }).code ?? String(result.reason)}`);
         });
       }
       expect(failures).toEqual([]);
-      expect((await service.list(ipaUser, { baseId, path: folder })).items).toHaveLength(40);
+      expect((await service.list(testCall(ipaUser), { baseId, path: folder })).items).toHaveLength(40);
       for (let index = 0; index < 20; index++)
         for (const tab of [0, 1])
           expect(await (await root.contentRaw(`${target}/tab-${tab}-${index}.txt`)).text()).toBe(`tab ${tab}, file ${index}`);
     } finally {
       // Best effort, one at a time: Filegate bounds concurrent Unix executions, and the suite removes its prefix anyway.
-      for (const uploadId of uncommitted) await service.abortUpload(ipaUser, { baseId, id: uploadId }).catch(() => undefined);
+      for (const uploadId of uncommitted) await service.abortUpload(testCall(ipaUser), { baseId, id: uploadId }).catch(() => undefined);
     }
   }, 60_000);
 
@@ -291,7 +307,7 @@ suite("real Filegate directory lifecycle", () => {
     const target = `${prefix}/home/${name(ipaUser)}/Conflict.odt`;
     const root = client.root("freeipa");
     await root.put(target, new Blob(["original"]), { ownership: { uid, gid, mode: "0600" } });
-    const launch = await service.editor(ipaUser, { baseId, path: "Conflict.odt" });
+    const launch = await service.editor(testCall(ipaUser), { baseId, path: "Conflict.odt" });
     if (launch.kind === "markdown") throw new Error("Expected office editor");
     const fileId = new URL(launch.action).searchParams.get("WOPISrc")!.split("/").at(-1)!;
     const timestamp = (await service.editorFileInfo(launch.token, fileId)).LastModifiedTime;
@@ -309,7 +325,7 @@ suite("real Filegate directory lifecycle", () => {
       conflict: true,
     });
     const current = await root.stat(target);
-    const upload = await service.upload(ipaUser, {
+    const upload = await service.upload(testCall(ipaUser), {
       baseId,
       path: "Conflict.odt",
       size: 0,
@@ -318,12 +334,12 @@ suite("real Filegate directory lifecycle", () => {
       expectedRevision: `fs:${current.modified}:${current.size}`,
     });
     await withRootLock("freeipa", async () => {
-      await expect(service.commitUpload(ipaUser, { baseId, id: upload.id })).rejects.toMatchObject({ code: "operation_busy" });
+      await expect(service.commitUpload(testCall(ipaUser), { baseId, id: upload.id })).rejects.toMatchObject({ code: "operation_busy" });
     });
     const saved = await service.editorSave(launch.token, fileId, { timestamp: null, read: async () => new Blob(["confirmed overwrite"]) });
     expect(saved).toHaveProperty("modified");
-    await expect(service.commitUpload(ipaUser, { baseId, id: upload.id })).rejects.toMatchObject({ code: "write_conflict" });
-    await service.abortUpload(ipaUser, { baseId, id: upload.id });
+    await expect(service.commitUpload(testCall(ipaUser), { baseId, id: upload.id })).rejects.toMatchObject({ code: "write_conflict" });
+    await service.abortUpload(testCall(ipaUser), { baseId, id: upload.id });
     expect(await (await root.contentRaw(target)).text()).toBe("confirmed overwrite");
     expect((await service.editorFileInfo(launch.token, fileId)).LastModifiedTime).toBe("modified" in saved ? saved.modified : "");
   }, 60_000);
@@ -335,7 +351,7 @@ suite("real Filegate directory lifecycle", () => {
     await client.root("freeipa").put(`${prefix}/home/${name(ipaUser)}/Reel.webm`, new Blob([video], { type: "video/webm" }), {
       ownership: { uid, gid, mode: "0600" },
     });
-    const lease = await service.download(ipaUser, { baseId, path: "Reel.webm" });
+    const lease = await service.download(testCall(ipaUser), { baseId, path: "Reel.webm" });
     const origin = "http://localhost:3000";
     const get = (range?: string) =>
       fetch(lease.url, { headers: { Origin: origin, ...(range ? { Range: range } : {}) }, redirect: "error" });
@@ -366,17 +382,19 @@ suite("real Filegate directory lifecycle", () => {
     const root = client.root("cloud");
     const user = await createUser("files-lifecycle-local", "local");
     configuration.cloud.autoCreate = true;
-    const base = (await service.bases(user)).items.find((item) => item.area === "cloud" && item.kind === "users")!;
+    const base = (await service.bases(testCall(user))).items.find((item) => item.area === "cloud" && item.kind === "users")!;
     expect(base.status).toBe("existing");
     const daemon = await root.stat(prefix);
     expect(await root.stat(`${prefix}/home/${name(user)}`)).toMatchObject({ uid: daemon.uid, gid: daemon.gid });
     await sql`DELETE FROM auth.users WHERE id=${id(user)}::uuid`;
     expect((await service.maintain()).archived).toBe(1);
-    const archives = await service.archives(admin, { area: "cloud", q: name(user) });
+    const archives = await service.archives(testCall(admin), { area: "cloud", q: name(user) });
     expect(archives.items).toHaveLength(1);
     expect(archives.items[0]?.state).toBe("archived");
     const replacement = await createUser(name(user), "local");
-    expect((await service.bases(replacement)).items[0]?.status).toBe("conflict");
-    await expect(service.restore(admin, archives.items[0]!.id, { confirmPath: `${prefix}/home/${name(user)}` })).rejects.toThrow();
+    expect((await service.bases(testCall(replacement))).items[0]?.status).toBe("conflict");
+    await expect(
+      service.restore(testCall(admin), archives.items[0]!.id, { confirmPath: `${prefix}/home/${name(user)}` }),
+    ).rejects.toThrow();
   }, 30_000);
 });

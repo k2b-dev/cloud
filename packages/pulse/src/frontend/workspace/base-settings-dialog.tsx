@@ -1,9 +1,12 @@
 import { PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
+import { text } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
   confirmDiscardIfDirty,
+  DescriptionList,
+  Format,
   NoticeCard,
   NumberInput,
   prompts,
@@ -11,12 +14,16 @@ import {
   SettingsGroup,
   SettingsModal,
   SettingsPanelFooter,
+  StatusBadge,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
-import { type Accessor, createSignal, onCleanup, Show } from "solid-js";
+import { type Accessor, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import type { PulseBase } from "../../contracts";
+import type { BaseStoreStatus } from "../../store/admin-contracts";
 import { usePulseMessages } from "../use-messages";
+import { type BaseStoreMessages, baseStoreMessages } from "./base-store-messages";
 import { jsonFetch } from "./helpers";
 import type { GrantableLevel } from "./types";
 
@@ -34,17 +41,112 @@ type BaseSettingsDialogOptions = {
     },
   ) => Promise<BaseSettingsSaveResult>;
   writeBlocked: Accessor<boolean>;
+  /** The base's store as the workspace's base list currently has it; it refreshes while an operation runs. */
+  currentStore: Accessor<BaseStoreStatus | null>;
+  /** Resumes the failed lifecycle step and refreshes the base list; resolves with the updated base, or null when it did not start. */
+  retryStore: () => Promise<PulseBase | null>;
   clearBaseData: () => Promise<void>;
   deleteBase: () => Promise<boolean>;
 };
 
 export type BaseSettingsSaveResult = "failed" | "persisted";
 
+const storeBadge = (t: BaseStoreMessages, store: BaseStoreStatus) => {
+  if (store.state === "active")
+    return store.writeBlockReason
+      ? { tone: "warning" as const, label: t.stateWriteBlocked, icon: "ti ti-lock" }
+      : { tone: "ok" as const, label: t.stateActive, icon: "ti ti-circle-check" };
+  if (store.state === "failed") return { tone: "error" as const, label: t.stateFailed, icon: "ti ti-alert-circle" };
+  const label = { provisioning: t.stateProvisioning, clearing: t.stateClearing, deleting: t.stateDeleting }[store.state];
+  return { tone: "running" as const, label, icon: "ti ti-loader-2" };
+};
+const failedText = (t: BaseStoreMessages, store: BaseStoreStatus) =>
+  store.operation === "clear" ? t.failedClear : store.operation === "delete" ? t.failedDelete : t.failedProvision;
+
+/** The base's own database: state with "Retry" in a fixed place, usage against its threshold, and limits. */
+const StoreStatusGroup = (props: { store: () => BaseStoreStatus; busy: () => boolean; onRetry: () => void }) => {
+  const locale = useLocale();
+  const t = createMemo(() => baseStoreMessages.resolve([locale()]).t);
+  const badge = () => storeBadge(t(), props.store());
+  const bytes = (value: number) => text.pprintBytes(value, { locale: locale(), mode: "si" });
+  const notice = () => {
+    const store = props.store();
+    if (store.state === "failed") return { tone: "danger" as const, text: failedText(t(), store), retry: true };
+    if (store.state === "active" && store.writeBlockReason) return { tone: "warning" as const, text: t().blockedText, retry: false };
+    if (store.state !== "active") return { tone: "neutral" as const, text: t().busyText, retry: false };
+    return null;
+  };
+  return (
+    <SettingsGroup title={t().storeTitle} description={t().storeDescription}>
+      <DescriptionList
+        layout="rows"
+        items={[
+          {
+            term: t().state,
+            description: (
+              <span class="flex flex-col gap-1" aria-live="polite">
+                <StatusBadge tone={badge().tone} variant="text" icon={badge().icon} label={badge().label} />
+                <Show when={notice()}>{(value) => <span class="text-xs text-secondary">{value().text}</span>}</Show>
+              </span>
+            ),
+            action: (
+              <Show when={notice()?.retry}>
+                <Button size="xs" variant="secondary" loading={props.busy()} onClick={() => props.onRetry()}>
+                  {t().retry}
+                </Button>
+              </Show>
+            ),
+          },
+          {
+            term: t().usage,
+            description: (
+              <Show when={props.store().usage} fallback={<span class="text-secondary">{t().notMeasured}</span>}>
+                {(usage) => (
+                  <span class="tabular-nums">
+                    {t().usageOf({ used: bytes(usage().bytes), limit: bytes(props.store().limits.storageBytes) })}
+                    <span class="text-xs text-dimmed">
+                      {" · "}
+                      {t().measured} <Format.RelativeTime value={usage().measuredAt} />
+                    </span>
+                  </span>
+                )}
+              </Show>
+            ),
+          },
+          {
+            term: t().limits,
+            description: t().limitsSummary({
+              values: text.pprintNumber(props.store().limits.valuesPerMinute, { locale: locale() }),
+              series: text.pprintNumber(props.store().limits.maxSeries, { locale: locale() }),
+              profile: { small: t().profileSmall, normal: t().profileNormal, large: t().profileLarge }[props.store().profile],
+            }),
+          },
+        ]}
+      />
+    </SettingsGroup>
+  );
+};
+
 export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) =>
   prompts.dialog<void>(
     (close) => {
       const t = usePulseMessages();
+      const locale = useLocale();
+      const storeT = createMemo(() => baseStoreMessages.resolve([locale()]).t);
       let disposed = false;
+      const store = () => options.currentStore() ?? options.base.store;
+      // A Cloud admin decides about a checkpoint mismatch first; clearing would take away the restore option.
+      const clearBlocked = () => Boolean(store().writeBlockReason);
+      const [retrying, setRetrying] = createSignal(false);
+      const retry = async () => {
+        if (retrying()) return;
+        setRetrying(true);
+        try {
+          await options.retryStore();
+        } finally {
+          setRetrying(false);
+        }
+      };
       const [name, setName] = createSignal(options.base.name);
       const [description, setDescription] = createSignal(options.base.description ?? "");
       const [rawRetentionDays, setRawRetentionDays] = createSignal<number | null>(options.base.rawRetentionDays);
@@ -195,6 +297,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     />
                   </SettingsField>
                 </SettingsGroup>
+                <StoreStatusGroup store={store} busy={retrying} onRetry={() => void retry()} />
                 <SettingsModal.Footer>
                   <SettingsPanelFooter
                     changeCount={changeCount}
@@ -321,13 +424,16 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                 tone="danger"
                 description={t().destructiveBaseActions}
               >
-                <SettingsGroup title={t().clearTelemetry} description={t().clearTelemetryDescription}>
+                <SettingsGroup
+                  title={t().clearTelemetry}
+                  description={clearBlocked() ? storeT().clearBlockedText : t().clearTelemetryDescription}
+                >
                   <SettingsGroup.Action>
                     <Button
                       type="button"
                       variant="danger"
                       size="sm"
-                      disabled={options.loading() || options.writeBlocked()}
+                      disabled={options.loading() || options.writeBlocked() || clearBlocked()}
                       onClick={() => void options.clearBaseData()}
                     >
                       <i class="ti ti-eraser text-sm" />

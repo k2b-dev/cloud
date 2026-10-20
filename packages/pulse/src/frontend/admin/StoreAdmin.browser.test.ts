@@ -181,7 +181,7 @@ describe("Pulse data store page in a browser", () => {
           const { page, release } = await open(view, { dark, initial, status: { ...configured, status: connected } });
           try {
             release();
-            await page.getByText(initial.configured ? "Connected" : "Not set up yet", { exact: true }).waitFor();
+            await page.getByText(initial.configured ? "Connected" : "Pulse needs a data store", { exact: true }).waitFor();
             expect((await boxes(page)).overflow).toBeLessThanOrEqual(0);
           } finally {
             await page.close();

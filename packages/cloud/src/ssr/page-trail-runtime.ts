@@ -7,6 +7,7 @@
  * to the page itself. After returning, the row that led down is marked.
  */
 
+import { swapPage } from "@k2b/ssr/nav";
 import { PAGE_TRAIL_EVENT, readPageTrail } from "@k2b/ui";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { PAGE_UP_EVENT, type PageUpDetail } from "./layout-runtime";
@@ -168,7 +169,10 @@ export const goUp = (href: string): boolean => {
   const memory = read();
   memory.returning = { url: destination, from: here() };
   write(memory);
-  location.assign(url.href);
+  const canvas = document.querySelector<HTMLElement>(".cloud-app-canvas[data-nav-shell]");
+  const scope = canvas?.dataset.navScope;
+  if (scope && url.origin === location.origin && (url.pathname === scope || url.pathname.startsWith(`${scope}/`))) void swapPage(url.href);
+  else location.assign(url.href);
   return true;
 };
 
@@ -208,7 +212,10 @@ const restoreReturn = (visit: Visit | undefined, from: URL) => {
   const pending = new Map((visit?.regions ?? []).map((region) => [region.key, region]));
   let marked: HTMLElement | null = null;
   let frames = 0;
+  // A page swap that replaces this column ends its restore; the next page is not the one returned to.
+  const column = document.querySelector("[data-nav-root]");
   const step = () => {
+    if (column && !column.isConnected) return;
     for (const [key, region] of pending) {
       // A region is restored once both axes hold; content that renders late can still widen or lengthen it.
       if (key === "@window") {
@@ -263,8 +270,10 @@ const offerPageUp = (labels: PageUpLabels): (() => void) => {
   };
   update();
   window.addEventListener(PAGE_TRAIL_EVENT, update);
+  window.addEventListener("ssr:nav-swapped", update);
   return () => {
     window.removeEventListener(PAGE_TRAIL_EVENT, update);
+    window.removeEventListener("ssr:nav-swapped", update);
     unregister();
   };
 };
@@ -277,19 +286,26 @@ const offerPageUp = (labels: PageUpLabels): (() => void) => {
  */
 export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
   const stopPageUp = offerPageUp(labels);
-  const memory = read();
-  const returning = memory.returning;
-  if (returning) {
-    delete memory.returning;
-    write(memory);
-    const current = resolve(here());
-    if (pathOf(resolve(returning.url)) === pathOf(current) && resolve(returning.url).search === current.search)
-      restoreReturn(
-        memory.visits.find((visit) => visit.url === returning.url),
-        resolve(returning.from),
-      );
-  }
+  const restoreArrivingPage = () => {
+    const memory = read();
+    const returning = memory.returning;
+    if (returning) {
+      delete memory.returning;
+      write(memory);
+      const current = resolve(here());
+      if (pathOf(resolve(returning.url)) === pathOf(current) && resolve(returning.url).search === current.search)
+        restoreReturn(
+          memory.visits.find((visit) => visit.url === returning.url),
+          resolve(returning.from),
+        );
+    }
+  };
+  restoreArrivingPage();
+  window.addEventListener("ssr:nav-swapped", restoreArrivingPage);
   const onCapture = () => rememberPage();
+  const onNavigate = (event: NavigateEvent) => {
+    if (event.navigationType === "traverse") rememberPage();
+  };
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter") rememberPage();
   };
@@ -303,11 +319,14 @@ export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
   document.addEventListener("keydown", onKey, true);
   document.addEventListener("click", onClick);
   window.addEventListener("pagehide", onCapture);
+  window.navigation?.addEventListener("navigate", onNavigate);
   return () => {
+    window.removeEventListener("ssr:nav-swapped", restoreArrivingPage);
     stopPageUp();
     document.removeEventListener("click", onCapture, true);
     document.removeEventListener("keydown", onKey, true);
     document.removeEventListener("click", onClick);
     window.removeEventListener("pagehide", onCapture);
+    window.navigation?.removeEventListener("navigate", onNavigate);
   };
 };
