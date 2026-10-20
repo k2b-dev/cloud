@@ -48,7 +48,7 @@ import {
   type MailListItem,
   mailRouteUrl,
 } from "./mail-navigation";
-import { createMailQuickLookLoader } from "./mail-quick-look";
+import { createMailQuickLookLoader, mailQuickLookKey } from "./mail-quick-look";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
 
 const selectedQuickSearchFields = (url: URL): MailQuickSearchField[] => {
@@ -160,6 +160,12 @@ export default function MailConversationList(props: {
     disabled: (conversationId) => props.selectionMode || conversationId === props.selectedConversationId,
   });
   const quickLookData = createMailQuickLookLoader(() => props.mailboxId);
+  // Prefetch and opening are one attempt for this pointer stay. A fast syncing
+  // answer (or error) must not start another request when the card opens or the
+  // pointer moves. A new stay, explicit keyboard opening, or item version may retry.
+  let hoverAttempt: string | null = null;
+  let activeAttempt: string | null = null;
+  const attemptKey = (item: MailListItem) => `${props.mailboxId}:${mailQuickLookKey(item)}`;
   // The request starts once the mouse rests on a row, before the card opens:
   // a sweep across rows or rows passing under a still pointer while the list
   // scrolls start none.
@@ -179,7 +185,13 @@ export default function MailConversationList(props: {
   };
   createEffect(() => {
     const item = conversationItem(quickLook.active());
-    if (item) quickLookData.load(item);
+    const key = item ? attemptKey(item) : null;
+    if (key === activeAttempt) return;
+    activeAttempt = key;
+    if (item && key !== hoverAttempt) {
+      hoverAttempt = key;
+      quickLookData.load(item);
+    }
   });
   const quickLookLabel = () => {
     const item = conversationItem(quickLook.active());
@@ -651,6 +663,10 @@ export default function MailConversationList(props: {
                       id: quickLook.id,
                       anchor: quickLook.anchor,
                       active: quickLook.active,
+                      begin: () => {
+                        cancelPrefetch();
+                        hoverAttempt = null;
+                      },
                       // Every mouse move restarts the rest, so the card usually opens with its data.
                       prefetch: (item, row, pointer) => {
                         cancelPrefetch();
@@ -659,12 +675,19 @@ export default function MailConversationList(props: {
                           prefetchTimer = undefined;
                           // The list may have moved another row under the still mouse before its scroll event.
                           const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
-                          if (hit && row.contains(hit) && roomForQuickLook()) quickLookData.load(item);
+                          if (!hit || !row.contains(hit) || !roomForQuickLook()) return;
+                          const key = attemptKey(item);
+                          if (key === hoverAttempt) return;
+                          hoverAttempt = key;
+                          quickLookData.load(item);
                         }, QUICK_LOOK_PREFETCH_DELAY);
                       },
                       release: (item) => {
                         cancelPrefetch();
-                        if (quickLook.active() !== item.conversationId) quickLookData.cancel(item);
+                        if (quickLook.active() !== item.conversationId) {
+                          if (hoverAttempt === attemptKey(item)) hoverAttempt = null;
+                          quickLookData.cancel(item);
+                        }
                       },
                     }}
                   />
