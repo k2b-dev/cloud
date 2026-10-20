@@ -674,13 +674,8 @@ else {
       const pending = Promise.withResolvers<Response>();
       const fetch = spyOn(globalThis, "fetch")
         .mockReturnValueOnce(pending.promise)
-        .mockImplementation(async (_url, init) =>
-          Response.json(
-            init?.method === "PUT"
-              ? { provider: "fixture", allowed: true, revision: 4 }
-              : { answers: { fixture: { allowed: false, revision: 3 } } },
-          ),
-        );
+        .mockResolvedValueOnce(Response.json({ answers: { fixture: { allowed: false, revision: 3 } } }))
+        .mockResolvedValueOnce(Response.json({ provider: "fixture", allowed: true, revision: 4 }));
       fetchSpy = fetch;
       const h = setupContext(pageContext, true, false);
       h.open();
@@ -742,13 +737,8 @@ else {
     const pending = Promise.withResolvers<Response>();
     const fetch = spyOn(globalThis, "fetch")
       .mockReturnValueOnce(pending.promise)
-      .mockImplementation(async (_url, init) =>
-        Response.json(
-          init?.method === "PUT"
-            ? { provider: "fixture", allowed: true, revision: 4 }
-            : { answers: { fixture: { allowed: false, revision: 3 } } },
-        ),
-      );
+      .mockResolvedValueOnce(Response.json({ answers: { fixture: { allowed: false, revision: 3 } } }))
+      .mockResolvedValueOnce(Response.json({ provider: "fixture", allowed: true, revision: 4 }));
     fetchSpy = fetch;
     const h = setup(1440, false, true, undefined, false, undefined, {
       context: pageContext,
