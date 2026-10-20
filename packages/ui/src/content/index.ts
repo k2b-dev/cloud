@@ -91,6 +91,7 @@ export type { LightboxAction, LightboxImage } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
 export type { LogTableEntry } from "./LogEntriesTable";
 export { default as LogEntriesTable } from "./LogEntriesTable";
+export { MapAttribution } from "./MapAttribution";
 export { MapView } from "./MapView";
 export { MapViewFrame } from "./MapViewFrame";
 export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewProps, renderSafeMarkdown } from "./MarkdownView";
@@ -110,6 +111,8 @@ export type {
   MessageSystemRowProps,
 } from "./MessageRow";
 export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
+export { type MapPaletteColors, type MapTheme, mapPalette } from "./map-palette";
+export { type MapStyleOptions, mapAttribution, mapStyle } from "./map-style";
 export type {
   MapViewArea,
   MapViewFit,

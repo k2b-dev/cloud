@@ -188,10 +188,8 @@ describe("Mail conversation reader", () => {
     expect(html).toContain('data-mail-toolbar-action="reply"');
     expect(html).toContain('aria-label="Reply, draft available"');
     expect(html).toContain("data-mail-draft-label");
-    expect(html).toContain("sm:inline");
     expect(html).toContain("Draft available");
     expect(html).toContain("data-mail-draft-indicator");
-    expect(html).toContain("sm:hidden");
     expect(html).not.toContain("Continue draft");
   });
 

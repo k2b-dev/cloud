@@ -46,6 +46,11 @@ const measurements = [
   ".mail-sidebar-mailbox",
   ".mail-focus-row",
   ".mail-list-entry",
+  ".k2b-app-workspace__main-pane",
+  ".k2b-app-workspace__main-primary",
+  ".mail-reader-toolbar",
+  ".mail-reading-column",
+  ".k2b-app-workspace__detail",
 ].join(",");
 // Rows below the fold render lazily (content-visibility); only what the person sees must hold still.
 const geometrySource = `() => Array.from(document.querySelectorAll(${JSON.stringify(measurements)})).map((e,i)=>{const r=e.getBoundingClientRect();const part=String(e.className).split(" ").filter(Boolean).join(" ");return r.bottom<=0||r.top>=innerHeight?{part,index:i,x:0,y:-1,width:0,height:0}:{part,index:i,x:r.x,y:r.y,width:r.width,height:r.height}})`;
@@ -66,11 +71,27 @@ let controller = "";
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 const pageErrors = new WeakMap<Page, string[]>();
+/**
+ * `?shell=1` lays the page out like Cloud's signed-in shell from 1024 px: a 56 px rail, the card spacing, and the
+ * window as the app host. `&panel=416` adds Cloud's panel column, which makes the app area beside it the host.
+ * Without `shell`, the window is the app area and the workspace, as before.
+ */
+const shell = (url: URL, html: string) => {
+  if (url.searchParams.get("shell") !== "1")
+    return `<main style="container-type:inline-size;container-name:k2b-app-area;display:flex;flex-direction:column;height:100dvh">${html}</main>`;
+  const panel = Number(url.searchParams.get("panel")) || 0;
+  // A sidebar width the person stored, as Cloud's layout cookie restores it on the workspace.
+  const sidebar = Number(url.searchParams.get("sidebar")) || 0;
+  const stored = sidebar ? `<style>.k2b-app-workspace{--k2b-workspace-sidebar-width:${sidebar}px}</style>` : "";
+  const inset = "round(clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem), 1px)";
+  return `${stored}<div style="display:flex;box-sizing:border-box;height:100dvh;padding:${inset} ${inset} ${inset} 0"><div style="flex:none;width:3.5rem"></div><div data-fixture-app-area style="display:flex;flex:1;min-width:0;flex-direction:column;${panel ? "container:k2b-app-area / inline-size" : ""}"><main style="display:flex;flex:1;min-height:0;flex-direction:column">${html}</main></div>${panel ? `<aside data-fixture-panel style="flex:none;width:${panel}px;margin-inline-start:${inset}"></aside>` : ""}</div>`;
+};
 const pageHtml = (url: URL) => {
   const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
   const locale = url.searchParams.get("locale") === "de" ? "de" : "en";
   const html = renderToString(() => createComponent(Fixture, { source: `${url.pathname}${url.search}`, locale, theme }));
-  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0"><main style="container-type:inline-size;container-name:k2b-app-area;display:flex;flex-direction:column;height:100dvh">${html}</main><script>${controller}</script><script type="module">
+  // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
+  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}<script>${controller}</script><script type="module">
     const geometry=${geometrySource};
     const strip=${stripSource};
     const step=(name)=>{document.documentElement.dataset.mailShellStep=name};
@@ -743,14 +764,13 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
                   differences.push(String(error));
                 }
               };
-              // List rows change height for one frame after hydration on main too (#1545); the shell must not move.
-              const shell = (frame: Frame) => frame.filter((part) => !/mail-focus-row|mail-list-entry/.test(part.part));
-              await compare("hydrated", shell(serverFrame), shell(await recordedFrame(page, "hydrated")));
+              // Rows keep their height in the first hydrated frame too (#1545).
+              await compare("hydrated", serverFrame, await recordedFrame(page, "hydrated"));
               await compare("settled", serverFrame, await geometry(page));
               await page.reload();
               await ready(page);
               await compare("reload SSR", serverFrame, await recordedFrame(page, "server"));
-              await compare("reload hydrated", shell(serverFrame), shell(await recordedFrame(page, "hydrated")));
+              await compare("reload hydrated", serverFrame, await recordedFrame(page, "hydrated"));
               await compare("reload settled", serverFrame, await geometry(page));
             } finally {
               await close(page);
@@ -772,6 +792,510 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           await close(page);
         }
       }
+    });
+
+    describe("Mail wide windows", () => {
+      /** Cloud's card with the mockup's 240 px sidebar, a conversation open and its details on. */
+      const widePath = (options: { panel?: number; path?: string; extra?: string } = {}) =>
+        `${options.path ?? `${boxPath}?conversation=Conv01&details=1`}${(options.path ?? "?").includes("?") ? "&" : "?"}shell=1&sidebar=240${options.panel ? `&panel=${options.panel}` : ""}${options.extra ?? ""}`;
+      type Box = { x: number; y: number; width: number; height: number };
+      type Wide = {
+        list: number;
+        pane: Box | null;
+        reader: Box | null;
+        column: Box | null;
+        toolbar: Box | null;
+        sidebar: Box | null;
+        head: Box | null;
+        detail: "column" | "waiting" | "drawer" | "closed";
+        detailWidth: number;
+        headDetails: boolean;
+      };
+      const wide = (page: Page): Promise<Wide> =>
+        page.evaluate(() => {
+          const box = (selector: string) => {
+            const element = document.querySelector(selector);
+            if (!element || element.getClientRects().length === 0) return null;
+            const r = element.getBoundingClientRect();
+            return { x: r.x, y: r.y, width: r.width, height: r.height };
+          };
+          const aside = document.querySelector<HTMLElement>(".mail-workspace .k2b-app-workspace__detail");
+          const toggle = document.querySelector<HTMLElement>(".mail-workspace .k2b-app-workspace__detail-toggle");
+          const pane = box(".mail-workspace .k2b-app-workspace__main-pane");
+          return {
+            // The list pane holds the list and the shared 12 px gap to the reader.
+            list: pane ? pane.width - 12 : 0,
+            pane,
+            reader: box(".mail-workspace .k2b-app-workspace__main-primary"),
+            column: box(".mail-reading-column"),
+            toolbar: box(".mail-reader-toolbar"),
+            sidebar: box(".mail-workspace .k2b-app-workspace__sidebar"),
+            head: box(".mail-workspace .k2b-app-workspace__head"),
+            detail:
+              !aside || aside.hidden
+                ? "closed"
+                : getComputedStyle(aside).display === "none"
+                  ? "waiting"
+                  : aside.dataset.workspaceDetailDrawer === "open"
+                    ? "drawer"
+                    : "column",
+            detailWidth: aside?.getBoundingClientRect().width ?? 0,
+            headDetails: Boolean(toggle && getComputedStyle(toggle).display !== "none"),
+          };
+        });
+      const sameBox = (actual: Box | null, expected: Box | null, label: string) => {
+        expect(Boolean(actual), label).toBe(Boolean(expected));
+        if (!actual || !expected) return;
+        for (const key of ["x", "y", "width", "height"] as const)
+          expect(Math.abs(actual[key] - expected[key]), `${label}.${key}: ${expected[key]} → ${actual[key]}`).toBeLessThanOrEqual(0.5);
+      };
+      // Where the shared frame differs from the mockup's: a Detail column keeps an 8 px inset and the card a 1 px edge,
+      // while the list's gap to the reader is 12 px instead of 16 px, so a reader beside a column is 6 px narrower.
+      const COLUMN_EDGES = 6;
+      const table = [
+        { width: 1440, height: 900, panel: 0, list: 320, reader: 800, detail: "waiting" },
+        // The mockup drew the sidebar as a column in a 952 px card. Below a 64 rem host the shared sidebar is the
+        // overlay (#1380), so the reader also gets the 240 px: 952 - 2 - 332.
+        { width: 1440, height: 900, panel: 416, list: 320, reader: 618, detail: "waiting" },
+        { width: 1920, height: 1080, panel: 0, list: 440, reader: 680 - COLUMN_EDGES, detail: "column" },
+        { width: 1920, height: 1080, panel: 416, list: 334, reader: 842, detail: "waiting" },
+        { width: 2560, height: 1080, panel: 0, list: 440, reader: 1320 - COLUMN_EDGES, detail: "column" },
+        { width: 2560, height: 1080, panel: 416, list: 440, reader: 896 - COLUMN_EDGES, detail: "column" },
+      ] as const;
+
+      test("F2: list, reader, reading column and Detail follow the 1920/2560 table, server = hydrated = settled", async () => {
+        const failures: string[] = [];
+        for (const row of table) {
+          const label = `${row.width}${row.panel ? ` with a ${row.panel} px panel` : ""}`;
+          const page = await open(widePath({ panel: row.panel }), row.width, row.height as 900);
+          try {
+            const frame = await wide(page);
+            try {
+              expect(Math.abs(frame.list - row.list), `${label}: list ${frame.list}`).toBeLessThanOrEqual(4);
+              expect(Math.abs(frame.reader!.width - row.reader), `${label}: reader ${frame.reader!.width}`).toBeLessThanOrEqual(4);
+              expect(frame.detail, `${label}: Detail`).toBe(row.detail);
+              expect(frame.headDetails, `${label}: head Details`).toBe(row.detail === "waiting");
+              if (row.detail === "column") expect(Math.abs(frame.detailWidth - 480), `${label}: Detail width`).toBeLessThanOrEqual(0.5);
+              // At most 760 px, centred in the reader; the toolbar stays as wide as the reader.
+              expect(frame.column!.width, `${label}: reading column`).toBeLessThanOrEqual(760.5);
+              const readerCentre = frame.reader!.x + frame.reader!.width / 2;
+              expect(Math.abs(frame.column!.x + frame.column!.width / 2 - readerCentre), `${label}: column centre`).toBeLessThanOrEqual(1);
+              sameBox({ ...frame.toolbar!, y: 0, height: 0 }, { ...frame.reader!, y: 0, height: 0 }, `${label}: toolbar`);
+              // Opening the conversation marks it read after hydration; that changes no geometry.
+              const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
+              const server = read(await recordedFrame(page, "server"));
+              assertFrame(server, read(await recordedFrame(page, "hydrated")), `${label} hydrated`);
+              assertFrame(server, read(await geometry(page)), `${label} settled`);
+            } catch (error) {
+              failures.push(String(error));
+            }
+          } finally {
+            await close(page);
+          }
+        }
+        expect(failures).toEqual([]);
+      }, 120_000);
+
+      test("F2: inside the band where the list grows, a 1520 px card keeps the Detail waiting", async () => {
+        // A fixed 776 px minimum (320 + 16 + 440) would make a column here, with a reader below 440 px.
+        const page = await open(widePath(), 1584, 900);
+        try {
+          const frame = await wide(page);
+          expect(Math.abs(frame.list - (1520 * 0.25 - 24))).toBeLessThanOrEqual(0.5);
+          expect(frame.detail).toBe("waiting");
+          expect(frame.headDetails).toBe(true);
+        } finally {
+          await close(page);
+        }
+      });
+
+      for (const [width, height, detail] of [
+        [1440, 900, "column"],
+        [1194, 834, "waiting"],
+      ] as const)
+        test(`F2: at ${width}, Hide list makes the Detail a ${detail === "column" ? "column" : "Detail that still waits"}`, async () => {
+          const page = await open(widePath(), width, height);
+          try {
+            expect((await wide(page)).detail).toBe("waiting");
+            await page.getByRole("button", { name: "Hide conversation list" }).click();
+            await settled(page);
+            const frame = await wide(page);
+            expect(frame.pane).toBeNull();
+            expect(frame.detail).toBe(detail);
+            if (detail === "column") expect(frame.reader!.width).toBeGreaterThanOrEqual(440);
+          } finally {
+            await close(page);
+          }
+        });
+
+      for (const [width, height, path] of [
+        [1194, 834, widePath({ path: "/app/mail" })],
+        [834, 1194, "/app/mail"],
+      ] as const)
+        test(`Fokus at ${width}: a conversation opens the 480 px drawer, Escape parks it and focus returns`, async () => {
+          const page = await open(path, width, height);
+          try {
+            const aside = page.locator(".mail-focus-workspace .k2b-app-workspace__detail");
+            await page.locator(".mail-focus-row").first().click();
+            await page.waitForFunction(
+              () =>
+                document.querySelector<HTMLElement>(".mail-focus-workspace .k2b-app-workspace__detail")?.dataset.workspaceDetailDrawer ===
+                "open",
+            );
+            await settled(page);
+            expect(Math.abs((await aside.boundingBox())!.width - 480)).toBeLessThanOrEqual(0.5);
+            await page.keyboard.press("Escape");
+            await settled(page);
+            expect(await aside.evaluate((element) => getComputedStyle(element).display)).toBe("none");
+            expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-app-workspace__detail-toggle"))).toBe(true);
+          } finally {
+            await close(page);
+          }
+        });
+
+      test("reader toolbar: labels from 720 px, icons below, and Reply all and Forward move into … below 520 px", async () => {
+        const cases = [
+          { path: widePath(), width: 2560, height: 1080, labels: true, shown: true },
+          { path: widePath(), width: 1920, height: 1080, labels: false, shown: true },
+          { path: `${boxPath}?conversation=Conv01`, width: 834, height: 1194, labels: false, shown: false },
+        ] as const;
+        for (const item of cases) {
+          const page = await open(item.path, item.width, item.height);
+          try {
+            const label = `${item.width}`;
+            for (const id of ["reply_all", "forward"]) {
+              const button = page.locator(`.mail-reader-toolbar [data-mail-toolbar-action="${id}"]`);
+              const readerWidth = await page.locator(".mail-reader").evaluate((element) => element.getBoundingClientRect().width);
+              expect(await button.isVisible(), `${label}: ${id} shown (reader ${readerWidth})`).toBe(item.shown);
+              if (item.shown)
+                expect(await button.locator(".mail-reader-respond-label").isVisible(), `${label}: ${id} label`).toBe(item.labels);
+            }
+            expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible(), `${label}: Details`).toBe(true);
+            // Nothing in the bar spills out of the reader.
+            const bar = await page.locator(".mail-reader-toolbar").evaluate((element) => element.scrollWidth - element.clientWidth);
+            expect(bar, `${label}: toolbar overflow`).toBeLessThanOrEqual(0);
+            if (!item.shown) {
+              const more = page.getByRole("button", { name: "More conversation actions" });
+              await more.focus();
+              await page.keyboard.press("Enter");
+              for (const name of ["Reply all", "Forward"])
+                expect(await page.getByRole("menuitem", { name }).count(), `${label}: ${name} in …`).toBe(1);
+              await page.keyboard.press("Escape");
+            }
+          } finally {
+            await close(page);
+          }
+        }
+      }, 60_000);
+
+      test("reader toolbar: the largest own toolbar fits every reader width, in English and German", async () => {
+        // Eight actions is the most a person can choose: all three answers plus five icons, or Reply plus seven.
+        const misfits: string[] = [];
+        const readers: number[] = [];
+        for (const toolbar of ["reply,reply_all,forward,archive,spam,trash,move,read", "reply,archive,spam,trash,move,read,flag,tags"])
+          for (const locale of ["en", "de"] as const) {
+            for (const [extra, widths] of [
+              ["", [768, 800, 834, 900, 980, 1024, 1100, 1194, 1280, 1366, 1440]],
+              ["&list=hidden", [834, 900]],
+              ["&shell=1&sidebar=240&panel=416", [1024, 1100, 1194, 1280, 1366]],
+              ["&list=hidden&shell=1&sidebar=240&panel=416", [900, 924, 960, 1024, 1100, 1194]],
+            ] as const) {
+              // One page per case, resized through its widths.
+              const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}&locale=${locale}${extra}`, widths[0], 900);
+              try {
+                for (const width of widths) {
+                  await page.setViewportSize({ width, height: 900 });
+                  await settled(page);
+                  const result = await page.evaluate(() => {
+                    const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
+                    const bar = document.querySelector(".mail-reader-toolbar")!;
+                    const outside = [...bar.querySelectorAll<HTMLElement>("button, a")]
+                      .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden")
+                      .filter((element) => {
+                        const box = element.getBoundingClientRect();
+                        return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
+                      })
+                      .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
+                    const details = bar.querySelector<HTMLElement>("[data-mail-details-trigger]")!.getClientRects().length > 0;
+                    return { reader: Math.round(reader.width), outside, details };
+                  });
+                  readers.push(result.reader);
+                  if (result.outside.length || !result.details)
+                    misfits.push(
+                      `${toolbar} ${locale} ${width}${extra} (reader ${result.reader}): ${result.outside.join(", ") || "no Details"}`,
+                    );
+                }
+              } finally {
+                await close(page);
+              }
+            }
+          }
+        expect(misfits).toEqual([]);
+        // The sweep covers every tier: under 380, 380–440, 440–480, 480–520, 520–720 and from 720 px of reader.
+        for (const [from, to] of [
+          [0, 380],
+          [380, 440],
+          [440, 480],
+          [480, 520],
+          [520, 720],
+          [720, 2000],
+        ] as const)
+          expect(
+            readers.some((width) => width >= from && width < to),
+            `a reader width in ${from}–${to} (${[...new Set(readers)].join(", ")})`,
+          ).toBe(true);
+      }, 90_000);
+
+      test("reader toolbar: a person's own actions stay, and those that do not fit are in …", async () => {
+        const toolbar = "reply,forward,archive,trash,move,read,flag,tags";
+        const page = await open(`${boxPath}?conversation=Conv01&toolbar=${toolbar}`, 834, 1194);
+        try {
+          expect(await page.locator('.mail-reader-toolbar [data-mail-toolbar-action="reply_all"]').count()).toBe(0);
+          const visible = await page
+            .locator(".mail-reader-toolbar [data-mail-toolbar-action]")
+            .evaluateAll((elements) =>
+              elements
+                .filter((element) => element.getClientRects().length > 0)
+                .map((element) => element.getAttribute("data-mail-toolbar-action")),
+            );
+          expect(visible[0]).toBe("reply");
+          expect(visible.every((id) => toolbar.split(",").includes(id!))).toBe(true);
+          expect(
+            await page.locator(".mail-reader-toolbar").evaluate((element) => element.scrollWidth - element.clientWidth),
+          ).toBeLessThanOrEqual(0);
+          await page.getByRole("button", { name: "More conversation actions" }).click();
+          for (const name of ["Forward", "Move to folder", "Tags"])
+            expect(await page.getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBeGreaterThan(0);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("#1467: while the details wait, one click on the reader's details button opens and parks the drawer", async () => {
+        const page = await open(widePath(), 1440, 900);
+        try {
+          const button = page.locator(".mail-reader-toolbar [data-mail-details-trigger]");
+          expect((await wide(page)).detail).toBe("waiting");
+          await button.click();
+          await settled(page);
+          expect((await wide(page)).detail).toBe("drawer");
+          expect(await button.getAttribute("aria-expanded")).toBe("true");
+          // The open drawer covers the reader's end; Escape parks it again.
+          await page.keyboard.press("Escape");
+          await settled(page);
+          expect((await wide(page)).detail).toBe("waiting");
+          expect(await button.getAttribute("aria-expanded")).toBe("false");
+          // Keyboard: Enter opens it again and moves into the details.
+          await button.focus();
+          await page.keyboard.press("Enter");
+          await settled(page);
+          expect((await wide(page)).detail).toBe("drawer");
+          expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".k2b-app-workspace__detail")))).toBe(true);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("phone: Reply, Reply all, Forward and Archive wait at the bottom, work by touch and keyboard, and cover nothing", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
+        try {
+          const bar = page.locator("[data-mail-phone-actions] .k2b-toolbar");
+          await page.waitForFunction(
+            () => !document.querySelector("[data-mail-phone-actions] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
+          );
+          expect(await bar.isVisible()).toBe(true);
+          const names = await bar
+            .locator("button")
+            .evaluateAll((elements) =>
+              elements
+                .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-overflow]"))
+                .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
+            );
+          expect(names).toEqual(["Reply", "Reply all", "Forward", "Archive"]);
+          // The bar is the reader's last row: the scrolled messages end above it.
+          const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
+          const strip = (await bar.boundingBox())!;
+          expect(scroller.y + scroller.height).toBeLessThanOrEqual(strip.y + 0.5);
+          expect(strip.y + strip.height).toBeLessThanOrEqual(844 + 0.5);
+          // The top row keeps the way back, … and the details; the actions live below.
+          expect(
+            await page
+              .locator(".mail-reader-toolbar [data-mail-toolbar-action]")
+              .evaluateAll((elements) => elements.filter((element) => element.getClientRects().length > 0).length),
+          ).toBe(0);
+          expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible()).toBe(true);
+          expect(await page.locator("[data-mail-reply-box]").isVisible()).toBe(false);
+          // Keyboard: the bar is one tab stop with arrow keys inside.
+          await bar.getByRole("button", { name: "Reply", exact: true }).focus();
+          await page.keyboard.press("ArrowRight");
+          expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Reply all");
+          // Touch: Archive sends its command.
+          const archived = page.waitForRequest((request) => request.url().endsWith("/actions") && request.method() === "POST");
+          await bar.getByRole("button", { name: "Archive" }).tap();
+          expect(JSON.stringify((await archived).postDataJSON())).toContain("archive");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("reader: a long conversation shows its newest three messages and n older messages for the rest", async () => {
+        const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 900);
+        try {
+          const cards = page.locator("[data-mail-conversation-messages] [data-mail-message-id]");
+          expect(await cards.count()).toBe(3);
+          const older = page.locator("[data-mail-older-messages]");
+          expect(await older.textContent()).toBe("3 older messages");
+          await older.focus();
+          await page.keyboard.press("Enter");
+          await settled(page);
+          expect(await cards.count()).toBe(6);
+          expect(await older.count()).toBe(0);
+          // Focus moves to the first message the button showed.
+          expect(
+            await page.evaluate(() => document.activeElement?.closest("[data-mail-message-id]")?.getAttribute("data-mail-message-id")),
+          ).toBe("Long03");
+          // Another conversation and back: the older messages stay shown with the reading position.
+          await page.locator('.mail-workspace [data-conversation-id="Conv01"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+          await settled(page);
+          await page.locator('.mail-workspace [data-conversation-id="Conv02"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
+          await settled(page);
+          expect(await cards.count()).toBe(6);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("reader: a link to an older message shows the whole conversation, also after collapsing that message", async () => {
+        const page = await open(widePath({ path: `${boxPath}?conversation=Conv02&message=Long02` }), 1440, 900);
+        try {
+          const cards = page.locator("[data-mail-conversation-messages] [data-mail-message-id]");
+          expect(await cards.count()).toBe(6);
+          expect(await page.locator("[data-mail-older-messages]").count()).toBe(0);
+          const header = page.locator('[data-mail-message-id="Long02"] [data-mail-message-header]');
+          await header.focus();
+          await page.keyboard.press("Enter");
+          await settled(page);
+          expect(await cards.count()).toBe(6);
+          expect(await header.evaluate((element) => element === document.activeElement)).toBe(true);
+          // Another conversation and Back to the same link: the conversation stays unfolded.
+          await page.locator('.mail-workspace [data-conversation-id="Conv01"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+          await settled(page);
+          await page.goBack();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("message") === "Long02");
+          await settled(page);
+          expect(await cards.count()).toBe(6);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("reader: a conversation taller than the reader opens at its start, with the subject in view", async () => {
+        const page = await open(widePath({ path: `${boxPath}?conversation=Conv02` }), 1440, 480 as 900);
+        try {
+          const scroller = page.locator(".mail-reader-scroll");
+          expect(await scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+          expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0);
+          expect(await page.locator("[data-mail-reader-heading]").isVisible()).toBe(true);
+          const server = await recordedFrame(page, "server");
+          const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
+          assertFrame(read(server), read(await geometry(page)), "tall conversation settled");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("rows: three-line rows share one height, a fourth line only for tags or Waiting", async () => {
+        const page = await open(widePath(), 1440, 900);
+        try {
+          const rows = await page.locator(".mail-workspace .mail-list-entry").evaluateAll((elements) =>
+            elements
+              .filter((element) => element.getBoundingClientRect().bottom < innerHeight)
+              .map((element) => ({
+                lines: element.getAttribute("data-lines"),
+                height: element.getBoundingClientRect().height,
+              })),
+          );
+          expect(rows.length).toBeGreaterThan(4);
+          for (const row of rows)
+            expect(Math.abs(row.height - (row.lines === "4" ? 102 : 77)), JSON.stringify(row)).toBeLessThanOrEqual(0.5);
+          expect(rows.filter((row) => row.lines === "3").length).toBeGreaterThan(3);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("opening the waiting Detail moves nothing; closing a column gives only the reader its room", async () => {
+        const waiting = await open(widePath(), 1440, 900);
+        try {
+          const before = await wide(waiting);
+          await waiting.locator(".mail-workspace .k2b-app-workspace__detail-toggle").click();
+          await settled(waiting);
+          const after = await wide(waiting);
+          expect(after.detail).toBe("drawer");
+          for (const part of ["pane", "reader", "toolbar", "sidebar", "head"] as const) sameBox(after[part], before[part], `1440 ${part}`);
+          // Reduced motion: the drawer opened without a transition.
+          expect(
+            await waiting.locator(".mail-workspace .k2b-app-workspace__detail").evaluate((element) =>
+              getComputedStyle(element)
+                .transitionDuration.split(",")
+                .every((value) => Number.parseFloat(value) === 0),
+            ),
+          ).toBe(true);
+        } finally {
+          await close(waiting);
+        }
+        const column = await open(widePath(), 1920, 1080);
+        try {
+          const before = await wide(column);
+          expect(before.detail).toBe("column");
+          await column.locator(".mail-reader-toolbar [data-mail-details-trigger]").click();
+          await settled(column);
+          const after = await wide(column);
+          expect(after.detail).toBe("closed");
+          for (const part of ["pane", "sidebar"] as const) sameBox(after[part], before[part], `1920 ${part}`);
+          // The head row shares its track with Main, so only its end follows the column away.
+          sameBox({ ...after.head!, width: 0 }, { ...before.head!, width: 0 }, "1920 head start");
+          sameBox({ ...after.reader!, width: 0 }, { ...before.reader!, width: 0 }, "1920 reader start");
+          expect(after.reader!.width).toBeGreaterThan(before.reader!.width);
+        } finally {
+          await close(column);
+        }
+      });
+
+      test("dark at 1920: the Detail column shares the reader's surface, with no seam", async () => {
+        const page = await open(`${widePath()}&theme=dark`, 1920, 1080);
+        try {
+          const seam = await page.evaluate(() => {
+            const surface = (element: Element | null): string => {
+              for (let current = element; current; current = current.parentElement) {
+                const color = getComputedStyle(current).backgroundColor;
+                if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent") return color;
+              }
+              return "none";
+            };
+            const aside = document.querySelector(".mail-workspace .k2b-app-workspace__detail")!;
+            const style = getComputedStyle(aside);
+            return {
+              detail: surface(aside),
+              reader: surface(document.querySelector(".mail-reader")),
+              list: surface(document.querySelector(".mail-workspace .k2b-app-workspace__main-pane")),
+              borders: [style.borderLeftWidth, style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth],
+              shadow: style.boxShadow,
+            };
+          });
+          // One surface: the list, the reader and the Detail column (the reader drew a raised dark fill before).
+          expect(seam.detail).toBe(seam.list);
+          expect(seam.reader).toBe(seam.detail);
+          expect(seam.borders).toEqual(["0px", "0px", "0px", "0px"]);
+          expect(seam.shadow).toBe("none");
+          if (screenshots) await page.screenshot({ path: join(resolve(screenshots), "wide-dark-1920.png") });
+        } finally {
+          await close(page);
+        }
+      });
     });
 
     if (screenshots)

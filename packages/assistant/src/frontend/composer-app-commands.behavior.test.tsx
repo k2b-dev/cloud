@@ -213,6 +213,7 @@ const mount = async (
           renderedAt={now}
           initialLiveCursor="s6t.cloud-live-core.0"
           initialConversations={active ? [initial] : []}
+          initialQuestions={{ items: [], count: 0 }}
           initialDoneCount={0}
           initialConversationId={active ? conversation.id : null}
           initialArtifactPath={null}

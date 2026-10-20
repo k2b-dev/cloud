@@ -124,8 +124,12 @@ the question collapses immediately. `open` shows the question;
 announces its current sentence. An outcome action that reopens the question
 returns focus to the sentence and briefly highlights it. A host that cannot
 take an answer returns the question from `sending` to `open`; focus then goes
-back to the sentence as well. Changes from elsewhere do not move focus. Handle
-rejected answer callbacks with `onAnswerError` and show a recoverable outcome.
+back to the sentence as well. Changes from elsewhere do not move focus. To
+lead the person to an open question from elsewhere, such as a list of waiting
+questions, scroll to its `anchorId` and focus `.k2b-chat-decision__sentence`
+(`tabindex="-1"`): any focus that does not come from a press on the sentence
+itself briefly highlights it the same way. Handle rejected answer callbacks
+with `onAnswerError` and show a recoverable outcome.
 
 Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
 occupies the same grid cell, including hidden alternatives, so the longest line

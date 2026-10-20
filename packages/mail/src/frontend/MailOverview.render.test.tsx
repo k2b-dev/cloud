@@ -123,7 +123,9 @@ describe("Mail overview", () => {
     expect(html).toContain("For me");
     expect(html).toContain("Unassigned");
     expect(html).toContain("Release update");
-    expect(html).toContain('class="mail-focus-avatar"');
+    // Focus rows are the mailbox list's rows: three lines and a fourth for the mailbox.
+    expect(html).toMatch(/class="mail-list-entry mail-focus-row[^"]*"[^>]*data-lines="4"/);
+    expect(html).toContain('class="mail-row-mailbox"');
     expect(html).toContain("Ada");
     expect(html).toContain('href="/app/mail/Mail01?conversation=Convo1"');
     expect(html).toContain("Flagged");

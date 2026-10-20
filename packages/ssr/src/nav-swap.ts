@@ -1,6 +1,7 @@
 import { disposeIslands, islandsPending, mountIslands, onIslandMount } from "./mount";
 import type { ScrollSnapshot } from "./nav";
 import { captureScroll, documentNavigate, restoreScroll, swapKey } from "./nav-history";
+import { allowsLeave } from "./nav-veto";
 
 type SwapState = {
   document: Document;
@@ -20,11 +21,15 @@ type SwapState = {
   scroll: Map<string, ScrollSnapshot>;
   /** Counts pushes and URL-changing replaces through the wrapper: either supersedes a pending traversal for good. */
   moves: number;
+  /** Counts every wrapper write, including same-URL replaces that must not run inside leave checks. */
+  writes: number;
   decide: (event: PopStateEvent) => "page" | "nav";
   departure?: ScrollSnapshot;
   /** Where the kept head's relative links resolved: history commits move the document URL, not its loaded head. */
   headBase: string;
   fragment?: { event: MouseEvent; href: string };
+  /** A vetoed traversal on its way back to the entry of `page`, the page shown at the veto. */
+  rollback?: { page: string; position: number; key?: string; restored: () => void };
 };
 const documentKey = Symbol.for("@k2b/ssr/nav-document");
 const shared: typeof globalThis & {
@@ -142,6 +147,7 @@ const patchHistory = (): HistoryWrites => {
   history.pushState = (value: unknown, ...args: [unused: string, url?: string | URL | null]) => {
     const state = shared[swapKey];
     if (!state || state.document !== document) return writes.push.call(history, value, ...args);
+    state.writes++;
     const departing = currentEntry(state);
     // The island may already show shorter content; a helper's earlier capture is the departing position.
     const snapshot = state.departure ?? captureScroll();
@@ -158,8 +164,7 @@ const patchHistory = (): HistoryWrites => {
   history.replaceState = (value: unknown, ...args: [unused: string, url?: string | URL | null]) => {
     const state = shared[swapKey];
     if (!state || state.document !== document) return writes.replace.call(history, value, ...args);
-    // While a swap still loads, the entry keeps its page (an unmarked one stays unmarked) so a traversal can commit.
-    // Otherwise the shown page wrote it, also over the marker of a traversal that a newer navigation cancelled.
+    state.writes++;
     const stored = marker(history.state);
     const [, url] = args;
     let moves = false;
@@ -171,7 +176,11 @@ const patchHistory = (): HistoryWrites => {
     }
     // A new URL supersedes a pending traversal, which then never commits: the shown page owns the entry.
     const live = state.active !== undefined && !state.active.signal.aborted && !moves;
-    const page = live ? stored?.page : state.currentPage;
+    // During rollback history still stands on a foreign entry: a same-URL replace must not claim it for the shown page.
+    const rolling = state.rollback?.page === state.currentPage && !moves;
+    // A loading swap also keeps the entry's page so a traversal can commit; unmarked entries stay unmarked.
+    // Otherwise the shown page wrote it, also over the marker of a traversal that a newer navigation cancelled.
+    const page = live || rolling ? stored?.page : state.currentPage;
     if (page === undefined) {
       writes.replace.call(history, value, ...args);
       if (moves) state.moves++;
@@ -180,6 +189,8 @@ const patchHistory = (): HistoryWrites => {
     const entry = { ...(stored?.page === page ? stored : {}), page, position: stored?.position ?? state.currentEntry.position };
     writes.replace.call(history, mergeMarker(value, entry), ...args);
     if (moves) state.moves++;
+    // rollback() already restored these trackers to the shown entry, while history has not reached it yet.
+    if (rolling) return;
     state.currentEntry = entry;
     if (!live || entryKey(entry) === entryKey(state.shown)) state.shown = entry;
   };
@@ -300,12 +311,14 @@ export function installPageSwap(): () => void {
     stopRestore,
     scroll: holder.scroll,
     moves: 0,
+    writes: 0,
     decide: (event) => decide(event),
     // The navigation entry keeps the URL the document loaded from, also across a reinstall after a swap.
     headBase: timing?.name || window.location.href,
     uninstall: () => {
       if (shared[swapKey] !== state) return;
       stopRestore();
+      state.rollback = undefined;
       window.removeEventListener("click", captureClick, true);
       window.removeEventListener("click", click);
       window.removeEventListener("submit", submit, true);
@@ -407,7 +420,7 @@ export function installPageSwap(): () => void {
     state.native = { event, controller: state.active };
   };
   // The Navigation API reports the departing entry before history moves, also after traversals nav never saw.
-  let departure: { kind: "traverse" | "push" | "replace"; key: string; entry: Entry; scroll: ScrollSnapshot } | undefined;
+  let departure: { kind: "traverse" | "push" | "replace"; key: string; from?: string; entry: Entry; scroll: ScrollSnapshot } | undefined;
   const onNavigate = (event: NavigateEvent): void => {
     const kind =
       event.navigationType === "traverse" || (event.hashChange && event.navigationType !== "reload") ? event.navigationType : undefined;
@@ -416,7 +429,7 @@ export function installPageSwap(): () => void {
     const entry = marker(value) ?? (value != null && !plain(value) ? state.currentEntry : { position: basePosition() });
     departure =
       kind === "traverse" || kind === "push" || kind === "replace"
-        ? { kind, key: event.destination.key, entry, scroll: captureScroll() }
+        ? { kind, key: event.destination.key, from: navigation?.currentEntry?.key, entry, scroll: captureScroll() }
         : undefined;
   };
   const traverse = (entry: Entry): void => {
@@ -424,6 +437,46 @@ export function installPageSwap(): () => void {
     void runSwap(window.location.href, {}, { href: window.location.href, entry, key: navigation?.currentEntry?.key, moves: state.moves });
   };
   const decisions = new WeakMap<PopStateEvent, "page" | "nav">();
+  const absorb = (event: PopStateEvent): "nav" => {
+    decisions.set(event, "nav");
+    event.stopImmediatePropagation();
+    departure = undefined;
+    return "nav";
+  };
+  const rollback = (delta: number, shown: Entry, restored: () => void, key?: string): void => {
+    // A dialog-only traversal that another owner hid from nav can leave the tracked entry on a retired one.
+    state.currentEntry = shown;
+    state.shown = shown;
+    const page = state.currentPage;
+    const pending: NonNullable<SwapState["rollback"]> = { page, position: shown.position, restored };
+    state.rollback = pending;
+    const failed = (): void => {
+      if (state.rollback !== pending) return;
+      state.rollback = undefined;
+      // Only a newer swap's commit may own the entry history ended on; the vetoed page's own writes landed on a
+      // foreign position, so its column and the URL no longer match.
+      if (state.currentPage !== page && marker(window.history.state)?.page === state.currentPage) return;
+      window.location.reload();
+    };
+    if (key === undefined || !navigation) {
+      window.history.go(-delta);
+      return;
+    }
+    if (key === navigation.currentEntry?.key) {
+      state.rollback = undefined;
+      restored();
+      return;
+    }
+    try {
+      // Absolute entry identity survives another Back queued before this rollback runs.
+      pending.key = key;
+      const result = navigation.traverseTo(key);
+      void result.committed?.catch(() => {});
+      void result.finished?.catch(failed);
+    } catch {
+      failed();
+    }
+  };
   const claim = (event: PopStateEvent, entry: Entry): void => {
     decisions.set(event, "nav");
     event.stopImmediatePropagation();
@@ -438,13 +491,31 @@ export function installPageSwap(): () => void {
       if (known === "nav") event.stopImmediatePropagation();
       return known;
     }
+    // A newer swap committed during the rollback: the column shows that page now, so this arrival is an ordinary
+    // traversal away from it, and absorbing it would leave the URL on the vetoed page.
+    if (state.rollback && state.rollback.page !== state.currentPage) state.rollback = undefined;
+    if (state.rollback) {
+      const pending = state.rollback;
+      absorb(event);
+      if (pending.key !== undefined) {
+        if (navigation?.currentEntry?.key === pending.key) {
+          state.rollback = undefined;
+          pending.restored();
+        }
+      } else {
+        // Without absolute traversal, the first arrival is best effort; a rapid second Back may need a reload.
+        state.rollback = undefined;
+        const entry = marker(event.state);
+        if (entry?.page !== state.currentPage || entry.position !== pending.position) window.location.reload();
+        else pending.restored();
+      }
+      return "nav";
+    }
     stopRestore();
     // A traversal's departure must match the arriving entry; a fragment navigation's popstate follows its navigate.
     const fragmentDeparture = departure && departure.kind !== "traverse" ? departure.kind : undefined;
-    const from =
-      departure && (fragmentDeparture || departure.key === navigation?.currentEntry?.key)
-        ? departure
-        : { entry: state.currentEntry, scroll: captureScroll() };
+    const matched = departure && (fragmentDeparture || departure.key === navigation?.currentEntry?.key) ? departure : undefined;
+    const from = matched ?? { entry: state.currentEntry, scroll: captureScroll() };
     const shown = shownEntry(state, from.entry);
     // History already left the shown page while its DOM stays: a cross-page traversal has not committed.
     const pending = from.entry.page !== state.currentPage;
@@ -494,6 +565,37 @@ export function installPageSwap(): () => void {
       decisions.set(event, "page");
       return "page";
     }
+    // Navigation indices shift when old entries are evicted; marker positions stay in their own coordinate system.
+    const departIndex =
+      matched?.kind === "traverse" && matched.from !== undefined
+        ? navigation?.entries().findIndex((entry) => entry.key === matched.from)
+        : undefined;
+    const key = departIndex !== undefined && departIndex >= 0 ? matched?.from : undefined;
+    const arrived = navigation?.currentEntry;
+    const delta =
+      key !== undefined && arrived && departIndex !== undefined
+        ? arrived.index - departIndex
+        : entry === undefined
+          ? undefined
+          : entry.position - shown.position;
+    const context = shellContext(document);
+    const url = new URL(window.location.href);
+    // Pending cross-page traversals were already allowed; an unknown or zero delta cannot be rolled back.
+    if (!pending && delta && context && inScope(url, context.scope)) {
+      const writes = state.writes;
+      const restored = allowsLeave(context.root, url, delta);
+      if (restored) {
+        absorb(event);
+        if (state.writes !== writes) {
+          state.rollback = undefined;
+          console.error(
+            "[@k2b/ssr/nav] A leave check wrote history during Back or Forward; wait for event.restored. Loading the document.",
+          );
+          window.location.reload();
+        } else rollback(delta, shown, restored, key);
+        return "nav";
+      }
+    }
     claim(event, entry ?? { position: basePosition() });
     return "nav";
   };
@@ -536,23 +638,38 @@ export async function swapPage(href: string, options: { replace?: boolean } = {}
   return runSwap(href, options);
 }
 
+const parseUrl = (href: string): URL | undefined => {
+  try {
+    return new URL(href, document.baseURI || window.location.href);
+  } catch {
+    return undefined;
+  }
+};
+
 async function runSwap(href: string, options: { replace?: boolean }, traversal?: Traversal): Promise<void> {
   if (typeof window === "undefined") return;
   const state = shared[swapKey];
+  const requested = parseUrl(href);
+  const context = shellContext(document);
+  const swaps = requested !== undefined && state?.document === document && context !== undefined && inScope(requested, context.scope);
+  // A vetoed swap changes nothing, not even an older pending swap; document loads are left to beforeunload.
+  if (swaps && !traversal) {
+    const restored = allowsLeave(context.root, requested);
+    if (restored) {
+      restored();
+      return;
+    }
+  }
   if (state) {
     state.stopRestore();
     abort(state);
     state.started++;
   }
-  let requested: URL;
-  try {
-    requested = new URL(href, document.baseURI || window.location.href);
-  } catch {
+  if (!requested) {
     loadDocument(href, options);
     return;
   }
-  const context = shellContext(document);
-  if (!state || state.document !== document || !context || !inScope(requested, context.scope)) {
+  if (!swaps) {
     if (traversal) {
       if (state && stillCurrent(state, traversal)) window.location.reload();
     } else loadDocument(requested.href, options);

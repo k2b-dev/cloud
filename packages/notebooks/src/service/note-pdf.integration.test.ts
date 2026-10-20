@@ -13,6 +13,36 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
     config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
   });
 
+  test("Book tables keep short numbers whole and the last column on the page", async () => {
+    const description =
+      "Fictional order for a wooden storage cabinet. Each panel is carefully packed for delivery. Assembly instructions and spare fittings are included in the shipment.";
+    const tokenPrefix = "example.org/";
+    const token = tokenPrefix + "b".repeat(120 - tokenPrefix.length);
+    const markdown = [
+      "| Nr. | Beschreibung | Menge | Preis |",
+      "| --- | --- | --- | --- |",
+      `| 100 | ${description} | 1 | 19.50 |`,
+      `| 110 | ${description} | 2 | 29.50 |`,
+      `| 120 | ${description} ${token} | 3 | 39.50 |`,
+    ].join("\n");
+    const { html } = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "de", templateId: "document" });
+    const { pdf } = await renderHtmlToPdfWithConfig({ html, title: "Fictional order" }, config);
+    const text = await pdfText(pdf, { layout: true });
+
+    for (const value of ["Nr\\.", "100", "110", "120"]) {
+      expect(text).toMatch(new RegExp(`^\\s*${value}\\s{2,}`, "mu"));
+    }
+    expect(text).not.toMatch(/^\s*(?:10|11|12|0|N|r\.)\s{2,}/mu);
+    for (const value of ["Menge", "Preis", "19.50", "29.50", "39.50"]) {
+      expect(text).toContain(value);
+    }
+    const descriptionText = text
+      .replace(/^\s*(?:100|110|120)\s{2,}/gmu, "")
+      .replace(/\s{2,}[1-3]\s+\d{2}\.50\s*$/gmu, "")
+      .replace(/\s/gu, "");
+    expect(descriptionText).toContain(token);
+  }, 60_000);
+
   test("every notice kind prints its content without the directive source", async () => {
     const markdown = [
       "# Hiking weekend",

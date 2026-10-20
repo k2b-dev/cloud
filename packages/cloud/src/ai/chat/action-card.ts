@@ -6,6 +6,7 @@ import {
   capabilityReceiptParts,
   capabilityReviewSentence,
   capabilityReviewSentenceParts,
+  capabilitySentenceParts,
   capabilitySentenceText,
 } from "../../_internal/capability-sentences";
 import type {
@@ -186,6 +187,19 @@ export const actionPlainText = (text: ActionText): string =>
       return chip.kind === "time" ? chip.label : chip.title;
     })
     .join("");
+
+/** The short template, else the action sentence, read as the card's chips without person addresses or title quotes. */
+export const reviewShortText = (review: CapabilityActionCallReview, context: ActionCardContext): string =>
+  actionPlainText(
+    partsText(
+      capabilitySentenceParts(review.sentence.short ?? review.sentence.action, review.slots, {
+        locale: review.locale,
+        timeZone: context.timeZone,
+      }),
+      review.locale,
+      context.app,
+    ),
+  );
 
 const firstLink = (links: readonly CapabilitySemanticLink[] | undefined, rels: CapabilitySemanticLink["rel"][]) =>
   rels.map((rel) => links?.find((link) => link.rel === rel)?.href).find(Boolean);
@@ -391,7 +405,8 @@ const messageRows = (block: ToolBlock): AiLegacyReviewRow[] => {
   for (const line of message.split("\n").map((entry) => entry.trim())) {
     if (!line || /^Review the validated arguments below before running this action\.$/i.test(line)) continue;
     const heading = /^([^:]{1,40}):$/.exec(line);
-    const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
+    // The value starts at its first visible character, so the pattern never backtracks over the white space before it.
+    const match = /^([^:]{1,40}):\s+(\S.*)$/.exec(line);
     if (heading) {
       open = { label: heading[1]!, value: "" };
       rows.push(open);
