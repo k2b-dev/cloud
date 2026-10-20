@@ -218,11 +218,14 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
   // complete only when the question or a row shows each value whole; people the app left out are never shown.
   const shown = [card.questionText, ...rows.map((entry) => entry.value)];
   const whole = (value: string) => shown.some((text) => text.includes(value));
-  const typed = (value: string) => rows.some((entry) => entry.format && entry.value === value);
+  const typed = (value: string, format: "date" | "date-time") =>
+    rows.some((entry) => entry.value === value && (entry.format === "date-time" || entry.format === format));
   if (
     card.slotValues?.unlisted ||
     card.slotValues?.values.some((value) => !whole(value)) ||
-    card.slotValues?.times.some((time) => !whole(time.text) && !(typed(time.start) && (!time.end || typed(time.end))))
+    card.slotValues?.times.some(
+      (time) => !whole(time.text) && !(typed(time.start, time.format) && (!time.end || typed(time.end, time.format))),
+    )
   )
     incomplete = true;
   return {

@@ -447,3 +447,36 @@ test("a shortened time stays complete when typed rows hold both of its ends", ()
   expect(text.question).not.toContain("22. Sept.");
   expect(text.incomplete).toBe(false);
 });
+
+test.each(["date", "date-time"] as const)("a shortened date-time requires its precision in typed fields (%s)", (format) => {
+  const people = ["a", "b"].map((letter) => ({ name: letter.repeat(100), address: `${letter.repeat(200)}@example.com` }));
+  const start = "2026-09-21T10:00:00Z";
+  const end = "2026-09-22T10:00:00Z";
+  const review: CapabilityActionCallReview = {
+    locale: "de",
+    ask: "sends",
+    sentence: {
+      action: "An {to} am {at} senden",
+      running: "Wird an {to} gesendet",
+      done: "An {to} gesendet",
+      confirm: "Senden",
+      decline: "Nicht senden",
+    },
+    slots: { to: { kind: "person", people }, at: { kind: "time", start, end, format: "date-time" } },
+    preview: {
+      kind: "fields",
+      rows: [
+        { label: "An", value: people.map((person) => `${person.name} <${person.address}>`).join(", ") },
+        { label: "Wann", value: start, format },
+        { label: "Bis", value: end, format: "date-time" },
+      ],
+    },
+  };
+  const text = actionCardText(
+    reviewActionCard(review, { locale: "de", timeZone: "Europe/Berlin", app: { name: "Mail", icon: "ti ti-mail" } }),
+  );
+  expect(text.question).toContain("…");
+  expect(text.question).not.toContain("22. Sept.");
+  expect(text.rows.find((row) => row.label === "Wann")).toEqual({ label: "Wann", value: start, format });
+  expect(text.incomplete).toBe(format === "date");
+});

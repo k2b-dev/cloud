@@ -104,7 +104,11 @@ export type ActionCard = {
    * also in consequences and rule lines, and whether the app left people out. Plain text that does not show each value
    * whole is incomplete.
    */
-  slotValues?: { values: string[]; times: { text: string; start: string; end?: string }[]; unlisted: boolean };
+  slotValues?: {
+    values: string[];
+    times: { text: string; start: string; end?: string; format: "date" | "date-time" }[];
+    unlisted: boolean;
+  };
 };
 
 const REASON_LOOK: Record<CapabilityAskReason, Omit<ActionReason, "code" | "text">> = {
@@ -213,10 +217,17 @@ const slotValues = (slots: CapabilitySlot[], context: { locale: string; timeZone
             ? [capabilitySentenceText("{value}", { value: slot }, context)]
             : [],
   ),
-  // A time is shown whole as its words, or as typed rows that hold its start and end.
+  // A time is shown whole as its words, or as typed rows that hold its start and end with at least its precision.
   times: slots.flatMap((slot) =>
     slot.kind === "time"
-      ? [{ text: capabilitySentenceText("{value}", { value: slot }, context), start: slot.start, ...(slot.end ? { end: slot.end } : {}) }]
+      ? [
+          {
+            text: capabilitySentenceText("{value}", { value: slot }, context),
+            start: slot.start,
+            ...(slot.end ? { end: slot.end } : {}),
+            format: slot.format,
+          },
+        ]
       : [],
   ),
   unlisted: slots.some((slot) => slot.kind === "person" && (slot.total ?? slot.people.length) > slot.people.length),
