@@ -1015,6 +1015,41 @@ described under [Where CI images come from](#where-ci-images-come-from). The
 image's publisher deletes its date tags after about eight months, so move the
 pin to a newer tag before that.
 
+### Scale acceptance
+
+The nightly `scale-acceptance` job runs `scripts/scale-acceptance.ts`. It boots
+one gateway and two replicas each of Core, Mail, Chat, and Notebooks from
+`compose.prod.yml` and the test overlay `compose.scale-test.yml`, in its own
+Compose project with its own PostgreSQL, NATS, Valkey, and SMTP sink. It never
+uses the development stack or `.env`, and it removes every container, volume,
+and built image tag when it ends, also after a failure or a signal.
+
+Each scenario step addresses one replica container through its own published
+port, so no step can reach the same replica twice by accident:
+
+- a Chat message posted on replica A reaches a live socket on replica B;
+- a Notebooks Yjs update sent through replica A reaches a client on replica B;
+- one durable outgoing mail is delivered once while two Core replicas run;
+- a Mail draft lease taken on replica A is saved and renewed on replica B;
+- a second acquire of that lease on replica B returns 409 with the holder;
+- Core is killed with SIGKILL while it sends a mail, and the other Core
+  replica delivers it exactly once after recovery, which takes about five
+  minutes.
+
+At the end, the run fails unless both replicas of every app are different
+running containers and each served at least one step. It runs nightly, not on
+pull requests, because it builds five images. Run it locally with Docker:
+
+```bash
+bun run --cwd packages/ui build
+bun --no-env-file scripts/scale-acceptance.ts
+```
+
+The script takes a heavy slot itself. Add `--image-tag <tag>` to use published
+images instead of building them. `--replicas 1` is the negative control: every
+step reaches the only container of each app, and the final check fails because
+replica B is replica A.
+
 ### Where CI images come from
 
 No workflow pulls from Docker Hub: its limit for anonymous pulls failed CI runs.
