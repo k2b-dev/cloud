@@ -6292,7 +6292,8 @@
 }
 .k2b-ui .k2b-map-view__live { position: absolute; inset: 0; opacity: 0; transition: opacity var(--k2b-motion-base) var(--k2b-ease-out); }
 .k2b-ui .k2b-map-view[data-state="ready"] .k2b-map-view__live { opacity: 1; }
-.k2b-ui .k2b-map-view__fit { position: absolute; pointer-events: none; }
+/* Its own stacking context: a raised selected pin never rises above the controls, notice, info tile, or attribution. */
+.k2b-ui .k2b-map-view__fit { position: absolute; pointer-events: none; isolation: isolate; }
 .k2b-ui .k2b-map-view__pins { position: absolute; inset: 0; }
 .k2b-ui .k2b-map-view__geometry { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .k2b-ui .k2b-map-view [data-tone] { --k2b-map-tone: var(--k2b-map-accent); --k2b-map-ink: var(--k2b-map-accent-ink); --k2b-map-on: var(--k2b-map-accent-on); }
