@@ -181,29 +181,32 @@ th, td { overflow-wrap: break-word; word-break: normal; }
 const MAX_WHOLE_CELL_RUN = 20;
 const CELL_RUN_BREAK_STEP = 10;
 
-// Count references, even without a semicolon, as one unit without decoding or
-// splitting them; &nbsp; is not whitespace. Numeric references keep all their
-// digits, leading zeros included. A name is at most 32 characters, the longest
-// HTML reference name, so over-matching text such as &foo keeps only a short
-// piece unbroken. A bare & remains one unit.
+// Segment decoded code points into graphemes, keeping references and literal
+// code points as whole raw pieces. Numeric references decode valid scalars;
+// names, invalid values and bare & use a neutral U+FFFD. References may omit
+// a semicolon and keep all digits, including leading zeros; &nbsp; is not
+// whitespace. Names are limited to 32 characters, the longest HTML reference
+// name, so over-matching text such as &foo keeps only a short piece unbroken.
 const CHARACTER_REFERENCE = /&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]{0,31});?/gu;
-// Other text counts in graphemes, so a break never separates an accent or a
-// joined emoji from its base character.
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 const runUnits = (run: string): string[] => {
-  const units: string[] = [];
+  const pieces = run.match(new RegExp(`${CHARACTER_REFERENCE.source}|.`, "gsu")) ?? [];
+  const decoded = pieces
+    .map((piece) => {
+      if (!piece.startsWith("&")) return piece;
+      if (!piece.startsWith("&#")) return "\uFFFD";
+      const hex = /^&#[xX]/u.test(piece);
+      const point = Number.parseInt(piece.slice(hex ? 3 : 2), hex ? 16 : 10);
+      return point > 0 && point <= 0x10ffff && (point < 0xd800 || point > 0xdfff) ? String.fromCodePoint(point) : "\uFFFD";
+    })
+    .join("");
   let at = 0;
-  const graphemes = (text: string) => {
-    for (const { segment } of GRAPHEMES.segment(text)) units.push(segment);
-  };
-  for (const match of run.matchAll(CHARACTER_REFERENCE)) {
-    graphemes(run.slice(at, match.index));
-    units.push(match[0]);
-    at = match.index + match[0].length;
-  }
-  graphemes(run.slice(at));
-  return units;
+  return Array.from(GRAPHEMES.segment(decoded), ({ segment }) => {
+    const start = at;
+    at += Array.from(segment).length;
+    return pieces.slice(start, at).join("");
+  });
 };
 
 // Inline formatting does not end a run: `aaa**bbb**ccc` prints one unbroken

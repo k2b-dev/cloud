@@ -162,6 +162,17 @@ describe("Markdown PDF renderer", () => {
     expect(html).toContain(`<td>${family.repeat(10)}<wbr>${family.repeat(10)}<wbr>${family}</td>`);
   });
 
+  test("keeps graphemes whole across literal text and character references", () => {
+    for (const grapheme of ["e&#x301;", "&#101;\u0301", "&#x1F469;&#x200D;&#x1F4BB;"]) {
+      const html = buildPresetPdfHtml({
+        html: `<table><tr><td>${"a".repeat(9)}${grapheme}${"b".repeat(12)} ${"c".repeat(21)}</td></tr></table>`,
+      });
+      expect(html).toContain(
+        `<td>${"a".repeat(9)}${grapheme}<wbr>${"b".repeat(10)}<wbr>bb ${"c".repeat(10)}<wbr>${"c".repeat(10)}<wbr>c</td>`,
+      );
+    }
+  });
+
   test("treats a raw no-break space as part of the run", () => {
     const html = buildPresetPdfHtml({ html: `<table><tr><td>${"a".repeat(10)}\u00a0${"b".repeat(10)}</td></tr></table>` });
     expect(html).toContain(`<td>${"a".repeat(10)}<wbr>\u00a0${"b".repeat(9)}<wbr>b</td>`);
