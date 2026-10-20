@@ -394,6 +394,7 @@ export function installPageSwap(): () => void {
     const from =
       departure && departure.key === navigation?.currentEntry?.key ? departure : { entry: state.currentEntry, scroll: captureScroll() };
     const shown = shownEntry(state, from.entry);
+    const pending = state.traversing;
     abort(state);
     departure = undefined;
     remember(state, shown, from.scroll);
@@ -408,8 +409,16 @@ export function installPageSwap(): () => void {
     fragment = undefined;
     state.fragment = undefined;
     if (fragmentMode) {
-      const entry = { page: state.currentPage, position: from.entry.position + (fragmentMode === "push" ? 1 : 0) };
-      writes.replace.call(window.history, mergeMarker(window.history.state, entry), "");
+      // A fragment entry belongs to the page of the entry it came from, which a pending traversal has not shown yet.
+      const page = pending ? from.entry.page : state.currentPage;
+      const entry = { page, position: from.entry.position + (fragmentMode === "push" ? 1 : 0) };
+      if (page !== undefined) writes.replace.call(window.history, mergeMarker(window.history.state, { ...entry, page }), "");
+      if (pending) {
+        decisions.set(event, "nav");
+        event.stopImmediatePropagation();
+        traverse(entry);
+        return "nav";
+      }
       state.currentEntry = entry;
       state.shown = entry;
       decisions.set(event, "page");
@@ -436,8 +445,8 @@ export function installPageSwap(): () => void {
     if (!event.persisted) return;
     abort(state);
     const entry = marker(window.history.state);
-    if (entry?.page === state.currentPage) state.currentEntry = entry;
-    else traverse(entry ?? { position: basePosition() });
+    // A same-page return keeps the tracked entry: a popstate that follows still departs from the shown one.
+    if (entry?.page !== state.currentPage) traverse(entry ?? { position: basePosition() });
   };
   const pagehide = (): void => {
     const shown = shownEntry(state);

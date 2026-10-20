@@ -1640,6 +1640,56 @@ test("overlapping Back traversals keep A1's scroll for Forward", async () => {
   expect(requests).toHaveLength(2);
 });
 
+test("a fragment navigation during a pending traversal belongs to the arriving page and swaps it", async () => {
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "initial", index: 3 } });
+  Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+  try {
+    install();
+    const requests = deferredFetch(true);
+    navigation.dispatchEvent(
+      Object.assign(new Event("navigate"), { navigationType: "traverse", destination: { key: "arrival" }, hashChange: false }),
+    );
+    navigation.currentEntry = { key: "arrival", index: 1 };
+    arrive({ [markerKey]: { page: "other", position: 1 } }, "/app/new");
+    navigation.dispatchEvent(
+      Object.assign(new Event("navigate"), { navigationType: "push", destination: { key: "fragment" }, hashChange: true }),
+    );
+    navigation.currentEntry = { key: "fragment", index: 2 };
+    History.prototype.pushState.call(window.history, null, "", "/app/new#section");
+    const listener = mock();
+    const stop = listenPopState(listener);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    stop();
+    expect(requests[0]!.aborted).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
+    expect(window.history.state[markerKey]).toEqual({ page: "other", position: 2 });
+    const done = swapped("new");
+    requests[1]!.resolve(response());
+    await done;
+    expect(window.location.hash).toBe("#section");
+    expect(window.history.state[markerKey]).toEqual({ page: "other", position: 2 });
+  } finally {
+    uninstall();
+    Reflect.deleteProperty(window, "navigation");
+  }
+});
+
+test("a bfcache return to an earlier same-page entry keeps that entry's own scroll", () => {
+  install();
+  const a0 = window.history.state;
+  let y = 200;
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+  window.history.pushState(null, "", "/app/old?tab=1");
+  y = 700;
+  window.dispatchEvent(new Event("pagehide"));
+  History.prototype.replaceState.call(window.history, a0, "", "/app/old");
+  const show = new Event("pageshow");
+  Object.defineProperty(show, "persisted", { value: true });
+  window.dispatchEvent(show);
+  window.dispatchEvent(new PopStateEvent("popstate", { state: a0 }));
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 200);
+});
+
 test("pagehide during traversal leaves the arriving entry's saved scroll intact", async () => {
   install();
   const requests = deferredFetch(true);

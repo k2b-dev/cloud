@@ -267,8 +267,12 @@ swap state. Navigation API navigate captures the departing marker and scroll
 before traversal, also when dialog-core hides a dialog-only popstate from nav
 and applications. If nav runs first, inherited page ids keep those traversals
 with the page; nav must not stop them. Keep the fragment-click fallback for
-browsers without the Navigation API. Persisted pageshow aborts pending work and
-checks the arriving marker, swapping a foreign or unmarked entry. pagehide
+browsers without the Navigation API. A fragment entry belongs to the page of
+the entry it came from: during a pending traversal that is the arriving page,
+so nav restarts the traversal for the fragment URL. Persisted pageshow aborts
+pending work and swaps a foreign or unmarked arriving entry; for a same-page
+return it keeps the tracked entry, so a following popstate departs from the
+shown one. pagehide
 first remembers the shown entry's current scroll and persists it in that entry
 best effort. It also mirrors the in-memory snapshots to sessionStorage under
 the reserved key `"@k2b/ssr/nav:scroll"`, so a reload keeps departure snapshots
