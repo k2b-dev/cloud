@@ -489,12 +489,15 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
 
   const openSheet = () => {
     const current = locale();
+    const lifetime = new AbortController();
+    // dialogCore can wait for a previous sheet's history traversal. Disabling
+    // or unmounting the field must also cancel an opening that is still queued.
+    closeSheet = () => lifetime.abort();
     let after: (() => void) | undefined;
     setSheetOpen(true);
     void dialogCore
       .open<void>(
         (closeDialog, context) => {
-          closeSheet = () => closeDialog();
           context.dialog.id ||= `${meta.controlId}-sheet`;
           setSheetId(context.dialog.id);
           return (
@@ -518,6 +521,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
         {
           ...bottomSheetOptions,
           history: true,
+          signal: lifetime.signal,
           // A phone keyboard must not cover the list as it opens: focus starts on the sheet.
           initialFocus: (dialog) => {
             dialog.tabIndex = -1;
@@ -525,7 +529,9 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
           },
         },
       )
-      .then(() => after?.())
+      .then(() => {
+        if (!lifetime.signal.aborted) after?.();
+      })
       .finally(() => {
         closeSheet = undefined;
         setSheetOpen(false);
