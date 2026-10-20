@@ -1959,6 +1959,52 @@ test("same-page traversal restores window before the island and leaves region sc
   }
 });
 
+test.each([false, true])("a clamped same-page restore retries after the island renders (island scrolls: %p)", async (islandScrolls) => {
+  let max = 300;
+  let y = 0;
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y });
+  spyOn(window, "scrollTo").mockImplementation(((x: number, top: number) => {
+    y = Math.min(top, max);
+  }) as typeof window.scrollTo);
+  install();
+  const tall = window.history.state;
+  y = 900;
+  window.history.pushState(null, "", "/app/old?tab=short");
+  y = 0;
+  const stop = listenPopState(() => {
+    // The island renders the taller entry synchronously in its handler.
+    max = 2000;
+    if (islandScrolls) window.scrollTo(0, 50);
+  });
+  try {
+    arrive(tall);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(y).toBe(islandScrolls ? 50 : 900);
+  } finally {
+    stop();
+  }
+});
+
+test("a cleanup that moves history during a traversal commit loads where it went", async () => {
+  install();
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  const requests = deferredFetch(true);
+  const dispose = () => navigate("/app/new?moved", { viewTransition: false });
+  window.addEventListener("ssr:island-dispose", dispose, { once: true });
+  try {
+    arrive({ [markerKey]: { page: "other", position: 5 } }, "/app/new");
+    const disposed = new Promise((resolve) => window.addEventListener("ssr:island-dispose", resolve, { once: true }));
+    requests[0]!.resolve(response());
+    await disposed;
+    await Promise.resolve();
+    expect(window.location.search).toBe("?moved");
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(document.title).toBe("old");
+  } finally {
+    window.removeEventListener("ssr:island-dispose", dispose);
+  }
+});
+
 test("a traversal restores stored window and region scroll after mounting the new island", async () => {
   install();
   const snapshot = { window: { x: 0, y: 240 }, regions: [{ key: "list", x: 0, y: 110 }] };

@@ -437,7 +437,17 @@ export function installPageSwap(): () => void {
       state.currentEntry = entry;
       state.shown = entry;
       const snapshot = savedScroll(state, entry);
-      if (snapshot) window.scrollTo(snapshot.window.x, snapshot.window.y);
+      if (snapshot) {
+        const { x, y } = snapshot.window;
+        window.scrollTo(x, y);
+        const set = { x: window.scrollX, y: window.scrollY };
+        // The departing content can clamp the position; after islands rendered the entry, retry unless one scrolled.
+        if (set.x !== x || set.y !== y)
+          requestAnimationFrame(() => {
+            const here = marker(window.history.state);
+            if (here && entryKey(here) === entryKey(entry) && window.scrollX === set.x && window.scrollY === set.y) window.scrollTo(x, y);
+          });
+      }
       decisions.set(event, "page");
       return "page";
     }
@@ -638,7 +648,15 @@ const commit = (
       recoverCommit(Boolean(options.replace));
       return;
     }
-    if (traversal && !stillCurrent(state, traversal)) return;
+    if (traversal && !stillCurrent(state, traversal)) {
+      // A cleanup moved history after the old islands were disposed: only a load of where it went is safe.
+      try {
+        window.location.reload();
+      } catch (error) {
+        console.error("[@k2b/ssr/nav] Document navigation failed.", error);
+      }
+      return;
+    }
     const writes = patchHistory();
     let entry: Marker;
     if (traversal) {
