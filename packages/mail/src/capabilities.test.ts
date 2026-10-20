@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
-  type CapabilityActionDefinition,
   CapabilityActionCallReviewSchema,
+  type CapabilityActionDefinition,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
@@ -35,7 +35,6 @@ import {
   SubscriptionListDataSchema,
   SubscriptionUnsubscribeInputSchema,
 } from "./capability-contracts";
-import * as reviewReaders from "./service/capability-review-readers";
 import { checkMailCapabilityMessages } from "./capability-messages";
 import {
   attachmentExtraction,
@@ -63,6 +62,7 @@ import {
   search,
   triage,
 } from "./service";
+import * as reviewReaders from "./service/capability-review-readers";
 
 const mailboxId = "MbA123";
 const conversationId = "CvB234";
@@ -251,6 +251,7 @@ beforeEach(() => {
   spyOn(reviewReaders, "loadSendReviewContent").mockImplementation(async ({ draft }) => ({
     ok: true,
     data: {
+      contentHash: "a".repeat(64),
       from: { name: "Ada", address: "ada@example.test" },
       draft: { ...draft, format: "plain", body: draft.body + (draft.signatureTemplateId ? "\n\nBest regards" : "") },
     },

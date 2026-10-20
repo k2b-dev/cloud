@@ -359,9 +359,15 @@ suite("Mail per-call reviews with real grants and draft state", () => {
 
   test("a signature change beyond the display limit changes the approval digest", async () => {
     await sql`UPDATE mail.drafts SET body_markdown = ${"Long body. ".repeat(2000)} WHERE id = ${draftId}::uuid`;
-    const input = { mailboxId: mailboxShortId, draftId: draftShortId, senderIdentityId: identityShortId, expectedRevision: 7 };
+    const input = {
+      mailboxId: mailboxShortId,
+      draftId: draftShortId,
+      senderIdentityId: identityShortId,
+      expectedRevision: 7,
+      undoSeconds: 20,
+    };
     const first = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));
-    await sql`UPDATE mail.compose_templates SET body_template = 'Changed signature', revision = revision + 1
+    await sql`UPDATE mail.compose_templates SET body_template = 'Changed signature {{ mailbox.logo }}', revision = revision + 1
       WHERE id = (SELECT signature_template_id FROM mail.drafts WHERE id = ${draftId}::uuid)`;
     const second = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));
     expect(first.preview).toEqual(second.preview);
@@ -373,7 +379,13 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     const signature = "{{ 'now' | date: '%s' }}";
     await sql`UPDATE mail.compose_templates SET body_template = ${signature}
       WHERE id = (SELECT signature_template_id FROM mail.drafts WHERE id = ${draftId}::uuid)`;
-    const input = { mailboxId: mailboxShortId, draftId: draftShortId, senderIdentityId: identityShortId, expectedRevision: 7 };
+    const input = {
+      mailboxId: mailboxShortId,
+      draftId: draftShortId,
+      senderIdentityId: identityShortId,
+      expectedRevision: 7,
+      undoSeconds: 20,
+    };
     try {
       setSystemTime(new Date(at));
       const first = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));

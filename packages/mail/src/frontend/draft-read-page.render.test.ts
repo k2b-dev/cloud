@@ -173,8 +173,8 @@ test("a failed effective-content read cannot fall back to the raw draft", async 
   expect(await response.text()).not.toContain("Please find");
 });
 
-test("ordinary revision links allow recipient-free drafts and do not require a sender", async () => {
-  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok({ ...draft, to: [], cc: [], bcc: [], senderIdentityId: null })));
+test("ordinary revision links allow recipient-free drafts without send-readiness checks", async () => {
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(ok({ ...draft, to: [], cc: [], bcc: [] })));
   const content = spyOn(reviewReaders, "loadSendReviewContent");
   spies.push(content);
   const response = await request("en", "?revision=1");
