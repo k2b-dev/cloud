@@ -14,10 +14,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
-import { capabilitySentenceText } from "../_internal/capability-sentences";
-import { preferredLocale } from "../server/locale";
-import { normalizeTimeZone } from "../shared/time";
 import { readBoundedJson } from "../_internal/bounded-json";
+import { capabilitySentenceText } from "../_internal/capability-sentences";
 import {
   HELP_SEARCH_MAX_LIMIT,
   helpAgentMarkdown,
@@ -46,12 +44,14 @@ import {
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
+import { preferredLocale } from "../server/locale";
 import { noTransform } from "../server/middleware/no-transform";
 import { createHelpReader, type HelpArticle, type HelpMetadata, type HelpReader, type HelpReaderFactory } from "../services/help";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
 import { get } from "../services/settings";
 import { cloudMcpResourceUri, publicCloudOrigin } from "../shared/app-url";
+import { normalizeTimeZone } from "../shared/time";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
 
 const MCP_TOOL_PAGE_SIZE = 100;

@@ -2456,6 +2456,31 @@ suite("isolated app approval protocol", () => {
       expect(await approvals.get(browserOnly.id)).toMatchObject({ status: "pending" });
     });
 
+    test("the inbox reads past a full page of browser-only questions to older ones a device may decide", async () => {
+      const owner = await account();
+      const review: CapabilityActionCallReview = {
+        locale: "en",
+        ask: "sends",
+        sentence: { action: "Send message", running: "Sending message", done: "Sent message", confirm: "Send", decline: "Don't send" },
+        slots: {},
+        links: [{ rel: "open", href: "/mail/drafts/maintenance?revision=7" }],
+        preview: {
+          from: { name: "Team Ops", address: "ops@example.com" },
+          kind: "message",
+          to: [{ name: "Lea", address: "lea@example.com" }],
+          subject: "Maintenance",
+          body: "Full body is in Cloud",
+          format: "plain",
+          truncated: true,
+        },
+      };
+      const older = await askAction(owner, { review: { ...review, ask: "app_asks" } });
+      for (let index = 0; index <= APP_APPROVAL_LIMITS.pageSize; index += 1) await askAction(owner, { review });
+      const inbox = await deviceActions.inbox({ userId: owner.id, issuer: cfg.issuer });
+      expect(inbox.actions.map((item) => item.actionId)).toEqual([older.id]);
+      expect(inbox.moreActions).toBe(APP_APPROVAL_LIMITS.pageSize + 1);
+    });
+
     test("all Action commands verify signatures first, and changed, expired or resolved views cannot be decided", async () => {
       const owner = await account();
       const device = await enroll(owner);

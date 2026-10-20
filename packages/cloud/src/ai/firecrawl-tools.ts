@@ -309,15 +309,17 @@ export const authorizeWebRead = async (kind: "page" | "file", url: string, ctx: 
   }
   const message = webReadApprovalMessage(kind, url, ctx.locale);
   const review = cloudToolReview(kind === "page" ? "web_extract" : "fetch_file", { url }, ctx.locale ?? "en");
-  if (!review) throw new Error("Cannot describe the address to read.");
-  const question: CapabilityActionCallReview = {
-    ...review,
-    ask: "sends",
-    consequences: message
-      .split("\n")
-      .slice(1)
-      .map((text) => ({ text })),
-  };
+  // An address whose encoded form outgrows the review's bounds asks with its full text alone, as before reviews.
+  const question: CapabilityActionCallReview | undefined = review
+    ? {
+        ...review,
+        ask: "sends",
+        consequences: message
+          .split("\n")
+          .slice(1)
+          .map((text) => ({ text })),
+      }
+    : undefined;
   const approved = ctx.requestApprovalFor ? await ctx.requestApprovalFor(message, target, question) : await ctx.requestApproval(message);
   if (!approved) throw new Error("The person did not allow reading this address. Use an address from their message or a search result.");
   return false;

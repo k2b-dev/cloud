@@ -232,8 +232,3 @@ export {
   parseCloudAiView,
   sortCloudAiViewRows,
 } from "./view-block";
-
-// Shared question rendering for Cloud's text surfaces. Pure, so the CLI bundle stays free of server modules.
-export { type ApprovalCardInput, approvalCard } from "../approvals/approval-card";
-export { type ActionCard } from "./chat/action-card";
-export { type ActionQuestionText, type ActionTextRow, actionCardText, actionQuestionLines } from "./chat/action-text";

@@ -3,11 +3,10 @@ import type { InboundEvent, OutboundEvent, ProviderRequest, StoreEntry, Tool } f
 import { defineTool as defineNessiTool, nessi } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
 import { z } from "zod";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
 import { approvalReviewDigest } from "../services/approvals";
-import type { CapabilityActionCallReview } from "../contracts/capabilities";
-import { cloudToolReview } from "./tool-sentences";
 import { aiToolAllowsAlways, aiToolApprovalScope, aiToolNeedsApproval } from "./approvals";
 import { aiChatAccessSubject } from "./assistant-models";
 import * as credentials from "./credentials";
@@ -25,6 +24,7 @@ import {
 import { aiModelAccess } from "./model-access";
 import { AiTurnActionSchema } from "./runtime";
 import * as settings from "./settings";
+import { cloudToolReview } from "./tool-sentences";
 import { type AiApprovalUse, aiApprovalAskedLater, aiToolPromptHints, defineAiTool, prepareAiTools } from "./tools";
 import type { AiApprovalTarget, AiModelProfile, AiToolRuntime } from "./types";
 

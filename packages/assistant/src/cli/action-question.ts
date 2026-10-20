@@ -1,7 +1,7 @@
-import { dates, i18n } from "@k2b/stdlib";
 import type { AiPendingTurnAction } from "@k2b/cloud/ai";
-import { actionCardText, actionQuestionLines, approvalCard } from "@k2b/cloud/ai/browser";
+import { actionCardText, actionQuestionLines, approvalCard } from "@k2b/cloud/ai/question-text";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { dates, i18n } from "@k2b/stdlib";
 import { terminalSafeText } from "./terminal";
 
 type ApprovalAction = Extract<AiPendingTurnAction, { type: "approval_request" }>;
@@ -25,7 +25,7 @@ export const pendingActionQuestion = (
   ctx: CloudCliContext,
   action: ApprovalAction,
   commands?: { approve: string; reject: string },
-): { lines: string[]; hasRows: boolean } => {
+): { lines: string[]; showInput: boolean } => {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const card = approvalCard(
     {
@@ -50,6 +50,8 @@ export const pendingActionQuestion = (
     .join(" · ");
   return {
     lines: actionQuestionLines(text, { ...(origin ? { origin } : {}), ...(commands ? { commands } : {}), timeZone }).map(terminalSafeText),
-    hasRows: text.rows.length > 0,
+    // Only an app's review describes the call; without one, the validated input stays the source of truth, whatever
+    // lines the approval message adds.
+    showInput: !action.review,
   };
 };

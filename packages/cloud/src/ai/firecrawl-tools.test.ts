@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import { capabilityReviewSentence } from "../_internal/capability-sentences";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
+import type { RequestActor } from "../server";
 import { approvalAssurance } from "../services/approvals";
 import { AI_WEBSITE_APPROVAL_TOOL, aiWebsiteApprovalScope } from "./approvals";
 import {
@@ -12,34 +13,36 @@ import {
   runCloudAiWebSearch,
 } from "./firecrawl-tools";
 
+const actor: RequestActor = {
+  kind: "user",
+  user: {
+    id: "11111111-1111-4111-8111-111111111111",
+    uid: "person",
+    roles: ["user"],
+    provider: "local",
+    profile: "user",
+    givenname: "Test",
+    sn: "User",
+    displayName: "Test User",
+    mail: null,
+    avatarHash: null,
+    ipa: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    memberofGroup: [],
+    memberofGroupIds: [],
+    manages: [],
+    managesGroupIds: [],
+  },
+};
+
 describe("Firecrawl AI tools", () => {
   test("web reads retain their website approval target and assurance with the exact sends review", async () => {
     for (const locale of ["de", "en"]) {
       let captured: CapabilityActionCallReview | undefined;
       const url = "https://example.com/private?value=one";
       await authorizeWebRead("page", url, {
-        actor: {
-          kind: "user",
-          user: {
-            id: "11111111-1111-4111-8111-111111111111",
-            uid: "person",
-            roles: ["user"],
-            provider: "local",
-            profile: "user",
-            givenname: "Test",
-            sn: "User",
-            displayName: "Test User",
-            mail: null,
-            avatarHash: null,
-            ipa: null,
-            accountExpires: null,
-            lastLoginLocal: null,
-            memberofGroup: [],
-            memberofGroupIds: [],
-            manages: [],
-            managesGroupIds: [],
-          },
-        },
+        actor,
         locale,
         requestApproval: async () => {
           throw new Error("Expected the website target");
@@ -63,6 +66,24 @@ describe("Firecrawl AI tools", () => {
         locale === "de" ? "Seite auf „example.com“ lesen?" : "Read page on “example.com”?",
       );
     }
+  });
+  test("an address whose encoded form outgrows the review bounds still asks, with its full text", async () => {
+    const url = new URL(`https://example.com/${"ä".repeat(400)}`).href;
+    expect(url.length).toBeGreaterThan(2_000);
+    let asked: { message: string; review: CapabilityActionCallReview | undefined } | undefined;
+    await authorizeWebRead("page", url, {
+      actor,
+      locale: "en",
+      requestApproval: async () => {
+        throw new Error("Expected the website target");
+      },
+      requestApprovalFor: async (message, _target, review) => {
+        asked = { message, review };
+        return true;
+      },
+    });
+    expect(asked?.review).toBeUndefined();
+    expect(asked?.message).toContain(url);
   });
   test("rejects non-public URLs before extraction", () => {
     expect(() => assertPublicHttpUrl("ftp://example.com/file")).toThrow("http or https");

@@ -1,5 +1,5 @@
 import { capabilityQuestionText, capabilityUnknownText } from "../_internal/capability-sentences";
-import { isLegacyActionReview, storedActionReview, type AiStoredActionReview } from "../ai/action-review";
+import { type AiStoredActionReview, isLegacyActionReview, storedActionReview } from "../ai/action-review";
 import { type ActionCard, legacyActionCard, reviewActionCard } from "../ai/chat/action-card";
 import { aiChatMessages } from "../ai/chat/messages";
 import type { CapabilityActionReviewData } from "../contracts/capabilities";

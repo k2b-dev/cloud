@@ -36,6 +36,9 @@ const messages = i18n.define({
       repeats: "Repeats",
       due: "Due",
       assignees: "Assignees",
+      status: "Status",
+      checklist: "Checklist",
+      tags: "Tags",
       folder: "Folder",
       size: "Size",
       target: "To",
@@ -68,6 +71,9 @@ const messages = i18n.define({
       repeats: "Wiederholung",
       due: "Fällig",
       assignees: "Zuständig",
+      status: "Status",
+      checklist: "Checkliste",
+      tags: "Tags",
       folder: "Ordner",
       size: "Größe",
       target: "Ziel",
@@ -155,8 +161,12 @@ export const actionCardText = (card: ActionCard): ActionQuestionText => {
         break;
       }
       case "task":
+        row(t.place, preview.place);
         row(t.due, preview.due, { format: /^\d{4}-\d{2}-\d{2}$/.test(preview.due ?? "") ? "date" : "date-time" });
         row(t.assignees, people(preview.assignees));
+        row(t.status, preview.status);
+        row(t.checklist, preview.checklist?.map((item) => `${item.done ? "☑" : "☐"} ${item.label}`).join(" · "));
+        row(t.tags, preview.tags?.join(", "));
         row(t.text, preview.description, { block: true });
         break;
       case "file":

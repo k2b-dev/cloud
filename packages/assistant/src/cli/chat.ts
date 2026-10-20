@@ -14,10 +14,10 @@ import type {
 import { guessAiMediaType } from "@k2b/cloud/ai/browser";
 import { arg, cloudResourceUrl, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { pendingActionQuestion } from "./action-question";
-import { terminalSafeText } from "./terminal";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
+import { terminalSafeText } from "./terminal";
 import { type ConversationDetail, conversationPath, resolveConversation, submitAndMaybeWatch } from "./turn";
 
 type FullConversationDetail = ConversationDetail & {

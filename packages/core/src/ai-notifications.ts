@@ -7,7 +7,7 @@ import {
   chatTaskName,
   chatTaskReasonSentence,
 } from "@k2b/cloud/ai";
-import { approvalCard } from "@k2b/cloud/ai/browser";
+import { approvalCard } from "@k2b/cloud/ai/question-text";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { CapabilityActionReviewDataSchema } from "@k2b/cloud/contracts/capabilities";
 import { coreSettings, getFreeIpaConfig, logger, notifications, trace } from "@k2b/cloud/services";

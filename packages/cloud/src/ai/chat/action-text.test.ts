@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { CapabilityActionCallReview, CapabilityPreview } from "../../contracts/capabilities";
 import { approvalCard } from "../../approvals/approval-card";
+import type { CapabilityActionCallReview, CapabilityPreview } from "../../contracts/capabilities";
 import { reviewActionCard } from "./action-card";
 import { actionCardText, actionQuestionLines } from "./action-text";
 
@@ -183,9 +183,28 @@ test("all message metadata, hidden recipients and attachments mark incomplete co
 });
 
 test("task, file, page and fields retain their typed values and changes", () => {
-  expect(textFor("de", { kind: "task", title: "Task", due: "2026-10-21", assignees: [lea], description: "Work" }).rows).toEqual([
+  expect(
+    textFor("de", {
+      kind: "task",
+      title: "Task",
+      place: "Team Ops",
+      due: "2026-10-21",
+      assignees: [lea],
+      status: "Offen",
+      checklist: [
+        { label: "Entwurf", done: true },
+        { label: "Review", done: false },
+      ],
+      tags: ["Release", "Q4"],
+      description: "Work",
+    }).rows,
+  ).toEqual([
+    { label: "Ort", value: "Team Ops" },
     { label: "Fällig", value: "2026-10-21", format: "date" },
     { label: "Zuständig", value: "Lea Berg <lea.berg@example.com>" },
+    { label: "Status", value: "Offen" },
+    { label: "Checkliste", value: "☑ Entwurf · ☐ Review" },
+    { label: "Tags", value: "Release, Q4" },
     { label: "Text", value: "Work", block: true },
   ]);
   expect(textFor("en", { kind: "file", name: "one.pdf", path: "/drafts", size: 84_000, to: "/archive" }).rows).toEqual([

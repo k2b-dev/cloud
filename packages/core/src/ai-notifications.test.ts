@@ -20,7 +20,7 @@ for (const locale of ["de", "en"])
 
 for (const locale of ["de", "en"]) {
   test(`approval notice uses the card's plain question and reason in ${locale}`, async () => {
-    const { approvalCard } = await import("@k2b/cloud/ai/browser");
+    const { approvalCard } = await import("@k2b/cloud/ai/question-text");
     const input = {
       sentence: "Mail: Send draft",
       action: "draft.send",

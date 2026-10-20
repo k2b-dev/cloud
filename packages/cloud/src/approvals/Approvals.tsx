@@ -14,8 +14,8 @@ import {
   ApprovalPageSchema,
   type PendingApproval,
 } from "../contracts/approvals";
-import { approvalMessages } from "./messages";
 import { approvalCard } from "./approval-card";
+import { approvalMessages } from "./messages";
 
 /** How a decided request ends in this list. It stays in place as a receipt until the next load. */
 type Outcome = "approved" | "rejected" | "elsewhere" | "gone";

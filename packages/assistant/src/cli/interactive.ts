@@ -318,7 +318,7 @@ const resolveAttention = async (input: {
     if (action.type === "approval_request") {
       const question = pendingActionQuestion(input.ctx, action);
       for (const line of question.lines) input.ctx.print(line);
-      if (!question.hasRows) input.ctx.print(approvalInputPreview(action.args));
+      if (question.showInput) input.ctx.print(approvalInputPreview(action.args));
       const decision = await collectActionApproval(input.ctx, input.reader, action);
       if (decision === null) return null;
       await submitAction(input.ctx, action, { type: "approval_response", ...decision });
