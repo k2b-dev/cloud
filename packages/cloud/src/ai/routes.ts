@@ -1372,7 +1372,8 @@ export const aiRoutes = (() => {
             const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
             const stored = reviews.get(reviewCallId);
             const appId = request?.appId;
-            const app = appId && appId !== "assistant" ? await getApp(appId) : null;
+            // The name is presentation: a registry that cannot answer leaves the app ID, never the waiting approvals unread.
+            const app = appId && appId !== "assistant" ? await getApp(appId).catch(() => null) : null;
             return {
               ...result,
               ...(stored && !isLegacyActionReview(stored) ? { review: stored } : {}),
