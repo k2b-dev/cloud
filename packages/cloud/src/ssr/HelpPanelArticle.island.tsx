@@ -193,17 +193,20 @@ export default function HelpPanelArticle(props: { topic?: HelpTopic }) {
       controller.abort();
     });
   });
+  /** The navigation whose heading focus and section jump are done; returning from search must not replay them. */
+  let settled = 0;
   createEffect(() => {
     const current = state();
     const navigation = current?.navigation();
     // The loaded reader replaces the loading frame and its heading; follow it unless the reader moved focus elsewhere.
-    payload();
-    reader();
-    if (!current || !navigation?.version || current.view() !== "article") return;
+    const body = current?.activeId() === current?.data.article?.id || (!!payload() && !!reader());
+    if (!current || !navigation?.version || navigation.version === settled || current.view() !== "article") return;
     const frame = requestAnimationFrame(() => {
       const focused = document.activeElement;
       if (!focused || focused === document.body || focused.matches(".help-article-title") || focused.closest("[hidden]"))
         current.focusHeading();
+      if (!body) return;
+      settled = navigation.version;
       if (navigation.hash) scrollToHash(navigation.hash);
     });
     onCleanup(() => cancelAnimationFrame(frame));

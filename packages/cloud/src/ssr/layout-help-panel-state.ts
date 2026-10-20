@@ -52,10 +52,14 @@ const createPanelState = (root: HTMLElement) => {
     setView("hub");
     sync();
   };
+  /** Where the article stood when a search started from it; clearing the search returns there. */
+  let articleScrollTop = 0;
   const changeQuery = (value: string) => {
     const searching = !!value.trim();
+    let returned = false;
     batch(() => {
       if (searching && view() === "article") {
+        articleScrollTop = scroller()?.scrollTop ?? 0;
         setSearchReturnId(activeId());
         const region = results();
         if (region) region.style.minHeight = "";
@@ -70,10 +74,19 @@ const createPanelState = (root: HTMLElement) => {
         if (id && data.documents.some((topic) => topic.id === id)) {
           setActiveId(id);
           setView("article");
+          returned = true;
         }
       }
     });
     sync();
+    // The article stayed in the document while results showed; give it back its place once it has its height again.
+    if (returned) {
+      const top = articleScrollTop;
+      requestAnimationFrame(() => {
+        const scroll = scroller();
+        if (scroll) scroll.scrollTop = top;
+      });
+    }
   };
   const open = (id: string, hash = "") => {
     if (!data.documents.some((topic) => topic.id === id)) return;

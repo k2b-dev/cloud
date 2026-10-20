@@ -236,6 +236,33 @@ else {
       fixture.cleanup();
     }
   });
+  test("returning from a search keeps the article's place and does not replay its section jump", async () => {
+    const fixture = await setup();
+    const { root, mount, Article, Search, state } = fixture;
+    // The scroll area has no layout here; keep its position as the browser would.
+    const scroller = root.querySelector<HTMLElement>("[data-scroll-fade-mode]")!;
+    let top = 0;
+    Object.defineProperty(scroller, "scrollTop", { get: () => top, set: (value: number) => (top = value), configurable: true });
+    const jumps = spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      mount("article", () => createComponent(Article, {}));
+      mount("search", () => createComponent(Search, {}));
+      state.open("roles", "invite");
+      await until(() => jumps.mock.calls.length === 1);
+      top = 240;
+      state.changeQuery("roles");
+      top = 0;
+      state.changeQuery("");
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      expect(state.view()).toBe("article");
+      expect(top).toBe(240);
+      expect(jumps).toHaveBeenCalledTimes(1);
+    } finally {
+      jumps.mockRestore();
+      fixture.cleanup();
+    }
+  });
+
   test("a section chunk never replaces its static trigger during a pointer press", async () => {
     const fixture = await setup(true);
     const { root, mount, Article } = fixture;
