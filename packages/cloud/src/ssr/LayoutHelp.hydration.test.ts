@@ -205,7 +205,7 @@ test("an initial article hydrates the complete server frame without fetching its
   const { helpArticlePartsServer } = await import("./layout-help-article.server");
   const { server, clientPath } = articleHydrationFixture;
   for (const panel of [false, true]) {
-    const payload = {
+    const { html: articleHtml, ...payload } = {
       id: "share",
       title: "Share a Space",
       locale: "en",
@@ -221,7 +221,7 @@ test("an initial article hydrates the complete server frame without fetching its
       initialTopic: "share",
       pageBase: "/help/apps/spaces",
       documents: [{ id: "share", title: payload.title, kind: "task", order: 1, url: "/api/help/share", searchUrl: "/api/help/search" }],
-      initialArticle: { payload, parts: helpArticlePartsServer(payload.html) },
+      initialArticle: { payload, parts: helpArticlePartsServer(articleHtml) },
     };
     for (const invalid of [
       { ...props, initialTopic: undefined },
