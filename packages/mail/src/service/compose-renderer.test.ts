@@ -206,7 +206,7 @@ describe("Markdown dividers", () => {
     const elements = (html: string) => new Set(Array.from(html.matchAll(/<([a-z][a-z0-9]*)\b/gi), (match) => match[1]));
     const platform = elements(markdown.renderSync(source, { links: "plain" }));
     const email = elements(content(source).html);
-    // img/figure/figcaption: body images; input: task checkbox; aside/svg/path: info-block shell and icon.
+    // img/figure/figcaption: body images; input: task checkbox; aside/svg/path: info block shell and icon.
     // Email keeps their text only. Strikethrough is already removed by the platform Markdown sanitizer.
     expect([...platform].filter((tag) => !email.has(tag)).sort()).toEqual(["aside", "figcaption", "figure", "img", "input", "path", "svg"]);
   });
