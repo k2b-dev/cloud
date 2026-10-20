@@ -144,8 +144,11 @@ A stopping process does not drain HTTP yet. On `SIGTERM` it runs its stop
 hooks, stops Sync, and exits while its HTTP server still accepts requests, and
 its readiness still reports ready. Requests that reach it during this time can
 fail when they need NATS. Requests in flight and open SSE streams are cut at
-exit: the gateway answers such a request with `502` and `Retry-After: 3`, and
-live sockets close and reconnect. Graceful HTTP shutdown is tracked in
+exit. If the replica had not sent response headers yet, the gateway answers
+with `502` and `Retry-After: 3`. A response or SSE stream that had already
+started keeps its status and ends with a broken body, so the client must retry
+or reconnect. Live sockets close and reconnect. Graceful HTTP shutdown is
+tracked in
 [#1625](https://github.com/k2b-dev/cloud/issues/1625).
 
 Until then:
