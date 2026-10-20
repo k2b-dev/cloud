@@ -6363,17 +6363,24 @@
 .k2b-ui .k2b-map-view[data-state="loading"] .k2b-map-view__status { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-map-view__status > i { font-size: 15px; color: var(--k2b-text-muted); }
 .k2b-ui .k2b-map-view__notice { color: var(--k2b-text-secondary); }
-.k2b-ui .k2b-map-view__info { position: absolute; left: 10px; bottom: 32px; max-width: min(22rem, calc(100% - 20px)); border-radius: 12px; }
+/* The bottom stack: the info tile always sits above the row, and the row keeps the scale and the attribution apart. */
+.k2b-ui .k2b-map-view__foot { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.k2b-ui .k2b-map-view__info { box-sizing: border-box; margin-inline: 10px; max-width: min(22rem, calc(100% - 20px)); border-radius: 12px; pointer-events: auto; }
 .k2b-ui .k2b-map-view__info:not(:empty) { padding: 12px 14px; }
-.k2b-ui .k2b-map-view__scale { position: absolute; left: 10px; bottom: 8px; color: var(--k2b-map-line-muted); font-size: 11px; line-height: 1.2; pointer-events: none; }
+.k2b-ui .k2b-map-view__foot-row { align-self: stretch; display: flex; align-items: flex-end; gap: 10px; }
+.k2b-ui .k2b-map-view__scale { flex: none; margin: 0 0 8px 10px; color: var(--k2b-map-line-muted); font-size: 11px; line-height: 1.2; pointer-events: none; }
 .k2b-ui .k2b-map-view__scale span { white-space: nowrap; }
 .k2b-ui .k2b-map-view__scale > div { height: 4px; border: 1.5px solid currentColor; border-top: 0; }
-.k2b-ui .k2b-map-view__attribution { position: absolute; right: 0; bottom: 0; padding: 2px 8px; border-top-left-radius: 7px; background: var(--k2b-map-surface); color: var(--k2b-text-muted); font-size: 11px; }
+.k2b-ui .k2b-map-view__attribution { min-width: 0; margin-left: auto; padding: 2px 8px; border-top-left-radius: 7px; background: var(--k2b-map-surface); color: var(--k2b-text-muted); font-size: 11px; text-align: end; overflow-wrap: anywhere; pointer-events: auto; }
+.k2b-ui .k2b-map-view__attribution:empty { display: none; }
 .k2b-ui .k2b-map-view__attribution a { text-decoration: underline; }
 .k2b-ui .k2b-map-view__empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 48px; text-align: center; pointer-events: none; }
 .k2b-ui .k2b-map-view__empty > span { max-width: 100%; padding: 7px 14px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .12); color: var(--k2b-text-secondary); font-size: 13px; }
 .k2b-ui .k2b-map-view :is(.maplibregl-canvas-container, .maplibregl-canvas) { position: absolute; left: 0; top: 0; }
 .k2b-ui .k2b-map-view .maplibregl-canvas-container { width: 100%; height: 100%; }
+/* The canvas takes arrow keys for panning; its focus shows as the token ring inset on the rounded map, never clipped. */
+.k2b-ui .k2b-map-view .maplibregl-canvas:focus-visible { outline: none; }
+.k2b-ui .k2b-map-view:has(.maplibregl-canvas:focus-visible)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring); pointer-events: none; }
 .k2b-ui .k2b-map-view .maplibregl-interactive { cursor: grab; user-select: none; }
 .k2b-ui .k2b-map-view .maplibregl-interactive:active { cursor: grabbing; }
 .k2b-ui .k2b-map-view .maplibregl-cooperative-gestures { touch-action: pan-x pan-y; }
@@ -6387,10 +6394,13 @@
 @media (any-pointer: coarse) {
   /* A round target of up to 2.75rem that stops before a neighbouring pin's visible mark (radius from the data). */
   .k2b-ui button.k2b-map-view__pin::after { content: ""; position: absolute; inset: min(0px, calc(50% - var(--k2b-map-pin-hit, 1.375rem))); border-radius: 50%; }
-  /* Keep the expanded hit areas off the neighbouring control's visible pixels. */
-  /* The buttons keep their 32 px look; the gaps keep the 2.75rem hit areas from overlapping. */
-  .k2b-ui .k2b-map-view__zoom { gap: 12px; }
-  .k2b-ui .k2b-map-view__controls { gap: 12px; }
   /* The map controls stack vertically: the row rule that stops a later button's hit area at its start does not apply. */
   .k2b-ui .k2b-map-view__controls .k2b-button.k2b-icon-button::after { left: min(0px, calc((100% - 2.75rem) / 2)); right: min(0px, calc((100% - 2.75rem) / 2)); }
+  /* Zoom keeps its tight 32 + 32 stack: the two 2.75rem hit areas meet at the seam and grow outward instead. */
+  .k2b-ui .k2b-map-view__zoom > :first-child .k2b-icon-button::after,
+  .k2b-ui .k2b-map-view__zoom > .k2b-icon-button:first-child::after { top: calc(32px - 2.75rem); bottom: 0; }
+  .k2b-ui .k2b-map-view__zoom > :last-child .k2b-icon-button::after,
+  .k2b-ui .k2b-map-view__zoom > .k2b-icon-button:last-child::after { top: 0; bottom: calc(32px - 2.75rem); }
+  /* Room above for the zoom-in hit area inside the map, and between the stack's and the locate button's hit areas. */
+  .k2b-ui .k2b-map-view__controls { top: 12px; gap: 18px; }
 }

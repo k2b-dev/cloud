@@ -161,8 +161,15 @@ const lift = (marker: MapViewMarker): number => (marker.mark === undefined ? 14 
  * one, so they hold at any width. `zoomFactor` is 2^(live zoom - fitted zoom): 1 for the server frame, the first client
  * frame and the untouched live map, so all three agree; when the person zooms, separation is decided for the new scale.
  */
-export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame, zoomFactor = 1): Map<string, PinOffset> {
+export function pinOffsets(
+  sortedMarkers: MapViewMarker[],
+  frame: MapFrame,
+  zoomFactor = 1,
+  ownLocation?: MapViewPoint,
+): Map<string, PinOffset> {
   const position = pinPlaces(sortedMarkers, frame, zoomFactor);
+  const location = ownLocation ? projectPoint(ownLocation) : undefined;
+  const scale = (frame.overlapWidth / frame.spanX) * zoomFactor;
   const rMax = Math.max(1, frame.referenceWidth / frame.overlapWidth);
   const candidates = candidateOffsets(sortedMarkers.length);
   const reachOf = (offset: PinOffset) => Math.hypot(offset.dx, offset.dy);
@@ -174,10 +181,16 @@ export function pinOffsets(sortedMarkers: MapViewMarker[], frame: MapFrame, zoom
   // Offsets here are those of the visible mark; a drop pin's own offset adds its lift back below.
   const place = (marker: MapViewMarker, preferred: PinOffset, anchorId?: string) => {
     const p = position(marker);
+    // The location is fixed; route stops keep their anchors even when they coincide with it.
+    const obstacle = !isStop(marker) && location;
     // Two pins whose points are further apart than their offsets plus one pin never meet at a wider fit
     // (|g·r + o| ≥ |g| − |o| for r ≥ 1), so only the pins near this one are checked, once per pin.
     const near = placed.filter((other) => Math.hypot(p.x - other.x, p.y - other.y) < furthest + other.reach + PIN_SPACING);
+    // Leave 22 px around the fixed dot: 12 px pin radius + 8.5 px dot radius + 1.5 px gap.
     const clear = (offset: PinOffset, anchor?: string) =>
+      (!obstacle ||
+        closest(p.x - (obstacle.x - frame.minX) * scale, p.y - (obstacle.y - frame.minY) * scale, offset.dx, offset.dy, rMax) >=
+          22 - 1e-9) &&
       near.every(
         (other) =>
           closest(p.x - other.x, p.y - other.y, offset.dx - other.dx, offset.dy - other.dy, rMax) >=

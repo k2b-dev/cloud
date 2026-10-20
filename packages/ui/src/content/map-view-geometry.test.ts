@@ -134,6 +134,59 @@ describe("MapView geometry", () => {
     expect(drawn("hit").x - drawn("stop").x).toBeCloseTo(17, 9);
     expect(drawn("hit").y - drawn("stop").y).toBeCloseTo(-17, 9);
   });
+  test("a numbered marker at own location clears the dot at the phone and widest fits", () => {
+    const pins = sortMarkers([marker("here", 1), marker("far", 2, 48.41, 10.04)]);
+    const ownLocation = pins[0]!.point;
+    const f = mapFrame({ markers: pins, ownLocation: { point: ownLocation } }, 360)!;
+    const offsets = pinOffsets(pins, f, 1, ownLocation);
+    for (const width of [320, f.referenceWidth + 2 * DEFAULT_PADDING]) {
+      const fitted = Math.max(f.minWidth, Math.min(width - 2 * DEFAULT_PADDING, f.referenceWidth));
+      const p = projectPoint(pins[0]!.point);
+      const me = projectPoint(ownLocation);
+      const offset = offsets.get("here")!;
+      expect(
+        Math.hypot(((p.x - me.x) * fitted) / f.spanX + offset.dx, ((p.y - me.y) * fitted) / f.spanX + offset.dy),
+      ).toBeGreaterThanOrEqual(22);
+    }
+    expect(pinOffsets(pins, f, 1, ownLocation)).toEqual(offsets);
+  });
+  test("stops at own location keep their route anchors", () => {
+    for (const mark of ["A", "+"]) {
+      const pins = [marker("stop", mark)];
+      const f = mapFrame({ markers: pins }, 360)!;
+      expect(pinOffsets(pins, f, 1, pins[0]!.point).get("stop")).toEqual({ dx: 0, dy: 0 });
+    }
+  });
+  test("without own location the original offsets are unchanged", () => {
+    const pins = sortMarkers([marker("stop", "A"), marker("first", 1), marker("next", 2)]);
+    const f = mapFrame({ markers: pins }, 360)!;
+    const offsets = pinOffsets(pins, f, 1, undefined);
+    expect(offsets).toEqual(pinOffsets(pins, f));
+    expect(offsets.get("stop")).toEqual({ dx: 0, dy: 0 });
+    expect(offsets.get("first")).toEqual({ dx: 17, dy: -17 });
+    expect(offsets.get("next")?.dx).toBeCloseTo(28 / Math.sqrt(2));
+    expect(offsets.get("next")?.dy).toBeCloseTo(28 / Math.sqrt(2));
+  });
+  test("attached and displaced numbered pins skip candidates that would cover the dot at any width", () => {
+    for (const anchorMark of ["A", 1]) {
+      const pins = sortMarkers([marker("anchor", anchorMark), marker("hit", 2), marker("far", 3, 48.41, 10.04)]);
+      const f = mapFrame({ markers: pins }, 360)!;
+      const preferred = pinOffsets(pins, f).get("hit")!;
+      const p = projectPoint(pins.find((pin) => pin.id === "hit")!.point);
+      const scale = f.overlapWidth / f.spanX;
+      const ownLocation = unprojectPoint(p.x + preferred.dx / scale, p.y + preferred.dy / scale);
+      const me = projectPoint(ownLocation);
+      const offsets = pinOffsets(pins, f, 1, ownLocation);
+      expect(offsets.get("hit")).not.toEqual(preferred);
+      for (let width = 320; width <= f.referenceWidth + 2 * DEFAULT_PADDING; width += 5) {
+        const fitted = Math.max(f.minWidth, Math.min(width - 2 * DEFAULT_PADDING, f.referenceWidth));
+        const offset = offsets.get("hit")!;
+        expect(
+          Math.hypot(((p.x - me.x) * fitted) / f.spanX + offset.dx, ((p.y - me.y) * fitted) / f.spanX + offset.dy),
+        ).toBeGreaterThanOrEqual(22 - 1e-6);
+      }
+    }
+  });
   test("pins stay apart while the person zooms in", () => {
     const pins = sortMarkers([marker("stop", "A", 48.4, 10), marker("hit", 1, 48.39996, 9.99994), marker("far", 2, 48.41, 10.02)]);
     const f = mapFrame({ markers: pins }, 360, 48)!;

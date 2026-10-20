@@ -2,7 +2,7 @@ import type { Map as LiveMap } from "maplibre-gl";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { prefersReducedMotion } from "../motion";
-import { MapAttribution, MapGeometry, type MapScale, MapScaleBar, referenceScale, selectedMarker } from "./MapViewFrame";
+import { MapFootRow, MapGeometry, type MapScale, referenceScale, selectedMarker } from "./MapViewFrame";
 import {
   DEFAULT_PADDING,
   fitCamera,
@@ -73,6 +73,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   };
   let root!: HTMLDivElement;
   let live!: HTMLDivElement;
+  let info!: HTMLDivElement;
   let map: LiveMap | undefined;
   let currentStyle: MapViewStyle | undefined;
   let disposed = false;
@@ -278,13 +279,26 @@ export function MapView(props: MapViewProps): JSX.Element {
       const f = frame();
       const lon = marker.point.lon + (f ? worldCopy(map, f) * 360 : 0);
       const p = map.project([lon, marker.point.lat]);
-      const offset = f ? pinOffsets(sortMarkers(props.markers ?? []), f, zoomFactor()).get(marker.id) : undefined;
+      const offset = f ? pinOffsets(sortMarkers(props.markers ?? []), f, zoomFactor(), props.ownLocation?.point).get(marker.id) : undefined;
       const x = p.x + (offset?.dx ?? 0);
       const y = p.y + (offset?.dy ?? 0);
-      if (x >= 16 && x <= root.clientWidth - 16 && y >= 16 && y <= root.clientHeight - 16) return;
+      const w = root.clientWidth;
+      const h = root.clientHeight;
+      const tile = info.getBoundingClientRect();
+      const bounds = root.getBoundingClientRect();
+      const tileTop = tile.top - bounds.top - 8;
+      const covered =
+        tile.height > 0 &&
+        x >= tile.left - bounds.left - 8 &&
+        x <= tile.right - bounds.left + 8 &&
+        y >= tileTop &&
+        y <= tile.bottom - bounds.top + 8;
+      if (!covered && x >= 16 && x <= w - 16 && y >= 16 && y <= h - 16) return;
       touch();
-      // Center the pin as it is drawn, offset included, so a pin moved aside by its neighbours comes into view too.
-      const target = map.unproject([x, y]);
+      // Put the drawn pin, offset included, in the free band above the tile.
+      const targetX = w / 2;
+      const targetY = tile.height > 0 ? tileTop / 2 : h / 2;
+      const target = map.unproject([x + w / 2 - targetX, y + h / 2 - targetY]);
       const camera = { center: [target.lng, target.lat] satisfies [number, number] };
       if (prefersReducedMotion()) map.jumpTo(camera);
       else map.easeTo(camera);
@@ -326,10 +340,7 @@ export function MapView(props: MapViewProps): JSX.Element {
         }
       >
         {(value) => (
-          <>
-            <MapGeometry {...props} frame={value()} boxStyle={boxStyle()} zoomFactor={zoomFactor()} onSelect={props.onSelect} interactive />
-            <MapScaleBar scale={scale() ?? referenceScale(value(), props.padding ?? DEFAULT_PADDING)} />
-          </>
+          <MapGeometry {...props} frame={value()} boxStyle={boxStyle()} zoomFactor={zoomFactor()} onSelect={props.onSelect} interactive />
         )}
       </Show>
       <div class="k2b-map-view__messages">
@@ -372,12 +383,14 @@ export function MapView(props: MapViewProps): JSX.Element {
           </IconButton>
         </Show>
       </div>
-      <div class="k2b-map-view__info" aria-live="polite">
-        <Show when={selected()} keyed>
-          {(marker) => props.infoTile?.(marker)}
-        </Show>
+      <div class="k2b-map-view__foot">
+        <div ref={info} class="k2b-map-view__info" aria-live="polite">
+          <Show when={selected()} keyed>
+            {(marker) => props.infoTile?.(marker)}
+          </Show>
+        </div>
+        <MapFootRow scale={scale()}>{props.attribution}</MapFootRow>
       </div>
-      <MapAttribution>{props.attribution}</MapAttribution>
     </div>
   );
 }

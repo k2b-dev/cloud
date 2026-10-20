@@ -65,7 +65,7 @@ export function MapGeometry(
 ): JSX.Element {
   const messages = useMapViewMessages();
   const markers = createMemo(() => sortMarkers(props.markers ?? []));
-  const offsets = createMemo(() => pinOffsets(markers(), props.frame, props.zoomFactor));
+  const offsets = createMemo(() => pinOffsets(markers(), props.frame, props.zoomFactor, props.ownLocation?.point));
   const hitRadii = createMemo(() => pinHitRadii(markers(), props.frame, offsets(), props.zoomFactor));
   // Input order decides the fallback selection, as in MapView; sorting is only for drawing and keys.
   const selected = createMemo(() => selectedMarker(props.markers ?? [], props.selectedId));
@@ -219,8 +219,14 @@ export function MapScaleBar(props: { scale: MapScale }): JSX.Element {
     </div>
   );
 }
-export function MapAttribution(props: { children?: JSX.Element }): JSX.Element {
-  return <div class="k2b-map-view__attribution">{props.children}</div>;
+/** The scale bar and the attribution share the bottom row, so a long attribution wraps before it covers the scale. */
+export function MapFootRow(props: { scale?: MapScale; children?: JSX.Element }): JSX.Element {
+  return (
+    <div class="k2b-map-view__foot-row">
+      <Show when={props.scale}>{(scale) => <MapScaleBar scale={scale()} />}</Show>
+      <div class="k2b-map-view__attribution">{props.children}</div>
+    </div>
+  );
 }
 /** Geometry without a browser, a canvas, or a network dependency; suitable for server rendering and PDF output. */
 export function MapViewFrame(props: MapViewFrameProps): JSX.Element {
@@ -235,15 +241,12 @@ export function MapViewFrame(props: MapViewFrameProps): JSX.Element {
       aria-label={messages().mapLabel}
     >
       <span class="k2b-sr-only">{messages().summary({ count: props.markers?.length ?? 0 })}</span>
-      <Show when={frame()}>
-        {(value) => (
-          <>
-            <MapGeometry {...props} frame={value()} />
-            <MapScaleBar scale={referenceScale(value(), props.padding ?? DEFAULT_PADDING)} />
-          </>
-        )}
-      </Show>
-      <MapAttribution>{props.attribution}</MapAttribution>
+      <Show when={frame()}>{(value) => <MapGeometry {...props} frame={value()} />}</Show>
+      <div class="k2b-map-view__foot">
+        <MapFootRow scale={frame() ? referenceScale(frame()!, props.padding ?? DEFAULT_PADDING) : undefined}>
+          {props.attribution}
+        </MapFootRow>
+      </div>
     </div>
   );
 }

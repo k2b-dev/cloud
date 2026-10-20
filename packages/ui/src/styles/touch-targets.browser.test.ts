@@ -274,6 +274,8 @@ describe("@k2b/ui touch hit areas on a phone", () => {
           };
         }),
       );
+      // Zoom keeps its tight 32 + 32 stack on touch; the hit areas grow outward, not the visible group.
+      expect(await page.evaluate(() => document.querySelector(".k2b-map-view__zoom")!.getBoundingClientRect().height)).toBe(64);
       expect(hitAreas).toHaveLength(5);
       for (const area of hitAreas) {
         expect(area.width).toBeGreaterThanOrEqual(44);

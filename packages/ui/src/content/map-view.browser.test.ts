@@ -18,7 +18,16 @@ const { MapView } = await import("./MapView");
 const { MapViewFrame } = await import("./MapViewFrame");
 const { Button } = await import("../actions/Button");
 const dist = resolve(import.meta.dir, "../../dist");
-type FixtureOptions = { stylePath: string; darkPath?: string; empty?: boolean; polar?: boolean; dateline?: boolean };
+type FixtureOptions = {
+  stylePath: string;
+  darkPath?: string;
+  empty?: boolean;
+  polar?: boolean;
+  dateline?: boolean;
+  nearMe?: boolean;
+  tallTile?: boolean;
+  longCredit?: boolean;
+};
 // Shared data and tree, without compiled JSX closures: SSR and the browser create the very same fixture.
 function fixtureTree(
   components: {
@@ -47,6 +56,7 @@ function fixtureTree(
             { id: "a", mark: "A", label: "Start", point: { lat: 48.397, lon: 9.982 } },
             { id: "one", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
           ];
+  if (options.nearMe) markers.push({ id: "here", mark: 3, label: "Cafe", point: { lat: 48.401, lon: 9.991 } });
   const [selectedId, setSelectedId] = createSignal("one");
   const [ownLocation, setOwnLocation] = createSignal(
     options.empty || options.polar || options.dateline ? undefined : { point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 },
@@ -54,14 +64,16 @@ function fixtureTree(
   return [
     createComponent(MapView, {
       height: 400,
+      class: options.tallTile ? "tall-tile" : undefined,
       style: { light: options.stylePath, dark: options.darkPath ?? "/dark.json" },
       markers,
       get selectedId() {
         return selectedId();
       },
       onSelect: setSelectedId,
-      infoTile: (marker) => marker.label,
-      attribution: "Local fixture",
+      infoTile: (marker) =>
+        options.tallTile ? [marker.label, "Open until 18:00", "Category", "Street 1", "example.org"].join("\n") : marker.label,
+      attribution: options.longCredit ? "© OpenStreetMap contributors · © OpenMapTiles · Geoapify" : "Local fixture",
       notice: "Walking route",
       empty: "Choose a place",
       get ownLocation() {
@@ -240,13 +252,16 @@ const server = Bun.serve({
       empty: url.searchParams.has("empty"),
       polar: url.searchParams.has("polar"),
       dateline: url.searchParams.has("dateline"),
+      nearMe: url.searchParams.has("nearMe"),
+      tallTile: url.searchParams.has("tallTile"),
+      longCredit: url.searchParams.has("longCredit"),
     };
     const html = renderToString(() => fixtureTree({ MapView, Button, createComponent, createSignal }, options));
     const spacer = url.searchParams.has("spacer") ? '<div style="height:2000px"></div>' : "";
     return new Response(
       `<!doctype html><html${url.searchParams.has("motion") ? ' data-k2b-motion="reduced"' : ""}><head>
       <meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css">
-      <style>body{margin:0}main{width:100%;max-width:1024px;margin:auto}solid-island{display:contents}</style></head>
+      <style>body{margin:0}main{width:100%;max-width:1024px;margin:auto}solid-island{display:contents}.tall-tile .k2b-map-view__info{white-space:pre-line}</style></head>
       <body class="k2b-ui">${spacer}<main><solid-island id="island" data-options='${JSON.stringify(options)}'>${html}</solid-island></main>
       <script>requestAnimationFrame(() => { window.mapServerFrame = (${measureFrame.toString()})();
         const script = document.createElement('script'); script.type = 'module'; script.src = '/entry.js'; document.body.append(script); });</script>
@@ -356,6 +371,105 @@ for (const width of [390, 1024]) {
     }
   });
 }
+
+test("pins never cover the own-location dot", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await page.route(
+      (url) => lazyChunks.includes(basename(url.pathname)),
+      async (route) => {
+        await gate;
+        await route.continue();
+      },
+    );
+    await page.goto(`${origin}/?nearMe`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => !!window.mapFirstFrame, undefined, { timeout: 10_000 });
+    // The dot ignores pointer events like the rest of the overlay; only this probe makes it hit-testable.
+    await page.addStyleTag({ content: ".k2b-map-view__me { pointer-events: auto !important; }" });
+    for (let phase = 0; phase < 2; phase++) {
+      if (phase) {
+        release();
+        await ready(page);
+      }
+      await settled(page);
+      const visible = await page.evaluate(() => {
+        const dot = document.querySelector(".k2b-map-view__me")!;
+        const r = dot.getBoundingClientRect();
+        return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === dot;
+      });
+      expect(visible).toBe(true);
+    }
+  } finally {
+    release();
+    await page.close();
+  }
+});
+
+test("the info tile never covers the selected pin", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?tallTile`);
+    await ready(page);
+    await page.locator(".host-choice").filter({ hasText: "Start" }).click();
+    await settled(page);
+    const visible = await page.evaluate(() => {
+      const pin = document.querySelector('.k2b-map-view__pin[data-id="a"]')!;
+      const r = pin.getBoundingClientRect();
+      return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest(".k2b-map-view__pin") === pin;
+    });
+    expect(visible).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+for (const width of [320, 360]) {
+  test(`a long attribution wraps before it covers the scale bar at ${width}px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 800 }, reducedMotion: "reduce" });
+    try {
+      await page.goto(`${origin}/?longCredit`);
+      await ready(page);
+      const boxes = await page.evaluate(() =>
+        [".k2b-map-view__scale", ".k2b-map-view__attribution"].map((selector) => {
+          const r = document.querySelector(selector)!.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        }),
+      );
+      const [scale, credit] = boxes as [(typeof boxes)[0], (typeof boxes)[0]];
+      const apart = scale.right <= credit.left || credit.bottom <= scale.top || scale.bottom <= credit.top;
+      expect(apart).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test("keyboard focus on the map canvas shows the token ring inside the rounded map", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
+  try {
+    await page.goto(origin);
+    await ready(page);
+    await page.keyboard.press("Tab");
+    await settled(page);
+    const ring = await page.evaluate(() => {
+      const canvas = document.querySelector(".maplibregl-canvas")!;
+      return {
+        focused: document.activeElement === canvas,
+        outline: getComputedStyle(canvas).outlineStyle,
+        ring: getComputedStyle(document.querySelector(".k2b-map-view")!, "::after").boxShadow,
+      };
+    });
+    expect(ring.focused).toBe(true);
+    expect(ring.outline).toBe("none");
+    expect(ring.ring).toContain("inset");
+  } finally {
+    await page.close();
+  }
+});
 
 test("a wide fit near the pole keeps its pins when the map loads", async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
@@ -586,9 +700,15 @@ test("theme style replaces the canvas paint without navigation", async () => {
       document.documentElement.classList.add("dark");
     });
     await response;
+    // Playwright's WebKit captures a WebGL canvas without a preserved drawing buffer one frame late: it shows the frame
+    // before MapLibre's last one. When the map goes idle right after the colour transition, that frame is mid-fade (or
+    // still light) for good. One more camera step renders another frame, so the captured one carries the settled paint.
+    // The zoom keeps the sampled corner on the land layer; reduced motion makes each step a single jump.
     let darkPixel: number[] = [];
+    let step = 0;
     const deadline = performance.now() + 10_000;
     do {
+      await page.getByRole("button", { name: step++ % 2 ? "Zoom out" : "Zoom in" }).click();
       darkPixel = await pixel();
     } while (!near(darkPixel, [24, 40, 56]) && performance.now() < deadline);
     expect(near(darkPixel, [24, 40, 56]), `dark pixel ${darkPixel}`).toBe(true);

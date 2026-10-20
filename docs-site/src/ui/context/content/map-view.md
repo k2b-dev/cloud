@@ -42,7 +42,8 @@ const [selectedId, setSelectedId] = createSignal("museum");
 ```
 
 Use the map provider's required attribution in the `attribution` slot. It
-stays visible at the bottom right. MapView disables MapLibre's attribution
+stays visible at the bottom right and shares the bottom row with the scale
+bar: a long attribution wraps before it covers the scale. MapView disables MapLibre's attribution
 control and displays only this host-supplied content, including when the
 style declares its own attribution.
 
@@ -61,7 +62,7 @@ style declares its own attribution.
 | `fit` | `all` (default) fits all vertices and location; `markers` fits pins, falling back to all geometry when there are no pins. |
 | `selectedId` | Controlled selection; otherwise the first marker with `selected: true` is selected. |
 | `onSelect` | Receives a marker ID from a pin click or keyboard selection. |
-| `infoTile` | Renders the selected marker at the bottom left above the scale bar. It lies over the map, so keep it short; a host with its own list can show details there instead. |
+| `infoTile` | Renders the selected marker at the bottom left above the scale bar. It lies over the map, so keep it short; a host with its own list can show details there instead. When the tile would cover the selected pin, the live map moves the pin into the free space above it. |
 | `notice` | Host message above the map at the top left. |
 | `empty` | Host sentence centered when there is no geometry. |
 | `onLocate` | Shows the location button. The host obtains and supplies the location. |
@@ -73,6 +74,8 @@ previous lines are dashed. Pins appear in number, letter, `+`, then unmarked
 order. Pins that would cover each other on a 320 px phone are kept apart at
 every width: a numbered pin at a stop sits top right of the stop's letter,
 and any other overlapping pin moves to the first free place around its point.
+Numbered and drop pins also keep clear of the own-location dot; stops stay on
+their route point.
 The offsets come from the data alone, so they stay the same when the map image
 arrives; once the person zooms, the separation is decided again for the new
 scale. Separation is checked for every width from a phone up to the widest fit,
@@ -84,7 +87,9 @@ Known limits: MapView draws a flat, north-up Mercator map and turns off a
 style's globe projection and terrain. Geometry that crosses the antimeridian
 is fitted across the longitudes as given, so pins at 179° and −179° sit far
 apart. A cluster of many pins at one place on a small map can spread past the
-padding; show such places as a list instead. Filled pins pick a text colour per tone and
+padding; show such places as a list instead. Without a live map (before it
+loads, after an error, or without WebGL 2) nothing can move, so a tall info
+tile can cover a pin near the bottom left. Filled pins pick a text colour per tone and
 theme that keeps 4.5:1 contrast.
 
 The scale bar names the distance for the fitted map: the server frame uses
@@ -121,7 +126,10 @@ A style pair follows the nearest `.dark`, `.k2b-dark`, or
 `[data-theme="dark"]` ancestor. Theme changes replace the map style in place.
 Overlays use the inherited UI tokens in either theme. Hosts can override the
 `--k2b-map-*` tokens on their map class, including land, surface, accent,
-accent-on, second, second-ink, neutral, warning, me, and line-muted.
+accent-on, second, second-ink, neutral, warning, me, and line-muted. The
+accent defaults to the platform action colour. A host that draws pins in its
+own app colour sets `--k2b-map-accent` together with `--k2b-map-accent-ink`
+and `--k2b-map-accent-on`, so marks keep 4.5:1 contrast.
 
 ## Accessibility
 
@@ -133,7 +141,10 @@ to the host list through `selectedId`.
 
 The info tile has a persistent polite live region. Map controls have inherited
 English or German labels. MapLibre's canvas supports arrow-key panning; Ctrl
-or Command plus scrolling zooms, and two fingers pan on touch devices.
+or Command plus scrolling zooms, and two fingers pan on touch devices. When
+the canvas has keyboard focus, the whole map shows the focus ring inside its
+rounded edge. On touch screens every pin and control has a 44 px hit area; the
+zoom buttons keep their tight stack and their hit areas grow outward.
 
 ## Server-only frames and PDFs
 
