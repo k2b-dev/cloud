@@ -459,7 +459,7 @@ describe(`Spaces shared head in ${browserName}`, () => {
           for (const width of [1024, 960, 900, 834]) {
             const page = await open(`/app/spaces/Space1?view=${view}&locale=de&shell=1&panel=${panel}${item ? "&item=Item01" : ""}`, width);
             try {
-              const result = await page.evaluate(headOverlaps);
+              const result = await page.evaluate(headOverlaps, undefined);
               expect(
                 result.controls.some((name) => name.startsWith("primary")),
                 `primary at ${width}`,

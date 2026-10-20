@@ -290,7 +290,7 @@ test(`${browserName}: reopenable head controls stay apart on phones and across w
         host.style.width = `${width}px`;
       }, width);
       await workspaceFrames(page);
-      const result = await page.evaluate(headOverlaps);
+      const result = await page.evaluate(headOverlaps, undefined);
       expect(result.controls).toContain("details");
       expect(result.problems).toEqual([]);
     }
@@ -309,7 +309,7 @@ test(`${browserName}: wrapped lines grow the head during successive resizes`, as
         host.style.width = `${width}px`;
       }, width);
       await workspaceFrames(page);
-      expect((await page.evaluate(headOverlaps)).problems).toEqual([]);
+      expect((await page.evaluate(headOverlaps, undefined)).problems).toEqual([]);
     }
   } finally {
     await page.close();
@@ -319,7 +319,7 @@ test(`${browserName}: wrapped lines grow the head during successive resizes`, as
 test(`${browserName}: the guard keeps Details outside Content's overflow clip`, async () => {
   const page = await load(shapes[1]!, 780);
   try {
-    const result = await page.evaluate(headOverlaps);
+    const result = await page.evaluate(headOverlaps, undefined);
     expect(result.controls).toContain("details");
     expect(result.problems).toEqual([]);
     // Moving its containing block inside Content makes this a real clip.
@@ -330,7 +330,7 @@ test(`${browserName}: the guard keeps Details outside Content's overflow clip`, 
       toggle.style.top = "-40px";
       toggle.style.transform = "none";
     });
-    expect((await page.evaluate(headOverlaps)).problems).toContain("details is clipped");
+    expect((await page.evaluate(headOverlaps, undefined)).problems).toContain("details is clipped");
   } finally {
     await page.close();
   }
@@ -345,7 +345,7 @@ test(`${browserName}: the overlap guard rejects partially and fully clipped acti
       element.style.overflow = "hidden";
       element.style.flexWrap = "nowrap";
     });
-    const result = await page.evaluate(headOverlaps);
+    const result = await page.evaluate(headOverlaps, undefined);
     expect(result.problems.some((problem) => problem.startsWith("action") && problem.endsWith("is clipped"))).toBe(true);
     expect(result.problems.some((problem) => problem.startsWith("primary") && problem.endsWith("is clipped"))).toBe(true);
   } finally {
