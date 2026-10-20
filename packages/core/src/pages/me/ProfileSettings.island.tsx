@@ -1,9 +1,17 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
+import { normalizeRedirectTo } from "@k2b/cloud/shared";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { PasswordSetupFields } from "../auth/PasswordSetupFields";
+import {
+  isSignOutOthersRetry,
+  retrySignOutOthers,
+  signInAgainHref,
+  signOutOthersRetryPath,
+  withoutSignOutOthersRetry,
+} from "../sign-out-others";
 import { signOutCurrentSession } from "./account-session";
 import { accountMessages } from "./messages";
 
@@ -96,6 +104,8 @@ function ChangePasswordDialog(props: { close: (value: ChangePasswordPayload | nu
 
       {error() && <NoticeCard tone="danger">{error()}</NoticeCard>}
 
+      <p class="text-sm text-dimmed">{t().changePasswordSignsOutHint}</p>
+
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)}>
           {t().cancel}
@@ -115,14 +125,65 @@ export default function ProfileSettings(props: Props) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
   // ── Account mutations ──
-  const passwordMutation = mutations.create<void, { currentPassword: string; newPassword: string; confirmPassword: string }>({
+  const signedOutElsewhere = () => prompts.success(t().passwordChangedSignedOut, { title: t().changePasswordTitle });
+
+  // Every sign-in ended, this browser's too: sign in again and come back to this page.
+  const signInAgain = async (): Promise<void> => {
+    await prompts.alert(t().passwordChangedSignInAgain, { title: t().changePasswordTitle, confirmText: t().signInAgain });
+    window.location.href = signInAgainHref(normalizeRedirectTo(`${window.location.pathname}${window.location.search}`));
+  };
+
+  // The address keeps the unfinished retry until it succeeds or the person closes it, so a reload asks again.
+  const keepRetryInAddress = (keep: boolean): void => {
+    const url = new URL(window.location.href);
+    if (isSignOutOthersRetry(url.searchParams) === keep) return;
+    window.history.replaceState(window.history.state, "", keep ? signOutOthersRetryPath(url.href) : withoutSignOutOthersRetry(url));
+  };
+
+  // The password is already changed here; only signing out the other sign-ins is retried.
+  const retryUntilSignedOut = async (): Promise<void> => {
+    keepRetryInAddress(true);
+    for (;;) {
+      const retry = await prompts.confirm(t().passwordChangedSignOutFailed, {
+        title: t().changePasswordTitle,
+        icon: "ti ti-alert-triangle",
+        confirmText: t().tryAgain,
+        cancelText: t().close,
+      });
+      if (!retry) return keepRetryInAddress(false);
+      const outcome = await retrySignOutOthers();
+      if (outcome === "sign-in-again") return signInToFinish();
+      if (outcome === "signed-out") {
+        keepRetryInAddress(false);
+        return void (await signedOutElsewhere());
+      }
+    }
+  };
+
+  // A retry found no browser sign-in here, so the other sign-ins may still be there: sign in, then this page retries.
+  const signInToFinish = async (): Promise<void> => {
+    await prompts.alert(t().signInToFinishSignOut, { title: t().changePasswordTitle, confirmText: t().signInAgain });
+    window.location.href = signInAgainHref(signOutOthersRetryPath(window.location.href));
+  };
+
+  // After a reload or that sign-in, the address asks for the retry again.
+  onMount(() => {
+    if (isSignOutOthersRetry(new URL(window.location.href).searchParams)) void retryUntilSignedOut();
+  });
+
+  const passwordMutation = mutations.create<
+    "signed-out" | "sign-in-again" | "sign-out-failed",
+    { currentPassword: string; newPassword: string; confirmPassword: string }
+  >({
     mutation: async (vars) => {
       const res = await apiClient.me.password.$post({ json: vars });
-      if (!res.ok) {
-        throw new Error(res.status === 401 ? t().currentPasswordIncorrect : t().changePasswordFailed);
-      }
+      if (res.ok) return (await res.json()).signInAgain ? "sign-in-again" : "signed-out";
+      const body = (await res.json().catch(() => null)) as { code?: unknown } | null;
+      if (body?.code === "SIGN_OUT_OTHERS_FAILED") return "sign-out-failed";
+      throw new Error(res.status === 401 ? t().currentPasswordIncorrect : t().changePasswordFailed);
     },
-    onSuccess: () => prompts.alert(t().passwordChanged),
+    onSuccess: (outcome) =>
+      outcome === "signed-out" ? signedOutElsewhere() : outcome === "sign-in-again" ? signInAgain() : retryUntilSignedOut(),
     onError: (err) => prompts.error(err.message),
   });
 

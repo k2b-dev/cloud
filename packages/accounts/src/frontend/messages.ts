@@ -359,7 +359,8 @@ export const accountsMessages = i18n.define({
       resetPasswordFailed: "The password could not be reset.",
       temporaryPasswordCreated: "Temporary password created",
       temporaryPasswordIntro: "A new temporary password has been generated for this FreeIPA account.",
-      temporaryPasswordNextLogin: "The user must set a new password at the next login.",
+      temporaryPasswordNextLogin:
+        "The user is signed out of all browsers, the mobile app, the command line and apps. Their phones with Cloud Login stay paired. They must set a new password at the next login.",
       temporaryPassword: "Temporary password",
       copyPassword: "Copy password",
       deleteUserFailed: "The user could not be deleted.",
@@ -378,7 +379,7 @@ export const accountsMessages = i18n.define({
       copyLink: "Copy link",
       notifyFailed: "The notification could not be sent.",
       resetPasswordConfirm: ({ uid }: { uid: string }) =>
-        `Generate a temporary password for “${uid}”? The user must set a new password at the next login.`,
+        `Generate a temporary password for “${uid}”? The user is signed out of all browsers, the mobile app, the command line and apps. Their phones with Cloud Login stay paired. They must set a new password at the next login.`,
       reset: "Reset",
       editUser: "Edit user",
       emailSyncWarning:
@@ -1193,7 +1194,8 @@ export const accountsMessages = i18n.define({
       resetPasswordFailed: "Das Passwort konnte nicht zurückgesetzt werden.",
       temporaryPasswordCreated: "Temporäres Passwort erstellt",
       temporaryPasswordIntro: "Für dieses FreeIPA-Konto wurde ein neues temporäres Passwort erzeugt.",
-      temporaryPasswordNextLogin: "Der Benutzer muss bei der nächsten Anmeldung ein neues Passwort festlegen.",
+      temporaryPasswordNextLogin:
+        "Die Person wird in allen Browsern, in der Mobile App, in der Kommandozeile und in Apps abgemeldet. Ihre Telefone mit Cloud Login bleiben gekoppelt. Bei der nächsten Anmeldung muss sie ein neues Passwort festlegen.",
       temporaryPassword: "Temporäres Passwort",
       copyPassword: "Passwort kopieren",
       deleteUserFailed: "Der Benutzer konnte nicht gelöscht werden.",
@@ -1211,7 +1213,7 @@ export const accountsMessages = i18n.define({
       copyLink: "Link kopieren",
       notifyFailed: "Die Benachrichtigung konnte nicht gesendet werden.",
       resetPasswordConfirm: ({ uid }) =>
-        `Ein temporäres Passwort für „${uid}“ erzeugen? Der Benutzer muss bei der nächsten Anmeldung ein neues Passwort festlegen.`,
+        `Ein temporäres Passwort für „${uid}“ erzeugen? Die Person wird in allen Browsern, in der Mobile App, in der Kommandozeile und in Apps abgemeldet. Ihre Telefone mit Cloud Login bleiben gekoppelt. Bei der nächsten Anmeldung muss sie ein neues Passwort festlegen.`,
       reset: "Zurücksetzen",
       editUser: "Benutzer bearbeiten",
       emailSyncWarning:

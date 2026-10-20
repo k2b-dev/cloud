@@ -173,7 +173,17 @@ export const accountMessages = i18n.define({
       change: "Change",
       changePasswordFailed: "Failed to change password.",
       currentPasswordIncorrect: "The current password is incorrect.",
-      passwordChanged: "Password changed successfully.",
+      changePasswordSignsOutHint:
+        "Changing your password signs you out everywhere else: other browsers, the mobile app, the command line, and connected apps. This browser stays signed in. Your API keys and passkeys stay valid, and your phones with Cloud Login stay paired.",
+      passwordChangedSignedOut:
+        "Password changed. You are signed out everywhere else. Your API keys and passkeys stay valid, and your phones with Cloud Login stay paired.",
+      passwordChangedSignOutFailed: "Password changed. Signing out your other sign-ins did not work.",
+      passwordChangedSignInAgain:
+        "Password changed. You are signed out everywhere, including this browser. Sign in again with your new password.",
+      signInAgain: "Sign in again",
+      signInToFinishSignOut: "Sign in again to finish signing out your other sign-ins.",
+      tryAgain: "Try again",
+      close: "Close",
       deleteAccountFailed: "Failed to delete account.",
       changePasswordTitle: "Change password",
       deleteAccountConfirm: "Delete your account permanently? This action cannot be undone.",
@@ -271,6 +281,7 @@ export const accountMessages = i18n.define({
       activityPasskeyRemoved: "Passkey removed",
       activityPasskeyUsed: "Passkey used",
       activityAppPaired: "App paired",
+      activitySignedOutElsewhere: "Signed out everywhere else",
       activityAppRemoved: "App removed",
       notificationCheckFailed: "Browser notification status could not be checked. Reload this page to try again.",
       browserNotificationsEnabled: "Browser notifications enabled.",
@@ -623,7 +634,17 @@ export const accountMessages = i18n.define({
       change: "Ändern",
       changePasswordFailed: "Das Passwort konnte nicht geändert werden.",
       currentPasswordIncorrect: "Das aktuelle Passwort ist falsch.",
-      passwordChanged: "Passwort geändert.",
+      changePasswordSignsOutHint:
+        "Mit dem neuen Passwort meldet Cloud dich überall sonst ab: in anderen Browsern, in der Mobile App, in der Kommandozeile und in verbundenen Apps. Dieser Browser bleibt angemeldet. Deine API-Schlüssel und Passkeys bleiben gültig, und deine Telefone mit Cloud Login bleiben gekoppelt.",
+      passwordChangedSignedOut:
+        "Passwort geändert. Du bist überall sonst abgemeldet. Deine API-Schlüssel und Passkeys bleiben gültig, und deine Telefone mit Cloud Login bleiben gekoppelt.",
+      passwordChangedSignOutFailed: "Passwort geändert. Das Abmelden der anderen Anmeldungen hat nicht geklappt.",
+      passwordChangedSignInAgain:
+        "Passwort geändert. Du bist überall abgemeldet, auch in diesem Browser. Melde dich mit dem neuen Passwort wieder an.",
+      signInAgain: "Wieder anmelden",
+      signInToFinishSignOut: "Melde dich wieder an, um das Abmelden deiner anderen Anmeldungen abzuschließen.",
+      tryAgain: "Erneut versuchen",
+      close: "Schließen",
       deleteAccountFailed: "Das Konto konnte nicht gelöscht werden.",
       changePasswordTitle: "Passwort ändern",
       deleteAccountConfirm: "Dein Konto endgültig löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -727,6 +748,7 @@ export const accountMessages = i18n.define({
       activityPasskeyRemoved: "Passkey entfernt",
       activityPasskeyUsed: "Passkey verwendet",
       activityAppPaired: "App gekoppelt",
+      activitySignedOutElsewhere: "Überall sonst abgemeldet",
       activityAppRemoved: "App entfernt",
       notificationCheckFailed:
         "Der Status der Browser-Benachrichtigungen konnte nicht geprüft werden. Lade die Seite neu und versuche es erneut.",

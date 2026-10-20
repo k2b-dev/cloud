@@ -29,6 +29,8 @@ type ResetAttemptSuccess = {
   ok: true;
   userId: string;
   user: User;
+  authEpoch: number;
+  signOutOthersFailed: boolean;
 };
 
 type ResetAttemptFailure =
@@ -154,13 +156,24 @@ const changeTemporaryPassword = async (params: {
     };
   }
 
-  await session.revokeAllForUser(changeResult.userId);
+  // The old password stayed valid while FreeIPA changed it, so a sign-in or device paired in that time outlives the
+  // sign-out before the change. Signing out everywhere again ends them, and everything the change already ended.
+  // Without it, this browser gets no session: the retry for other sign-ins keeps devices, a new reset link does not.
+  // Bind issuance to this final sign-out so a later sign-out also ends this sign-in.
+  let authEpoch: number;
+  try {
+    authEpoch = await session.revokeAllForUser(changeResult.userId);
+  } catch {
+    log.warn("Password reset: signing out everywhere after the change failed", { userId: changeResult.userId });
+    return {
+      ok: false,
+      status: 500,
+      reason: "reset_failed",
+      message: "Your password was changed, but signing you out everywhere did not work. Request a new reset link to finish.",
+    };
+  }
 
-  return {
-    ok: true,
-    userId: changeResult.userId,
-    user: changeResult.user,
-  };
+  return { ok: true, userId: changeResult.userId, user: changeResult.user, authEpoch, signOutOthersFailed: false };
 };
 
 type ResetRequest = { email: string; redirectTo?: string; locale?: string };
@@ -255,6 +268,19 @@ export const complete = async (params: { token?: string; newPassword: string }):
       status: serviceSession.status,
       reason: "reset_failed",
       message: serviceSession.error,
+    };
+  }
+
+  // The consumed reset token authorizes signing out everywhere; unpair phones before changing the password.
+  try {
+    await session.revokeAllForUser(target.userId);
+  } catch {
+    log.warn("Password reset stopped: signing out everywhere failed", { userId: target.userId });
+    return {
+      ok: false,
+      status: 500,
+      reason: "reset_failed",
+      message: "Signing you out everywhere did not work, so your password was not changed. Request a new reset link.",
     };
   }
 

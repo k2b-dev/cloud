@@ -39,6 +39,9 @@ export const authMessages = i18n.define({
       signInWithAdminToken: "Sign in with admin token",
       signingIn: "Signing in",
       loginFailed: ({ status }: { status: number }) => `Sign-in failed (${status})`,
+      signedOutWhileSigningIn: "You were signed out everywhere while signing in. Sign in again.",
+      passwordChangedSignInAgain:
+        "Your password was changed. You were signed out everywhere in the meantime. Sign in with your new password.",
       acceptLegal: "Please accept the Terms of Service and Privacy Policy.",
       requestFailed: "The request failed.",
       invalidToken: "The code is invalid or has expired.",
@@ -93,6 +96,13 @@ export const authMessages = i18n.define({
       secure: "Secure",
       backToSignIn: "Back to sign in",
       resetFailed: "Could not reset the password.",
+      requestNewResetLink: "Request a new reset link",
+      passwordChangedSignOutFailed: "Password changed. Signing out your other sign-ins did not work.",
+      signOutOthersRetryHint:
+        "Other browsers, the mobile app, the command line and apps may still be signed in. Try again before you continue.",
+      signingOutOthers: "Signing out",
+      tryAgain: "Try again",
+      continueWithoutSignOut: "Continue anyway",
       resettingPassword: "Resetting password",
       resetRequestFailed: "Could not request a password reset.",
       resetSent:
@@ -141,6 +151,9 @@ export const authMessages = i18n.define({
       signInWithAdminToken: "Mit Admin-Token anmelden",
       signingIn: "Anmeldung läuft",
       loginFailed: ({ status }) => `Anmeldung fehlgeschlagen (${status})`,
+      signedOutWhileSigningIn: "Während der Anmeldung wurdest du überall abgemeldet. Melde dich erneut an.",
+      passwordChangedSignInAgain:
+        "Dein Passwort wurde geändert. Inzwischen wurdest du überall abgemeldet. Melde dich mit deinem neuen Passwort an.",
       acceptLegal: "Bitte akzeptiere die Nutzungsbedingungen und die Datenschutzerklärung.",
       requestFailed: "Die Anfrage ist fehlgeschlagen.",
       invalidToken: "Der Code ist ungültig oder abgelaufen.",
@@ -197,6 +210,13 @@ export const authMessages = i18n.define({
       secure: "Sicher",
       backToSignIn: "Zurück zur Anmeldung",
       resetFailed: "Das Passwort konnte nicht zurückgesetzt werden.",
+      requestNewResetLink: "Neuen Link anfordern",
+      passwordChangedSignOutFailed: "Passwort geändert. Das Abmelden der anderen Anmeldungen hat nicht geklappt.",
+      signOutOthersRetryHint:
+        "Andere Browser, die Mobile App, die Kommandozeile und Apps sind vielleicht noch angemeldet. Versuch es erneut, bevor du weitermachst.",
+      signingOutOthers: "Wird abgemeldet",
+      tryAgain: "Erneut versuchen",
+      continueWithoutSignOut: "Trotzdem weiter",
       resettingPassword: "Passwort wird zurückgesetzt",
       resetRequestFailed: "Das Zurücksetzen des Passworts konnte nicht angefordert werden.",
       resetSent:
