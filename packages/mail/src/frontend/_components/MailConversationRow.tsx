@@ -34,6 +34,7 @@ type MailConversationRowActions = {
 
 /** The list's quick look card; rows anchor it and report mouse rests, with the row and the pointer, and leaves for its request. */
 type MailConversationRowQuickLook = Pick<HoverPreviewController<string>, "id" | "anchor" | "active"> & {
+  begin: () => void;
   prefetch: (item: MailListItem, row: HTMLElement, pointer: PointerEvent) => void;
   release: (item: MailListItem) => void;
 };
@@ -101,7 +102,10 @@ export default function MailConversationRow(props: {
         "mail-list-entry-peek": peeking(),
       }}
       onPointerEnter={(event) => {
-        if (event.pointerType === "mouse") quickLook?.prefetch(props.item, event.currentTarget, event);
+        if (event.pointerType === "mouse") {
+          quickLook?.begin();
+          quickLook?.prefetch(props.item, event.currentTarget, event);
+        }
       }}
       onPointerMove={(event) => {
         if (event.pointerType === "mouse") quickLook?.prefetch(props.item, event.currentTarget, event);
@@ -139,6 +143,21 @@ export default function MailConversationRow(props: {
         // The open card already names sender and subject; a native tooltip would cover the row.
         title={peeking() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
         draggable={props.state.canWrite && Boolean(props.item.conversationId && props.item.activeFolderIds.length > 0)}
+        on:keydown={(event) => {
+          // Runs on the link before the shared row anchor handles Space. Reopening
+          // explicitly may retry a syncing/error answer even while the mouse stays here.
+          if (
+            event.key === " " &&
+            !event.defaultPrevented &&
+            !event.repeat &&
+            !event.shiftKey &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !peeking()
+          )
+            quickLook?.begin();
+        }}
         onClick={(event) => {
           activation = event.detail === 0 ? "keyboard" : "pointer";
           if (event.defaultPrevented || event.button !== 0 || event.altKey) return;

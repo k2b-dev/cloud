@@ -8,9 +8,13 @@ import {
   type BrowserSection,
   interactionIds,
   interactionRequestSchema,
+  interactionRequestSizes,
+  interactionRequestTiming,
   interactionResultSchema,
   interactionSample,
   interactionSampleSchema,
+  interactions,
+  interactionTraceBreakdown,
   islandRenderMs,
   loadSampleSchema,
   rankBottlenecks,
@@ -36,6 +40,8 @@ test("browser flags: engines, runs and the rank mode", () => {
     browserRuns: 5,
   });
   expect(parseArgs(["--browser", "webkit"]).browsers).toEqual(["webkit"]);
+  expect(parseArgs(["--browser-only", "--browser", "webkit"])).toMatchObject({ browserOnly: true, browsers: ["webkit"] });
+  expect(() => parseArgs(["--browser-only"])).toThrow("--browser-only requires --browser");
   expect(() => parseArgs(["--browser", "firefox"])).toThrow();
   expect(() => parseArgs(["--browser", "chromium,chromium"])).toThrow("duplicates");
   expect(() => parseArgs(["--browser"])).toThrow("Missing value for --browser");
@@ -44,6 +50,32 @@ test("browser flags: engines, runs and the rank mode", () => {
   expect(parseArgs(["--rank", "r.json", "--bottlenecks", "b.json"])).toMatchObject({ rank: "r.json", bottlenecks: "b.json" });
   expect(() => parseArgs(["--rank", "r.json"])).toThrow("--rank and --bottlenecks go together");
   expect(() => parseArgs(["--rank", "r.json", "--bottlenecks", "b.json", "--browser", "chromium"])).toThrow("starts nothing");
+});
+
+test("browser selection defaults to all, accepts focused runs, and rejects invalid or repeated ids", () => {
+  expect(parseArgs([])).toMatchObject({ interactions: interactionIds, loads: ["mailbox", "compose"] });
+  expect(parseArgs(["--interactions", "mailbox-switch,folder-switch", "--loads", "none"])).toMatchObject({
+    interactions: ["mailbox-switch", "folder-switch"],
+    loads: [],
+  });
+  expect(parseArgs(["--loads", "compose"]).loads).toEqual(["compose"]);
+  expect(parseArgs(["--loads", "compose,mailbox"]).loads).toEqual(["compose", "mailbox"]);
+  for (const args of [
+    ["--interactions", "unknown"],
+    ["--interactions", "folder-switch,folder-switch"],
+    ["--interactions", ""],
+    ["--interactions"],
+    ["--loads", "none,mailbox"],
+    ["--loads", "mailbox,mailbox"],
+    ["--loads", "unknown"],
+    ["--loads", ""],
+    ["--loads"],
+  ])
+    expect(() => parseArgs(args)).toThrow();
+  expect(interactions.filter((entry) => "trace" in entry && entry.trace).map((entry) => entry.id)).toEqual([
+    "mailbox-switch",
+    "folder-switch",
+  ]);
 });
 
 const request = (path: string, bytes: number) => ({
@@ -83,6 +115,7 @@ test("interaction samples count API requests and bytes and reject incomplete ent
   expect(interactionSampleSchema.safeParse({ ...sample, durationMs: Number.NaN }).success).toBe(false);
   expect(interactionResultSchema.safeParse({ id: "unknown", profiles: [] }).success).toBe(false);
   expect(interactionIds).toEqual([
+    "mailbox-switch",
     "folder-switch",
     "conversation-open",
     "conversation-open-large",
@@ -94,6 +127,160 @@ test("interaction samples count API requests and bytes and reject incomplete ent
   const summary = summarizeInteraction([10, 40, 20, 30].map((ms) => interactionSample(ms, [request("/api/a", ms)])));
   expect(summary).toEqual({ durationMs: { median: 25, p95: 40, min: 10, max: 40 }, apiRequests: 1, apiBytes: 25 });
   expect(() => summarizeInteraction([])).toThrow();
+});
+
+test("cached request bodies with unavailable sizes do not discard an interaction or invent encoded bytes", () => {
+  for (const [sizes, expected] of [
+    [
+      { responseBodySize: 1000, responseHeadersSize: 100 },
+      { bytes: 1100, encodedBytes: 1000 },
+    ],
+    [{ responseBodySize: -1, responseHeadersSize: 100 }, { bytes: 100 }],
+    [
+      { responseBodySize: 0, responseHeadersSize: -1 },
+      { bytes: 0, encodedBytes: 0 },
+    ],
+    [null, { bytes: 0 }],
+  ] as const) {
+    const measured = { ...request("/app/mail/Bbb002", 0), type: "document", ...interactionRequestSizes(sizes) };
+    const sample = interactionSample(100, [measured], "/app/mail/Bbb002");
+    expect(sample.mainRequest).toMatchObject(expected);
+    expect(summarizeInteraction([sample]).encodedBytes).toBe("encodedBytes" in expected ? expected.encodedBytes : undefined);
+  }
+});
+
+test("main requests and timing cover document and in-place mailbox switches without counting unrelated requests", () => {
+  expect(interactionRequestTiming({ requestStart: 20, responseStart: 70, responseEnd: 90 })).toEqual({ serverMs: 50, transferMs: 20 });
+  for (const timing of [
+    { requestStart: -1, responseStart: 70, responseEnd: 90 },
+    { requestStart: 20, responseStart: -1, responseEnd: -1 },
+    { requestStart: 20, responseStart: 70, responseEnd: -1 },
+  ])
+    expect(interactionRequestTiming(timing)).toEqual({});
+  for (const main of [
+    { ...request("/app/mail/Bbb002", 1100), type: "document" },
+    request("/api/mail/mailboxes/Bbb002/workspace-route?href=%2Fapp%2Fmail%2FBbb002", 1100),
+    request("/api/mail/mailboxes/Bbb002/workspace-list?href=%2Fapp%2Fmail%2FBbb002", 1100),
+  ]) {
+    const measured = { ...main, encoding: "br", encodedBytes: 1000, serverMs: 50, transferMs: 20 };
+    const sample = interactionSample(
+      100,
+      [
+        request("/api/mail/mailboxes/Aaa001/workspace-route?href=x", 1),
+        request("/api/mail/mailboxes/Bbb002/workspace-route-extra?href=x", 1),
+        { ...measured, failure: "cancelled" },
+        { ...measured, method: "POST" },
+        measured,
+      ],
+      "/app/mail/Bbb002",
+    );
+    expect(sample.mainRequest).toEqual(measured);
+    expect(summarizeInteraction([sample])).toMatchObject({ serverMs: 50, transferMs: 20, encodedBytes: 1000 });
+  }
+  expect(interactionSample(100, [request("/app/mail/Aaa001", 1)], "/app/mail/Bbb002").mainRequest).toBeUndefined();
+  const legacy = interactionSample(100, [request("/api/mail/x", 1)]);
+  expect(legacy.mainRequest).toBeUndefined();
+  expect(summarizeInteraction([legacy]).serverMs).toBeUndefined();
+});
+
+test("interaction traces follow frame renderer changes and partition nested tasks only inside the action window", () => {
+  const event = (name: string, start: number, duration: number, pid = 1, tid = 7) => ({
+    name,
+    ph: "X",
+    pid,
+    tid,
+    ts: 1_000_000 + start * 1000,
+    dur: duration * 1000,
+  });
+  const thread = (pid: number, tid = 7) => ({ name: "thread_name", ph: "M", ts: 0, pid, tid, args: { name: "CrRendererMain" } });
+  const data = {
+    traceEvents: [
+      { name: syncMark, cat: "blink.user_timing", ph: "R", pid: 1, tid: 7, ts: 1_000_000 },
+      thread(1),
+      thread(2, 9),
+      thread(3),
+      thread(2, 10),
+      {
+        name: "TracingStartedInBrowser",
+        ph: "I",
+        ts: 0,
+        pid: 0,
+        tid: 0,
+        args: {
+          data: {
+            frames: [
+              { frame: "page", processId: 1 },
+              { frame: "other", processId: 3 },
+            ],
+          },
+        },
+      },
+      { name: "FrameCommittedInBrowser", ph: "I", ts: 1_050_000, pid: 0, tid: 0, args: { data: { frame: "page", processId: 2 } } },
+      event("RunTask", 0, 50),
+      event("FunctionCall", 10, 30),
+      event("v8.compile", 15, 5),
+      event("RecalcStyle", 20, 10),
+      event("RunTask", 60, 80, 2, 9),
+      event("EvaluateScript", 60, 80, 2, 9),
+      event("Layout", 80, 10, 2, 9),
+      event("v8.parse", 90, 10, 2, 9),
+      event("RunTask", 0, 200, 3),
+      event("Layout", 0, 200, 3),
+      event("RunTask", 150, 10, 2, 10),
+    ],
+  };
+  const timing: Parameters<typeof interactionTraceBreakdown>[1] = {
+    markTimeMs: 0,
+    actionAt: 10,
+    hitAt: 130,
+    mountWindows: [
+      [65, 75],
+      [70, 80],
+    ],
+    frameIds: ["page"],
+  };
+  const trace = interactionTraceBreakdown(data, timing);
+  expect(trace).toMatchObject({
+    totalMs: 120,
+    busyMs: 110,
+    scriptMs: 50,
+    parseCompileMs: 15,
+    styleLayoutMs: 20,
+    islandRenderMs: 15,
+    otherMs: 10,
+  });
+  expect(trace.scriptShare + trace.parseCompileShare + trace.styleLayoutShare + trace.islandRenderShare + trace.otherShare).toBeCloseTo(
+    1,
+    3,
+  );
+  const concurrent = { traceEvents: [...data.traceEvents, event("RunTask", 70, 5)] };
+  expect(interactionTraceBreakdown(concurrent, timing)).toEqual(trace);
+  const epoch = 1_800_000_000_000;
+  expect(
+    interactionTraceBreakdown(data, {
+      ...timing,
+      markTimeMs: epoch,
+      actionAt: epoch + 10,
+      hitAt: epoch + 130,
+      mountWindows: [
+        [epoch + 65, epoch + 75],
+        [epoch + 70, epoch + 80],
+      ],
+    }),
+  ).toEqual(trace);
+  expect(interactionTraceBreakdown(data, { ...timing, mountWindows: [] })).toMatchObject({ islandRenderMs: 0, scriptMs: 65 });
+  const child = {
+    name: "FrameCommittedInBrowser",
+    ph: "I",
+    ts: 1_050_000,
+    pid: 0,
+    tid: 0,
+    args: { data: { frame: "child", parent: "page", processId: 4 } },
+  };
+  const withChild = { traceEvents: [...data.traceEvents, child, thread(4), event("RunTask", 50, 10, 4)] };
+  expect(interactionTraceBreakdown(withChild, timing)).toMatchObject({ busyMs: 120, otherMs: 20 });
+  expect(() => interactionTraceBreakdown({ traceEvents: [] }, timing)).toThrow(syncMark);
+  expect(() => interactionTraceBreakdown(data, { ...timing, actionAt: 200, hitAt: 210 })).toThrow("no page main-thread tasks");
 });
 
 test("unions clip and merge intervals; island render time counts overlapping mounts once", () => {
@@ -317,6 +504,47 @@ test("time metrics index server, load, trace and interaction numbers by stable i
   expect(metrics.has("load.mailbox.webkit.desktop.ttiMs")).toBe(false);
 });
 
+test("interaction traces and main requests survive result parsing, render once and expose rank metrics", () => {
+  const browser = browserSection();
+  browser.pages = [];
+  const profile = browser.interactions[0]!.profiles[0]!;
+  profile.samples = [
+    interactionSample(
+      100,
+      [{ ...request("/app/mail/Bbb002", 1200), type: "document", encodedBytes: 1000, serverMs: 40, transferMs: 20 }],
+      "/app/mail/Bbb002",
+    ),
+  ];
+  profile.metrics = summarizeInteraction(profile.samples);
+  profile.trace = {
+    totalMs: 120,
+    busyMs: 70,
+    scriptMs: 20,
+    parseCompileMs: 10,
+    islandRenderMs: 15,
+    styleLayoutMs: 5,
+    otherMs: 20,
+    scriptShare: 20 / 70,
+    parseCompileShare: 10 / 70,
+    islandRenderShare: 15 / 70,
+    styleLayoutShare: 5 / 70,
+    otherShare: 20 / 70,
+    mainRequest: profile.samples[0]!.mainRequest,
+  };
+  const result = resultSchema.parse({ ...exampleResult(), browser });
+  const summary = renderSummary(result);
+  expect(summary.match(/## Interaction breakdown/g)).toHaveLength(1);
+  expect(summary).toContain("| folder-switch | chromium phone | 120 | 40 | 20 | 20 (28.6%) |");
+  expect(summary).toContain("| chromium phone | 40 | 20 | 1.0 KB | identity |");
+  expect(summary).not.toContain("### mailbox-switch");
+  const index = timeMetrics(result);
+  expect(index.get("interactionTrace.folder-switch.chromium.phone.scriptMs")).toBe(20);
+  expect(index.get("interactionTrace.folder-switch.chromium.phone.styleLayoutMs")).toBe(5);
+  expect(index.get("interactionTrace.folder-switch.chromium.phone.islandRenderMs")).toBe(15);
+  expect(index.get("interaction.folder-switch.chromium.phone.serverMs")).toBe(40);
+  expect(parsePrevious({ ...exampleResult(), browser: browserSection() }).browser?.interactions[0]!.profiles[0]!.trace).toBeUndefined();
+});
+
 const candidate = (title: string, metric: string, location = "packages/mail/scripts/perf-baseline/browser-model.ts:1") => ({
   title,
   location,
@@ -406,8 +634,7 @@ test("--rank reads a result and candidates from files", async () => {
   }
 });
 
-test("the interaction probe refuses an end state that already holds and times a marked action to the painting frame", async () => {
-  setSystemTime(new Date("2026-10-01T00:00:00Z"));
+function interactionDom() {
   const dom = createDomTestHarness();
   const names = [
     "sessionStorage",
@@ -427,10 +654,25 @@ test("the interaction probe refuses an end state that already holds and times a 
       value: typeof value === "function" && name === "addEventListener" ? value.bind(dom.window) : value,
     });
   }
+  return {
+    dom,
+    cleanup: () => {
+      for (const [name, descriptor] of previous)
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+        else Reflect.deleteProperty(globalThis, name);
+      Reflect.deleteProperty(window, "__mailPerfArm");
+      dom.cleanup();
+    },
+  };
+}
+
+test("the interaction probe refuses an end state that already holds and times a marked action to the painting frame", async () => {
+  setSystemTime(new Date("2026-10-01T00:00:00Z"));
+  const { dom, cleanup } = interactionDom();
   try {
     document.body.innerHTML =
       '<h1 data-mail-list-heading>Inbox</h1><div data-mail-conversation-list><div data-conversation-id="A"></div></div>';
-    installInteractionProbe(watchKey);
+    installInteractionProbe({ key: watchKey, trace: true });
     expect(window.__mailPerfArm?.({ id: "x", action: "mark", conditions: [{ selector: '[data-conversation-id="A"]' }] })).toBe(false);
     expect(
       window.__mailPerfArm?.({
@@ -477,10 +719,86 @@ test("the interaction probe refuses an end state that already holds and times a 
       true,
     );
   } finally {
-    for (const [name, descriptor] of previous)
-      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-      else Reflect.deleteProperty(globalThis, name);
-    Reflect.deleteProperty(window, "__mailPerfArm");
-    dom.cleanup();
+    cleanup();
+  }
+});
+
+test("mailbox-switch waits for the destination path, viewport row, mounted workspace and an idle list, including after a document replacement", async () => {
+  setSystemTime(new Date("2026-10-01T00:00:00Z"));
+  for (const navigation of ["document", "in-place"]) {
+    let env = interactionDom();
+    try {
+      window.history.replaceState(null, "", "/app/mail/Aaa001");
+      installInteractionProbe({ key: watchKey, trace: true });
+      const watch = {
+        id: "mailbox-switch",
+        action: "mark" as const,
+        conditions: [{ selector: '[data-conversation-id="B"]', path: "/app/mail/Bbb002", visible: true, interactive: true }],
+      };
+      expect(window.__mailPerfArm?.(watch)).toBe(true);
+      window.__mailPerfMark?.();
+      const armed = sessionStorage.getItem(watchKey)!;
+      if (navigation === "document") {
+        env.cleanup();
+        env = interactionDom();
+        sessionStorage.setItem(watchKey, armed);
+        installInteractionProbe({ key: watchKey, trace: true });
+      }
+      document.body.innerHTML =
+        '<solid-island><main aria-busy="true"><div data-mail-conversation-list><div data-conversation-id="B"></div></div></main></solid-island>';
+      const island = document.querySelector("solid-island")!;
+      const row = document.querySelector('[data-conversation-id="B"]')!;
+      let onScreen = false;
+      Object.defineProperty(row, "getBoundingClientRect", {
+        value: () => ({ width: 100, height: 40, top: onScreen ? 0 : 2000, left: 0, bottom: onScreen ? 40 : 2040, right: 100 }),
+      });
+      const mounted = new Map<Element, number>();
+      const started = new Map<Element, number>();
+      Object.defineProperty(window, "__cloudPerf", { configurable: true, value: { mounted, started } });
+      const frame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const state = () => JSON.parse(sessionStorage.getItem(watchKey) ?? "null");
+      await frame();
+      expect(state().hitAt).toBeNull();
+      window.history.replaceState(null, "", "/app/mail/Bbb002");
+      onScreen = true;
+      document.querySelector("main")!.removeAttribute("aria-busy");
+      await frame();
+      // SSR rows alone are insufficient, even with the right URL and an idle list.
+      expect(state().hitAt).toBeNull();
+      started.set(island, 1);
+      mounted.set(island, 2);
+      document.querySelector("main")!.setAttribute("aria-busy", "true");
+      await frame();
+      expect(state().hitAt).toBeNull();
+      document.querySelector("main")!.setAttribute("aria-busy", "false");
+      onScreen = false;
+      await frame();
+      expect(state().hitAt).toBeNull();
+      onScreen = true;
+      window.history.replaceState(null, "", "/app/mail/Aaa001");
+      await frame();
+      expect(state().hitAt).toBeNull();
+      window.history.replaceState(null, "", "/app/mail/Bbb002");
+      await frame();
+      expect(state().hitAt).toBeGreaterThanOrEqual(state().actionAt);
+      expect(state().mountWindows).toEqual([[performance.timeOrigin + 1, performance.timeOrigin + 2]]);
+      expect(window.__mailPerfArm?.(watch)).toBe(false);
+      if (navigation === "in-place") {
+        const reused = {
+          ...watch,
+          conditions: [{ ...watch.conditions[0]!, path: "/app/mail/Ccc003", selector: '[data-conversation-id="C"]' }],
+        };
+        expect(window.__mailPerfArm?.(reused)).toBe(true);
+        window.__mailPerfMark?.();
+        row.setAttribute("data-conversation-id", "C");
+        window.history.replaceState(null, "", "/app/mail/Ccc003");
+        await frame();
+        // The island remains mounted: an in-place switch must not wait for another mount.
+        expect(state().hitAt).toBeGreaterThanOrEqual(state().actionAt);
+        expect(mounted.size).toBe(1);
+      }
+    } finally {
+      env.cleanup();
+    }
   }
 });
