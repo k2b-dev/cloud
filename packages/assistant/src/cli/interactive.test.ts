@@ -156,6 +156,30 @@ test("capability approvals offer numbered Always approve only when allowed", asy
     review: null,
     scope: null,
   };
+  const complete = approvalTest(["y"]);
+  const content = { kind: "page" as const, title: "Complete draft", body: `${"x".repeat(80_000)}\u0000END`, format: "plain" as const };
+  const read = complete.reader.read;
+  complete.reader.read = async (...args) => {
+    const rendered = complete.printed.find((line) => line.includes("Complete draft"));
+    expect(rendered).toBeDefined();
+    expect(JSON.parse(rendered!)).toEqual(content);
+    return read(...args);
+  };
+  expect(
+    await collectCapabilityApproval(complete.ctx, complete.reader, {
+      ...request,
+      allowAlways: false,
+      review: {
+        locale: "en",
+        sentence: { action: "Write", running: "Writing", done: "Wrote", confirm: "Write", decline: "Keep" },
+        slots: {},
+        content,
+      },
+    }),
+  ).toEqual({ approved: true });
+  const contentIndex = complete.printed.findIndex((line) => line.includes("Complete draft"));
+  expect(JSON.parse(complete.printed[contentIndex]!)).toEqual(content);
+  expect(complete.prompts).toEqual([{ prompt: "Approve? [y/N]: ", options: { typedOnly: true } }]);
   const always = approvalTest(["2"]);
   expect(await collectCapabilityApproval(always.ctx, always.reader, request)).toEqual({ approved: true, remember: "always" });
   expect(always.printed.slice(-3)).toEqual(["Approve?", "  1. Approve once", "  2. Always approve"]);

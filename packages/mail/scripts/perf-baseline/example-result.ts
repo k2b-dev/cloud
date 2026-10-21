@@ -3,7 +3,7 @@ import type { Result } from "./model";
 /** A small Mail result for summary and schema tests. */
 export function exampleResult(): Result {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: "mail",
     metadata: {
       commit: "abc",

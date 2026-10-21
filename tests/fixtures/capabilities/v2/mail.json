@@ -3774,12 +3774,16 @@
               "required": ["id", "title", "description"],
               "additionalProperties": false
             }
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           }
         },
-        "required": ["draftId", "revision", "fingerprint", "warnings"],
+        "required": ["draftId", "revision", "fingerprint", "warnings", "contentHash"],
         "additionalProperties": false
       },
-      "schemaHash": "78c80c201ad352bda322dfe16270266901333500897260f84804f99235e4653e",
+      "schemaHash": "dc904f7146485dff5cbe6d48a919051d4386303d25dfe016752c514f6f8dda03",
       "openWorld": false
     },
     {
@@ -7938,6 +7942,11 @@
             "maximum": 9007199254740991,
             "description": "Current resource revision used for optimistic concurrency."
           },
+          "expectedContentHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "Exact contentHash from draft.send.review under the same actor. Changed content requires a fresh manual review and send attempt."
+          },
           "senderIdentityId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
@@ -7993,7 +8002,7 @@
             "additionalProperties": false
           }
         },
-        "required": ["mailboxId", "draftId", "expectedRevision", "senderIdentityId"],
+        "required": ["mailboxId", "draftId", "expectedRevision", "expectedContentHash", "senderIdentityId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8030,7 +8039,7 @@
         "required": ["commandId", "state", "draftId", "conversationId"],
         "additionalProperties": false
       },
-      "schemaHash": "633e43d33458d744efe815990123e9dfa6471ba927bf8865213aa7c3dea4ef0e",
+      "schemaHash": "ae5c3ff8cad5baac4642525e9f6e1716dec34ba318bf9610c5c70e4f0b792e91",
       "destructive": true,
       "openWorld": true,
       "idempotency": "required",

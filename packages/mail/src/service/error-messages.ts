@@ -27,6 +27,8 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
 };
 
 const genericGermanMessage = (error: HumanFacingError): string => {
+  if (error.code === "SEND_CONTENT_CHANGED")
+    return "Der Nachrichteninhalt hat sich geändert. Es wurde nichts eingereiht. Öffne den Entwurf, prüfe ihn erneut und gib einen neuen Sendeversuch frei.";
   if (error.code === "CONVERSATION_KEPT")
     return "Diese Unterhaltung wird aufbewahrt und kann nicht gelöscht oder in den Papierkorb, den Spam-Ordner oder die Entwürfe verschoben werden. Verschieben und Archivieren sind weiterhin möglich.";
   if (error.code === "FOLDER_HAS_KEPT_CONVERSATIONS")

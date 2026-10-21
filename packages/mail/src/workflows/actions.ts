@@ -24,6 +24,7 @@ import {
 } from "../service/collaboration";
 import { hasCurrentMailboxUserPermission } from "../service/collaborators";
 import {
+  adoptWorkflowSendCommand,
   createWorkflowCommand,
   createWorkflowCommandInTransaction,
   enqueueCreatedWorkflowCommand,
@@ -41,6 +42,7 @@ import { resolveIncomingAutomationMandateCaller } from "../service/incoming-auto
 import { updateWorkflowConversationLocalTagInTransaction } from "../service/local-tags";
 import { parseMessageProtocolFacts } from "../service/message-protocol";
 import { type MailboxOwnedPublicResourceTable, publicIds, requirePublicId, resolveMailboxPublicId } from "../service/public-resources";
+import { loadSendContent } from "../service/send-content";
 import { renderMailWorkflowTemplate } from "../service/template-rendering";
 import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
@@ -286,6 +288,31 @@ const commandOutcome = (command: Pick<MailCommand, "id" | "state" | "lastError">
     state: "waiting",
     dependency: { kind: "mail.command", key: command.id, deadline: mailWorkflowDependencyDeadline() },
   };
+};
+
+/** Retries retain their original precondition; a new workflow effect prepares its own execution actor's content. */
+const workflowSendContentHash = async (
+  db: typeof sql,
+  scope: MailRunScope,
+  effectKey: string,
+  draftId: string,
+  revision: number,
+  senderIdentityId: string,
+): Promise<string> => {
+  const [existing] = await db<{ content_hash: string | null }[]>`
+    SELECT target->>'expectedContentHash' AS content_hash FROM mail.commands
+    WHERE mailbox_id=${scope.mailboxId}::uuid AND idempotency_key=${effectKey} AND kind='send'`;
+  if (existing?.content_hash) return existing.content_hash;
+  const content = await loadSendContent({
+    db,
+    mailboxId: scope.mailboxId,
+    draftId,
+    expectedRevision: revision,
+    senderIdentityId,
+    actor: { kind: "workflow", workflowVersionId: scope.workflowVersionId },
+  });
+  if (!content.ok) throw Object.assign(new Error(content.error.message), content.error);
+  return content.data.contentHash;
 };
 
 const createCommand = async (ctx: WorkflowActionContext, scope: MailRunScope, input: ActorCommandInput): Promise<ActionResult> => {
@@ -1116,8 +1143,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
         );
         const scheduledAt = asText(values.scheduledAt, "scheduledAt");
         if (!Number.isFinite(Date.parse(scheduledAt))) throw new Error("scheduledAt must be an ISO timestamp");
-        return createCommand(ctx, scope, {
-          kind: "send",
+        const input = {
+          kind: "send" as const,
           draftId,
           expectedDraftRevision: Number(draft.revision),
           senderIdentityId,
@@ -1125,6 +1152,24 @@ export const MAIL_WORKFLOW_ACTIONS = {
           undoSeconds: 0,
           idempotencyKey: ctx.effectKey,
           correlationId: ctx.runId,
+        };
+        const adopted = await adoptWorkflowSendCommand({
+          mailboxId: scope.mailboxId,
+          workflowVersionId: scope.workflowVersionId,
+          input,
+          beforeAdopt: async (tx) => {
+            const fence = await lockProviderFence(tx, ctx);
+            if (!(await mailWorkflowExecutionAuthorityActive(scope.authority, scope.mailboxId, scope.workflowVersionId, tx))) {
+              throw Object.assign(new Error("Workflow execution authority is no longer active"), { code: "FORBIDDEN" });
+            }
+            return fence;
+          },
+        });
+        if (!adopted.ok) return resultFailure(adopted.error);
+        if (adopted.data) return commandOutcome(adopted.data);
+        return createCommand(ctx, scope, {
+          ...input,
+          expectedContentHash: await workflowSendContentHash(sql, scope, ctx.effectKey, draftId, Number(draft.revision), senderIdentityId),
         });
       }),
   }),
@@ -1262,6 +1307,14 @@ export const MAIL_WORKFLOW_ACTIONS = {
             kind: "send",
             draftId: reply.data.draftId,
             expectedDraftRevision: reply.data.draftRevision,
+            expectedContentHash: await workflowSendContentHash(
+              tx,
+              scope,
+              ctx.effectKey,
+              reply.data.draftId,
+              reply.data.draftRevision,
+              senderIdentityId,
+            ),
             senderIdentityId,
             scheduledAt: reply.data.scheduledAt,
             undoSeconds: 0,

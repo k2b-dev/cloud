@@ -196,6 +196,7 @@ describe("scheduled send contracts", () => {
       kind: "send",
       draftId: "Draft1",
       expectedDraftRevision: 1,
+      expectedContentHash: "a".repeat(64),
       senderIdentityId: "Ident1",
       idempotencyKey: "00000000-0000-4000-8000-000000000003",
     };

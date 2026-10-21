@@ -186,7 +186,7 @@ export async function run(options: Options) {
   });
   const planB = planLargeMailbox({ ...plan.parameters, seed: (options.seed + 1) >>> 0 }, fixtureShortIds(plan));
   const result: Result = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: "mail",
     metadata: {
       commit: "unknown",
@@ -515,6 +515,7 @@ export async function run(options: Options) {
           mailboxB: { shortId: mailboxB.id },
           interactions: options.interactions,
           loads: options.loads,
+          pageChanges: options.pageChanges,
           nextUid: () => arrival++,
         },
         result.browser,
@@ -572,7 +573,9 @@ export async function run(options: Options) {
     !!result.browser &&
     (result.browser.errors.length > 0 ||
       [...result.browser.pages, ...result.browser.interactions].some((entry) => entry.profiles.some((p) => p.status === "failed")) ||
-      result.browser.pages.some((page) => page.errors.length > 0));
+      result.browser.pages.some((page) => page.errors.length > 0) ||
+      result.browser.pageChanges?.profiles.some((profile) => profile.status === "failed") ||
+      result.browser.pageChanges?.sequence.status === "failed");
   if (controller.signal.aborted || result.errors.length || browserFailed || result.scenarios.some((s) => s.status === "failed"))
     process.exitCode = controller.signal.aborted ? 130 : 1;
 }

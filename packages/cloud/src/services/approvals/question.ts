@@ -3,9 +3,8 @@ import { type AiStoredActionReview, storedActionReview } from "../../ai/action-r
 import type { ActionCard } from "../../ai/chat/action-card";
 import { approvalCard } from "../../approvals/approval-card";
 import {
-  CapabilityActionCallReviewSchema,
   type CapabilityActionPolicy,
-  CapabilityActionReviewDataSchema,
+  CapabilityActionReviewPresentationSchema,
   capabilityActionPolicy,
 } from "../../contracts/capabilities";
 import { DEFAULT_LOCALE } from "../../server/locale";
@@ -23,8 +22,8 @@ import type { PendingApprovalRow } from "./list";
 export type ApprovalActionPolicy = CapabilityActionPolicy | null | undefined;
 const needsPolicy = (row: PendingApprovalRow): boolean => {
   if (row.storedReview && "sentence" in row.storedReview) return true;
-  const review = CapabilityActionCallReviewSchema.safeParse(row.details);
-  return review.success;
+  const review = CapabilityActionReviewPresentationSchema.safeParse(row.details);
+  return review.success && "sentence" in review.data;
 };
 /** Reads the registry once for the rows that need their Action's declared policy, as the approvals page does. */
 export const loadApprovalActionPolicies = async (
@@ -41,13 +40,18 @@ export const loadApprovalActionPolicies = async (
   };
 };
 
-/** Prefer the turn's snapshot, then the linked request's review. */
+/** The open request binds the content; the turn supplies the declared reason for older snapshots. */
 export const pendingApprovalReview = (
   row: Pick<PendingApprovalRow, "storedReview" | "details">,
   policy?: ApprovalActionPolicy,
 ): AiStoredActionReview | null => {
-  const parsed = CapabilityActionReviewDataSchema.safeParse(row.details);
-  return row.storedReview ?? (parsed.success ? storedActionReview(parsed.data, policy ?? undefined) : null);
+  const parsed = CapabilityActionReviewPresentationSchema.safeParse(row.details);
+  if (parsed.success && "sentence" in parsed.data)
+    return storedActionReview(
+      { ...parsed.data, ask: parsed.data.ask ?? (row.storedReview && "sentence" in row.storedReview ? row.storedReview.ask : undefined) },
+      policy,
+    );
+  return row.storedReview ?? (parsed.success ? storedActionReview(parsed.data, policy) : null);
 };
 
 /** Resolve the recorded question in the language and time zone of its originating turn. */
