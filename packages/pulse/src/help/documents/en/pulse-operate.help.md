@@ -31,6 +31,12 @@ If someone changes the source while you edit, Pulse keeps your entries and block
 
 **Retry** reloads a failed overview. During a store outage, existing values remain dated; an unavailable value is not zero. If access was removed, ask a base administrator to restore it. Retrying does not restore access.
 
+## Receive alerts
+
+Pulse checks due alert rules and source freshness every minute, even when no one has the base open. A firing alarm, escalation, missing data, check error, or recovery can notify people with **Manage** access to the base. Browser and email delivery follow your Cloud notification preferences. Losing **Manage** access also stops delivery of queued base alerts.
+
+Notifications use the installation language selected when the event occurs. Browser text, email, and later delivery attempts keep that language. Changing the installation language affects new events.
+
 ## Retry HTTP ingest safely
 
 Send batches to `POST /api/pulse/ingest` with the source token as a Bearer credential.

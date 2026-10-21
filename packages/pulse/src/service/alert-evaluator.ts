@@ -2,7 +2,7 @@ import { sql } from "bun";
 import { ALERT_MAX_KEYS, type AlertKeyState, type AlertSeverity, type AlertStateName, type AlertThresholds } from "../alert-contracts";
 import { nextAlertState, readAlertValues } from "./alert-state";
 import { recordBaseActivity } from "./base-activity";
-import { enqueueBaseNotice } from "./base-notifications";
+import { enqueueBaseNotice, notificationLocale } from "./base-notifications";
 import { CLOUD_SLOTS } from "./sql-admission";
 import { runAlertSql } from "./sql-service";
 import { iso, isoNullable } from "./telemetry-values";
@@ -21,6 +21,8 @@ type Claim = {
   min_duration_seconds: number;
   interval_seconds: number;
   overdue: boolean;
+  next_check_at: Date | string;
+  claimed_at: Date;
 };
 type StateRow = {
   key: string;
@@ -69,8 +71,28 @@ export const claimDueAlert = async (now: Date, database = sql): Promise<Claim | 
     const leaseId = crypto.randomUUID();
     await tx`UPDATE pulse.alert_rules SET lease_id=${leaseId}::uuid,lease_until=clock_timestamp()+interval '60 seconds',
     next_check_at=${now}::timestamptz+interval_seconds*interval '1 second' WHERE id=${rule.id}::uuid`;
-    return { ...rule, lease_id: leaseId, reset_generation: base.reset_generation };
+    return { ...rule, lease_id: leaseId, reset_generation: base.reset_generation, claimed_at: now };
   });
+/** Cancellation does not evaluate the rule. Restore its due time only while we
+ * still own this revision/lease in the same active lifecycle generation. An
+ * expired claim was already overdue before us; keep that fact on its next try. */
+export const releaseCancelledAlert = async (claim: Claim, database = sql): Promise<void> => {
+  await database.begin(async (tx) => {
+    await tx`SET LOCAL statement_timeout='5s'`.simple();
+    const [base] = await tx<{ deletion_started_at: Date | null }[]>`
+      SELECT deletion_started_at FROM pulse.bases WHERE id=${claim.base_id}::uuid FOR UPDATE`;
+    if (!base || base.deletion_started_at) return;
+    const [store] = await tx<{ state: string; reset_generation: number }[]>`
+      SELECT state,reset_generation FROM pulse.base_stores WHERE base_id=${claim.base_id}::uuid`;
+    if (!store || store.state !== "active" || store.reset_generation !== claim.reset_generation) return;
+    await tx`UPDATE pulse.alert_rules SET lease_id=NULL,lease_until=NULL,
+      next_check_at=CASE WHEN ${claim.overdue}
+        THEN LEAST(${claim.next_check_at}::timestamptz,${claim.claimed_at}::timestamptz-interval_seconds*interval '1 second')
+        ELSE ${claim.next_check_at}::timestamptz END
+      WHERE id=${claim.id}::uuid AND revision=${claim.revision} AND lease_id=${claim.lease_id}::uuid`;
+  });
+};
+
 const statePriority = (state: AlertKeyState) =>
   state.state === "error"
     ? 6
@@ -202,32 +224,66 @@ export const applyAlertEvaluation = async (
 /** Three workers match global SQL slots. Each tick starts at most 60 rules and
  * stops starting work after 50 s; each started rule owns a 10 s SQL deadline. */
 export const evaluateDueAlerts = async (
-  locale: string,
+  locale?: string,
   options: { signal?: AbortSignal; now?: () => Date; heartbeat?: () => Promise<void> } = {},
 ) => {
   const now = options.now ?? (() => new Date()),
     until = performance.now() + 50_000;
   let attempted = 0,
     applied = 0;
-  await Promise.all(
+  const workers = await Promise.allSettled(
     Array.from({ length: CLOUD_SLOTS }, async () => {
       for (let count = 0; count < 20 && performance.now() < until && !options.signal?.aborted; count++) {
+        await options.heartbeat?.();
+        if (options.signal?.aborted) break;
+        // Resolve settings before taking a lease: a settings failure must not
+        // strand a claim. Capture this locale with the resulting event.
+        const language = await notificationLocale(locale);
+        if (options.signal?.aborted) break;
         const claim = await claimDueAlert(now());
         if (!claim) break;
         attempted++;
-        const result: Awaited<ReturnType<typeof runAlertSql>> = claim.overdue
-          ? { ok: false, error: { code: "OVERDUE", message: "The alert check is overdue", status: 503 } }
-          : await runAlertSql({
-              ruleId: claim.id,
-              revision: claim.revision,
-              leaseId: claim.lease_id,
-              resetGeneration: claim.reset_generation,
-              signal: options.signal,
-            });
-        if (await applyAlertEvaluation(claim, result, now(), locale)) applied++;
+        if (options.signal?.aborted) {
+          await releaseCancelledAlert(claim);
+          break;
+        }
+        let result: Awaited<ReturnType<typeof runAlertSql>>;
+        try {
+          result = claim.overdue
+            ? { ok: false, error: { code: "OVERDUE", message: "The alert check is overdue", status: 503 } }
+            : await runAlertSql({
+                ruleId: claim.id,
+                revision: claim.revision,
+                leaseId: claim.lease_id,
+                resetGeneration: claim.reset_generation,
+                signal: options.signal,
+              });
+        } catch (error) {
+          if (options.signal?.aborted) {
+            await releaseCancelledAlert(claim);
+            if (
+              error === options.signal.reason ||
+              (error instanceof Error && (error.name === "AbortError" || ("code" in error && error.code === "CANCELLED")))
+            )
+              break;
+          }
+          // A coincident shutdown must not hide a real transport/programming failure.
+          throw error;
+        }
+        if (options.signal?.aborted) {
+          await releaseCancelledAlert(claim);
+          break;
+        }
+        if (await applyAlertEvaluation(claim, result, now(), language)) applied++;
         await options.heartbeat?.();
       }
     }),
   );
+  const failed = workers.filter((worker) => worker.status === "rejected");
+  if (failed.length)
+    throw new AggregateError(
+      failed.map((worker) => worker.reason),
+      "Pulse alert evaluation failed",
+    );
   return { attempted, applied };
 };

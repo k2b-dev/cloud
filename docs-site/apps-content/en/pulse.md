@@ -28,6 +28,9 @@ content scrolls inside it; key numbers keep their natural size.
 The overview refreshes every 60 seconds while visible. **View** on an alert
 opens its authorized SQL and parameter values in the console without running
 it. The URL stores the rule reference, so long SQL survives reload and Back.
+Number-only updates keep the headline and tiles in place. When attention rows
+appear or disappear, the list grows or shrinks naturally and following sections
+move with it. An action that remains in the list keeps keyboard focus.
 
 **Ask AI** opens an unsent Assistant draft asking what needs attention in this
 base and why. The draft carries the base resource and the Pulse skill. Data
@@ -80,6 +83,21 @@ thresholds, a minimum duration, and an interval of at least 300 seconds. A base
 starts with a limit of 20 rules. Saving uses an idempotency key and, for an
 update, the current revision. A conflict requires rereading the rule.
 `alert.save` approval can be remembered; deletion always asks.
+
+Pulse checks due rules and source freshness every minute, independently of open
+tabs. Each rule has a ten-second SQL deadline and uses only free execution
+slots, without consuming the question quota. A missed check is an error, never
+an assumed success. Work is bounded per tick: at most 60 due rules and 2,000
+sources; a backlog continues on later ticks.
+
+Firing, escalation, missing data, errors, and recovery notify the base's admins
+through Cloud; browser and email delivery are recommended and respect their
+notification preferences. Pending thresholds do not notify. The state change
+and its notification event are committed together, and delivery checks admin
+access again. The event stores the installation language (`app.locale`) as
+delivery metadata. Browser text, email, and retries use that same language,
+even if the installation language changes before delivery. This is the
+installation language, not a recipient profile language.
 
 HTTP ingest sources accept either `expectEverySeconds`, `expectDailyBy`
 (`HH:MM` in the base timezone), or neither. The UI offers these under

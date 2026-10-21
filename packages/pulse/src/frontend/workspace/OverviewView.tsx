@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { Button, ButtonLink, Chart, Format, IconButton, Skeleton } from "@k2b/ui";
-import { createMemo, createUniqueId, For, Match, Show, Switch } from "solid-js";
+import { createComputed, createMemo, createUniqueId, For, Match, on, Show, Switch } from "solid-js";
 import type { pulseMessages } from "../../messages";
 import type { Overview, OverviewActivity, OverviewAttention } from "../../overview-contracts";
 import { usePulseMessages } from "../use-messages";
@@ -382,6 +382,34 @@ export default function OverviewView(props: OverviewViewProps) {
   const denied = () => props.error?.code === "FORBIDDEN" || props.error?.code === "NOT_FOUND" || props.error?.code === "NO_READ_ACCESS";
   // Defense in depth: never render even an accidentally retained protected snapshot.
   const data = createMemo(() => (denied() ? null : props.data));
+  let attentionList: HTMLUListElement | undefined;
+  let attentionHeading: HTMLHeadingElement | undefined;
+  // A keyed row can still lose browser focus when Solid moves its DOM node.
+  // Computations run before DOM effects, even after repeated refreshes.
+  // Restore the surviving action, next surviving neighbor, previous one, or
+  // heading only if focus fell to the body; never override another target.
+  createComputed(
+    on(
+      () => data()?.attention.items,
+      () => {
+        const list = attentionList;
+        const focused = list?.ownerDocument.activeElement;
+        if (!list || !(focused instanceof HTMLElement) || !list.contains(focused)) return;
+        const actions = [...list.querySelectorAll("button")];
+        const position = actions.findIndex((button) => button === focused);
+        queueMicrotask(() => {
+          if (!list.isConnected || list.ownerDocument.activeElement !== list.ownerDocument.body) return;
+          const neighbors = [...actions.slice(position + 1), ...actions.slice(0, position).reverse()];
+          const target =
+            focused.isConnected && list.contains(focused)
+              ? focused
+              : (neighbors.find((button) => button.isConnected && list.contains(button)) ?? attentionHeading);
+          target?.focus({ preventScroll: true });
+        });
+      },
+      { defer: true },
+    ),
+  );
   const empty = () => {
     const snapshot = data();
     return !!snapshot && snapshot.sources.total === 0 && snapshot.attention.total === 0 && snapshot.numbers.length === 0;
@@ -551,7 +579,7 @@ export default function OverviewView(props: OverviewViewProps) {
                     </div>
                   }
                 >
-                  <h2 id={`${id}-attention`} class="pulse-overview__headline" aria-live="polite">
+                  <h2 ref={attentionHeading} tabIndex={-1} id={`${id}-attention`} class="pulse-overview__headline" aria-live="polite">
                     {snapshot().attention.total === 0 ? (
                       t().overviewQuiet
                     ) : snapshot().attention.total === 1 ? (
@@ -562,7 +590,7 @@ export default function OverviewView(props: OverviewViewProps) {
                       </>
                     )}
                   </h2>
-                  <ul class="pulse-overview__attention" aria-labelledby={`${id}-attention`}>
+                  <ul ref={attentionList} class="pulse-overview__attention" aria-labelledby={`${id}-attention`}>
                     {/* Stable domain IDs keep existing actions mounted across snapshot refreshes. */}
                     <For each={snapshot().attention.items.map((item) => item.id)}>
                       {(itemId) => (

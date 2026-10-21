@@ -507,6 +507,89 @@ describe("Pulse base overview", () => {
     }
   }, 60_000);
 
+  test("60-second refresh grows and shrinks attention naturally while preserving the surviving focused action", async () => {
+    const surviving = baseOverviewFixture.attention.items[0]!;
+    const expandedItems = [
+      { ...surviving, id: "alert-Alt002", reference: "Alt002", name: "CPU" },
+      { ...surviving },
+      { ...surviving, id: "alert-Alt003", reference: "Alt003", name: "Speicher" },
+    ];
+    let snapshot = { ...baseOverviewFixture, attention: { items: expandedItems, total: 3, nextOffset: null } };
+    const { tab, calls } = await open(views[1]!, overviewWorkspaceFixture, "de", () => ({ status: 200, json: snapshot }));
+    tab.setDefaultTimeout(5_000);
+    try {
+      const rows = tab.locator(".pulse-overview__attention-row");
+      const action = rows.filter({ hasText: surviving.name }).getByRole("button", { name: "Ansehen", exact: true });
+      await action.waitFor();
+      await tab.evaluate(() => document.fonts.ready);
+      await action.focus();
+      const button = await action.elementHandle();
+      expect(await button?.evaluate((node) => node === document.activeElement && node.isConnected)).toBe(true);
+      // The periodic clock is paused; wait for the actual focus/font condition
+      // instead of the generic settlement helper's animation frames.
+      await tab.waitForFunction(
+        () => document.fonts.status === "loaded" && !!document.activeElement?.closest(".pulse-overview__attention-action"),
+      );
+      const layout = () =>
+        tab.evaluate(() => {
+          const list = document.querySelector(".pulse-overview__attention")!;
+          const box = list.getBoundingClientRect();
+          return {
+            height: box.height,
+            overflow: list.scrollHeight - list.clientHeight,
+            // Relative positions measure document flow independently of browser scroll anchoring.
+            following: [".pulse-overview__numbers", ".pulse-overview__activity"].map(
+              (selector) => document.querySelector(selector)!.getBoundingClientRect().top - box.top,
+            ),
+          };
+        });
+      expect(await rows.count()).toBe(1);
+      const before = await layout();
+      await tab.clock.runFor(60_000);
+      await rows.getByText("Speicher", { exact: true }).waitFor();
+      expect(await rows.count()).toBe(3);
+      const grown = await layout();
+      expect(grown.height).toBeGreaterThan(before.height);
+      expect(grown.overflow).toBeLessThanOrEqual(1);
+      for (const [index, position] of grown.following.entries()) {
+        expect(position - before.following[index]!).toBeCloseTo(grown.height - before.height, 5);
+      }
+      expect(await button?.evaluate((node) => node === document.activeElement && node.isConnected)).toBe(true);
+
+      snapshot = { ...baseOverviewFixture, attention: { items: [{ ...surviving }], total: 1, nextOffset: null } };
+      await tab.clock.runFor(60_000);
+      await rows.getByText("Speicher", { exact: true }).waitFor({ state: "detached" });
+      expect(await rows.count()).toBe(1);
+      expect(await layout()).toEqual(before);
+      expect(await button?.evaluate((node) => node === document.activeElement && node.isConnected)).toBe(true);
+      expect(calls).toEqual(["/api/pulse/bases/Lad001/overview", "/api/pulse/bases/Lad001/overview"]);
+
+      // A refresh must not steal focus back from another action.
+      const elsewhere = tab.locator(".pulse-overview__assistant-desktop button");
+      await elsewhere.focus();
+      snapshot = { ...baseOverviewFixture, attention: { items: expandedItems, total: 3, nextOffset: null } };
+      await tab.clock.runFor(60_000);
+      await rows.getByText("Speicher", { exact: true }).waitFor();
+      expect(await elsewhere.evaluate((node) => node === document.activeElement)).toBe(true);
+
+      // A resolved row is removed, not resurrected to restore its old focus.
+      await action.focus();
+      snapshot = { ...baseOverviewFixture, attention: { items: [expandedItems[2]!], total: 1, nextOffset: null } };
+      await tab.clock.runFor(60_000);
+      await action.waitFor({ state: "detached" });
+      expect(await button?.evaluate((node) => node.isConnected)).toBe(false);
+      expect(await rows.getByRole("button", { name: "Ansehen", exact: true }).evaluate((node) => node === document.activeElement)).toBe(
+        true,
+      );
+      snapshot = { ...baseOverviewFixture, attention: { items: [], total: 0, nextOffset: null } };
+      await tab.clock.runFor(60_000);
+      await rows.waitFor({ state: "detached" });
+      expect(await tab.locator(".pulse-overview__headline").evaluate((node) => node === document.activeElement)).toBe(true);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
   test("pin reconciliation failure stays visible and a successful retry unlocks the switches without repeating the write", async () => {
     let reads = 0,
       writes = 0;

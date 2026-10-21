@@ -1,4 +1,5 @@
 import { listUsersWithAccess } from "@k2b/cloud/server";
+import { settings } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { AlertSeverity, AlertStateName } from "../alert-contracts";
 
@@ -22,6 +23,10 @@ export type BaseNotice =
       data: { baseId: string; baseName: string; sourceId: string; sourceName: string; stale: boolean; newestDataAt: string | null };
     };
 
+/** Read only the event language; importing this helper must not initialize the outbox. */
+export const notificationLocale = (locale?: string): Promise<string> =>
+  locale ? Promise.resolve(locale) : settings.get<string>("app.locale");
+
 /** Inserted in the state transaction. Fanout is durable and bounded; no admin is
  * silently dropped by the public membership API's 500-user page limit. */
 export const enqueueBaseNotice = async (db: typeof sql, baseId: string, notice: BaseNotice, locale: string): Promise<void> => {
@@ -33,7 +38,7 @@ export const enqueueBaseNotice = async (db: typeof sql, baseId: string, notice: 
 
 /** One page, one transaction. Keep an event ahead of later events for its base
  * until every user page is resolved; two replicas cannot fan out it twice. */
-export const fanoutBaseNotices = async (database = sql): Promise<number> =>
+export const fanoutBaseNotices = async (database = sql): Promise<number | null> =>
   database.begin(async (tx) => {
     await tx`SET LOCAL statement_timeout='10s'`.simple();
     const [event] = await tx<
@@ -51,7 +56,7 @@ export const fanoutBaseNotices = async (database = sql): Promise<number> =>
       AND NOT EXISTS (SELECT 1 FROM pulse.notification_outbox earlier WHERE earlier.dispatch_kind='fanout'
         AND earlier.base_id=current.base_id AND earlier.seq<current.seq)
     ORDER BY current.seq LIMIT 1 FOR UPDATE OF current SKIP LOCKED`;
-    if (!event) return 0;
+    if (!event) return null;
     const candidates = await tx<{ id: string }[]>`SELECT id FROM auth.users
     WHERE (${event.recipient_after}::uuid IS NULL OR id>${event.recipient_after}::uuid) ORDER BY id LIMIT 500`;
     const access = await tx<{ access_id: string; all_users_admin: boolean }[]>`

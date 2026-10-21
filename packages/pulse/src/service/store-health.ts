@@ -1,9 +1,9 @@
-import { accounts, logger, notifications, settings } from "@k2b/cloud/services";
+import { accounts, logger, notifications } from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
 import { sql } from "bun";
 import { app } from "../config";
 import { requireBaseAccess } from "./access-control";
-import type { BaseNotice } from "./base-notifications";
+import { type BaseNotice, notificationLocale } from "./base-notifications";
 
 const log = logger("pulse:store-health");
 type Notice =
@@ -56,8 +56,6 @@ const cloudAdmins = async (): Promise<string[]> => {
     if (!result.pagination.has_next) return ids;
   }
 };
-export const notificationLocale = (locale?: string): Promise<string> =>
-  locale ? Promise.resolve(locale) : settings.get<string>("app.locale");
 const enqueue = async (db: typeof sql, ids: string[], notice: Notice, locale: string) => {
   if (!ids.length) return;
   for (const id of ids)

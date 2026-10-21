@@ -1,6 +1,6 @@
 import { sql } from "bun";
 import { recordBaseActivity } from "./base-activity";
-import { enqueueBaseNotice } from "./base-notifications";
+import { enqueueBaseNotice, notificationLocale } from "./base-notifications";
 import { type FreshnessSource, sourceStaleSince } from "./source-staleness";
 import { iso, isoNullable } from "./telemetry-values";
 
@@ -66,15 +66,21 @@ export const checkSourceFreshnessBatch = async (locale: string, now: Date, datab
     return sources.length;
   });
 
-export const checkSourceFreshness = async (locale: string, input: { now?: Date; signal?: AbortSignal; heartbeat?: () => void } = {}) => {
+export const checkSourceFreshness = async (
+  locale?: string,
+  input: { now?: Date; signal?: AbortSignal; heartbeat?: () => Promise<void> } = {},
+) => {
   const now = input.now ?? new Date();
   const deadline = performance.now() + 50_000;
   let checked = 0;
   // Same bounded per-minute scheduling model as alert evaluation, with 100
   // sources per transaction and no external effects inside the transaction.
   for (let page = 0; page < 20 && performance.now() < deadline && !input.signal?.aborted; page++) {
-    input.heartbeat?.();
-    const count = await checkSourceFreshnessBatch(locale, now);
+    await input.heartbeat?.();
+    if (input.signal?.aborted) break;
+    const language = await notificationLocale(locale);
+    if (input.signal?.aborted) break;
+    const count = await checkSourceFreshnessBatch(language, now);
     checked += count;
     if (!count) break;
   }

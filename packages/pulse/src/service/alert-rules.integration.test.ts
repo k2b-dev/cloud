@@ -4,12 +4,13 @@ import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-in
 import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { baseStore } from "../store/base-store";
-import { applyAlertEvaluation, claimDueAlert } from "./alert-evaluator";
+import { applyAlertEvaluation, claimDueAlert, evaluateDueAlerts, releaseCancelledAlert } from "./alert-evaluator";
 import { alertRules } from "./alert-rules";
 import { enqueueBaseNotice, fanoutBaseNotices } from "./base-notifications";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { checkSourceFreshnessBatch } from "./source-freshness";
 import { createSource, removeSource, updateSource } from "./source-management";
+import * as sqlService from "./sql-service";
 
 suiteFor("database")("alert rules preserve rights, revisions and bounded control data", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
@@ -23,6 +24,104 @@ suiteFor("database")("alert rules preserve rights, revisions and bounded control
     if (database) {
       await sql.close();
       await database.drop();
+    }
+  });
+  test("interrupted alert SQL preserves PG state and outbox, releases its lease and restores the due time", async () => {
+    const baseId = "a47f31ac-d628-4505-bfd4-b5ff86ec8a98";
+    const ruleId = "b47f31ac-d628-4505-bfd4-b5ff86ec8a98";
+    const at = new Date("2000-01-01T12:00:00Z");
+    await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,'Cancel','Cancellation')`;
+    await seedActiveBaseStore(baseId);
+    await sql`INSERT INTO pulse.alert_rules(id,short_id,base_id,name,sql,comparison,warn,min_duration_seconds,interval_seconds,next_check_at,since)
+      VALUES(${ruleId}::uuid,'Cancel',${baseId}::uuid,'CPU','SELECT 1','above',80,0,300,${at},${at})`;
+    await sql`INSERT INTO pulse.alert_states(rule_id,key,state,value,since,last_checked_at)
+      VALUES(${ruleId}::uuid,'cpu','ok',50,${at},${at})`;
+    const snapshot = async () => ({
+      rules: await sql`SELECT * FROM pulse.alert_rules WHERE id=${ruleId}::uuid`,
+      states: await sql`SELECT * FROM pulse.alert_states WHERE rule_id=${ruleId}::uuid`,
+      outbox: await sql`SELECT * FROM pulse.notification_outbox WHERE base_id=${baseId}::uuid`,
+      activity: await sql`SELECT * FROM pulse.base_activity WHERE base_id=${baseId}::uuid`,
+    });
+    const before = await snapshot();
+    // Only external SQL is substituted: claims, fencing, state and outbox use PG.
+    const run = spyOn(sqlService, "runAlertSql");
+    try {
+      const preAborted = new AbortController();
+      preAborted.abort();
+      expect(await evaluateDueAlerts("en", { now: () => at, signal: preAborted.signal })).toEqual({ attempted: 0, applied: 0 });
+      expect(run).not.toHaveBeenCalled();
+      expect(await snapshot()).toEqual(before);
+      for (const rejects of [false, true]) {
+        const abort = new AbortController();
+        run.mockImplementation(async (input) => {
+          expect(input.ruleId).toBe(ruleId);
+          const [leased] = await sql<{ lease_id: string; next_check_at: Date }[]>`
+            SELECT lease_id,next_check_at FROM pulse.alert_rules WHERE id=${ruleId}::uuid`;
+          expect(leased?.lease_id).toBe(input.leaseId);
+          expect(leased?.next_check_at.toISOString()).toBe("2000-01-01T12:05:00.000Z");
+          abort.abort();
+          if (rejects) throw abort.signal.reason;
+          return { ok: false, error: { code: "CANCELLED", message: "Fixture interruption", status: 400 } };
+        });
+        expect(await evaluateDueAlerts("en", { now: () => at, signal: abort.signal })).toEqual({ attempted: 1, applied: 0 });
+        expect(await snapshot()).toEqual(before);
+      }
+      expect(run).toHaveBeenCalledTimes(2);
+    } finally {
+      run.mockRestore();
+      await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
+    }
+  });
+  test("cancelled claim release preserves superseded leases, revision and lifecycle fences, and reclaimed overdue work", async () => {
+    const baseId = "c47f31ac-d628-4505-bfd4-b5ff86ec8a98";
+    const ruleId = "d47f31ac-d628-4505-bfd4-b5ff86ec8a98";
+    const at = new Date("2000-01-01T12:00:00Z");
+    await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,'FenceC','Cancellation fences')`;
+    await seedActiveBaseStore(baseId);
+    await sql`INSERT INTO pulse.alert_rules(id,short_id,base_id,name,sql,comparison,warn,min_duration_seconds,interval_seconds,next_check_at,since)
+      VALUES(${ruleId}::uuid,'FenceC',${baseId}::uuid,'CPU','SELECT 1','above',80,0,300,${at},${at})`;
+    const rule = () => sql`SELECT * FROM pulse.alert_rules WHERE id=${ruleId}::uuid`;
+    try {
+      const claim = await claimDueAlert(at);
+      expect(claim?.id).toBe(ruleId);
+      if (!claim) throw new Error("Missing cancellation claim");
+      const claimed = await rule();
+      await releaseCancelledAlert({ ...claim, revision: claim.revision + 1 });
+      expect(await rule()).toEqual(claimed);
+      const replacementLease = "e47f31ac-d628-4505-bfd4-b5ff86ec8a98";
+      await sql`UPDATE pulse.alert_rules SET lease_id=${replacementLease}::uuid WHERE id=${ruleId}::uuid`;
+      const superseded = await rule();
+      await releaseCancelledAlert(claim);
+      expect(await rule()).toEqual(superseded);
+      await sql`UPDATE pulse.alert_rules SET lease_id=${claim.lease_id}::uuid WHERE id=${ruleId}::uuid`;
+      await sql`UPDATE pulse.base_stores SET state='clearing' WHERE base_id=${baseId}::uuid`;
+      await releaseCancelledAlert(claim);
+      expect(await rule()).toEqual(claimed);
+      await sql`UPDATE pulse.base_stores SET state='active',reset_generation=reset_generation+1 WHERE base_id=${baseId}::uuid`;
+      await releaseCancelledAlert(claim);
+      expect(await rule()).toEqual(claimed);
+      await sql`UPDATE pulse.base_stores SET reset_generation=${claim.reset_generation} WHERE base_id=${baseId}::uuid`;
+      await sql`UPDATE pulse.bases SET deletion_started_at=${at} WHERE id=${baseId}::uuid`;
+      await releaseCancelledAlert(claim);
+      expect(await rule()).toEqual(claimed);
+      await sql`UPDATE pulse.bases SET deletion_started_at=NULL WHERE id=${baseId}::uuid`;
+      // Reclaim a lease which expired before its advanced due time. Cancelling
+      // the new owner must not make that previously lost check look healthy.
+      await sql`UPDATE pulse.alert_rules SET lease_until=${at} WHERE id=${ruleId}::uuid`;
+      const reclaimed = await claimDueAlert(at);
+      expect(reclaimed?.overdue).toBe(true);
+      if (!reclaimed) throw new Error("Missing reclaimed claim");
+      await releaseCancelledAlert(reclaimed);
+      expect(
+        await sql<
+          { lease_id: string | null; lease_until: Date | null }[]
+        >`SELECT lease_id,lease_until FROM pulse.alert_rules WHERE id=${ruleId}::uuid`,
+      ).toEqual([{ lease_id: null, lease_until: null }]);
+      const retry = await claimDueAlert(at);
+      expect(retry?.id).toBe(ruleId);
+      expect(retry?.overdue).toBe(true);
+    } finally {
+      await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
     }
   });
   test("source expectations preserve revisions, rights and transactional activity", async () => {

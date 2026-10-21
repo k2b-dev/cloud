@@ -31,6 +31,12 @@ Bei einer sendenden Quelle öffnest du **Bearbeiten → Erwartete Daten**. Wähl
 
 **Erneut versuchen** lädt eine fehlgeschlagene Übersicht neu. Bei einem Speicherausfall bleiben vorhandene Werte mit ihrem Zeitpunkt sichtbar; ein nicht verfügbarer Wert ist nicht null. Wurde dein Zugriff entfernt, bitte die Base-Administration um Zugriff. Ein erneuter Ladeversuch stellt ihn nicht wieder her.
 
+## Erhalte Alarmmeldungen
+
+Pulse prüft fällige Alarmregeln und die Aktualität der Quellen jede Minute, auch wenn niemand die Base geöffnet hat. Ein ausgelöster oder verschärfter Alarm, fehlende Daten, ein Prüfungsfehler oder die Rückkehr zum Normalzustand können Personen mit Zugriff **Verwalten** auf die Base benachrichtigen. Browser- und E-Mail-Zustellung richten sich nach deinen Cloud-Benachrichtigungseinstellungen. Wer den Zugriff **Verwalten** verliert, erhält auch keine bereits vorgemerkten Base-Alarme mehr.
+
+Benachrichtigungen verwenden die Installationssprache zum Zeitpunkt des Ereignisses. Browsertext, E-Mail und spätere Zustellversuche behalten diese Sprache. Eine Änderung der Installationssprache gilt für neue Ereignisse.
+
 ## Wiederhole HTTP-Datenaufnahme sicher
 
 Sende Batches an `POST /api/pulse/ingest` mit dem Quellentoken als Bearer-Zugang.
