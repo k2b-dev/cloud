@@ -14,6 +14,8 @@ export const mailPageMessages = i18n.define({
       breadcrumbAutomaticReplies: "Automatic replies",
       breadcrumbWorkflows: "Workflows",
       draft: "Draft",
+      reviewChanged: "This draft has changed",
+      reviewChangedDescription: "Return to the question and ask the Assistant to review the draft again.",
       newMessage: "New message",
       adminMailboxes: "Mailboxes",
       adminDescription: "Recover access and inspect redacted operational status without opening message or attachment content.",
@@ -146,6 +148,8 @@ export const mailPageMessages = i18n.define({
       breadcrumbAutomaticReplies: "Automatische Antworten",
       breadcrumbWorkflows: "Workflows",
       draft: "Entwurf",
+      reviewChanged: "Dieser Entwurf hat sich geändert",
+      reviewChangedDescription: "Kehre zur Frage zurück und lass den Assistant den Entwurf erneut prüfen.",
       newMessage: "Neue E-Mail",
       adminMailboxes: "Postfächer",
       adminDescription:

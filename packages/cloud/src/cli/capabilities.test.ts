@@ -3,6 +3,7 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import { defineCapabilities } from "../contracts/capabilities";
 import capabilitiesCliModule from "./capabilities";
 import type { CloudCliContext, CloudCliFlags } from "./index";
@@ -351,4 +352,18 @@ test("read reuses its manifest when it covers every result ref", async () => {
   expect(JSON.parse(lines[0] ?? "").refs).toEqual([
     { type: "library.book", id: "b1", permalink: "http://cloud.test/open/library.book/~b1" },
   ]);
+});
+
+test("generic CLI review returns the complete unsaved proposal without executing an Action", async () => {
+  const review = { ...reviewFixture(), content: { kind: "page", title: "Unsaved", body: "x".repeat(300_000), format: "plain" } };
+  const calls: string[] = [];
+  const { ctx, lines } = createContext(["review", "demo", "write"], { input: '{"body":"new"}' }, async (path, init) => {
+    calls.push(path);
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ input: { body: "new" } });
+    return Response.json(review);
+  });
+  await capabilitiesCliModule.run(ctx);
+  expect(calls).toEqual(["/api/capabilities/v1/actions/demo/write/review"]);
+  expect(lines.map((line) => JSON.parse(line))).toEqual([review]);
 });

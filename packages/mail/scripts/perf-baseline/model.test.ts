@@ -81,7 +81,7 @@ test("summary is pure, shows failed scenarios and median comparisons", () => {
 });
 test("compare schema clearly rejects page results, wrong versions and corrupt mail results", () => {
   expect(() => parsePrevious({ schemaVersion: 1, pages: [] })).toThrow("Mail result");
-  expect(() => parsePrevious({ ...exampleResult(), schemaVersion: 2 })).toThrow();
+  expect(() => parsePrevious({ ...exampleResult(), schemaVersion: 3 })).toThrow();
   expect(() => parsePrevious({ kind: "mail", schemaVersion: 1 })).toThrow();
   expect(parsePrevious(exampleResult()).kind).toBe("mail");
 });

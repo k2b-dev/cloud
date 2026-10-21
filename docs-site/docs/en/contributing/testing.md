@@ -1220,7 +1220,14 @@ slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
 Accounts, Grids, Mail, and Chat images, boots them against fresh infrastructure,
 and runs the Grids, Mail, and Chat browser smokes against that stack. It runs
 independently of the Assistant browser suites, so a failure in one does not hide
-the other's result. The smokes accept pending legal documents using the version
+the other's result.
+
+The Nightly `grids` job retains complete phase logs, JUnit reports, and
+verification environment metadata in a `nightly-grids-certification-*` artifact
+when certification fails, as the pull request Grids job does. Read these
+reports before attributing a phase failure to a specific test.
+
+The smokes accept pending legal documents using the version
 rendered in the consent page's `data-legal-version` attribute; they must not read
 island props, whose encoding is internal.
 

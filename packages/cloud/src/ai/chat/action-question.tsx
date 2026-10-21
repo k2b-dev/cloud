@@ -4,15 +4,25 @@ import {
   Chat,
   type ChatDecisionState,
   type ChatOutcomeLine,
+  dialogCore,
   isStructuredDataValue,
   LocaleProvider,
   MarkdownView,
+  PanelDialog,
+  Placeholder,
+  panelDialogOptions,
   ReferenceChip,
   StructuredDataPreview,
 } from "@k2b/ui";
 import { Lexer, type Token, type Tokens } from "marked";
-import { createMemo, createSignal, createUniqueId, For, type JSX, Match, Show, Switch } from "solid-js";
-import type { CapabilityPerson, CapabilityPreview } from "../../contracts/capabilities";
+import { createMemo, createSignal, createUniqueId, For, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { readCapabilityReviewContent } from "../../capabilities/client";
+import type {
+  CapabilityPerson,
+  CapabilityPreview,
+  CapabilityReviewContent,
+  CapabilityReviewContentRef,
+} from "../../contracts/capabilities";
 import { formatBytes } from "../../shared/format";
 import type { ActionCard, ActionChip, ActionPreviewModel, ActionText } from "./action-card";
 import { actionMessages } from "./action-messages";
@@ -160,13 +170,13 @@ const mayOverflow = (text: string): boolean =>
  * not fit offers to show the rest in place, and any other text stands whole, so nothing a person approves stays out of
  * reach even where the estimate is short, such as for wide characters.
  */
-function PreviewExcerpt(props: { text: string; readMore?: string; label: string }) {
+function PreviewExcerpt(props: { text: string; readMore?: string; label: string; full?: boolean; compact?: boolean }) {
   const id = createUniqueId();
   const [expanded, setExpanded] = createSignal(false);
-  const offer = () => !props.readMore && mayOverflow(props.text);
+  const offer = () => !props.full && !props.compact && !props.readMore && mayOverflow(props.text);
   return (
     <>
-      <Chat.Preview.Excerpt id={id} expanded={expanded() || (!props.readMore && !offer())}>
+      <Chat.Preview.Excerpt id={id} expanded={props.full || expanded() || (!props.compact && !props.readMore && !offer())}>
         {props.text}
       </Chat.Preview.Excerpt>
       <Show when={offer() && !expanded()}>
@@ -219,17 +229,25 @@ function MessagePreview(props: {
   readMore?: string;
   /** Only a question that sends says when the mail goes out; a draft that is created or deleted goes nowhere. */
   sends: boolean;
+  full?: boolean;
+  compact?: boolean;
 }) {
   const t = () => actionMessages(props.locale);
+  const text = (value: string) => (props.full ? visibleReviewText(value) : value);
+  const person = (value: CapabilityPerson) => ({
+    ...personRow(value),
+    ...(value.name !== undefined ? { name: text(value.name) } : {}),
+    ...(value.address !== undefined ? { address: text(value.address) } : {}),
+  });
   const rows = () => {
     const p = props.preview;
     const more = (count?: number) => (count ? { value: <> {t().andMore({ count })}</> } : {});
     return [
-      ...(p.from ? [{ label: t().from, people: [personRow(p.from)] }] : []),
-      { label: t().to, people: p.to.map(personRow), ...more(p.more?.to) },
-      ...(p.cc?.length || p.more?.cc ? [{ label: t().cc, people: (p.cc ?? []).map(personRow), ...more(p.more?.cc) }] : []),
+      ...(p.from ? [{ label: t().from, people: [person(p.from)] }] : []),
+      { label: t().to, people: p.to.map(person), ...more(p.more?.to) },
+      ...(p.cc?.length || p.more?.cc ? [{ label: t().cc, people: (p.cc ?? []).map(person), ...more(p.more?.cc) }] : []),
       ...(p.bcc?.length || p.more?.bcc
-        ? [{ label: t().bcc, people: (p.bcc ?? []).map(personRow), emphasis: true, ...more(p.more?.bcc) }]
+        ? [{ label: t().bcc, people: (p.bcc ?? []).map(person), emphasis: true, ...more(p.more?.bcc) }]
         : []),
     ];
   };
@@ -251,9 +269,15 @@ function MessagePreview(props: {
   return (
     <>
       <Chat.Preview.Header rows={rows()} note={note()} />
-      <Chat.Preview.Title>{props.preview.subject || t().noSubject}</Chat.Preview.Title>
-      <Show when={props.preview.body.trim()}>
-        <PreviewExcerpt text={excerptText(props.preview.body, props.preview.format)} readMore={props.readMore} label={t().readMail} />
+      <Chat.Preview.Title>{text(props.preview.subject) || t().noSubject}</Chat.Preview.Title>
+      <Show when={props.full || props.preview.body.trim()}>
+        <PreviewExcerpt
+          text={props.full ? visibleReviewText(props.preview.body) : excerptText(props.preview.body, props.preview.format)}
+          readMore={props.readMore}
+          label={t().readMail}
+          full={props.full}
+          compact={props.compact}
+        />
       </Show>
       <For each={props.preview.attachments ?? []}>
         {(attachment) => (
@@ -262,7 +286,7 @@ function MessagePreview(props: {
             accent={attachmentLook(attachment.name).accent}
             meta={attachment.size !== undefined ? formatBytes(attachment.size, { locale: props.locale }) : undefined}
           >
-            {attachment.name}
+            {text(attachment.name)}
           </Chat.Preview.Line>
         )}
       </For>
@@ -276,7 +300,7 @@ function MessagePreview(props: {
       <For each={props.preview.warnings ?? []}>
         {(warning) => (
           <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
-            <WarningText text={warning} />
+            <WarningText text={text(warning)} />
           </Chat.Preview.Line>
         )}
       </For>
@@ -291,7 +315,14 @@ function MessagePreview(props: {
   );
 }
 
-function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "review" }>; card: ActionCard; readMore?: string }) {
+function ReviewPreviewBody(props: {
+  model: Extract<ActionPreviewModel, { kind: "review" }>;
+  card: ActionCard;
+  readMore?: string;
+  full?: boolean;
+  baseRevision?: number;
+  compact?: boolean;
+}) {
   const t = () => actionMessages(props.model.locale);
   const locale = () => props.model.locale;
   const tz = () => props.model.timeZone;
@@ -308,6 +339,9 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
   const preview = () => props.model.preview;
   return (
     <Chat.Preview>
+      <Show when={props.baseRevision !== undefined}>
+        <Chat.Preview.Line icon="ti ti-history">{t().baseRevision({ revision: props.baseRevision! })}</Chat.Preview.Line>
+      </Show>
       <Switch>
         <Match when={preview()?.kind === "message" ? (preview() as Extract<CapabilityPreview, { kind: "message" }>) : undefined}>
           {(message) => (
@@ -317,6 +351,8 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
               timeZone={tz()}
               readMore={props.readMore}
               sends={props.card.reason.code === "sends"}
+              full={props.full}
+              compact={props.compact}
             />
           )}
         </Match>
@@ -407,9 +443,17 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
         <Match when={preview()?.kind === "page" ? (preview() as Extract<CapabilityPreview, { kind: "page" }>) : undefined}>
           {(page) => (
             <>
-              <Chat.Preview.Title meta={page().place}>{page().title}</Chat.Preview.Title>
-              <Show when={page().body.trim()}>
-                <PreviewExcerpt text={excerptText(page().body, page().format)} readMore={props.readMore} label={t().readPage} />
+              <Chat.Preview.Title meta={props.full && page().place ? visibleReviewText(page().place!) : page().place}>
+                {props.full ? visibleReviewText(page().title) : page().title}
+              </Chat.Preview.Title>
+              <Show when={props.full || page().body.trim()}>
+                <PreviewExcerpt
+                  text={props.full ? visibleReviewText(page().body) : excerptText(page().body, page().format)}
+                  readMore={props.readMore}
+                  label={t().readPage}
+                  full={props.full}
+                  compact={props.compact}
+                />
               </Show>
               <Show when={page().changes?.length ? page().changes : undefined}>
                 {(changes) => (
@@ -567,20 +611,153 @@ function LegacyPreview(props: { model: Extract<ActionPreviewModel, { kind: "lega
   );
 }
 
+/** Controls remain inspectable instead of being removed or changing reading order. */
+export const visibleReviewText = (text: string): string =>
+  text.replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, (character) =>
+    character === "\n" || character === "\t" ? character : `⟦U+${character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}⟧`,
+  );
+
+function ReviewContentPanel(props: {
+  card: ActionCard;
+  source: CapabilityReviewContentRef;
+  timeZone: string;
+  close: () => void;
+  onLoaded: () => void;
+}) {
+  const t = () => actionMessages(props.card.locale);
+  const [content, setContent] = createSignal<CapabilityReviewContent>();
+  const [failed, setFailed] = createSignal(false);
+  const [loading, setLoading] = createSignal(false);
+  let request: AbortController | undefined;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+    request?.abort();
+  });
+  const load = async () => {
+    if (loading() || disposed) return;
+    request = new AbortController();
+    setLoading(true);
+    setFailed(false);
+    try {
+      const result = await readCapabilityReviewContent(props.source, { signal: request.signal });
+      if (!result.ok) throw new Error(result.error.message);
+      if (disposed) return;
+      setContent(result.data);
+      props.onLoaded();
+    } catch {
+      if (!disposed) setFailed(true);
+    } finally {
+      if (!disposed) setLoading(false);
+    }
+  };
+  onMount(() => void load());
+  return (
+    <LocaleProvider locale={props.card.locale}>
+      <PanelDialog>
+        <PanelDialog.Header
+          icon={props.card.app.icon}
+          title={t().fullReview}
+          subtitle={props.card.questionText}
+          close={props.close}
+          closeLabel={t().fullReviewClose}
+        />
+        <PanelDialog.Body>
+          <Show
+            when={content()}
+            fallback={
+              <Show when={failed()} fallback={<Placeholder state="loading" title={t().fullReviewLoading} variant="panel" />}>
+                <Placeholder
+                  state="error"
+                  title={t().fullReviewFailed}
+                  variant="panel"
+                  action={
+                    <Button variant="secondary" onClick={() => void load()}>
+                      {t().fullReviewRetry}
+                    </Button>
+                  }
+                />
+              </Show>
+            }
+          >
+            {(value) => (
+              <ReviewPreviewBody
+                card={props.card}
+                full
+                baseRevision={value().baseRevision}
+                model={{
+                  kind: "review",
+                  locale: props.card.locale,
+                  timeZone: props.timeZone,
+                  preview: value(),
+                  slots: {},
+                  consequences: [],
+                }}
+              />
+            )}
+          </Show>
+        </PanelDialog.Body>
+      </PanelDialog>
+    </LocaleProvider>
+  );
+}
+
 /** The thing the question is about, from its review, or an old review's rows and Markdown. */
-export function ActionPreview(props: { card: ActionCard; timeZone: string }) {
+export function ActionPreview(props: { card: ActionCard; timeZone: string; onContentLoaded?: (key: string) => void }) {
   return (
     <>
       <Show when={props.card.preview}>
         {(model) => (
           <Switch>
             <Match when={model().kind === "review" ? (model() as Extract<ActionPreviewModel, { kind: "review" }>) : undefined}>
-              {(review) => <ReviewPreviewBody model={review()} card={props.card} readMore={props.card.readMore} />}
+              {(review) => (
+                <ReviewPreviewBody
+                  model={review()}
+                  card={props.card}
+                  compact={!!props.card.contentRef}
+                  readMore={props.card.contentRef ? undefined : props.card.readMore}
+                />
+              )}
             </Match>
             <Match when={model().kind === "legacy" ? (model() as Extract<ActionPreviewModel, { kind: "legacy" }>) : undefined}>
               {(legacy) => <LegacyPreview model={legacy()} card={props.card} timeZone={props.timeZone} />}
             </Match>
           </Switch>
+        )}
+      </Show>
+      <Show when={props.card.contentRef}>
+        {(reference) => (
+          <Chat.Preview>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const card = props.card;
+                const source = reference();
+                void dialogCore.open<void>(
+                  (close) => (
+                    <ReviewContentPanel
+                      card={card}
+                      source={source}
+                      timeZone={props.timeZone}
+                      close={close}
+                      onLoaded={() => props.onContentLoaded?.(`${source.href}:${source.digest}`)}
+                    />
+                  ),
+                  { ...panelDialogOptions, history: true, ariaLabel: actionMessages(card.locale).fullReview },
+                );
+              }}
+            >
+              {actionMessages(props.card.locale).fullReview}
+            </Button>
+            <Show when={props.card.readMore}>
+              {(href) => (
+                <Chat.Preview.ReadMore href={href()}>
+                  {actionMessages(props.card.locale).openIn({ app: props.card.app.name })}
+                </Chat.Preview.ReadMore>
+              )}
+            </Show>
+          </Chat.Preview>
         )}
       </Show>
       {/* The review's other links, such as editing the draft, stay one quiet click away before the answer. */}
@@ -655,6 +832,9 @@ const confirmIcon = (card: ActionCard): string | undefined =>
 
 /** One Assistant question in card v4. An answer collapses it at once to its outcome line, which takes the focus. */
 export function ActionQuestion(props: ActionQuestionProps) {
+  const [loadedContent, setLoadedContent] = createSignal<string>();
+  const needsContent = () => props.card.contentRef && loadedContent() !== `${props.card.contentRef.href}:${props.card.contentRef.digest}`;
+  const unavailable = () => props.unavailable ?? (needsContent() ? actionMessages(props.card.locale).fullReviewRequired : undefined);
   return (
     <LocaleProvider locale={props.card.locale}>
       <Chat.Decision
@@ -663,8 +843,8 @@ export function ActionQuestion(props: ActionQuestionProps) {
         anchorId={props.anchorId}
         sentence={<ActionTextView text={props.card.question} accent={props.card.app.accent} />}
         reason={{ text: props.card.reason.text, icon: props.card.reason.icon, tone: props.card.reason.tone }}
-        unavailable={props.unavailable ? { text: props.unavailable, icon: "ti ti-player-pause", tone: "neutral" } : undefined}
-        preview={<ActionPreview card={props.card} timeZone={props.timeZone} />}
+        unavailable={unavailable() ? { text: unavailable()!, icon: "ti ti-player-pause", tone: "neutral" } : undefined}
+        preview={<ActionPreview card={props.card} timeZone={props.timeZone} onContentLoaded={setLoadedContent} />}
         confirm={{
           label: props.card.confirm.label,
           variant: props.card.confirm.variant,
