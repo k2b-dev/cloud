@@ -1,5 +1,6 @@
 import type { sql } from "bun";
-import { notificationLocale, recordInstanceDisk, recordStorageThreshold, recordStoreOutage } from "../service/store-health";
+import { notificationLocale } from "../service/base-notifications";
+import { recordInstanceDisk, recordStorageThreshold, recordStoreOutage } from "../service/store-health";
 import { assertStoreName } from "./base-schema";
 import { BaseOperationSuperseded, baseStore, loadStoreRow, type StoreRow } from "./base-store";
 import { StoreQueryError } from "./client";

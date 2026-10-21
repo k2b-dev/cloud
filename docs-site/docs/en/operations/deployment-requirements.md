@@ -209,6 +209,16 @@ Pulse's six default jobs are `pulse:metrics:scrape`, `pulse:rollup:hourly`,
 `pulse:retention`, `pulse:base-lifecycle`, `pulse:base-usage`, and
 `pulse:base-checkpoint`. Its scheduler `pulse` checks due scrapes every minute,
 submits hourly calculation at minute 23, and runs retention at 03:17 UTC.
+It also checks due SQL alerts and source freshness and resolves notification
+recipients every minute. Those scans are bounded and resume from PostgreSQL
+state on later ticks; they do not add per-base Sync resources. Alert events
+store `app.locale` as delivery metadata, including for retries after a language
+change. Its six schedules share four local handler slots. Scrape, rollup, and
+retention dispatch may briefly wait when all slots are occupied; each schedule
+remains serial across replicas, and the existing three global SQL slots still apply.
+Shutdown stops new scans and cancels in-flight alert SQL before draining workers.
+An intentional cancellation releases its owned claim for a later tick without
+recording an alert failure or sending a notification.
 Scheduler `pulse:stores` sweeps unfinished lifecycle work every minute,
 measures usage every five minutes, and writes checkpoints on the hour.
 Scheduler definitions are separate from the six jobs in the reservation table.

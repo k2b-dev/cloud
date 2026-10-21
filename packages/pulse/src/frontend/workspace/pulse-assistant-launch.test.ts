@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { launchPulseSqlAssistant } from "./pulse-assistant-launch";
+import { launchPulseOverviewAssistant, launchPulseSqlAssistant } from "./pulse-assistant-launch";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -84,4 +84,37 @@ test("keeps SQL fence content intact and surfaces launch failure without sending
     preconnect: originalFetch.preconnect,
   });
   await expect(launchPulseSqlAssistant({ base: { id: "Base01", name: "Shop" }, sql: "SELECT 1", params: {} })).rejects.toThrow("offline");
+});
+
+test("overview opens the exact localized unsent draft with the base and read tools", async () => {
+  for (const [locale, title, text] of [
+    ["de", "Was ist los in Shop?", "Was braucht in Shop gerade Aufmerksamkeit, und warum?"],
+    ["en", "What is happening in Shop?", "What needs attention in Shop right now, and why?"],
+  ]) {
+    const calls = capture();
+    await launchPulseOverviewAssistant({ base: { id: "Base01", name: "Shop" }, locale });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body).toEqual({
+      launchedByAppId: "pulse",
+      title,
+      skills: ["cloud-pulse"],
+      preloadTools: [
+        { appId: "pulse", kind: "query", id: "sql.run" },
+        { appId: "pulse", kind: "query", id: "base.read" },
+        { appId: "pulse", kind: "query", id: "source.list" },
+      ],
+      draft: {
+        content: [
+          { type: "text", text },
+          {
+            type: "resource",
+            ref: { type: "pulse.base", id: "Base01" },
+            title: "Shop",
+            icon: "ti ti-activity-heartbeat",
+            href: "/app/pulse/Base01",
+          },
+        ],
+      },
+    });
+  }
 });

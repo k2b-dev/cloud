@@ -43,6 +43,18 @@ const seedOld = async (ledger: boolean) => {
     await sql`INSERT INTO pulse.schema_migrations(version,name) VALUES(1,'baseline'),(2,'base_stores')`;
   } else await sql`CREATE TABLE pulse.installation(installed_at TIMESTAMPTZ)`.simple();
 };
+const removeOverviewMigration = async () => {
+  await sql`DELETE FROM pulse.schema_migrations WHERE version=5`;
+  await sql`DROP TABLE pulse.overview_state,pulse.alert_states,pulse.alert_rules,pulse.alert_rule_operations,pulse.base_activity`.simple();
+  await sql`ALTER TABLE pulse.notification_outbox DROP CONSTRAINT pulse_notification_destination,
+    DROP CONSTRAINT pulse_notification_event_recipient, DROP COLUMN base_id,DROP COLUMN event_id,
+    DROP COLUMN recipient_after,DROP COLUMN dispatch_kind,ALTER COLUMN user_id SET NOT NULL`.simple();
+  await sql`ALTER TABLE pulse.sources DROP CONSTRAINT pulse_source_expectation,
+    DROP COLUMN expect_every_seconds,DROP COLUMN expect_daily_by,DROP COLUMN stale_since,
+    DROP COLUMN revision,DROP COLUMN next_freshness_check_at`.simple();
+  await sql`ALTER TABLE pulse.saved_queries DROP COLUMN pinned`.simple();
+  await sql`ALTER TABLE pulse.base_stores DROP COLUMN max_alert_rules`.simple();
+};
 suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
   databaseTest(
     "fresh installation is atomic and creates no extension",
@@ -60,6 +72,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
       expect(await sql<{ version: number; name: string }[]>`SELECT version,name FROM pulse.schema_migrations`).toEqual([
         { version: 3, name: "clickhouse_baseline" },
         { version: 4, name: "sql_console" },
+        { version: 5, name: "overview_alerts" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
       const ddl = await readFile(`${import.meta.dir}/schema.ts`, "utf8");
@@ -68,7 +81,11 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
       expect(installation?.absent).toBe(true);
       const tables = await sql<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname='pulse' ORDER BY tablename`;
       expect(tables.map((t) => t.tablename)).toEqual([
+        "alert_rule_operations",
+        "alert_rules",
+        "alert_states",
         "base_access",
+        "base_activity",
         "base_internal_targets",
         "base_stores",
         "bases",
@@ -78,6 +95,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         "metric_hours",
         "metric_series",
         "notification_outbox",
+        "overview_state",
         "saved_queries",
         "saved_query_operations",
         "schema_migrations",
@@ -110,6 +128,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
       30000,
     );
   databaseTest("migration 4 upgrades an existing baseline once under concurrent startup", async () => {
+    await removeOverviewMigration();
     await sql`DELETE FROM pulse.schema_migrations WHERE version=4`;
     await sql`DROP TABLE pulse.saved_query_operations,pulse.saved_queries`.simple();
     await sql`ALTER TABLE pulse.bases DROP COLUMN icon,DROP COLUMN color,DROP COLUMN timezone`.simple();
@@ -123,6 +142,29 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
     expect(quota?.column_default).toBe("600");
     await migrate();
     expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=4`).toHaveLength(1);
+  });
+  databaseTest("migration 5 preserves saved SQL and adds expectations once under concurrent startup", async () => {
+    await removeOverviewMigration();
+    await sql`INSERT INTO pulse.saved_queries(short_id,base_id,name,sql) VALUES('Query5',${base}::uuid,'Preserved SQL','SELECT 1')`;
+    await Promise.all([migrate(), migrate(), migrate()]);
+    expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=5`).toHaveLength(1);
+    expect(
+      await sql<{ name: string; sql: string; pinned: boolean }[]>`SELECT name,sql,pinned FROM pulse.saved_queries WHERE short_id='Query5'`,
+    ).toEqual([{ name: "Preserved SQL", sql: "SELECT 1", pinned: false }]);
+    const [budget] = await sql`SELECT column_default FROM information_schema.columns
+      WHERE table_schema='pulse' AND table_name='base_stores' AND column_name='max_alert_rules'`;
+    expect(budget?.column_default).toBe("20");
+    await sql`INSERT INTO pulse.sources(id,short_id,base_id,name,kind) VALUES(${source}::uuid,'Push05',${base}::uuid,'Daily push','http_ingest')`;
+    await sql`UPDATE pulse.sources SET expect_daily_by='04:00' WHERE id=${source}::uuid`;
+    await expect(sql`UPDATE pulse.sources SET expect_every_seconds=60 WHERE id=${source}::uuid`.execute()).rejects.toThrow();
+    await expect(sql`UPDATE pulse.sources SET expect_daily_by='24:00' WHERE id=${source}::uuid`.execute()).rejects.toThrow();
+    await expect(sql`UPDATE pulse.sources SET kind='metrics' WHERE id=${source}::uuid`.execute()).rejects.toThrow();
+    await migrate();
+    expect(
+      await sql<
+        { expect_daily_by: string; stale_since: Date | null }[]
+      >`SELECT expect_daily_by,stale_since FROM pulse.sources WHERE id=${source}::uuid`,
+    ).toEqual([{ expect_daily_by: "04:00", stale_since: null }]);
   });
   databaseTest("refuses unknown newer versions before touching old data", async () => {
     await sql`INSERT INTO pulse.schema_migrations(version,name) VALUES(99,'future')`;
