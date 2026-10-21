@@ -24,6 +24,7 @@ import { dialogCore } from "../feedback/dialog-core";
 import { RenderErrorBoundary } from "../internal/render-error";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
+  APP_WORKSPACE_DETAIL_OPEN_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
   type AppWorkspaceDetailStep,
@@ -122,6 +123,8 @@ const navTreeItemSlot = (value: unknown): value is NavTreeItemSlot =>
   Boolean(value && typeof value === "object" && "kind" in value && (value as NavTreeItemSlot).kind === NAV_TREE_ITEM);
 
 export type AppWorkspaceHeadProps = {
+  /** Below 48rem, show this head only with this active Main region. Unsplit Mains keep their head. */
+  mobilePane?: string;
   /** View tabs, usually a ViewTabs. */
   views?: JSX.Element;
   /** Filter chips, usually FilterChip elements. */
@@ -292,6 +295,10 @@ export type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
 export type AppWorkspaceDetailProps = {
   children: JSX.Element;
   open: boolean;
+  /** Keeps the shared head control reachable while closed; set the app's existing open state synchronously. */
+  onOpen?: () => void;
+  /** Whether the current object may show details. False disables reopening and hides the panel. */
+  available?: boolean;
   /**
    * Whether choosing an item in Main opens this Detail as the drawer while it waits.
    * Set false when Main itself shows the chosen item, such as a reader beside a list:
@@ -309,6 +316,7 @@ export type AppWorkspaceDetailProps = {
   maxWidth?: number;
   /**
    * Closes the column with Escape, or the phone sheet with a downward drag.
+   * With onOpen, the shared head control also closes the column or phone sheet.
    * Server-rendered panels mark their close control with
    * `data-workspace-detail-close` instead; those gestures click it.
    * Escape and a rightward touch swipe park an open waiting drawer without
@@ -901,6 +909,9 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   let aside: HTMLElement | undefined;
   onMount(() => {
     const close = () => props.onClose?.();
+    const open = () => {
+      if (props.available !== false) props.onOpen?.();
+    };
     const isStep = (detail: unknown): detail is AppWorkspaceDetailStep =>
       typeof detail === "object" && detail !== null && "direction" in detail && (detail.direction === 1 || detail.direction === -1);
     const step = (event: Event) => {
@@ -908,9 +919,11 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
       const item = props.onStep?.(event.detail.direction);
       if (item instanceof HTMLElement) event.detail.item = item;
     };
+    aside?.addEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, open);
     aside?.addEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
     aside?.addEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);
     onCleanup(() => {
+      aside?.removeEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, open);
       aside?.removeEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
       aside?.removeEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);
     });
@@ -924,6 +937,8 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         aria-controls={domId()}
         aria-expanded="false"
         data-app-workspace-detail-toggle=""
+        data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
+        disabled={props.available === false}
         class="k2b-app-workspace__detail-toggle"
       >
         <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
@@ -950,9 +965,10 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         data-workspace-detail-choice={props.openOnChoice === false ? "request" : undefined}
         data-workspace-panel-id={panelId()}
         data-workspace-resizable={resizable() ? "true" : "false"}
+        data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
         data-workspace-detail-closable={props.onClose ? "true" : undefined}
         data-workspace-detail-steppable={props.onStep ? "true" : undefined}
-        hidden={!props.open}
+        hidden={!props.open || props.available === false}
         style={{ ...sizeStyle(), "view-transition-name": props.viewTransitionName }}
       >
         {/* Only the phone sheet shows the grabber: a tap switches between half and full height. */}
@@ -2162,6 +2178,16 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
   const resolvedCount = children(() => props.head?.count);
   // A nested workspace is part of a page that already shows its title.
   const trail = props.nested ? () => undefined : usePageTrail();
+  // Main already publishes the active region in SSR and on each selection.
+  // Scope both sides to this workspace, including transparent island hosts;
+  // a nested Main must never decide whether its parent's head is visible.
+  const mobilePane = () =>
+    props.head?.mobilePane === undefined ? undefined : assertStableUiId(props.head.mobilePane, "AppWorkspace.Head mobilePane");
+  const mobilePaneRule = (pane: string) => {
+    const main = `.k2b-app-workspace__main.has-panes:not([data-workspace-levels]) > [data-workspace-mobile-active="true"]:not([data-workspace-main-region="${pane}"])`;
+    const host = `.k2b-ui .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane="${pane}"]):has(> .k2b-app-workspace__content > ${main}, > .k2b-app-workspace__content > :is(solid-island, solid-client) > ${main})`;
+    return `@media not all and (min-width:48rem){${host} > .k2b-app-workspace__head,${host} > .k2b-app-workspace__content > .k2b-app-workspace__detail-toggle,${host} > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail-toggle{display:none}}`;
+  };
   const resetContent = () => filters().reset;
   const primaryContent = () => (
     <>
@@ -2174,7 +2200,9 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
       class="k2b-app-workspace__head"
       data-trail={trail()?.ancestors.length ? "up" : trail() ? "title" : undefined}
       data-row={props.head ? "" : undefined}
+      data-workspace-head-pane={mobilePane()}
     >
+      <Show when={mobilePane()}>{(pane) => <style innerHTML={mobilePaneRule(pane())} />}</Show>
       <div class="k2b-app-workspace__head-lead">
         <IconButton
           class="k2b-app-workspace__head-toggle"
@@ -2311,11 +2339,17 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
     const slots = createMemo(() => flatten(resolved()));
     // Same props object, same memo value: a sibling change must not rebuild the head's slots.
     const head = createMemo(() => slots().find(headSlot)?.props);
-    const content = () => slots().filter((value) => !headSlot(value)) as JSX.Element;
+    // Keep one head instance at the explicit slot's position. Object links
+    // before it must also precede its view controls in SSR and keyboard order.
+    // Callers without a slot retain the automatic leading head.
+    const renderedHead = <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />;
     return (
       <>
-        <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />
-        {content()}
+        {
+          (head()
+            ? slots().map((value) => (headSlot(value) ? (value.props === head() ? renderedHead : null) : value))
+            : [renderedHead, ...slots()]) as JSX.Element
+        }
       </>
     );
   };

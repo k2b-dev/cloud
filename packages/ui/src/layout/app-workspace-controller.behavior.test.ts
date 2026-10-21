@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Window as HappyWindow } from "happy-dom";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
+  APP_WORKSPACE_DETAIL_OPEN_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
   installAppWorkspaceController,
@@ -2300,6 +2301,171 @@ describe("waiting detail drawers", () => {
     fixture.aside.style.setProperty("--k2b-workspace-detail-waiting", "1");
     return { ...fixture, toggle };
   };
+
+  for (const form of ["column", "waiting", "phone"] as const) {
+    test(`reopenable ${form} detail keeps app visibility, drawer state and focus separate`, async () => {
+      if (form === "phone")
+        Object.defineProperty(window, "matchMedia", {
+          value: (query: string) => ({ matches: query === "(max-width: 47.999rem)", addEventListener() {}, removeEventListener() {} }),
+        });
+      const { root, aside, toggle, title } = waitingWorkspace();
+      if (form !== "waiting") aside.style.removeProperty("--k2b-workspace-detail-waiting");
+      aside.hidden = true;
+      aside.dataset.workspaceDetailReopen = "true";
+      toggle.dataset.workspaceDetailReopen = "true";
+      let opens = 0;
+      aside.addEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, () => {
+        opens++;
+        aside.hidden = false;
+      });
+      aside.addEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, () => {
+        aside.hidden = true;
+      });
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        toggle.focus();
+        toggle.click();
+        await window.happyDOM.whenAsyncComplete();
+        expect(opens).toBe(1);
+        expect(aside.hidden).toBe(false);
+        expect(toggle.getAttribute("aria-expanded")).toBe("true");
+        expect(document.activeElement === title).toBe(true);
+        detailKey(title, "Escape");
+        await window.happyDOM.whenAsyncComplete();
+        expect(aside.hidden).toBe(form !== "waiting");
+        expect(toggle.getAttribute("aria-expanded")).toBe("false");
+        expect(document.activeElement === toggle).toBe(true);
+        toggle.click();
+        await window.happyDOM.whenAsyncComplete();
+        expect(aside.hidden).toBe(false);
+        // X closes application visibility, unlike parking a waiting drawer.
+        title.focus();
+        aside.dispatchEvent(new CustomEvent(APP_WORKSPACE_DETAIL_CLOSE_EVENT));
+        await window.happyDOM.whenAsyncComplete();
+        expect(aside.hidden).toBe(true);
+        expect(toggle.getAttribute("aria-expanded")).toBe("false");
+        expect(document.activeElement === toggle).toBe(true);
+        toggle.click();
+        expect(aside.hidden).toBe(false);
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  for (const initiallyWaiting of [false, true]) {
+    test(`a persistent toggle keeps pointer focus on resize into a column (waiting ${initiallyWaiting})`, () => {
+      const { root, aside, toggle } = waitingWorkspace();
+      aside.dataset.workspaceDetailReopen = "true";
+      toggle.dataset.workspaceDetailReopen = "true";
+      if (!initiallyWaiting) aside.style.removeProperty("--k2b-workspace-detail-waiting");
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        flushFrames();
+        toggle.focus();
+        aside.style.removeProperty("--k2b-workspace-detail-waiting");
+        resizeObservers.forEach((observer) => observer.trigger());
+        flushFrames();
+        expect(document.activeElement === toggle).toBe(true);
+        expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  test("a disappearing waiting-only toggle still hands focus to the returning column", () => {
+    const { root, aside, toggle, title } = waitingWorkspace();
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      toggle.focus();
+      aside.style.removeProperty("--k2b-workspace-detail-waiting");
+      toggle.style.display = "none";
+      resizeObservers.forEach((observer) => observer.trigger());
+      flushFrames();
+      expect(document.activeElement === title).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
+
+  for (const blocked of ["disabled", "app-rejected"] as const) {
+    test(`reopening never reveals ${blocked} retained detail content`, () => {
+      const { root, aside, toggle } = waitingWorkspace();
+      aside.hidden = true;
+      aside.dataset.workspaceDetailReopen = "true";
+      toggle.dataset.workspaceDetailReopen = "true";
+      toggle.disabled = blocked === "disabled";
+      let opens = 0;
+      aside.addEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, () => opens++);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        expect(opens).toBe(blocked === "disabled" ? 0 : 1);
+        expect(aside.hidden).toBe(true);
+        expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  test("nested and island controllers reopen only the owning detail once", async () => {
+    const outer = waitingWorkspace();
+    const inner = waitingWorkspace();
+    inner.aside.id = "inner-detail-record";
+    inner.toggle.setAttribute("aria-controls", inner.aside.id);
+    inner.handle.setAttribute("aria-controls", inner.aside.id);
+    const island = document.createElement("solid-island");
+    island.append(inner.toggle, inner.handle, inner.aside);
+    inner.content.append(island);
+    outer.main.append(inner.root);
+    for (const fixture of [outer, inner]) {
+      fixture.aside.hidden = true;
+      fixture.aside.dataset.workspaceDetailReopen = "true";
+      fixture.toggle.dataset.workspaceDetailReopen = "true";
+    }
+    let innerOpens = 0;
+    let outerOpens = 0;
+    inner.aside.addEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, () => {
+      innerOpens++;
+      inner.aside.hidden = false;
+    });
+    outer.aside.addEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, () => {
+      outerOpens++;
+      outer.aside.hidden = false;
+    });
+    const parentDispose = installAppWorkspaceController({ root: document });
+    const islandDispose = installAppWorkspaceController({ root: inner.root });
+    try {
+      inner.toggle.click();
+      await window.happyDOM.whenAsyncComplete();
+      expect(innerOpens).toBe(1);
+      expect(outerOpens).toBe(0);
+      expect(outer.aside.hidden).toBe(true);
+      expect(inner.toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(outer.toggle.getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      islandDispose();
+      parentDispose();
+    }
+  });
+
+  test("a closed selection-only detail never reopens retained content", () => {
+    const { root, aside, toggle } = waitingWorkspace();
+    aside.hidden = true;
+    let opens = 0;
+    aside.addEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, () => opens++);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      toggle.click();
+      expect(opens).toBe(0);
+      expect(aside.hidden).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
 
   for (const region of ["Main", "Detail"] as const) {
     for (const interaction of ["pointer", "keyboard"] as const) {
