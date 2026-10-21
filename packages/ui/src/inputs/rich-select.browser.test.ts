@@ -138,6 +138,15 @@ describe("RichSelect shipped browser contract", () => {
           await page.locator("body").evaluate((element, value) => element.setAttribute("data-theme", value), theme);
           await page.addScriptTag({ content: axeSource });
           await page.getByRole("combobox", { name: "Move card" }).click();
+          if (width === 390) {
+            // WebKit can retire the covered trigger's hover after the sheet takes focus.
+            // Wait for that state change before settled() snapshots the return transitions.
+            await page.waitForFunction(() => {
+              const sheet = document.querySelector("dialog[open]");
+              const trigger = document.querySelector("form .k2b-rich-select__trigger");
+              return sheet !== null && document.activeElement === sheet && trigger !== null && !trigger.matches(":hover");
+            });
+          }
           for (const state of ["ready", "loading", "error", "empty"]) {
             if (state !== "ready")
               await page.evaluate((value) => document.dispatchEvent(new CustomEvent("fixture:state", { detail: value })), state);
