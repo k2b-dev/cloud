@@ -259,7 +259,7 @@ const mount = async (
     [...dom.root.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
       (row) => row.querySelector("strong")?.textContent === "Neue Aufgabe",
     );
-  await waitFor(() => Boolean(row()));
+  await waitFor(() => (options.embedded ? !input.disabled : Boolean(row())));
   const choose = () => row()!.click();
   return {
     ...dom,
@@ -604,8 +604,11 @@ for (const project of [false, true]) {
       loseFirstCreate: true,
       replayedDraft: { content: [{ type: "text", text: "Remote draft B" }], revision: 1, updatedAt: now },
     });
-    h.choose();
-    await waitFor(() => h.creates.length === 1 && Boolean(h.status()));
+    h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    [...h.root.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.trim() === "Entwürfe speichern")!
+      .click();
+    await waitFor(() => h.creates.length === 1 && Boolean(h.root.textContent?.includes("Erstellen der Unterhaltung ist unklar")));
     const retry = [...h.root.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "Erstellen erneut versuchen",
     );

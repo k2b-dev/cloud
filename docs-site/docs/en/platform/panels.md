@@ -27,7 +27,9 @@ service. Switching providers, closing, and opening the full view retain saved
 drafts; unfinished uploads, conflicting drafts, and unconfirmed sends keep the
 current provider open with recovery controls. Pending resource insertion and image
 preparation are protected too. A browser storage error keeps recovery controls
-visible; it does not prevent leaving when there is no unsaved work.
+visible; it does not prevent leaving when there is no unsaved work. Chat also keeps
+the current conversation open while preparing a send; if preparation fails, the
+text returns to the composer.
 Both composers become editable only
 after their leave guard and draft restoration are ready. If a send or queue response
 is lost, Assistant offers a status check and a retry of the same submission. When
@@ -37,7 +39,10 @@ explains which local text and attachments will be discarded; other drafts and
 unfinished uploads or saves remain protected. An unconfirmed conversation creation
 keeps its original request identity and waits for an explicit retry. If another tab
 has since saved a draft in that conversation, Assistant shows both drafts for the
-reader to resolve instead of replacing the saved draft. An empty creation attempt can be
+reader to resolve instead of replacing the saved draft. A second local draft in
+that conversation is saved before retrying creation. If it cannot be saved or
+changes during the retry, both local drafts stay protected until resolved.
+An empty creation attempt can be
 abandoned with a separate explanation in the same exit dialog; this does not delete
 a conversation that may already exist. A nonempty new draft remains protected.
 On phones, reopen the sheet after

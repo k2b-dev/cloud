@@ -13,6 +13,7 @@ export const assistantMessages = i18n.define({
       panelUnknownCreateHint:
         "The conversation could not be confirmed. Retrying uses the same creation request. Only an empty creation attempt can be abandoned.",
       panelRetryCreate: "Retry creating conversation",
+      panelCreateDraftCollision: "Another local draft belongs to this conversation. Save or resolve it before retrying creation.",
       panelLeaveUnknownCreate: "Leave despite unclear creation",
       panelLeaveUnknownCreateConfirm:
         "The conversation may already exist. Leaving abandons only local tracking of this empty creation attempt; it does not delete or cancel the conversation. Nothing is retried automatically. Check your conversations later. Leave now?",
@@ -150,6 +151,8 @@ export const assistantMessages = i18n.define({
       panelUnknownCreateHint:
         "Die Unterhaltung konnte nicht bestätigt werden. Ein erneuter Versuch verwendet dieselbe Anfrage. Nur ein leerer Erstellversuch kann aufgegeben werden.",
       panelRetryCreate: "Erstellen erneut versuchen",
+      panelCreateDraftCollision:
+        "Zu dieser Unterhaltung gehört ein weiterer lokaler Entwurf. Speichere oder kläre ihn vor dem erneuten Erstellversuch.",
       panelLeaveUnknownCreate: "Trotz unklarem Erstellen verlassen",
       panelLeaveUnknownCreateConfirm:
         "Die Unterhaltung kann bereits existieren. Verlassen gibt nur die lokale Nachverfolgung dieses leeren Erstellversuchs auf; die Unterhaltung wird weder gelöscht noch storniert. Es wird nichts automatisch wiederholt. Prüfe deine Unterhaltungen später. Jetzt verlassen?",

@@ -92,6 +92,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // The latest open whose snapshot is still loading; an older one that a newer navigation superseded no longer counts.
   let openToken = 0;
   let pendingOpen = 0;
+  let pendingSends = 0;
   // The outbox changes its entries in place; this counts its changes so the history reads them again.
   const [sendsVersion, setSendsVersion] = createSignal(0);
   // The list keeps its order while messages arrive elsewhere; it sorts again on the reader's own actions.
@@ -380,8 +381,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   };
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
-  const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
+  const open = async (next: Route): Promise<"applied" | "superseded" | "failed" | "blocked"> => {
     if (!store) return "failed";
+    if (pendingSends > 0 && next.chatId !== route().chatId) {
+      toast(t().sendPreparing);
+      return "blocked";
+    }
     if (pendingOpen === 0 && route().chatId === next.chatId && route().messageId === next.messageId && route().panel !== next.panel) {
       setRoute(next);
       setPanel(openChat() ? next.panel : null);
@@ -520,10 +525,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
     if (!current || !outbox || !text.trim() || draftStorageFailed()) return false;
-    if (current.hasNewer) await store?.loadLatest();
-    outbox.send(current.id, text);
-    feed?.scrollToEnd();
-    return true;
+    // The composer has cleared its draft, but the outbox does not own it until history is ready.
+    pendingSends++;
+    try {
+      if (current.hasNewer) await store?.loadLatest();
+      outbox.send(current.id, text);
+      feed?.scrollToEnd();
+      return true;
+    } finally {
+      pendingSends--;
+    }
   };
 
   onMount(() => {
@@ -559,10 +570,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
-    onCleanup(onPanelBeforeLeave(() => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingOpen === 0));
+    onCleanup(
+      onPanelBeforeLeave(
+        () => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingOpen === 0 && pendingSends === 0,
+      ),
+    );
     setComposerReady(true);
     const leave = (event: BeforeUnloadEvent) => {
-      if (box.unsent() || unsavedDrafts.size > 0) {
+      if (box.unsent() || unsavedDrafts.size > 0 || pendingSends > 0) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -590,6 +605,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         // The browser already shows the new address; when its chat cannot load in place, the server renders it.
         void open(next).then((result) => {
           if (result === "failed") refreshCurrentPath();
+          if (result === "blocked") {
+            const current = route();
+            navigate(current.chatId ? panelHref(current.chatId, current.panel, current.messageId) : basePath, {
+              replace: true,
+              scroll: "preserve",
+            });
+          }
         });
       }),
     );

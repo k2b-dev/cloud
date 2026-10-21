@@ -95,7 +95,8 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import PanelRuntime from "./PanelRuntime.island";
 import { getContext, onContextChange, onPanelBeforeLeave } from "../browser/panel";
-if (new URL(location.href).searchParams.get("guard") === "1") {
+const parameters = new URL(location.href).searchParams;
+if (parameters.has("guard")) {
   const input = document.querySelector("input");
   let dirty = false;
   input.addEventListener("input", () => { dirty = true; });
@@ -104,14 +105,31 @@ if (new URL(location.href).searchParams.get("guard") === "1") {
   save.id = "save-fixture";
   save.addEventListener("click", () => { dirty = false; });
   input.after(save);
-  onPanelBeforeLeave(() => !dirty);
+  const first = onPanelBeforeLeave(() => !dirty);
+  if (parameters.get("guard") === "multiple") {
+    onPanelBeforeLeave(() => !dirty);
+    const dispose = document.createElement("button");
+    dispose.id = "dispose-first-guard";
+    dispose.textContent = "Dispose first guard";
+    dispose.addEventListener("click", first);
+    input.after(dispose);
+  }
 }
 const showContext = () => document.getElementById("panel-context-probe").textContent = JSON.stringify(getContext());
 showContext();
 onContextChange(showContext);
 document.getElementById("prevent-escape").addEventListener("keydown", event => { if (event.key === "Escape") event.preventDefault(); });
-if (new URL(location.href).searchParams.get("mode") !== "silent" || document.cookie.includes("fixture_ready=1")) {
+const mountRuntime = () => {
   render(() => createComponent(PanelRuntime, { provider: document.querySelector("[data-cloud-panel-page]").dataset.panelProvider, scope: location.pathname }), document.createElement("div"));
+};
+if (parameters.get("mode") === "manual") {
+  const mount = document.createElement("button");
+  mount.id = "mount-runtime";
+  mount.textContent = "Mount runtime";
+  mount.addEventListener("click", mountRuntime, { once: true });
+  document.body.append(mount);
+} else if (parameters.get("mode") !== "silent" || document.cookie.includes("fixture_ready=1")) {
+  mountRuntime();
 }
 document.documentElement.dataset.panelProviderMounted = "true";
 `,
@@ -864,6 +882,100 @@ test("1194px touch tablet waits for Details beside the open panel and opens an e
     expect(await page.locator(mainArea).boundingBox()).toEqual(before);
     expect(await page.locator(slot).getAttribute("data-state")).toBe("ready");
     expect(await page.locator(".cloud-app-canvas").getAttribute("data-panel")).toBe("open");
+  } finally {
+    await context.close();
+  }
+});
+
+test("early links keep multiple guards through disposal and late runtime without duplicate navigation", async () => {
+  const { page, context } = await fixture(1440);
+  let fullRequests = 0;
+  page.on("request", (request) => {
+    if (request.isNavigationRequest() && request.url() === `${origin}/app/fixture/next`) fullRequests++;
+  });
+  try {
+    await page.locator("#open-panel").click();
+    await ready(page);
+    await page.evaluate(() => {
+      document.documentElement.dataset.navigationMessages = "0";
+      window.addEventListener("message", (event) => {
+        if (event.data?.type === "cloud.panel.navigate")
+          document.documentElement.dataset.navigationMessages = String(Number(document.documentElement.dataset.navigationMessages) + 1);
+      });
+      window.dispatchEvent(
+        new CustomEvent("cloud.panel.request", {
+          detail: { action: "open", provider: "fixture", search: "guard=multiple&mode=manual", accepted: false },
+        }),
+      );
+    });
+    const frame = page.frameLocator("[data-cloud-panel-frame]");
+    await frame.locator('html[data-panel-provider-mounted="true"]').waitFor();
+    await frame.locator("#dispose-first-guard").click();
+    const checkNativeLinks = async () => {
+      expect(
+        await frame.locator("#leave-panel").evaluate((anchor: HTMLAnchorElement) => {
+          const nativeCases = [
+            { event: { ctrlKey: true } },
+            { event: { metaKey: true } },
+            { event: { shiftKey: true } },
+            { event: { altKey: true } },
+            { event: { button: 1 } },
+            { target: "_blank" },
+            { download: "fixture.txt" },
+            { href: "#local" },
+            { href: "https://example.org/" },
+          ];
+          return nativeCases.map((entry) => {
+            const link = document.createElement("a");
+            link.href = anchor.href;
+            if (entry.target) link.target = entry.target;
+            if (entry.download) link.download = entry.download;
+            if (entry.href) link.href = entry.href;
+            document.body.append(link);
+            let handled = false;
+            document.addEventListener(
+              "click",
+              (event) => {
+                handled = event.defaultPrevented;
+                event.preventDefault(); // Observe native classification without opening a new browser destination.
+              },
+              { once: true },
+            );
+            link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...entry.event }));
+            link.remove();
+            return handled;
+          });
+        }),
+      ).toEqual(Array(9).fill(false));
+    };
+    await checkNativeLinks();
+    await frame.getByLabel("Panel input", { exact: true }).fill("Still dirty before runtime");
+    await frame.locator("#internal-panel").click();
+    await page.locator('[data-cloud-panel-leave="blocked"]').waitFor();
+    expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Still dirty before runtime");
+    expect(await page.locator("html").getAttribute("data-navigation-messages")).toBe("1");
+    await frame.locator("#save-fixture").click();
+    await frame.locator("#internal-panel").click();
+    await page.waitForFunction(() =>
+      document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentWindow?.location.search.includes("step=2"),
+    );
+    await frame.locator('html[data-panel-provider-mounted="true"]').waitFor();
+    expect(await page.locator("html").getAttribute("data-navigation-messages")).toBe("2");
+    expect(new URL(page.url()).pathname).toBe("/app/fixture");
+    expect(await frame.locator(".cloud-app-canvas").count()).toBe(0);
+    await frame.locator("#dispose-first-guard").click();
+    await frame.locator("#mount-runtime").click();
+    await ready(page);
+    await checkNativeLinks();
+    await frame.getByLabel("Panel input", { exact: true }).fill("Still dirty after runtime");
+    await frame.locator("#leave-panel").click();
+    await page.locator('[data-cloud-panel-leave="blocked"]').waitFor();
+    expect(await page.locator("html").getAttribute("data-navigation-messages")).toBe("3");
+    expect(fullRequests).toBe(0);
+    await frame.locator("#save-fixture").click();
+    await frame.locator("#leave-panel").click();
+    await page.waitForURL(`${origin}/app/fixture/next`);
+    expect(fullRequests).toBe(1);
   } finally {
     await context.close();
   }

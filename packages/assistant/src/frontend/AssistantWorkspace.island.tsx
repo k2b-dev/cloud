@@ -731,6 +731,12 @@ export default function AssistantWorkspace(props: Props) {
         setCreationVersion((version) => version + 1);
       }
       const conversation = await chat.createConversation(request);
+      const existing = conversation && !projectId ? sessions.get(conversation.id) : undefined;
+      if (existing && (existing.dirty || existing.conflict || existing.saving)) {
+        // A replay can find a conversation already edited in this workspace. Never replace that session.
+        chat.setError(t().panelCreateDraftCollision);
+        return null;
+      }
       if (conversation)
         batch(() => {
           creationRequests.delete(key);
@@ -850,6 +856,12 @@ export default function AssistantWorkspace(props: Props) {
           setPanelStorageFailed(true);
           return;
         }
+      }
+      // Save known conversations first: a creation replay may resolve to one of these local drafts.
+      for (const [key, local] of [...sessions]) {
+        if (key === "__new__" || key.startsWith("project:") || !local.dirty || local.conflict) continue;
+        if (chat.uncertainSubmissions()[key] !== undefined) continue;
+        if (!(await saveComposer(key, key))) return;
       }
       for (const request of [...creationRequests.values()]) {
         if (!(await createConversation(false, request.projectId, false))) return;
@@ -1848,18 +1860,20 @@ export default function AssistantWorkspace(props: Props) {
       }
     };
     const appCommands = createMemo(() =>
-      cloudCommandMenu({
-        locale: locale(),
-        commands: catalog.commands(),
-        state: catalog.state(),
-        section: "apps",
-        before: (draft, signal, follow) => {
-          setPendingCommandSaves((count) => count + 1);
-          return beforeCommand(draft, signal, follow).finally(() => setPendingCommandSaves((count) => count - 1));
-        },
-        returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
-        signal: () => commandOpening?.controller.signal,
-      }),
+      props.embedded
+        ? { commands: [], pending: false }
+        : cloudCommandMenu({
+            locale: locale(),
+            commands: catalog.commands(),
+            state: catalog.state(),
+            section: "apps",
+            before: (draft, signal, follow) => {
+              setPendingCommandSaves((count) => count + 1);
+              return beforeCommand(draft, signal, follow).finally(() => setPendingCommandSaves((count) => count - 1));
+            },
+            returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
+            signal: () => commandOpening?.controller.signal,
+          }),
     );
     const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
     const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
