@@ -66,6 +66,11 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Sendeausgang des Entwurfs prüfen",
           description:
             "Liest den Zustellstatus für genau eine Entwurfsrevision. Sendet nichts, wiederholt nichts und kontaktiert keinen Anbieter.",
+          input: {
+            mailboxId: "Postfach-ID aus mailbox.list.",
+            draftId: "Entwurfs-ID aus draft.list oder draft.read.",
+            expectedRevision: "Genau die Entwurfsrevision, deren Sendeausgang geprüft werden soll.",
+          },
         },
         "mailbox.browse": {
           title: "Postfach auswählen",
@@ -648,6 +653,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
+            expectedContentHash: "Inhaltsfingerabdruck contentHash aus draft.send.review unter demselben Ausführungsakteur.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",
             scheduledAt: "Optionale zukünftige Lieferzeit.",
             undoSeconds: "Fenster zum Rückgängigmachen und Senden in Sekunden.",

@@ -23,7 +23,7 @@ export type ApprovalActionPolicy = CapabilityActionPolicy | null | undefined;
 const needsPolicy = (row: PendingApprovalRow): boolean => {
   if (row.storedReview && "sentence" in row.storedReview) return true;
   const review = CapabilityActionReviewPresentationSchema.safeParse(row.details);
-  return review.success;
+  return review.success && "sentence" in review.data;
 };
 /** Reads the registry once for the rows that need their Action's declared policy, as the approvals page does. */
 export const loadApprovalActionPolicies = async (

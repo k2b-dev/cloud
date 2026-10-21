@@ -240,6 +240,25 @@ const tagFixture = {
 } as const;
 
 beforeEach(() => {
+  spyOn(drafts, "prepareDraftSeed").mockImplementation(async ({ mailboxId, origin }) => {
+    if (origin.kind !== "compose") throw new Error("This unit fixture only prepares compose origins");
+    return {
+      ok: true,
+      data: {
+        id: internalDraftId,
+        mailboxId,
+        origin,
+        createdAt: timestamp,
+        conversationId: origin.input.conversationId ?? null,
+        intent: origin.input.intent ?? "new",
+        sourceMessageId: origin.input.sourceMessageId ?? null,
+        derivedFromMessageId: null,
+        derivationKind: null,
+        content: { ...draftFixture, ...origin.input },
+        attachments: [],
+      },
+    };
+  });
   spyOn(mailboxAccess, "draftReviewAudience").mockResolvedValue({ name: "Team Ops", shared: true });
   spyOn(reviewReaders, "loadAssignmentReviewChange").mockImplementation(async ({ assigneeUserIds }) => ({
     requested: assigneeUserIds.map((userId) => ({ name: userId, userId })),
@@ -824,6 +843,21 @@ describe("mail capabilities", () => {
       },
     });
     if (review.ok) expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBeTrue();
+    expect(drafts.prepareDraftSeed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mailboxId: internalMailboxId,
+        origin: expect.objectContaining({ kind: "compose", input: expect.objectContaining({ senderIdentityId: internalConversationId }) }),
+      }),
+    );
+  });
+
+  test("draft review preserves origin preparation failures without presenting incomplete content", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    const unavailable = fail(err.forbidden("Source message is unavailable"));
+    spyOn(drafts, "prepareDraftSeed").mockResolvedValue(unavailable);
+    expect(
+      await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ mailboxId, senderIdentityId }), context),
+    ).toEqual(unavailable);
   });
 
   test("returns German action-review text for regional German locales", async () => {

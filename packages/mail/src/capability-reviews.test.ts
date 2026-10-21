@@ -389,7 +389,7 @@ describe("Mail review contract", () => {
     for (const state of ["failed", "cancelled", "reconciled_unsent", undefined] as const) expect(draftSendOutcome(state)).toBe("not_done");
     for (const state of ["unknown", "needs_attention"] as const) expect(draftSendOutcome(state)).toBe("pending");
   });
-  test("queries returning message or attachment content retain open-world provenance", () => {
+  test("query interaction hints preserve the declared external and local boundaries", () => {
     for (const id of [
       "search",
       "conversation.list",
@@ -400,11 +400,11 @@ describe("Mail review contract", () => {
       "message.list",
       "message.read-content",
       "message.read",
-      "attachment.read-content",
-      "draft.read",
-      "draft.list",
     ] as const)
       expect(mailCapabilities.queries[id].openWorld).toBeTrue();
+    // A permission-scoped local lookup is closed-world; its content remains untrusted.
+    for (const id of ["attachment.read-content", "draft.read", "draft.list"] as const)
+      expect(mailCapabilities.queries[id].openWorld).toBeFalse();
   });
 });
 
