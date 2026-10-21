@@ -1,4 +1,4 @@
-import type { ServiceAccount, ServiceAccountCredential, User } from "@k2b/cloud/contracts";
+import type { RequestActor, ServiceAccount, ServiceAccountCredential, User } from "@k2b/cloud/contracts";
 import { err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
@@ -6,9 +6,11 @@ import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { SourceConfigSchema } from "../metric-filters";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
+import { recordBaseActivity } from "./base-activity";
 import { checkScrapeTarget } from "./scrape-target";
 import { sourceCounts } from "./source-counts";
 import { tryMirrorSource } from "./source-mirror";
+import { SourceExpectationSchema } from "./source-staleness";
 import { iso, isoNullable } from "./telemetry-values";
 
 export const PULSE_APP_ID = "pulse";
@@ -25,6 +27,10 @@ type SourceRow = {
   endpoint_url: string | null;
   bearer_token_encrypted: string | null;
   scrape_interval_seconds: number | null;
+  revision: number;
+  expect_every_seconds: number | null;
+  expect_daily_by: string | null;
+  stale_since: Date | string | null;
   config: { metricFilters?: string[] };
   last_data_at: Date | string | null;
   throttled_at: Date | string | null;
@@ -62,6 +68,11 @@ type UpdateSourceParams = {
   bearerToken?: string | null;
   scrapeIntervalSeconds?: number | null;
   metricFilters?: string[];
+  actor?: RequestActor;
+  requestId?: string;
+  expectEverySeconds?: number | null;
+  expectDailyBy?: string | null;
+  expectedRevision?: number;
 };
 
 type SourceUpdateValues = {
@@ -71,6 +82,8 @@ type SourceUpdateValues = {
   bearerTokenEncrypted: string | null;
   scrapeIntervalSeconds: number | null;
   config: { metricFilters?: string[] };
+  expectEverySeconds: number | null;
+  expectDailyBy: string | null;
 };
 
 const mapSource = (row: SourceRow, now = new Date()): PulseSource => ({
@@ -83,6 +96,10 @@ const mapSource = (row: SourceRow, now = new Date()): PulseSource => ({
   bearerTokenConfigured: Boolean(row.bearer_token_encrypted),
   scrapeIntervalSeconds: row.scrape_interval_seconds,
   metricFilters: row.config.metricFilters ?? [],
+  revision: row.revision,
+  expectEverySeconds: row.expect_every_seconds,
+  expectDailyBy: row.expect_daily_by,
+  staleSince: isoNullable(row.stale_since),
   status: {
     newestDataAt: isoNullable(row.last_data_at),
     throttled:
@@ -217,6 +234,10 @@ export const createSource = async (params: {
   bearerToken?: string | null;
   scrapeIntervalSeconds?: number | null;
   metricFilters?: string[];
+  actor?: RequestActor;
+  requestId?: string;
+  expectEverySeconds?: number | null;
+  expectDailyBy?: string | null;
 }): Promise<Result<PulseSource>> => {
   if (
     params.scrapeIntervalSeconds != null &&
@@ -233,6 +254,13 @@ export const createSource = async (params: {
     const active = await requireBaseActive(params.baseId, db);
     if (!active.ok) return fail(active.error);
 
+    const expectation = SourceExpectationSchema.safeParse({
+      expectEverySeconds: params.expectEverySeconds ?? null,
+      expectDailyBy: params.expectDailyBy ?? null,
+    });
+    if (!expectation.success) return fail(err.badInput("Choose a positive interval or a daily HH:MM expectation"));
+    if (params.kind !== "http_ingest" && (expectation.data.expectEverySeconds !== null || expectation.data.expectDailyBy !== null))
+      return fail(err.badInput("Push expectations are only supported for HTTP ingest sources"));
     if (params.metricFilters !== undefined && params.kind !== "metrics")
       return fail(err.badInput("Metric filters are only supported for metrics sources"));
     const config = SourceConfigSchema.safeParse({ ...(params.metricFilters === undefined ? {} : { metricFilters: params.metricFilters }) });
@@ -256,7 +284,7 @@ export const createSource = async (params: {
       name,
       endpoint_url,
       bearer_token_encrypted,
-      scrape_interval_seconds, config
+      scrape_interval_seconds, config, expect_every_seconds, expect_daily_by
     )
     VALUES (
       ${shortId},
@@ -265,7 +293,8 @@ export const createSource = async (params: {
       ${params.name.trim()},
       ${endpointUrl},
       ${encryptedBearer},
-      ${params.scrapeIntervalSeconds ?? null}, (${JSON.stringify(config.data)}::jsonb #>> '{}')::jsonb
+      ${params.scrapeIntervalSeconds ?? null}, (${JSON.stringify(config.data)}::jsonb #>> '{}')::jsonb,
+      ${expectation.data.expectEverySeconds}, ${expectation.data.expectDailyBy}
     )
     RETURNING *
   `;
@@ -273,13 +302,26 @@ export const createSource = async (params: {
       }),
     );
     if (!row) return fail(err.internal("Failed to create Pulse source"));
+    await recordBaseActivity(db, {
+      baseId: params.baseId,
+      actor: params.actor,
+      requestId: params.requestId,
+      kind: "source.created",
+      data: { sourceId: row.short_id, name: row.name },
+    });
     return ok(mapSource(row));
   });
   if (result.ok) await tryMirrorSource(params.baseId, result.data.id);
   return result;
 };
 
-export const removeSource = async (params: { baseId: string; sourceId: string; user: AccessScope }): Promise<Result<void>> => {
+export const removeSource = async (params: {
+  baseId: string;
+  sourceId: string;
+  user: AccessScope;
+  actor?: RequestActor;
+  requestId?: string;
+}): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
   const result = await sql.begin(async (tx): Promise<Result<number>> => {
@@ -295,12 +337,20 @@ export const removeSource = async (params: { baseId: string; sourceId: string; u
         AND account.resource_type = ${PULSE_SOURCE_RESOURCE_TYPE}
         AND account.resource_id = source.short_id
     `;
-    const deleted = await tx`
+    const deleted = await tx<{ short_id: string; name: string }[]>`
       UPDATE pulse.sources SET deleted=true,enabled=false,mirror_pending=true,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond')
       WHERE NOT deleted AND id = ${params.sourceId}::uuid
-        AND base_id = ${params.baseId}::uuid
+        AND base_id = ${params.baseId}::uuid RETURNING short_id,name
     `;
-    return ok(deleted.count ?? 0);
+    if (deleted[0])
+      await recordBaseActivity(tx, {
+        baseId: params.baseId,
+        actor: params.actor,
+        requestId: params.requestId,
+        kind: "source.removed",
+        data: { sourceId: deleted[0].short_id, name: deleted[0].name },
+      });
+    return ok(deleted.length);
   });
   if (!result.ok) return result;
   if (result.data === 0) return fail(err.notFound("Pulse source"));
@@ -338,7 +388,15 @@ const normalizeSourceUpdateValues = async (
     ...(params.metricFilters === undefined ? {} : { metricFilters: params.metricFilters }),
   });
   if (!config.success) return fail(err.badInput("Invalid metric filters or source config exceeds 16 KiB"));
+  const expectation = SourceExpectationSchema.safeParse({
+    expectEverySeconds: params.expectEverySeconds === undefined ? existing.expect_every_seconds : params.expectEverySeconds,
+    expectDailyBy: params.expectDailyBy === undefined ? existing.expect_daily_by : params.expectDailyBy,
+  });
+  if (!expectation.success) return fail(err.badInput("Choose a positive interval or a daily HH:MM expectation"));
+  if (existing.kind !== "http_ingest" && (expectation.data.expectEverySeconds !== null || expectation.data.expectDailyBy !== null))
+    return fail(err.badInput("Push expectations are only supported for HTTP ingest sources"));
   return ok({
+    ...expectation.data,
     config: config.data,
     name: sourceUpdateName(existing, params.name),
     enabled: params.enabled ?? existing.enabled,
@@ -378,6 +436,8 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
       AND base_id = ${params.baseId}::uuid FOR UPDATE
   `;
     if (!existing) return fail(err.notFound("Pulse source"));
+    if (params.expectedRevision !== undefined && params.expectedRevision !== existing.revision)
+      return fail(err.conflict("Source changed; read it again before updating"));
 
     const values = await normalizeSourceUpdateValues(params, existing, db);
     if (!values.ok) return fail(values.error);
@@ -386,10 +446,14 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
     UPDATE pulse.sources
     SET
       name = ${values.data.name},
+      revision = revision + 1,
       enabled = ${values.data.enabled},
       endpoint_url = ${values.data.endpointUrl},
       bearer_token_encrypted = ${values.data.bearerTokenEncrypted},
       scrape_interval_seconds = ${values.data.scrapeIntervalSeconds},
+      expect_every_seconds = ${values.data.expectEverySeconds},
+      expect_daily_by = ${values.data.expectDailyBy},
+      next_freshness_check_at = now(),
       config = (${JSON.stringify(values.data.config)}::jsonb #>> '{}')::jsonb,
       mirror_pending = true,
       updated_at = greatest(clock_timestamp(),updated_at+interval '1 microsecond')
@@ -398,6 +462,13 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
     RETURNING *
   `;
     if (!row) return fail(err.internal("Failed to update Pulse source"));
+    await recordBaseActivity(db, {
+      baseId: params.baseId,
+      actor: params.actor,
+      requestId: params.requestId,
+      kind: "source.updated",
+      data: { sourceId: row.short_id, name: row.name },
+    });
     return ok(mapSource(row));
   });
   if (result.ok) await tryMirrorSource(params.baseId, result.data.id);

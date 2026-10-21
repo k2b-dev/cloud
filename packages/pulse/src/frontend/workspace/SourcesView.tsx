@@ -125,7 +125,7 @@ export default function SourcesView(props: SourcesViewProps) {
           disabled={!props.selectedBaseId() || props.loading()}
           onClick={() => void props.addSource()}
         >
-          <i class="ti ti-plus" /> {t().addSource}
+          <i class="ti ti-plus" aria-hidden="true" /> {t().addSource}
         </Button>
       </div>
       <DataTable

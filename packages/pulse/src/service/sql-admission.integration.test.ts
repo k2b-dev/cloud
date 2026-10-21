@@ -102,6 +102,24 @@ suite("SQL admission is atomic across replicas", () => {
       await held.release();
     }
   });
+  test("alerts take only unqueued free slots and never consume the question quota", async () => {
+    const { a, b } = setup();
+    const held = await a.acquire(input("a", "interactive"));
+    try {
+      await expect(b.acquire({ ...input("a", "alert", false), freeOnly: true })).rejects.toMatchObject({ code: "BUSY" });
+      expect((await b.usage("a")).used).toBe(1);
+      // Even with a free Cloud slot, an alert must not overtake a waiting interactive query.
+      expect((await b.check(input("a", "waiter"))).state).toBe("WAIT");
+      await expect(b.acquire({ ...input("other", "alert-other", false), freeOnly: true })).rejects.toMatchObject({ code: "BUSY" });
+      await b.release("a", "waiter");
+      const free = await b.acquire({ ...input("other", "alert-free", false), freeOnly: true });
+      await free.release();
+      expect((await b.usage("other")).used).toBe(0);
+    } finally {
+      await held.release();
+      await b.release("a", "waiter");
+    }
+  });
   test("actor ownership and cancellation propagate between replicas", async () => {
     const { a, b } = setup();
     expect(await a.register("a", "run", "user:one")).toBe(true);

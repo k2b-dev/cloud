@@ -53,3 +53,27 @@ describe("Pulse source helpers", () => {
     expect(sourceInitialScrapeFailureMessage("bad")).toBe("Source added, initial scrape failed");
   });
 });
+
+test("HTTP source requests carry explicit expectations while metrics keep their interval contract", () => {
+  expect(sourceCreateRequest({ kind: "http_ingest", name: "Backup", expectEverySeconds: null, expectDailyBy: "04:00" })).toEqual({
+    kind: "http_ingest",
+    name: "Backup",
+    expectEverySeconds: null,
+    expectDailyBy: "04:00",
+  });
+  expect(sourceCreateRequest({ kind: "http_ingest", name: "Backup", expectEverySeconds: 300, expectDailyBy: null })).toEqual({
+    kind: "http_ingest",
+    name: "Backup",
+    expectEverySeconds: 300,
+    expectDailyBy: null,
+  });
+  const metrics = sourceCreateRequest({
+    kind: "metrics",
+    name: "CPU",
+    endpointUrl: "https://example.test/metrics",
+    expectEverySeconds: 300,
+    expectDailyBy: "04:00",
+  });
+  expect(metrics).not.toHaveProperty("expectEverySeconds");
+  expect(metrics).not.toHaveProperty("expectDailyBy");
+});

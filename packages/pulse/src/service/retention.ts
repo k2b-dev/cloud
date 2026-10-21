@@ -16,6 +16,7 @@ export type RetentionResult = {
   registryRecords: number;
   scrapeRecords: number;
   hourRecords: number;
+  activityRecords: number;
   done: boolean;
   nextAfter: string | null;
 };
@@ -41,6 +42,7 @@ export const createRetention =
       registryRecords: 0,
       scrapeRecords: 0,
       hourRecords: 0,
+      activityRecords: 0,
       done: true,
       nextAfter: null,
     };
@@ -112,6 +114,15 @@ export const createRetention =
           WHERE base_id=${base.id}::uuid AND expires_at<=${now} LIMIT ${BATCH})
           DELETE FROM pulse.saved_query_operations op USING victims v WHERE op.base_id=${base.id}::uuid AND op.operation_key=v.operation_key`;
         result.idempotencyRecords += queryKeys.count;
+        const alertKeys = await tx`WITH victims AS(SELECT operation_key FROM pulse.alert_rule_operations
+          WHERE base_id=${base.id}::uuid AND expires_at<=${now} LIMIT ${BATCH})
+          DELETE FROM pulse.alert_rule_operations op USING victims v WHERE op.base_id=${base.id}::uuid AND op.operation_key=v.operation_key`;
+        result.idempotencyRecords += alertKeys.count;
+        const activity =
+          await tx`WITH victims AS(SELECT id FROM pulse.base_activity WHERE base_id=${base.id}::uuid AND at<${rawCutoff} ORDER BY at,id LIMIT ${BATCH})
+          DELETE FROM pulse.base_activity a USING victims v WHERE a.id=v.id`;
+        result.activityRecords += activity.count;
+
         const scrapes =
           await tx`WITH victims AS(SELECT id FROM pulse.source_scrapes WHERE base_id=${base.id}::uuid AND started_at<${rawCutoff} LIMIT ${BATCH}) DELETE FROM pulse.source_scrapes s USING victims v WHERE s.id=v.id`;
         result.scrapeRecords += scrapes.count;
@@ -149,7 +160,10 @@ export const createRetention =
           await tx`WITH victims AS(SELECT state_key FROM pulse.state_keys k WHERE base_id=${base.id}::uuid AND first_seen_at<${registryCutoff} AND NOT EXISTS(SELECT 1 FROM pulse.state_variants v WHERE v.base_id=k.base_id AND v.state_key=k.state_key) LIMIT ${BATCH})
           DELETE FROM pulse.state_keys k USING victims v WHERE k.base_id=${base.id}::uuid AND k.state_key=v.state_key`;
         result.registryRecords += series.count + defs.count + kinds.count + states.count;
-        if (retiring.length >= BATCH || [keys, scrapes, hours, series, defs, kinds, states].some((r) => r.count >= BATCH))
+        if (
+          retiring.length >= BATCH ||
+          [keys, queryKeys, alertKeys, activity, scrapes, hours, series, defs, kinds, states].some((r) => r.count >= BATCH)
+        )
           result.done = false;
       });
     }
@@ -161,7 +175,7 @@ export const createRetention =
       ? "partition"
       : result.sealedHours
         ? "seal"
-        : result.registryRecords || result.idempotencyRecords || result.scrapeRecords || result.hourRecords
+        : result.registryRecords || result.idempotencyRecords || result.scrapeRecords || result.hourRecords || result.activityRecords
           ? "registries"
           : "done";
     return result;

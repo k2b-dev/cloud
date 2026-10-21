@@ -3,6 +3,7 @@ import { trace } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { pulseStoreConfigured } from "../store/service";
+import { registerAlertSchedules } from "./alert-runtime";
 import { startPulseBaseJobs, stopPulseBaseJobs } from "./base-lifecycle";
 import { startBaseMaintenance, stopBaseMaintenance } from "./base-maintenance-runtime";
 import { scrapeMetricsSource } from "./index";
@@ -60,6 +61,7 @@ const pulseScheduler = lazySync((sync) =>
 );
 let workers: Worker[] = [];
 let started = false;
+let alertStop = new AbortController();
 
 export const dueMetricsSources = async (slotTs: number) => sql<{ id: string; short_id: string; base_id: string; base_short_id: string }[]>`
     SELECT s.id, s.short_id, s.base_id, b.short_id AS base_short_id
@@ -103,6 +105,7 @@ const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> 
 export const pulseRuntime = {
   start: async (): Promise<void> => {
     if (started) return;
+    alertStop = new AbortController();
     workers.push(
       await scrapeJob().process({}, async (context) => {
         await trace
@@ -204,13 +207,17 @@ export const pulseRuntime = {
         await retentionJob().submit({ key: `slot:${context.slot.getTime()}`, input: { after: null } });
       },
     });
-    workers.push(await pulseScheduler().process());
+    await registerAlertSchedules(pulseScheduler(), alertStop.signal);
+    // The three bounded alert scans must not hold up each other or the existing
+    // scrape/maintenance dispatch lane. Each schedule remains serial fleet-wide.
+    workers.push(await pulseScheduler().process({ concurrency: 4 }));
     await startPulseBaseJobs();
     await startBaseMaintenance();
     notificationOutbox.start();
     started = true;
   },
   stop: async (): Promise<void> => {
+    alertStop.abort();
     await Promise.all(workers.map((worker) => worker.drain()));
     workers = [];
     await stopPulseBaseJobs();
