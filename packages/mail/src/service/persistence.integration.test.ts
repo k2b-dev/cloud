@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { encryptSecret } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { mailCapabilities } from "../capabilities";
 import { ConversationGetDataSchema } from "../capability-contracts";
 import { unavailableProviderLimitSnapshot } from "../contracts";
@@ -11,6 +12,7 @@ import { migrate } from "../migrate";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import type { MailRequestContext } from "./auth";
+import { sha256Json } from "./canonical";
 import { writeConversationAssignees } from "./collaboration";
 import { executeMutationCommand, executeOutboxSubmission, executeOutboxSubmissionWithHeartbeat } from "./command-runtime";
 import { createActorCommand } from "./commands";
@@ -560,6 +562,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: safetyDraft.data.id,
         expectedDraftRevision: safetyDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(context, mailbox.data.id, safetyDraft.data.id, safetyDraft.data.revision),
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `safety-unapproved-${suffix}`,
@@ -605,6 +608,12 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: revisedSafetyDraft.data.id,
         expectedDraftRevision: revisedSafetyDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(
+          context,
+          mailbox.data.id,
+          revisedSafetyDraft.data.id,
+          revisedSafetyDraft.data.revision,
+        ),
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `safety-stale-${suffix}`,
@@ -627,6 +636,168 @@ suite("mail PostgreSQL foundation", () => {
     });
     expect(revisedSafetyReview.ok).toBe(true);
     if (!revisedSafetyReview.ok) return;
+    const reviewedHash = revisedSafetyReview.data.contentHash;
+    const persistedCounts = async () =>
+      (
+        await sql`
+      SELECT (SELECT count(*) FROM mail.commands WHERE mailbox_id=${mailbox.data.id}::uuid) AS commands,
+        (SELECT count(*) FROM mail.outbox_submissions WHERE mailbox_id=${mailbox.data.id}::uuid) AS outbox`
+      )[0];
+    const beforeConflict = await persistedCounts();
+    const [originalSender] = await sql<
+      { display_name: string }[]
+    >`SELECT display_name FROM mail.sender_identities WHERE id=${identity!.id}::uuid`;
+    await sql`UPDATE mail.sender_identities SET display_name='Changed after review' WHERE id=${identity!.id}::uuid`;
+    const changedContent = await createActorCommand({
+      context,
+      mailboxId: mailbox.data.id,
+      input: {
+        kind: "send",
+        draftId: revisedSafetyDraft.data.id,
+        expectedDraftRevision: revisedSafetyDraft.data.revision,
+        expectedContentHash: reviewedHash,
+        senderIdentityId: identity!.id,
+        undoSeconds: 60,
+        idempotencyKey: `changed-content-${suffix}`,
+        safetyApproval: {
+          revision: revisedSafetyReview.data.revision,
+          fingerprint: revisedSafetyReview.data.fingerprint,
+          warningIds: revisedSafetyReview.data.warnings.map((warning) => warning.id),
+        },
+      },
+    });
+    expect(changedContent).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
+    expect(await persistedCounts()).toEqual(beforeConflict);
+    await sql`UPDATE mail.sender_identities SET display_name=${originalSender!.display_name} WHERE id=${identity!.id}::uuid`;
+    const rejectChangedDependency = async (name: string, change: () => Promise<unknown>, restore: () => Promise<unknown>) => {
+      const reviewed = await reviewDraftComposeSafety({
+        context,
+        mailboxId: mailbox.data.id,
+        draftId: revisedSafetyDraft.data.id,
+        expectedRevision: revisedSafetyDraft.data.revision,
+      });
+      if (!reviewed.ok) throw new Error(reviewed.error.message);
+      const before = await persistedCounts();
+      try {
+        await change();
+        const result = await createActorCommand({
+          context,
+          mailboxId: mailbox.data.id,
+          input: {
+            kind: "send",
+            draftId: revisedSafetyDraft.data.id,
+            expectedDraftRevision: revisedSafetyDraft.data.revision,
+            senderIdentityId: identity!.id,
+            expectedContentHash: reviewed.data.contentHash,
+            undoSeconds: 60,
+            idempotencyKey: `changed-${name}-${suffix}`,
+            safetyApproval: {
+              revision: reviewed.data.revision,
+              fingerprint: reviewed.data.fingerprint,
+              warningIds: reviewed.data.warnings.map((warning) => warning.id),
+            },
+          },
+        });
+        expect(result, name).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
+        expect(await persistedCounts(), name).toEqual(before);
+        expect(await getDraft(context, mailbox.data.id, revisedSafetyDraft.data.id)).toMatchObject({ ok: true, data: { state: "draft" } });
+      } finally {
+        await restore();
+      }
+    };
+    const [identityBeforeChanges] = await sql<
+      { vcard: string | null }[]
+    >`SELECT vcard FROM mail.sender_identities WHERE id=${identity!.id}::uuid`;
+    await rejectChangedDependency(
+      "vcard",
+      () => sql`UPDATE mail.sender_identities SET vcard='BEGIN:VCARD\nVERSION:3.0\nFN:Changed\nEND:VCARD' WHERE id=${identity!.id}::uuid`,
+      () => sql`UPDATE mail.sender_identities SET vcard=${identityBeforeChanges!.vcard} WHERE id=${identity!.id}::uuid`,
+    );
+    const [styleBeforeChanges] = await sql<
+      { custom_css: string }[]
+    >`SELECT custom_css FROM mail.compose_styles WHERE mailbox_id=${mailbox.data.id}::uuid`;
+    await sql`UPDATE mail.drafts SET body_format='markdown' WHERE id=${revisedSafetyDraft.data.id}::uuid`;
+    try {
+      await rejectChangedDependency(
+        "css",
+        () => sql`INSERT INTO mail.compose_styles (mailbox_id, custom_css)
+        VALUES (${mailbox.data.id}::uuid, 'p { color: #ff0000; }') ON CONFLICT (mailbox_id) DO UPDATE SET custom_css=EXCLUDED.custom_css`,
+        async () => {
+          if (styleBeforeChanges)
+            await sql`UPDATE mail.compose_styles SET custom_css=${styleBeforeChanges.custom_css} WHERE mailbox_id=${mailbox.data.id}::uuid`;
+          else await sql`DELETE FROM mail.compose_styles WHERE mailbox_id=${mailbox.data.id}::uuid`;
+        },
+      );
+    } finally {
+      await sql`UPDATE mail.drafts SET body_format=${revisedSafetyDraft.data.format} WHERE id=${revisedSafetyDraft.data.id}::uuid`;
+    }
+    const dependencyBytes = Buffer.from(`review-dependency-${suffix}`);
+    const dependencyBlob = await storeReadableBlob(Readable.from([dependencyBytes]), dependencyBytes.length);
+    ids.blobIds.push(dependencyBlob.id);
+    const [dependencyAttachment] = await sql<{ id: string }[]>`INSERT INTO mail.draft_attachments
+      (short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position)
+      VALUES (${newShortId()}, ${revisedSafetyDraft.data.id}::uuid, ${dependencyBlob.id}::uuid, 'review.txt', 'text/plain',
+        ${dependencyBytes.length}, ${dependencyBlob.contentHash}, 0) RETURNING id`;
+    try {
+      await rejectChangedDependency(
+        "attachment",
+        () => sql`UPDATE mail.draft_attachments SET filename='changed.txt' WHERE id=${dependencyAttachment!.id}::uuid`,
+        () => sql`UPDATE mail.draft_attachments SET filename='review.txt' WHERE id=${dependencyAttachment!.id}::uuid`,
+      );
+    } finally {
+      await sql`DELETE FROM mail.draft_attachments WHERE id=${dependencyAttachment!.id}::uuid`;
+    }
+    const [originalSignature] = await sql<
+      { signature_template_id: string | null }[]
+    >`SELECT signature_template_id FROM mail.drafts WHERE id=${revisedSafetyDraft.data.id}::uuid`;
+    const [clockSignature] = await sql<{ id: string }[]>`INSERT INTO mail.compose_templates
+      (short_id, mailbox_id, kind, scope, name, normalized_name, shortcut, body_template, created_by_actor_kind, created_by_actor_id)
+      VALUES (${newShortId()}, ${mailbox.data.id}::uuid, 'signature', 'mailbox', 'Review clock', 'review clock', 'review_clock',
+        ${"{{ 'now' | date: '%s' }}"}, 'user', ${ids.userIds[0]!}::uuid) RETURNING id`;
+    await sql`UPDATE mail.drafts SET signature_template_id=${clockSignature!.id}::uuid WHERE id=${revisedSafetyDraft.data.id}::uuid`;
+    setSystemTime(new Date("2026-10-20T06:00:00.000Z"));
+    try {
+      await rejectChangedDependency(
+        "clock",
+        async () => {
+          setSystemTime(new Date("2026-10-20T06:00:02.000Z"));
+        },
+        async () => {
+          setSystemTime(new Date("2026-10-20T06:00:00.000Z"));
+        },
+      );
+      await sql`UPDATE mail.compose_templates SET body_template='{{ mailbox.logo }}' WHERE id=${clockSignature!.id}::uuid`;
+      const [originalLogo] = await sql<
+        { logo_version_id: string | null }[]
+      >`SELECT logo_version_id FROM mail.mailboxes WHERE id=${mailbox.data.id}::uuid`;
+      const logoBytes = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=",
+        "base64",
+      );
+      const logoIds: string[] = [];
+      try {
+        for (const alt of ["Reviewed logo", "Changed logo"]) {
+          const [logo] = await sql<{ id: string }[]>`INSERT INTO mail.mailbox_logo_versions
+            (mailbox_id, content, content_type, pixel_width, pixel_height, display_width, alt_text, sha256, created_by_actor_kind, created_by_actor_id)
+            VALUES (${mailbox.data.id}::uuid, ${logoBytes}, 'image/png', 1, 1, 1, ${alt},
+              ${new Bun.CryptoHasher("sha256").update(logoBytes).digest("hex")}, 'user', ${ids.userIds[0]!}::uuid) RETURNING id`;
+          logoIds.push(logo!.id);
+        }
+        await sql`UPDATE mail.mailboxes SET logo_version_id=${logoIds[0]!}::uuid WHERE id=${mailbox.data.id}::uuid`;
+        await rejectChangedDependency(
+          "logo",
+          () => sql`UPDATE mail.mailboxes SET logo_version_id=${logoIds[1]!}::uuid WHERE id=${mailbox.data.id}::uuid`,
+          () => sql`UPDATE mail.mailboxes SET logo_version_id=${logoIds[0]!}::uuid WHERE id=${mailbox.data.id}::uuid`,
+        );
+      } finally {
+        await sql`UPDATE mail.mailboxes SET logo_version_id=${originalLogo!.logo_version_id}::uuid WHERE id=${mailbox.data.id}::uuid`;
+        for (const logoId of logoIds) await sql`DELETE FROM mail.mailbox_logo_versions WHERE id=${logoId}::uuid`;
+      }
+    } finally {
+      setSystemTime();
+      await sql`UPDATE mail.drafts SET signature_template_id=${originalSignature!.signature_template_id}::uuid WHERE id=${revisedSafetyDraft.data.id}::uuid`;
+      await sql`DELETE FROM mail.compose_templates WHERE id=${clockSignature!.id}::uuid`;
+    }
     const approvedSafetySend = await createActorCommand({
       context,
       mailboxId: mailbox.data.id,
@@ -634,6 +805,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: revisedSafetyDraft.data.id,
         expectedDraftRevision: revisedSafetyDraft.data.revision,
+        expectedContentHash: reviewedHash,
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `safety-approved-${suffix}`,
@@ -645,6 +817,12 @@ suite("mail PostgreSQL foundation", () => {
       },
     });
     expect(approvedSafetySend.ok, approvedSafetySend.ok ? undefined : JSON.stringify(approvedSafetySend.error)).toBe(true);
+    if (approvedSafetySend.ok) {
+      const [outbox] = await sql<
+        { draft_snapshot: unknown }[]
+      >`SELECT draft_snapshot FROM mail.outbox_submissions WHERE command_id=${approvedSafetySend.data.id}::uuid`;
+      expect(sha256Json(outbox!.draft_snapshot)).toBe(reviewedHash);
+    }
     const [answeredConversation] = await sql<{ work_status: string; message_count: number }[]>`
       SELECT c.work_status, COUNT(cm.message_id)::int AS message_count
       FROM mail.conversations c
@@ -877,6 +1055,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: replyDraft.data.id,
         expectedDraftRevision: editedReplyDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(context, mailbox.data.id, replyDraft.data.id, editedReplyDraft.data.revision),
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `reply-source-send-${suffix}`,
@@ -1177,6 +1356,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: emptyDraft.data.id,
         expectedDraftRevision: emptyDraft.data.revision,
+        expectedContentHash: "0".repeat(64),
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `empty-send-${suffix}`,
@@ -1245,6 +1425,12 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: invalidIdentityDraft.data.id,
         expectedDraftRevision: invalidIdentityDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(
+          context,
+          mailbox.data.id,
+          invalidIdentityDraft.data.id,
+          invalidIdentityDraft.data.revision,
+        ),
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `pending-upload-send-${suffix}`,
@@ -1371,12 +1557,14 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: draft.data.id,
         expectedDraftRevision: restoredDraft.data.revision,
+        expectedContentHash: "0".repeat(64),
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `stale-send-${suffix}`,
       },
     });
     expect(staleSend.ok).toBe(false);
+    const outgoingContentHash = await reviewedDraftContentHash(context, mailbox.data.id, draft.data.id, draftWithAttachment.data.revision);
     const command = await createActorCommand({
       context,
       mailboxId: mailbox.data.id,
@@ -1384,6 +1572,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: draft.data.id,
         expectedDraftRevision: draftWithAttachment.data.revision,
+        expectedContentHash: outgoingContentHash,
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `send-${suffix}`,
@@ -1402,6 +1591,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: draft.data.id,
         expectedDraftRevision: draftWithAttachment.data.revision,
+        expectedContentHash: outgoingContentHash,
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `send-${suffix}`,
@@ -1415,6 +1605,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: draft.data.id,
         expectedDraftRevision: draftWithAttachment.data.revision,
+        expectedContentHash: outgoingContentHash,
         senderIdentityId: identity!.id,
         undoSeconds: 60,
         idempotencyKey: `duplicate-send-${suffix}`,
@@ -1428,6 +1619,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: draft.data.id,
         expectedDraftRevision: draftWithAttachment.data.revision,
+        expectedContentHash: outgoingContentHash,
         senderIdentityId: identity!.id,
         undoSeconds: 59,
         idempotencyKey: `send-${suffix}`,
@@ -1585,6 +1777,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: oversizedDraft.data.id,
         expectedDraftRevision: oversizedDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(context, mailbox.data.id, oversizedDraft.data.id, oversizedDraft.data.revision),
         senderIdentityId: identity!.id,
         undoSeconds: 0,
         idempotencyKey: `oversized-send-${suffix}`,
@@ -1625,6 +1818,12 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: discardScheduledDraft.data.id,
         expectedDraftRevision: discardScheduledDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(
+          context,
+          mailbox.data.id,
+          discardScheduledDraft.data.id,
+          discardScheduledDraft.data.revision,
+        ),
         senderIdentityId: identity!.id,
         scheduledAt: new Date(Date.now() - 60_000).toISOString(),
         undoSeconds: 0,
@@ -1640,6 +1839,12 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: discardScheduledDraft.data.id,
         expectedDraftRevision: discardScheduledDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(
+          context,
+          mailbox.data.id,
+          discardScheduledDraft.data.id,
+          discardScheduledDraft.data.revision,
+        ),
         senderIdentityId: identity!.id,
         scheduledAt: discardScheduledAt,
         undoSeconds: 30,
@@ -1677,6 +1882,12 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: secondScheduledDraft.data.id,
         expectedDraftRevision: secondScheduledDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(
+          context,
+          mailbox.data.id,
+          secondScheduledDraft.data.id,
+          secondScheduledDraft.data.revision,
+        ),
         senderIdentityId: identity!.id,
         scheduledAt: discardScheduledAt,
         undoSeconds: 0,
@@ -3006,6 +3217,12 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: collaboratorDraft.data.id,
         expectedDraftRevision: collaboratorDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(
+          collaboratorContext,
+          mailbox.data.id,
+          collaboratorDraft.data.id,
+          collaboratorDraft.data.revision,
+        ),
         senderIdentityId: identity!.id,
         scheduledAt: new Date(Date.now() + 60 * 60_000).toISOString(),
         undoSeconds: 0,
@@ -3227,6 +3444,7 @@ suite("mail PostgreSQL foundation", () => {
         kind: "send",
         draftId: retryDraft.data.id,
         expectedDraftRevision: retryDraft.data.revision,
+        expectedContentHash: await reviewedDraftContentHash(context, mailbox.data.id, retryDraft.data.id, retryDraft.data.revision),
         senderIdentityId: identity!.id,
         scheduledAt: new Date(Date.now() + 60 * 60_000).toISOString(),
         undoSeconds: 0,

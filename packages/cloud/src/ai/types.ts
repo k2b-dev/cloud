@@ -15,7 +15,7 @@ import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
 import type {
   CapabilityActionCallReview,
-  CapabilityActionReviewData,
+  CapabilityActionReviewPresentation,
   CapabilityActionSentences,
   CloudResourceRef,
 } from "../contracts/capabilities";
@@ -457,7 +457,7 @@ export type AiPendingTurnAction =
       args: unknown;
       message?: string;
       /** Stored review, including the declared ask reason for new-shape reviews. */
-      review?: CapabilityActionReviewData;
+      review?: CapabilityActionReviewPresentation;
       /** Owning application, with its registry name in the turn's request locale. */
       app?: { id: string; name: string };
       /** The chat's current title, when known. */
@@ -499,7 +499,7 @@ export type AiPendingTurnActionRecord = {
   name: string;
   args: unknown;
   message?: string;
-  review?: CapabilityActionReviewData;
+  review?: CapabilityActionReviewPresentation;
   approvalScope: string;
   allowAlways: boolean;
   /** Whether the approval can be remembered for this chat; defaults to `allowAlways`. */

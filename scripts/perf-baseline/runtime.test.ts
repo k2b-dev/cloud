@@ -1,6 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
+import { createHash, X509Certificate } from "node:crypto";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
+import { caCertificate, foreignCertificate, localhostCertificate } from "./certificates.test-fixture";
 import {
   browserServer,
   caddyImage,
@@ -51,11 +53,11 @@ test("skipping certificate verification applies only to the exact local HTTPS or
   expect(localTls("http://localhost:4100/health", "http://localhost:4100")).toEqual({});
 });
 
-test("both engines use the catalog-matching noble image with a server in Caddy’s namespace", () => {
+test("the run-owned browser server accepts certificate pin launch args in Caddy’s namespace", () => {
   expect(browserServer("1.63.0", 4200)).toEqual({
     image: "mcr.microsoft.com/playwright:v1.63.0-noble",
     args: ["--init", "--ipc=host", "--user", "pwuser", "--workdir", "/home/pwuser"],
-    tail: ["npx", "-y", "playwright@1.63.0", "run-server", "--port", "4200", "--host", "0.0.0.0"],
+    tail: ["npx", "-y", "playwright@1.63.0", "run-server", "--unsafe", "--port", "4200", "--host", "0.0.0.0"],
     endpoint: "ws://127.0.0.1:4200/",
   });
 });
@@ -143,6 +145,7 @@ function stubCommands(reply: (args: string[]) => { output?: string; error?: stri
         "--no-env-file",
         "-e",
         "process.stdout.write(process.argv[1]);process.stderr.write(process.argv[2]);process.exit(Number(process.argv[3]))",
+        "--",
         output,
         error,
         error ? "1" : "0",
@@ -153,6 +156,80 @@ function stubCommands(reply: (args: string[]) => { output?: string; error?: stri
   const stub = spyOn(Bun, "spawn").mockImplementation(substitute);
   return { calls, restore: () => stub.mockRestore() };
 }
+
+test("the browser pin comes from the verified Caddy ID, never an unauthenticated TLS endpoint", async () => {
+  const runtime = new Runtime(4100, "image", new AbortController().signal);
+  runtime.containers.push(runtime.name("caddy"));
+  const id = "a".repeat(64);
+  const clock = spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-21T12:00:00Z"));
+  const stub = stubCommands((args) => ({
+    output:
+      args[1] === "container"
+        ? JSON.stringify({ Id: id, Config: { Image: caddyImage, Labels: { "cloud.perf.run": runtime.prefix } } })
+        : localhostCertificate,
+  }));
+  try {
+    const expected = createHash("sha256")
+      .update(new X509Certificate(localhostCertificate).publicKey.export({ type: "spki", format: "der" }))
+      .digest("base64");
+    expect(await runtime.browserSpki()).toBe(expected);
+    expect(stub.calls).toEqual([
+      ["docker", "container", "inspect", "--format", "{{json .}}", runtime.name("caddy")],
+      ["docker", "exec", id, "cat", "/data/caddy/certificates/local/localhost/localhost.crt"],
+    ]);
+  } finally {
+    stub.restore();
+    clock.mockRestore();
+  }
+});
+
+test("foreign or untracked certificate sources fail before reading any certificate", async () => {
+  for (const source of ["untracked", "foreign-run", "foreign-image", "invalid-id"]) {
+    const runtime = new Runtime(4100, "image", new AbortController().signal);
+    if (source !== "untracked") runtime.containers.push(runtime.name("caddy"));
+    const stub = stubCommands(() => ({
+      output: JSON.stringify({
+        Id: source === "invalid-id" ? "not-a-container-id" : "a".repeat(64),
+        Config: {
+          Image: source === "foreign-image" ? "foreign/image" : caddyImage,
+          Labels: { "cloud.perf.run": source === "foreign-run" ? "foreign" : runtime.prefix },
+        },
+      }),
+    }));
+    try {
+      await expect(runtime.browserSpki()).rejects.toThrow();
+      expect(stub.calls.some((args) => args[1] === "exec")).toBe(false);
+    } finally {
+      stub.restore();
+    }
+  }
+});
+
+test("wrong host, CA, malformed, and out-of-validity certificates cannot become browser pins", async () => {
+  for (const [pem, now, error] of [
+    [foreignCertificate, "2026-10-21T12:00:00Z", "localhost leaf"],
+    [caCertificate, "2026-10-21T12:00:00Z", "localhost leaf"],
+    ["not a certificate", "2026-10-21T12:00:00Z", ""],
+    [localhostCertificate, "2026-10-19T12:00:00Z", "validity period"],
+    [localhostCertificate, "2026-10-23T12:00:00Z", "validity period"],
+  ]) {
+    const runtime = new Runtime(4100, "image", new AbortController().signal);
+    runtime.containers.push(runtime.name("caddy"));
+    const clock = spyOn(Date, "now").mockReturnValue(Date.parse(now));
+    const stub = stubCommands((args) => ({
+      output:
+        args[1] === "container"
+          ? JSON.stringify({ Id: "a".repeat(64), Config: { Image: caddyImage, Labels: { "cloud.perf.run": runtime.prefix } } })
+          : pem,
+    }));
+    try {
+      await expect(runtime.browserSpki()).rejects.toThrow(error);
+    } finally {
+      stub.restore();
+      clock.mockRestore();
+    }
+  }
+});
 
 test("failed ownership inspection retains the attempted container and cleanup resolves its exact label", async () => {
   const runtime = new Runtime(4100, "image", new AbortController().signal);

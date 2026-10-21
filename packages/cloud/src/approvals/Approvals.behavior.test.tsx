@@ -61,7 +61,7 @@ describe("Approvals", () => {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const { default: Approvals } = await import("./Approvals");
+    const { Approvals } = await import("@k2b/cloud/approvals/ui");
     delegateEvents(["click"]);
     const dispose = render(() => <Approvals app={props.app ?? "assistant"} initial={props.initial} layout={props.layout} />, dom.root);
     return {
@@ -105,6 +105,66 @@ describe("Approvals", () => {
       view.cleanup();
     }
   });
+
+  for (const locale of ["de", "en"] as const) {
+    for (const linked of [true, false]) {
+      test(`${locale}: the public approvals list preserves the chat's message preview and reading interaction (${linked ? "revision link" : "in place"})`, async () => {
+        const { actionFixtures, FIXTURE_AT } = await import("../ai/chat/action-question.fixtures");
+        const block = actionFixtures(locale).sched!.block;
+        const source = block.review;
+        if (!source || !("sentence" in source) || source.preview?.kind !== "message") throw new Error("Expected a message review");
+        // The unlinked case contains the complete text. A truncated review must keep its revision link.
+        const review = linked ? source : { ...source, preview: { ...source.preview, truncated: false }, links: [] };
+        const view = await mount(
+          { initial: page([item("parity", { review, createdAt: FIXTURE_AT, expiresAt: "2026-10-18T12:02:00.000Z" })]) },
+          () => Response.json({ status: "rejected" }),
+        );
+        const { toolActionCard } = await import("../ai/chat/action-card");
+        const { ActionQuestion } = await import("../ai/chat/action-question");
+        const { legacyOutcomeWords } = await import("../ai/chat/tool-action-words");
+        const chatRoot = document.createElement("section");
+        view.dom.root.append(chatRoot);
+        const card = toolActionCard({ ...block, review }, { locale, timeZone: "UTC", outcome: legacyOutcomeWords(block, locale, "UTC") });
+        const disposeChat = render(
+          () => <ActionQuestion card={card} state="open" timeZone="UTC" onConfirm={() => {}} onDecline={() => {}} outcome={null} />,
+          chatRoot,
+        );
+        try {
+          const approval = view.dom.root.querySelector("article.cloud-approval")!;
+          const preview = (root: ParentNode) => root.querySelector<HTMLElement>(".k2b-chat-preview")!;
+          const excerpt = (root: ParentNode) => root.querySelector<HTMLElement>(".k2b-chat-preview__excerpt")!;
+          expect(preview(approval).textContent).toBe(preview(chatRoot).textContent);
+          expect(excerpt(approval).textContent).toBe(source.preview.body);
+          for (const value of ["Lea Berg", "Mira Hoffmann", "Tom Weber", "Wartungsplan-KW43.pdf", source.preview.warnings![0]!]) {
+            expect(preview(approval).textContent).toContain(value);
+          }
+          expect(excerpt(approval).dataset.expanded).toBeUndefined();
+          if (linked) {
+            const href = source.links!.find((link) => link.rel === "open")!.href;
+            for (const root of [approval, chatRoot]) {
+              expect(root.querySelector("a.k2b-chat-preview__more")?.getAttribute("href")).toBe(href);
+              expect(root.querySelector("button.k2b-chat-preview__more")).toBeNull();
+            }
+          } else {
+            await waitFor(() => !approval.querySelector("[inert]"), "the approval's reading controls to arm");
+            for (const root of [approval, chatRoot]) {
+              const button = root.querySelector<HTMLButtonElement>("button.k2b-chat-preview__more")!;
+              expect(button.getAttribute("aria-controls")).toBe(excerpt(root).id);
+              button.click();
+              await waitFor(() => excerpt(root).dataset.expanded === "true", "expanded text");
+              await Promise.resolve();
+              expect(document.activeElement).toBe(excerpt(root));
+              expect(root.querySelector("button.k2b-chat-preview__more")).toBeNull();
+            }
+          }
+          expect(view.requests.filter((request) => request.url.endsWith("/decision"))).toEqual([]);
+        } finally {
+          disposeChat();
+          view.cleanup();
+        }
+      });
+    }
+  }
 
   test("a review in another language keeps that language in its outcome line too", async () => {
     const { actionFixtures } = await import("../ai/chat/action-question.fixtures");

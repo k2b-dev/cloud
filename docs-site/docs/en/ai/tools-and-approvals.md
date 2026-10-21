@@ -612,6 +612,15 @@ readable without treating the text as a new template.
 | `sensitive` | This concerns payments, invoices, addresses, or sign-in data |
 | `app_asks` | The app asks every time |
 
+When a review includes complete proposed content, **Read the complete proposal**
+opens the stored snapshot using the same renderer in the chat and approval
+page. Approval and remembering remain unavailable until that exact snapshot
+loads; a failed load offers retry. Opening the draft separately may show a newer
+version. The compact card, stream and list do not include the full body.
+The interactive CLI loads complete content before offering approval;
+`cld assistant actions content <chat> <turn> <call>` reads one pending proposal.
+Cloud Login retains its existing restriction on incomplete send questions.
+
 The review is display data, not model context or a tool result. Cloud stores it
 on the tool-call message before showing the question, including calls an earlier
 approval lets through. Reloads keep the same sentence, slots, and preview even
@@ -666,7 +675,9 @@ offers no repeat button. Background checks follow the same rules and never ask.
 current chat for requests that can be remembered. An editor may approve these
 automatically. Actions that cannot be undone or reach other people, such as
 sending mail, deleting, sharing, or inviting, wait for confirmation in Cloud;
-the editor shows the link and can only reject them. Use `/approvals` in the
+the editor shows the link and can only reject them. Requests with complete
+proposed content also use **Confirm in Cloud**, where the full snapshot must
+load before approval. Use `/approvals` in the
 editor to revoke remembered choices.
 
 ## Handle approval in the UI

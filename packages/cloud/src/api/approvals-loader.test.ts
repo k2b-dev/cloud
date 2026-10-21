@@ -113,3 +113,22 @@ test("only reviews without a stored snapshot fall back to current manifest polic
   expect(result.items.map((item) => item.review)).toEqual([storedReview, { ...reviewFixture(), ask: "sends" }]);
   expect(warn).not.toHaveBeenCalled();
 });
+
+test("full presentation without a stored review retains declared sends policy", async () => {
+  const contentRef = { href: `/api/approvals/${row.id}/content`, digest: "a".repeat(64) };
+  const details = { ...reviewFixture(), contentRef };
+  spyOn(pending, "listPending").mockResolvedValue(page([{ ...row, details, storedReview: null }]));
+  spyOn(registry, "listCapabilities").mockResolvedValue([
+    {
+      appId: "demo",
+      appName: "Demo",
+      appIcon: "ti ti-mail",
+      appDescription: "Demo",
+      endpoint: "http://demo:3000",
+      manifest: compileReviewFixture({ ask: "sends" }).manifest,
+    },
+  ]);
+  const result = await load();
+  expect(result.items[0]?.review).toEqual({ ...details, ask: "sends" });
+  expect(registry.listCapabilities).toHaveBeenCalledTimes(1);
+});

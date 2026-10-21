@@ -1209,6 +1209,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         locale: "en",
         sentence: { action: "Write item", running: "Writing item", done: "Wrote item", confirm: "Write item", decline: "Do not write" },
         slots: {},
+        content: { kind: "page" as const, title: "Draft", body: `${"x".repeat(65_536)}\u0000\ud800END\udc00`, format: "plain" as const },
       };
       catalog.mockResolvedValueOnce({
         ok: true,
@@ -1229,10 +1230,20 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect((await approvalFor(typed.id)).details).toEqual(typedReview);
       expect((await approvalFor(typed.id)).reviewDigest).toBe(approvalReviewDigest(typedReview));
       const [saved] = await sql<
-        { prepared: { review: unknown } }[]
+        { prepared: { review: string } }[]
       >`SELECT prepared FROM assistant.capability_calls WHERE id=${typed.id}::uuid`;
-      expect(saved?.prepared.review).toEqual(typedReview);
+      expect(JSON.parse(saved!.prepared.review)).toEqual(typedReview);
       await runtimeCapabilities.resolve(typed.id, { approved: false }, owner, caller);
+      // Positive resolution must decode the persisted review before comparing its digest.
+      const acceptedContent = request();
+      review.mockResolvedValueOnce({ ok: true, data: typedReview });
+      await runtimeCapabilities.prepare(acceptedContent, owner, caller);
+      review.mockResolvedValueOnce({ ok: true, data: typedReview });
+      expect(await runtimeCapabilities.resolve(acceptedContent.id, { approved: true }, owner, caller)).toMatchObject({
+        status: "completed",
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
+      execute.mockClear();
       const denied = request();
       // The card gets the Action's wording in the caller's locale, as a chat call of the same Action would.
       expect(await runtimeCapabilities.prepare(denied, owner, caller)).toMatchObject({

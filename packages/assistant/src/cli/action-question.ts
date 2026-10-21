@@ -1,6 +1,8 @@
 import type { AiPendingTurnAction } from "@k2b/cloud/ai";
 import { actionCardText, actionQuestionLines, approvalCard } from "@k2b/cloud/ai/question-text";
+import { readCapabilityReviewContent } from "@k2b/cloud/capabilities";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { type CapabilityActionReviewPresentation, CapabilityReviewContentSchema } from "@k2b/cloud/contracts";
 import { dates, i18n } from "@k2b/stdlib";
 import { terminalSafeText } from "./terminal";
 
@@ -56,3 +58,36 @@ export const pendingActionQuestion = (
     showInput: !action.review || !("sentence" in action.review) || (text.incomplete && !text.readMore),
   };
 };
+
+/** Never offer an interactive approval after a failed or incomplete full-content read. */
+export const printReviewContent = async (
+  ctx: Pick<CloudCliContext, "fetch" | "print">,
+  review: CapabilityActionReviewPresentation | null | undefined,
+  signal?: AbortSignal,
+): Promise<void> => {
+  if (!review || !("sentence" in review)) return;
+  let content = review.content;
+  if (review.contentRef) {
+    const result = await readCapabilityReviewContent(review.contentRef, {
+      fetch: (url, init) => ctx.fetch(String(url), init),
+      signal,
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    content = result.data;
+  }
+  if (!content) return;
+  // JSON preserves all fields and source escapes. Other invisible characters stay visible too; no excerpt limit.
+  const json = JSON.stringify(CapabilityReviewContentSchema.parse(content), null, 2).replace(/[\p{Cf}\u2028\u2029]/gu, (character) =>
+    character
+      .split("")
+      .map((unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`)
+      .join(""),
+  );
+  ctx.print(terminalSafeText(json));
+};
+
+export const printPendingActionContent = (
+  ctx: Pick<CloudCliContext, "fetch" | "print">,
+  action: ApprovalAction,
+  signal?: AbortSignal,
+): Promise<void> => printReviewContent(ctx, action.review, signal);

@@ -291,12 +291,24 @@ export async function observeTti(
 export class Browsers {
   readonly engines = new Map<Engine, Browser>();
   webkitSkip: string | null = null;
-  constructor(readonly signal: AbortSignal) {}
+  constructor(
+    readonly signal: AbortSignal,
+    readonly trustedSpki: string,
+  ) {}
 
   async launch(endpoint: string, engines: readonly Engine[] = ["chromium", "webkit"]) {
     this.signal.throwIfAborted();
     const options = { timeout: 30_000, headers: { "x-playwright-launch-options": JSON.stringify({ headless: true }) } };
-    if (engines.includes("chromium")) this.engines.set("chromium", await chromium.connect(endpoint, options));
+    if (engines.includes("chromium")) {
+      const launch = {
+        headless: true,
+        args: [`--ignore-certificate-errors-spki-list=${this.trustedSpki}`],
+      };
+      this.engines.set(
+        "chromium",
+        await chromium.connect(endpoint, { ...options, headers: { "x-playwright-launch-options": JSON.stringify(launch) } }),
+      );
+    }
     if (!engines.includes("webkit")) return;
     try {
       this.engines.set("webkit", await webkit.connect(endpoint, options));
@@ -376,7 +388,7 @@ export class Browsers {
       timezoneId: measuredTimeZone,
       colorScheme: "light",
       serviceWorkers: "block",
-      ignoreHTTPSErrors: true,
+      ignoreHTTPSErrors: engine !== "chromium",
     });
     const abort = () => {
       void context.close().catch(() => {});

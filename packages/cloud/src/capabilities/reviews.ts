@@ -14,10 +14,11 @@ export const capabilityPreviewIssues = (
   preview: CapabilityPreview | undefined,
   links: readonly CapabilitySemanticLink[] | undefined,
   sends = false,
+  completeContent = false,
 ): string[] => {
   if (!preview) return [];
   const issues: string[] = [];
-  const open = links?.some((link) => link.rel === "open");
+  const open = completeContent || links?.some((link) => link.rel === "open");
   if ("truncated" in preview && preview.truncated && !open) issues.push("A truncated preview requires an open link");
   if (preview.kind === "message") {
     if ((Object.values(preview.more ?? {}).some((count) => count > 0) || (preview.moreAttachments ?? 0) > 0) && !open)
@@ -33,9 +34,22 @@ export const capabilityReviewFormIssues = (review: CapabilityActionCallReview): 
   for (const form of ["confirm", "decline"] as const)
     if (Array.from(capabilityReviewSentence(review, form, { timeZone: "UTC" })).length > 40)
       issues.push(`${form} exceeds 40 rendered characters`);
-  issues.push(...capabilityPreviewIssues(review.preview, review.links, review.ask === "sends"));
+  issues.push(...capabilityPreviewIssues(review.preview, review.links, review.ask === "sends", Boolean(review.content)));
+  if (
+    review.content &&
+    review.preview &&
+    review.content.kind !== review.preview.kind &&
+    !(review.content.kind === "message" && review.preview.kind === "page")
+  )
+    issues.push("Full content must have the same kind as its preview");
+  if (review.content?.kind === "message" && review.ask === "sends") {
+    if (!review.content.from) issues.push("Full sends content requires from");
+    if (!review.content.to.length && !review.content.cc?.length && !review.content.bcc?.length)
+      issues.push("Full sends content requires a recipient");
+  }
   try {
-    if (new TextEncoder().encode(JSON.stringify(review)).byteLength > CAPABILITY_MAX_REVIEW_BYTES) issues.push("Review exceeds 32 KiB");
+    const { content: _content, ...compact } = review;
+    if (new TextEncoder().encode(JSON.stringify(compact)).byteLength > CAPABILITY_MAX_REVIEW_BYTES) issues.push("Review exceeds 32 KiB");
   } catch {
     issues.push("Review is not JSON serializable");
   }

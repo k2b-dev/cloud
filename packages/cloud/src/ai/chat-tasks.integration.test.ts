@@ -1,6 +1,7 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import { mandates } from "../services/mandates";
 import { toAiChatTaskView } from "./chat-task-contracts";
 import { chatTaskReasonSentence } from "./chat-task-reasons";
@@ -8,8 +9,9 @@ import { AiChatTaskIdempotencyConflictError, type AiChatTaskSchedule, aiChatTask
 import { authorizeCodeExecution } from "./code-execution";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { migrateCloudAi } from "./migrate";
+import * as protocol from "./protocol";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
-import { aiConversations } from "./store";
+import { aiConversations, recordAiToolReview } from "./store";
 
 const suite = databaseSuite();
 
@@ -1747,6 +1749,12 @@ suite("AI chat tasks", () => {
         INSERT INTO ai.task_messages(short_id, conversation_id, seq, kind, role, message, loop_id, meta)
         VALUES (${createAiShortId()}, ${conversation.id}::uuid, ${i + 2}, 'message', ${message.role}, ${JSON.stringify(message)}::text::jsonb,
           ${delivered.turnId}, ${JSON.stringify({ toolPresentations: { write: presentation, untitled: { ...presentation, title: "Entwurf aktualisieren", sentences: undefined }, read: { ...presentation, capabilityKind: "query" }, failed: presentation, rejected: presentation, "not-run": presentation } })}::text::jsonb)`;
+        await recordAiToolReview({
+          conversationId: conversation.id,
+          turnId: delivered.turnId,
+          callId: "not-run",
+          review: { ...reviewFixture(), content: { kind: "page", title: "Unexecuted draft", body: "x".repeat(80_000), format: "plain" } },
+        });
         if (cause === "paused") await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" });
         else expect(await aiChatTasks.delete({ userId: user!.id, taskId: task.shortId })).toBe(true);
         const [turn] = await sql<{ cancel_requested_at: Date | null; cancellation_reason: string }[]>`
@@ -1763,8 +1771,19 @@ suite("AI chat tasks", () => {
           }),
         ).toBe("completed");
         expect(await aiChatTasks.listTerminalRunningTurns()).toContainEqual({ turnId: delivered.turnId, status: "aborted" });
-        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "aborted" });
-        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "aborted" });
+        const build = protocol.buildBlocksFromMessages;
+        const receiptMessages = spyOn(protocol, "buildBlocksFromMessages").mockImplementation((rows, ...args) => {
+          expect(JSON.stringify(rows)).not.toContain("x".repeat(1_000));
+          expect(rows.some((row) => row.meta?.toolReviews?.["not-run"])).toBe(true);
+          return build(rows, ...args);
+        });
+        try {
+          await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "aborted" });
+          await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "aborted" });
+          expect(receiptMessages).toHaveBeenCalledTimes(1);
+        } finally {
+          receiptMessages.mockRestore();
+        }
         expect(await aiChatTasks.listTerminalRunningTurns()).not.toContainEqual({ turnId: delivered.turnId, status: "aborted" });
         const lines = await aiConversations.listMessages({ conversationId: conversation.id });
         expect(lines).toHaveLength(1);

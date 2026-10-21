@@ -1401,7 +1401,7 @@ export const aiRoutes = (() => {
             const result = publicPendingAction(action, conversation.shortId, turn.shortId);
             if (action.type !== "approval_request") return result;
             const record = records.find((record) => record.callId === action.callId);
-            const request = record?.approvalId ? await approvals.get(record.approvalId) : null;
+            const request = record?.approvalId ? await approvals.get(record.approvalId, undefined, true) : null;
             const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
             const stored = reviews.get(reviewCallId);
             let review: AiStoredActionReview | null = stored && !isLegacyActionReview(stored) ? stored : null;

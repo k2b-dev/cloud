@@ -651,8 +651,11 @@ even when the call names another reason. An incomplete question also stays in
 the browser when Cloud cannot read the declared policy, including when the
 app is not registered. A browser-only question is absent from
 the device inbox and detail endpoint and triggers no device push. It still
-counts in `moreActions`. The person decides in Cloud, where the full message
-is visible. To fill the inbox past such questions, one inbox call reads at
+counts in `moreActions`. The person decides in Cloud using the shared review
+and its link to the complete reviewed revision. Opening Cloud does not restore
+content omitted from that review; the application must supply the complete
+proposed content as described in [Action approvals](/en/docs/identity/approvals#where-to-decide).
+To fill the inbox past such questions, one inbox call reads at
 most the newest 100 open requests. Other truncated questions remain available on the device; show
 that their complete content is available in Cloud.
 
