@@ -555,7 +555,7 @@ code requested by the first action, API responses, or database caches.
 | Field | Observation |
 | --- | --- |
 | `clickToMainMs` | Trusted pointerdown until a frame finds destination content in the viewport: a mailbox row or the Automations heading. |
-| `clickToFirstActionMs` | Until a trusted input has a visible response: the mailbox selection toolbar, the settings dialog on desktop Automations, or the app menu on phone Automations. The element must first belong to a mounted island and be enabled. Includes the driver's dispatch delay; this is an upper bound. |
+| `clickToFirstActionMs` | Until a trusted input has a visible response: the mailbox selection toolbar or the app menu on Automations. The open Help column can hide the sidebar settings button even at desktop width, so both profiles use the visible app menu. Both the destination-content island and the action's island must be mounted, and the action must be enabled. Includes the driver's dispatch delay; this is an upper bound. |
 | `documentLoad` | Host `performance.timeOrigin` changed. |
 | `panelReloaded` | The Help iframe was replaced/disconnected, its document time origin changed, or another provider document request occurred. |
 | `panelContextMs` | First frame with the ready, visible Help heading and expected topic: `mail-work` for the mailbox; the start heading without a stale view section for Automations. |

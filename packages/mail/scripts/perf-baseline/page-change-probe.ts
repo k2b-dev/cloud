@@ -78,12 +78,15 @@ export function installPageChangeProbe({ key, panel }: { key: string; panel: typ
       if (main && watch.mainAt === null) watch.mainAt = now();
       const action = [...document.querySelectorAll(watch.actionSelector)].find(visible);
       const island = action?.closest("solid-island,solid-client");
+      const mainIsland = main?.closest("solid-island,solid-client");
       if (
         main &&
         action &&
         !action.matches(":disabled,[aria-disabled=true]") &&
         island &&
         window.__cloudPerf.mounted.has(island) &&
+        mainIsland &&
+        window.__cloudPerf.mounted.has(mainIsland) &&
         watch.readyAt === null
       ) {
         watch.readyAt = now();

@@ -22,7 +22,7 @@ test("main content, island readiness and a responding trusted input are separate
       },
     });
     history.replaceState(null, "", "/app/mail/Box001");
-    document.body.innerHTML = '<solid-island><div data-main>Mail</div><input type="search"></solid-island>';
+    document.body.innerHTML = '<solid-island><div data-main>Mail</div></solid-island><solid-island><input type="search"></solid-island>';
     for (const element of document.querySelectorAll<HTMLElement>("*")) {
       element.style.visibility = "visible";
       Object.defineProperty(element, "getBoundingClientRect", {
@@ -31,8 +31,9 @@ test("main content, island readiness and a responding trusted input are separate
       });
     }
     const island = document.querySelector("solid-island")!;
+    const actionIsland = document.querySelectorAll("solid-island")[1]!;
     window.__cloudPerf = {
-      initial: [island],
+      initial: [island, actionIsland],
       mounted: new Map(),
       started: new Map(),
       errors: [],
@@ -47,8 +48,10 @@ test("main content, island readiness and a responding trusted input are separate
     installPageChangeProbe({ key: pageChangeKey, panel: () => ({ holds: false, state: "not shown on phone" }) });
     document.head.innerHTML = '<script type="module" data-ssr-assets="/_ssr/version" data-ssr-preload="shared.js"></script>';
     island.setAttribute("data-id", "mail");
+    actionIsland.setAttribute("data-id", "shell");
     expect(window.__mailPageChange.eagerScripts()).toEqual([
       new URL("/_ssr/version/mail.js", document.baseURI).href,
+      new URL("/_ssr/version/shell.js", document.baseURI).href,
       new URL("/_ssr/version/shared.js", document.baseURI).href,
     ]);
     window.__mailPageChange.arm({
@@ -75,11 +78,16 @@ test("main content, island readiness and a responding trusted input are separate
     tick();
     expect(window.__mailPageChange.read()?.mainAt).toBeNumber();
     expect(window.__mailPageChange.read()?.readyAt).toBeNull();
+    window.__cloudPerf.mounted.set(actionIsland, 1);
+    tick();
+    // A mounted shell action cannot establish readiness for the destination island.
+    expect(window.__mailPageChange.read()?.readyAt).toBeNull();
     window.__cloudPerf.mounted.set(island, 1);
     tick();
     expect(window.__mailPageChange.read()?.readyAt).toBeNumber();
     const eagerAtReady = [
       new URL("/_ssr/version/mail.js", document.baseURI).href,
+      new URL("/_ssr/version/shell.js", document.baseURI).href,
       new URL("/_ssr/version/shared.js", document.baseURI).href,
     ];
     expect(window.__mailPageChange.eagerScripts()).toEqual(eagerAtReady);

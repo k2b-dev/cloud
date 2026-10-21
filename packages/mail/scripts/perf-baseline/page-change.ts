@@ -101,11 +101,8 @@ export class PageChangesBrowser {
     this.setup.signal.throwIfAborted();
     const target = this.target(id);
     const automated = id === "mailbox-automations";
-    const control = automated
-      ? profile === "phone"
-        ? 'button[aria-label="Open apps"]'
-        : "button:has(i.ti-settings)"
-      : "[data-mail-conversation-list] button:has(i.ti-checkbox)";
+    // The open Help column can hide Automations' sidebar settings even at desktop width.
+    const control = automated ? 'button[aria-label="Open apps"]' : "[data-mail-conversation-list] button:has(i.ti-checkbox)";
     const action = await this.click(page, profile, id);
     const before = await page.evaluate(() => {
       const frame = document.querySelector<HTMLIFrameElement>('#cloud-panel iframe[data-cloud-panel-frame="core"]');
