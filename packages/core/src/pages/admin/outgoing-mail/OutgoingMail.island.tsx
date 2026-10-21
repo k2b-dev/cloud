@@ -8,6 +8,7 @@ import {
   confirmDiscardIfDirty,
   DataTable,
   type DataTableColumn,
+  Disclosure,
   Dropdown,
   dialogCore,
   Format,
@@ -709,13 +710,25 @@ export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly Admin
         <NoticeCard tone="warning" title={t().logAccessNotDeclared} />
       </Show>
       <p class="text-sm text-secondary">{t().logAccessHint}</p>
+      <Disclosure summary={t().logAccessDetails} surface="plain">
+        <div class="flex flex-col gap-2 text-sm text-secondary">
+          <p>{t().logMetadataHint}</p>
+          <p>{t().logContentHint}</p>
+        </div>
+      </Disclosure>
       <Show when={candidates().length} fallback={<p class="text-sm text-dimmed">{t().noOtherApps}</p>}>
-        <div class="flex flex-col gap-2" role="group" aria-label={t().apps}>
+        <div class="flex flex-col gap-4" role="group" aria-label={t().apps}>
           <For each={candidates()}>
             {(app) => (
               <Select
                 label={app.name}
-                description={app.registered ? app.appId : `${app.appId} · ${t().notRegistered}`}
+                description={
+                  !app.registered
+                    ? t().notRegistered
+                    : candidates().some((other) => other.appId !== app.appId && other.name === app.name)
+                      ? app.appId
+                      : undefined
+                }
                 value={content().includes(app.appId) ? "content" : selected().includes(app.appId) ? "metadata" : "none"}
                 onValueChange={(level) => choose(app.appId, level ?? "none")}
                 options={[
@@ -729,7 +742,9 @@ export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly Admin
           </For>
         </div>
       </Show>
-      <Show when={save.error()}>{(error) => <NoticeCard tone="danger" title={t().logAccessFailed} detail={error().message} />}</Show>
+      <Show when={save.error()}>
+        {(error) => <NoticeCard role="alert" tone="danger" title={t().logAccessFailed} detail={error().message} />}
+      </Show>
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close()} disabled={save.loading()}>
           {t().cancel}

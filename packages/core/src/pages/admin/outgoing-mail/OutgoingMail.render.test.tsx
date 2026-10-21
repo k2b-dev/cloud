@@ -145,13 +145,13 @@ test("shows whose sent mail each app may read, on the page and in its dialog", (
   expect(de).toContain("Eigene Mails und Files (Metadaten)");
   expect(de).toContain("Fordert keine Einsicht ins Sendeprotokoll an");
 
-  const dialog = (locale: string, appId: string) =>
+  const dialog = (locale: string, appId: string, apps = state.apps.items) =>
     renderToString(() =>
       createComponent(LocaleProvider, {
         locale,
         get children() {
           const app = state.apps.items.find((entry) => entry.appId === appId)!;
-          return createComponent(LogAccessDialog, { app, apps: state.apps.items, close: () => {}, onSaved: () => {} });
+          return createComponent(LogAccessDialog, { app, apps, close: () => {}, onSaved: () => {} });
         },
       }),
     );
@@ -163,16 +163,25 @@ test("shows whose sent mail each app may read, on the page and in its dialog", (
   expect(invoices).toContain("Content");
   expect(invoices).toContain("No access");
   expect(invoices).toContain(">Files<");
-  expect(invoices).toContain("legacy · Not registered");
+  expect(invoices).toContain(">legacy<");
+  expect(invoices).toContain("Not registered");
+  expect(invoices).not.toContain("legacy ·");
   expect(invoices).not.toContain("does not request send log access");
-  // The administrator sees every shared field before granting access.
+  // Reach stays visible; the native disclosure makes field-level details available without a wall of text.
+  expect(invoices).toContain("past and future, while it is retained");
+  expect(invoices).toContain("What does each level allow?");
   expect(invoices).toContain(
-    "recipients, subject, status, delivery errors, who sent it, record references, and attachment names, but not the text",
+    "recipients, subject, status, delivery errors, sender, record references, and attachment names. No message text.",
   );
   expect(dialog("de", "invoices")).toContain(
-    "Empfänger, Betreff, Status, Zustellfehler, wer sie gesendet hat, Datensatzverweise und Anhangsnamen, aber nicht den Text",
+    "Empfänger, Betreff, Status, Zustellfehler, Absender, Datensatzverweise und Anhangsnamen. Kein Nachrichtentext.",
   );
   expect(dialog("de", "files")).toContain("liest daher unabhängig von dieser Auswahl nur ihre eigenen Mails");
+  expect(invoices).not.toContain(">files<");
+  const files = state.apps.items.find((entry) => entry.appId === "files")!;
+  const duplicateNames = dialog("en", "invoices", [...state.apps.items, { ...files, appId: "files-archive" }]);
+  expect(duplicateNames).toContain(">files<");
+  expect(duplicateNames).toContain(">files-archive<");
 });
 
 test("content grants are labelled separately, while missing old-server fields remain metadata", () => {

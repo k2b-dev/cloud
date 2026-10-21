@@ -120,7 +120,8 @@ else
       expect(dom.document.activeElement).toBe(trigger);
     };
     try {
-      expect(dom.root.textContent).toContain("offline · Not registered");
+      expect(dom.root.textContent).toContain("Not registered");
+      expect(dom.root.textContent?.match(/offline/g)).toHaveLength(1);
       expect(dom.root.querySelectorAll("[role=combobox]")[0]?.textContent).toContain("Content");
       await pick("Metadata");
       await pick("Content");
