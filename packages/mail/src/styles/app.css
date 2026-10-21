@@ -1214,8 +1214,12 @@
   }
 }
 
-/* The reader's details button looks selected while the details show, as a
-   column or as the open drawer; a parked drawer leaves it plain. */
+/* The phone reader replaces the hidden list head's Details access. */
+@media (min-width: 48rem) {
+  .k2b-ui .mail-reader-toolbar .mail-reader-details-access { display: none; }
+}
+
+/* The phone control looks selected while its details are open. */
 .k2b-ui .mail-reader-toolbar .mail-reader-details[aria-expanded="true"] {
   background: var(--ui-selected);
 }

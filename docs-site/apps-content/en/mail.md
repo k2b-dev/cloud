@@ -60,7 +60,8 @@ available on hover. On a phone, the workspace head appears over the list and
 leaves the screen while reading. Back, subject, overflow, and Details remain
 at the top; the message count is hidden. Reply actions stay in the bottom bar. **Conversation details** stand beside the reader while the reader
 keeps 440 px next to them; otherwise they wait behind **Details** and open with
-one click, also from the reader's own details button. Hiding the list gives
+one click from the shared head button. On a phone, use **Details** in the reader
+while the list head is hidden. Hiding the list gives
 the reader that room. In Focus, a conversation opens its details beside the
 queue, or over its end when there is no room; on a phone it opens in its
 mailbox. List rows have three lines (sender and time, subject with its marks,

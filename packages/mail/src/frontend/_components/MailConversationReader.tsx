@@ -1344,9 +1344,8 @@ export default function MailConversationReader(props: {
                 <i class="ti ti-dots" aria-hidden="true" />
               </Dropdown.Trigger>
             </Dropdown.Root>
-            <Tooltip.Anchor content={t().conversationDetails}>
-              {/* While the details wait behind the head's Details, this button opens and parks their drawer with one
-                click (#1467); AppWorkspace keeps aria-expanded in step. */}
+            <Tooltip.Anchor class="mail-reader-details-access" content={t().conversationDetails}>
+              {/* Phone readers hide the list head. Keep their Details access here; wider layouts use the shared head control. */}
               <IconButton
                 type="button"
                 class="mail-reader-details"
