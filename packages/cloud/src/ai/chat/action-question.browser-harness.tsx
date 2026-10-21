@@ -22,6 +22,18 @@ type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 const params = new URLSearchParams(location.search);
 const lang = (params.get("lang") === "en" ? "en" : "de") as ActionFixtureLocale;
 const fixtures = actionFixtures(lang);
+if (params.has("full")) {
+  const block = fixtures.mail!.block;
+  if (block.review && "sentence" in block.review) {
+    block.review = {
+      ...block.review,
+      contentRef: {
+        href: "/api/approvals/11111111-1111-4111-8111-111111111111/content",
+        digest: "a".repeat(64),
+      },
+    };
+  }
+}
 const state = params.get("state") ?? "open";
 /** Each entry is `fixture` or `fixture:state`; its id is unique even when one fixture shows in several states. */
 const entries = (params.get("scenarios") ?? "mail")
