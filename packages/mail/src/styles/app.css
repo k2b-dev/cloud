@@ -382,8 +382,37 @@
     font-weight: 600;
   }
 
+  /* One domain group holds the open mailbox and all of its places. Shared sections own its spacing. */
+  .mail-sidebar-mailbox-group.is-open {
+    background: var(--ui-app-selected);
+    border-radius: var(--k2b-radius-surface);
+  }
+
+  .mail-sidebar {
+    --mail-other-mailbox-ink: var(--k2b-neutral-500);
+  }
+
+  .dark .mail-sidebar,
+  .k2b-ui[data-theme="dark"] .mail-sidebar {
+    --mail-other-mailbox-ink: var(--k2b-neutral-400);
+  }
+
   .k2b-ui .mail-sidebar-mailbox:not([data-open="true"]) :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
-    color: var(--k2b-text-muted);
+    color: var(--mail-other-mailbox-ink);
+    font-weight: 400;
+  }
+
+  .k2b-ui .mail-sidebar-mailbox:not([data-open="true"]):is(:hover, :focus-within) :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
+    color: var(--k2b-text-secondary);
+  }
+
+  /* Mail's primary workspace action is Compose; other actions and status tones keep their own roles. */
+  .mail-workspace [data-workspace-primary] {
+    --k2b-action-solid: var(--app-accent);
+  }
+
+  .mail-workspace [data-workspace-primary] {
+    --k2b-action-solid-hover: color-mix(in srgb, var(--app-accent) 88%, black);
   }
 
   .mail-sidebar-health {

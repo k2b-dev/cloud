@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
 import { createConfig } from "@k2b/ssr";
 
 import type { Browser, Locator, Page } from "playwright";
@@ -106,7 +107,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
     }),
   );
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
-  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button>' : ""}<script>${controller}</script><script type="module">
+  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui app-accent-scope" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0;${appAccentStyle("#0f766e")}">${shell(url, html)}${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button>' : ""}<script>${controller}</script><script type="module">
     const geometry=${geometrySource};
     const strip=${stripSource};
     const step=(name)=>{document.documentElement.dataset.mailShellStep=name;performance.mark('mail-shell:'+name)};
@@ -829,13 +830,13 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
     for (const theme of ["light", "dark"] as const)
       for (const width of [1440, 390])
         test(`mailbox context contrast ${theme} ${width}: folder selection and keyboard switch stay independent`, async () => {
-          const page = await open(`${boxPath}?folder=Inbox1&navigation=1&theme=${theme}`, width);
+          const page = await open(`${boxPath}?folder=Inbox1&navigation=1&theme=${theme}&locale=${theme === "light" ? "de" : "en"}`, width);
           const appearance = (locator: Locator) =>
             locator.evaluate((element) => {
               const style = getComputedStyle(element);
               const probe = document.createElement("span");
-              probe.style.color = "var(--k2b-text-muted)";
-              probe.style.backgroundColor = "var(--k2b-surface-muted)";
+              probe.style.color = element.closest(".mail-sidebar") ? "var(--mail-other-mailbox-ink)" : "var(--k2b-text-muted)";
+              probe.style.backgroundColor = "var(--k2b-surface)";
               element.append(probe);
               const muted = getComputedStyle(probe).color;
               const background = getComputedStyle(probe).backgroundColor;
@@ -876,12 +877,64 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             };
             const ink = luminance(otherInk.color);
             const background = luminance(otherInk.background);
-            // The shared muted-text contract retains 7:1 contrast even on the darker muted surface.
-            expect((Math.max(ink, background) + 0.05) / (Math.min(ink, background) + 0.05)).toBeGreaterThanOrEqual(7);
+            // Other mailboxes stay readable and selectable even with their quieter app-owned presentation.
+            expect((Math.max(ink, background) + 0.05) / (Math.min(ink, background) + 0.05)).toBeGreaterThanOrEqual(phone ? 7 : 4.5);
             expect(await current.getAttribute("aria-current")).toBeNull();
             expect(await other.getAttribute("aria-disabled")).toBeNull();
             const folder = navigation.locator(`a[href="${boxPath}?folder=Inbox1"]`);
             expect(await folder.getAttribute("aria-current")).toBe("page");
+            if (!phone) {
+              const group = navigation.locator(".mail-sidebar-mailbox-group.is-open");
+              expect(await group.count()).toBe(1);
+              expect(await group.locator('[data-mailbox="Box001"]').count()).toBe(1);
+              expect(await group.locator(".mail-sidebar-folders").count()).toBe(1);
+              expect(await group.locator('[data-mailbox="Box002"]').count()).toBe(0);
+              const colors = await group.evaluate((element) => {
+                const probe = document.createElement("span");
+                probe.style.background = "var(--ui-app-selected)";
+                element.append(probe);
+                const fill = getComputedStyle(element).backgroundColor;
+                const expected = getComputedStyle(probe).backgroundColor;
+                probe.remove();
+                return { fill, expected };
+              });
+              expect(colors.fill).toBe(colors.expected);
+            }
+            // The real Cloud appearance scope supplies the approved 10% navigation fill.
+            const selectedColors = await folder.evaluate((element) => {
+              const row = element.closest(".k2b-app-workspace__sidebar-item") ?? element;
+              const probe = document.createElement("span");
+              probe.style.background = "var(--ui-app-selected-nav)";
+              row.append(probe);
+              const expected = getComputedStyle(probe).backgroundColor;
+              probe.remove();
+              return { fill: getComputedStyle(row).backgroundColor, ink: getComputedStyle(element).color, expected };
+            });
+            expect(selectedColors.fill).toBe(selectedColors.expected);
+            if (theme === "light") expect(selectedColors.fill).toBe("rgb(231, 241, 241)");
+            const fg = luminance(selectedColors.ink);
+            const bg = luminance(selectedColors.fill);
+            expect((Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)).toBeGreaterThanOrEqual(4.5);
+            if (!phone) {
+              await folder.hover();
+              await folder.focus();
+            }
+            await settled(page);
+            if (!phone) {
+              expect(await folder.evaluate((element) => document.activeElement === element)).toBe(true);
+              expect(
+                await folder.evaluate((element) => getComputedStyle(element.closest(".k2b-app-workspace__sidebar-item")!).backgroundColor),
+              ).toBe(selectedColors.fill);
+            }
+            const compose = page.locator("[data-workspace-primary]");
+            const composeColors = await compose.evaluate((element) => {
+              const style = getComputedStyle(element);
+              return { ink: style.color, fill: style.backgroundColor };
+            });
+            expect(composeColors.fill).toBe("rgb(15, 118, 110)");
+            const composeInk = luminance(composeColors.ink);
+            const composeFill = luminance(composeColors.fill);
+            expect((Math.max(composeInk, composeFill) + 0.05) / (Math.min(composeInk, composeFill) + 0.05)).toBeGreaterThanOrEqual(4.5);
             if (phone) {
               expect(await current.locator("..").getAttribute("data-context")).toBe("true");
               expect(await other.locator("..").getAttribute("data-context")).toBe("false");
@@ -898,6 +951,8 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
                   {
                     currentInk,
                     otherInk,
+                    selectedColors,
+                    composeColors,
                     phases: await page.evaluate(() =>
                       performance
                         .getEntriesByType("mark")

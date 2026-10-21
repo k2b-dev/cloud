@@ -16,8 +16,12 @@ context such as assignments, comments, local tags, reminders, and follow-up stat
 
 The sidebar lists **Focus** and your mailboxes, with pinned mailboxes first.
 The open mailbox expands to Inbox, Drafts, Scheduled, Send problems, Sent,
-Archive/Trash/Junk under **More**, and custom folders. On a phone, open the
-mailbox title to reach these places.
+Archive/Trash/Junk under **More**, and custom folders. In the sidebar, the open
+mailbox and its folders share a quiet teal surface. Other mailboxes stay readable
+and clickable with less emphasis. On a phone, open the mailbox title to reach
+these places.
+Mail's teal accent also marks selections and **Compose**; status and tag colors
+keep their own meanings.
 
 The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
 **Waiting for reply**, **Unassigned**, and **More** for the remaining and saved
