@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
-import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import { CapabilityActionReviewDataSchema, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts, encryptSecret } from "@k2b/cloud/services";
+import { approvalReviewDigest, approvals } from "@k2b/cloud/services/approvals";
 import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import { unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -238,6 +239,62 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     const subjectOnly = unwrap(await patch.review(patch.input.parse({ ...base, patch: { subject: "New subject" } }), context()));
     expect(subjectOnly.content).toMatchObject({ body: larger, subject: "New subject", baseRevision: 7 });
     expect(unwrap(await getDraft(owner, mailboxId, draftId))).toMatchObject({ body: larger, revision: 7 });
+  }, 30_000);
+
+  test("the 10k emoji boundary and lone surrogates round-trip through the real approval JSONB snapshot", async () => {
+    const patch = mailCapabilities.actions["draft.patch"];
+    const subject = `${"s".repeat(199)}😀tail\ud800`;
+    for (const body of [`${"x".repeat(9_999)}😀tail\ud800`, "short\ud800body\udc00"]) {
+      const input = patch.input.parse({
+        mailboxId: mailboxShortId,
+        draftId: draftShortId,
+        expectedRevision: 7,
+        patch: { subject, body },
+      });
+      const review = unwrap(await patch.review(input, context()));
+      assertCapabilityReview(review);
+      expect(review.content).toMatchObject({ subject, body, baseRevision: 7 });
+      expect(review.slots.draft).toMatchObject({ kind: "object", title: "s".repeat(199) });
+      if (review.preview?.kind !== "message") throw new Error("Missing compact message preview");
+      const compactBody = body.length > 10_000 ? "x".repeat(9_999) : body.toWellFormed();
+      expect(review.preview.body).toBe(compactBody);
+      expect(review.preview.body.isWellFormed()).toBeTrue();
+      // A provider that leaves malformed compact text must fail the public review contract.
+      for (const invalid of [
+        { ...review, preview: { ...review.preview, body: "invalid\ud800" } },
+        { ...review, preview: { ...review.preview, subject: "invalid\ud800" } },
+      ])
+        expect(CapabilityActionReviewDataSchema.safeParse(invalid).success).toBeFalse();
+      const request = await approvals.request({
+        appId: "mail",
+        action: "draft.patch",
+        requester: { kind: "assistant_turn", appId: "assistant", ref: crypto.randomUUID() },
+        subjectId: ownerId,
+        approverUserId: ownerId,
+        assurance: "confirm",
+        sentence: "Update draft",
+        input,
+        review,
+        expiresInMs: 600_000,
+      });
+      if (!request.ok) throw new Error("Missing approval snapshot");
+      try {
+        const [stored] = await sql<{ body: string; content: string }[]>`
+          SELECT details->'preview'->>'body' AS body, details->>'content' AS content
+          FROM approvals.requests WHERE id=${request.id}::uuid`;
+        expect(stored?.body).toBe(compactBody);
+        expect(JSON.parse(stored!.content)).toEqual(review.content);
+        const restored = await approvals.get(request.id);
+        expect(restored?.details).toEqual(review);
+        expect(restored?.reviewDigest).toBe(approvalReviewDigest(review));
+        const compact = await approvals.get(request.id, undefined, true);
+        expect(compact?.details).not.toHaveProperty("content");
+        expect(compact?.details).toHaveProperty("contentRef.digest", restored?.reviewDigest);
+      } finally {
+        await sql`DELETE FROM approvals.requests WHERE id=${request.id}::uuid`;
+      }
+    }
+    expect(unwrap(await getDraft(owner, mailboxId, draftId))).toMatchObject({ subject: "Maintenance", body: "Hello Lea", revision: 7 });
   }, 30_000);
 
   for (const inline of ["none", "new", "duplicate"] as const)
