@@ -19,6 +19,7 @@ const ADMIT =
   `
 local id,quota,count=ARGV[2],tonumber(ARGV[3]),tonumber(ARGV[4])
 local deadline=tonumber(ARGV[5])
+local freeOnly=ARGV[12]=='1'
 local cloudSlots,baseSlots,maxWaiting,leaseMs,waitingMs,graceMs=tonumber(ARGV[6]),tonumber(ARGV[7]),tonumber(ARGV[8]),tonumber(ARGV[9]),tonumber(ARGV[10]),tonumber(ARGV[11])
 redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now)
 redis.call('ZREMRANGEBYSCORE',KEYS[2],'-inf',now)
@@ -29,6 +30,7 @@ local used=tonumber(old[1] or 0)==reset and tonumber(old[2] or 0) or 0
 if redis.call('HGET',KEYS[5],'cancelled')=='1' then redis.call('ZREM',KEYS[3],id); return {'CANCELLED',used,reset,now} end
 if deadline>0 and now>=deadline then redis.call('ZREM',KEYS[3],id); return {'BUSY',used,reset,now} end
 if count==1 and used>=quota then redis.call('ZREM',KEYS[3],id); return {'QUOTA',used,reset,now} end
+if freeOnly and redis.call('ZCARD',KEYS[3])>0 then return {'BUSY',used,reset,now} end
 if redis.call('ZCARD',KEYS[1])<cloudSlots and redis.call('ZCARD',KEYS[2])<baseSlots then
  redis.call('ZREM',KEYS[3],id)
  redis.call('ZADD',KEYS[1],now+leaseMs,id); redis.call('PEXPIRE',KEYS[1],leaseMs)
@@ -36,6 +38,7 @@ if redis.call('ZCARD',KEYS[1])<cloudSlots and redis.call('ZCARD',KEYS[2])<baseSl
  if count==1 then used=used+1; redis.call('HSET',KEYS[4],'reset',reset,'used',used); redis.call('PEXPIRE',KEYS[4],math.max(1,reset-now)) end
  return {'OK',used,reset,now}
 end
+if freeOnly then return {'BUSY',used,reset,now} end
 local waiting=redis.call('ZSCORE',KEYS[3],id)
 if waiting then
  if now>=tonumber(waiting)-graceMs then redis.call('ZREM',KEYS[3],id); return {'BUSY',used,reset,now} end
@@ -50,7 +53,14 @@ const CANCEL = `if redis.call('HGET',KEYS[1],'actor')~=ARGV[1] then return 0 end
 const USAGE =
   CLOCK +
   `local reset=(math.floor(now/3600000)+1)*3600000; local v=redis.call('HMGET',KEYS[1],'reset','used'); return {tonumber(v[1] or 0)==reset and tonumber(v[2] or 0) or 0,reset}`;
-export type AdmissionInput = { baseId: string; runId: string; quota: number; countQuota?: boolean; signal?: AbortSignal };
+export type AdmissionInput = {
+  baseId: string;
+  runId: string;
+  quota: number;
+  countQuota?: boolean;
+  freeOnly?: boolean;
+  signal?: AbortSignal;
+};
 export type SqlAdmission = ReturnType<typeof createSqlAdmission>;
 
 /** A dedicated fail-closed connection. testOnly clock/poll hooks are explicit,
@@ -118,6 +128,7 @@ export const createSqlAdmission = (
         String(LEASE_MS),
         String(WAIT_MS + WAIT_GRACE_MS),
         String(WAIT_GRACE_MS),
+        input.freeOnly ? "1" : "0",
       ],
     );
     if (!Array.isArray(reply)) throw new SqlError("STORE_UNAVAILABLE", "Invalid admission response");

@@ -5,13 +5,18 @@ import { type Accessor, onCleanup, type Setter } from "solid-js";
 import type { PulseSource } from "../../contracts";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
-import { createPulseSource, scrapePulseSourceOnce, sourceCreateValidationError } from "./source-actions";
+import { createPulseSource, SourceCreateError, scrapePulseSourceOnce, sourceCreateValidationError } from "./source-actions";
 import { openSourceCreateDialog } from "./source-create-dialog";
-import { openSourceEditDialog } from "./source-edit-dialog";
+import { openSourceEditDialog, SourceEditError } from "./source-edit-dialog";
 import type { CreateSourceInput, WorkspaceView } from "./types";
 
 type SourceControllerDeps = {
   selectedBaseId: Accessor<string>;
+  selectedBaseName?: Accessor<string>;
+  timezone?: Accessor<string>;
+  askAssistant?: () => Promise<void>;
+  assistantPending?: Accessor<boolean>;
+  assistantError?: Accessor<string | null>;
   loading: Accessor<boolean>;
   setLoading: Setter<boolean>;
   selectedSourceId: Accessor<string>;
@@ -40,11 +45,20 @@ export const createSourceController = (deps: SourceControllerDeps) => {
   });
   const editMutation = mutation.create<PulseSource, { baseId: string; sourceId: string; patch: Record<string, unknown> }>({
     mutation: ({ baseId, sourceId, patch }, { abortSignal }) =>
-      jsonFetch<PulseSource>(`/api/pulse/bases/${baseId}/sources/${sourceId}`, {
-        method: "PATCH",
-        body: JSON.stringify(patch),
-        signal: abortSignal,
-      }),
+      jsonFetch<PulseSource>(
+        `/api/pulse/bases/${baseId}/sources/${sourceId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+          signal: abortSignal,
+        },
+        "REQUEST_FAILED",
+        (status, body) =>
+          new SourceEditError(
+            status === 409 ? "conflict" : status >= 500 ? "uncertain" : "rejected",
+            body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : "REQUEST_FAILED",
+          ),
+      ),
   });
   const removeMutation = mutation.create<void, { baseId: string; sourceId: string }>({
     mutation: ({ baseId, sourceId }, { abortSignal }) =>
@@ -136,6 +150,11 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       toast.success(input.kind === "http_ingest" ? t().httpIngestSourceCreated : t().metricsSourceCreated);
       return true;
     } catch (error) {
+      if (disposed) return false;
+      if (!(error instanceof SourceCreateError) || error.kind === "uncertain") {
+        await reconcile([deps.refreshBaseData], t().sourceCreateUncertain);
+        throw new SourceCreateError("uncertain", t().sourceCreateUncertain);
+      }
       toast.error(error instanceof Error ? error.message : t().sourceAddFailed);
       return false;
     } finally {
@@ -145,7 +164,16 @@ export const createSourceController = (deps: SourceControllerDeps) => {
 
   const addSource = () => {
     if (!requireWritable()) return;
-    return openSourceCreateDialog({ loading: deps.loading, createSource });
+    return openSourceCreateDialog({
+      loading: deps.loading,
+      baseName: deps.selectedBaseName?.(),
+      createSource,
+      inspectSources: () => deps.navigate({ view: "sources" }),
+      timezone: deps.timezone?.(),
+      askAssistant: deps.askAssistant,
+      assistantPending: deps.assistantPending,
+      assistantError: deps.assistantError,
+    });
   };
 
   const scrape = async (source: PulseSource) => {
@@ -190,20 +218,28 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (!requireWritable()) return;
     const baseId = deps.selectedBaseId();
     if (!baseId) return;
-    const patch = await openSourceEditDialog(source);
-    if (disposed || !patch || !requireWritable()) return;
-    deps.setLoading(true);
-    try {
-      await editMutation.mutate({ baseId, sourceId: source.id, patch: { ...patch } });
-      if (disposed) return;
-      if (editMutation.error()) throw editMutation.error();
-      if (!(await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed))) return;
-      toast.success(t().sourceUpdated);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().sourceUpdateFailed);
-    } finally {
-      deps.setLoading(false);
-    }
+    await openSourceEditDialog(source, {
+      loading: deps.loading,
+      timezone: deps.timezone?.() ?? "UTC",
+      save: async (patch) => {
+        if (disposed || !requireWritable()) throw new SourceEditError("uncertain", t().refreshBeforeChanges);
+        deps.setLoading(true);
+        try {
+          await editMutation.mutate({ baseId, sourceId: source.id, patch });
+          if (disposed) throw new SourceEditError("uncertain", t().sourceEditUncertain);
+          if (editMutation.error()) throw editMutation.error();
+          if (!(await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed)))
+            throw new SourceEditError("uncertain", t().sourceEditUncertain);
+          toast.success(t().sourceUpdated);
+        } catch (error) {
+          // Reconcile a rejected/lost response before another dialog can write.
+          await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed);
+          throw error;
+        } finally {
+          deps.setLoading(false);
+        }
+      },
+    });
   };
 
   const removeSource = async (source: PulseSource) => {
