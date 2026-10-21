@@ -1,3 +1,4 @@
+import { createHash, X509Certificate } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -37,7 +38,8 @@ export function browserServer(version: string, port: number) {
   return {
     image: `mcr.microsoft.com/playwright:v${version}-noble`,
     args: ["--init", "--ipc=host", "--user", "pwuser", "--workdir", "/home/pwuser"],
-    tail: ["npx", "-y", `playwright@${version}`, "run-server", "--port", String(port), "--host", "0.0.0.0"],
+    // Playwright 1.64 filters client launch args unless this controlled, loopback-published server opts in.
+    tail: ["npx", "-y", `playwright@${version}`, "run-server", "--unsafe", "--port", String(port), "--host", "0.0.0.0"],
     endpoint: `ws://127.0.0.1:${port}/`,
   };
 }
@@ -396,6 +398,41 @@ export class Runtime {
       this.signal,
     );
     console.log(`Production gateway through Caddy TLS + HTTP/2: ${this.origin} (${this.prefix})`);
+  }
+
+  /** Read only the public leaf certificate from the verified, run-owned Caddy container. */
+  async browserSpki(): Promise<string> {
+    const name = this.name("caddy");
+    if (!this.containers.includes(name)) throw new Error("Caddy certificate source was not started by this run");
+    const source = z
+      .object({
+        Id: z.string().regex(/^[a-f0-9]{64}$/),
+        Config: z.object({ Image: z.literal(caddyImage), Labels: z.record(z.string(), z.string()) }),
+      })
+      .parse(
+        JSON.parse(
+          await command(["docker", "container", "inspect", "--format", "{{json .}}", name], {
+            timeoutMs: 5000,
+            signal: this.signal,
+          }),
+        ),
+      );
+    if (source.Config.Labels["cloud.perf.run"] !== this.prefix) throw new Error("Caddy certificate source belongs to another run");
+    // Use the inspected immutable ID, so replacing a container with the same name cannot change the source.
+    // Caddy's XDG_DATA_HOME=/data stores the tls-internal localhost leaf at this fixed path; never read its key.
+    const pem = await command(["docker", "exec", source.Id, "cat", "/data/caddy/certificates/local/localhost/localhost.crt"], {
+      timeoutMs: 5000,
+      signal: this.signal,
+    });
+    const cert = new X509Certificate(pem);
+    if (cert.ca || cert.checkHost("localhost", { subject: "never" }) !== "localhost")
+      throw new Error("Caddy certificate must be a localhost leaf");
+    const now = Date.now();
+    if (now < Date.parse(cert.validFrom) || now >= Date.parse(cert.validTo))
+      throw new Error("Caddy certificate is outside its validity period");
+    return createHash("sha256")
+      .update(cert.publicKey.export({ type: "spki", format: "der" }))
+      .digest("base64");
   }
 
   async startBrowsers(version: string) {

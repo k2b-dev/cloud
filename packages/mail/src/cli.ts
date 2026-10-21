@@ -41,7 +41,6 @@ import {
   type ComposeFormattingWarning,
   type ComposePreview,
   type ComposeSafetyApproval,
-  type ComposeSafetyReview,
   type ComposeSignatureDefault,
   type ComposeSuggestion,
   type ComposeTemplate,
@@ -62,6 +61,7 @@ import {
   type DraftIntent,
   type DraftLease,
   type DraftRecoveryCopy,
+  type DraftSendReview,
   draftEditableContentInputSchema,
   type FolderDisplay,
   folderDisplaySchema,
@@ -938,21 +938,24 @@ const reviewDraftSafety = async (
   mailboxId: string,
   draft: Pick<MailDraft, "id" | "revision">,
   approve: boolean,
-): Promise<ComposeSafetyApproval | undefined> => {
-  const review = await readApi<ComposeSafetyReview>(
+): Promise<{ expectedContentHash: string; safetyApproval?: ComposeSafetyApproval }> => {
+  const review = await readApi<DraftSendReview>(
     ctx,
     `/mailboxes/${mailboxId}/drafts/${draft.id}/safety-review`,
     jsonRequest("POST", { expectedRevision: draft.revision }),
   );
-  if (review.warnings.length === 0) return undefined;
+  if (review.warnings.length === 0) return { expectedContentHash: review.contentHash };
   if (!approve) {
     const details = review.warnings.map((warning) => `- ${warning.title}: ${warning.description}`).join("\n");
     throw new Error(`Sending requires review:\n${details}\nPass --approve-safety after reviewing these warnings.`);
   }
   return {
-    revision: review.revision,
-    fingerprint: review.fingerprint,
-    warningIds: review.warnings.map((warning) => warning.id),
+    expectedContentHash: review.contentHash,
+    safetyApproval: {
+      revision: review.revision,
+      fingerprint: review.fingerprint,
+      warningIds: review.warnings.map((warning) => warning.id),
+    },
   };
 };
 
@@ -2733,7 +2736,7 @@ const everydayCommands = (t: Translate) => {
         const scheduledAt = flags.schedule ? parseOffsetDateTime(flags.schedule, "--schedule") : undefined;
         const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
         const draft = await readApi<MailDraft>(ctx, `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draft, "Draft id")}`);
-        const safetyApproval = await reviewDraftSafety(ctx, mailbox.id, draft, flags.approveSafety);
+        const reviewed = await reviewDraftSafety(ctx, mailbox.id, draft, flags.approveSafety);
         const queued = await readApi<MailCommand>(
           ctx,
           `/mailboxes/${mailbox.id}/commands`,
@@ -2745,7 +2748,7 @@ const everydayCommands = (t: Translate) => {
             scheduledAt,
             undoSeconds: flags.undo,
             idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
-            ...(safetyApproval ? { safetyApproval } : {}),
+            ...reviewed,
           }),
         );
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, queued.id, flags.timeoutSeconds) : queued;

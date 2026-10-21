@@ -4,6 +4,8 @@ import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
   CAPABILITY_MAX_RESULT_BYTES,
+  CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
+  CapabilityActionReviewDataSchema,
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
   type CapabilityManifest,
@@ -293,6 +295,23 @@ export default defineCliCommands({
         const reader = resolveCapabilityResourceReader(app.manifest, ref);
         if (!reader) throw new Error(`Cloud resource type ${ref.type} is unknown or has no reader.`);
         await invoke({ ctx, kind: "queries", appId, capabilityId: reader.localId, inputValue: { id: ref.id }, manifest: app.manifest });
+      },
+    }),
+    command("review", {
+      summary: "Read the complete proposed Action without executing it",
+      args: { appId: arg.required({ description: "Owning app id" }), actionId: arg.required({ description: "App-local action id" }) },
+      flags: { input: flag.input({ required: true, description: "Strict JSON input; supports --input-file or --stdin" }) },
+      run: async ({ ctx, args, flags }) => {
+        const response = await ctx.fetch(
+          `/api/capabilities/v1/actions/${encodeURIComponent(args.appId)}/${encodeURIComponent(args.actionId)}/review`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ input: await parseInput(flags.input) }),
+          },
+        );
+        const review = CapabilityActionReviewDataSchema.parse(await readCapabilityJson(response, CAPABILITY_MAX_REVIEW_RESPONSE_BYTES));
+        printGenericResult(ctx, review);
       },
     }),
     command("action", {
