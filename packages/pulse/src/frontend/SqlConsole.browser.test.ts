@@ -122,6 +122,7 @@ test("SQL anchors remain stable while result height follows the original chart b
       expect(await tab.getByRole("button", { name: "Speichern unter …" }).isEnabled()).toBe(true);
       await editor.press("Control+Enter");
       expect(runs).toHaveLength(3);
+      await tab.getByRole("button", { name: "Ausführen", exact: true }).waitFor();
       expect(await geometry(tab)).toEqual(before);
       expect(await resultHeight()).toBe(360);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
@@ -486,6 +487,14 @@ test("the last of 32 parameters keeps its visible external diagnosis alongside s
     expect(await visibleInStrip()).toBe(true);
     await result.getByRole("button", { name: "Wert eintragen", exact: true }).click();
     expect(await last.evaluate((element) => document.activeElement === element)).toBe(true);
+    await tab.waitForFunction(() => {
+      const input = document.querySelector<HTMLInputElement>('input[aria-label=":p31"]');
+      const strip = input?.closest("[data-sql-parameter-strip]");
+      if (!input || !strip || document.activeElement !== input) return false;
+      const box = input.getBoundingClientRect(),
+        bounds = strip.getBoundingClientRect();
+      return box.left >= bounds.left - 1 && box.right <= bounds.right + 1;
+    });
     expect(await visibleInStrip()).toBe(true);
     await last.fill("2");
     expect(await last.getAttribute("data-original-parameter")).toBe("true");
@@ -558,6 +567,9 @@ test("SQL composition keeps phone orientation, local syntax colors and monospace
       await tab.clock.runFor(32);
       expect(await head.getByText("Beispiel-SQL", { exact: true }).count()).toBe(0);
       expect(await head.getByText("Tabellen:", { exact: false }).isVisible()).toBe(true);
+      await tab.waitForFunction(() =>
+        [".cd-k", ".cd-param", ".cd-s", ".cd-n"].every((selector) => document.querySelector(`[data-sql-region="editor"] ${selector}`)),
+      );
       const colors = await tab.locator('[data-sql-region="editor"]').evaluate((element) => {
         const selectors = [".cd-k", ".cd-param", ".cd-s", ".cd-n"];
         const result = selectors.map((selector) => getComputedStyle(element.querySelector(selector)!).color);
@@ -576,6 +588,7 @@ test("SQL composition keeps phone orientation, local syntax colors and monospace
       });
       expect(colors.result).toEqual(colors.expected);
       await tab.getByRole("textbox", { name: ":host", exact: true }).fill("web-01");
+      await tab.waitForFunction(() => document.fonts.status === "loaded");
       expect(
         await tab.locator("[data-sql-parameter-strip] .font-semibold").evaluate((element) => getComputedStyle(element).fontFamily),
       ).toContain("IBM Plex Mono");

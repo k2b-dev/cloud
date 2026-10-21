@@ -4,11 +4,11 @@ import { adminCommands } from "./cli/admin";
 import { baseCommands } from "./cli/bases";
 import { resolveBaseFromCommand, resolveSource } from "./cli/context";
 import { baseFlag, JSON_INPUT } from "./cli/flags";
+import { queryCommands } from "./cli/queries";
 import { jsonRequest, printJsonOrTable, readApi, readJsonInput } from "./cli/shared";
 import { sourceTokenCommands } from "./cli/source-tokens";
 import { sourceCommands } from "./cli/sources";
 import { sqlCommand } from "./cli/sql";
-import { queryCommands } from "./cli/queries";
 import type { PulseIngestBatch } from "./contracts";
 
 type IngestResult = { metrics: number; events: number; states: number };

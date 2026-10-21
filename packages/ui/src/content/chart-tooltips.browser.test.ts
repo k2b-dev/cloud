@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 const topLegendFixture = `
 import { createChartCursor } from "../src/content/chart-cursor";
@@ -101,6 +101,7 @@ test("a plain bar chart shows label and value on hover without shifting layout",
   const page = await open();
   try {
     const chart = page.locator(".plain-bar");
+    await settled(page);
     const before = await chart.boundingBox();
     expect(before).not.toBeNull();
     await chart.locator(".stdlib-chart-bar").first().hover();
@@ -179,6 +180,7 @@ test("a StatCell trend has a named sparkline with hover inspection and stable ge
   try {
     const chart = page.locator('.requests-trend [data-chart-kind="sparkline"]');
     expect(await chart.getAttribute("aria-label")).toBe("Requests");
+    await settled(page);
     const before = await chart.boundingBox();
     expect(before).not.toBeNull();
     await chart.locator("[data-chart-datum] circle").last().hover();
@@ -252,6 +254,7 @@ for (const width of [390, 1440])
       await chart.scrollIntoViewIfNeeded();
       await page.evaluate(() => new Promise(requestAnimationFrame));
       const plot = chart.locator(".k2b-chart__svg");
+      await settled(page);
       const outer = await chart.boundingBox();
       const legend = await chart.locator(".k2b-chart__legend").boundingBox();
       const drawing = await plot.boundingBox();
@@ -312,6 +315,7 @@ for (const width of [390, 1440])
       const point = chart.locator("[data-chart-datum] circle").last();
       await point.scrollIntoViewIfNeeded();
       await page.evaluate(() => new Promise(requestAnimationFrame));
+      await settled(page);
       const pointBox = await point.boundingBox();
       expect(pointBox).not.toBeNull();
       await page.mouse.move(pointBox!.x + pointBox!.width / 2, pointBox!.y + pointBox!.height / 2);

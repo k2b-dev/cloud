@@ -1,4 +1,3 @@
-import { sourceCounts } from "./source-counts";
 import type { ServiceAccount, ServiceAccountCredential, User } from "@k2b/cloud/contracts";
 import { err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
@@ -8,6 +7,7 @@ import { withShortId } from "../lib/short-id";
 import { SourceConfigSchema } from "../metric-filters";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
 import { checkScrapeTarget } from "./scrape-target";
+import { sourceCounts } from "./source-counts";
 import { tryMirrorSource } from "./source-mirror";
 import { iso, isoNullable } from "./telemetry-values";
 

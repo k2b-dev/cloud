@@ -1,6 +1,6 @@
-import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
 import { PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
+import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
 import { METRIC_TYPES, SOURCE_KINDS } from "../contracts";
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
 import { MetricFiltersSchema } from "../metric-filters";

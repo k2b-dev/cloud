@@ -7,6 +7,7 @@ import {
   confirmDiscardIfDirty,
   DescriptionList,
   Format,
+  IconButton,
   IconInput,
   NoticeCard,
   NumberInput,
@@ -325,11 +326,11 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   <div role="group" aria-label={t().settingsColor} class="flex flex-wrap gap-2.5 py-1">
                     <For each={BASE_COLORS}>
                       {(value) => (
-                        <Button
+                        <IconButton
                           variant="ghost"
                           class="h-[38px] w-[38px] rounded-[10px] p-0!"
                           disabled={!options.canAdmin}
-                          aria-label={
+                          label={
                             {
                               zinc: t().settingsColorGray,
                               blue: t().settingsColorBlue,
@@ -347,7 +348,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                           }}
                         >
                           <i class={`${icon()} text-lg`} aria-hidden="true" />
-                        </Button>
+                        </IconButton>
                       )}
                     </For>
                   </div>

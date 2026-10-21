@@ -4,8 +4,8 @@ import { createBaseLifecycle } from "../service/base-lifecycle";
 import { parsePrometheusMetrics } from "../service/metrics-scraper";
 import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "./base-store.test-fixture";
 import { clickhouseQuery, StoreQueryError } from "./client";
-import { quoteIdentifier as q } from "./validation";
 import { createSqlRunner } from "./sql-run";
+import { quoteIdentifier as q } from "./validation";
 
 suiteFor("database", "clickhouse")("Pulse per-base SQL helpers", () => {
   beforeAll(installFixtureStore, 30_000);

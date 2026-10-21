@@ -9,7 +9,7 @@ import solid from "babel-preset-solid";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // iOS Safari zooms the page when a focused field's text is smaller than 16 px.
 // Font size and the boxes around a field are layout results, which happy-dom
@@ -115,7 +115,7 @@ const measure = async (styles: string, host: Host) => {
   const tab = await browser.newPage(phone);
   try {
     await tab.setContent(page(styles, host));
-    await tab.evaluate(() => document.fonts.ready);
+    await settled(tab);
     return await tab.evaluate((selector) => {
       const boxes = () =>
         Array.from(document.querySelectorAll("main *")).map((element, index) => {
@@ -199,6 +199,7 @@ test.each([false, true])(
             iconCount: shell.querySelectorAll(".k2b-input-shell__icon").length,
           };
         });
+      await settled(tab);
       const before = await measureCompact();
       expect(before.shellHeight).toBe(26);
       expect(before.inputHeight).toBe(20);
@@ -206,6 +207,7 @@ test.each([false, true])(
       expect(before.fontSize).toBe(touch ? 16 : 12);
       expect(before.iconCount).toBe(0);
       await input.focus();
+      await settled(tab);
       expect(await measureCompact()).toEqual(before);
       expect(await input.inputValue()).toBe("Europe");
     } finally {
@@ -232,6 +234,7 @@ test("embedded code keeps its overlay and gutter aligned at the touch font size"
     await tab.setContent(
       `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><div style="height:232px;font-size:13px;line-height:20px">${markup}</div></body></html>`,
     );
+    await settled(tab);
     const metrics = await tab.locator('[data-variant="embedded"]').evaluate((element) => {
       const measureLayer = (selector: string) => {
         const node = element.querySelector<HTMLElement>(selector)!;
@@ -293,10 +296,12 @@ test.each([false, true])(
       expect(await tab.getByRole("status").isVisible()).toBeTrue();
       for (const input of [inlineInput, externalInput]) {
         expect(await input.getAttribute("aria-invalid")).toBe("true");
+        await settled(tab);
         expect(await input.evaluate((element) => element.parentElement!.getBoundingClientRect().height)).toBe(26);
         expect(await input.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBe(touch ? 16 : 12);
         const before = await input.evaluate((element) => element.parentElement!.getBoundingClientRect().toJSON());
         await input.focus();
+        await settled(tab);
         expect(await input.evaluate((element) => element.parentElement!.getBoundingClientRect().toJSON())).toEqual(before);
       }
     } finally {
@@ -407,6 +412,7 @@ document.body.dataset.hydrated = "true";
     expect(await controls.count()).toBe(2);
     expect(await controls.first().inputValue()).toBe("Europe");
     expect(await controls.last().inputValue()).toBe("Europe");
+    await settled(tab);
     const before = await controls.evaluateAll((elements) =>
       elements.map((element) => {
         element.setAttribute("data-ssr-node", "preserved");
@@ -428,6 +434,7 @@ document.body.dataset.hydrated = "true";
     await tab.addScriptTag({ content: script });
     await tab.waitForSelector('body[data-hydrated="true"]');
     expect(errors).toEqual([]);
+    await settled(tab);
     const after = await controls.evaluateAll((elements) =>
       elements.map((element) => ({
         id: element.id,

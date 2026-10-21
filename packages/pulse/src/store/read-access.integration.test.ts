@@ -1,4 +1,3 @@
-import { deniedReadQueries, deniedReadCodes } from "./read-attacks.test-fixture";
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { clickhouseAdminQuery as admin } from "../../../../scripts/fixtures/test-clickhouse";
@@ -8,6 +7,7 @@ import { READ_PROFILE_NAMES } from "./admin-contracts";
 import { READ_VIEWS } from "./base-schema";
 import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "./base-store.test-fixture";
 import { clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
+import { deniedReadCodes, deniedReadQueries } from "./read-attacks.test-fixture";
 import { READ_LIMITS, READ_PROFILES } from "./setup-sql";
 import { SQL_HELPER_VIEWS } from "./sql-helpers";
 import { quoteIdentifier as q } from "./validation";

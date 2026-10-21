@@ -91,7 +91,6 @@ packages/ui/src/chat/chat-composer.browser.test.ts | 20
 packages/ui/src/chat/chat-decision.browser.test.ts | 5
 packages/ui/src/content/calendar-days.browser.test.ts | 1
 packages/ui/src/content/calendar-month.browser.test.ts | 4
-packages/ui/src/content/chart-tooltips.browser.test.ts | 2
 packages/ui/src/content/content-styles.browser.test.ts | 2
 packages/ui/src/content/data-panel-header.browser.test.ts | 1
 packages/ui/src/content/data-table-minimal.browser.test.ts | 8
@@ -142,9 +141,7 @@ packages/ui/src/styles/focus-rings.browser.test.ts | 3
 packages/ui/src/styles/icon-tile.browser.test.ts | 4
 packages/ui/src/styles/motion.browser.test.ts | 1
 packages/ui/src/styles/selection-colors.browser.test.ts | 9
-packages/ui/src/styles/touch-field-text.browser.test.ts | 1
 packages/ui/src/surfaces/avatar-tints.browser.test.ts | 1
-packages/ui/src/surfaces/calm-states.browser.test.ts | 1
 packages/ui/src/surfaces/resource-card.browser.test.ts | 8
 packages/ui/src/surfaces/single-frame.browser.test.ts | 4
 pwas/pwa-auth/src/decision.browser.test.ts | 1

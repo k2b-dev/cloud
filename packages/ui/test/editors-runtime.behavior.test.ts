@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
-import { render } from "solid-js/web";
+import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
 type EditorKind = "autocomplete" | "markdown";
@@ -224,6 +224,9 @@ describe("completion editor runtime behavior", () => {
 test("read-only autocomplete cancels suggestions and keeps selection, controlled updates and submit", async () => {
   const dom = createDomTestHarness();
   installEditorDomSupport(dom);
+  // The previous test imported this module against a different document.
+  // Reattach its delegated events to this test document; cached imports do not.
+  delegateEvents(["input", "keydown", "mousedown", "click"], dom.document);
   const { AutocompleteEditor } = await import("../src/inputs/AutocompleteEditor");
   const [value, setValue] = createSignal("");
   const [readOnly, setReadOnly] = createSignal(false);

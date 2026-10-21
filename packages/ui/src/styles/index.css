@@ -4496,11 +4496,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   transition: none;
 }
 .k2b-ui .k2b-text-input[data-variant="compact"]:focus-within {
-  box-shadow: inset 0 0 0 1.5px var(--k2b-action);
+  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring);
 }
 .k2b-ui .k2b-text-input[data-variant="compact"][data-invalid="true"],
 .k2b-ui .k2b-text-input[data-variant="compact"][data-invalid="true"]:focus-within {
-  box-shadow: inset 0 0 0 1.5px var(--k2b-danger-500);
+  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-danger-500);
 }
 .k2b-ui .k2b-text-input[data-variant="compact"] > .k2b-input {
   flex: none;
@@ -12624,6 +12624,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-panes__separator:focus-visible > span,
   .k2b-ui .k2b-chart[data-interactive="true"]:focus-visible,
   .k2b-ui .k2b-input-shell:focus-within,
+  .k2b-ui .k2b-text-input[data-variant="compact"]:focus-within,
+  .k2b-ui .k2b-text-input[data-variant="compact"][data-invalid="true"]:focus-within,
   .k2b-ui .k2b-choice-trigger:focus-visible,
   .k2b-ui .k2b-multi-select-trigger:focus-visible,
   .k2b-ui .k2b-combobox__input:focus-within,

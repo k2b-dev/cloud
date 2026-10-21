@@ -1,7 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
-import { suiteFor, requireInfraUrl } from "../../../../scripts/fixtures/test-infra";
-import { createSqlAdmission, LEASE_MS, WAIT_MS } from "./sql-admission";
+import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { validateSqlInput } from "../sql-params";
+import { createSqlAdmission, LEASE_MS, WAIT_MS } from "./sql-admission";
+
 const suite = suiteFor("valkey");
 suite("SQL admission is atomic across replicas", () => {
   const instances: ReturnType<typeof createSqlAdmission>[] = [];

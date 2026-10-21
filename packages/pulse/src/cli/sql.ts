@@ -1,6 +1,6 @@
 import { arg, type CliInputFlagValue, type CloudCliContext, command, flag, readCliInput } from "@k2b/cloud/cli";
-import { SqlInputError, validateSqlInput } from "../sql-params";
 import type { SqlResult } from "../service/sql-service";
+import { SqlInputError, validateSqlInput } from "../sql-params";
 import { requireDefaultBaseRef } from "./context";
 import { baseFlag } from "./flags";
 import { jsonRequest } from "./shared";

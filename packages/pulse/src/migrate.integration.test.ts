@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { sql } from "bun";
 import { createDisposableDatabase, suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
 import { migrate as migratePulse } from "./migrate";
+
 const migrate = () => migratePulse("Europe/Berlin");
 
 const enabled = testInfra.database !== undefined,

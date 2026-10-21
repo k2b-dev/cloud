@@ -291,6 +291,7 @@ test("base settings preserve arbitrary values and show only measured usage on ph
       await dialog.getByRole("tab", { name: "Aufbewahrung", exact: true }).click();
       const raw = dialog.getByRole("spinbutton", { name: "Aufbewahrung von Rohdaten", exact: true });
       expect(await raw.inputValue()).toBe("45");
+      await raw.waitFor();
       const fieldGeometry = await raw.evaluate((element) => {
         const field = element.closest(".k2b-settings-field")!;
         return {
@@ -306,6 +307,7 @@ test("base settings preserve arbitrary values and show only measured usage on ph
       }
       for (const name of ["Aufbewahrung von Rohdaten", "Aufbewahrung stündlicher Aggregate", "Aufbewahrung sensibler Ereignisdaten"]) {
         const input = dialog.getByRole("spinbutton", { name, exact: true });
+        await input.waitFor();
         const descriptionId = await input.getAttribute("aria-describedby");
         expect(descriptionId).toBeTruthy();
         expect(
@@ -331,6 +333,7 @@ test("base settings preserve arbitrary values and show only measured usage on ph
         await sensitive.fill(value);
         await sensitive.press("Tab");
         expect(await sensitive.inputValue()).toBe(value);
+        await tab.waitForFunction(() => document.fonts.status === "loaded");
         const fitting = await sensitive.evaluate((element) => {
           if (!(element instanceof HTMLInputElement)) throw new Error("Expected native retention input");
           const style = getComputedStyle(element);

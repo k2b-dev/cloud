@@ -1,5 +1,5 @@
 import { deleteAccess } from "@k2b/cloud/server";
-import { get as settingsGet, logger } from "@k2b/cloud/services";
+import { logger, get as settingsGet } from "@k2b/cloud/services";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
 import { BaseTimezoneSchema } from "./base-settings";

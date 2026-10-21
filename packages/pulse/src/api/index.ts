@@ -6,8 +6,8 @@ import adminRoutes from "./routes/admin";
 import baseAdminRoutes from "./routes/base-admin";
 import basesRoutes from "./routes/bases";
 import ingestRoutes from "./routes/ingest";
-import sqlRoutes from "./routes/sql";
 import sourcesRoutes from "./routes/sources";
+import sqlRoutes from "./routes/sql";
 
 const app = new Hono<AuthContext>()
   // Ingest-only sources write free-text dimensions, attributes and states that most Pulse reads return next to other sources' data.

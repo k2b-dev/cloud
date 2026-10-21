@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { launchPulseSqlAssistant } from "./pulse-assistant-launch";
+
 const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
