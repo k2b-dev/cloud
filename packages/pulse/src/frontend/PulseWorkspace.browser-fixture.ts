@@ -1,5 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { User } from "@k2b/cloud/contracts";
 import type { ComponentProps } from "solid-js";
 import type { PulseSource } from "../contracts";
 import type { Overview } from "../overview-contracts";
@@ -10,6 +11,26 @@ import type { PulseWorkspaceProps } from "./workspace/types";
 const ui = new URL("../../../ui/", import.meta.url).pathname;
 export const origin = "https://cloud.example.test";
 const now = "2026-10-19T12:40:00.000Z";
+// Invented account owned by this fixture; no Cloud-internal test module is needed.
+const person = {
+  id: "11111111-1111-4111-8111-111111111111",
+  uid: "mmuster",
+  roles: ["user", "local", "local/user"],
+  provider: "local",
+  profile: "user",
+  givenname: "Mia",
+  sn: "Muster",
+  displayName: "Mia Muster",
+  mail: "mia.muster@example.test",
+  avatarHash: null,
+  accountExpires: null,
+  lastLoginLocal: null,
+  memberofGroup: [],
+  memberofGroupIds: [],
+  manages: [],
+  managesGroupIds: [],
+  ipa: null,
+} satisfies User;
 const status = (overrides: Partial<PulseSource["status"]> = {}): PulseSource["status"] => ({
   newestDataAt: "2026-10-19T12:32:00.000Z",
   throttled: false,
@@ -211,32 +232,35 @@ export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale
     import { renderToString } from "solid-js/web";
     const root = mkdtempSync(join(tmpdir(), "pulse-snapshot-"));
     try {
-      Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+      const snapshot = createConfig({
+        dev: true,
+        rootDir: root,
+        // The browser harness owns assets and mounting; only the actual page body
+        // crosses this seam, not the platform document template or its loaders.
+        template: ({ body }) => "<!doctype html><html><head></head><body>" + body + "</body></html>",
+      });
+      Bun.plugin(snapshot.plugin());
       const { default: Workspace } = await import(${JSON.stringify(new URL("./PulseWorkspace.island.tsx", import.meta.url).pathname)});
-      const { props, locale, withLayout } = JSON.parse(await Bun.stdin.text());
+      const { props, locale, withLayout, person } = JSON.parse(await Bun.stdin.text());
       if (withLayout) {
         const { spyOn, setSystemTime } = await import("bun:test");
         const { Hono } = await import("hono");
-        const { person } = await import("../cloud/src/_internal/define-app.test-fixture");
-        const rail = await import("../cloud/src/services/rail-snapshot");
-        const settings = await import("../cloud/src/server/middleware/settings");
-        const help = await import("../cloud/src/ssr/help");
-        const consent = await import("../cloud/src/ssr/panel-consent");
-        const { defaultRailPreferences } = await import("../cloud/src/contracts/rail-preferences");
-        const { app } = await import("./src/config");
+        const { createSSRHandler } = await import("@k2b/ssr/hono");
+        const config = await import("./src/config");
+        // Keep the actual page handler, Layout and island. Only the app-owned SSR
+        // entry is substituted: the public adapter renders without platform service
+        // preloads. This fixture is not a test of authentication or shell services.
+        const ssr = Object.assign(createSSRHandler(snapshot.html), config.ssr);
         const pageData = await import("./src/frontend/[baseId]/page-data");
         const spies = [
-          spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
-          spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
-          spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
-          spyOn(consent, "preloadPanelConsent").mockResolvedValue(undefined),
+          spyOn(config, "ssr").mockImplementation(ssr),
           spyOn(pageData, "loadPulseWorkspacePageData").mockResolvedValue({ kind: "ok", baseName: "Laden", workspaceProps: props }),
         ];
         setSystemTime(new Date(props.initialNow));
         try {
           const { default: basePage } = await import("./src/frontend/[baseId]/page");
           const server = new Hono().use(async (c, next) => {
-            c.set("runtime", { apps: [app.meta] });
+            c.set("runtime", { apps: [config.app.meta] });
             c.set("user", person);
             await next();
           }).get("/app/pulse/:baseId", ...basePage);
@@ -254,7 +278,7 @@ export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale
   const child = Bun.spawn([process.execPath, "--no-env-file", "-e", script], {
     cwd: resolve(import.meta.dir, "../.."),
     timeout: 15_000,
-    stdin: new Response(JSON.stringify({ props, locale, withLayout })),
+    stdin: new Response(JSON.stringify({ props, locale, withLayout, person })),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -262,6 +286,15 @@ export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale
   if (exit !== 0) throw new Error(`Pulse server snapshot failed: ${errors}`);
   return markup;
 };
+
+/** Adapt trusted, generated SSR markup for the isolated client harness; not a general HTML sanitizer. */
+export const workspaceDocumentContent = (document: string) =>
+  new HTMLRewriter()
+    .on("script, head", { element: (element) => void element.remove() })
+    .on("html, body", { element: (element) => void element.removeAndKeepContent() })
+    .on('solid-island[data-file="PulseWorkspace.island.tsx"]', { element: (element) => void element.setAttribute("id", "root") })
+    .onDocument({ doctype: (doctype) => void doctype.remove() })
+    .transform(document);
 
 export const buildWorkspaceHarness = async () => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -323,11 +356,7 @@ export const buildWorkspaceHarness = async () => {
     mount?: { serverHtml: string; deferMount: boolean; pageDocument?: boolean },
   ) => {
     const content = mount?.pageDocument
-      ? mount.serverHtml
-          .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "")
-          .replace(/^[\s\S]*?<body[^>]*>/, "")
-          .replace(/<\/body>[\s\S]*$/, "")
-          .replace(/<solid-island\b([^>]*data-file="PulseWorkspace\.island\.tsx"[^>]*)>/, '<solid-island id="root"$1>')
+      ? workspaceDocumentContent(mount.serverHtml)
       : `<div class="cloud-app-canvas relative flex h-dvh w-full overflow-hidden" data-app-id="pulse" data-layout-full-page="true">` +
         `<main class="layout-content-main flex min-h-0 min-w-0 flex-1 flex-col"><solid-island id="root">${mount?.serverHtml ?? ""}</solid-island></main></div>`;
     return (
