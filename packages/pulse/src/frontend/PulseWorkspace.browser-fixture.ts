@@ -2,6 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ComponentProps } from "solid-js";
 import type { PulseSource } from "../contracts";
+import type { Overview } from "../overview-contracts";
 import type PulseOverview from "./PulseOverview.island";
 import type { PulseWorkspaceProps } from "./workspace/types";
 
@@ -29,6 +30,10 @@ const source = (id: string, name: string, overrides: Partial<PulseSource> = {}):
   bearerTokenConfigured: false,
   scrapeIntervalSeconds: 60,
   metricFilters: [],
+  revision: 1,
+  expectEverySeconds: null,
+  expectDailyBy: null,
+  staleSince: null,
   status: status(),
   lastSeenAt: "2026-10-19T12:32:00.000Z",
   lastError: null,
@@ -114,6 +119,118 @@ export const workspaceFixture: PulseWorkspaceProps = {
   initialOrigin: origin,
 };
 
+export const baseOverviewFixture: Overview = {
+  baseId: "Lad001",
+  name: "Laden",
+  timezone: "Europe/Berlin",
+  readAt: now,
+  storeUnavailable: false,
+  sources: { total: 4, current: 3 },
+  attention: {
+    total: 1,
+    nextOffset: null,
+    items: [
+      {
+        id: "alert-Alt001",
+        kind: "alert",
+        reference: "Alt001",
+        name: "Antwortzeit",
+        state: "firing",
+        severity: "warn",
+        since: "2026-10-19T12:30:00.000Z",
+        lastCheckedAt: now,
+        errorCode: null,
+        key: "shop",
+        value: 254,
+        comparison: "above",
+        threshold: 200,
+        newestDataAt: null,
+        expectEverySeconds: null,
+        expectDailyBy: null,
+      },
+    ],
+  },
+  numbers: [
+    { name: "CPU-Auslastung", value: 42, unit: "%", detail: "↓ 4 % zur Vorwoche", detailTone: "success" },
+    { name: "Antwortzeit", value: 254, unit: "ms", detail: "↑ 12 % zur Vorwoche", detailTone: "warning" },
+    { name: "Bestellungen heute", value: 128, unit: "", detail: "↑ 8 % zur Vorwoche", detailTone: "success" },
+    { name: "Umsatz heute", value: 12480, unit: "€", detail: "↑ 6 % zur Vorwoche", detailTone: "success" },
+  ].map((number, index) => ({
+    queryId: `Num00${index}`,
+    name: number.name,
+    revision: 1,
+    status: "ready",
+    errorCode: null,
+    lastAttemptAt: now,
+    nextRefreshAt: "2026-10-19T12:45:00.000Z",
+    lastGood: {
+      evaluatedAt: now,
+      windowFrom: "2026-10-18T12:40:00.000Z",
+      windowTo: now,
+      data: {
+        ...number,
+        valueAt: now,
+        detailTone: number.detailTone === "warning" ? "warning" : "success",
+        truncated: false,
+        points: [0.7, 0.8, 0.75, 0.9, 0.85, 1].map((factor, step) => ({
+          x: Date.parse(now) - (5 - step) * 300_000,
+          y: number.value * factor,
+        })),
+      },
+    },
+  })),
+  activity: {
+    nextCursor: null,
+    items: [
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        at: "2026-10-19T12:30:00.000Z",
+        kind: "query_saved",
+        actor: { kind: "user", id: "Person1", name: "Jana" },
+        data: { name: "Umsatz heute" },
+      },
+    ],
+  },
+};
+
+export const overviewWorkspaceFixture: PulseWorkspaceProps = {
+  ...workspaceFixture,
+  initialRouteState: { view: "overview", sourceId: "" },
+  initialOverview: { data: baseOverviewFixture, error: null },
+};
+
+/** Render the real server component in an isolated Bun process, leaving browser tests' module conditions alone. */
+export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale: string) => {
+  const script = `
+    import { mkdtempSync, rmSync } from "node:fs";
+    import { tmpdir } from "node:os";
+    import { join } from "node:path";
+    import { createConfig } from "@k2b/ssr";
+    import { LocaleProvider } from "@k2b/ui";
+    import { createComponent } from "solid-js";
+    import { renderToString } from "solid-js/web";
+    const root = mkdtempSync(join(tmpdir(), "pulse-snapshot-"));
+    try {
+      Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+      const { default: Workspace } = await import(${JSON.stringify(new URL("./PulseWorkspace.island.tsx", import.meta.url).pathname)});
+      const { props, locale } = JSON.parse(await Bun.stdin.text());
+      process.stdout.write(renderToString(() => createComponent(LocaleProvider, {
+        locale, get children() { return createComponent(Workspace, props); }
+      })));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  `;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "-e", script], {
+    cwd: resolve(import.meta.dir, "../.."),
+    timeout: 15_000,
+    stdin: new Response(JSON.stringify({ props, locale })),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [markup, errors, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  if (exit !== 0) throw new Error(`Pulse server snapshot failed: ${errors}`);
+  return markup;
+};
+
 export const buildWorkspaceHarness = async () => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
@@ -166,10 +283,16 @@ export const buildWorkspaceHarness = async () => {
   };
   const fonts = await Promise.all(["@k2b/ui/icons/tabler.css", "@k2b/ui/fonts/plex.css"].map(inlineFonts));
   const css = ["@layer properties, theme, base, components, utilities;", ...fonts, appCss, globalCss].join("\n");
-  return (props: PulseWorkspaceProps, locale = "de", dark = false, overview?: ComponentProps<typeof PulseOverview>) =>
+  return (
+    props: PulseWorkspaceProps,
+    locale = "de",
+    dark = false,
+    overview?: ComponentProps<typeof PulseOverview>,
+    mount?: { serverHtml: string; deferMount: boolean },
+  ) =>
     `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
     `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" data-app-id="pulse">` +
-    `<main class="layout-content-main min-h-0 min-w-0 flex-1 p-4"><div id="root"></div></main></div>` +
-    `<script>window.__pulse=${JSON.stringify({ locale, props, overview })}</script><script>${bundle}</script></body></html>`;
+    `<main class="layout-content-main min-h-0 min-w-0 flex-1 p-4"><div id="root">${mount?.serverHtml ?? ""}</div></main></div>` +
+    `<script>window.__pulse=${JSON.stringify({ locale, props, overview, deferMount: mount?.deferMount })}</script><script>${bundle}</script></body></html>`;
 };

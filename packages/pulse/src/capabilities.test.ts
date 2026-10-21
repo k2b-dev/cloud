@@ -12,6 +12,8 @@ import { fixturePolicy } from "./store/base-store.test-fixture";
 test("declares SQL and saved query capabilities with base and source readers", () => {
   expect(Object.keys(pulseCapabilities.types).sort()).toEqual(["base", "source"]);
   expect(Object.keys(pulseCapabilities.queries).sort()).toEqual([
+    "alert.list",
+    "alert.read",
     "base.list",
     "base.read",
     "base.search",
@@ -20,6 +22,34 @@ test("declares SQL and saved query capabilities with base and source readers", (
     "source.read",
     "sql.run",
   ]);
+  expect(Object.keys(pulseCapabilities.actions).sort()).toEqual([
+    "alert.delete",
+    "alert.save",
+    "saved_query.delete",
+    "saved_query.save",
+    "source.create",
+    "source.update",
+  ]);
+  expect(pulseCapabilities.actions["alert.save"].approval).toBe("rememberable");
+  expect(pulseCapabilities.actions["alert.save"].idempotency).toBe("required");
+  for (const action of [
+    pulseCapabilities.actions["alert.delete"],
+    pulseCapabilities.actions["source.create"],
+    pulseCapabilities.actions["source.update"],
+  ])
+    expect("approval" in action).toBe(false);
+  for (const name of ["source.create", "source.update"] as const) {
+    expect(pulseCapabilities.actions[name].openWorld).toBe(true);
+    expect(pulseCapabilities.actions[name].idempotency).toBe("required");
+  }
+  expect(
+    pulseCapabilities.actions["source.create"].input.safeParse({
+      baseId: "Base01",
+      kind: "http_ingest",
+      name: "Web",
+      bearerToken: "FORBIDDEN",
+    }).success,
+  ).toBe(false);
   expect(pulseCapabilities.types.base.reader).toBe("base.read");
   expect(pulseCapabilities.types.source.reader).toBe("source.read");
   expect(pulseCapabilities.protocolVersion).toBe(2);

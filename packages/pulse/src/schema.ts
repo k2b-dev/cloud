@@ -225,3 +225,81 @@ export const installSqlConsole = async (sql: TransactionSQL, timezone: string): 
   )`.simple();
   await sql`CREATE INDEX ON pulse.saved_query_operations(expires_at)`.simple();
 };
+
+/** Overview and alert state remain in Postgres when the measurement store is unavailable. */
+export const installOverviewAlerts = async (sql: TransactionSQL): Promise<void> => {
+  await sql`ALTER TABLE pulse.base_stores ADD COLUMN max_alert_rules INTEGER NOT NULL DEFAULT 20 CHECK (max_alert_rules > 0)`.simple();
+  await sql`ALTER TABLE pulse.saved_queries ADD COLUMN pinned BOOLEAN NOT NULL DEFAULT false`.simple();
+  // The base ledger survives query edits/deletion and store resets. A cache
+  // miss must never replenish the four-attempt budget for a five-minute slot.
+  await sql`CREATE TABLE pulse.overview_state (
+    base_id UUID PRIMARY KEY REFERENCES pulse.bases(id) ON DELETE CASCADE,
+    slot_start TIMESTAMPTZ NOT NULL,
+    attempts JSONB NOT NULL DEFAULT '[]'::jsonb,
+    lease_id UUID, lease_until TIMESTAMPTZ,
+    snapshots JSONB NOT NULL DEFAULT '[]'::jsonb,
+    CHECK (jsonb_typeof(attempts)='array' AND jsonb_array_length(attempts)<=4),
+    CHECK (jsonb_typeof(snapshots)='array' AND jsonb_array_length(snapshots)<=4)
+  )`.simple();
+  await sql`ALTER TABLE pulse.sources
+    ADD COLUMN expect_every_seconds INTEGER CHECK (expect_every_seconds > 0),
+    ADD COLUMN expect_daily_by TEXT CHECK (expect_daily_by ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+    ADD COLUMN revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    ADD COLUMN stale_since TIMESTAMPTZ,
+    ADD COLUMN next_freshness_check_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ADD CONSTRAINT pulse_source_expectation CHECK (
+      (expect_every_seconds IS NULL OR expect_daily_by IS NULL) AND
+      (kind='http_ingest' OR (expect_every_seconds IS NULL AND expect_daily_by IS NULL)))`.simple();
+  await sql`CREATE INDEX ON pulse.sources(next_freshness_check_at,base_id) WHERE NOT deleted`.simple();
+  await sql`CREATE TABLE pulse.alert_rules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), short_id TEXT NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+    base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
+    sql TEXT NOT NULL CHECK (octet_length(sql) BETWEEN 1 AND 16384), params JSONB NOT NULL DEFAULT '{}'::jsonb,
+    comparison TEXT NOT NULL CHECK (comparison IN ('above','below')),
+    warn DOUBLE PRECISION, critical DOUBLE PRECISION,
+    min_duration_seconds INTEGER NOT NULL CHECK (min_duration_seconds >= 0),
+    interval_seconds INTEGER NOT NULL CHECK (interval_seconds >= 300),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0), created_by TEXT, updated_by TEXT,
+    next_check_at TIMESTAMPTZ NOT NULL DEFAULT now(), lease_id UUID, lease_until TIMESTAMPTZ,
+    state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('ok','pending','firing','no_data','error')),
+    severity TEXT CHECK (severity IN ('warn','critical')), since TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_checked_at TIMESTAMPTZ, last_error TEXT, incident_open BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (warn IS NOT NULL OR critical IS NOT NULL),
+    CHECK (warn IS NULL OR (warn > '-Infinity'::float8 AND warn < 'Infinity'::float8)),
+    CHECK (critical IS NULL OR (critical > '-Infinity'::float8 AND critical < 'Infinity'::float8)),
+    CHECK (warn IS NULL OR critical IS NULL OR CASE WHEN comparison='above' THEN critical>=warn ELSE critical<=warn END)
+  )`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_alert_rules_short_id ON pulse.alert_rules(short_id)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_alert_rules_name ON pulse.alert_rules(base_id,lower(name))`.simple();
+  await sql`CREATE INDEX ON pulse.alert_rules(next_check_at,id)`.simple();
+  await sql`CREATE TABLE pulse.alert_states (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rule_id UUID NOT NULL REFERENCES pulse.alert_rules(id) ON DELETE CASCADE, key TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ok','pending','firing','no_data','error')),
+    severity TEXT CHECK (severity IN ('warn','critical')), value DOUBLE PRECISION,
+    since TIMESTAMPTZ NOT NULL, pending_since TIMESTAMPTZ, incident_open BOOLEAN NOT NULL DEFAULT false, last_checked_at TIMESTAMPTZ NOT NULL, last_error TEXT
+  )`.simple();
+  await sql`CREATE INDEX ON pulse.alert_states(rule_id)`.simple();
+  await sql`CREATE TABLE pulse.alert_rule_operations (
+    base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE, operation_key TEXT NOT NULL,
+    input_hash TEXT NOT NULL, response JSONB NOT NULL, expires_at TIMESTAMPTZ NOT NULL DEFAULT (now()+interval '24 hours'),
+    PRIMARY KEY(base_id,operation_key)
+  )`.simple();
+  await sql`CREATE INDEX ON pulse.alert_rule_operations(expires_at)`.simple();
+  await sql`CREATE TABLE pulse.base_activity (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
+    at TIMESTAMPTZ NOT NULL DEFAULT now(), kind TEXT NOT NULL, actor JSONB, request_id TEXT, data JSONB NOT NULL
+  )`.simple();
+  await sql`CREATE INDEX ON pulse.base_activity(base_id,at DESC,id)`.simple();
+  await sql`ALTER TABLE pulse.notification_outbox ADD COLUMN base_id UUID REFERENCES pulse.bases(id) ON DELETE CASCADE,
+    ADD COLUMN event_id UUID, ADD COLUMN recipient_after UUID,
+    ADD COLUMN dispatch_kind TEXT NOT NULL DEFAULT 'delivery' CHECK (dispatch_kind IN ('delivery','fanout')),
+    ALTER COLUMN user_id DROP NOT NULL,
+    ADD CONSTRAINT pulse_notification_destination CHECK ((dispatch_kind='delivery' AND user_id IS NOT NULL) OR
+      (dispatch_kind='fanout' AND user_id IS NULL AND base_id IS NOT NULL AND event_id IS NOT NULL)),
+    ADD CONSTRAINT pulse_notification_event_recipient UNIQUE(event_id,user_id)`.simple();
+  await sql`CREATE INDEX ON pulse.notification_outbox(dispatch_kind,seq)`.simple();
+  await sql`CREATE INDEX ON pulse.notification_outbox(dispatch_kind,base_id,seq) WHERE dispatch_kind='fanout'`.simple();
+};

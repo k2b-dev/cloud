@@ -6,7 +6,7 @@ import PulseWorkspace from "../PulseWorkspace.island";
 import { loadPulseWorkspacePageData } from "./page-data";
 
 export default ssr<AuthContext>(async (c) => {
-  setRequestTimeout(c, 40);
+  setRequestTimeout(c, 60);
   let data: Awaited<ReturnType<typeof loadPulseWorkspacePageData>>;
   try {
     data = await loadPulseWorkspacePageData(c);

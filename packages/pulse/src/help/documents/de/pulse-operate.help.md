@@ -21,6 +21,16 @@ order: 140
 Bei einem internen Endpunkt lässt die Cloud-Administration dessen Host, Host:Port oder CIDR unter **Verwaltung → Pulse → Interne Ziele** zu.
 Eine Änderung von Schema, Host oder Port löscht das gespeicherte Bearer-Token, sofern du keinen Ersatz angibst.
 
+## Lege den erwarteten Datenempfang fest
+
+Bei einer sendenden Quelle öffnest du **Bearbeiten → Erwartete Daten**. Wähle einen regelmäßigen Abstand in Sekunden, eine tägliche Uhrzeit oder **Keine Erwartung**. Tägliche Uhrzeiten gelten in der Zeitzone der Base. Die Erwartung bezieht sich auf den neuesten Datenzeitpunkt, nicht auf den letzten Kontakt. Sie kann nicht belegen, dass die Daten eines ganzen Tages vollständig sind.
+
+Ändert jemand die Quelle während deiner Bearbeitung, behält Pulse deine Eingaben und sperrt weiteres Speichern. Schließe und öffne die Quelle erneut, um den aktuellen Stand zu prüfen. Bleibt das Ergebnis einer Neuanlage unklar, wähle **Quellen prüfen**, bevor du die Quelle erneut anlegst.
+
+## Lade die Übersicht erneut
+
+**Erneut versuchen** lädt eine fehlgeschlagene Übersicht neu. Bei einem Speicherausfall bleiben vorhandene Werte mit ihrem Zeitpunkt sichtbar; ein nicht verfügbarer Wert ist nicht null. Wurde dein Zugriff entfernt, bitte die Base-Administration um Zugriff. Ein erneuter Ladeversuch stellt ihn nicht wieder her.
+
 ## Wiederhole HTTP-Datenaufnahme sicher
 
 Sende Batches an `POST /api/pulse/ingest` mit dem Quellentoken als Bearer-Zugang.
