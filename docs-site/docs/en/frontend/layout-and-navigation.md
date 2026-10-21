@@ -726,7 +726,11 @@ phone title into **Name ⌄**, which opens the same menu. Other pages keep the
 plain title. An overview sidebar with `mobile="stacked"` shows a horizontally
 scrolling row of object chips above the content below 64 rem; **All** opens
 the complete sidebar in a bottom sheet below 48 rem and a centered dialog
-from 48 rem. From 768 px the app bar and the workspace's own
+from 48 rem. On phones, an outer `mobileSurface="flush"` workspace puts this
+object row on the shell above the content card. Declare its `Head` after the
+sidebar: view tabs stay inside the card, and server, keyboard, and hydrated
+order agree. Contained workspaces and tablet layouts keep their own surface.
+From 768 px the app bar and the workspace's own
 navigation take over. The mobile workspace uses the full canvas without a
 second application title or exterior frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
 for the SSR snapshot and island-owned action APIs. `@k2b/ui` remains independent

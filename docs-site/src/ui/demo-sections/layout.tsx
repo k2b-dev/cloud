@@ -558,7 +558,13 @@ const WorkspaceDemo = () => {
             <div class="ui-demo-pane">Main 2</div>
           </AppWorkspace.MainPane>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">
+        <AppWorkspace.Detail
+          id="record"
+          open={detailOpen()}
+          onOpen={() => setDetailOpen(true)}
+          onClose={() => setDetailOpen(false)}
+          width="sm"
+        >
           <div class="ui-demo-pane">Selected item</div>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
@@ -611,7 +617,7 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
       <AppWorkspace.MainPane id="main-2" label="Main 2" open={paneOpen()}>…</AppWorkspace.MainPane>
       …
     </AppWorkspace.Main>
-    <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">…</AppWorkspace.Detail>
+    <AppWorkspace.Detail id="record" open={detailOpen()} onOpen={() => setDetailOpen(true)} onClose={() => setDetailOpen(false)} width="sm">…</AppWorkspace.Detail>
   </AppWorkspace.Content>
   <AppWorkspace.BottomDrawer id="events" open={drawerOpen()} height="sm">…</AppWorkspace.BottomDrawer>
 </AppWorkspace>`}
@@ -642,7 +648,7 @@ const StackedOverviewDemo = () => {
     <DemoCard
       id="workspace-stacked-overview"
       chip={{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }}
-      description="An overview's objects become scrolling chips below 64 rem. All opens the complete sidebar, including Archive and footer actions. Select a notebook to change the current chip."
+      description="An overview's objects become scrolling chips below 64 rem. All opens the complete sidebar, including Archive and footer actions. On phones the objects precede the view tabs; the host supplies the surface behind the object row. Select a notebook to change the current chip."
       code={`<AppWorkspace flat resizable={false} mobileSurface="flush">
   <AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
     <AppWorkspace.SidebarDesktop>
@@ -663,6 +669,7 @@ const StackedOverviewDemo = () => {
       </AppWorkspace.SidebarFooter>
     </AppWorkspace.SidebarDesktop>
   </AppWorkspace.Sidebar>
+  <AppWorkspace.Head views={<ViewTabs label="Views" current="all" items={[{ id: "all", label: "All", href: "#all" }]} />} />
   <AppWorkspace.Content><AppWorkspace.Main>…</AppWorkspace.Main></AppWorkspace.Content>
 </AppWorkspace>`}
     >
@@ -703,6 +710,7 @@ const StackedOverviewDemo = () => {
               </AppWorkspace.SidebarFooter>
             </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
+          <AppWorkspace.Head views={<ViewTabs label="Views" current="all" items={[{ id: "all", label: "All", href: "#all" }]} />} />
           <AppWorkspace.Content>
             <AppWorkspace.Main>
               <div class="ui-workspace-demo__body">
@@ -1530,10 +1538,10 @@ const DetailPanelDemo = () => {
         <article class="ui-detail-panel-pattern">
           <header>
             <strong>Customer request</strong>
-            <span>Request state and customer context form clear, related surfaces.</span>
+            <span>Plain sections share the host surface without nested boxes.</span>
           </header>
           <div class="ui-detail-panel-pattern__frame">
-            <DetailPanel class="ui-detail-panel-grouped">
+            <DetailPanel surface="plain" class="ui-detail-panel-grouped">
               <DetailPanel.Header
                 title="Bug report"
                 subtitle="No preview · 5 minutes ago"

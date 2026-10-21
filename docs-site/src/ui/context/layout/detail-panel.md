@@ -19,10 +19,24 @@ import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
 Place it inside `AppWorkspace.Detail` for persistent selection context, or in
 another host when the same inspector content is reused. The host owns opening,
 closing, sizing, and persistence. An `AppWorkspace.Detail` column shares the
-workspace surface; a waiting Detail opens as a raised drawer. Its sections and
+workspace surface; a waiting Detail opens as a raised drawer with a soft
+shadow toward the content it covers. Its sections and
 groups have no boxes of their own. The application owns data, permissions,
 mutations, and which sections are present. See
 [Detail and panel](/en/ui/layout/workspace#detail-and-panel).
+
+Use `surface="plain"` in another host to share that host's surface. Sections,
+summary, and groups stay transparent, without nested boxes, and use the same
+spacing as `AppWorkspace.Detail`. Omit it to keep the default section surfaces.
+
+```tsx
+<DetailPanel surface="plain">
+  <DetailPanel.Header title="In this chat" />
+  <DetailPanel.Body>
+    <DetailPanel.Section title="Results" count={0} />
+  </DetailPanel.Body>
+</DetailPanel>
+```
 
 `DetailPanel.Header` keeps identity and actions in one compact region. Pass
 `icon` for the standard accent-tinted identity tile or `leading` for an avatar
@@ -95,7 +109,7 @@ The content owns its layout: wrap form controls in a column with a gap.
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
 adjacent sections when they belong to that same context. Outside
-`AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, the group is transparent. Spacing and section headings
+`AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, or with `surface="plain"`, the group is transparent. Spacing and section headings
 separate its sections without borders or lines. Pass `label` when the
 shared context benefits from an accessible group name.
 
