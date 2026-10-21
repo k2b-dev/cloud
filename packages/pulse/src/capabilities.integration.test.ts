@@ -197,12 +197,15 @@ postgresTest("reads only bases and sources visible to the current access subject
       expect.objectContaining({
         id: sourceShortId,
         name: "Agent source",
+        revision: 1,
+        expectEverySeconds: null,
+        expectDailyBy: null,
         links: [{ rel: "open", href: `/app/pulse/${baseShortId}/sources/${sourceShortId}` }],
       }),
     ]);
     const sourceRead = await invoke("source.read", { id: sourceShortId }, context);
     expect(sourceRead.ok && sourceRead.data).toMatchObject({
-      data: { id: sourceShortId, baseId: baseShortId },
+      data: { id: sourceShortId, baseId: baseShortId, revision: 1, expectEverySeconds: null, expectDailyBy: null },
       summary: "Read Pulse Source “Agent source”.",
       refs: [{ type: "pulse.source", id: sourceShortId }],
     });

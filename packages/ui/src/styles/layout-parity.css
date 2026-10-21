@@ -1292,7 +1292,7 @@ html {
    separated by space and their headings, not by boxes of their own, and they
    start where the header's title does. */
 .k2b-ui
-  .k2b-app-workspace__detail
+  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
   :is(
     .k2b-detail-panel__summary,
     .k2b-detail-panel__group,
@@ -1300,18 +1300,19 @@ html {
     .k2b-detail-panel .k2b-discussion[data-surface="default"]
   ) {
   padding: 0;
+  border-radius: 0;
   background: transparent;
 }
 
 /* One vertical rhythm: every section, discussion, and group sits the body's
    gap apart, and a group's sections keep that gap between them too. */
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__group {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group {
   gap: 1.5rem;
 }
 
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion),
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion),
 .k2b-ui
-  .k2b-app-workspace__detail
+  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
   .k2b-detail-panel__group
   > :is(.k2b-detail-panel__section, .k2b-discussion)
   + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
@@ -1321,11 +1322,11 @@ html {
 /* The body's scrollbar sits on the panel's edge, and its content keeps the
    panel's inset inside the scrollport, so overlay scrollbars never leave the
    text against the rounded edge. */
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__header {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__header {
   scrollbar-width: thin;
 }
 
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__body {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
   gap: 1.5rem;
   padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
   scrollbar-width: thin;
@@ -2031,8 +2032,11 @@ html {
   position: static;
   display: flex;
   width: auto;
-  height: auto;
+  /* WebKit must recompute every wrapped line instead of reusing the grid item's stretched height while the host narrows. */
+  height: max-content;
   min-height: 3.5rem;
+  container: k2b-head / inline-size;
+  flex-wrap: wrap;
   margin: 0;
   align-items: flex-start;
   gap: 0.5rem;
@@ -2050,6 +2054,7 @@ html {
 }
 
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
+  min-width: min(100%, 18rem);
   flex-wrap: wrap;
   gap: 0.25rem 0.5rem;
   container: k2b-head-lead / inline-size;
@@ -2092,6 +2097,19 @@ html {
   min-height: var(--k2b-workspace-head-line, 2.5rem);
   flex: 0 1 auto;
   align-items: center;
+}
+
+/* An application may wrap the view strip in an island or a hint host. Its
+   automatic minimum must not let the strip paint beyond the lead. Transparent
+   island elements leave that minimum on their first rendered child. */
+.k2b-ui .k2b-app-workspace__head-views > *,
+.k2b-ui .k2b-app-workspace__head-views > :is(solid-island, solid-client) > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.k2b-ui .k2b-app-workspace__head-views .k2b-view-tabs {
+  flex: 1 1 auto;
 }
 
 /* The filters move as one group; on their own row they scroll sideways.
@@ -2162,6 +2180,9 @@ html {
   display: flex;
   min-height: var(--k2b-workspace-head-line, 2.5rem);
   flex: none;
+  max-width: 100%;
+  flex-wrap: wrap;
+  margin-inline-start: auto;
   align-items: center;
   gap: 0.25rem;
 }
@@ -2185,6 +2206,28 @@ html {
   }
 }
 
+/* After filters and compact views give way, the primary keeps its name
+   for assistive technology while its icon frees space for the view strip.
+   If the lead and actions still cannot fit, flex puts them on separate rows. */
+@container k2b-head (width < 32rem) {
+  .k2b-ui .k2b-app-workspace__head-primary {
+    width: 2.5rem;
+    min-width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-primary-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 /* Phone: the views are the card's top row and stay while Main scrolls below
    them, with the actions at their end; the filters follow in their own row.
    With a title (a page with a way up), the title and the actions share the
@@ -2202,7 +2245,7 @@ html {
     flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem 0.5rem;
-    padding: 0.5rem 1rem 0.25rem;
+    padding: 0.5rem var(--k2b-workspace-head-end, 1rem) 0.25rem 1rem;
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
@@ -2214,7 +2257,9 @@ html {
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
-    flex: 1 1 0;
+    /* Reserve one control before distributing the row. A zero basis can
+       otherwise collapse the strip beside the full-width filter row. */
+    flex: 1 1 var(--k2b-workspace-head-line);
     margin-inline-start: -1rem;
   }
 
@@ -2225,7 +2270,9 @@ html {
 
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
     order: 2;
-    flex: 1 1 100%;
+    /* Include the two negative edge margins in the row's outer width. */
+    flex: 1 1 calc(100% + 2rem);
+    max-width: calc(100% + 2rem);
     margin-inline: -1rem;
   }
 
@@ -2488,6 +2535,18 @@ html {
 /* "All" opens a chip row's complete sidebar; it exists only while the row does. */
 .k2b-ui .k2b-app-workspace__sidebar-all {
   display: none;
+}
+
+/* On a phone, an outer flush workspace puts its objects before the head's
+   views. The host supplies the surface around this row; tablet and contained
+   workspaces retain their existing order and frame. */
+@media not all and (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *):has(
+    > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]),
+    > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden])
+  ) {
+    grid-template-areas: "mobile" "head" "content" "drawer";
+  }
 }
 
 /* A stacked sidebar is an overview's object list. Until the sidebar gets its
@@ -3534,7 +3593,7 @@ html {
 .k2b-ui .k2b-app-workspace__detail[data-workspace-detail-drawer="open"] {
   --k2b-detail-space: 0px;
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-side);
   clip-path: inset(0 0 0 -4rem);
 }
 
@@ -4464,4 +4523,28 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   width: auto;
   height: 12px;
   cursor: row-resize;
+}
+/* An app with separate visibility keeps one shared way to reopen its current
+   object, including a closed column and a phone sheet. Selection-only panels
+   keep their existing waiting-only control. */
+.k2b-ui .k2b-app-workspace__detail-toggle[data-workspace-detail-reopen="true"] {
+  display: inline-flex;
+}
+.k2b-ui
+  .k2b-app-workspace:has(
+    > .k2b-app-workspace__content > .k2b-app-workspace__detail-toggle[data-workspace-detail-reopen="true"],
+    > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail-toggle[data-workspace-detail-reopen="true"]
+  )
+  > .k2b-app-workspace__head.k2b-app-workspace__head:is([data-trail], :not([data-trail])) {
+  position: static;
+  display: flex;
+  width: auto;
+  height: max-content;
+  min-height: 2.875rem;
+  margin: 0;
+  --k2b-workspace-head-end: 7rem;
+  padding: 0.25rem 7rem 0.25rem 0.5rem;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
 }

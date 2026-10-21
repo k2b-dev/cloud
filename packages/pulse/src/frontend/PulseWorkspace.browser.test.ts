@@ -1,7 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { launchBrowser } from "../../../ui/test/browser";
-import { buildWorkspaceHarness, origin, workspaceFixture } from "./PulseWorkspace.browser-fixture";
-import { sqlTestLimits } from "./workspace/sql-test-fixtures";
+import {
+  baseOverviewFixture,
+  buildWorkspaceHarness,
+  origin,
+  overviewWorkspaceFixture,
+  renderWorkspaceSnapshot,
+  workspaceFixture,
+} from "./PulseWorkspace.browser-fixture";
+import { buildPulseWorkspaceHref, readWorkspacePathState } from "./workspace/routes";
+import { sqlTestLimits, sqlTestQuery } from "./workspace/sql-test-fixtures";
 import type { PulseWorkspaceProps } from "./workspace/types";
 
 // The post-cut base page: sources with their status, one source in detail, and the in-place hint where
@@ -44,13 +52,600 @@ const open = async (
     return route.fulfill(await answer(route.request().url()));
   });
   await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: page(props, locale) }));
-  await tab.goto(
-    `${origin}/app/pulse/Lad001${props.initialRouteState.view === "coming-back" ? "/dashboards" : "/sources"}${props.initialRouteState.settings ? `?settings=${props.initialRouteState.settings}` : ""}`,
-  );
+  await tab.goto(`${origin}${buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: props.initialRouteState })}`);
   return { tab, calls };
 };
 const overflow = (tab: Awaited<ReturnType<typeof open>>["tab"]) =>
   tab.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+
+describe("Pulse base overview", () => {
+  test("the real SSR page fills the available app height and keeps long content in its own scroller", async () => {
+    let desktopNumberHeight: number | undefined;
+    for (const view of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+      { width: 1440, height: 600 },
+    ]) {
+      const props: PulseWorkspaceProps =
+        view.width === 390 || view.height === 600
+          ? {
+              ...overviewWorkspaceFixture,
+              initialOverview: {
+                error: null,
+                data: {
+                  ...baseOverviewFixture,
+                  attention: {
+                    total: 12,
+                    nextOffset: null,
+                    items: Array.from({ length: 12 }, (_, index) => ({
+                      ...baseOverviewFixture.attention.items[0]!,
+                      id: `Alert${index}`,
+                      name: `Response ${index + 1}`,
+                    })),
+                  },
+                },
+              },
+            }
+          : overviewWorkspaceFixture;
+      const serverHtml = await renderWorkspaceSnapshot(props, "de", true);
+      const tab = await browser.newPage({ viewport: view });
+      tab.setDefaultTimeout(5_000);
+      const errors: string[] = [];
+      tab.on("pageerror", (error) => errors.push(error.message));
+      await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 503, json: { code: "UNEXPECTED" } }));
+      await tab.route(`${origin}/app/pulse/**`, (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: page(props, "de", false, undefined, { serverHtml, deferMount: true, pageDocument: true }),
+        }),
+      );
+      const geometry = () =>
+        tab.evaluate(() => {
+          const rect = (selector: string, content = false) => {
+            const element = document.querySelector(selector);
+            if (!element) throw new Error(`Missing ${selector}`);
+            const box = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const topInset = content ? Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.paddingTop) : 0;
+            const bottomInset = content ? Number.parseFloat(style.borderBottomWidth) + Number.parseFloat(style.paddingBottom) : 0;
+            return { top: box.top + topInset, bottom: box.bottom - bottomInset, height: box.height - topInset - bottomInset };
+          };
+          return {
+            host: rect(".layout-content-main", true),
+            workspace: rect(".k2b-app-workspace"),
+            numbers: rect(".pulse-overview__numbers"),
+            documentHeight: document.documentElement.scrollHeight,
+            documentWidth: document.documentElement.scrollWidth,
+          };
+        });
+      try {
+        await tab.clock.install({ time: new Date(props.initialNow!) });
+        await tab.clock.pauseAt(new Date(props.initialNow!));
+        await tab.goto(`${origin}/app/pulse/Lad001`);
+        await tab.evaluate(() => document.fonts.ready);
+        await tab.locator(".pulse-overview__headline").waitFor();
+        const before = await geometry();
+        expect(before.workspace.top).toBeCloseTo(before.host.top, 0);
+        expect(before.workspace.bottom).toBeCloseTo(before.host.bottom, 0);
+        expect(before.host.bottom).toBeLessThanOrEqual(view.height);
+        expect(before.documentHeight).toBeLessThanOrEqual(view.height + 1);
+        expect(before.documentWidth).toBeLessThanOrEqual(view.width);
+        if (view.width === 1440) {
+          if (desktopNumberHeight !== undefined) expect(before.numbers.height).toBeCloseTo(desktopNumberHeight, 0);
+          desktopNumberHeight = before.numbers.height;
+        }
+        expect(await tab.locator(".cloud-app-canvas").getAttribute("data-layout-full-page")).toBe("true");
+        expect(await tab.locator("#root").getAttribute("data-mounted")).toBeNull();
+        await tab.evaluate(() => {
+          const mount = Reflect.get(window, "__pulseMount");
+          if (typeof mount !== "function") throw new Error("Missing deferred mount");
+          mount();
+        });
+        await tab.locator('#root[data-mounted="true"]').waitFor();
+        expect(await geometry()).toEqual(before);
+        if (view.width === 390 || view.height === 600) {
+          const scroller = tab.locator(".k2b-app-workspace__main");
+          expect(await scroller.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+          await scroller.evaluate((node) => node.scrollTo(0, node.scrollHeight));
+          expect(await scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+          const activity = await tab.locator(".pulse-overview__activity").boundingBox();
+          const visibleMain = await scroller.boundingBox();
+          expect(activity!.y + activity!.height).toBeLessThanOrEqual(visibleMain!.y + visibleMain!.height);
+          expect(await tab.evaluate(() => window.scrollY)).toBe(0);
+        }
+        expect(errors).toEqual([]);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 60_000);
+
+  test("initial loading ends only when the overview response is available", async () => {
+    const response = Promise.withResolvers<{ status: number; json: unknown }>();
+    const { tab } = await open(views[0]!, { ...overviewWorkspaceFixture, initialOverview: undefined }, "de", () => response.promise);
+    tab.setDefaultTimeout(5_000);
+    try {
+      await tab.locator(".pulse-overview__loading").waitFor();
+      expect(await tab.locator(".pulse-overview__value").count()).toBe(0);
+      response.resolve({ status: 200, json: baseOverviewFixture });
+      await tab.getByRole("heading", { name: "1 Sache braucht Aufmerksamkeit" }).waitFor();
+      expect(await tab.locator(".pulse-overview__loading").count()).toBe(0);
+      expect(await tab.locator(".pulse-overview__value").count()).toBe(4);
+    } finally {
+      response.resolve({ status: 503, json: { code: "CANCELLED" } });
+      await tab.close();
+    }
+  }, 30_000);
+
+  test("source expectation edits send the current revision and preserve the draft on conflict", async () => {
+    const props: PulseWorkspaceProps = { ...workspaceFixture, initialRouteState: { view: "sources", sourceId: "Src002" } };
+    const { tab } = await open(views[1]!, props, "de", (url) => ({
+      status: 200,
+      json: new URL(url).pathname.endsWith("/bases") ? props.initialBases : props.initialSources,
+    }));
+    tab.setDefaultTimeout(5_000);
+    const writes: unknown[] = [];
+    await tab.route(`${origin}/api/pulse/bases/Lad001/sources/Src002`, (route) => {
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({ status: 409, json: { code: "CONFLICT", message: "Fixture revision changed" } });
+    });
+    try {
+      await tab.getByRole("button", { name: /Bearbeiten/ }).click();
+      const dialog = tab.locator("dialog[open]");
+      await dialog.getByRole("combobox", { name: "Erwartete Daten", exact: true }).click();
+      await tab.getByRole("option", { name: "Täglich bis zu einer Uhrzeit", exact: true }).click();
+      await dialog.getByRole("textbox", { name: "Erwartet bis", exact: true }).fill("05:30");
+      await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
+      await dialog.getByRole("alert").waitFor();
+      expect(await dialog.getByRole("alert").textContent()).toContain("Die Quelle wurde geändert");
+      expect(await dialog.getByRole("textbox", { name: "Erwartet bis", exact: true }).inputValue()).toBe("05:30");
+      expect(await dialog.getByRole("button", { name: "Speichern", exact: true }).isDisabled()).toBe(true);
+      expect(writes).toEqual([{ name: "Shop-Bestellungen", expectedRevision: 1, expectEverySeconds: null, expectDailyBy: "05:30" }]);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
+  test("SSR and the first browser render preserve the visible overview snapshot", async () => {
+    for (const locale of ["de", "en"]) {
+      const props = { ...overviewWorkspaceFixture, initialDateConfig: { ...overviewWorkspaceFixture.initialDateConfig, locale } };
+      const serverHtml = await renderWorkspaceSnapshot(props, locale);
+      const tab = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      tab.setDefaultTimeout(5_000);
+      const calls: string[] = [],
+        errors: string[] = [];
+      tab.on("pageerror", (error) => errors.push(error.message));
+      await tab.route(`${origin}/api/**`, (route) => {
+        calls.push(route.request().url());
+        return route.fulfill({ status: 500, json: { code: "UNEXPECTED" } });
+      });
+      await tab.route(`${origin}/app/pulse/**`, (route) =>
+        route.fulfill({ contentType: "text/html", body: page(props, locale, false, undefined, { serverHtml, deferMount: true }) }),
+      );
+      try {
+        await tab.clock.install({ time: new Date(props.initialNow!) });
+        await tab.clock.pauseAt(new Date(props.initialNow!));
+        await tab.goto(`${origin}/app/pulse/Lad001`);
+        await tab.evaluate(() => document.fonts.ready);
+        await tab.locator(".pulse-overview__headline").waitFor();
+        const snapshot = () =>
+          tab.locator(".pulse-overview__headline, .pulse-overview__value, .pulse-overview__activity-time").evaluateAll((nodes) =>
+            nodes.map((node) => {
+              const box = node.getBoundingClientRect();
+              return { text: node.textContent, x: box.x, y: box.y, width: box.width, height: box.height };
+            }),
+          );
+        const before = await snapshot();
+        expect(before).toHaveLength(6);
+        expect(await tab.locator("#root").getAttribute("data-mounted")).toBeNull();
+        await tab.evaluate(() => {
+          const mount = Reflect.get(window, "__pulseMount");
+          if (typeof mount !== "function") throw new Error("Missing deferred mount");
+          mount();
+        });
+        await tab.locator('#root[data-mounted="true"]').waitFor();
+        expect(await snapshot()).toEqual(before);
+        expect(calls).toEqual([]);
+        expect(errors).toEqual([]);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 60_000);
+
+  test("View opens the complete alert draft without running it and survives reload and Back", async () => {
+    const { tab, calls } = await open(views[1]!, overviewWorkspaceFixture);
+    tab.setDefaultTimeout(5_000);
+    const sql = `SELECT :host AS host, :label AS label /* ${"context ".repeat(600)} */`;
+    const params = { host: "db\\01", label: "A&B ü" };
+    await tab.route(`${origin}/app/pulse/**`, (route) => {
+      const state = readWorkspacePathState(route.request().url(), "Lad001");
+      const props: PulseWorkspaceProps =
+        state.alertId === "Alt001"
+          ? {
+              ...overviewWorkspaceFixture,
+              initialRouteState: { ...state, sql, params },
+              initialSql: { limits: sqlTestLimits, query: null, error: null },
+            }
+          : { ...overviewWorkspaceFixture, initialRouteState: state };
+      return route.fulfill({ contentType: "text/html", body: page(props) });
+    });
+    try {
+      await tab.getByRole("button", { name: "Ansehen", exact: true }).click();
+      await tab.waitForURL(`${origin}/app/pulse/Lad001/sql?alert=Alt001`);
+      const assertDraft = async () => {
+        const editor = tab.getByRole("textbox", { name: "SQL", exact: true });
+        await editor.waitFor();
+        expect(await editor.inputValue()).toBe(sql);
+        for (const [key, value] of Object.entries(params))
+          expect(await tab.getByRole("textbox", { name: `:${key}`, exact: true }).inputValue()).toBe(value);
+        expect(new URL(tab.url()).search).toBe("?alert=Alt001");
+        expect(calls.filter((path) => path.endsWith("/sql"))).toEqual([]);
+      };
+      await assertDraft();
+      await tab.reload();
+      await assertDraft();
+      await tab.goBack();
+      await tab.waitForURL(`${origin}/app/pulse/Lad001`);
+      await tab.getByRole("heading", { name: "1 Sache braucht Aufmerksamkeit" }).waitFor();
+      expect(await tab.getByRole("textbox", { name: "SQL", exact: true }).count()).toBe(0);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
+  test("overview and the third source path open the exact unsent Assistant draft", async () => {
+    for (const sourcePicker of [false, true]) {
+      const { tab } = await open(views[1]!, sourcePicker ? workspaceFixture : overviewWorkspaceFixture);
+      tab.setDefaultTimeout(5_000);
+      const requests: unknown[] = [];
+      await tab.route(`${origin}/api/ai/**`, (route) => {
+        const request = route.request();
+        requests.push({ path: new URL(request.url()).pathname, method: request.method(), body: request.postDataJSON() });
+        return route.fulfill({ status: 201, json: { id: "Cht001", draft: { content: [], revision: 1, updatedAt: null } } });
+      });
+      await tab.route(`${origin}/app/assistant**`, (route) =>
+        route.fulfill({ contentType: "text/html", body: "<p>Assistant fixture</p>" }),
+      );
+      try {
+        if (sourcePicker) {
+          await tab.getByRole("button", { name: "Quelle", exact: true }).click();
+          const dialog = tab.locator("dialog[open]");
+          await dialog.getByRole("heading", { name: "Neue Quelle in Laden" }).waitFor();
+          await dialog.getByRole("button", { name: /Mit KI fragen/ }).click();
+        } else await tab.getByRole("button", { name: "Mit KI fragen", exact: true }).click();
+        await tab.waitForURL(`${origin}/app/assistant?conversation=Cht001`);
+        expect(requests).toEqual([
+          {
+            path: "/api/ai/conversations",
+            method: "POST",
+            body: {
+              launchedByAppId: "pulse",
+              title: "Was ist los in Laden?",
+              skills: ["cloud-pulse"],
+              preloadTools: [
+                { appId: "pulse", kind: "query", id: "sql.run" },
+                { appId: "pulse", kind: "query", id: "base.read" },
+                { appId: "pulse", kind: "query", id: "source.list" },
+              ],
+              draft: {
+                content: [
+                  { type: "text", text: "Was braucht in Laden gerade Aufmerksamkeit, und warum?" },
+                  {
+                    type: "resource",
+                    ref: { type: "pulse.base", id: "Lad001" },
+                    title: "Laden",
+                    icon: "ti ti-activity-heartbeat",
+                    href: "/app/pulse/Lad001",
+                  },
+                ],
+              },
+            },
+          },
+        ]);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 30_000);
+  test("a lost source-create response preserves the draft, blocks resubmission and offers the reconciled source list", async () => {
+    const { tab } = await open(views[1]!, workspaceFixture, "de", (url) => ({
+      status: 200,
+      json: new URL(url).pathname.endsWith("/bases") ? workspaceFixture.initialBases : workspaceFixture.initialSources,
+    }));
+    let writes = 0,
+      reads = 0;
+    await tab.route(`${origin}/api/pulse/bases/Lad001/sources`, async (route) => {
+      if (route.request().method() === "POST") {
+        ++writes;
+        return route.abort("failed");
+      }
+      ++reads;
+      return route.fulfill({ status: 200, json: workspaceFixture.initialSources });
+    });
+    tab.setDefaultTimeout(5_000);
+    try {
+      await tab.getByRole("button", { name: "Quelle", exact: true }).click();
+      const dialog = tab.locator("dialog[open]");
+      expect(await dialog.getByRole("button", { name: /Mit KI fragen/ }).isVisible()).toBe(true);
+      await dialog.getByRole("button", { name: /Senden/ }).click();
+      await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Tägliche Lieferung");
+      await dialog.getByRole("button", { name: "Hinzufügen", exact: true }).click();
+      await dialog.getByRole("button", { name: "Quellen prüfen", exact: true }).waitFor();
+      expect(await dialog.getByRole("textbox", { name: "Name", exact: true }).inputValue()).toBe("Tägliche Lieferung");
+      expect(await dialog.getByRole("button", { name: "Hinzufügen", exact: true }).isDisabled()).toBe(true);
+      expect(writes).toBe(1);
+      expect(reads).toBe(1);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
+  test("retrying a revoked saved-query read cannot redisplay protected rows before authorization succeeds", async () => {
+    let reads = 0;
+    const pending = Promise.withResolvers<{ status: number; json: unknown }>();
+    const { tab } = await open(
+      views[1]!,
+      {
+        ...workspaceFixture,
+        initialRouteState: { view: "sql", sourceId: "", sql: "SELECT 1" },
+        initialSql: { limits: sqlTestLimits, query: null, error: null },
+      },
+      "de",
+      (url) => {
+        if (new URL(url).pathname.endsWith("/queries/Qry001")) return { status: 200, json: sqlTestQuery };
+        if (new URL(url).pathname.endsWith("/queries")) {
+          ++reads;
+          if (reads === 2) return { status: 403, json: { code: "FORBIDDEN" } };
+          if (reads === 3) return pending.promise;
+          return { status: 200, json: { items: [sqlTestQuery], total: 1, nextOffset: null } };
+        }
+        return { status: 500, json: {} };
+      },
+    );
+    tab.setDefaultTimeout(5_000);
+    try {
+      await tab.getByRole("tab", { name: "Gespeichert", exact: true }).click();
+      await tab.getByRole("switch", { name: "Auf Übersicht", exact: true }).click();
+      const retry = tab.getByRole("button", { name: "Erneut versuchen", exact: true });
+      await retry.waitFor();
+      expect(await tab.getByRole("button", { name: "CPU", exact: true }).count()).toBe(0);
+      await retry.click();
+      await tab.getByRole("status").filter({ hasText: "Gespeicherte Abfragen" }).waitFor();
+      expect(await tab.getByRole("button", { name: "CPU", exact: true }).count()).toBe(0);
+      pending.resolve({ status: 503, json: { code: "UNAVAILABLE" } });
+      await retry.waitFor();
+      expect(await tab.getByRole("button", { name: "CPU", exact: true }).count()).toBe(0);
+      await retry.click();
+      await tab.getByRole("button", { name: "CPU", exact: true }).waitFor();
+    } finally {
+      pending.resolve({ status: 403, json: { code: "FORBIDDEN" } });
+      await tab.close();
+    }
+  }, 30_000);
+
+  test("overview states preserve truthful values and fit phone and desktop", async () => {
+    const quiet = { ...baseOverviewFixture, attention: { items: [], total: 0, nextOffset: null } };
+    const empty = { ...quiet, sources: { total: 0, current: 0 }, numbers: [], activity: { items: [], nextCursor: null } };
+    const states = [
+      { data: baseOverviewFixture, error: null, title: "1 Sache braucht Aufmerksamkeit" },
+      { data: quiet, error: null, title: "Alles ruhig" },
+      { data: empty, error: null, title: "Laden ist noch leer" },
+      { data: { ...baseOverviewFixture, storeUnavailable: true }, error: null, title: "Pulse erreicht den Datenspeicher nicht" },
+      { data: null, error: { code: "REQUEST_FAILED", message: "Offline" }, title: "Die Übersicht ließ sich nicht laden" },
+    ];
+    for (const view of views)
+      for (const state of states) {
+        const { tab, calls } = await open(view, { ...overviewWorkspaceFixture, initialOverview: state });
+        tab.setDefaultTimeout(5_000);
+        try {
+          await tab.getByText(state.title, { exact: true }).first().waitFor();
+          await tab.evaluate(() => document.fonts.ready);
+          expect(await overflow(tab)).toBeLessThanOrEqual(0);
+          expect(calls).toEqual([]);
+          if (state.data?.numbers.length) {
+            expect(await tab.locator(".pulse-overview__number").count()).toBe(4);
+            expect(await tab.locator(".pulse-overview__value").first().textContent()).toContain("42");
+            expect(
+              await tab
+                .locator(".pulse-overview__spark .stdlib-chart-sparkline")
+                .evaluateAll((lines) => lines.map((line) => getComputedStyle(line).stroke)),
+            ).toEqual(["rgb(20, 184, 166)", "rgb(249, 115, 22)", "rgb(139, 92, 246)", "rgb(236, 72, 153)"]);
+          }
+          if (state.data?.storeUnavailable) {
+            expect(await tab.locator(".pulse-overview__number-time").first().isVisible()).toBe(true);
+            expect(await tab.getByRole("button", { name: "Erneut versuchen", exact: true }).isVisible()).toBe(true);
+          }
+        } finally {
+          await tab.close();
+        }
+      }
+  }, 60_000);
+
+  test("60-second refresh preserves anchors and focused actions, retains failure facts and purges denied data", async () => {
+    for (const view of views) {
+      let answer = { status: 200, json: { ...baseOverviewFixture, readAt: "2026-10-19T12:41:00.000Z", sources: { total: 4, current: 4 } } };
+      const { tab, calls } = await open(view, overviewWorkspaceFixture, "de", () => answer);
+      tab.setDefaultTimeout(5_000);
+      try {
+        const action = tab.getByRole("button", { name: "Ansehen", exact: true }).first();
+        await action.waitFor();
+        await tab.evaluate(() => document.fonts.ready);
+        await action.focus();
+        await tab.waitForFunction(() => document.activeElement?.textContent?.trim() === "Ansehen");
+        const anchorPositions = () =>
+          tab.evaluate(() =>
+            [".pulse-overview__band", ".pulse-overview__headline", ".pulse-overview__numbers", ".pulse-overview__activity"].map(
+              (selector) => {
+                const box = document.querySelector(selector)!.getBoundingClientRect();
+                return { x: box.x, y: box.y, width: box.width, height: box.height };
+              },
+            ),
+          );
+        const before = await anchorPositions();
+        const button = await action.elementHandle();
+        await tab.clock.runFor(59_999);
+        expect(calls).toEqual([]);
+        await tab.clock.runFor(1);
+        await tab.locator(".pulse-overview__band").getByText("4 von 4 Quellen aktuell", { exact: true }).waitFor();
+        expect(await anchorPositions()).toEqual(before);
+        expect(await button?.evaluate((node) => node === document.activeElement && node.isConnected)).toBe(true);
+        expect(calls).toEqual(["/api/pulse/bases/Lad001/overview"]);
+        answer = { status: 503, json: { ...baseOverviewFixture } };
+        await tab.clock.runFor(60_000);
+        await tab.getByRole("button", { name: "Erneut versuchen", exact: true }).waitFor();
+        expect(await tab.locator(".pulse-overview__number").count()).toBe(4);
+        answer = { status: 403, json: { ...baseOverviewFixture } };
+        await tab.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+        await tab.clock.runFor(1);
+        await tab.getByRole("link", { name: "Zu meinen Bases", exact: true }).waitFor();
+        expect(await tab.locator(".pulse-overview__number").count()).toBe(0);
+        expect(await tab.getByText("Antwortzeit", { exact: true }).count()).toBe(0);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 60_000);
+
+  test("60-second refresh grows and shrinks attention naturally while preserving the surviving focused action", async () => {
+    const surviving = baseOverviewFixture.attention.items[0]!;
+    const expandedItems = [
+      { ...surviving, id: "alert-Alt002", reference: "Alt002", name: "CPU" },
+      { ...surviving },
+      { ...surviving, id: "alert-Alt003", reference: "Alt003", name: "Speicher" },
+    ];
+    let snapshot = { ...baseOverviewFixture, attention: { items: expandedItems, total: 3, nextOffset: null } };
+    const { tab, calls } = await open(views[1]!, overviewWorkspaceFixture, "de", () => ({ status: 200, json: snapshot }));
+    tab.setDefaultTimeout(5_000);
+    try {
+      const rows = tab.locator(".pulse-overview__attention-row");
+      const action = rows.filter({ hasText: surviving.name }).getByRole("button", { name: "Ansehen", exact: true });
+      await action.waitFor();
+      await tab.evaluate(() => document.fonts.ready);
+      await action.focus();
+      const button = await action.elementHandle();
+      expect(await button?.evaluate((node) => node === document.activeElement && node.isConnected)).toBe(true);
+      // The periodic clock is paused; wait for the actual focus/font condition
+      // instead of the generic settlement helper's animation frames.
+      await tab.waitForFunction(
+        () => document.fonts.status === "loaded" && !!document.activeElement?.closest(".pulse-overview__attention-action"),
+      );
+      const layout = () =>
+        tab.evaluate(() => {
+          const list = document.querySelector(".pulse-overview__attention")!;
+          const box = list.getBoundingClientRect();
+          return {
+            height: box.height,
+            overflow: list.scrollHeight - list.clientHeight,
+            // Relative positions measure document flow independently of browser scroll anchoring.
+            following: [".pulse-overview__numbers", ".pulse-overview__activity"].map(
+              (selector) => document.querySelector(selector)!.getBoundingClientRect().top - box.top,
+            ),
+          };
+        });
+      expect(await rows.count()).toBe(1);
+      const before = await layout();
+      await tab.clock.runFor(60_000);
+      await rows.getByText("Speicher", { exact: true }).waitFor();
+      expect(await rows.count()).toBe(3);
+      const grown = await layout();
+      expect(grown.height).toBeGreaterThan(before.height);
+      expect(grown.overflow).toBeLessThanOrEqual(1);
+      for (const [index, position] of grown.following.entries()) {
+        expect(position - before.following[index]!).toBeCloseTo(grown.height - before.height, 5);
+      }
+      expect(await button?.evaluate((node) => node === document.activeElement && node.isConnected)).toBe(true);
+
+      snapshot = { ...baseOverviewFixture, attention: { items: [{ ...surviving }], total: 1, nextOffset: null } };
+      await tab.clock.runFor(60_000);
+      await rows.getByText("Speicher", { exact: true }).waitFor({ state: "detached" });
+      expect(await rows.count()).toBe(1);
+      expect(await layout()).toEqual(before);
+      expect(await button?.evaluate((node) => node === document.activeElement && node.isConnected)).toBe(true);
+      expect(calls).toEqual(["/api/pulse/bases/Lad001/overview", "/api/pulse/bases/Lad001/overview"]);
+
+      // A refresh must not steal focus back from another action.
+      const elsewhere = tab.locator(".pulse-overview__assistant-desktop button");
+      await elsewhere.focus();
+      snapshot = { ...baseOverviewFixture, attention: { items: expandedItems, total: 3, nextOffset: null } };
+      await tab.clock.runFor(60_000);
+      await rows.getByText("Speicher", { exact: true }).waitFor();
+      expect(await elsewhere.evaluate((node) => node === document.activeElement)).toBe(true);
+
+      // A resolved row is removed, not resurrected to restore its old focus.
+      await action.focus();
+      snapshot = { ...baseOverviewFixture, attention: { items: [expandedItems[2]!], total: 1, nextOffset: null } };
+      await tab.clock.runFor(60_000);
+      await action.waitFor({ state: "detached" });
+      expect(await button?.evaluate((node) => node.isConnected)).toBe(false);
+      expect(await rows.getByRole("button", { name: "Ansehen", exact: true }).evaluate((node) => node === document.activeElement)).toBe(
+        true,
+      );
+      snapshot = { ...baseOverviewFixture, attention: { items: [], total: 0, nextOffset: null } };
+      await tab.clock.runFor(60_000);
+      await rows.waitFor({ state: "detached" });
+      expect(await tab.locator(".pulse-overview__headline").evaluate((node) => node === document.activeElement)).toBe(true);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
+  test("pin reconciliation failure stays visible and a successful retry unlocks the switches without repeating the write", async () => {
+    let reads = 0,
+      writes = 0;
+    let row = { ...sqlTestQuery, baseId: "Lad001" };
+    const { tab } = await open(
+      views[1]!,
+      {
+        ...workspaceFixture,
+        initialRouteState: { view: "sql", sourceId: "", sql: "SELECT 1" },
+        initialSql: { limits: sqlTestLimits, query: null, error: null },
+      },
+      "de",
+      (url) => {
+        const path = new URL(url).pathname;
+        if (path.endsWith("/queries/Qry001")) {
+          ++writes;
+          row = { ...row, pinned: !row.pinned, revision: row.revision + 1 };
+          return { status: 200, json: row };
+        }
+        if (path.endsWith("/queries")) {
+          ++reads;
+          return reads === 2
+            ? { status: 503, json: { code: "UNAVAILABLE" } }
+            : { status: 200, json: { items: [row], total: 51, nextOffset: 50 } };
+        }
+        return { status: 500, json: {} };
+      },
+    );
+    tab.setDefaultTimeout(5_000);
+    try {
+      await tab.getByRole("tab", { name: "Gespeichert", exact: true }).click();
+      const pin = tab.getByRole("switch", { name: "Auf Übersicht", exact: true });
+      await pin.waitFor();
+      await pin.click();
+      const retry = tab.getByRole("button", { name: "Erneut versuchen", exact: true });
+      await retry.waitFor();
+      expect(await pin.isDisabled()).toBe(true);
+      expect(writes).toBe(1);
+      await retry.click();
+      await tab.waitForFunction(() => {
+        const input = document.querySelector<HTMLInputElement>('input[role="switch"]');
+        return input?.checked && !input.disabled;
+      });
+      expect(writes).toBe(1);
+      await pin.click();
+      await tab.waitForFunction(() => {
+        const input = document.querySelector<HTMLInputElement>('input[role="switch"]');
+        return input && !input.checked && !input.disabled;
+      });
+      expect(writes).toBe(2);
+      expect(reads).toBe(4);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+});
 
 describe("Pulse base page after the cut", () => {
   test("sources show their status and newest data on phones and desktops", async () => {
