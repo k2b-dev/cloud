@@ -276,6 +276,14 @@ acquisition, transaction start and commit are outside that budget. A timeout
 rolls back before returning `mail_unavailable`. Retention may skip a row while
 its read is locked and process it in a later batch.
 
+In these read events, `metadata.appId` identifies the source and `readingAppId`
+the reader. Their `appIdSha256` and `readingAppIdSha256` values fingerprint the
+complete, exact IDs when audit strings are truncated; compare them with a known
+ID's SHA-256, since a hash cannot recover a deleted ID. Grant updates record the
+before and after levels for all 100 supported sources. Technical actors use
+`metadata.serviceAccountId` and the existing service-account audit filter;
+a delegated user is recorded separately.
+
 The reading application cannot cancel or change another application's mail.
 Its author decides which users see that information: ask how the page is
 protected before you grant access.
