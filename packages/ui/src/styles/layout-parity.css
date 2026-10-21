@@ -3251,6 +3251,11 @@ html {
   transform: translateY(-50%);
 }
 
+/* Align the sidebar glyph and Details text on their shared font baseline. */
+.k2b-ui .k2b-app-workspace__detail-toggle > .k2b-button__label {
+  align-items: baseline;
+}
+
 /* A head row can wrap to more lines; the Details button stays centred on
    its first line, beside the actions: the row's top padding plus half of
    its 2.5 rem line. */
