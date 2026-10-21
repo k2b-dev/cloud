@@ -124,7 +124,7 @@
   .mail-row-sender {
     min-width: 0;
     overflow: hidden;
-    font-weight: 500;
+    font-weight: 400;
     text-overflow: ellipsis;
   }
 
@@ -163,6 +163,7 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-weight: 400;
   }
 
   .mail-list-entry-unread .mail-row-subject {
@@ -379,6 +380,10 @@
      a folder in it is the marked row. */
   .k2b-ui .mail-sidebar-mailbox[data-open="true"] .k2b-app-workspace__sidebar-item-label {
     font-weight: 600;
+  }
+
+  .k2b-ui .mail-sidebar-mailbox:not([data-open="true"]) :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
+    color: var(--k2b-text-muted);
   }
 
   .mail-sidebar-health {

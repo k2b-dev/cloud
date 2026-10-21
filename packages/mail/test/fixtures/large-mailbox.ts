@@ -70,7 +70,7 @@ function createBodyCorpus(random: () => number) {
   return sentences.join("").slice(0, 256 * 1024);
 }
 
-export function planLargeMailbox(parameters: Parameters) {
+export function planLargeMailbox(parameters: Parameters, reservedIds: Iterable<string> = []) {
   const { seed, messages: count, conversations: threads, folders: folderCount } = parameters;
   if (
     !Number.isInteger(count) ||
@@ -95,7 +95,8 @@ export function planLargeMailbox(parameters: Parameters) {
     t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  const used = new Set<string>();
+  // Short IDs are globally unique per table, including across separately seeded mailboxes.
+  const used = new Set(reservedIds);
   const shortId = (): string => {
     let id: string;
     do {
@@ -271,6 +272,14 @@ export function planLargeMailbox(parameters: Parameters) {
   };
 }
 export type LargeMailboxPlan = ReturnType<typeof planLargeMailbox>;
+export function fixtureShortIds(plan: LargeMailboxPlan): string[] {
+  return [
+    ...plan.folders.map((row) => row.id),
+    ...plan.conversations.map((row) => row.id),
+    ...plan.messages.flatMap((row) => [row.id, ...(row.attachment ? [row.attachment.id] : [])]),
+    plan.senderIdentityShortId,
+  ];
+}
 export function digestPlan(plan: LargeMailboxPlan) {
   const canonical = (value: unknown): unknown =>
     Array.isArray(value)

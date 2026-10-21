@@ -632,3 +632,63 @@ test("page swap replaces only the content column and its page data", async () =>
     for (const spy of spies) spy.mockRestore();
   }
 });
+
+// The launcher consumes precisely this shell catalog, including Core's virtual Admin destination.
+test("launcher catalog follows live app navigation, roles and request locale in SSR", async () => {
+  const probes = [
+    {
+      ...badgeApps[0]!,
+      id: "public-launcher",
+      name: "Tools",
+      nav: { href: "/tools", section: "more" as const },
+      presentation: { baseLocale: "en", translations: { de: { name: "Werkzeuge" } } },
+      searchLinks: [{ label: "Tools", href: "/tools", keywords: ["utilities"] }],
+    },
+    { ...badgeApps[1]!, id: "private-launcher", nav: { href: "/private", section: "more" as const, requiresAuth: true } },
+    {
+      ...badgeApps[1]!,
+      id: "restricted-launcher",
+      nav: { href: "/restricted", section: "more" as const, requiresRoles: ["admin" as const] },
+    },
+    { ...badgeApps[1]!, id: "hidden-launcher", nav: { href: "/hidden", section: "hidden" as const } },
+    { ...badgeApps[1]!, id: "internal-launcher", nav: undefined },
+  ];
+  const launcherServer = new Hono().get(
+    "/launcher",
+    async (c, next) => {
+      c.set("runtime" as never, { apps: probes } as never);
+      const role = c.req.query("role");
+      if (role) c.set("user" as never, { ...person, roles: role === "admin" ? [...person.roles, "admin"] : person.roles } as never);
+      await next();
+    },
+    ...app.ssr((c) => () => createComponent(Layout, { c: c as unknown as LayoutContextArg, panel: false, children: "Launcher probe" })),
+  );
+  const spies = [
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+  ];
+  try {
+    for (const locale of ["en", "de"]) {
+      for (const role of ["", "user", "admin"]) {
+        const response = await launcherServer.request(`/launcher?role=${role}`, { headers: { "Accept-Language": locale } });
+        expect(response.status).toBe(200);
+        const html = await response.text();
+        const shell = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">(.*?)<\/script>/)![1]!);
+        expect(shell.apps.map((entry: { id: string }) => entry.id).sort()).toEqual(
+          ["public-launcher", ...(role ? ["private-launcher"] : []), ...(role === "admin" ? ["admin", "restricted-launcher"] : [])].sort(),
+        );
+        expect(shell.apps.find((entry: { id: string }) => entry.id === "public-launcher").label).toBe(
+          locale === "de" ? "Werkzeuge" : "Tools",
+        );
+        expect(shell.apps.find((entry: { id: string }) => entry.id === "admin")?.label).toBe(
+          role === "admin" ? (locale === "de" ? "Administration" : "Admin") : undefined,
+        );
+        expect(Object.keys(shell.searchLinks)).toEqual(["public-launcher"]);
+        for (const absent of ["hidden-launcher", "internal-launcher", ...(role === "admin" ? [] : ["restricted-launcher"])])
+          expect(html).not.toContain(absent);
+      }
+    }
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});

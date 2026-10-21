@@ -362,6 +362,48 @@ describe("Mail quick look", () => {
     }
   }, 30_000);
 
+  test("focus retries an aborted prefetch while another card is pinned open", async () => {
+    const page = await load();
+    let releaseResponse = () => {};
+    const heldResponse = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    let attempts = 0;
+    try {
+      await page.route(`**${previewPath("Cv0003")}`, async (route) => {
+        attempts += 1;
+        if (attempts === 1) await heldResponse;
+        await route.fulfill({ json: previewFor("Cv0003") });
+      });
+      await page.focus(linkOf("Cv0002"));
+      await page.keyboard.press("Space");
+      await settle(page);
+      expect(await shown(page)).toBe("Room booking 2");
+      await pointAt(page, row("Cv0003"));
+      await page.clock.runFor(81);
+      await requested(page, previewPath("Cv0003"), 1);
+      expect(await shown(page)).toBe("Room booking 2");
+      await away(page);
+      await abortReported(page, previewPath("Cv0003"));
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0003"))).toEqual([
+        { path: previewPath("Cv0003"), aborted: true },
+      ]);
+      releaseResponse();
+      // No new pointer stay or Space: the shared controller follows focus.
+      await page.focus(linkOf("Cv0003"));
+      await page.clock.runFor(91);
+      expect(await shown(page)).toBe("Room booking 3");
+      await requested(page, previewPath("Cv0003"), 2);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0003"))).toHaveLength(2);
+      await settle(page);
+      expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toContain("thanks.");
+      expect(page.errors).toEqual([]);
+    } finally {
+      releaseResponse();
+      await close(page);
+    }
+  }, 30_000);
+
   test("swaps rows after 90 ms at the same size and serves a row again from the cache", async () => {
     const page = await load();
     try {
@@ -613,16 +655,43 @@ describe("Mail quick look", () => {
   test("says when the newest message's body is still synchronizing", async () => {
     const page = await load({ locale: "de" });
     try {
+      // Complete the prefetch before the 200 ms opening callback. A slow response
+      // would hide a second load behind the loader's in-flight deduplication.
+      await page.evaluate(() => {
+        const fetch = window.fetch.bind(window);
+        window.fetch = Object.assign(async (...args: Parameters<typeof fetch>) => {
+          const response = await fetch(...args);
+          if (response.url.endsWith("/Cv0007/preview")) {
+            const json = response.json.bind(response);
+            response.json = async () => {
+              const data = await json();
+              document.body.dataset.previewParsed = "true";
+              return data;
+            };
+          }
+          return response;
+        }, fetch);
+      });
       await pointAt(page, row("Cv0007"));
-      await page.clock.runFor(201);
+      await page.clock.runFor(81);
+      await page.waitForFunction(() => document.body.dataset.previewParsed === "true");
+      await page.clock.runFor(120);
       await settle(page);
       expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toBe("Der Nachrichteninhalt wird noch synchronisiert");
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(1);
+      const target = (await box(page, row("Cv0007")))!;
+      await page.mouse.move(target.left + target.width * 0.6, target.top + target.height / 2);
+      await hovered(page, row("Cv0007"));
+      await page.clock.runFor(81);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(1);
       // A body that was still synchronizing is asked for again on the next rest instead of staying cached.
       await away(page);
       await page.clock.runFor(400);
       await pointAt(page, row("Cv0007"));
       await page.clock.runFor(81);
       await requested(page, previewPath("Cv0007"), 2);
+      await page.clock.runFor(120);
+      await settle(page);
       expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
     } finally {
       await close(page);
@@ -647,6 +716,86 @@ describe("Mail quick look", () => {
       expect((await requests(page)).filter((request) => request.path === previewPath("Cv0002"))).toHaveLength(2);
     } finally {
       previewDelay = 0;
+      await close(page);
+    }
+  }, 30_000);
+
+  test("an explicit keyboard reopening retries a syncing preview while the pointer stays on the row", async () => {
+    const page = await load();
+    try {
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(201);
+      await settle(page);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(1);
+      await page.locator(linkOf("Cv0007")).focus();
+      await page.keyboard.press("Space");
+      expect(await shown(page)).toBeNull();
+      await page.keyboard.press("Space");
+      await settle(page);
+      await requested(page, previewPath("Cv0007"), 2);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
+      expect(await shown(page)).toBe("Room booking 7");
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("returning from the still-open card starts one new attempt for a syncing preview", async () => {
+    const page = await load();
+    try {
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(201);
+      await settle(page);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(1);
+      await pointAt(page, card);
+      await page.clock.runFor(400);
+      expect(await shown(page)).toBe("Room booking 7");
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(81);
+      await requested(page, previewPath("Cv0007"), 2);
+      await settle(page);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
+      await page.clock.runFor(200);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("a denied preview stays unavailable for the current stay and can retry on a new stay", async () => {
+    const page = await load();
+    let attempts = 0;
+    try {
+      await page.route(`**${previewPath("Cv0007")}`, (route) => {
+        attempts += 1;
+        return attempts === 1
+          ? route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "Forbidden" }) })
+          : route.fulfill({ json: previewFor("Cv0007") });
+      });
+      const denied = page.waitForResponse((response) => response.url().endsWith(previewPath("Cv0007")));
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(81);
+      await (await denied).finished();
+      await page.clock.runFor(120);
+      await settle(page);
+      expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toBe(
+        "Preview unavailable. Open the conversation to read it.",
+      );
+      expect(attempts).toBe(1);
+      await away(page);
+      await page.clock.runFor(400);
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(201);
+      await settle(page);
+      expect(attempts).toBe(2);
+      expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toBe("Body is still synchronizing");
+      expect(page.errors).toEqual([]);
+    } finally {
       await close(page);
     }
   }, 30_000);

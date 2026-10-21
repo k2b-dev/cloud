@@ -4,6 +4,7 @@ export const resourceSearchMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      app: "App",
       actions: "Actions",
       contextActions: "On this page",
       commandPlaceholder: "Find an action…",
@@ -54,6 +55,7 @@ export const resourceSearchMessages = i18n.define({
       loadingTags: "Loading filters…",
     },
     de: {
+      app: "App",
       actions: "Aktionen",
       contextActions: "Auf dieser Seite",
       commandPlaceholder: "Aktion finden…",

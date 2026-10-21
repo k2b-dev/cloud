@@ -13,8 +13,6 @@ export const app = defineApp({
     translations: {
       de: {
         description: "Metriken, Ereignisse und Zustände sammeln.",
-        adminGroups: { pulse: "Pulse" },
-        adminLinks: { "/admin/pulse": "Pulse" },
       },
     },
   },
@@ -31,7 +29,6 @@ export const app = defineApp({
   skills: SKILLS,
   notifications: NOTIFICATIONS,
   adminHref: "/admin/pulse",
-  adminNav: [{ id: "pulse", label: "Pulse", links: [{ label: "Pulse", href: "/admin/pulse", icon: "ti ti-activity-heartbeat" }] }],
   settings: {
     "pulse.max_bases": {
       kind: "number",
@@ -117,6 +114,18 @@ export const app = defineApp({
       description: "Set under Administration -> Pulse -> Bases.",
       presentation: {
         translations: { de: { label: "Standardmaximum Ereignisarten", description: "Einstellen unter Administration -> Pulse -> Bases." } },
+      },
+    },
+    "pulse.default_queries_per_hour": {
+      kind: "number",
+      default: 600,
+      min: 1,
+      max: 2147483647,
+      integer: true,
+      label: "Default questions per hour",
+      description: "Questions and SQL runs per base and clock hour.",
+      presentation: {
+        translations: { de: { label: "Standardfragen pro Stunde", description: "Fragen und SQL-Abfragen je Base und voller Stunde." } },
       },
     },
     "pulse.default_max_state_keys": {

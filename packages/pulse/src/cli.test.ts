@@ -581,3 +581,286 @@ test("the removed deployment snapshot command makes no API call", async () => {
   await expect(pulseCli.run(ctx)).rejects.toThrow("Unknown pulse command");
   expect(calls).toHaveLength(0);
 });
+
+describe("Pulse SQL CLI", () => {
+  const result = {
+    runId: "00000000-0000-4000-8000-000000000001",
+    columns: [{ name: "text", type: "String" }],
+    rows: [['a,"b']],
+    rowCount: 1,
+    truncated: false,
+    stats: { elapsedMs: 1, readRows: 1, readBytes: 4 },
+    limits: {},
+  };
+  test.each(["table", "json", "csv"])("prints %s and binds parameter values as data", async (format) => {
+    const context = createContext(["sql", "SELECT :value"], { base: baseId, param: ['value=a,\"b'], format }, [jsonResponse(result)]);
+    expect(await pulseCli.run(context.ctx)).toBe(0);
+    expect(context.calls[0]?.path).toBe(`/api/pulse/bases/${baseId}/sql`);
+    const body = JSON.parse(String(context.calls[0]?.init?.body));
+    expect(body.params).toEqual({ value: 'a,"b' });
+    expect(body.runId).toMatch(/^[a-f0-9-]{36}$/);
+    if (format === "json") expect(JSON.parse(context.lines[0]!)).toEqual(result);
+    else if (format === "csv") expect(context.lines).toEqual(["text", '"a,""b"']);
+    else expect(context.tables).toEqual([[{ 0: 'a,"b' }]]);
+  });
+  test("reads SQL from a file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pulse-sql-cli-"));
+    const path = join(directory, "query.sql");
+    await Bun.write(path, "SELECT :metric");
+    try {
+      const context = createContext(["sql"], { base: baseId, file: path, param: ["metric=cpu"] }, [jsonResponse(result)]);
+      expect(await pulseCli.run(context.ctx)).toBe(0);
+      expect(JSON.parse(String(context.calls[0]?.init?.body)).sql).toBe("SELECT :metric");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+  test("reads SQL from stdin", async () => {
+    const { spyOn } = await import("bun:test");
+    const stdin = spyOn(Bun.stdin, "text").mockResolvedValue("SELECT 1");
+    try {
+      const context = createContext(["sql", "-"], { base: baseId }, [jsonResponse(result)]);
+      expect(await pulseCli.run(context.ctx)).toBe(0);
+      expect(JSON.parse(String(context.calls[0]?.init?.body)).sql).toBe("SELECT 1");
+    } finally {
+      stdin.mockRestore();
+    }
+  });
+  test.each([
+    ["INPUT_TOO_LARGE", 2],
+    ["PARAMETER_MISSING", 2],
+    ["SQL_ERROR", 3],
+    ["TIME_LIMIT", 4],
+    ["MEMORY_LIMIT", 4],
+    ["RESULT_TOO_LARGE", 4],
+    ["BUSY", 5],
+    ["QUEUE_FULL", 5],
+    ["QUOTA", 5],
+    ["NO_READ_ACCESS", 6],
+    ["STORE_UNAVAILABLE", 7],
+  ] as const)("maps %s to exit %s", async (code, expected) => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId }, [jsonResponse({ code, message: "Query refused." }, 400)]);
+    expect(await pulseCli.run(context.ctx)).toBe(expected);
+    expect(context.lines).toEqual([`${code}: Query refused.`]);
+  });
+  test("rejects invalid input before any HTTP request", async () => {
+    const context = createContext(["sql", "SELECT :missing"], { base: baseId });
+    expect(await pulseCli.run(context.ctx)).toBe(2);
+    expect(context.calls).toHaveLength(0);
+    expect(context.lines.join()).toContain("PARAMETER_MISSING");
+  });
+  test("unknown upstream failures never print credentials or response bodies", async () => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId }, [
+      jsonResponse({ code: "REMOTE", message: "SECRET_MUST_NOT_PRINT" }, 500),
+    ]);
+    expect(await pulseCli.run(context.ctx)).toBe(7);
+    expect(context.lines.join()).not.toContain("SECRET_MUST_NOT_PRINT");
+    expect(context.lines.join()).not.toContain(context.ctx.options.token);
+  });
+  test.each([true, false])("Ctrl-C cancels visibly even if the response races the abort (transport rejects: %s)", async (rejects) => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId });
+    let sent: Record<string, unknown> | undefined;
+    context.ctx.fetch = async (path, init) => {
+      context.calls.push({ path, init });
+      if (path.endsWith("/cancel")) {
+        sent = JSON.parse(String(init?.body));
+        return jsonResponse({ cancelled: true });
+      }
+      // Emitting immediately exercises cancellation before the first response byte.
+      process.emit("SIGINT");
+      expect(init?.signal?.aborted).toBe(true);
+      if (rejects) throw new DOMException("Aborted", "AbortError");
+      return jsonResponse(result);
+    };
+    expect(await pulseCli.run(context.ctx)).toBe(130);
+    const request = JSON.parse(String(context.calls[0]?.init?.body));
+    expect(sent).toEqual({ runId: request.runId });
+    expect(context.calls[1]?.path).toBe(`/api/pulse/bases/${baseId}/sql/cancel`);
+    expect(context.lines).toContain("CANCELLED: Query cancelled.");
+  });
+  test.each(["sql", "queries list", "queries get", "queries save", "queries delete"])("help for %s sends no request", async (command) => {
+    const context = createContext([...command.split(" "), "--help"]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls).toHaveLength(0);
+    expect(context.lines.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Pulse saved query CLI", () => {
+  const query = {
+    id: "Query1",
+    baseId,
+    name: "Count",
+    sql: "SELECT 1",
+    params: {},
+    revision: 2,
+    createdBy: userId,
+    updatedBy: userId,
+    createdAt: "2026-10-20T10:00:00Z",
+    updatedAt: "2026-10-20T10:00:00Z",
+  };
+  test("lists a bounded page", async () => {
+    const context = createContext(["queries", "list"], { base: baseId, page: "2", "per-page": "5" }, [
+      jsonResponse({ items: [query], total: 6, nextOffset: null }),
+    ]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.path).toBe(`/api/pulse/bases/${baseId}/queries?limit=5&offset=5`);
+  });
+  test("saves an update with its expected revision and retry key", async () => {
+    const context = createContext(
+      ["queries", "save", "SELECT 1"],
+      { base: baseId, name: "Count", query: "Query1", "expected-revision": "1", "idempotency-key": "fixture-save" },
+      [jsonResponse(query)],
+    );
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.init?.method).toBe("PATCH");
+    expect(new Headers(context.calls[0]?.init?.headers).get("Idempotency-Key")).toBe("fixture-save");
+    expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({ name: "Count", sql: "SELECT 1", params: {}, expectedRevision: 1 });
+  });
+  test("delete sends the revision that was confirmed", async () => {
+    const context = createContext(["queries", "delete", "Query1"], { base: baseId, "expected-revision": "2", yes: true }, [
+      jsonResponse({ deleted: true }),
+    ]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.init?.method).toBe("DELETE");
+    expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({ expectedRevision: 2 });
+  });
+  test("delete needs confirmation", async () => {
+    const context = createContext(["queries", "delete", "Query1"], { base: baseId, "expected-revision": "1" });
+    await expect(pulseCli.run(context.ctx)).rejects.toThrow("without --yes");
+    expect(context.calls).toHaveLength(0);
+  });
+});
+
+describe("Pulse alert CLI", () => {
+  const rule = {
+    id: "Rule01",
+    baseId,
+    name: "CPU",
+    sql: "SELECT 'cpu' AS key, :load AS value",
+    params: { load: "95" },
+    comparison: "above",
+    warn: 80,
+    critical: 90,
+    minDurationSeconds: 300,
+    intervalSeconds: 300,
+    revision: 2,
+    createdBy: userId,
+    updatedBy: userId,
+    createdAt: "2026-10-20T10:00:00Z",
+    updatedAt: "2026-10-20T10:00:00Z",
+  };
+  test("save and list preserve thresholds, parameters, revision and the retry key", async () => {
+    const context = createContext(
+      ["alerts", "save", rule.sql],
+      {
+        base: baseId,
+        name: "CPU",
+        rule: "Rule01",
+        "expected-revision": "1",
+        "idempotency-key": "alert-save",
+        param: ["load=95"],
+        comparison: "above",
+        warn: "80",
+        critical: "90",
+        for: "300",
+        every: "300",
+      },
+      [jsonResponse(rule)],
+      "json",
+    );
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.path).toBe(`/api/pulse/bases/${baseId}/alerts/Rule01`);
+    expect(context.calls[0]?.init?.method).toBe("PATCH");
+    expect(new Headers(context.calls[0]?.init?.headers).get("Idempotency-Key")).toBe("alert-save");
+    expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({
+      name: "CPU",
+      sql: rule.sql,
+      params: { load: "95" },
+      comparison: "above",
+      warn: 80,
+      critical: 90,
+      minDurationSeconds: 300,
+      intervalSeconds: 300,
+      expectedRevision: 1,
+    });
+    expect(JSON.parse(context.lines[0]!)).toEqual(rule);
+    const list = createContext(["alerts", "list"], { base: baseId }, [jsonResponse({ items: [rule], total: 1, nextOffset: null })], "json");
+    await pulseCli.run(list.ctx);
+    expect(JSON.parse(list.lines[0]!)).toMatchObject({ items: [rule], total: 1 });
+    expect(list.lines.join()).not.toContain(context.ctx.options.token);
+  });
+  test("alert help and text output use the request locale", async () => {
+    expect(pulseCli.help?.("de")).toContain("Alarmregeln");
+    expect(pulseCli.help?.("en")).toContain("alert rules");
+    const context = createContext(["alerts", "delete", "Rule01"], { base: baseId, "expected-revision": "2", yes: true }, [
+      jsonResponse({ deleted: true }),
+    ]);
+    context.ctx.options.locale = "de-DE";
+    await pulseCli.run(context.ctx);
+    expect(context.lines).toContain("Alarmregel gelöscht.");
+  });
+  test("SQL file input and missing confirmation stay explicit", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pulse-alert-cli-")),
+      file = join(directory, "rule.sql");
+    await Bun.write(file, rule.sql);
+    try {
+      const save = createContext(
+        ["alerts", "save"],
+        { base: baseId, name: "CPU", "sql-file": file, param: ["load=95"], comparison: "above", warn: "80" },
+        [jsonResponse(rule)],
+      );
+      await pulseCli.run(save.ctx);
+      expect(JSON.parse(String(save.calls[0]?.init?.body))).toMatchObject({ sql: rule.sql, params: { load: "95" }, critical: null });
+      const remove = createContext(["alerts", "delete", "Rule01"], { base: baseId, "expected-revision": "2" });
+      await expect(pulseCli.run(remove.ctx)).rejects.toThrow("without --yes");
+      expect(remove.calls).toHaveLength(0);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+test("source expectation flags replace the other mode and preserve the read revision", async () => {
+  const current = { ...source, revision: 3, expectEverySeconds: 3600, expectDailyBy: null, staleSince: null };
+  const context = createContext(["sources", "update", baseId, "docker"], { "expect-daily-by": "04:00" }, [
+    jsonResponse(base),
+    jsonResponse([current]),
+    jsonResponse({ ...current, revision: 4, expectEverySeconds: null, expectDailyBy: "04:00" }),
+  ]);
+  await pulseCli.run(context.ctx);
+  expect(JSON.parse(String(context.calls[2]?.init?.body))).toEqual({
+    expectedRevision: 3,
+    expectEverySeconds: null,
+    expectDailyBy: "04:00",
+  });
+  const clear = createContext(["sources", "update", baseId, "docker"], { "clear-expectation": true }, [
+    jsonResponse(base),
+    jsonResponse([current]),
+    jsonResponse({ ...current, revision: 4, expectEverySeconds: null }),
+  ]);
+  await pulseCli.run(clear.ctx);
+  expect(JSON.parse(String(clear.calls[2]?.init?.body))).toEqual({ expectedRevision: 3, expectEverySeconds: null, expectDailyBy: null });
+});
+
+test("new overview pin and expectation help follows each request locale", async () => {
+  for (const { locale, pinHelp, expectationHelp } of [
+    { locale: "de-DE", pinHelp: "Diese Abfrage auf der Übersicht anzeigen", expectationHelp: "Täglich erwartet bis HH:MM" },
+    { locale: "en", pinHelp: "Show this query on the overview", expectationHelp: "Expected daily HH:MM" },
+  ]) {
+    for (const { command, expected } of [
+      { command: "queries save", expected: pinHelp },
+      { command: "sources update", expected: expectationHelp },
+    ]) {
+      const help = createContext([...command.split(" "), "--help"]);
+      help.ctx.options.locale = locale;
+      await pulseCli.run(help.ctx);
+      expect(help.lines.join("\n")).toContain(expected);
+      expect(help.calls).toHaveLength(0);
+    }
+  }
+  const context = createContext(["queries", "save", "SELECT 1"], { base: baseId, name: "CPU", pin: true, unpin: true });
+  context.ctx.options.locale = "de";
+  await expect(pulseCli.run(context.ctx)).rejects.toThrow("entweder --pin oder --unpin");
+  expect(context.calls).toHaveLength(0);
+});

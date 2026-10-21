@@ -17,13 +17,17 @@ Without `MAIL_PERFORMANCE_TESTS=1`, the performance suite is skipped, and the vi
 
 ## Measure Mail at mailbox scale
 
-`perf-baseline.ts` seeds a deterministic large mailbox (default 20,000 messages, 3,000 conversations, 30 folders; `--folders 350` for the folder scale from #1268) into a run-owned production stack and measures SSR and API scenarios with statement counts and explain plans:
+`perf-baseline.ts` seeds two deterministic large mailboxes (default per mailbox: 20,000 messages, 3,000 conversations, 30 folders; `--folders 350` for the folder scale from #1268) into a run-owned production stack and measures SSR and API scenarios with statement counts and explain plans:
 
 ```sh
 bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
 ```
 
-It needs Docker, takes the machine-wide heavy lock, never uses port 3000 or the development database, and writes `.local/mail-perf/<UTC timestamp>/result.json` and `summary.md`. `--browser chromium,webkit` adds page loads and seven interactions in the run-owned Playwright container; `--rank <result.json> --bottlenecks <candidates.json>` prints the top 5 bottlenecks backed by that result. `--compare <earlier result.json>` adds median deltas. The fixture lives in `packages/mail/test/fixtures/large-mailbox.ts`; an integration test keeps it in step with real ingest. Flags, scenarios, fixture shape and limitations: `--help` and [Measure production page performance](../../../docs-site/docs/en/contributing/performance-baseline.md#measure-mail-at-mailbox-scale).
+It needs Docker, takes the machine-wide heavy lock, never uses port 3000 or the development database, and writes `.local/mail-perf/<UTC timestamp>/result.json` and `summary.md`. `--browser chromium,webkit` adds page loads and eight interactions in the run-owned Playwright container; `--rank <result.json> --bottlenecks <candidates.json>` prints the top 5 bottlenecks backed by that result. `--compare <earlier result.json>` adds median deltas.
+
+`--interactions mailbox-switch,folder-switch --loads none` selects only those browser interactions and skips standalone page-load measurements; both mailboxes and all server scenarios still run. `mailbox-switch-route` measures B's workspace route, and `ssr-mailbox-b` measures B's document. B uses seed + 1 (wrapping at 2^32) and records its seed duration separately. One extra traced Chromium sample per profile for mailbox and folder switching reports JS, parse/compile, island render, style/layout, and other task time, separately from timing samples.
+
+The fixture lives in `packages/mail/test/fixtures/large-mailbox.ts`; an integration test keeps it in step with real ingest. Flags, scenarios, fixture shape and limitations: `--help` and [Measure production page performance](../../../docs-site/docs/en/contributing/performance-baseline.md#measure-mail-at-mailbox-scale).
 
 ## Measure Mail memory under hydration load
 
