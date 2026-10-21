@@ -98,7 +98,13 @@ export function recordPageChangeNetwork(page: Page, target: string, cdp?: CDPSes
       collecting = false;
       const frozen = [...requests];
       const outcomes = await boundedSettlement(
-        frozen.map(([, record]) => record.done),
+        frozen.map(async ([request, record]) => {
+          // A known HTTP failure needs no successful finish event (which browsers may omit for rejected CSS).
+          const response = await request.response();
+          if (response && !response.ok())
+            throw new Error(`Page-change resource returned ${response.status()}: ${new URL(request.url()).pathname}`);
+          return record.done;
+        }),
         timeoutMs,
       );
       const failed = outcomes.flatMap((error, index) => (error ? [`${new URL(frozen[index]![0].url()).pathname}: ${error}`] : []));
@@ -123,7 +129,6 @@ export function recordPageChangeNetwork(page: Page, target: string, cdp?: CDPSes
       for (const [request, record] of frozen) {
         const response = await request.response();
         if (!response) throw new Error(`Missing page-change response: ${new URL(request.url()).pathname}`);
-        if (!response.ok()) throw new Error(`Page-change resource returned ${response.status()}: ${new URL(request.url()).pathname}`);
         if (new URL(request.url()).pathname === target && request.frame() === page.mainFrame() && record.key === "htmlBytes") {
           if (!response.headers()["content-type"]?.includes("text/html")) throw new Error("Page-change destination was not HTML");
           validatePage(response.status(), new URL(target, page.url()).href, page.url(), await response.text());
