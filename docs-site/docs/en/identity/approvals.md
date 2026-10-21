@@ -72,6 +72,15 @@ comes from the app's review or declared policy, not the model's explanation;
 legacy reviews and Actions without a policy use `app_asks`. Filling a missing
 reason in a displayed copy never changes the approval snapshot or its digest.
 
+The list and the band's detail panel reuse the chat's preview and reading
+controls. They show the stored review, including its locale and revision links.
+An excerpt without a link can expand in place; a preview with an `open` link
+opens the app's reviewed revision. These surfaces share the
+[review limits](/en/docs/platform/capabilities#describe-an-action-before-it-runs): opening the approvals
+page does not recover content omitted from the snapshot. The app must make
+the complete proposed content available at that link. A saved resource that
+does not yet contain the proposed edits cannot serve as that complete review.
+
 The lists contain only open, unexpired requests that a chat still waits for.
 They include Assistant chats and Studio code that asked through a chat.
 A Studio request answered in an open Studio page is not listed.
