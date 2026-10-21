@@ -12,7 +12,7 @@ const root = mkdtempSync(join(tmpdir(), "mail-head-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { MailboxHeadFilters } = await import("./MailWorkspaceHead");
+const { MailboxHeadFilters, MailboxTagFilter } = await import("./MailWorkspaceHead");
 const tag = {
   id: "Tag001",
   mailboxId: "Box001",
@@ -24,21 +24,22 @@ const tag = {
 };
 const filters = (expression: object, localTags = [tag]) => {
   const requestUrl = `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify({ expression, sort: "newest" }) })}`;
-  return renderToString(() =>
-    createComponent(MailboxHeadFilters, {
-      requestUrl,
-      search: resolveMailSearchRoute(new URL(requestUrl, "https://cloud.test")),
-      folders: [],
-      folderId: null,
-      localTags,
-      onOpenHref: () => {},
-      onEditSearch: () => {},
-    }),
-  );
+  const props = {
+    requestUrl,
+    search: resolveMailSearchRoute(new URL(requestUrl, "https://cloud.test")),
+    folders: [],
+    folderId: null,
+    localTags,
+    onOpenHref: () => {},
+    onEditSearch: () => {},
+  };
+  return renderToString(() => [createComponent(MailboxHeadFilters, props), createComponent(MailboxTagFilter, props)]);
 };
-test("head Tag chip names the selected tag, without displaying its ID or a second search chip", () => {
+test("head Tag icon names the selected tag, without displaying its ID or a second search chip", () => {
   const html = filters({ type: "local_tag_id", tagId: "Tag001" });
-  expect(html).toContain("Invoices");
+  expect(html).toContain('aria-label="Tag: Invoices"');
+  expect(html).toContain('data-icon-only="true"');
+  expect(html).toContain('data-active="true"');
   expect(html).toContain("Tag");
   expect(html).not.toContain("Tag001");
   expect(html).not.toContain("Search");

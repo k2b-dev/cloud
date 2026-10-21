@@ -51,7 +51,7 @@ import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, readMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar, { type MailSidebarMailbox, type MailSidebarOpenMailbox } from "./_components/MailSidebar";
-import { MailboxHeadFilters, MailboxViewTabs } from "./_components/MailWorkspaceHead";
+import { MailboxHeadFilters, MailboxTagFilter, MailboxViewTabs } from "./_components/MailWorkspaceHead";
 import { MailSearchInput, MailSearchOptions, MailSearchTrigger } from "./_components/MailWorkspaceSearch";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import { createMailActionQueue } from "./_components/mail-action-queue";
@@ -2714,6 +2714,17 @@ function MailboxWorkspace(
             <Show when={!data.scheduledMode && !data.draftsMode}>
               <Show when={!searchControls.opened() && !selectionMode()}>
                 <MailSearchTrigger search={searchControls} unseen={!searchDiscovered()} />
+                <MailboxTagFilter
+                  requestUrl={requestPath()}
+                  search={data.search}
+                  folderId={data.folderId}
+                  folders={data.folders}
+                  localTags={data.localTags}
+                  onOpenHref={(href) => {
+                    searchControls.cancelPending();
+                    void openWorkspaceHref(href);
+                  }}
+                />
               </Show>
               <Show when={canWrite() && data.listMode === "conversations" && !selectionMode()}>
                 <Tooltip.Anchor content={listText().selectConversations}>

@@ -119,7 +119,7 @@ To empty the Inbox in other mail clients too, also choose **Archive**. Archive d
   Each person works from **Assigned to me**. The owner's confirmed reply sets **Waiting for reply**; the owner marks **Done**.
   Use **Only in the folder** for team folders that must stay outside shared lists, as described above.
 
-In a folder, use **Unread**, **Flagged**, **With attachment**, or **Date range** in the head to narrow that folder. Sent offers attachment and date filters. A **Tag** keeps the folder restriction and selects **All** in the tabs. **Reset** returns to the place and selection where filtering began. Date presets keep their chosen time range on reload; **Custom date range…** opens the search editor with your current filters. Typing a text search still searches the whole mailbox.
+In a folder, use **Unread**, **Flagged**, **With attachment**, or **Date range** in the head to narrow that folder. Sent offers attachment and date filters. The **Tag** icon next to **Search** opens the tag choices. Its tooltip names the active tag; **Clear** removes that choice. A tag keeps the folder restriction and selects **All** in the tabs. **Reset** returns to the place and selection where filtering began. Date presets keep their chosen time range on reload; **Custom date range…** opens the search editor with your current filters. Typing a text search still searches the whole mailbox.
 
 ## Take a quick look before opening {icon="eye"}
 
@@ -136,7 +136,7 @@ A quick look never marks a conversation as read, never creates a summary, and ne
 
 ## Read a complete thread {icon="route"}
 
-The reader keeps its subject and message count above the messages while you scroll. Use its first button to hide or show the list on a wide screen. On a phone, Back returns to the list and its workspace head.
+The reader keeps its subject above the messages while you scroll. The message count appears on wider screens. Use its first button to hide or show the list on a wide screen. On a phone, Back returns to the list and its workspace head.
 
 Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content.
 
@@ -277,7 +277,7 @@ Open **… → Settings → Organization** to create a saved view from folder an
 - **Everyone with mailbox access** creates a mailbox view and requires **Edit** access.
 - You cannot change the visibility after creation. Create a replacement view if you need a different visibility.
 
-Local tags are mailbox labels for people, search, and automations. Choose a tag with the **Tag** chip in the head to open all matching conversations. Local tags are not IMAP folders or provider keywords, and other clients do not show them.
+Local tags are mailbox labels for people, search, and automations. Choose a tag with the **Tag** icon next to **Search** in the head to open all matching conversations. Local tags are not IMAP folders or provider keywords, and other clients do not show them.
 
 :::warning Deleting a local tag removes it everywhere
 Mail removes a deleted local tag from every conversation in that mailbox. Saved views and search links that filter by a deleted tag or folder find no conversations for that condition.

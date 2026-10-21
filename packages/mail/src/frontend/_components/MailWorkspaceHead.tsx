@@ -37,10 +37,7 @@ export function MailboxViewTabs(props: {
   return <ViewTabs label={messages().mailboxViews} items={props.items} current={props.current} />;
 }
 
-/**
- * Folder quick filters and tags share the existing search expression. Text and arbitrary trees remain searches.
- */
-export function MailboxHeadFilters(props: {
+type MailboxFilterContext = {
   requestUrl: string;
   search: ResolvedMailSearchRoute;
   folders: MailFolderView[];
@@ -48,10 +45,9 @@ export function MailboxHeadFilters(props: {
   folderId: string | null;
   localTags: LocalTag[];
   onOpenHref: (href: string) => void;
-  onEditSearch: (state: MailSearchState, source: URL) => void;
-}) {
-  const locale = useLocale();
-  const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+};
+
+const createMailboxFilterContext = (props: MailboxFilterContext) => {
   const url = () => mailRouteUrl(props.requestUrl);
   const quick = createMemo(() => readMailHeadFilters(url(), props.search, props.folderId));
   const folder = () => props.folders.find((folder) => folder.id === quick()?.folderId);
@@ -60,7 +56,18 @@ export function MailboxHeadFilters(props: {
     if (folder()?.role === "sent" && (value?.unread || value?.flagged)) return null;
     return value && (!value.folderId || folder()) && (!value.tagId || props.localTags.some((tag) => tag.id === value.tagId)) ? value : null;
   };
-  const activeTagId = () => knownQuick()?.tagId ?? null;
+  return { url, folder, knownQuick };
+};
+
+/** Folder quick filters share the existing search expression. Arbitrary trees remain searches. */
+export function MailboxHeadFilters(
+  props: MailboxFilterContext & {
+    onEditSearch: (state: MailSearchState, source: URL) => void;
+  },
+) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const { url, folder, knownQuick } = createMailboxFilterContext(props);
   const searchSummary = () => {
     const expression = props.search.expression;
     if (!expression || knownQuick()) return null;
@@ -69,10 +76,6 @@ export function MailboxHeadFilters(props: {
   const update = (change: Partial<MailHeadFilters>) => {
     const current = knownQuick();
     if (current) props.onOpenHref(mailHeadFilterHref(url(), { ...current, ...change }, current));
-  };
-  const chooseTag = (value: string[]) => {
-    const current = knownQuick() ?? emptyMailHeadFilters(props.folderId);
-    props.onOpenHref(mailHeadFilterHref(url(), { ...current, tagId: value.at(-1) ?? null }, knownQuick()));
   };
   const dateLabel = () => {
     const days = mailHeadFilterDayCount(knownQuick()?.dates ?? []);
@@ -152,16 +155,6 @@ export function MailboxHeadFilters(props: {
           </Dropdown.Trigger>
         </Dropdown.Root>
       </Show>
-      <Show when={props.localTags.length > 0}>
-        <FilterChip
-          label={messages().tag}
-          icon="ti ti-tag"
-          showValue
-          options={[{ options: props.localTags.map((tag) => ({ value: tag.id, label: tag.name, color: tag.color })) }]}
-          value={activeTagId() ? [activeTagId()!] : []}
-          onValueChange={chooseTag}
-        />
-      </Show>
       <Show when={searchSummary()}>
         {(summary) => (
           <FilterChip
@@ -175,6 +168,31 @@ export function MailboxHeadFilters(props: {
         )}
       </Show>
     </>
+  );
+}
+
+/** The tag filter belongs beside Search and selection, while its value stays in the canonical query. */
+export function MailboxTagFilter(props: MailboxFilterContext) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const { url, knownQuick } = createMailboxFilterContext(props);
+  const activeTag = () => props.localTags.find((tag) => tag.id === knownQuick()?.tagId);
+  return (
+    <Show when={props.localTags.length > 0}>
+      <FilterChip
+        label={activeTag() ? messages().tagValue({ name: activeTag()!.name }) : messages().tag}
+        icon="ti ti-tag"
+        iconOnly
+        variant={activeTag() ? "subtle" : "ghost"}
+        class="mail-head-tag"
+        options={[{ options: props.localTags.map((tag) => ({ value: tag.id, label: tag.name, color: tag.color })) }]}
+        value={activeTag() ? [activeTag()!.id] : []}
+        onValueChange={(value) => {
+          const current = knownQuick() ?? emptyMailHeadFilters(props.folderId);
+          props.onOpenHref(mailHeadFilterHref(url(), { ...current, tagId: value.at(-1) ?? null }, knownQuick()));
+        }}
+      />
+    </Show>
   );
 }
 

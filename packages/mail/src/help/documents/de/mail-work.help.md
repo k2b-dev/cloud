@@ -119,7 +119,7 @@ Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätz
   Jede Person arbeitet aus **Mir zugewiesen**. Ihre bestätigte Antwort setzt **Wartet auf Antwort**; sie markiert die Unterhaltung als **Erledigt**.
   Nutze **Nur im Ordner** für Teamordner, die außerhalb gemeinsamer Listen bleiben sollen, wie oben beschrieben.
 
-Im Ordner grenzen **Ungelesen**, **Markiert**, **Mit Anhang** und **Zeitraum** im Kopfbereich die Liste auf diesen Ordner ein. Gesendet bietet Anhang und Zeitraum. Ein **Tag** behält die Ordnergrenze bei und wählt **Alle** in den Ansichten. **Zurücksetzen** bringt dich zum Ausgangsort und zur vorherigen Auswahl zurück. Zeitvorgaben behalten beim Neuladen ihren gewählten Zeitraum. **Eigener Zeitraum…** öffnet den Sucheditor mit den aktuellen Filtern. Eine Textsuche durchsucht weiterhin das ganze Postfach.
+Im Ordner grenzen **Ungelesen**, **Markiert**, **Mit Anhang** und **Zeitraum** im Kopfbereich die Liste auf diesen Ordner ein. Gesendet bietet Anhang und Zeitraum. Das **Tag**-Symbol neben **Suchen** öffnet die Tag-Auswahl. Sein Tooltip nennt den aktiven Tag; **Leeren** entfernt diese Auswahl. Ein Tag behält die Ordnergrenze bei und wählt **Alle** in den Ansichten. **Zurücksetzen** bringt dich zum Ausgangsort und zur vorherigen Auswahl zurück. Zeitvorgaben behalten beim Neuladen ihren gewählten Zeitraum. **Eigener Zeitraum…** öffnet den Sucheditor mit den aktuellen Filtern. Eine Textsuche durchsucht weiterhin das ganze Postfach.
 
 ## Kurz hineinschauen, ohne zu öffnen {icon="eye"}
 
@@ -136,7 +136,7 @@ Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und 
 
 ## Einen vollständigen Verlauf lesen {icon="route"}
 
-Betreff und Nachrichtenanzahl bleiben beim Scrollen über den Nachrichten stehen. Mit der ersten Schaltfläche im Leser blendest du auf breiten Bildschirmen die Liste aus oder ein. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
+Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Mit der ersten Schaltfläche im Leser blendest du auf breiten Bildschirmen die Liste aus oder ein. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
 
 Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst.
 
@@ -277,7 +277,7 @@ Mehr zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustelloptionen findest
 - **Alle Personen mit Postfachzugriff** erstellt eine Postfachansicht und braucht Zugriff **Bearbeiten**.
 - Die Sichtbarkeit kannst du nach dem Erstellen nicht ändern. Erstelle eine neue Ansicht, wenn du eine andere Sichtbarkeit brauchst.
 
-Lokale Tags sind Kennzeichnungen im Postfach für Menschen, Suche und Automatisierungen. Wähle einen Tag über den Chip **Tag** im Kopfbereich, um alle passenden Unterhaltungen zu öffnen. Lokale Tags sind keine IMAP-Ordner und keine Anbieter-Schlüsselwörter, und andere Programme zeigen sie nicht.
+Lokale Tags sind Kennzeichnungen im Postfach für Menschen, Suche und Automatisierungen. Wähle einen Tag über das **Tag**-Symbol neben **Suchen** im Kopfbereich, um alle passenden Unterhaltungen zu öffnen. Lokale Tags sind keine IMAP-Ordner und keine Anbieter-Schlüsselwörter, und andere Programme zeigen sie nicht.
 
 :::warning Ein gelöschter lokaler Tag verschwindet überall
 Mail entfernt einen gelöschten lokalen Tag aus jeder Unterhaltung im Postfach. Gespeicherte Ansichten und Suchlinks, die nach einem gelöschten Tag oder Ordner filtern, finden für diese Bedingung keine Unterhaltungen.

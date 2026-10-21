@@ -21,8 +21,10 @@ mailbox title to reach these places.
 
 The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
 **Waiting for reply**, **Unassigned**, and **More** for the remaining and saved
-views), a **Tag** chip, and a **Search** chip for an active structured search.
-Remove that chip or use **Reset** to clear filters. Folders, Scheduled, and
+views) and a **Search** chip for an active structured search. The **Tag** icon
+next to **Search** filters by a local tag; its tooltip
+names the selected tag. Open it to change or clear that choice.
+Remove the **Search** chip or use **Reset** to clear filters. Folders, Scheduled, and
 Send problems have no view tabs. Use the magnifier or press `/` to search:
 the input replaces the views, with field and place options beside it (below it
 on a phone). Text searches the whole mailbox by default; **Place** can restrict
@@ -52,7 +54,7 @@ list toggle, and conversation actions above the centered 760 px reading
 column. The subject stays visible when messages scroll; its full text is
 available on hover. On a phone, the workspace head appears over the list and
 leaves the screen while reading. Back, subject, overflow, and Details remain
-at the top, with reply actions in the bottom bar. **Conversation details** stand beside the reader while the reader
+at the top; the message count is hidden. Reply actions stay in the bottom bar. **Conversation details** stand beside the reader while the reader
 keeps 440 px next to them; otherwise they wait behind **Details** and open with
 one click, also from the reader's own details button. Hiding the list gives
 the reader that room. In Focus, a conversation opens its details beside the

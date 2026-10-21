@@ -344,23 +344,77 @@ const clickTab = async (page: Page, href: string) => {
 /** The shell tests. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    for (const locale of ["en", "de"] as const)
+      for (const width of [1440, 834])
+        test(`compact tag action ${locale} ${width}: icon order, selection, reload and clear`, async () => {
+          const page = await open(`${boxPath}?locale=${locale}`, width);
+          const actions = page.locator(".k2b-app-workspace__head-actions");
+          const tag = actions.locator(".mail-head-tag");
+          const query = () => {
+            const url = new URL(page.url());
+            return readMailHeadFilters(url, resolveMailSearchRoute(url), mailboxData(url).folderId);
+          };
+          try {
+            expect(await tag.getAttribute("aria-label")).toBe("Tag");
+            expect(await tag.getAttribute("data-icon-only")).toBe("true");
+            expect((await tag.textContent())?.trim()).toBe("");
+            const search = (await actions.locator("[data-mail-search-trigger]").boundingBox())!;
+            const box = (await tag.boundingBox())!;
+            const select = (await actions.locator("[data-mail-selection-trigger]").boundingBox())!;
+            expect(box.x).toBeGreaterThanOrEqual(search.x + search.width);
+            expect(box.x + box.width).toBeLessThanOrEqual(select.x);
+            expect(Math.abs(box.y - search.y)).toBeLessThanOrEqual(1);
+            expect(await page.locator(".k2b-app-workspace__head-filters").isVisible()).toBe(false);
+            await tag.focus();
+            await page.keyboard.press("Enter");
+            await page.getByRole("menu").waitFor({ state: "visible" });
+            const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await page.getByRole("menuitemradio", { name: "Priority", exact: true }).click();
+            await response;
+            await ready(page);
+            expect(query()?.tagId).toBe("Tag001");
+            expect(await tag.getAttribute("aria-label")).toBe("Tag: Priority");
+            await page.keyboard.press("Escape");
+            await page.getByRole("menu").waitFor({ state: "hidden" });
+            expect(await tag.evaluate((element) => document.activeElement === element)).toBe(true);
+            await page.reload();
+            await ready(page);
+            expect(await tag.getAttribute("data-active")).toBe("true");
+            await tag.click();
+            await page.getByRole("menuitemradio", { name: "Priority", exact: true }).waitFor({ state: "visible" });
+            expect(await page.getByRole("menuitemradio", { name: "Priority", exact: true }).getAttribute("aria-checked")).toBe("true");
+            const cleared = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await page.getByRole("menuitem", { name: locale === "de" ? "Leeren" : "Clear", exact: true }).click();
+            await cleared;
+            await ready(page);
+            expect(query()?.tagId).toBeNull();
+            expect(await tag.getAttribute("data-active")).toBeNull();
+          } finally {
+            await close(page);
+          }
+        });
+
     for (const theme of ["light", "dark"] as const)
       for (const width of [1440, 390])
-        test(`compact reader short subject ${theme} ${width}: count stays beside the title`, async () => {
+        test(`compact reader short subject ${theme} ${width}: count beside the title, hidden on phones`, async () => {
           const page = await open(`${boxPath}?conversation=Conv01&theme=${theme}`, width, 900);
           try {
             const title = page.locator(".mail-reader-title");
             const count = page.locator(".mail-reader-count");
             await title.waitFor({ state: "visible" });
             const titleBox = (await title.boundingBox())!;
-            const countBox = (await count.boundingBox())!;
             const marksBox = (await page.locator(".mail-reader-marks").boundingBox())!;
             if (width >= 768) {
+              const countBox = (await count.boundingBox())!;
               expect(countBox.x - (marksBox.x + marksBox.width)).toBeGreaterThanOrEqual(0);
               expect(countBox.x - (marksBox.x + marksBox.width)).toBeLessThanOrEqual(8.5);
             } else {
-              expect(countBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height);
-              expect(Math.abs(countBox.x - titleBox.x)).toBeLessThanOrEqual(0.5);
+              expect(await count.isVisible()).toBe(false);
+              const back = (await page.locator(".mail-reader-back").boundingBox())!;
+              const details = (await page.locator("[data-mail-details-trigger]").boundingBox())!;
+              const middle = (box: { y: number; height: number }) => box.y + box.height / 2;
+              expect(Math.abs(middle(titleBox) - middle(back))).toBeLessThanOrEqual(1);
+              expect(Math.abs(middle(marksBox) - middle(details))).toBeLessThanOrEqual(1);
             }
             if (screenshots) {
               mkdirSync(join(screenshots, browserName), { recursive: true });
@@ -379,7 +433,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             const toolbar = page.locator("[data-mail-reader-toolbar]");
             const heading = toolbar.locator("[data-mail-reader-heading]");
             await heading.waitFor({ state: "visible" });
-            expect(await toolbar.locator(".mail-reader-count").isVisible()).toBe(true);
+            expect(await toolbar.locator(".mail-reader-count").isVisible()).toBe(width >= 768);
             expect(await page.locator(".mail-reader-scroll [data-mail-reader-heading]").count()).toBe(0);
             const metrics = await heading.evaluate((element) => {
               const css = getComputedStyle(element);
@@ -395,9 +449,8 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             expect(metrics.height).toBeLessThanOrEqual(metrics.line * (width < 768 ? 3 : 2) + 0.5);
             if (width < 768) {
               const titleBox = await heading.boundingBox();
-              const countBox = await toolbar.locator(".mail-reader-count").boundingBox();
-              expect(countBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
-              expect(Math.abs(countBox!.x - titleBox!.x)).toBeLessThanOrEqual(0.5);
+              const back = (await toolbar.locator(".mail-reader-back").boundingBox())!;
+              expect(Math.abs(titleBox!.y + metrics.line / 2 - (back.y + back.height / 2))).toBeLessThanOrEqual(1);
             }
             const before = await toolbar.boundingBox();
             await page.locator(".mail-reader-scroll").evaluate((element) => {
@@ -468,7 +521,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             await head.getByRole("button", { name: "Date range", exact: true }).click();
             await activate(page.getByRole("menuitemradio", { name: "Last 7 days", exact: true }));
             expect(filters()?.dates.length).toBe(2);
-            await head.getByRole("button", { name: "Tag", exact: true }).click();
+            await page.locator(".k2b-app-workspace__head-actions").getByRole("button", { name: "Tag", exact: true }).click();
             await activate(page.getByRole("menuitemradio", { name: "Priority", exact: true }));
             // FilterChip intentionally stays open; close it before testing the next route.
             await page.keyboard.press("Escape");
@@ -1202,9 +1255,9 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           if (route.query.startsWith("folder="))
             expect(await sidebar(page).locator('a[href$="folder=Filed1"]').getAttribute("aria-current")).toBe("page");
           if (route.query.startsWith("search=")) {
-            const chip = page.locator(".k2b-app-workspace__head-filters .k2b-filter-chip");
-            expect(await chip.textContent()).toContain("Tag");
-            expect(await chip.textContent()).toContain("Priority");
+            const tag = page.locator(".k2b-app-workspace__head-actions .mail-head-tag");
+            expect(await tag.getAttribute("aria-label")).toBe("Tag: Priority");
+            expect(await tag.getAttribute("data-active")).toBe("true");
           }
           if (route.query === "view=snoozed") {
             expect(await tabs(page).getByRole("button", { name: /More/ }).isVisible()).toBe(true);
