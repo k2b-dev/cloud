@@ -132,7 +132,7 @@ async function withPanelPage<T>(
     timezoneId: measuredTimeZone,
     colorScheme: "light",
     serviceWorkers: "block",
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: engine !== "chromium",
   });
   return boundedContext(context, api.signal, async () => {
     await context.addCookies([

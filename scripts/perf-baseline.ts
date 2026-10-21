@@ -39,8 +39,8 @@ hosts or downloads take longer. Each browser load is capped at 45 seconds.
 The script starts and removes only its uniquely named containers/network/
 volumes. It publishes HTTPS and the browser server on free loopback ports,
 never 3000; all apps use APP_URL=https://localhost:<port>. Bun fetches skip
-certificate verification only for this origin; browser contexts ignore
-certificate errors.
+certificate verification only for this origin; Chromium pins the run’s
+certificate public key, and WebKit contexts ignore certificate errors.
 It does not use or change the development stack or application runtime code.
 After login it accepts the fresh installation's legal terms for the throwaway
 administrator through Core's public consent flow and verifies the session
@@ -161,7 +161,7 @@ async function run() {
       : ["core", ...new Set(options.pages.map((id) => pageApps[id]).filter((id) => id !== "core")), "gateway"];
     await runtime.build(apps, options.skipBuild);
     await runtime.start(apps);
-    browsers = new Browsers(controller.signal);
+    browsers = new Browsers(controller.signal, await runtime.browserSpki());
     await browsers.launch(await runtime.startBrowsers(catalog.playwright));
     result.metadata.browserVersions = browsers.versions();
     const api = new Api(origin, controller.signal);
