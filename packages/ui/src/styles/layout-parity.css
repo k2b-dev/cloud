@@ -3381,8 +3381,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3443,8 +3443,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3505,8 +3505,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3567,8 +3567,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3588,13 +3588,14 @@ html {
   }
 }
 
-/* An open drawer covers `Main`, so it is a raised surface again. Its shadow
-   shows only along its leading edge: the other edges are the workspace's. */
-.k2b-ui .k2b-app-workspace__detail[data-workspace-detail-drawer="open"] {
+/* An open drawer covers `Main`. Round its exposed leading corner and let the
+   side shadow continue above it; the other edges meet the workspace's. */
+.k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width][data-workspace-detail-drawer="open"] {
   --k2b-detail-space: 0px;
+  border-top-left-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-side);
-  clip-path: inset(0 0 0 -4rem);
+  clip-path: inset(-4rem 0 0 -4rem);
 }
 
 /* These containers clip their content, so focus rings inside them are drawn
@@ -4542,8 +4543,8 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   height: max-content;
   min-height: 2.875rem;
   margin: 0;
-  --k2b-workspace-head-end: 7rem;
-  padding: 0.25rem 7rem 0.25rem 0.5rem;
+  --k2b-workspace-head-end: 6.25rem;
+  padding: 0.25rem 6.25rem 0.25rem 0.5rem;
   overflow: visible;
   clip-path: none;
   white-space: normal;

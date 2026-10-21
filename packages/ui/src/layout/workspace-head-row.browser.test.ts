@@ -185,6 +185,30 @@ test("a waiting detail's Details button stays in the first row when the filters 
   }
 });
 
+test("the Plex head keeps Details close to its actions", async () => {
+  const page = await load({ head: { items: 4, detail: "sm" } }, 1440, 620);
+  try {
+    // Match the public presets used by Cloud. The default system font and an
+    // unloaded icon font have different metrics on the browser runner hosts.
+    await page.route("http://workspace.test/ui/**", (route) =>
+      route.fulfill({ path: resolve(workspaceDist, new URL(route.request().url()).pathname.slice(4)) }),
+    );
+    await page.addStyleTag({ url: "http://workspace.test/ui/plex.css" });
+    await page.addStyleTag({ url: "http://workspace.test/ui/tabler.css" });
+    await page.evaluate(() => document.fonts.ready);
+    await settled(page);
+    const toggle = await rect(page, "[data-app-workspace-detail-toggle]");
+    const primary = await rect(page, "[data-workspace-primary]");
+    const gap = toggle.x - primary.x - primary.width;
+    console.info(`Plex Details gap: ${gap}px; button width: ${toggle.width}px`);
+    expect(gap).toBeGreaterThanOrEqual(4);
+    expect(gap).toBeLessThanOrEqual(12);
+    expect(Math.abs(center(toggle) - center(primary))).toBeLessThanOrEqual(2);
+  } finally {
+    await page.close();
+  }
+});
+
 test("More lists exactly the CSS-hidden views at each level and always keeps the current view in the strip", async () => {
   const page = await load({ head: { items: 8, current: "7" } }, 1440, 1440, true);
   try {
