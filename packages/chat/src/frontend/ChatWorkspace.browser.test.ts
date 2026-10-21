@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
-import { CreateConversationSchema } from "../service/contracts";
+import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
@@ -798,6 +798,7 @@ describe("ChatWorkspace start chats and members", () => {
         const { page, errors } = await load(options, kind === "fresh" ? { chat } : {}, false, undefined, { locale });
         const requests: ReturnType<typeof CreateConversationSchema.parse>[] = [];
         let drop = true;
+        let createdId: string | undefined;
         try {
           await page.route("**/api/chat/conversations", async (route) => {
             if (route.request().method() !== "POST") return route.continue();
@@ -808,6 +809,9 @@ describe("ChatWorkspace start chats and members", () => {
               // Commit at the HTTP fixture first, then discard only the response on its way to the browser.
               const response = await route.fetch();
               expect(response.status()).toBe(201);
+              const outcome = CreateOutcomeSchema.parse(await response.json());
+              if (outcome.outcome !== "created") throw new Error("Expected the committed chat");
+              createdId = outcome.conversation.id;
               await route.abort("failed");
             } else await route.continue();
           });
@@ -830,6 +834,9 @@ describe("ChatWorkspace start chats and members", () => {
             if (kind === "anyway") await dialog.getByRole("button", { name: t.createAnyway, exact: true }).click();
           }
           await dialog.getByRole("alert").waitFor();
+          if (!createdId) throw new Error("The dropped response must identify the committed chat");
+          const destination = `/app/chat/c/${createdId}`;
+          expect(createdId).not.toBe(chat);
           const accepted = requests.at(-1)!;
           expect(accepted.createKey).toMatch(/^[0-9a-f-]{36}$/);
           expect(harness.chatCount()).toBe(2);
@@ -860,13 +867,14 @@ describe("ChatWorkspace start chats and members", () => {
             expect(await dialog.getByRole("textbox", { name: t.name, exact: true }).inputValue()).toBe("Recovered intent");
           }
           await dialog.getByRole("button", { name: t.retry, exact: true }).click();
-          await page.waitForURL(/\/app\/chat\/c\/[0-9A-Za-z]{6}$/);
+          // The source chat already matches a generic chat URL; wait for the originally committed ID.
+          await page.waitForURL((url) => url.pathname === destination);
           await page.locator(".chat-conversation__header").getByText("Recovered intent", { exact: true }).waitFor();
           await dialog.waitFor({ state: "hidden" });
           expect(requests.at(-1)).toEqual(accepted);
           expect(harness.chatCount()).toBe(2);
           const id = new URL(page.url()).pathname.split("/").at(-1)!;
-          expect(id).not.toBe(chat);
+          expect(id).toBe(createdId);
           expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("chat.create:")).length)).toBe(0);
           // An explicit cancellation discards a later dialog and returns keyboard focus to its entry.
           if (name === "phone") {
