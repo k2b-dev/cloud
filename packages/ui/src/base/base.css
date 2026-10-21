@@ -64,6 +64,7 @@
     --k2b-danger-text: light-dark(#b91c1c, #fca5a5);
     /* light-dark() only takes colors, so the shadow switches with the theme attribute. */
     --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
+    --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
     /* What an inspected mark's color mixes with: darker in light, lighter in dark. */
     --k2b-chart-highlight-mix: light-dark(black, white);
   }
@@ -71,6 +72,7 @@
   :root[data-theme="dark"] {
     color-scheme: dark;
     --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
+    --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   }
 
   *,

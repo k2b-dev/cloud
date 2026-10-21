@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Frames, insets and where a heading sits are layout, which happy-dom does not
 // model, so a real engine renders the shipped stylesheet.
@@ -240,6 +240,7 @@ const open = async (viewport: { width: number; height: number }, theme: "light" 
           standalone()) +
       `</body></html>`,
   );
+  await settled(page);
   return page;
 };
 
@@ -532,5 +533,59 @@ describe("DetailPanel sections and Discussion share one frame", () => {
         }
       }, 30_000);
     }
+  }
+});
+
+// The public surface option must work outside the workspace host that first
+// owned the flat styles. The default remains a separate quiet surface.
+test("plain panels reuse the workspace rhythm in an independent host", async () => {
+  const page = await browser.newPage({ viewport: viewports.desktop });
+  const markup = (surface?: "plain") =>
+    renderToString(() =>
+      createComponent(DetailPanel, {
+        surface,
+        get children() {
+          return createComponent(DetailPanel.Body, {
+            get children() {
+              return [
+                createComponent(DetailPanel.Group, {
+                  get children() {
+                    return section("Context", "ti ti-info-circle");
+                  },
+                }),
+                section("Results", "ti ti-file"),
+              ];
+            },
+          });
+        },
+      }),
+    );
+  try {
+    await page.setContent(
+      `<html><head><style>${css}</style></head><body class="k2b-ui"><div id="plain">${markup("plain")}</div><div id="default">${markup()}</div></body></html>`,
+    );
+    await settled(page);
+    const painted = await page.evaluate(() => {
+      const values = (id: string) =>
+        Array.from(
+          document.querySelectorAll(`#${id} .k2b-detail-panel__group,#${id} .k2b-detail-panel__body > .k2b-detail-panel__section`),
+        ).map((element) => {
+          const style = getComputedStyle(element);
+          return { background: style.backgroundColor, radius: style.borderRadius, padding: style.padding };
+        });
+      return {
+        plain: values("plain"),
+        default: values("default"),
+        gap: getComputedStyle(document.querySelector("#plain .k2b-detail-panel__body")!).gap,
+      };
+    });
+    expect(painted.plain).toHaveLength(2);
+    expect(
+      painted.plain.every((value) => value.background === "rgba(0, 0, 0, 0)" && value.radius === "0px" && value.padding === "0px"),
+    ).toBe(true);
+    expect(painted.default.every((value) => value.background !== "rgba(0, 0, 0, 0)" && value.radius !== "0px")).toBe(true);
+    expect(painted.gap).toBe("24px");
+  } finally {
+    await page.close();
   }
 });

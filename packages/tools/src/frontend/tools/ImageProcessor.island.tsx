@@ -1268,6 +1268,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
       <AppWorkspace.Detail
         id="image-processor-inspector"
+        onOpen={() => setInspectorOpen(true)}
         onClose={() => setInspectorOpen(false)}
         open={inspectorOpen()}
         width="md"
