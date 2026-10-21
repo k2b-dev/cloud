@@ -737,6 +737,13 @@ convention still needs a check or a test.
 - **Error class:** Repeated JSX slot construction.
 - **Guard:** The head resolves each JSX slot with Solid's `children()`. Render tests count constructions; `workspace-head-hydration.browser.test.ts` checks real SSR hydration, stable geometry, unique head parts and an interactive More menu.
 
+### RichSelect contrast was audited during a theme transition
+
+- **What happened:** The desktop and tablet dark-mode accessibility cases reported both RichSelect placeholders below 4.5:1 while the light and phone cases passed.
+- **Root cause:** The fixture switched from light to dark immediately before running axe. The empty-value hint already used `#bdbdc6`, while the field background was still transitioning from `#f4f4f5`: axe measured 1.69:1. After the same transition finished, the background was `#20242a` and the audit passed. The dark palette itself did not need changing.
+- **Error class:** State sampled before it settled.
+- **Guard:** `rich-select.browser.test.ts` calls `settled()` before each accessibility audit. A regression case starts a deliberately extended background transition, verifies it is running, then checks the completed state through the same audit helper. Axe failures retain their targets and color/contrast explanation.
+
 ### The OAuth card was read before its styles arrived
 
 - **What happened:** The OAuth authorization page browser test read `expired light at 1440 px` as unframed once in CI ([#1499](https://github.com/k2b-dev/cloud/issues/1499)), and once in a local Chromium run under load it found `span.k2b-button__label: 1.24` for `confirm light at 1440 px` ([#1476](https://github.com/k2b-dev/cloud/issues/1476)). Re-runs passed.
