@@ -3,7 +3,7 @@ import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { deleteLegacyKeys, listLegacyKeys } from "@k2b/cloud/services/settings/store";
 import { createSync } from "@k2b/sync";
-import { SQL } from "bun";
+import { SQL, sql } from "bun";
 import { connectTestNats, databaseSuite, testFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
 import { migrate as migrateLogging } from "./logging";
@@ -26,6 +26,9 @@ databaseSuite()("outgoing mail migration", () => {
   });
   afterAll(async () => {
     await db?.close();
+    // useFreshDatabase also binds Bun's default handle, used by migrateLogging.
+    // Close it before FORCE-dropping its database to avoid reconnecting to a deleted target.
+    await sql.close();
     await disposable?.drop();
   });
   const searchIndexes = () =>
@@ -235,7 +238,7 @@ databaseSuite()("outgoing mail migration", () => {
     await db`UPDATE outgoing_mail.app_log_access SET level = 'content'`;
     await migrate(db);
     expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "content" }]);
-    await expect(db`UPDATE outgoing_mail.app_log_access SET level = 'invalid'`).rejects.toThrow();
+    await expect((async () => await db`UPDATE outgoing_mail.app_log_access SET level = 'invalid'`)()).rejects.toThrow();
     await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES ('reader', 'old-writer')`;
     expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access WHERE source_app_id = 'old-writer'`).toEqual([
       { level: "metadata" },
