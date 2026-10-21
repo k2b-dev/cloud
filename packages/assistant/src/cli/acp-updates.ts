@@ -74,8 +74,10 @@ export const planEntries = (args: unknown): PlanEntry[] | undefined =>
     item.status === "cancelled" ? [] : [{ content: terminalSafeText(item.content), priority: "medium" as const, status: item.status }],
   );
 export const isConfirmApproval = (action: ApprovalAction): boolean => !(action.allowChat || action.allowAlways || action.website);
+export const requiresCloudApproval = (action: ApprovalAction): boolean =>
+  isConfirmApproval(action) || !!(action.review && "sentence" in action.review && (action.review.contentRef || action.review.content));
 export const approvalOptions = (action: ApprovalAction): PermissionOption[] =>
-  isConfirmApproval(action)
+  requiresCloudApproval(action)
     ? [
         { optionId: "cloud", name: "Confirm in Cloud", kind: "allow_once" },
         { optionId: "reject", name: "Reject", kind: "reject_once" },

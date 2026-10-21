@@ -30,12 +30,12 @@ import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../command
 import {
   type ComposePreview,
   type ComposeSafetyApproval,
-  type ComposeSafetyReview,
   DRAFT_LEASE_ERROR_CODES,
   type DraftEditableContent,
   type DraftEditableContentInput,
   type DraftIntent,
   type DraftRecoveryCopy,
+  type DraftSendReview,
   MAX_DRAFT_ATTACHMENT_BYTES,
   type MailCommand,
   type MailDraft,
@@ -43,7 +43,7 @@ import {
   type MailPriority,
   type SenderIdentity,
 } from "../../contracts";
-import { readApiError } from "./api-response";
+import { readApiError, readApiFailure } from "./api-response";
 import MailComposerAttachments from "./MailComposerAttachments";
 import { openMailComposerCalendarDialog } from "./MailComposerCalendarDialog";
 import MailComposerEditor from "./MailComposerEditor";
@@ -619,7 +619,7 @@ export default function MailComposer(props: {
     saved: MailDraft,
     scheduled: boolean,
     abortSignal: AbortSignal,
-  ): Promise<ComposeSafetyApproval | undefined> => {
+  ): Promise<{ expectedContentHash: string; safetyApproval?: ComposeSafetyApproval }> => {
     const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["safety-review"].$post(
       {
         param: { mailboxId: props.mailboxId, draftId: saved.id },
@@ -628,8 +628,8 @@ export default function MailComposer(props: {
       { init: { signal: abortSignal } },
     );
     if (!response.ok) throw new Error(await readApiError(response, t().safetyReviewFailed));
-    const review: ComposeSafetyReview = await response.json();
-    if (review.warnings.length === 0) return undefined;
+    const review: DraftSendReview = await response.json();
+    if (review.warnings.length === 0) return { expectedContentHash: review.contentHash };
     const choice = await prompts.dialog<"approve" | "attachment">(
       (close) => (
         <div class="flex flex-col gap-3">
@@ -667,9 +667,12 @@ export default function MailComposer(props: {
     if (choice === "attachment") throw new ComposeSafetyAttachmentRequested();
     if (choice !== "approve") throw new ComposeSafetyCancelled();
     return {
-      revision: review.revision,
-      fingerprint: review.fingerprint,
-      warningIds: review.warnings.map((warning) => warning.id),
+      expectedContentHash: review.contentHash,
+      safetyApproval: {
+        revision: review.revision,
+        fingerprint: review.fingerprint,
+        warningIds: review.warnings.map((warning) => warning.id),
+      },
     };
   };
 
@@ -681,6 +684,7 @@ export default function MailComposer(props: {
       kind: "send";
       draftId: string;
       expectedDraftRevision: number;
+      expectedContentHash: string;
       senderIdentityId: string;
       scheduledAt?: string;
       undoSeconds: number;
@@ -706,7 +710,11 @@ export default function MailComposer(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, t().queueFailed));
+      if (!response.ok) {
+        const failure = await readApiFailure(response, t().queueFailed);
+        if (failure.code === "SEND_CONTENT_CHANGED") lastDeliveryAttempt = null;
+        throw failure;
+      }
       const command = await response.json();
       return { command, attempt };
     },
@@ -743,7 +751,7 @@ export default function MailComposer(props: {
     validateDelivery();
     const saved = await persist();
     if (!saved) throw new Error(statusMessage());
-    const safetyApproval = await reviewSafety(saved, Boolean(delivery.scheduledAt), abortSignal);
+    const reviewed = await reviewSafety(saved, Boolean(delivery.scheduledAt), abortSignal);
     const senderIdentityId = identityId();
     if (!senderIdentityId) throw new Error(t().chooseSenderBeforeSend);
     return {
@@ -757,7 +765,7 @@ export default function MailComposer(props: {
         senderIdentityId,
         scheduledAt: delivery.scheduledAt,
         undoSeconds: delivery.scheduledAt ? 0 : preferences.undoSeconds,
-        safetyApproval,
+        ...reviewed,
         idempotencyKey: crypto.randomUUID(),
       },
     };

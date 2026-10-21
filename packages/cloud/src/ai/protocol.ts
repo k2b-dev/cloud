@@ -1,5 +1,5 @@
 import type { CompactResult, InboundEvent, Message } from "@k2b/nessi";
-import type { CapabilityActionReviewData } from "../contracts/capabilities";
+import type { CapabilityActionReviewPresentation } from "../contracts/capabilities";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiConversation, AiFrontendToolMode, AiStoredMessage, AiToolPresentation, AiTurnStatus } from "./types";
 
@@ -49,7 +49,7 @@ export type AiTurnBlock =
       /** Present while status is awaiting_approval. */
       approval?: {
         message?: string;
-        review?: CapabilityActionReviewData;
+        review?: CapabilityActionReviewPresentation;
         allowAlways: boolean;
         /** Whether the approval can be remembered for this chat. */
         allowChat?: boolean;
