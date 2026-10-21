@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # Lessons learned
@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
 | An app adds an unnecessary administration group | A single administration entry declares `adminNav`, separating it from the shared app administration list. | Test: Pulse `frontend/admin/navigation.render.test.ts` checks the German and English SSR sidebar and mobile snapshot, active link, default data-store tab, and unchanged admin-only route access. Convention: use `adminHref` for one app administration entry. |
 | Shared interaction behavior implemented for only some consumers | Resize handles differ in cue, keyboard behavior, or reset depending on the region. | Tests: UI `resize-cue.browser.test.ts` covers every workspace edge and standalone separator; separator, workspace controller, and Cloud panel behavior tests cover reset callbacks and saved-size removal. |
 | Unread fetch error bodies | A reader returns its fallback after response headers but leaves the unused body open, keeping a browser request pending. | Tests: Cloud `app-badges.behavior.test.tsx` covers cleanup rejection, absent bodies, aborts and disposal; `app-badges.browser.test.ts` checks real finite and streaming error responses, terminal network events and server disconnects through `watchAppBadges`. |

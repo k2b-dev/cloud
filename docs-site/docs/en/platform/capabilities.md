@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-19
+updated: 2026-10-21
 ---
 
 # App capabilities
@@ -1269,6 +1269,19 @@ change kind, remove fields or operations, add required input, weaken a
 previously guaranteed result field, change safety or idempotency semantics, or
 remove or replace an advertised reader, review, or search token. Publish a new
 local ID for those changes and migrate callers deliberately.
+
+New optional input fields require a previously closed object without
+`patternProperties`. Otherwise the new field's schema could reject values
+that callers were already allowed to send under that name.
+
+Input unions may add or reorder variants when every old variant remains
+compatible under the same field and constraint checks. For a changed `oneOf`,
+the checker also requires proof that every pair of resulting variants is
+disjoint: both must require a shared property whose scalar `const` or `enum`
+values do not overlap. Optional tags, overlapping variants, and cases without
+this proof are rejected. `anyOf` additions do not need disjointness. These
+rules apply recursively to nested input unions; they do not permit new result
+union variants or changes to the union's surrounding constraints.
 
 Keep a previous manifest fixture and check it in provider tests:
 
