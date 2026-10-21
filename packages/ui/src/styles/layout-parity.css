@@ -3381,8 +3381,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3443,8 +3443,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3505,8 +3505,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3567,8 +3567,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -4543,8 +4543,8 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   height: max-content;
   min-height: 2.875rem;
   margin: 0;
-  --k2b-workspace-head-end: 7rem;
-  padding: 0.25rem 7rem 0.25rem 0.5rem;
+  --k2b-workspace-head-end: 6.25rem;
+  padding: 0.25rem 6.25rem 0.25rem 0.5rem;
   overflow: visible;
   clip-path: none;
   white-space: normal;
