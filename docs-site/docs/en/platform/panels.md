@@ -25,7 +25,10 @@ Chat keeps text drafts per reader and conversation in the current browser tab.
 Assistant saves drafts and uploaded references through its existing conversation
 service. Switching providers, closing, and opening the full view retain saved
 drafts; unfinished uploads, conflicting drafts, and unconfirmed sends keep the
-current provider open with recovery controls. Both composers become editable only
+current provider open with recovery controls. Pending resource insertion and image
+preparation are protected too. A browser storage error keeps recovery controls
+visible; it does not prevent leaving when there is no unsaved work.
+Both composers become editable only
 after their leave guard and draft restoration are ready. If a send or queue response
 is lost, Assistant offers a status check and a retry of the same submission. When
 its status remains unknown, **Leave despite unclear message status** requires
@@ -156,7 +159,8 @@ const dispose = onPanelBeforeLeave(() =>
 
 Register before enabling editing. Cloud calls the guard synchronously in the
 current same-origin provider window, so it sees the latest input rather than a
-previously posted busy flag. Return `true` only when the page can be restored
+previously posted busy flag. Registered guards apply even while the separate
+`PanelRuntime` island is still loading. Return `true` only when the page can be restored
 safely. A `false` result, exception, or non-boolean result keeps the current
 provider open. If several guards are registered, all must allow leaving.
 Providers without guards keep their existing behavior.

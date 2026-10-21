@@ -1,7 +1,7 @@
 import { installAppWorkspaceController, installInputModeController, keyboardPlatform } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { installPanelContextReceiver } from "../browser/panel-context-receiver";
-import { hasPanelLeaveGuard } from "../browser/panel-leave";
+import { hasPanelLeaveGuard, panelLinkDestination } from "../browser/panel-leave";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
 export default function PanelRuntime(props: { provider?: string; scope?: string }) {
@@ -25,12 +25,8 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
     };
     const close = () => window.parent.postMessage({ type: "cloud.panel.close" }, location.origin);
     const click = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-      if (!anchor || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download")) return;
-      const url = new URL(anchor.getAttribute("href")!, document.baseURI);
-      if (url.origin !== location.origin) return;
-      if (url.pathname === location.pathname && url.search === location.search && url.hash) return;
+      const url = panelLinkDestination(event);
+      if (!url) return;
       const scope = props.scope?.replace(/\/$/, "");
       const internal = scope !== undefined && (url.pathname === scope || url.pathname.startsWith(`${scope}/`));
       if (!hasPanelLeaveGuard()) {

@@ -162,22 +162,30 @@ export async function startConversationPanelFixture() {
         }),
       );
     const entry = resolve(import.meta.dir, "conversation-panel-client.tsx");
-    const build = await buildIslandClosure([entry], {
+    const panelEntry = resolve(import.meta.dir, "conversation-panel-runtime.tsx");
+    const build = await buildIslandClosure([entry, panelEntry], {
+      [panelEntry]: `
+import { createComponent } from "solid-js";
+import { render } from "solid-js/web";
+import PanelRuntime from "@k2b/cloud/ssr/PanelRuntime.island";
+const embedded = document.querySelector("[data-cloud-panel-page]");
+const root = document.createElement("div");
+document.body.append(root);
+render(() => createComponent(PanelRuntime, { provider: embedded.dataset.panelProvider, scope: "/app/" + embedded.dataset.panelProvider + "/panel" }), root);
+`,
       [entry]: `
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { LocaleProvider } from "@k2b/ui";
 import { openPanel } from "@k2b/cloud/browser/panel";
 import ShellRuntime from "@k2b/cloud/ssr/ShellRuntime.island";
-import PanelRuntime from "@k2b/cloud/ssr/PanelRuntime.island";
 import ChatWorkspace from "./ChatWorkspace.island";
 import AssistantWorkspace from "../../../assistant/src/frontend/AssistantWorkspace.island";
 const embedded = document.querySelector("[data-cloud-panel-page]");
 const runtime = document.createElement("div");
 document.body.append(runtime);
-render(() => createComponent(LocaleProvider, { locale: "en", get children() {
-  return embedded ? createComponent(PanelRuntime, { provider: embedded.dataset.panelProvider, scope: "/app/" + embedded.dataset.panelProvider + "/panel" })
-    : createComponent(ShellRuntime, { panel: true, workspace: { appId: "fixture" }, commands: { searchResources: false } });
+if (!embedded) render(() => createComponent(LocaleProvider, { locale: "en", get children() {
+  return createComponent(ShellRuntime, { panel: true, workspace: { appId: "fixture" }, commands: { searchResources: false } });
 }}), runtime);
 document.getElementById("open-chat")?.addEventListener("click", () => openPanel("chat"));
 const props = document.getElementById("chat-props");
@@ -201,7 +209,10 @@ document.documentElement.dataset.fixtureReady = "true";
     const script = Object.entries(build.metafile!.outputs).find(
       ([, output]) => output.entryPoint && resolve(output.entryPoint) === entry,
     )?.[0];
-    if (!script) throw new Error("Missing fixture client");
+    const panelScript = Object.entries(build.metafile!.outputs).find(
+      ([, output]) => output.entryPoint && resolve(output.entryPoint) === panelEntry,
+    )?.[0];
+    if (!script || !panelScript) throw new Error("Missing fixture client");
     type SocketData = { upstream: WebSocket | null; pending: string[] };
     const server = Bun.serve<SocketData>({
       port: 0,
@@ -236,7 +247,10 @@ document.documentElement.dataset.fixtureReady = "true";
         return new Response(
           html
             .replace("</head>", '<link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/styles.css"></head>')
-            .replace("</body>", `<script type="module" src="${outputUrl(script)}"></script></body>`),
+            .replace(
+              "</body>",
+              `<script type="module" src="${outputUrl(script)}"></script>${html.includes("data-cloud-panel-page") ? `<script type="module" src="${outputUrl(panelScript)}"></script>` : ""}</body>`,
+            ),
           { headers: { "content-type": "text/html" } },
         );
       },
@@ -267,6 +281,7 @@ document.documentElement.dataset.fixtureReady = "true";
         contextAllowed = allowed;
       },
       url: server.url.href,
+      panelRuntimePath: outputUrl(panelScript),
       stop: () => {
         server.stop(true);
         backend.stop();

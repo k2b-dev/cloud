@@ -247,8 +247,10 @@ for (const provider of ["chat", "assistant"] as const) {
       await composer.waitFor();
       expect(await composer.isDisabled()).toBe(true);
       expect(await panel.locator('html[data-fixture-ready="true"]').count()).toBe(0);
+      expect(await panel.getByRole("link", { name: "Open full view", exact: true }).getAttribute("target")).toBe("_top");
       release();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      expect(await panel.getByRole("link", { name: "Open full view", exact: true }).getAttribute("target")).toBeNull();
       await composer.fill("Input after guard registration");
       expect(await composer.inputValue()).toBe("Input after guard registration");
     } finally {
@@ -506,3 +508,297 @@ test("a late server acceptance after a confirmed exit never triggers another sub
     await context.close();
   }
 }, 30_000);
+
+test("Assistant protects editing while only PanelRuntime is delayed", async () => {
+  fixture.assistant.reset();
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8_000);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**${fixture.panelRuntimePath}`, async (route) => {
+    if (route.request().frame().url().includes("/app/assistant/panel")) await gate;
+    await route.continue();
+  });
+  const releaseCreate = fixture.assistant.holdCreate();
+  try {
+    await page.goto(fixture.url + "app/fixture");
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    await page.locator("#open-chat").click();
+    await page.locator('[data-cloud-panel-provider="assistant"]').click();
+    const panel = page.frameLocator("[data-cloud-panel-frame]");
+    await panel.locator('html[data-fixture-ready="true"]').waitFor();
+    const composer = panel.locator('textarea:not([aria-hidden="true"])');
+    await composer.fill("Input before the runtime is ready");
+    expect(await panel.locator("[data-cloud-panel-ready]").count()).toBe(0);
+    await page.locator('[data-cloud-panel-provider="second"]').click();
+    expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
+    await page.locator("[data-cloud-panel-close]").click();
+    expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
+    expect(await composer.inputValue()).toBe("Input before the runtime is ready");
+    await panel.getByRole("link", { name: "Open full view", exact: true }).click();
+    expect(await composer.inputValue()).toBe("Input before the runtime is ready");
+    expect(new URL(page.url()).pathname).toBe("/app/fixture");
+    releaseCreate();
+    await panel.getByText("Draft not saved yet", { exact: true }).waitFor({ state: "hidden" });
+    await panel.getByRole("link", { name: "Open full view", exact: true }).click();
+    await page.waitForURL("**/app/assistant?conversation=*", { waitUntil: "domcontentloaded" });
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    expect(await page.locator('textarea:not([aria-hidden="true"])').inputValue()).toBe("Input before the runtime is ready");
+  } finally {
+    release();
+    releaseCreate();
+    await context.close();
+  }
+}, 30_000);
+
+for (const provider of ["chat", "assistant"] as const) {
+  test(`${provider} can leave an empty panel when session storage is unavailable`, async () => {
+    fixture.backend.reset();
+    fixture.assistant.reset();
+    const id = fixture.backend.addChat({ members: [viewer, nora], name: "Storage recovery", count: 1, end: fixture.backend.now() });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    await context.addInitScript(() => {
+      if (location.pathname.includes("/panel"))
+        Object.defineProperty(window, "sessionStorage", {
+          get() {
+            throw new Error("Synthetic unavailable storage");
+          },
+        });
+    });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    try {
+      await page.goto(fixture.url + "app/fixture");
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      await page.locator("#open-chat").click();
+      const panel = page.frameLocator("[data-cloud-panel-frame]");
+      if (provider === "assistant") await page.locator('[data-cloud-panel-provider="assistant"]').click();
+      else await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
+      await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      expect(await panel.locator('textarea:not([aria-hidden="true"])').isDisabled()).toBe(true);
+      await panel.getByRole("button", { name: provider === "chat" ? "Try again" : "Save drafts", exact: true }).waitFor();
+      await page.locator('[data-cloud-panel-provider="second"]').click();
+      await page.locator('#cloud-panel[data-provider="second"][data-state="ready"]').waitFor();
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+}
+
+test("Chat protects a draft after a storage write failure and releases it only after retry", async () => {
+  fixture.backend.reset();
+  const id = fixture.backend.addChat({ members: [viewer, nora], name: "Storage write recovery", count: 1, end: fixture.backend.now() });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8_000);
+  try {
+    await page.goto(fixture.url + "app/fixture");
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    await page.locator("#open-chat").click();
+    const panel = page.frameLocator("[data-cloud-panel-frame]");
+    await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
+    await panel.locator('html[data-fixture-ready="true"]').waitFor();
+    await panel.locator('textarea:not([aria-hidden="true"])').evaluate(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = () => {
+        throw new Error("Synthetic quota failure");
+      };
+      window.addEventListener(
+        "restore-storage",
+        () => {
+          Storage.prototype.setItem = original;
+        },
+        { once: true },
+      );
+    });
+    const composer = panel.locator('textarea:not([aria-hidden="true"])');
+    await composer.fill("Draft survives failed storage");
+    await page.locator('[data-cloud-panel-provider="second"]').click();
+    expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("chat");
+    expect(await composer.inputValue()).toBe("Draft survives failed storage");
+    await composer.evaluate(() => window.dispatchEvent(new Event("restore-storage")));
+    await panel.getByRole("button", { name: "Try again", exact: true }).click();
+    await page.locator('[data-cloud-panel-provider="second"]').click();
+    await page.locator('#cloud-panel[data-provider="second"][data-state="ready"]').waitFor();
+    await page.locator('[data-cloud-panel-provider="chat"]').click();
+    await composer.waitFor();
+    expect(await composer.inputValue()).toBe("Draft survives failed storage");
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+for (const preparation of ["resource", "image"] as const) {
+  for (const unknownCreation of [false, true]) {
+    test(`Assistant protects pending ${preparation} preparation (unknown creation: ${unknownCreation})`, async () => {
+      fixture.assistant.reset();
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+      const page = await context.newPage();
+      page.setDefaultTimeout(8_000);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const ref = { type: "notebooks.note", id: "3rQGbm" };
+      if (preparation === "resource") {
+        await page.route("**/api/capabilities/v1/catalog?*", (route) =>
+          route.fulfill({
+            json: {
+              protocolVersion: 2,
+              apps: [
+                {
+                  appId: "notebooks",
+                  appName: "Notebooks",
+                  appDescription: "Synthetic notes",
+                  appIcon: "ti ti-notebook",
+                  manifest: {
+                    protocolVersion: 2,
+                    appId: "notebooks",
+                    manifestHash: "a".repeat(64),
+                    types: [
+                      { localId: "note", title: "Synthetic note", description: "A note", icon: "ti ti-file-text", reader: "note.read" },
+                    ],
+                    queries: [
+                      {
+                        localId: "note.read",
+                        title: "Read note",
+                        description: "Read",
+                        inputSchema: {},
+                        dataSchema: {},
+                        schemaHash: "b".repeat(64),
+                        openWorld: false,
+                      },
+                    ],
+                    actions: [],
+                    commands: [],
+                  },
+                },
+              ],
+              page: { hasMore: false },
+            },
+          }),
+        );
+        await page.route("**/api/capabilities/v1/queries/notebooks/note.read", async (route) => {
+          await gate;
+          await route.fulfill({
+            json: {
+              data: { id: ref.id, title: "Synthetic note" },
+              refs: [ref],
+              links: [{ rel: "open", href: "/app/notebooks/notes/3rQGbm" }],
+            },
+          });
+        });
+      } else
+        await context.addInitScript(() => {
+          const read = FileReader.prototype.readAsDataURL;
+          FileReader.prototype.readAsDataURL = function (file) {
+            document.documentElement.dataset.imageReading = "true";
+            window.addEventListener(
+              "release-image",
+              () => {
+                read.call(this, file);
+              },
+              { once: true },
+            );
+          };
+        });
+      try {
+        await page.goto(fixture.url + "app/fixture");
+        await page.locator('html[data-fixture-ready="true"]').waitFor();
+        await page.locator("#open-chat").click();
+        await page.locator('[data-cloud-panel-provider="assistant"]').click();
+        const panel = page.frameLocator("[data-cloud-panel-frame]");
+        await panel.locator('html[data-fixture-ready="true"]').waitFor();
+        if (unknownCreation) {
+          fixture.assistant.loseCreate();
+          await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
+          await panel.getByRole("dialog").getByText("New chat", { exact: true }).click();
+          await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
+        }
+        const composer = panel.locator('textarea:not([aria-hidden="true"])');
+        if (preparation === "resource") {
+          const reading = page.waitForRequest("**/api/capabilities/v1/queries/notebooks/note.read");
+          await composer.evaluate((element, ref) => {
+            const clipboardData = new DataTransfer();
+            clipboardData.setData(
+              "application/vnd.k2b.cloud-resource-ref+json",
+              JSON.stringify({ version: 1, cloudUrl: location.origin, ref }),
+            );
+            element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+          }, ref);
+          await reading;
+        } else {
+          await panel.locator('input[type="file"]').setInputFiles({
+            name: "synthetic.png",
+            mimeType: "image/png",
+            buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2hAAAAABJRU5ErkJggg==", "base64"),
+          });
+          await panel.locator('html[data-image-reading="true"]').waitFor();
+        }
+        expect(await composer.isDisabled()).toBe(true);
+        expect(await panel.getByRole("button", { name: "Save drafts", exact: true }).isDisabled()).toBe(true);
+        if (unknownCreation)
+          expect(await panel.getByRole("button", { name: "Leave despite unclear creation", exact: true }).isDisabled()).toBe(true);
+        await page.locator('[data-cloud-panel-provider="second"]').click();
+        expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
+        await page.locator("[data-cloud-panel-close]").click();
+        expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
+        release();
+        if (preparation === "image") await composer.evaluate(() => window.dispatchEvent(new Event("release-image")));
+        await panel.getByText(preparation === "resource" ? "Synthetic note" : "synthetic.png", { exact: true }).waitFor();
+        await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
+        await panel.getByText("Draft not saved yet", { exact: true }).waitFor({ state: "hidden" });
+        await page.locator('[data-cloud-panel-provider="second"]').click();
+        await page.locator('#cloud-panel[data-provider="second"][data-state="ready"]').waitFor();
+        await page.locator('[data-cloud-panel-provider="assistant"]').click();
+        await panel.getByText(preparation === "resource" ? "Synthetic note" : "synthetic.png", { exact: true }).waitFor();
+        expect(fixture.assistant.conversations.size).toBe(1);
+      } catch (error) {
+        console.error(await page.frameLocator("[data-cloud-panel-frame]").locator("body").innerText());
+        throw error;
+      } finally {
+        release();
+        await context.close();
+      }
+    }, 30_000);
+  }
+}
+
+for (const provider of ["chat", "assistant"] as const) {
+  test(`${provider} opens the SSR full-view link in the host before provider scripts load`, async () => {
+    fixture.backend.reset();
+    fixture.assistant.reset();
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/*", async (route) => {
+      if (route.request().resourceType() === "script" && route.request().frame().parentFrame()) await gate;
+      await route.continue();
+    });
+    try {
+      await page.goto(fixture.url + "app/fixture");
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      await page.locator("#open-chat").click();
+      if (provider === "assistant") await page.locator('[data-cloud-panel-provider="assistant"]').click();
+      const panel = page.frameLocator("[data-cloud-panel-frame]");
+      const link = panel.getByRole("link", { name: "Open full view", exact: true });
+      await link.waitFor();
+      expect(await panel.locator('html[data-fixture-ready="true"]').count()).toBe(0);
+      await link.click();
+      await page.waitForURL(`**/app/${provider}`, { waitUntil: "domcontentloaded" });
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      expect(new URL(page.url()).pathname).toBe(`/app/${provider}`);
+      expect(await page.locator(".cloud-app-canvas").count()).toBe(1);
+    } finally {
+      release();
+      await context.close();
+    }
+  }, 30_000);
+}

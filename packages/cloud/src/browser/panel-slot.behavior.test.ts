@@ -276,7 +276,10 @@ else {
   test("a requested search replaces a page reached inside the panel and keeps the page it already shows", () => {
     const h = setup();
     const show = (frame: HTMLIFrameElement, path: string) =>
-      Object.defineProperty(frame, "contentWindow", { configurable: true, value: { location: { href: `${location.origin}${path}` } } });
+      Object.defineProperty(frame, "contentWindow", {
+        configurable: true,
+        value: Object.assign(new h.dom.window.EventTarget(), { location: { href: `${location.origin}${path}` } }),
+      });
     h.open("fixture", "q=bolts");
     const first = h.frame();
     show(first, "/app/fixture/panel/details?item=1");

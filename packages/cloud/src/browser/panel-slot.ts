@@ -64,7 +64,7 @@ export function installPanelSlot(): () => void {
   const [leaveBlocked, setLeaveBlocked] = createSignal(false);
   const transitionTo = (action: () => void) => {
     const target = frame?.contentWindow;
-    if (target && showsProvider() && !panelCanLeave(target)) {
+    if (target && !panelCanLeave(target)) {
       setLeaveBlocked(true);
       return;
     }
@@ -173,13 +173,13 @@ export function installPanelSlot(): () => void {
   // Whether the current frame has seen a context, in its URL or by message; only such a frame needs a clearing null.
   let disclosed = !!frame && new URL(frame.src, location.origin).searchParams.has(PANEL_CONTEXT_PARAM);
   // The frame may have navigated on its own; only the selected provider's page below its panel path may receive context.
-  const showsProvider = () => {
+  const showsProvider = (requireReady = true) => {
     try {
       const shown = frame?.contentWindow?.location;
       const scope = new URL(provider.href, location.origin).pathname.replace(/\/$/, "");
       return (
         !!shown &&
-        frame?.contentDocument?.documentElement.dataset.cloudPanelReady === provider.id &&
+        (!requireReady || frame?.contentDocument?.documentElement.dataset.cloudPanelReady === provider.id) &&
         (shown.pathname === scope || shown.pathname.startsWith(`${scope}/`))
       );
     } catch {
@@ -668,7 +668,7 @@ export function installPanelSlot(): () => void {
     else if (isPanelNavigateMessage(event.data)) {
       if (!URL.canParse(event.data.href)) return;
       const url = new URL(event.data.href, location.origin);
-      if (url.origin !== location.origin || !showsProvider()) return;
+      if (url.origin !== location.origin || !showsProvider(false)) return;
       const scope = new URL(provider.href, location.origin).pathname.replace(/\/$/, "");
       const internal = url.pathname === scope || url.pathname.startsWith(`${scope}/`);
       transitionTo(() => {

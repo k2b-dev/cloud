@@ -2,7 +2,14 @@ import type { AiConversation, AiPublicModelProfile, AiStoredMessage } from "@k2b
 
 const now = "2026-10-21T12:00:00.000Z";
 const models: AiPublicModelProfile[] = [
-  { id: "standard", label: "Standard", provider: "ollama", model: "standard", capabilities: ["streaming"], dataBoundary: "private" },
+  {
+    id: "standard",
+    label: "Standard",
+    provider: "ollama",
+    model: "standard",
+    capabilities: ["streaming", "vision"],
+    dataBoundary: "private",
+  },
 ];
 const conversation = (id: string): AiConversation => ({
   id,

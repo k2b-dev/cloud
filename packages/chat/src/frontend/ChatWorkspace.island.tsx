@@ -559,10 +559,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
-    onCleanup(onPanelBeforeLeave(() => !box.unsent() && !draftStorageFailed() && !dialogCore.isOpen() && pendingOpen === 0));
+    onCleanup(onPanelBeforeLeave(() => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingOpen === 0));
     setComposerReady(true);
     const leave = (event: BeforeUnloadEvent) => {
-      if (box.unsent() || draftStorageFailed()) {
+      if (box.unsent() || unsavedDrafts.size > 0) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -661,6 +661,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         <div class="flex shrink-0 justify-end p-1">
           <IconButtonLink
             href={route().chatId ? conversationHref(route().chatId!, null, route().messageId) : "/app/chat"}
+            target={composerReady() ? undefined : "_top"}
             label={t().openFullView}
           >
             <i class="ti ti-arrows-maximize" aria-hidden="true" />
@@ -695,7 +696,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         actions={
                           <>
                             <Show when={props.embedded}>
-                              <IconButtonLink href={conversationHref(current().id, null, route().messageId)} label={t().openFullView}>
+                              <IconButtonLink
+                                href={conversationHref(current().id, null, route().messageId)}
+                                target={composerReady() ? undefined : "_top"}
+                                label={t().openFullView}
+                              >
                                 <i class="ti ti-arrows-maximize" aria-hidden="true" />
                               </IconButtonLink>
                             </Show>

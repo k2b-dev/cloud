@@ -56,6 +56,7 @@ type AssistantSidebarProps = {
   fullViewConversationId?: string;
   basePath?: string;
   embedded?: boolean;
+  panelReady?: boolean;
   conversations: Accessor<AiConversation[]>;
   /** The viewer's time zone from the request, so the server and the browser put chats in the same day sections. */
   timeZone: string;
@@ -759,6 +760,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                         : assistantConversationHref("/app/assistant", activeConversationId())
                 }
                 label={t().openFullView}
+                target={props.panelReady ? undefined : "_top"}
               >
                 <i class="ti ti-arrows-maximize" aria-hidden="true" />
               </IconButtonLink>

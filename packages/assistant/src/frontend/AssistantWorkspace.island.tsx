@@ -418,7 +418,7 @@ export default function AssistantWorkspace(props: Props) {
   // meanwhile would move that draft to another key and lose the choice.
   const [composerPicking, setComposerPicking] = createSignal(0);
   /** Holds saving until `until` settles or the returned release runs, whichever comes first. */
-  const holdComposerSave = (until: Promise<unknown>) => {
+  const holdComposerSave = (until?: Promise<unknown>) => {
     let held = true;
     setComposerPicking((count) => count + 1);
     const release = () => {
@@ -426,7 +426,7 @@ export default function AssistantWorkspace(props: Props) {
       held = false;
       setComposerPicking((count) => count - 1);
     };
-    void until.then(release, release);
+    void until?.then(release, release);
     return release;
   };
   const trackComposerPicking = <T,>(picking: Promise<T>): Promise<T> => {
@@ -766,7 +766,6 @@ export default function AssistantWorkspace(props: Props) {
     sessionVersion();
     creationVersion();
     return (
-      panelStorageFailed() ||
       submissionChecking() ||
       savingPanelDrafts() ||
       composerPicking() > 0 ||
@@ -968,7 +967,13 @@ export default function AssistantWorkspace(props: Props) {
     );
   });
   const canSend = createMemo(
-    () => canUseComposer() && !newConversation.loading() && !chat.loadingConversation() && !chat.running() && !chat.activeTurn(),
+    () =>
+      canUseComposer() &&
+      !composerPicking() &&
+      !newConversation.loading() &&
+      !chat.loadingConversation() &&
+      !chat.running() &&
+      !chat.activeTurn(),
   );
   let navigationRequest = 0;
   const openAndFocusConversation = async (conversationId: string) => {
@@ -1279,7 +1284,7 @@ export default function AssistantWorkspace(props: Props) {
       : [];
   const queueMessage = async (input: AiComposerSendInput) => {
     const conversationId = chat.activeConversationId();
-    if (!conversationId || composerSubmitting()) return false;
+    if (!conversationId || composerSubmitting() || composerPicking()) return false;
     setComposerSubmitting(true);
     try {
       return await serializeComposer(conversationId, async () => {
@@ -1481,42 +1486,53 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   const useStarter = async (starter: AssistantStarterAction) => {
-    const key = composerSessionKey();
-    const current = composerDraft(key);
-    setComposerDraft(key, current.trim() ? `${current}\n\n${starter.prompt}` : starter.prompt);
-    focusComposer();
-    if (starter.skill)
-      try {
-        const skill = (await assistantApi.listSkills()).find((skill) => skill.enabled && skill.name === starter.skill);
-        if (
-          !skill ||
-          composerSessionKey() !== key ||
-          composerAttachmentsFor(key).some(
-            (item) => item.kind === "resource" && item.ref.type === "core.ai.skill" && item.ref.id === skill.id,
+    const release = holdComposerSave();
+    try {
+      const key = composerSessionKey();
+      const current = composerDraft(key);
+      setComposerDraft(key, current.trim() ? `${current}\n\n${starter.prompt}` : starter.prompt);
+      focusComposer();
+      if (starter.skill)
+        try {
+          const skill = (await assistantApi.listSkills()).find((skill) => skill.enabled && skill.name === starter.skill);
+          if (
+            !skill ||
+            composerSessionKey() !== key ||
+            composerAttachmentsFor(key).some(
+              (item) => item.kind === "resource" && item.ref.type === "core.ai.skill" && item.ref.id === skill.id,
+            )
           )
-        )
-          return;
-        await addResolvedComposerResource(key, { type: "core.ai.skill", id: skill.id });
-      } catch {
-        chat.setError(t().attachResourceFailed);
-      }
+            return;
+          await addResolvedComposerResource(key, { type: "core.ai.skill", id: skill.id });
+        } catch {
+          chat.setError(t().attachResourceFailed);
+        }
+    } finally {
+      release();
+    }
   };
+
   /** The server counts every non-text part of a draft: attachments and references in the text alike. */
   const composerPartCount = (key: string) => composerAttachmentsFor(key).length + mentionsFor(key).length;
   const addComposerFiles = async (sessionKey: string, files: readonly File[]) => {
-    const current = composerAttachmentsFor(sessionKey);
-    const result = await readAiComposerFiles(files, {
-      acceptsImages: acceptsImages(),
-      currentCount: composerPartCount(sessionKey),
-      currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
-    });
-    const attachmentErrors = [...result.errors];
-    if (result.discarded > 0) {
-      attachmentErrors.push(t().discardedAttachments({ count: result.discarded }));
+    const release = holdComposerSave();
+    try {
+      const current = composerAttachmentsFor(sessionKey);
+      const result = await readAiComposerFiles(files, {
+        acceptsImages: acceptsImages(),
+        currentCount: composerPartCount(sessionKey),
+        currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
+      });
+      const attachmentErrors = [...result.errors];
+      if (result.discarded > 0) {
+        attachmentErrors.push(t().discardedAttachments({ count: result.discarded }));
+      }
+      if (attachmentErrors.length > 0) chat.setError(attachmentErrors.join(" "));
+      if (result.attachments.length === 0) return;
+      setComposerAttachmentsFor(sessionKey, [...composerAttachmentsFor(sessionKey), ...result.attachments]);
+    } finally {
+      release();
     }
-    if (attachmentErrors.length > 0) chat.setError(attachmentErrors.join(" "));
-    if (result.attachments.length === 0) return;
-    setComposerAttachmentsFor(sessionKey, [...composerAttachmentsFor(sessionKey), ...result.attachments]);
   };
 
   /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
@@ -1538,38 +1554,43 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   const addResolvedComposerResource = async (sessionKey: string, ref: { type: string; id: string }, isCurrent = () => true) => {
-    if (!requireComposerAttachmentsAvailable(sessionKey)) return;
-    const current = composerAttachmentsFor(sessionKey);
-    if (current.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
-      chat.setError(t().resourceAlreadyAttached);
-      return;
+    const release = holdComposerSave();
+    try {
+      if (!requireComposerAttachmentsAvailable(sessionKey)) return;
+      const current = composerAttachmentsFor(sessionKey);
+      if (current.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
+        chat.setError(t().resourceAlreadyAttached);
+        return;
+      }
+      if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+        chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+        return;
+      }
+      const resource = await resolveAssistantCloudResource(ref);
+      if (!isCurrent()) return;
+      const latest = composerAttachmentsFor(sessionKey);
+      if (latest.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
+        chat.setError(t().resourceAlreadyAttached);
+        return;
+      }
+      if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+        chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+        return;
+      }
+      setComposerAttachmentsFor(sessionKey, [
+        ...latest,
+        {
+          kind: "resource",
+          id: `resource:${resource.ref.type}:${resource.ref.id}`,
+          name: resource.title,
+          ref: resource.ref,
+          icon: resource.icon,
+          href: resource.href,
+        },
+      ]);
+    } finally {
+      release();
     }
-    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
-      return;
-    }
-    const resource = await resolveAssistantCloudResource(ref);
-    if (!isCurrent()) return;
-    const latest = composerAttachmentsFor(sessionKey);
-    if (latest.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
-      chat.setError(t().resourceAlreadyAttached);
-      return;
-    }
-    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
-      return;
-    }
-    setComposerAttachmentsFor(sessionKey, [
-      ...latest,
-      {
-        kind: "resource",
-        id: `resource:${resource.ref.type}:${resource.ref.id}`,
-        name: resource.title,
-        ref: resource.ref,
-        icon: resource.icon,
-        href: resource.href,
-      },
-    ]);
   };
 
   const editScheduledTask = async (task: AiChatTaskView, repair: boolean) => {
@@ -1602,28 +1623,33 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   const showComposerTextAttachment = async (sessionKey: string, attachment: AiComposerAttachment) => {
-    let text: string;
-    if (attachment.kind === "file") {
-      text = await attachment.file.text();
-    } else if (attachment.kind === "stored-file") {
-      const conversationId = chat.activeConversationId();
-      if (!conversationId) throw new Error(t().openChatBeforeAttachment);
-      const query = new URLSearchParams({ path: attachment.path });
-      const response = await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${query}`);
-      if (!response.ok) throw new Error(t().loadTextAttachmentFailed);
-      text = await response.text();
-    } else {
-      return;
+    const release = holdComposerSave();
+    try {
+      let text: string;
+      if (attachment.kind === "file") {
+        text = await attachment.file.text();
+      } else if (attachment.kind === "stored-file") {
+        const conversationId = chat.activeConversationId();
+        if (!conversationId) throw new Error(t().openChatBeforeAttachment);
+        const query = new URLSearchParams({ path: attachment.path });
+        const response = await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${query}`);
+        if (!response.ok) throw new Error(t().loadTextAttachmentFailed);
+        text = await response.text();
+      } else {
+        return;
+      }
+      const currentText = composerDraft(sessionKey);
+      const nextText = currentText ? `${currentText}\n\n${text}` : text;
+      if (nextText.length > AI_COMPOSER_TEXT_MAX_CHARS) throw new Error(t().textTooLong);
+      setComposerDraft(sessionKey, nextText);
+      setComposerAttachmentsFor(
+        sessionKey,
+        composerAttachmentsFor(sessionKey).filter((candidate) => candidate.id !== attachment.id),
+      );
+      focusComposer();
+    } finally {
+      release();
     }
-    const currentText = composerDraft(sessionKey);
-    const nextText = currentText ? `${currentText}\n\n${text}` : text;
-    if (nextText.length > AI_COMPOSER_TEXT_MAX_CHARS) throw new Error(t().textTooLong);
-    setComposerDraft(sessionKey, nextText);
-    setComposerAttachmentsFor(
-      sessionKey,
-      composerAttachmentsFor(sessionKey).filter((candidate) => candidate.id !== attachment.id),
-    );
-    focusComposer();
   };
 
   const pasteComposerContent = (sessionKey: string, event: ClipboardEvent) => {
@@ -1852,7 +1878,7 @@ export default function AssistantWorkspace(props: Props) {
             />
           )}
         </Show>
-        <Show when={props.embedded && hasUnsavedPanelState()}>
+        <Show when={props.embedded && (hasUnsavedPanelState() || panelStorageFailed())}>
           <NoticeCard tone="warning" title={t().panelUnsaved}>
             <p>{t().panelSaveHint}</p>
             <Button
@@ -2134,6 +2160,7 @@ export default function AssistantWorkspace(props: Props) {
           }
           disabled={
             (props.embedded && !workspaceMounted()) ||
+            composerPicking() > 0 ||
             !canUseComposer() ||
             panelStorageFailed() ||
             submissionChecking() ||
@@ -2370,6 +2397,7 @@ export default function AssistantWorkspace(props: Props) {
         <AssistantSidebar
           fullViewConversationId={activeProject() ? pendingProjectChats()[activeProject()!.id]?.id : undefined}
           embedded={props.embedded}
+          panelReady={workspaceMounted()}
           basePath={basePath}
           conversations={conversations}
           timeZone={props.timeZone}
