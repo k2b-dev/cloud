@@ -24,6 +24,7 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | Transparent frame with a mismatched color scheme | A transparent sandbox wrapper uses a light canvas behind a dark app. WebKit can choose light from `color-scheme: light dark` even when its inherited media preference is dark; select one scheme from that preference. | Test: Assistant `html/html-app.browser.test.ts` checks the selected scheme and exact exposed canvas pixels in Chromium and WebKit, including live theme changes with preserved input and scrolling. Native OS rubber-banding still needs device verification. |
+| Shared interaction behavior implemented for only some consumers | Resize handles differ in cue, keyboard behavior, or reset depending on the region. | Tests: UI `resize-cue.browser.test.ts` covers every workspace edge and standalone separator; separator, workspace controller, and Cloud panel behavior tests cover reset callbacks and saved-size removal. |
 | Unread fetch error bodies | A reader returns its fallback after response headers but leaves the unused body open, keeping a browser request pending. | Tests: Cloud `app-badges.behavior.test.tsx` covers cleanup rejection, absent bodies, aborts and disposal; `app-badges.browser.test.ts` checks real finite and streaming error responses, terminal network events and server disconnects through `watchAppBadges`. |
 | Incomplete stored-state fixtures | A direct SQL fixture omits one of the fields that domain writers persist together, creating a state that normal writes cannot produce. | Test: `yjs-snapshot-projections.integration.test.ts` checks the persisted cursor and its matching sequence before publishing in both initialization cases, then asserts that the real snapshot save succeeds ([#1651](https://github.com/k2b-dev/cloud/pull/1651)). |
 | A clear keeps the measured usage | Clearing a base empties its data but keeps the usage that the storage threshold reads, so ingest refuses the empty base until the next usage scan. | Test: Pulse `service/base-lifecycle.integration.test.ts` clears a base over its threshold and checks that usage and the threshold crossing are reset. |
@@ -824,6 +825,13 @@ convention still needs a check or a test.
 - **Root cause:** Pin separation treated only pins as obstacles, and the scale bar, attribution, and info tile each had a fixed absolute place. In WebKit, the screenshot of a WebGL canvas without a preserved drawing buffer showed the frame before MapLibre's last one. MapLibre's own state held the final colour, which a probe of its internals confirmed while the captured pixel stayed stale for 12 s.
 - **Error class:** Overlays placed without each other; Canvas captured one frame late.
 - **Guard:** The dot is an obstacle in `pinOffsets` for numbered and drop pins, and stops keep their route point. The info tile and a shared scale and attribution row form one bottom stack, and selection moves a covered pin above the tile. Browser cases check each overlap with `elementFromPoint` or rects in Chromium and WebKit, and they fail on the code before the fix. The theme case renders one more frame before each sample.
+
+### Resize cues and reset behavior differed between columns
+
+- **What happened:** Mail's conversation pane showed a soft drag shadow, while its Detail column showed none; sidebar, drawer, and standalone separators lacked the same reset behavior.
+- **Root cause:** Detail omitted the shared shadow flag, standalone separators had separate cue styles, and reset handlers covered only panes and details.
+- **Error class:** Shared interaction behavior implemented for only some consumers.
+- **Guard:** `resize-cue.browser.test.ts` covers every workspace edge and standalone separator, including sequential arrow keys, cue geometry, reduced motion, and reset. Focused separator, workspace, and Cloud panel behavior tests cover callbacks and saved-size removal. Reactive workspace tests keep custom reset defaults after another region saves; RTL browser cases check the cue's side.
 
 ### A snapshot fixture retried saves until its test timed out
 
