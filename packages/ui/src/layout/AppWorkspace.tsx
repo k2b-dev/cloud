@@ -24,6 +24,7 @@ import { dialogCore } from "../feedback/dialog-core";
 import { RenderErrorBoundary } from "../internal/render-error";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
+  APP_WORKSPACE_DETAIL_OPEN_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
   type AppWorkspaceDetailStep,
@@ -292,6 +293,10 @@ export type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
 export type AppWorkspaceDetailProps = {
   children: JSX.Element;
   open: boolean;
+  /** Keeps the shared head control reachable while closed; set the app's existing open state synchronously. */
+  onOpen?: () => void;
+  /** Whether the current object may show details. False disables reopening and hides the panel. */
+  available?: boolean;
   /**
    * Whether choosing an item in Main opens this Detail as the drawer while it waits.
    * Set false when Main itself shows the chosen item, such as a reader beside a list:
@@ -309,6 +314,7 @@ export type AppWorkspaceDetailProps = {
   maxWidth?: number;
   /**
    * Closes the column with Escape, or the phone sheet with a downward drag.
+   * With onOpen, the shared head control also closes the column or phone sheet.
    * Server-rendered panels mark their close control with
    * `data-workspace-detail-close` instead; those gestures click it.
    * Escape and a rightward touch swipe park an open waiting drawer without
@@ -901,6 +907,9 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   let aside: HTMLElement | undefined;
   onMount(() => {
     const close = () => props.onClose?.();
+    const open = () => {
+      if (props.available !== false) props.onOpen?.();
+    };
     const isStep = (detail: unknown): detail is AppWorkspaceDetailStep =>
       typeof detail === "object" && detail !== null && "direction" in detail && (detail.direction === 1 || detail.direction === -1);
     const step = (event: Event) => {
@@ -908,9 +917,11 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
       const item = props.onStep?.(event.detail.direction);
       if (item instanceof HTMLElement) event.detail.item = item;
     };
+    aside?.addEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, open);
     aside?.addEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
     aside?.addEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);
     onCleanup(() => {
+      aside?.removeEventListener(APP_WORKSPACE_DETAIL_OPEN_EVENT, open);
       aside?.removeEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
       aside?.removeEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);
     });
@@ -924,6 +935,8 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         aria-controls={domId()}
         aria-expanded="false"
         data-app-workspace-detail-toggle=""
+        data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
+        disabled={props.available === false}
         class="k2b-app-workspace__detail-toggle"
       >
         <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
@@ -951,9 +964,10 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         data-workspace-detail-choice={props.openOnChoice === false ? "request" : undefined}
         data-workspace-panel-id={panelId()}
         data-workspace-resizable={resizable() ? "true" : "false"}
+        data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
         data-workspace-detail-closable={props.onClose ? "true" : undefined}
         data-workspace-detail-steppable={props.onStep ? "true" : undefined}
-        hidden={!props.open}
+        hidden={!props.open || props.available === false}
         style={{ ...sizeStyle(), "view-transition-name": props.viewTransitionName }}
       >
         {/* Only the phone sheet shows the grabber: a tap switches between half and full height. */}
@@ -2312,11 +2326,17 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
     const slots = createMemo(() => flatten(resolved()));
     // Same props object, same memo value: a sibling change must not rebuild the head's slots.
     const head = createMemo(() => slots().find(headSlot)?.props);
-    const content = () => slots().filter((value) => !headSlot(value)) as JSX.Element;
+    // Keep one head instance at the explicit slot's position. Object links
+    // before it must also precede its view controls in SSR and keyboard order.
+    // Callers without a slot retain the automatic leading head.
+    const renderedHead = <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />;
     return (
       <>
-        <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />
-        {content()}
+        {
+          (head()
+            ? slots().map((value) => (headSlot(value) ? (value.props === head() ? renderedHead : null) : value))
+            : [renderedHead, ...slots()]) as JSX.Element
+        }
       </>
     );
   };

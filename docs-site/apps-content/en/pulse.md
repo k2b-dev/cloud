@@ -18,6 +18,10 @@ Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a
 separate interface for these same operations; dashboards follow later.
 
+Cloud administrators open **Administration → App administration → Pulse** to
+manage the data store, bases, and internal targets. **Data store** opens first.
+Pulse uses the shared app administration list, with no separate sidebar section.
+
 ## See what needs attention
 
 A base opens on **Overview**. It shows source freshness, alert rules needing

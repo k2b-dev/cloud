@@ -18,7 +18,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Hono } = await import("hono");
-const { AppWorkspace, Button, ScrollArea } = await import("@k2b/ui");
+const { AppWorkspace, Button, ScrollArea, ViewTabs } = await import("@k2b/ui");
 const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
@@ -152,7 +152,7 @@ const listWorkspace = (head = false) =>
   });
 
 /** A sidebar-first overview that is the page itself, as Mail and Notebooks render. Invented content. */
-const overviewWorkspace = () =>
+const overviewWorkspace = (objects?: string) =>
   createComponent(AppWorkspace, {
     mobileSurface: "flush",
     flat: true,
@@ -162,6 +162,8 @@ const overviewWorkspace = () =>
         createComponent(AppWorkspace.Sidebar, {
           id: "overview-navigation",
           label: "Mailboxes",
+          mobile: objects ? "stacked" : undefined,
+          hidden: objects === "hidden",
           get children() {
             return createComponent(AppWorkspace.SidebarDesktop, {
               get children() {
@@ -176,12 +178,30 @@ const overviewWorkspace = () =>
             });
           },
         }),
+        objects === "mail" || objects === "contacts"
+          ? createComponent(AppWorkspace.Head, {
+              views: createComponent(ViewTabs, {
+                label: "Views",
+                current: "all",
+                items: [
+                  { id: "all", label: "All", href: "#all" },
+                  { id: "recent", label: "Recent", href: "#recent" },
+                ],
+              }),
+              primary: { label: "New object", icon: "ti ti-plus", href: "#new" },
+            })
+          : null,
         createComponent(AppWorkspace.Content, {
           get children() {
             return createComponent(AppWorkspace.Main, {
               get children() {
                 return Array.from({ length: 80 }, (_, index) =>
-                  createComponent(Button, { class: "overview-row", align: "start", children: `Message ${index + 1}` }),
+                  createComponent(Button, {
+                    class: "overview-row",
+                    variant: objects ? "ghost" : undefined,
+                    align: "start",
+                    children: `Message ${index + 1}`,
+                  }),
                 );
               },
             });
@@ -234,7 +254,17 @@ const server = new Hono()
             c: c as unknown as LayoutContextArg,
             title: [{ title: "Home", href: "/" }, { title: "Mail" }],
             get children() {
-              return overviewWorkspace();
+              if (c.req.query("objects") === "nested")
+                return createComponent(AppWorkspace, {
+                  get children() {
+                    return createComponent(AppWorkspace.Content, {
+                      get children() {
+                        return overviewWorkspace("contacts");
+                      },
+                    });
+                  },
+                });
+              return overviewWorkspace(c.req.query("objects"));
             },
           });
       // `?plain=` renders a regular page without a workspace or scroll area: `main` is its page scroller.
@@ -399,7 +429,16 @@ export const html = async (path: string, options: Options = {}) => {
     "Accept-Language": options.language ?? "en",
     Cookie: `theme=${options.theme ?? "light"}`,
   };
-  const markup = await (await server.request(path, { headers })).text();
+  let markup = await (await server.request(path, { headers })).text();
+  if (new URL(path, "http://fixture.test").searchParams.get("object-host") === "island")
+    markup = new HTMLRewriter()
+      .on("#overview-navigation", {
+        element(element) {
+          element.before('<solid-island style="display:contents">', { html: true });
+          element.after("</solid-island>", { html: true });
+        },
+      })
+      .transform(markup);
   const clean = new HTMLRewriter()
     .on('script[src], script[type="module"]', { element: (element) => void element.remove() })
     .on('link[rel="stylesheet"], link[rel="preload"], link[rel="modulepreload"]', { element: (element) => void element.remove() })

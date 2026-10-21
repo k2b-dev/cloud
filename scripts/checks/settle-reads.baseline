@@ -113,8 +113,6 @@ packages/ui/src/inputs/emoji/emoji-picker.browser.test.ts | 6
 packages/ui/src/inputs/signature-input.browser.test.ts | 43
 packages/ui/src/layout/app-overview-host.browser.test.ts | 2
 packages/ui/src/layout/container-field-parts.browser.test.ts | 7
-packages/ui/src/layout/detail-float.browser.test.ts | 7
-packages/ui/src/layout/detail-panel-sections.browser.test.ts | 2
 packages/ui/src/layout/drag-selection.browser.test.ts | 1
 packages/ui/src/layout/mobile-shell.browser.test.ts | 7
 packages/ui/src/layout/page-title.browser.test.ts | 7
@@ -131,8 +129,6 @@ packages/ui/src/layout/sidebar-row-overlays.browser.test.ts | 6
 packages/ui/src/layout/sidebar-switcher.browser.test.ts | 5
 packages/ui/src/layout/table-of-contents.browser.test.ts | 2
 packages/ui/src/layout/workspace-fixed.browser.test.ts | 2
-packages/ui/src/layout/workspace-head-hydration.browser.test.ts | 2
-packages/ui/src/layout/workspace-head-row.browser.test.ts | 37
 packages/ui/src/layout/workspace-host.browser.test.ts | 19
 packages/ui/src/layout/workspace-levels.browser.test.ts | 32
 packages/ui/src/layout/workspace-one-surface.browser.test.ts | 30

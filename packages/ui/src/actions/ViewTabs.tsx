@@ -120,7 +120,15 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
   );
   onMount(() => {
     const watch = watchViewTabs(list ?? null, settleViewTabs, scrollFadeEdges);
+    let disposed = false;
+    // Later mount effects can invalidate WebKit's scroll layout after this
+    // initial settle. Finish once the mount task is complete, before its first
+    // frame; ResizeObserver alone runs too late for that frame.
+    queueMicrotask(() => {
+      if (!disposed && watch?.preferCurrent) settleViewTabs(list ?? null, scrollFadeEdges);
+    });
     onCleanup(() => {
+      disposed = true;
       watch?.resize.disconnect();
       if (list && watch) {
         list.removeEventListener("focusin", watch.focus);
