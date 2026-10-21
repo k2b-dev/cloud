@@ -743,6 +743,13 @@ convention still needs a check or a test.
 - **Error class:** State sampled before it settled.
 - **Guard:** `rich-select.browser.test.ts` calls `settled()` before each accessibility audit. A regression case starts a deliberately extended background transition, verifies it is running, then checks the completed state through the same audit helper. Axe failures retain their targets and color/contrast explanation.
 
+### A sheet trigger lost hover after the animation snapshot
+
+- **What happened:** The RichSelect phone accessibility cases in WebKit started five trigger transitions while `settled()` was already waiting.
+- **Root cause:** Opening the modal sheet moved focus to the dialog, but WebKit still matched `:hover` on the covered trigger. Retiring that hover state later started background and border-color transitions after the helper's initial animation snapshot. A local event trace reproduced the failure and showed the delayed hover removal.
+- **Error class:** State sampled before it settled.
+- **Guard:** Before its first phone accessibility audit, `rich-select.browser.test.ts` waits for the sheet's final focus and for the covered trigger to stop matching `:hover`. Only then does the unchanged `settled()` helper wait for the return transitions. The light/dark phone cases retain all accessibility rules and state checks.
+
 ### The OAuth card was read before its styles arrived
 
 - **What happened:** The OAuth authorization page browser test read `expired light at 1440 px` as unframed once in CI ([#1499](https://github.com/k2b-dev/cloud/issues/1499)), and once in a local Chromium run under load it found `span.k2b-button__label: 1.24` for `confirm light at 1440 px` ([#1476](https://github.com/k2b-dev/cloud/issues/1476)). Re-runs passed.
