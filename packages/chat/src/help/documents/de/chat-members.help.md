@@ -29,6 +29,10 @@ Du kannst stattdessen **Neuen Chat ohne bisherigen Verlauf starten** wählen. De
 ohne deaktivierte Konten. Diese Auswahl gibt es für einen Chat mit bis zu 100 Mitgliedern.
 Als Gast bekommst du diese Auswahl nicht, wenn der Chat eine Gruppe enthält.
 
+Wenn nach **Neuen Chat ohne bisherigen Verlauf starten** die Auswahl **Erneut versuchen** erscheint, wähle sie, um dieselbe Anfrage abzuschließen.
+Öffne nach dem Neuladen dieses Tabs wieder **Personen hinzufügen** im ursprünglichen Chat, um sie fortzusetzen.
+Mit **Abbrechen** verwirfst du die Anfrage. Der neue Chat kann bereits in der Liste stehen.
+
 ## Die Chat-Info nutzen {icon="info-circle"}
 
 Wähle **Chat-Info** im Chat-Kopf, um den Zweck und die Mitglieder zu sehen.

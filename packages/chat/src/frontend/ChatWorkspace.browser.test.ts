@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
+import { CreateConversationSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
@@ -785,6 +786,108 @@ describe("ChatWorkspace browser read state", () => {
 
 describe("ChatWorkspace start chats and members", () => {
   beforeEach(() => harness.reset());
+  for (const { name, options } of viewports) {
+    const locale = name === "phone" ? "de" : "en";
+    const t = chatMessages.resolve([locale]).t;
+    for (const kind of ["anyway", "group", "fresh"] as const) {
+      test(`lost create response retries exactly one ${kind} chat on ${name} in ${locale}`, async () => {
+        const chat = harness.addChat({ members: [viewer, nora], count: 4, end: harness.now() });
+        harness.setPermission(chat, "admin");
+        const group = { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "Project Team", size: 3 };
+        harness.addGroup(group);
+        const { page, errors } = await load(options, kind === "fresh" ? { chat } : {}, false, undefined, { locale });
+        const requests: ReturnType<typeof CreateConversationSchema.parse>[] = [];
+        let drop = true;
+        try {
+          await page.route("**/api/chat/conversations", async (route) => {
+            if (route.request().method() !== "POST") return route.continue();
+            const body = CreateConversationSchema.parse(route.request().postDataJSON());
+            requests.push(body);
+            if (drop && (body.allowDuplicate || kind === "group")) {
+              drop = false;
+              // Commit at the HTTP fixture first, then discard only the response on its way to the browser.
+              const response = await route.fetch();
+              expect(response.status()).toBe(201);
+              await route.abort("failed");
+            } else await route.continue();
+          });
+          const entry = () =>
+            kind === "fresh"
+              ? page.locator(".chat-conversation__header").getByRole("button", { name: t.addPeople, exact: true })
+              : page.getByRole("button", { name: t.newChat, exact: true }).filter({ visible: true });
+          const title = kind === "fresh" ? t.addPeople : t.newChat;
+          await entry().click();
+          let dialog = page.getByRole("dialog", { name: title, exact: true });
+          const person = kind === "fresh" ? tobias.name : kind === "group" ? group.name : nora.name;
+          await dialog.getByRole("combobox").fill(person);
+          await page.getByRole("option", { name: person }).click();
+          await dialog.getByRole("textbox", { name: t.name, exact: true }).fill("Recovered intent");
+          if (kind === "fresh") {
+            const start = dialog.getByRole("button", { name: t.startWithoutHistory, exact: true });
+            await start.click();
+          } else {
+            await dialog.getByRole("button", { name: t.startChat, exact: true }).click();
+            if (kind === "anyway") await dialog.getByRole("button", { name: t.createAnyway, exact: true }).click();
+          }
+          await dialog.getByRole("alert").waitFor();
+          const accepted = requests.at(-1)!;
+          expect(accepted.createKey).toMatch(/^[0-9a-f-]{36}$/);
+          expect(harness.chatCount()).toBe(2);
+          await dialog.getByText(t.createRecovery, { exact: true }).waitFor();
+          if (kind === "anyway") {
+            for (const match of await dialog.getByRole("list", { name: t.existingChatsLabel }).getByRole("button").all())
+              expect(await match.isDisabled()).toBe(true);
+          }
+          // Dismissing is temporary: only the explicit Cancel button discards this intent.
+          await page.keyboard.press("Escape");
+          await dialog.waitFor({ state: "hidden" });
+          await focused(entry());
+          await entry().click();
+          dialog = page.getByRole("dialog", { name: title, exact: true });
+          await dialog.getByText(t.createRecovery, { exact: true }).waitFor();
+          if (kind !== "anyway") {
+            expect(await dialog.getByRole("textbox", { name: t.name, exact: true }).isDisabled()).toBe(true);
+            // Reopen after a real document reload: same tab, same immutable unresolved intent.
+            await page.reload();
+            await settle(page);
+            await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
+              props: harness.props(kind === "fresh" ? { chat } : {}),
+              locale,
+            });
+            await entry().click();
+            dialog = page.getByRole("dialog", { name: title, exact: true });
+            await dialog.getByText(t.createRecovery, { exact: true }).waitFor();
+            expect(await dialog.getByRole("textbox", { name: t.name, exact: true }).inputValue()).toBe("Recovered intent");
+          }
+          await dialog.getByRole("button", { name: t.retry, exact: true }).click();
+          await page.waitForURL(/\/app\/chat\/c\/[0-9A-Za-z]{6}$/);
+          await page.locator(".chat-conversation__header").getByText("Recovered intent", { exact: true }).waitFor();
+          await dialog.waitFor({ state: "hidden" });
+          expect(requests.at(-1)).toEqual(accepted);
+          expect(harness.chatCount()).toBe(2);
+          const id = new URL(page.url()).pathname.split("/").at(-1)!;
+          expect(id).not.toBe(chat);
+          expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("chat.create:")).length)).toBe(0);
+          // An explicit cancellation discards a later dialog and returns keyboard focus to its entry.
+          if (name === "phone") {
+            await page.getByRole("link", { name: t.backToChats, exact: true }).click();
+            await page.waitForURL((url) => url.pathname === "/app/chat");
+          }
+          const newChat = page.getByRole("button", { name: t.newChat, exact: true }).filter({ visible: true });
+          await newChat.click();
+          const fresh = page.getByRole("dialog", { name: t.newChat, exact: true });
+          await fresh.getByRole("textbox", { name: t.name, exact: true }).waitFor();
+          expect(await fresh.getByRole("textbox", { name: t.name, exact: true }).inputValue()).toBe("");
+          await fresh.getByRole("button", { name: t.cancel, exact: true }).click();
+          await fresh.waitFor({ state: "hidden" });
+          await focused(newChat);
+          expect(errors).toEqual([]);
+        } finally {
+          await page.context().close();
+        }
+      }, 30_000);
+    }
+  }
   for (const { name, options } of viewports) {
     for (const theme of ["light", "dark"] as const) {
       for (const locale of ["en", "de"]) {

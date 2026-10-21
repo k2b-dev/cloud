@@ -360,6 +360,18 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
   const people = members.filter((principal) => principal.type === "user").map((principal) => principal.userId);
   const groups = members.filter((principal) => principal.type === "group");
   const allIds = [callerId, ...people];
+  // Compare normalized meaning, including explicit duplicate creation, rather than transport field order.
+  const payload = JSON.stringify({
+    members: [...members].sort((a, b) => {
+      const left = JSON.stringify(a);
+      const right = JSON.stringify(b);
+      return left < right ? -1 : left > right ? 1 : 0;
+    }),
+    name: data.name ?? null,
+    icon: data.icon ?? null,
+    purpose: data.purpose ?? null,
+    allowDuplicate: data.allowDuplicate,
+  });
   try {
     const result = await sql.begin(async (db): Promise<Result<CreateOutcome> | RateLimited> => {
       const [caller] = await db<
@@ -367,6 +379,21 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       >`SELECT profile, (account_expires IS NULL OR account_expires > now()) AS active
       FROM auth.users WHERE id = ${callerId}::uuid FOR SHARE`;
       if (!caller?.active) return fail(err.badInput(t.memberUnavailable));
+      if (data.createKey) {
+        // Serializes the absent-row case too; a waiting transaction reads the committed mapping.
+        await db`SELECT pg_advisory_xact_lock(hashtextextended(${"chat.create_intent:" + callerId + ":" + data.createKey}, 0))`;
+        const [intent] = await db<{ short_id: string; same_payload: boolean }[]>`
+          SELECT c.short_id, i.payload = ${payload}::jsonb AS same_payload FROM chat.create_intents i
+          JOIN chat.conversations c ON c.id = i.conversation_id
+          WHERE i.user_id = ${callerId}::uuid AND i.create_key = ${data.createKey}::uuid`;
+        if (intent) {
+          // Reproject current state and grants, never a cached admin response or a new creation.
+          const current = await getInSnapshot({ ...input, conversationId: intent.short_id }, db);
+          if (!current.ok) return current;
+          if (!intent.same_payload) return conflict(t.createIntentChanged);
+          return ok({ outcome: "created", conversation: current.data });
+        }
+      }
       const valid = await validateMembers(members, input, db);
       if (!valid.ok) return valid;
       // One lock per member set: a waiting create sees the committed chat, so only allowDuplicate adds another.
@@ -436,6 +463,9 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
             },
           },
         });
+      if (data.createKey)
+        await db`INSERT INTO chat.create_intents (user_id, create_key, payload, conversation_id)
+          VALUES (${callerId}::uuid, ${data.createKey}::uuid, ${payload}::jsonb, ${row.id}::uuid)`;
       await record(db, input, row.short_id, "chat.conversation.create", { memberCount: row.member_count });
       const names = await titles([row], input, db);
       const latest = await lastMessages([row], input, db);

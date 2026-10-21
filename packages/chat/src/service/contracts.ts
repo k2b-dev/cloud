@@ -55,6 +55,11 @@ const members = z
     });
   });
 export const CreateConversationSchema = z.strictObject({
+  // Optional for older callers; one UUID identifies one immutable create intent per access subject.
+  createKey: z
+    .uuid()
+    .transform((id) => id.toLowerCase())
+    .optional(),
   ...metadata,
   members: members.default([]),
   allowDuplicate: z.boolean().default(false),

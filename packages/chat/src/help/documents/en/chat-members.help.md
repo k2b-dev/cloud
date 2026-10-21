@@ -29,6 +29,10 @@ You can choose **Start a new chat without the history** instead. The new chat ha
 without deactivated accounts. This choice is available for a chat with up to 100 members.
 As a guest, you do not get this choice when the chat includes a group.
 
+If **Try again** appears after **Start a new chat without the history**, choose it to finish the same request.
+After reloading this tab, reopen **Add people** in the original chat to resume it.
+Choose **Cancel** to discard the request. The new chat may already appear in the list.
+
 ## Use Chat info {icon="info-circle"}
 
 Choose **Chat info** in the header to see the chat's purpose and members.
