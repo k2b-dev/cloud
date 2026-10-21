@@ -336,7 +336,7 @@ window.mountMailList = (options) => {
                     listCollapsed={false}
                     detailsOpen={false}
                     toolbarActions={options.toolbarActions ?? ["reply"]}
-                    onRestoreList={noop}
+                    onToggleList={noop}
                     onToggleDetails={noop}
                     onToolbarActionsChange={noop}
                     actionPending={false}

@@ -136,6 +136,8 @@ A quick look never marks a conversation as read, never creates a summary, and ne
 
 ## Read a complete thread {icon="route"}
 
+The reader keeps its subject and message count above the messages while you scroll. Use its first button to hide or show the list on a wide screen. On a phone, Back returns to the list and its workspace head.
+
 Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content.
 
 An optional conversation summary appears in a highlighted card above the messages. To keep it current with Markdown formatting, use **Edit summary** or **More conversation actions → Create summary**. Summaries are shared Mail context, and an automation can also update them.

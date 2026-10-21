@@ -272,7 +272,17 @@ export function mailboxData(url: URL): MailboxPageData {
             : (folders.find((folder) => folder.id === folderId)?.name ?? "All mail"),
     detailMessages: selectedConversationId
       ? selectedConversationId === "Conv02"
-        ? longThread
+        ? longThread.map((message, index) =>
+            url.searchParams.has("long-subject") && index === longThread.length - 1
+              ? {
+                  ...message,
+                  plainText: Array.from(
+                    { length: 50 },
+                    (_, line) => `Delivery note ${line + 1}: Please check the revised exhibition schedule.`,
+                  ).join("\n\n"),
+                }
+              : message,
+          )
         : [
             {
               id: "Msg001",
@@ -337,7 +347,11 @@ export function mailboxData(url: URL): MailboxPageData {
       summary: null,
       drafts: null,
     },
-    selectedSubject: selectedConversationId ? "Example request 1" : "",
+    selectedSubject: url.searchParams.has("long-subject")
+      ? "Delivery confirmation for the autumn exhibition — review the revised schedule and delivery documents before Wednesday"
+      : selectedConversationId
+        ? "Example request 1"
+        : "",
     selectedReference: null,
   };
 }

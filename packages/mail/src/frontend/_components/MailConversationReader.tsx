@@ -20,6 +20,7 @@ import {
   prompts,
   ScrollArea,
   Select,
+  StatusBadge,
   Toolbar,
   Tooltip,
   toast,
@@ -126,7 +127,7 @@ export default function MailConversationReader(props: {
   listCollapsed: boolean;
   detailsOpen: boolean;
   toolbarActions: readonly MailConversationToolbarActionId[];
-  onRestoreList: () => void;
+  onToggleList: () => void;
   onToggleDetails: () => void;
   onToolbarActionsChange: (actions: MailConversationToolbarActionId[]) => void;
   actionPending: boolean;
@@ -1207,7 +1208,7 @@ export default function MailConversationReader(props: {
           </div>
         }
       >
-        <div class="mail-reader-toolbar" data-mail-reader-toolbar>
+        <div class="mail-reader-toolbar" data-mail-reader-toolbar role="group" aria-label={t().conversationActions}>
           <IconButtonLink
             href={closeHref()}
             class="mail-reader-back"
@@ -1218,88 +1219,147 @@ export default function MailConversationReader(props: {
           >
             <i class="ti ti-arrow-left" aria-hidden="true" />
           </IconButtonLink>
-          <Show when={props.listCollapsed}>
-            <Tooltip.Anchor content={t().showList}>
-              <IconButton type="button" class="mail-reader-show-list" label={t().showList} onClick={props.onRestoreList}>
-                <i class="ti ti-layout-sidebar-left-expand" aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
-          </Show>
-          {/* Reply, Reply all and Forward carry their labels while the reader has room; below 720 px Reply all and
-              Forward keep only their icons, and narrower still they leave the bar. "…" always lists them. */}
-          <For each={respondToolbarActions()}>
-            {(action) => (
-              <>
-                <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
-                  <span class="mail-reader-draft-label" data-mail-draft-label>
-                    {t().draftAvailable}
-                  </span>
-                </Show>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={action.id === "reply" ? "subtle" : "ghost"}
-                  class="mail-reader-respond"
-                  data-mail-toolbar-action={action.id}
-                  aria-label={action.label}
-                  tooltip={action.label}
-                  disabled={action.disabled}
-                  onClick={action.action}
-                >
-                  <i class={action.icon} aria-hidden="true" />
-                  <span class="mail-reader-respond-label" aria-hidden="true">
-                    {action.id === "reply" ? t().reply : action.label}
-                  </span>
-                  <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
-                    <span class="mail-reader-draft-dot" data-mail-draft-indicator aria-hidden="true" />
-                  </Show>
-                </Button>
-              </>
-            )}
-          </For>
-          <span class="mail-reader-toolbar-space" />
-          {/* The person's other toolbar actions, as icons. When the reader gets narrow, the last ones leave the bar first;
-              "…" always lists every action, so each one stays reachable by keyboard. */}
-          <div class="mail-reader-toolbar-actions">
-            <For each={otherToolbarActions()}>
-              {(entry) => (
-                <Tooltip.Anchor content={entry.action.label}>
-                  <IconButton
-                    type="button"
-                    class="mail-reader-toolbar-action"
-                    label={entry.action.label}
-                    data-mail-toolbar-action={entry.action.id}
-                    data-mail-toolbar-section={entry.section}
-                    data-section-start={entry.first ? "" : undefined}
-                    disabled={entry.action.disabled}
-                    onClick={entry.action.action}
-                  >
-                    <i class={entry.action.icon} aria-hidden="true" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              )}
-            </For>
-          </div>
-          <Dropdown.Root position="bottom-left" width="14rem" items={overflowActions()}>
-            <Dropdown.Trigger iconOnly type="button" variant="ghost" label={t().moreConversationActions}>
-              <i class="ti ti-dots" aria-hidden="true" />
-            </Dropdown.Trigger>
-          </Dropdown.Root>
-          <Tooltip.Anchor content={t().conversationDetails}>
-            {/* While the details wait behind the head's Details, this button opens and parks their drawer with one
-                click (#1467); AppWorkspace keeps aria-expanded in step. */}
+          <Tooltip.Anchor content={props.listCollapsed ? t().showList : t().hideList}>
             <IconButton
               type="button"
-              class="mail-reader-details"
-              label={t().toggleDetails}
-              aria-expanded={props.detailsOpen}
-              aria-controls={appWorkspaceDetailElementId(MAIL_CONTEXT_DETAIL_ID)}
-              data-mail-details-trigger
-              onClick={props.onToggleDetails}
+              class="mail-reader-show-list"
+              label={props.listCollapsed ? t().showList : t().hideList}
+              onClick={props.onToggleList}
             >
-              <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+              <i
+                class={props.listCollapsed ? "ti ti-layout-sidebar-left-expand" : "ti ti-layout-sidebar-left-collapse"}
+                aria-hidden="true"
+              />
             </IconButton>
           </Tooltip.Anchor>
+          <header class="mail-reader-subject">
+            <div class="mail-reader-title-line">
+              <h1 class="mail-reader-title" data-mail-reader-heading tabIndex={-1} title={props.subject || t().noSubject}>
+                {props.subject || t().noSubject}
+              </h1>
+              <span class="mail-reader-marks">
+                <Show when={props.flagged}>
+                  <Tooltip.Anchor content={t().flaggedConversation}>
+                    <span
+                      class="flex h-7 w-4 shrink-0 items-center justify-center text-orange-600 dark:text-orange-400"
+                      role="img"
+                      aria-label={t().flaggedConversation}
+                    >
+                      <i class={getMailAction("flag").icon} aria-hidden="true" />
+                    </span>
+                  </Tooltip.Anchor>
+                </Show>
+                <Show when={keptLabel()}>
+                  {(label) => (
+                    <Tooltip.Anchor content={label()}>
+                      <span
+                        class="flex h-7 w-4 shrink-0 items-center justify-center text-secondary"
+                        role="img"
+                        aria-label={`${t().keptConversation}. ${label()}`}
+                        data-mail-kept-indicator
+                      >
+                        <i class="ti ti-lock" aria-hidden="true" />
+                      </span>
+                    </Tooltip.Anchor>
+                  )}
+                </Show>
+              </span>
+            </div>
+            <Show when={props.reference}>
+              <button
+                type="button"
+                class="chip mail-reader-reference font-mono text-xs"
+                title={t().copyReference}
+                onClick={() => {
+                  const reference = props.reference;
+                  if (!reference) return;
+                  void navigator.clipboard.writeText(reference).then(
+                    () => toast.success(t().referenceCopied),
+                    () => toast.error(t().referenceCopyFailed),
+                  );
+                }}
+              >
+                <i class="ti ti-hash" aria-hidden="true" />
+                {props.reference}
+              </button>
+            </Show>
+            <StatusBadge tone="neutral" icon={null} class="mail-reader-count" label={t().messageCount({ count: props.messages.length })} />
+          </header>
+          <div class="mail-reader-controls">
+            {/* The title has priority; actions that no longer fit remain in the overflow menu. */}
+            <For each={respondToolbarActions()}>
+              {(action) => (
+                <>
+                  <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
+                    <span class="mail-reader-draft-label" data-mail-draft-label>
+                      {t().draftAvailable}
+                    </span>
+                  </Show>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={action.id === "reply" ? "subtle" : "ghost"}
+                    class="mail-reader-respond"
+                    data-mail-toolbar-action={action.id}
+                    aria-label={action.label}
+                    tooltip={action.label}
+                    disabled={action.disabled}
+                    onClick={action.action}
+                  >
+                    <i class={action.icon} aria-hidden="true" />
+                    <span class="mail-reader-respond-label" aria-hidden="true">
+                      {action.id === "reply" ? t().reply : action.label}
+                    </span>
+                    <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
+                      <span class="mail-reader-draft-dot" data-mail-draft-indicator aria-hidden="true" />
+                    </Show>
+                  </Button>
+                </>
+              )}
+            </For>
+            {/* The person's other toolbar actions, as icons. When the reader gets narrow, the last ones leave the bar first;
+              "…" always lists every action, so each one stays reachable by keyboard. */}
+            <div class="mail-reader-toolbar-actions">
+              <For each={otherToolbarActions()}>
+                {(entry) => (
+                  <Tooltip.Anchor content={entry.action.label}>
+                    <IconButton
+                      type="button"
+                      class="mail-reader-toolbar-action"
+                      label={entry.action.label}
+                      data-mail-toolbar-action={entry.action.id}
+                      data-mail-toolbar-section={entry.section}
+                      data-section-start={entry.first ? "" : undefined}
+                      disabled={entry.action.disabled}
+                      onClick={entry.action.action}
+                    >
+                      <i class={entry.action.icon} aria-hidden="true" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                )}
+              </For>
+            </div>
+            <Dropdown.Root position="bottom-left" width="14rem" items={overflowActions()}>
+              <Dropdown.Trigger iconOnly type="button" variant="ghost" label={t().moreConversationActions}>
+                <i class="ti ti-dots" aria-hidden="true" />
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+            <Tooltip.Anchor content={t().conversationDetails}>
+              {/* While the details wait behind the head's Details, this button opens and parks their drawer with one
+                click (#1467); AppWorkspace keeps aria-expanded in step. */}
+              <IconButton
+                type="button"
+                class="mail-reader-details"
+                label={t().toggleDetails}
+                aria-expanded={props.detailsOpen}
+                aria-controls={appWorkspaceDetailElementId(MAIL_CONTEXT_DETAIL_ID)}
+                data-mail-details-trigger
+                onClick={props.onToggleDetails}
+              >
+                <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          </div>
         </div>
 
         <div class="relative min-h-0 flex-1 overflow-hidden">
@@ -1310,57 +1370,6 @@ export default function MailConversationReader(props: {
             onScroll={handleReaderScroll}
           >
             <div class="mail-reading-column" data-mail-reading-column>
-              <header class="mail-reader-subject">
-                <div class="flex min-w-0 items-center gap-2">
-                  <h1 class="mail-reader-title" data-mail-reader-heading tabIndex={-1}>
-                    {props.subject || t().noSubject}
-                  </h1>
-                  <Show when={props.flagged}>
-                    <Tooltip.Anchor content={t().flaggedConversation}>
-                      <span
-                        class="flex h-7 w-7 shrink-0 items-center justify-center text-orange-600 dark:text-orange-400"
-                        role="img"
-                        aria-label={t().flaggedConversation}
-                      >
-                        <i class={getMailAction("flag").icon} aria-hidden="true" />
-                      </span>
-                    </Tooltip.Anchor>
-                  </Show>
-                  <Show when={keptLabel()}>
-                    {(label) => (
-                      <Tooltip.Anchor content={label()}>
-                        <span
-                          class="flex h-7 w-7 shrink-0 items-center justify-center text-secondary"
-                          role="img"
-                          aria-label={`${t().keptConversation}. ${label()}`}
-                          data-mail-kept-indicator
-                        >
-                          <i class="ti ti-lock" aria-hidden="true" />
-                        </span>
-                      </Tooltip.Anchor>
-                    )}
-                  </Show>
-                  <Show when={props.reference}>
-                    <button
-                      type="button"
-                      class="chip shrink-0 font-mono text-xs"
-                      title={t().copyReference}
-                      onClick={() => {
-                        const reference = props.reference;
-                        if (!reference) return;
-                        void navigator.clipboard.writeText(reference).then(
-                          () => toast.success(t().referenceCopied),
-                          () => toast.error(t().referenceCopyFailed),
-                        );
-                      }}
-                    >
-                      <i class="ti ti-hash" aria-hidden="true" />
-                      {props.reference}
-                    </button>
-                  </Show>
-                </div>
-                <p class="mt-0.5 text-xs text-dimmed">{t().messageCount({ count: props.messages.length })}</p>
-              </header>
               <Show when={props.conversationSummary?.summary}>
                 {(summary) => (
                   <MailConversationSummaryCard

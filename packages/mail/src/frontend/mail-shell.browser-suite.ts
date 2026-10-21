@@ -114,6 +114,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
     await document.fonts.ready;
     step('first frame');
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    step('server geometry');
     document.documentElement.dataset.serverGeometry=JSON.stringify(geometry());
     document.documentElement.dataset.serverStrip=JSON.stringify(strip());
     document.documentElement.dataset.serverCurrent=document.querySelector('${tabsSelector} [aria-current="page"]')?.getAttribute('href')??'';
@@ -227,7 +228,10 @@ const pinPageClock = (at: number) => {
 };
 const ready = async (page: Page) => {
   try {
-    await page.waitForFunction(() => document.documentElement.dataset.mailShellReady === "true");
+    // The page sets this only after its required SSR/hydrated frames and measurements.
+    // Cold WebKit takes about eight seconds to prepare its first styled/hydrated page.
+    // Bootstrap shares the existing 20s functional-test budget; actions still have their 6s deadline.
+    await page.locator('html[data-mail-shell-ready="true"]').waitFor({ state: "attached", timeout: 20_000 });
   } catch (error) {
     const evidence = await page
       .evaluate(() => ({
@@ -340,6 +344,86 @@ const clickTab = async (page: Page, href: string) => {
 /** The shell tests. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`compact reader short subject ${theme} ${width}: count stays beside the title`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&theme=${theme}`, width, 900);
+          try {
+            const title = page.locator(".mail-reader-title");
+            const count = page.locator(".mail-reader-count");
+            await title.waitFor({ state: "visible" });
+            const titleBox = (await title.boundingBox())!;
+            const countBox = (await count.boundingBox())!;
+            const marksBox = (await page.locator(".mail-reader-marks").boundingBox())!;
+            if (width >= 768) {
+              expect(countBox.x - (marksBox.x + marksBox.width)).toBeGreaterThanOrEqual(0);
+              expect(countBox.x - (marksBox.x + marksBox.width)).toBeLessThanOrEqual(8.5);
+            } else {
+              expect(countBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height);
+              expect(Math.abs(countBox.x - titleBox.x)).toBeLessThanOrEqual(0.5);
+            }
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              await page.screenshot({ path: join(screenshots, browserName, `reader-short-${theme}-${width}.png`) });
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`compact reader ${theme} ${width}: fixed subject, count and list toggle`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv02&long-subject=1&theme=${theme}`, width, 900);
+          try {
+            const toolbar = page.locator("[data-mail-reader-toolbar]");
+            const heading = toolbar.locator("[data-mail-reader-heading]");
+            await heading.waitFor({ state: "visible" });
+            expect(await toolbar.locator(".mail-reader-count").isVisible()).toBe(true);
+            expect(await page.locator(".mail-reader-scroll [data-mail-reader-heading]").count()).toBe(0);
+            const metrics = await heading.evaluate((element) => {
+              const css = getComputedStyle(element);
+              return {
+                font: css.fontSize,
+                lines: css.webkitLineClamp,
+                height: element.getBoundingClientRect().height,
+                line: parseFloat(css.lineHeight),
+              };
+            });
+            expect(metrics.font).toBe("17px");
+            expect(metrics.lines).toBe(width < 768 ? "3" : "2");
+            expect(metrics.height).toBeLessThanOrEqual(metrics.line * (width < 768 ? 3 : 2) + 0.5);
+            if (width < 768) {
+              const titleBox = await heading.boundingBox();
+              const countBox = await toolbar.locator(".mail-reader-count").boundingBox();
+              expect(countBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
+              expect(Math.abs(countBox!.x - titleBox!.x)).toBeLessThanOrEqual(0.5);
+            }
+            const before = await toolbar.boundingBox();
+            await page.locator(".mail-reader-scroll").evaluate((element) => {
+              element.scrollTop = 300;
+            });
+            await settled(page);
+            expect(await page.locator(".mail-reader-scroll").evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+            expect(await toolbar.boundingBox()).toEqual(before);
+            expect(await page.locator(".mail-workspace > .k2b-app-workspace__head").isVisible()).toBe(width >= 768);
+            expect(await toolbar.locator("[data-mail-details-trigger]").isVisible()).toBe(true);
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              await page.screenshot({ path: join(screenshots, browserName, `compact-reader-${theme}-${width}.png`) });
+            }
+            if (width >= 768) {
+              await toolbar.getByRole("button", { name: "Hide conversation list", exact: true }).click();
+              await toolbar.getByRole("button", { name: "Show conversation list", exact: true }).waitFor({ state: "visible" });
+              expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
+              await toolbar.getByRole("button", { name: "Show conversation list", exact: true }).click();
+              await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
     for (const theme of ["light", "dark"] as const)
       for (const width of [1440, 390])
         test(`compact folder filters ${theme} ${width}: scoped toggles, dates and tags`, async () => {
@@ -1635,11 +1719,14 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
               expect(frame.detail, `${label}: Detail`).toBe(row.detail);
               expect(frame.headDetails, `${label}: head Details`).toBe(true);
               if (row.detail === "column") expect(Math.abs(frame.detailWidth - 480), `${label}: Detail width`).toBeLessThanOrEqual(0.5);
-              // At most 760 px, centred in the reader; the toolbar stays as wide as the reader.
+              // At most 760 px, centred in the reader; the toolbar is centred at at most 800 px.
               expect(frame.column!.width, `${label}: reading column`).toBeLessThanOrEqual(760.5);
               const readerCentre = frame.reader!.x + frame.reader!.width / 2;
               expect(Math.abs(frame.column!.x + frame.column!.width / 2 - readerCentre), `${label}: column centre`).toBeLessThanOrEqual(1);
-              sameBox({ ...frame.toolbar!, y: 0, height: 0 }, { ...frame.reader!, y: 0, height: 0 }, `${label}: toolbar`);
+              expect(frame.toolbar!.width, `${label}: toolbar width`).toBeLessThanOrEqual(800.5);
+              expect(Math.abs(frame.toolbar!.x + frame.toolbar!.width / 2 - readerCentre), `${label}: toolbar centre`).toBeLessThanOrEqual(
+                0.5,
+              );
               // Opening the conversation marks it read after hydration; that changes no geometry.
               const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
               const server = read(await recordedFrame(page, "server"));
@@ -1713,9 +1800,9 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           }
         });
 
-      test("reader toolbar: labels from 720 px, icons below, and Reply all and Forward move into … below 520 px", async () => {
+      test("reader toolbar: optional replies are icons and move into overflow below 576 px", async () => {
         const cases = [
-          { path: widePath(), width: 2560, height: 1080, labels: true, shown: true },
+          { path: widePath(), width: 2560, height: 1080, labels: false, shown: true },
           { path: widePath(), width: 1920, height: 1080, labels: false, shown: true },
           { path: `${boxPath}?conversation=Conv01`, width: 834, height: 1194, labels: false, shown: false },
         ] as const;
@@ -1748,12 +1835,12 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       }, 60_000);
 
-      test("reader toolbar: the largest own toolbar fits every reader width, in English and German", async () => {
-        // Eight actions is the most a person can choose: all three answers plus five icons, or Reply plus seven.
-        const misfits: string[] = [];
-        const readers: number[] = [];
-        for (const toolbar of ["reply,reply_all,forward,archive,spam,trash,move,read", "reply,archive,spam,trash,move,read,flag,tags"])
-          for (const locale of ["en", "de"] as const) {
+      // Independent locale/configuration cases keep each engine run bounded without dropping any width.
+      for (const toolbar of ["reply,reply_all,forward,archive,spam,trash,move,read", "reply,archive,spam,trash,move,read,flag,tags"])
+        for (const locale of ["en", "de"] as const)
+          test(`reader toolbar: largest own toolbar ${toolbar} ${locale} fits every reader width`, async () => {
+            const misfits: string[] = [];
+            const readers: number[] = [];
             for (const [extra, widths] of [
               ["", [768, 800, 834, 900, 980, 1024, 1100, 1194, 1280, 1366, 1440]],
               ["&list=hidden", [834, 900]],
@@ -1789,22 +1876,21 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
                 await close(page);
               }
             }
-          }
-        expect(misfits).toEqual([]);
-        // The sweep covers every tier: under 380, 380–440, 440–480, 480–520, 520–720 and from 720 px of reader.
-        for (const [from, to] of [
-          [0, 380],
-          [380, 440],
-          [440, 480],
-          [480, 520],
-          [520, 720],
-          [720, 2000],
-        ] as const)
-          expect(
-            readers.some((width) => width >= from && width < to),
-            `a reader width in ${from}–${to} (${[...new Set(readers)].join(", ")})`,
-          ).toBe(true);
-      }, 90_000);
+            expect(misfits).toEqual([]);
+            // The sweep covers every tier: under 380, 380–440, 440–480, 480–520, 520–720 and from 720 px of reader.
+            for (const [from, to] of [
+              [0, 380],
+              [380, 440],
+              [440, 480],
+              [480, 520],
+              [520, 720],
+              [720, 2000],
+            ] as const)
+              expect(
+                readers.some((width) => width >= from && width < to),
+                `a reader width in ${from}–${to} (${[...new Set(readers)].join(", ")})`,
+              ).toBe(true);
+          }, 90_000);
 
       test("reader toolbar: a person's own actions stay, and those that do not fit are in …", async () => {
         const toolbar = "reply,forward,archive,trash,move,read,flag,tags";

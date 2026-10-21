@@ -2918,7 +2918,7 @@ function MailboxWorkspace(
                   listCollapsed={listCollapsed()}
                   detailsOpen={detailsOpen()}
                   toolbarActions={toolbarActions()}
-                  onRestoreList={() => setCollapsed(false)}
+                  onToggleList={() => setCollapsed(!listCollapsed())}
                   onToggleDetails={() => canShowDetails() && setDetailsVisible(!detailsOpen())}
                   onToolbarActionsChange={updateToolbarActions}
                   actionPending={structureMutationLoading()}

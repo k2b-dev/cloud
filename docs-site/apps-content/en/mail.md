@@ -41,8 +41,12 @@ person who started the draft. Members with write access can open a draft to
 continue it; readers can view the list.
 
 On wide screens the conversation list grows with the window from 320 to
-440 px, and the subject and messages stay in a centered reading column of at
-most 760 px. **Conversation details** stand beside the reader while the reader
+440 px. The fixed reader toolbar combines the subject, message-count chip,
+list toggle, and conversation actions above the centered 760 px reading
+column. The subject stays visible when messages scroll; its full text is
+available on hover. On a phone, the workspace head appears over the list and
+leaves the screen while reading. Back, subject, overflow, and Details remain
+at the top, with reply actions in the bottom bar. **Conversation details** stand beside the reader while the reader
 keeps 440 px next to them; otherwise they wait behind **Details** and open with
 one click, also from the reader's own details button. Hiding the list gives
 the reader that room. In Focus, a conversation opens its details beside the
