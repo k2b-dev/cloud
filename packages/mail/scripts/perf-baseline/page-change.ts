@@ -110,10 +110,7 @@ export class PageChangesBrowser {
     });
     const oldFrame =
       profile === "desktop" ? await page.locator('#cloud-panel iframe[data-cloud-panel-frame="core"]').elementHandle() : null;
-    const errors: string[] = [];
-    const onError = (error: Error) => errors.push(error.message);
     const network = recordPageChangeNetwork(page, target, cdp);
-    page.on("pageerror", onError);
     try {
       await page.evaluate(
         ({ key, watch }) => {
@@ -188,8 +185,7 @@ export class PageChangesBrowser {
           };
         }),
       }));
-      errors.push(...state.errors);
-      if (errors.length) throw new Error(`Page change failed: ${errors.join("; ")}`);
+      if (state.errors.length) throw new Error(`Page change failed: ${state.errors.join("; ")}`);
       const watch = state.watch;
       if (!watch || watch.actionAt === null || watch.mainAt === null || (verifyAction && watch.firstActionAt === null))
         throw new Error("Missing page-change timestamps");
@@ -217,7 +213,6 @@ export class PageChangesBrowser {
         eagerJsTransferBytes: scriptResources.reduce((sum, entry) => sum + entry.transferSize, 0),
       });
     } finally {
-      page.off("pageerror", onError);
       network.stop();
       await oldFrame?.dispose();
       await page

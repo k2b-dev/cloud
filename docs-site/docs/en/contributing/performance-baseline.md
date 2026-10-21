@@ -568,6 +568,13 @@ in this test and has null panel metrics. WebKit remains unthrottled.
 Failures and unavailable engines remain visible in the result and summary;
 a failed measured profile makes the command fail.
 
+Native uncaught exceptions, unhandled rejections, and island failures are
+recorded across the host and same-origin provider documents through the tab's
+shared session storage. Playwright's WebKit `pageerror` also includes handled
+fetch denials, so it does not define this error
+boundary. Required document, script, and stylesheet responses retain their
+separate strict network checks.
+
 Request starts use the same browser-time window in Playwright and Chromium's
 CDP evidence. Playwright exposes start timing with the response; a delayed
 event for a request begun before the measurement is excluded after that

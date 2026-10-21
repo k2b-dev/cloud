@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser } from "playwright";
+import { panelEndState } from "../../../../scripts/perf-baseline/panel-probe";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
 import { recordPageChangeNetwork } from "./page-change-network";
+import { installPageChangeProbe, pageChangeKey } from "./page-change-probe";
 
 let scriptAccepted: (() => void) | undefined;
 let releaseScript: (() => void) | undefined;
@@ -184,6 +186,92 @@ test("an error document containing matching markup is never a successful destina
     expect(failure instanceof Error ? failure.message : "").toContain("returned 500");
   } finally {
     recorder.stop();
+    await context.close();
+  }
+});
+
+const errorSetup = async () => {
+  const state = await setup();
+  await state.page.addInitScript({
+    content: `(${installPageChangeProbe.toString()})({key:${JSON.stringify(pageChangeKey)},panel:${panelEndState.toString()}})`,
+  });
+  await state.page.goto(new URL("/isolated", server.url).href);
+  return state;
+};
+
+test("page-change errors include native exceptions and rejections in the host and same-origin frames", async () => {
+  const { context, page } = await errorSetup();
+  try {
+    await page.evaluate(() => {
+      setTimeout(() => {
+        throw new Error("host crash");
+      }, 0);
+      setTimeout(() => {
+        void Promise.reject(new Error("host rejection"));
+      }, 0);
+    });
+    await page.waitForFunction(() => window.__mailPageChange.errors().some((error) => error.includes("host rejection")), undefined, {
+      timeout: 1000,
+    });
+    expect(await page.evaluate(() => window.__mailPageChange.errors().some((error) => error.includes("host crash")))).toBe(true);
+    const frameLoaded = page.waitForEvent(
+      "framenavigated",
+      (frame) => frame !== page.mainFrame() && new URL(frame.url()).pathname === "/child",
+    );
+    await page.evaluate(() => {
+      const frame = document.createElement("iframe");
+      frame.src = "/child";
+      document.body.append(frame);
+    });
+    const frame = await frameLoaded;
+    await frame.evaluate(() => {
+      setTimeout(() => {
+        throw new Error("frame crash");
+      }, 0);
+      setTimeout(() => {
+        void Promise.reject(new Error("frame rejection"));
+      }, 0);
+    });
+    await page.waitForFunction(() => window.__mailPageChange.errors().some((error) => error.includes("frame rejection")), undefined, {
+      timeout: 1000,
+    });
+    const errors = await page.evaluate(() => window.__mailPageChange.errors());
+    for (const message of ["host crash", "host rejection", "frame crash", "frame rejection"])
+      expect(errors.some((error) => error.includes(message))).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a handled fetch denial is not an uncaught page-change error", async () => {
+  const { context, page } = await errorSetup();
+  try {
+    // WebKit reports this handled rejection as a JavaScript console error. Playwright
+    // promotes it to pageerror even though neither native error event fires.
+    const reported =
+      browserName === "webkit"
+        ? page.waitForEvent("pageerror", { timeout: 1000 }).then(
+            (error) => error,
+            (error: unknown) => error,
+          )
+        : undefined;
+    const denied = new URL("/catalog", server.url);
+    denied.hostname = "localhost"; // Different origin; this server sends no CORS permission.
+    const handled = await page.evaluate(async (url) => {
+      try {
+        await fetch(url);
+        return false;
+      } catch {
+        return true;
+      }
+    }, denied.href);
+    expect(handled).toBe(true);
+    if (reported) {
+      const error = await reported;
+      expect(error instanceof Error ? error.name : "").toContain("Fetch API cannot load");
+    }
+    expect(await page.evaluate(() => window.__mailPageChange.errors())).toEqual([]);
+  } finally {
     await context.close();
   }
 });

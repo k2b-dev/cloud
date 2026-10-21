@@ -34,15 +34,21 @@ export const pageChangeKey = "cloud-mail-page-change";
 
 /** Stored epoch times survive real document loads; the same probe also observes swaps. */
 export function installPageChangeProbe({ key, panel }: { key: string; panel: typeof panelEndState }) {
-  if (window !== window.top) return;
   const errorKey = `${key}:errors`;
   const errors = (): string[] => JSON.parse(sessionStorage.getItem(errorKey) ?? "[]");
+  // Same-origin provider frames share this tab's sessionStorage. Capture native
+  // exceptions/rejections there too; WebKit's console-derived pageerror also
+  // reports handled fetch denials.
+  window.addEventListener("error", (event) => {
+    sessionStorage.setItem(errorKey, JSON.stringify([...errors(), event.message]));
+  });
   window.addEventListener("unhandledrejection", (event) => {
     sessionStorage.setItem(errorKey, JSON.stringify([...errors(), String(event.reason)]));
   });
   document.addEventListener("ssr:island-error", () => {
     sessionStorage.setItem(errorKey, JSON.stringify([...errors(), "ssr:island-error during page change"]));
   });
+  if (window !== window.top) return;
   const now = () => performance.timeOrigin + performance.now();
   const read = (): Watch | null => JSON.parse(sessionStorage.getItem(key) ?? "null");
   const write = (watch: Watch) => sessionStorage.setItem(key, JSON.stringify(watch));
