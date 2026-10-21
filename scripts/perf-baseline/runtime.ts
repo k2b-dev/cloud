@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { connect } from "node:tls";
 import { z } from "zod";
 
 export const repository = resolve(import.meta.dir, "../..");
@@ -396,6 +398,30 @@ export class Runtime {
       this.signal,
     );
     console.log(`Production gateway through Caddy TLS + HTTP/2: ${this.origin} (${this.prefix})`);
+  }
+
+  /** Pin this run's leaf public key; Chromium then keeps a real HTTP cache. */
+  async browserSpki(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const socket = connect({ host: "127.0.0.1", port: this.port, servername: "localhost", rejectUnauthorized: false });
+      socket.setTimeout(5000, () => socket.destroy(new Error("Local certificate read timed out")));
+      socket.once("error", reject);
+      socket.once("secureConnect", () => {
+        try {
+          const cert = socket.getPeerX509Certificate();
+          if (!cert) throw new Error("Local TLS endpoint supplied no certificate");
+          resolve(
+            createHash("sha256")
+              .update(cert.publicKey.export({ type: "spki", format: "der" }))
+              .digest("base64"),
+          );
+        } catch (error) {
+          reject(error);
+        } finally {
+          socket.destroy();
+        }
+      });
+    });
   }
 
   async startBrowsers(version: string) {
