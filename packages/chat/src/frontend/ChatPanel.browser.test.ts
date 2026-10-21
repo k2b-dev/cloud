@@ -719,6 +719,7 @@ for (const preparation of ["resource", "image"] as const) {
           await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
         }
         const composer = panel.locator('textarea:not([aria-hidden="true"])');
+        await composer.fill("Text and attachment stay together");
         if (preparation === "resource") {
           const reading = page.waitForRequest("**/api/capabilities/v1/queries/notebooks/note.read");
           await composer.evaluate((element, ref) => {
@@ -739,6 +740,13 @@ for (const preparation of ["resource", "image"] as const) {
           await panel.locator('html[data-image-reading="true"]').waitFor();
         }
         expect(await composer.isDisabled()).toBe(true);
+        await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
+        const newChat = panel.getByRole("dialog").getByRole("button", { name: "New chat", exact: true });
+        expect(await newChat.isDisabled()).toBe(true);
+        // Even a synthetic activation cannot change the identity of the draft being prepared.
+        await newChat.dispatchEvent("click");
+        expect(fixture.assistant.conversations.size).toBe(unknownCreation ? 1 : 0);
+        await panel.getByRole("dialog").press("Escape");
         expect(await panel.getByRole("button", { name: "Save drafts", exact: true }).isDisabled()).toBe(true);
         if (unknownCreation)
           expect(await panel.getByRole("button", { name: "Leave despite unclear creation", exact: true }).isDisabled()).toBe(true);
@@ -756,6 +764,10 @@ for (const preparation of ["resource", "image"] as const) {
         await page.locator('[data-cloud-panel-provider="assistant"]').click();
         await panel.getByText(preparation === "resource" ? "Synthetic note" : "synthetic.png", { exact: true }).waitFor();
         expect(fixture.assistant.conversations.size).toBe(1);
+        expect(await composer.inputValue()).toBe("Text and attachment stay together");
+        const saved = [...fixture.assistant.conversations.values()][0]!.draft.content;
+        expect(saved).toContainEqual({ type: "text", text: "Text and attachment stay together" });
+        expect(saved.some((part) => part.type !== "text")).toBe(true);
       } catch (error) {
         console.error(await page.frameLocator("[data-cloud-panel-frame]").locator("body").innerText());
         throw error;

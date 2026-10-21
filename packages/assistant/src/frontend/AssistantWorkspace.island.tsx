@@ -738,7 +738,7 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
   const createConversation = async (focus: boolean, projectId?: string, shouldNavigate: boolean | (() => boolean) = true) => {
-    if (newConversation.loading()) return null;
+    if (newConversation.loading() || composerPicking() > 0) return null;
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
   };
@@ -951,7 +951,7 @@ export default function AssistantWorkspace(props: Props) {
     void consumeCommandLink();
   });
   createEffect(() => {
-    if (newConversation.loading()) return;
+    if (newConversation.loading() || composerPicking() > 0) return;
     const project = activeProject() ?? projects().find((project) => project.id === activeConversation()?.projectId);
     onCleanup(
       registerContextAwareCommand({
@@ -2407,7 +2407,7 @@ export default function AssistantWorkspace(props: Props) {
           activeView={approvalsOpen() ? "approvals" : "chat"}
           projects={projects()}
           activeProjectId={activeProject()?.id ?? null}
-          creatingConversation={newConversation.loading}
+          creatingConversation={() => newConversation.loading() || composerPicking() > 0}
           onNewConversation={() => void createAndFocusConversation()}
           onCreateProject={async () => {
             const project = await openAssistantCreateProjectDialog();
