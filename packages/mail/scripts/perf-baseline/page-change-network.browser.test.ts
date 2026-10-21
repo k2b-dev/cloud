@@ -104,6 +104,47 @@ test("cached JavaScript has zero Chromium encoded transfer on a real document ch
   }
 });
 
+test("a delayed request event from before the measurement contributes no bytes", async () => {
+  const { context, page, cdp } = await setup();
+  let recorder: ReturnType<typeof recordPageChangeNetwork> | undefined;
+  try {
+    const accepted = new Promise<void>((resolve) => {
+      scriptAccepted = resolve;
+    });
+    const requested = page.waitForRequest("**/slow.js");
+    await page.evaluate(() => {
+      const script = document.createElement("script");
+      script.src = "/slow.js";
+      document.head.append(script);
+    });
+    const old = await requested;
+    await accepted;
+    // Browser timestamps are the subject. A frame puts this start before the recorder's host boundary.
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    recorder = recordPageChangeNetwork(page, "/isolated", cdp);
+    // Model a delayed Playwright-channel delivery after CDP already reported this start.
+    // Its startTime is populated only when the response arrives, not at this event.
+    const emit: unknown = Reflect.get(page, "emit");
+    if (typeof emit !== "function") throw new Error("Playwright no longer supports replaying a request event");
+    emit.call(page, "request", old);
+    releaseScript?.();
+    releaseScript = undefined;
+    const response = await old.response();
+    if (!response) throw new Error("Missing delayed script response");
+    await response.finished();
+    await page.goto(new URL("/isolated", server.url).href);
+    const sizes = await recorder.finish(1000);
+    expect(sizes.htmlBytes).toBeGreaterThan(0);
+    expect(sizes.jsBytes).toBe(0);
+  } finally {
+    releaseScript?.();
+    releaseScript = undefined;
+    scriptAccepted = undefined;
+    recorder?.stop();
+    await context.close();
+  }
+}, 20_000);
+
 test("a failed stylesheet rejects the page change even when destination content exists", async () => {
   const { context, page, cdp } = await setup();
   const recorder = recordPageChangeNetwork(page, "/target", cdp);

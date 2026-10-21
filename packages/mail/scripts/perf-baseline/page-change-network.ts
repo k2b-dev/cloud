@@ -97,10 +97,18 @@ export function recordPageChangeNetwork(page: Page, target: string, cdp?: CDPSes
       endedAt = Date.now();
       collecting = false;
       const frozen = [...requests];
+      const excluded = new Set<Request>();
       const outcomes = await boundedSettlement(
         frozen.map(async ([request, record]) => {
           // A known HTTP failure needs no successful finish event (which browsers may omit for rejected CSS).
           const response = await request.response();
+          // Timing arrives with the response. A delayed Playwright event can describe a start
+          // before our listener was installed; use the same browser-time window as CDP.
+          const startedAt = request.timing().startTime;
+          if (startedAt > 0 && (startedAt < beganAt || startedAt > endedAt)) {
+            excluded.add(request);
+            return null;
+          }
           if (response && !response.ok())
             throw new Error(`Page-change resource returned ${response.status()}: ${new URL(request.url()).pathname}`);
           return record.done;
@@ -109,12 +117,13 @@ export function recordPageChangeNetwork(page: Page, target: string, cdp?: CDPSes
       );
       const failed = outcomes.flatMap((error, index) => (error ? [`${new URL(frozen[index]![0].url()).pathname}: ${error}`] : []));
       if (failed.length) throw new Error(`Page-change resource failed: ${failed.join("; ")}`);
+      const measured = frozen.filter(([request]) => !excluded.has(request));
       // Playwright and our CDP session deliver on separate channels. Keep accepting CDP starts
       // by their browser timestamp until the frozen Playwright set settles, then drain this channel.
       if (cdp) await cdp.send("Runtime.evaluate", { expression: "0" });
       const encoded = cdp
         ? matchPageChangeTransfers(
-            frozen.map(([request]) => request.url()),
+            measured.map(([request]) => request.url()),
             [...transfers.values()],
           )
         : [];
@@ -126,7 +135,7 @@ export function recordPageChangeNetwork(page: Page, target: string, cdp?: CDPSes
       }
       let destination = false;
       const sizes = { htmlBytes: 0, jsBytes: 0, cssBytes: 0 };
-      for (const [request, record] of frozen) {
+      for (const [request, record] of measured) {
         const response = await request.response();
         if (!response) throw new Error(`Missing page-change response: ${new URL(request.url()).pathname}`);
         if (new URL(request.url()).pathname === target && request.frame() === page.mainFrame() && record.key === "htmlBytes") {

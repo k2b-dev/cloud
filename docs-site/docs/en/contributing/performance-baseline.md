@@ -568,6 +568,12 @@ in this test and has null panel metrics. WebKit remains unthrottled.
 Failures and unavailable engines remain visible in the result and summary;
 a failed measured profile makes the command fail.
 
+Request starts use the same browser-time window in Playwright and Chromium's
+CDP evidence. Playwright exposes start timing with the response; a delayed
+event for a request begun before the measurement is excluded after that
+timing becomes available. Required requests inside the window still need
+their own successful response and transfer evidence.
+
 The Chromium desktop sequence records a GC snapshot at the start and after
 50, 100, and 150 alternating mailbox/automations changes. It reports heap,
 DOM nodes, all DOM listener counts, registered window/document listeners,
