@@ -1257,6 +1257,13 @@ Parse/serialize use a URI-encoded JSON string; normalize accepts a decoded objec
 `appWorkspaceDetailElementId` returns the Detail region's DOM id for
 `aria-controls`. Pass the same stable `id` as `AppWorkspace.Detail`.
 
+With `Detail.onOpen`, a responsive layout that hides a focused Details control
+moves focus to a visible, enabled control for the same Detail in the same
+workspace. Application controls participate through this `aria-controls`
+reference. An open `phone="page"` Detail receives focus on its title instead.
+The transfer does not open or close the panel. Moving focus elsewhere takes
+precedence.
+
 ## Accessibility
 
 `MainPane.label` names the region. Sidebar icon actions and item actions require a clear `label`.

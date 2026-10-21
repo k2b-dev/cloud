@@ -46,7 +46,12 @@ const mainContent = () => {
       document.body.dataset.toggleClicks = String(Number(document.body.dataset.toggleClicks || 0) + 1);
       setOpen(value => !value);
     });
-    toolbar.append(toggle);
+    if (params.has("responsive-control")) {
+      const access = document.createElement("span");
+      access.id = "reader-access";
+      access.append(toggle);
+      toolbar.append(access);
+    } else toolbar.append(toggle);
   }
   let hint = null;
   if (params.has("moved-hint")) {
@@ -149,6 +154,13 @@ const load = async (width: number, height: number, params = "", options: Browser
         : ".k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}"
     }.fixture-main{padding:var(--k2b-workspace-detail-inset)}.fixture-date{width:1px}${
       new URLSearchParams(params).has("wide") ? ".fixture-table td,.fixture-table th{min-width:240px}" : ""
+    }${
+      new URLSearchParams(params).has("responsive-control")
+        ? `
+      @media (min-width:48rem){#reader-access{display:none}}
+      @media not all and (min-width:48rem){#app [data-app-workspace-detail-toggle]{display:none}}
+    `
+        : ""
     }</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
   await page.evaluate((params) => {
@@ -202,6 +214,119 @@ const expectInset = (shape: Awaited<ReturnType<typeof geometry>>) => {
 };
 
 describe("floating workspace detail", () => {
+  for (const initial of [false, true]) {
+    test(`responsive Details controls transfer focus in both directions (${initial ? "open" : "closed"})`, async () => {
+      const page = await load(767, 900, `request-control=1&responsive-control=1&reopen=1${initial ? "&initial=1" : ""}`);
+      try {
+        await settled(page);
+        const reader = page.locator("#reader-toggle");
+        const shared = page.locator("[data-app-workspace-detail-toggle]");
+        const panel = page.locator(".k2b-app-workspace__detail");
+        expect(await shared.isVisible()).toBe(false);
+        await reader.focus();
+        await page.setViewportSize({ width: 768, height: 900 });
+        await settled(page);
+        expect(await shared.isVisible()).toBe(true);
+        expect(await shared.evaluate((element) => document.activeElement === element)).toBe(true);
+        expect(await reader.isVisible()).toBe(false);
+        expect(await panel.evaluate((element) => element.hasAttribute("hidden"))).toBe(!initial);
+        await page.setViewportSize({ width: 767, height: 900 });
+        await settled(page);
+        expect(await reader.evaluate((element) => document.activeElement === element)).toBe(true);
+        expect(await shared.isVisible()).toBe(false);
+        expect(await panel.evaluate((element) => element.hasAttribute("hidden"))).toBe(!initial);
+        expect(await page.locator("body").getAttribute("data-toggle-clicks")).toBeNull();
+        expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  for (const moved of ["focus", "pointer", "blur"] as const) {
+    test(`responsive Details controls respect an intentional ${moved} departure`, async () => {
+      const page = await load(767, 900, "request-control=1&responsive-control=1&reopen=1");
+      try {
+        await settled(page);
+        await page.evaluate(() => {
+          const outside = document.createElement("button");
+          outside.id = "outside";
+          outside.textContent = "Outside workspace";
+          document.body.prepend(outside);
+        });
+        await page.locator("#reader-toggle").focus();
+        if (moved === "focus") await page.locator("#outside").focus();
+        else if (moved === "pointer") await page.locator("#outside").click();
+        else await page.locator("#reader-toggle").evaluate((element) => element.blur());
+        const active = await page.evaluate(() => document.activeElement?.id ?? "");
+        await page.setViewportSize({ width: 768, height: 900 });
+        await settled(page);
+        // Some WebKit platforms leave focus on the old control after a pointer click.
+        // Once that control hides, body is correct; a responsive rescue is not.
+        if (active === "reader-toggle" || active === "")
+          expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+        else expect(await page.evaluate(() => document.activeElement?.id)).toBe(active);
+        expect(await page.locator("[data-app-workspace-detail-toggle]").evaluate((element) => document.activeElement === element)).toBe(
+          false,
+        );
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  test("responsive Details controls preserve the selection-only column title target", async () => {
+    const page = await load(1194, 900, "request-control=1&initial=1");
+    try {
+      await settled(page);
+      await page.locator("[data-app-workspace-detail-toggle]").focus();
+      await page.setViewportSize({ width: 1920, height: 900 });
+      await settled(page);
+      expect(await page.locator(".k2b-app-workspace__detail h2").evaluate((element) => document.activeElement === element)).toBe(true);
+      expect(await page.locator("#reader-toggle").evaluate((element) => document.activeElement === element)).toBe(false);
+    } finally {
+      await page.close();
+    }
+  });
+  test("responsive Details controls keep focus inside an open phone page", async () => {
+    const page = await load(768, 900, "request-control=1&responsive-control=1&reopen=1&initial=1&phone-page=1");
+    try {
+      await settled(page);
+      await page.locator("[data-app-workspace-detail-toggle]").focus();
+      await page.setViewportSize({ width: 767, height: 900 });
+      await settled(page);
+      expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(false);
+      expect(await page.locator(".k2b-app-workspace__detail h2").evaluate((element) => document.activeElement === element)).toBe(true);
+      expect(await page.locator("#reader-toggle").evaluate((element) => Boolean(element.closest("[inert]")))).toBe(true);
+      expect(await page.locator(".k2b-app-workspace__detail").evaluate((element) => element.hasAttribute("hidden"))).toBe(false);
+    } finally {
+      await page.close();
+    }
+  });
+  test("responsive Details controls exclude disabled and nested replacements", async () => {
+    const page = await load(767, 900, "request-control=1&responsive-control=1&reopen=1");
+    try {
+      await settled(page);
+      await page.evaluate(() => {
+        document.querySelector<HTMLButtonElement>("[data-app-workspace-detail-toggle]")!.disabled = true;
+        const nested = document.createElement("div");
+        nested.dataset.k2bAppWorkspace = "";
+        const button = document.createElement("button");
+        button.id = "nested-control";
+        button.textContent = "Other workspace";
+        button.setAttribute("aria-controls", document.querySelector("#reader-toggle")!.getAttribute("aria-controls")!);
+        nested.append(button);
+        document.querySelector(".fixture-main")!.append(nested);
+      });
+      await page.locator("#reader-toggle").focus();
+      await page.setViewportSize({ width: 768, height: 900 });
+      await settled(page);
+      expect(await page.locator("[data-app-workspace-detail-toggle]").evaluate((element) => document.activeElement === element)).toBe(
+        false,
+      );
+      expect(await page.locator("#nested-control").evaluate((element) => document.activeElement === element)).toBe(false);
+    } finally {
+      await page.close();
+    }
+  });
   for (const [width, height] of [
     [1366, 900],
     [1920, 1080],
