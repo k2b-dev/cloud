@@ -197,3 +197,31 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
     outage_started_at TIMESTAMPTZ, last_outage_ended_at TIMESTAMPTZ
   )`.simple();
 };
+
+/** SQL console control data. migrate() holds the installation transaction lock. */
+export const installSqlConsole = async (sql: TransactionSQL, timezone: string): Promise<void> => {
+  await sql`ALTER TABLE pulse.bases ADD COLUMN icon TEXT NOT NULL DEFAULT 'ti ti-chart-line',
+    ADD COLUMN color TEXT NOT NULL DEFAULT 'blue', ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'`.simple();
+  await sql`UPDATE pulse.bases SET timezone=${timezone}`;
+  await sql`ALTER TABLE pulse.base_stores ADD COLUMN queries_per_hour INTEGER NOT NULL DEFAULT 600 CHECK (queries_per_hour > 0)`.simple();
+  await sql`CREATE TABLE pulse.saved_queries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), short_id TEXT NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+    base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
+    sql TEXT NOT NULL CHECK (octet_length(sql) BETWEEN 1 AND 16384), params JSONB NOT NULL DEFAULT '{}'::jsonb,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_by TEXT, updated_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_saved_queries_short_id ON pulse.saved_queries(short_id)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_saved_queries_name ON pulse.saved_queries(base_id,lower(name))`.simple();
+  await sql`CREATE INDEX ON pulse.saved_queries(base_id,updated_at DESC,id)`.simple();
+  // A receipt survives later revisions/deletion so a retried action never writes twice.
+  await sql`CREATE TABLE pulse.saved_query_operations (
+    base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
+    operation_key TEXT NOT NULL, input_hash TEXT NOT NULL, response JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now()+interval '24 hours'),
+    PRIMARY KEY(base_id,operation_key)
+  )`.simple();
+  await sql`CREATE INDEX ON pulse.saved_query_operations(expires_at)`.simple();
+};

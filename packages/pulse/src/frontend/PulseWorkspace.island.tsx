@@ -1,6 +1,6 @@
 import { clipboard } from "@k2b/stdlib/browser";
 import { AppWorkspace, Button, NoticeCard, toast } from "@k2b/ui";
-import { createEffect, createSignal, on, Show } from "solid-js";
+import { createEffect, createSignal, on, onMount, Show } from "solid-js";
 import { usePulseMessages } from "./use-messages";
 import { createBaseController } from "./workspace/base-controller";
 import ComingBackView from "./workspace/ComingBackView";
@@ -8,6 +8,7 @@ import { navigatePulseWorkspace } from "./workspace/navigation";
 import PulseSidebar from "./workspace/PulseSidebar";
 import { installPeriodicRefresh } from "./workspace/periodic-refresh";
 import SourcesView, { SourcesDetailPanel, type SourcesViewProps } from "./workspace/SourcesView";
+import SqlConsoleView from "./workspace/SqlConsoleView";
 import { createSourceController } from "./workspace/source-controller";
 import type { PulseWorkspaceProps } from "./workspace/types";
 import { createPulseWorkspaceQueries } from "./workspace/workspace-queries";
@@ -61,6 +62,10 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   });
   const { openSettings } = createBaseController({
     bases,
+    canAdmin: () => props.initialPermissions?.admin ?? false,
+    admins: props.initialSettings?.admins,
+    maxRawRetentionDays: props.initialSettings?.maxRawRetentionDays,
+    initialTab: props.initialRouteState.settings,
     selectedBase,
     loading,
     settingsDialogOpen,
@@ -73,6 +78,9 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     refreshWorkspace: refresh,
     writeBlocked,
     navigateToBase: (baseId) => navigatePulseWorkspace({ baseId, state: { view: "sources" } }),
+  });
+  onMount(() => {
+    if (props.initialRouteState.settings) void openSettings();
   });
   const actions = createSourceController({
     selectedBaseId,
@@ -144,6 +152,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         settingsDisabled={!selectedBase() || loading()}
         openSettings={openSettings}
         openSources={openSources}
+        openSql={() => navigate({ view: "sql" })}
         openComingBack={() => navigate({ view: "coming-back" })}
       />
       <AppWorkspace.Content>
@@ -157,7 +166,19 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
               </NoticeCard>
             )}
           </Show>
-          <Show when={activeView() === "sources"} fallback={<ComingBackView openSources={openSources} />}>
+          <Show
+            when={activeView() === "sources"}
+            fallback={
+              <Show when={activeView() === "sql"} fallback={<ComingBackView openSources={openSources} />}>
+                <SqlConsoleView
+                  base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
+                  route={props.initialRouteState}
+                  snapshot={props.initialSql}
+                  canWrite={props.initialPermissions?.write ?? false}
+                />
+              </Show>
+            }
+          >
             <SourcesView {...sourceProps} />
           </Show>
         </AppWorkspace.Main>

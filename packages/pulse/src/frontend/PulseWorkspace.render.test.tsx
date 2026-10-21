@@ -73,13 +73,39 @@ test("sources render from their server snapshot without measurement counts or re
 
 test("one in-place hint renders in each locale with a sources action", () => {
   for (const [locale, title, action] of [
-    ["en", "Dashboards and questions are coming back", "Go to sources"],
-    ["de", "Dashboards und Fragen kommen zurück", "Zu den Quellen"],
+    ["en", "Dashboards are coming back", "Go to sources"],
+    ["de", "Dashboards kommen zurück", "Zu den Quellen"],
   ] as const) {
     const html = render("coming-back", locale);
     expect(html.split(title)).toHaveLength(2);
     expect(html).toContain(action);
     expect(html).not.toContain("Warehouse importer");
     expect(html).not.toContain("<hr");
+  }
+});
+
+test("SQL console SSR renders the same initial draft as the controller without browser effects", async () => {
+  const { default: SqlConsoleView } = await import("./workspace/SqlConsoleView");
+  for (const [locale, title, save, helper] of [
+    ["en", "New query", "Save as", "Helper views: rate, increase, histogram_quantile"],
+    ["de", "Neue Abfrage", "Speichern unter", "Hilfen als Views: rate, increase, histogram_quantile"],
+  ] as const) {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(SqlConsoleView, {
+            base: { id: "Base01", name: "Operations" },
+            route: { view: "sql", sourceId: "", sql: "SELECT 123", params: {} },
+            snapshot: undefined,
+            canWrite: false,
+          });
+        },
+      }),
+    );
+    expect(html).toMatch(/<textarea[^>]*>\nSELECT 123<\/textarea>/);
+    expect(html).toContain(title);
+    expect(html).not.toContain(save);
+    expect(html).toContain(helper);
   }
 });

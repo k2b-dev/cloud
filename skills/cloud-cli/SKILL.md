@@ -43,7 +43,8 @@ Start with the reference named here; it holds the exact syntax and the safe work
 | Import a CSV file into a table, including Windows-1252 files, decimal commas, and `dd.mm.yyyy` dates | `cld grids reference`, section "Import a CSV file"; there is no CSV import command |
 | Plan tasks in Spaces, write task descriptions and comments, or link a note or file to a task | `cld spaces reference` |
 | Import or export contacts | `cld contacts reference` |
-| Set up Pulse sources, ingest batches, or inspect collection status | `cld pulse reference`, then `cld pulse reference ingest.md`; SQL questions arrive later |
+| Query Pulse measurements or save SQL | `cld pulse reference sql.md`; `cld pulse sql --base <id> --file <path>` and `cld pulse queries --help`; one base per query |
+| Set up Pulse sources, ingest batches, or inspect collection status | `cld pulse reference`, then `cld pulse reference ingest.md` |
 | Set up the Assistant for someone: Projects, knowledge, references, Skills, memories, or routines | `cld assistant reference how-it-works.md` first: whose permissions it uses, what is live or a copy, and what needs approval. Then `cld assistant reference` |
 
 ## Agent workflow

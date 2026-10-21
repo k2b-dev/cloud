@@ -24,7 +24,7 @@ export const jsonFetch = async <T>(
   url: string,
   init?: RequestInit,
   fallback = "Request failed",
-  errorFromBody?: (status: number, body: unknown) => Error,
+  errorFromBody?: (status: number, body: unknown, headers: Headers) => Error,
 ): Promise<T> => {
   const response = await fetch(url, {
     ...init,
@@ -32,7 +32,7 @@ export const jsonFetch = async <T>(
   });
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
-    throw errorFromBody ? errorFromBody(response.status, body) : new Error(messageFromBody(body, fallback));
+    throw errorFromBody ? errorFromBody(response.status, body, response.headers) : new Error(messageFromBody(body, fallback));
   }
   return readSuccess<T>(response);
 };

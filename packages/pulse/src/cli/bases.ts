@@ -55,6 +55,8 @@ export const baseCommands = [
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.base", base))) {
         ctx.print(`${base.name} (${base.id})`);
+        ctx.print(`Timezone: ${base.timezone}`);
+        ctx.print(`Icon: ${base.icon}; color: ${base.color}`);
         ctx.print(`Raw retention: ${base.rawRetentionDays} days`);
         ctx.print(`Rollup retention: ${base.rollupRetentionDays} days`);
         ctx.print(`Sensitive retention: ${base.sensitiveRetentionHours} hours`);
@@ -88,6 +90,9 @@ export const baseCommands = [
         name: "confirm-shorter-retention",
         description: "Confirm data removal by shorter retention using current settings, even if they changed since the preview",
       }),
+      icon: flag.string({ description: "Tabler icon from the Pulse base icon list" }),
+      color: flag.string({ description: "zinc, blue, emerald, amber or red" }),
+      timezone: flag.string({ description: "IANA timezone, for example Europe/Berlin" }),
       name: flag.string({ description: "New base name" }),
       description: flag.string({ description: "New base description" }),
       rawRetentionDays: flag.int({ name: "raw-retention-days", min: 1, max: 3650, description: "Raw telemetry retention in days" }),
@@ -108,6 +113,9 @@ export const baseCommands = [
     async run({ ctx, args, flags }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       const patch = {
+        icon: flags.icon,
+        color: flags.color,
+        timezone: flags.timezone,
         name: flags.name,
         description: flags.description,
         rawRetentionDays: flags.rawRetentionDays,

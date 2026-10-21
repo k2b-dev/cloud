@@ -13,6 +13,7 @@ const ui = new URL("../../../../ui/", import.meta.url).pathname;
 const origin = "https://cloud.example.test";
 const measuredAt = "2026-10-17T12:30:00.000Z";
 const limits = {
+  queriesPerHour: 600,
   valuesPerMinute: 2000,
   bytesPerMinute: 5_242_880,
   storageBytes: 5_000_000_000,
