@@ -35,7 +35,9 @@ its status remains unknown, **Leave despite unclear message status** requires
 confirmation. Leaving does not cancel or retry the message. The confirmation
 explains which local text and attachments will be discarded; other drafts and
 unfinished uploads or saves remain protected. An unconfirmed conversation creation
-keeps its original request identity for retries. An empty creation attempt can be
+keeps its original request identity and waits for an explicit retry. If another tab
+has since saved a draft in that conversation, Assistant shows both drafts for the
+reader to resolve instead of replacing the saved draft. An empty creation attempt can be
 abandoned with a separate explanation in the same exit dialog; this does not delete
 a conversation that may already exist. A nonempty new draft remains protected.
 On phones, reopen the sheet after
@@ -44,7 +46,8 @@ recovery of unsaved work.
 
 Assistant starts without choosing an unrelated recent conversation. Its
 conversation selector stays inside the panel, and **Open full view** opens the
-current conversation in the application window. A shared page reference enters
+current conversation in the application window. Application commands in Assistant's
+composer are available in the full view. A shared page reference enters
 the draft only through **Attach current view**, after the existing resource
 reader checks access. Later host context changes never reassign that attachment
 or an already submitted turn.

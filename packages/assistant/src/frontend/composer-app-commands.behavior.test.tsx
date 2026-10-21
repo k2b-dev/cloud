@@ -89,6 +89,7 @@ const mount = async (
     embedded?: boolean;
     conflict?: boolean;
     loseFirstCreate?: boolean;
+    replayedDraft?: AiConversation["draft"];
     project?: boolean;
     newChat?: boolean;
     content?: AiConversation["draft"]["content"];
@@ -176,7 +177,7 @@ const mount = async (
           id: "new001",
           shortId: "new001",
           projectId: options.project ? project.id : null,
-          draft: { content: [], revision: 0, updatedAt: null },
+          draft: options.replayedDraft ?? { content: [], revision: 0, updatedAt: null },
         });
       }
       if (url.pathname.endsWith("/draft") && init?.method === "PUT") {
@@ -593,3 +594,28 @@ test("the panel live guard holds a dirty composer and an in-flight save until co
     release();
   }
 });
+
+for (const project of [false, true]) {
+  test(`a create replay preserves local and remote drafts without saving over the remote revision (project: ${project})`, async () => {
+    const h = await mount({
+      embedded: true,
+      newChat: !project,
+      project,
+      loseFirstCreate: true,
+      replayedDraft: { content: [{ type: "text", text: "Remote draft B" }], revision: 1, updatedAt: now },
+    });
+    h.choose();
+    await waitFor(() => h.creates.length === 1 && Boolean(h.status()));
+    const retry = [...h.root.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Erstellen erneut versuchen",
+    );
+    expect(retry).toBeDefined();
+    retry!.click();
+    await waitFor(() => h.root.textContent?.includes("Der gespeicherte Entwurf wurde geändert.") ?? false);
+    expect(h.input.value).toBe("Plan /");
+    expect(h.root.textContent).toContain("Remote draft B");
+    expect(h.creates).toHaveLength(2);
+    expect(h.creates[1]).toEqual(h.creates[0]);
+    expect(h.saves).toHaveLength(0);
+  });
+}

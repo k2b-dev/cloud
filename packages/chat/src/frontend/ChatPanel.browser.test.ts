@@ -699,6 +699,10 @@ for (const preparation of ["resource", "image"] as const) {
             window.addEventListener(
               "release-image",
               () => {
+                document.documentElement.dataset.imageReleased = "true";
+                this.addEventListener("loadend", () => {
+                  document.documentElement.dataset.imageReadEnd = this.error?.message ?? "ok";
+                });
                 read.call(this, file);
               },
               { once: true },
@@ -755,7 +759,10 @@ for (const preparation of ["resource", "image"] as const) {
         await page.locator("[data-cloud-panel-close]").click();
         expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
         release();
-        if (preparation === "image") await composer.evaluate(() => window.dispatchEvent(new Event("release-image")));
+        if (preparation === "image") {
+          await composer.evaluate(() => window.dispatchEvent(new Event("release-image")));
+          await panel.locator('html[data-image-read-end="ok"]').waitFor();
+        }
         await panel.getByText(preparation === "resource" ? "Synthetic note" : "synthetic.png", { exact: true }).waitFor();
         await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
         await panel.getByText("Draft not saved yet", { exact: true }).waitFor({ state: "hidden" });
@@ -770,6 +777,16 @@ for (const preparation of ["resource", "image"] as const) {
         expect(saved.some((part) => part.type !== "text")).toBe(true);
       } catch (error) {
         console.error(await page.frameLocator("[data-cloud-panel-frame]").locator("body").innerText());
+        console.error(
+          await page
+            .frameLocator("[data-cloud-panel-frame]")
+            .locator("html")
+            .evaluate((element) => ({
+              dataset: { ...element.dataset },
+              attachments: element.querySelector(".k2b-chat-composer__attachments")?.outerHTML,
+              disabled: element.querySelector("textarea")?.disabled,
+            })),
+        );
         throw error;
       } finally {
         release();
@@ -813,4 +830,188 @@ for (const provider of ["chat", "assistant"] as const) {
       await context.close();
     }
   }, 30_000);
+}
+
+for (const width of [1440, 390]) {
+  test(`Assistant create replay preserves another tab's saved draft at ${width}px`, async () => {
+    fixture.assistant.reset();
+    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en" });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    try {
+      await page.goto(fixture.url + "app/fixture");
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      await page.locator("#open-chat").click();
+      await page.locator('[data-cloud-panel-provider="assistant"]').click();
+      const panel = page.frameLocator("[data-cloud-panel-frame]");
+      await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      const composer = panel.locator('textarea:not([aria-hidden="true"])');
+      await composer.fill("Local draft A");
+      fixture.assistant.loseCreate();
+      await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
+      await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
+      const created = [...fixture.assistant.conversations.values()][0]!;
+      const other = await context.newPage();
+      await other.goto(`${fixture.url}app/assistant?conversation=${created.id}`);
+      await other.locator('html[data-fixture-ready="true"]').waitFor();
+      const saved = other.waitForResponse((response) => response.url().endsWith("/draft") && response.request().method() === "PUT");
+      await other.locator('textarea:not([aria-hidden="true"])').fill("Other tab draft B");
+      const response = await saved;
+      expect(response.ok()).toBe(true);
+      const revision = created.draft.revision;
+      const writes = fixture.assistant.requests.filter((request) => request.path.endsWith("/draft")).length;
+      await panel.getByRole("button", { name: "Retry creating conversation", exact: true }).click();
+      await panel.getByText("The saved draft changed. Your local text has been kept.", { exact: true }).waitFor();
+      expect(await composer.inputValue()).toBe("Local draft A");
+      await panel.getByText("Other tab draft B", { exact: true }).waitFor();
+      expect(created.draft).toMatchObject({ revision, content: [{ type: "text", text: "Other tab draft B" }] });
+      expect(fixture.assistant.requests.filter((request) => request.path.endsWith("/draft"))).toHaveLength(writes);
+      await page.locator("[data-cloud-panel-close]").click();
+      expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
+      const creates = fixture.assistant.requests.filter((request) => request.path === "/api/ai/conversations");
+      expect(creates).toHaveLength(2);
+      expect(creates[1]!.body).toEqual(creates[0]!.body);
+      if (width === 390 && process.env.PANEL_SCREENSHOTS) {
+        await panel.getByRole("button", { name: "Use saved draft", exact: true }).scrollIntoViewIfNeeded();
+        await page.screenshot({
+          path: resolve(process.env.PANEL_SCREENSHOTS, "assistant-create-conflict-light-390.png"),
+          animations: "disabled",
+        });
+      }
+      await panel.getByRole("button", { name: "Use saved draft", exact: true }).click();
+      expect(await composer.inputValue()).toBe("Other tab draft B");
+      await page.locator("[data-cloud-panel-close]").click();
+      await page.locator("[data-cloud-panel-frame]").waitFor({ state: "detached" });
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+}
+
+for (const width of [1440, 390]) {
+  for (const pending of ["create", "save"] as const) {
+    test(`Assistant full-view Command Escape restores editing during ${pending} at ${width}px`, async () => {
+      fixture.assistant.reset();
+      if (pending === "save") fixture.assistant.addConversation("Chat2B", "Command conversation");
+      const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en" });
+      const attachmentDuringCreate = pending === "create" && width === 390;
+      if (attachmentDuringCreate)
+        await context.addInitScript(() => {
+          const read = FileReader.prototype.readAsDataURL;
+          FileReader.prototype.readAsDataURL = function (file) {
+            document.documentElement.dataset.imageReading = "true";
+            window.addEventListener("release-command-image", () => read.call(this, file), { once: true });
+          };
+        });
+      const page = await context.newPage();
+      page.setDefaultTimeout(8_000);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let opened = 0;
+      await page.route("**/api/capabilities/v1/catalog?*", (route) =>
+        route.fulfill({
+          json: {
+            protocolVersion: 2,
+            apps: [
+              {
+                appId: "chat",
+                appName: "Chat",
+                appIcon: "ti ti-layout-kanban",
+                appDescription: "Tasks",
+                manifest: {
+                  protocolVersion: 2,
+                  appId: "chat",
+                  manifestHash: "a".repeat(64),
+                  types: [],
+                  queries: [],
+                  actions: [],
+                  commands: [
+                    {
+                      localId: "task.compose",
+                      title: "Create task",
+                      description: "Open a task",
+                      icon: "ti ti-checkbox",
+                      keywords: ["task"],
+                      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+                      path: "/app/chat",
+                    },
+                  ],
+                },
+              },
+            ],
+            page: { hasMore: false },
+          },
+        }),
+      );
+      await page.route("**/api/capabilities/v1/commands/**", async (route) => {
+        opened++;
+        await route.fulfill({ status: 503, json: { message: "Unexpected command navigation" } });
+      });
+      await page.route(pending === "create" ? "**/api/ai/conversations" : "**/api/ai/conversations/*/draft", async (route) => {
+        if (route.request().method() === (pending === "create" ? "POST" : "PUT")) await gate;
+        await route.continue();
+      });
+      try {
+        await page.goto(`${fixture.url}app/assistant${pending === "save" ? "?conversation=Chat2B" : ""}`);
+        await page.locator('html[data-fixture-ready="true"]').waitFor();
+        const composer = page.locator('textarea:not([aria-hidden="true"])');
+        await composer.fill("Plan /");
+        await composer.click();
+        const command = page.getByRole("option").filter({ hasText: "Create task" });
+        await command.waitFor();
+        const request = page.waitForRequest(
+          (request) =>
+            request.url().endsWith(pending === "create" ? "/conversations" : "/draft") &&
+            request.method() === (pending === "create" ? "POST" : "PUT"),
+        );
+        await command.click();
+        await request;
+        expect(await composer.evaluate((element: HTMLTextAreaElement) => element.readOnly)).toBe(true);
+        await composer.press("Escape");
+        expect(await composer.isDisabled()).toBe(false);
+        expect(await composer.evaluate((element: HTMLTextAreaElement) => element.readOnly)).toBe(false);
+        await composer.fill("Later edits after Escape");
+        if (attachmentDuringCreate) {
+          await page.locator('input[type="file"]').setInputFiles({
+            name: "command-image.png",
+            mimeType: "image/png",
+            buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2hAAAAABJRU5ErkJggg==", "base64"),
+          });
+          await page.locator('html[data-image-reading="true"]').waitFor();
+        }
+        expect(await composer.inputValue()).toBe("Later edits after Escape");
+        const saved = page.waitForResponse(
+          (response) =>
+            response.url().endsWith("/draft") &&
+            response.request().postData()?.includes("Later edits after Escape") === true &&
+            response.ok(),
+        );
+        release();
+        await saved;
+        if (attachmentDuringCreate) {
+          const savedImage = page.waitForResponse(
+            (response) =>
+              response.url().endsWith("/draft") &&
+              response.request().postData()?.includes("/uploads/command-image.png") === true &&
+              response.ok(),
+          );
+          await composer.evaluate(() => window.dispatchEvent(new Event("release-command-image")));
+          await page.getByText("command-image.png", { exact: true }).waitFor();
+          await savedImage;
+        }
+
+        expect(opened).toBe(0);
+        expect(fixture.assistant.conversations.size).toBe(1);
+        expect(fixture.assistant.submitted()).toBe(0);
+        const content = [...fixture.assistant.conversations.values()][0]!.draft.content;
+        expect(content).toContainEqual({ type: "text", text: "Later edits after Escape" });
+        expect(content.some((part) => part.type === "file" && part.path === "/uploads/command-image.png")).toBe(attachmentDuringCreate);
+      } finally {
+        release();
+        await context.close();
+      }
+    }, 30_000);
+  }
 }
