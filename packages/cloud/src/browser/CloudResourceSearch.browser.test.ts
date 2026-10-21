@@ -357,3 +357,103 @@ describe("streamed search in a browser", () => {
     }
   }, 30_000);
 });
+
+for (const lang of ["en", "de"]) {
+  test(`app launcher uses localized shell names, aliases and normal/new-tab navigation (${lang})`, async () => {
+    searches.length = 0;
+    const view = await open(views[0]!, `/?launcher&public&admin&lang=${lang}`);
+    const { page } = view;
+    try {
+      expect(await page.locator('[role="option"]').count()).toBe(0);
+      const input = page.locator('input[role="combobox"]');
+      await input.fill("admin");
+      await waitForRows(page, 1);
+      const option = page.getByRole("option");
+      expect(await option.innerText()).toContain(lang === "de" ? "Administration" : "Admin");
+      expect(await option.locator("small").innerText()).toBe("App");
+      expect(await option.locator("i").getAttribute("class")).toBe("ti ti-settings");
+      for (const modifier of ["Control", "Meta"]) {
+        const popup = page.waitForEvent("popup");
+        await input.press(`${modifier}+Enter`);
+        const tab = await popup;
+        await tab.waitForURL("**/admin");
+        await tab.close();
+        expect(await input.inputValue()).toBe("admin");
+        expect(await option.getAttribute("aria-selected")).toBe("true");
+      }
+      const popup = page.waitForEvent("popup");
+      await option.click({ modifiers: ["Control"] });
+      const tab = await popup;
+      await tab.waitForURL("**/admin");
+      await tab.close();
+      await input.fill("utilities");
+      await waitForRows(page, 1);
+      expect(await option.innerText()).toContain(lang === "de" ? "Werkzeuge" : "Tools");
+      expect(await option.locator("small").innerText()).toBe("App");
+      expect(searches).toHaveLength(0);
+      await input.press("Enter");
+      await page.waitForURL("**/tools");
+    } finally {
+      await view.close();
+    }
+
+    const admin = await open(views[0]!, `/?launcher&public&admin&lang=${lang}&q=admin`);
+    try {
+      await waitForRows(admin.page, 1);
+      await admin.page.getByRole("option").click();
+      await admin.page.waitForURL("**/admin");
+    } finally {
+      await admin.close();
+    }
+    const publicView = await open(views[1]!, `/?launcher&public&lang=${lang}&q=admin`);
+    try {
+      await publicView.page
+        .getByText(lang === "de" ? "Keine Treffer. Versuche einen anderen Suchbegriff." : "No matches. Try another search term.")
+        .waitFor();
+      expect(await publicView.page.getByRole("option").count()).toBe(0);
+      await publicView.page.locator('input[role="combobox"]').fill("werkzege");
+      await waitForRows(publicView.page, 1);
+      await publicView.page.keyboard.press("Escape");
+      await publicView.page.locator("dialog").waitFor({ state: "detached" });
+    } finally {
+      await publicView.close();
+    }
+  });
+}
+
+test("launcher and chosen resources keep their positions and selection while providers stream", async () => {
+  const first = gate();
+  const second = gate();
+  answer = async (_url, write) => {
+    write({ type: "start", query: "utilities", apps, providers: ["mail", "files"] });
+    await first.opened;
+    write(line("mail", [result("mail", "Utilities invoice", "Invented mail content")]));
+    await second.opened;
+    write(line("files", [result("files", "Utilities guide", "Invented file content")]));
+  };
+  const view = await open(views[0]!, "/?launcher&q=utilities");
+  try {
+    await waitForRows(view.page, 1);
+    const launcher = view.page.getByRole("option").first();
+    const before = await launcher.boundingBox();
+    expect(await launcher.getAttribute("aria-selected")).toBe("true");
+    first.open();
+    await waitForRows(view.page, 2);
+    expect(await launcher.boundingBox()).toEqual(before);
+    expect(await launcher.getAttribute("aria-selected")).toBe("true");
+    await view.page.keyboard.press("ArrowDown");
+    const resource = view.page.getByRole("option").nth(1);
+    const resourceBefore = await resource.boundingBox();
+    second.open();
+    await waitForRows(view.page, 3);
+    expect(await resource.boundingBox()).toEqual(resourceBefore);
+    expect(await resource.getAttribute("aria-selected")).toBe("true");
+    expect(await resource.innerText()).toContain("Utilities invoice");
+    await view.page.keyboard.press("Enter");
+    await view.page.waitForURL("**/app/mail");
+  } finally {
+    first.open();
+    second.open();
+    await view.close();
+  }
+});
