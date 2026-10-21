@@ -91,7 +91,20 @@ describe("Pulse base overview", () => {
       const tab = await browser.newPage({ viewport: view });
       tab.setDefaultTimeout(5_000);
       const errors: string[] = [];
+      const unexpectedRequests: string[] = [];
       tab.on("pageerror", (error) => errors.push(error.message));
+      // The isolated SSR document must not depend on DNS or an external fixture host.
+      await tab.route("**/*", (route) => {
+        unexpectedRequests.push(route.request().url());
+        return route.abort("blockedbyclient");
+      });
+      // The real SSR shell requests branding even though this fixture mounts only the Pulse island.
+      await tab.route(`${origin}/branding/logo`, (route) =>
+        route.fulfill({
+          contentType: "image/svg+xml",
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="#123456"/></svg>',
+        }),
+      );
       await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 503, json: { code: "UNEXPECTED" } }));
       await tab.route(`${origin}/app/pulse/**`, (route) =>
         route.fulfill({
@@ -122,6 +135,15 @@ describe("Pulse base overview", () => {
         await tab.clock.install({ time: new Date(props.initialNow!) });
         await tab.clock.pauseAt(new Date(props.initialNow!));
         await tab.goto(`${origin}/app/pulse/Lad001`);
+        expect(unexpectedRequests).toEqual([]);
+        expect(
+          await tab
+            .locator('img[src="/branding/logo"]')
+            .evaluateAll(
+              (images) =>
+                images.length > 0 && images.every((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0),
+            ),
+        ).toBe(true);
         await tab.evaluate(() => document.fonts.ready);
         await tab.locator(".pulse-overview__headline").waitFor();
         const before = await geometry();
@@ -153,6 +175,7 @@ describe("Pulse base overview", () => {
           expect(activity!.y + activity!.height).toBeLessThanOrEqual(visibleMain!.y + visibleMain!.height);
           expect(await tab.evaluate(() => window.scrollY)).toBe(0);
         }
+        expect(unexpectedRequests).toEqual([]);
         expect(errors).toEqual([]);
       } finally {
         await tab.close();
