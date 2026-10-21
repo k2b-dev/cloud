@@ -38,7 +38,7 @@ const KEYWORDS = new Set([
   "of",
 ]);
 
-export type CodeDisplayLanguage = "ts" | "tsx" | "js" | "jsx" | "script" | "markdown" | "md" | "text";
+export type CodeDisplayLanguage = "ts" | "tsx" | "js" | "jsx" | "script" | "markdown" | "md" | "text" | "sql";
 
 export const escapeCodeHtml = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -182,6 +182,7 @@ export const highlightMarkdownDisplay = (code: string): string => code.split("\n
 
 export const highlightCodeDisplayLines = (code: string, language: CodeDisplayLanguage = "text"): string[] => {
   const lines = code.split("\n");
+  if (language === "sql") return highlightSql(code).split("\n");
 
   if (language === "text") return lines.map((line) => escapeCodeHtml(line || " "));
 
@@ -209,8 +210,82 @@ export const highlightCodeDisplayLines = (code: string, language: CodeDisplayLan
 };
 
 export const highlightCodeDisplay = (code: string, language: CodeDisplayLanguage = "text"): string => {
+  if (language === "sql") return highlightSql(code);
   if (code.includes("\n")) return highlightCodeDisplayLines(code, language).join("\n");
   if (language === "markdown" || language === "md") return highlightMarkdownDisplay(code);
   if (language === "text") return escapeCodeHtml(code);
   return highlightCode(code);
+};
+
+const SQL_KEYWORDS = new Set(
+  "SELECT WITH FROM WHERE AS AND OR NOT NULL IS IN BETWEEN LIKE ILIKE JOIN LEFT RIGHT INNER OUTER CROSS ON USING UNION ALL DISTINCT GROUP BY HAVING ORDER ASC DESC LIMIT OFFSET CASE WHEN THEN ELSE END OVER PARTITION ROWS RANGE INTERVAL TRUE FALSE SETTINGS FORMAT".split(
+    " ",
+  ),
+);
+
+/** Display-only, tolerant of incomplete SQL while typing. Source is always escaped. */
+export const highlightSql = (code: string): string => {
+  // CodeDisplay puts each returned line into its own <code> element.
+  const token = (kind: string, raw: string) =>
+    raw
+      .split("\n")
+      .map((line) => wrap(kind, line))
+      .join("\n");
+  let out = "",
+    i = 0;
+  while (i < code.length) {
+    const start = i,
+      c = code[i]!;
+    if (code.startsWith("--", i)) {
+      const end = code.indexOf("\n", i);
+      i = end < 0 ? code.length : end;
+      out += token("cd-c", code.slice(start, i));
+    } else if (code.startsWith("/*", i)) {
+      i += 2;
+      let depth = 1;
+      while (i < code.length && depth) {
+        if (code.startsWith("/*", i)) {
+          depth++;
+          i += 2;
+        } else if (code.startsWith("*/", i)) {
+          depth--;
+          i += 2;
+        } else i++;
+      }
+      out += token("cd-c", code.slice(start, i));
+    } else if (c === "'" || c === '"' || c === "`") {
+      i++;
+      while (i < code.length) {
+        if (code[i] === "\\") {
+          i = Math.min(code.length, i + 2);
+          continue;
+        }
+        if (code[i++] === c) {
+          if (code[i] === c) {
+            i++;
+            continue;
+          }
+          break;
+        }
+      }
+      out += token(c === "'" ? "cd-s" : "cd-p", code.slice(start, i));
+    } else if (c === ":" && code[i - 1] !== ":" && !/[A-Za-z0-9_]/.test(code[i - 1] ?? "") && /[A-Za-z_]/.test(code[i + 1] ?? "")) {
+      i += 2;
+      while (/[A-Za-z0-9_]/.test(code[i] ?? "")) i++;
+      out += token("cd-a cd-param", code.slice(start, i));
+    } else if (/[A-Za-z_]/.test(c)) {
+      i++;
+      while (/[A-Za-z0-9_]/.test(code[i] ?? "")) i++;
+      const word = code.slice(start, i);
+      out += SQL_KEYWORDS.has(word.toUpperCase()) ? token("cd-k", word) : escapeCodeHtml(word);
+    } else if (isDigit(c)) {
+      i++;
+      while (/[0-9.]/.test(code[i] ?? "")) i++;
+      out += token("cd-n", code.slice(start, i));
+    } else {
+      out += escapeCodeHtml(c);
+      i++;
+    }
+  }
+  return out;
 };

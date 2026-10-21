@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type axeCore from "axe-core";
-import type { Browser, BrowserContextOptions, Locator } from "playwright";
+import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
 
 declare global {
@@ -116,6 +116,18 @@ const box = async (locator: Locator) => {
   if (!bounds) throw new Error("Expected visible geometry");
   return bounds;
 };
+const accessibilityViolations = async (page: Page) => {
+  // The theme changes text immediately, while field backgrounds transition.
+  // Audit the completed state, including transitions caused by opening or retrying.
+  await settled(page);
+  return page.evaluate(async () => {
+    const result = await window.axe!.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] } });
+    return result.violations.map(({ id, nodes }) => ({
+      id,
+      nodes: nodes.map(({ target, failureSummary }) => ({ target, failureSummary })),
+    }));
+  });
+};
 
 describe("RichSelect shipped browser contract", () => {
   for (const width of [1440, 1024, 390]) {
@@ -126,13 +138,19 @@ describe("RichSelect shipped browser contract", () => {
           await page.locator("body").evaluate((element, value) => element.setAttribute("data-theme", value), theme);
           await page.addScriptTag({ content: axeSource });
           await page.getByRole("combobox", { name: "Move card" }).click();
+          if (width === 390) {
+            // WebKit can retire the covered trigger's hover after the sheet takes focus.
+            // Wait for that state change before settled() snapshots the return transitions.
+            await page.waitForFunction(() => {
+              const sheet = document.querySelector("dialog[open]");
+              const trigger = document.querySelector("form .k2b-rich-select__trigger");
+              return sheet !== null && document.activeElement === sheet && trigger !== null && !trigger.matches(":hover");
+            });
+          }
           for (const state of ["ready", "loading", "error", "empty"]) {
             if (state !== "ready")
               await page.evaluate((value) => document.dispatchEvent(new CustomEvent("fixture:state", { detail: value })), state);
-            const violations = await page.evaluate(async () => {
-              const result = await window.axe!.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] } });
-              return result.violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target) }));
-            });
+            const violations = await accessibilityViolations(page);
             expect(violations, state).toEqual([]);
           }
         } finally {
@@ -141,6 +159,34 @@ describe("RichSelect shipped browser contract", () => {
       }, 20_000);
     }
   }
+
+  test("accessibility audit waits for a running dark-theme transition", async () => {
+    const { page, close } = await open({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.addScriptTag({ content: axeSource });
+      // Make the transition long enough that an immediate axe run catches its old light fill.
+      await page.addStyleTag({ content: ".k2b-ui .k2b-rich-select__trigger { transition-duration: 1s; }" });
+      await settled(page);
+      await page.locator("body").evaluate((element) => element.setAttribute("data-theme", "dark"));
+      const running = await page
+        .getByRole("combobox", { name: "Move card" })
+        .evaluate((element) =>
+          element
+            .getAnimations()
+            .some(
+              (animation) =>
+                animation instanceof CSSTransition &&
+                animation.timeline === document.timeline &&
+                animation.transitionProperty === "background-color" &&
+                animation.playState === "running",
+            ),
+        );
+      expect(running).toBe(true);
+      expect(await accessibilityViolations(page)).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 10_000);
 
   test("desktop preview, list, popover and trigger never move while keys and hover change the active row", async () => {
     const { page, close } = await open({ viewport: { width: 1440, height: 900 } });

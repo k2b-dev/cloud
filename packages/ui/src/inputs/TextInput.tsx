@@ -1,4 +1,5 @@
 import { createSignal, type JSX, Show, splitProps } from "solid-js";
+import { isServer } from "solid-js/web";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import type { Completion } from "./completion";
@@ -15,9 +16,11 @@ export type TextInputProps = Omit<
     minLength?: number;
     maxLength?: number;
     type?: "text" | "search" | "email" | "url" | "tel";
-    variant?: "default" | "ai";
+    variant?: "default" | "ai" | "compact";
     icon?: string;
     activeIcon?: string;
+    /** ID of a consumer-owned visible error; caller owns its announcement. Native controls only. */
+    externalErrorId?: string;
     prefix?: JSX.Element;
     suffix?: JSX.Element;
     clearable?: boolean;
@@ -46,6 +49,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
     "completions",
     "description",
     "error",
+    "externalErrorId",
     "icon",
     "id",
     "label",
@@ -71,8 +75,20 @@ export function TextInput(props: TextInputProps): JSX.Element {
   const meta = createFieldMeta(local.id);
   const value = () => resolveMaybeAccessor(local.value) ?? "";
   const error = () => resolveMaybeAccessor(local.error);
+  // HTML IDs are single nonempty tokens; numeric starts and punctuation are valid.
+  const externalErrorId = () => {
+    const id = local.externalErrorId;
+    return id && !/[\t\n\f\r ]/.test(id) ? id : undefined;
+  };
+  const controlMeta = {
+    ...meta,
+    get errorId() {
+      return externalErrorId() ?? meta.errorId;
+    },
+  };
   const [passwordVisible, setPasswordVisible] = createSignal(false);
   const multiline = () => Boolean(local.multiline || local.markdown);
+  const compact = () => local.variant === "compact";
   const icon = () => local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : local.markdown ? "ti ti-markdown" : "ti ti-cursor-text");
   // A custom icon stays while typing (a search field keeps its magnifier); only the default icon switches to the pencil.
   const activeIcon = () => local.activeIcon ?? local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : "ti ti-pencil");
@@ -97,23 +113,26 @@ export function TextInput(props: TextInputProps): JSX.Element {
           class={local.class}
           label={local.label}
           description={local.description}
-          error={error()}
+          error={externalErrorId() ? undefined : error()}
           meta={meta}
           required={local.required}
           disabled={rest.disabled}
         >
           <div
             class="k2b-input-shell k2b-text-input"
+            data-variant={compact() ? "compact" : undefined}
             data-invalid={error() ? "true" : undefined}
             data-ai={local.variant === "ai" ? "true" : undefined}
             data-multiline={multiline() ? "true" : undefined}
             data-monospace={local.monospace ? "true" : undefined}
             style={multiline() ? { "--k2b-editor-lines": String(local.lines ?? 3) } : undefined}
           >
-            <span class="k2b-input-shell__icon k2b-text-input__icon" aria-hidden="true">
-              <i class={icon()} />
-              <i class={activeIcon()} />
-            </span>
+            <Show when={!compact()}>
+              <span class="k2b-input-shell__icon k2b-text-input__icon" aria-hidden="true">
+                <i class={icon()} />
+                <i class={activeIcon()} />
+              </span>
+            </Show>
             <Show when={local.prefix}>
               <span class="k2b-input-shell__affix">{local.prefix}</span>
             </Show>
@@ -127,12 +146,13 @@ export function TextInput(props: TextInputProps): JSX.Element {
                   {...rest}
                   id={meta.controlId}
                   class="k2b-input"
+                  size={rest.size ?? (compact() ? 9 : undefined)}
                   type={local.password && !passwordVisible() ? "password" : (local.type ?? "text")}
                   value={value()}
                   minlength={local.minLength}
                   maxlength={local.maxLength}
                   required={local.required}
-                  {...fieldControlAria(meta, local)}
+                  {...fieldControlAria(controlMeta, local)}
                   onInput={(event) => {
                     input(event.currentTarget.value);
                   }}
@@ -155,7 +175,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
                 required={local.required}
                 minlength={local.minLength}
                 maxlength={local.maxLength}
-                {...fieldControlAria(meta, local)}
+                {...fieldControlAria(controlMeta, local)}
                 onInput={(event) => {
                   input(event.currentTarget.value);
                 }}
@@ -166,7 +186,10 @@ export function TextInput(props: TextInputProps): JSX.Element {
                     local.onSubmit();
                   }
                 }}
-              />
+              >
+                {/* HTML consumes one leading newline in textarea content. */}
+                {isServer ? `\n${value()}` : undefined}
+              </textarea>
             </Show>
             <Show when={local.suffix}>
               <span class="k2b-input-shell__affix">{local.suffix}</span>

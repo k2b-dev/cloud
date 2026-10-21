@@ -11,6 +11,12 @@ export type SelectionAllowance = { file: string; subject: string; reason: string
 /** CSS subjects match exactly; TS/TSX subjects match a substring of the trimmed source line. */
 export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   {
+    file: "packages/pulse/src/frontend/workspace/base-settings-dialog.tsx",
+    subject: 'background: "var(--k2b-selected)",',
+    reason:
+      "Control: the three retention preset groups select scalar form values, not navigation or objects; each button exposes aria-pressed.",
+  },
+  {
     file: "packages/core/src/pages/me/AppDevices.island.tsx",
     subject: 'variant={touch() ? "primary" : "secondary"}',
     reason: "Action: copying the pairing link is the link step's main action on touch devices.",

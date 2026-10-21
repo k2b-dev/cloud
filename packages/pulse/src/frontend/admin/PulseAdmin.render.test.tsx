@@ -27,6 +27,7 @@ const render = (locale: string, child: () => JSX.Element) =>
   );
 
 const limits = {
+  queriesPerHour: 600,
   valuesPerMinute: 2000,
   bytesPerMinute: 5_242_880,
   storageBytes: 5_000_000_000,

@@ -132,3 +132,25 @@ test("a manual scrape raises the idle timeout for its synchronous ClickHouse wri
     scrape.mockRestore();
   }
 });
+
+test("source counts keep the extended timeout until their response resolves", async () => {
+  const base = spyOn(resources, "resolvePublicId").mockResolvedValue(baseId);
+  const timeouts: number[] = [];
+  const list = spyOn(pulseService.source, "list").mockImplementation(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(timeouts).toEqual([40]);
+    return ok([]);
+  });
+  try {
+    const response = await app.request(
+      "/api/pulse/bases/Base01/sources",
+      {},
+      { timeout: (_request: Request, seconds: number) => timeouts.push(seconds) },
+    );
+    expect(response.status).toBe(200);
+    expect(timeouts).toEqual([40, 10]);
+  } finally {
+    base.mockRestore();
+    list.mockRestore();
+  }
+});

@@ -1321,3 +1321,18 @@
     min-height: 2.5rem;
   }
 }
+
+/* Decorative loading geometry; the owning surface supplies its status separately. */
+.k2b-ui .k2b-skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--k2b-surface-muted) 0%, color-mix(in srgb, var(--k2b-text) 7%, var(--k2b-surface-muted)) 40%, var(--k2b-surface-muted) 80%);
+  background-size: 400% 100%;
+  animation: k2b-skeleton 1.6s ease-in-out infinite;
+}
+@keyframes k2b-skeleton {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-skeleton { animation: none; }
+}

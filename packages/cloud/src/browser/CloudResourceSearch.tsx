@@ -51,15 +51,6 @@ const isLinkableCommand = (command: PaletteCommand) => typeof command.action !==
 
 const itemKey = (item: SearchItem) => `${item.ref.type}:${item.ref.id}`;
 const URL_BASE = "https://cloud.invalid";
-const groupByApp = (items: SearchItem[]) => {
-  const groups = new Map<string, SearchItem[]>();
-  for (const item of items) {
-    const group = groups.get(item.appId) ?? [];
-    group.push(item);
-    groups.set(item.appId, group);
-  }
-  return [...groups.values()].flat();
-};
 
 export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const locale = useLocale();
@@ -236,9 +227,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   /** Rows of the run for the current input; anything older is visible but cannot be chosen. */
   const freshResults = () => current() && shownRun();
   const results = createMemo(() =>
-    canSearch()
-      ? [...groupByApp(navigation()), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))]
-      : [],
+    canSearch() ? [...navigation(), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))] : [],
   );
   const searchContext = () => JSON.stringify([desiredUrl(), commandMode(), commandQuery()]);
   /**
@@ -460,6 +449,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     }
   };
   const updateCaret = () => setCaret(inputRef.selectionStart ?? input().length);
+  const isApp = (item: SearchItem) => navigation().some((link) => link === item && link.kind === "app");
   const previewMetadata = () => (previewItem()?.metadata ?? []).filter((entry) => entry.label.trim() && entry.value.trim()).slice(0, 5);
 
   return (
@@ -670,7 +660,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                           <i class={item.icon ?? item.appIcon} aria-hidden="true" />
                           <span class="cloud-resource-search__result-copy">
                             <span>{item.title}</span>
-                            <small>{item.preview ?? item.appName}</small>
+                            <small>{isApp(item) ? t().app : (item.preview ?? item.appName)}</small>
                           </span>
                           <Show when={commandFor(item)?.shortcut}>{(shortcut) => <Kbd keys={shortcut()} />}</Show>
                           <Show when={props.selectionMode && selectedKey() === itemKey(item)}>

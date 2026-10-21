@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Whether a ring is clipped depends on layout, overflow, and paint, which
 // happy-dom does not model, so a real engine renders the shipped stylesheet.
@@ -737,3 +737,56 @@ describe("@k2b/ui focus rings outside clipping containers", () => {
     }
   });
 });
+
+for (const viewport of ["desktop", "phone"] as const)
+  test(`compact fields keep token focus and forced-colors outlines on ${viewport}`, async () => {
+    const target = await browser.newPage(viewports[viewport]);
+    try {
+      const controls = html(() => [
+        createComponent(TextInput, { label: "Parameter", variant: "compact", value: "Europe" }),
+        createComponent(TextInput, { label: "Missing", variant: "compact", value: "", error: "Enter a value" }),
+      ]);
+      await target.setContent(page(controls));
+      for (const theme of ["light", "dark"]) {
+        await target.locator("body").evaluate((element, theme) => (element.dataset.theme = theme), theme);
+        for (const label of ["Parameter", "Missing"]) {
+          const input = target.getByRole("textbox", { name: label, exact: true });
+          await input.focus();
+          await settled(target);
+          const normal = await input.evaluate((element) => {
+            const shell = element.closest<HTMLElement>(".k2b-text-input")!;
+            const style = getComputedStyle(shell);
+            const probe = document.createElement("span");
+            probe.style.boxShadow = `inset 0 0 0 var(--k2b-focus-width) var(${shell.dataset.invalid === "true" ? "--k2b-danger-500" : "--k2b-focus-ring"})`;
+            shell.append(probe);
+            const expected = getComputedStyle(probe).boxShadow;
+            probe.remove();
+            return {
+              shadow: style.boxShadow,
+              expected,
+              height: shell.getBoundingClientRect().height,
+              width: style.getPropertyValue("--k2b-focus-width").trim(),
+            };
+          });
+          expect(normal.shadow).toBe(normal.expected);
+          expect(normal.height).toBe(26);
+          await target.emulateMedia({ forcedColors: "active" });
+          await settled(target);
+          const forced = await input.evaluate((element) => {
+            const shell = element.closest<HTMLElement>(".k2b-text-input")!;
+            const style = getComputedStyle(shell);
+            return {
+              width: style.outlineWidth,
+              offset: style.outlineOffset,
+              style: style.outlineStyle,
+              height: shell.getBoundingClientRect().height,
+            };
+          });
+          expect(forced).toEqual({ width: normal.width, offset: `-${normal.width}`, style: "solid", height: normal.height });
+          await target.emulateMedia({ forcedColors: "none" });
+        }
+      }
+    } finally {
+      await target.close();
+    }
+  });

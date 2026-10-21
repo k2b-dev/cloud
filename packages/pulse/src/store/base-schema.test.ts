@@ -19,7 +19,8 @@ test("DDL names are derived from UUIDs, validated again and every view has a def
   expect(() => baseTtlStatements({ ...ctx, database: "pulse_rogue" })).toThrow();
   const statements = BASE_SCHEMA_VERSIONS[0]!.statements(ctx),
     views = statements.filter((s) => s.startsWith("CREATE OR REPLACE VIEW"));
-  expect(views.length).toBe(READ_VIEWS.length);
+  expect(views.length).toBe(6);
+  expect(READ_VIEWS).toContain("histogram_quantile");
   for (const view of views) {
     expect(view).toContain("DEFINER = CURRENT_USER SQL SECURITY DEFINER");
     expect(view).not.toMatch(/\b(sensitive|payload)\b/);
@@ -31,7 +32,7 @@ test("DDL names are derived from UUIDs, validated again and every view has a def
 });
 
 test("v2 orders states by observation then acceptance and hides source and series tombstones", () => {
-  expect(BASE_SCHEMA_VERSIONS.map((v) => v.version)).toEqual([1, 2]);
+  expect(BASE_SCHEMA_VERSIONS.map((v) => v.version)).toEqual([1, 2, 3]);
   const statements = BASE_SCHEMA_VERSIONS[1]!.statements(ctx);
   expect(statements[0]).toContain("ADD COLUMN IF NOT EXISTS deleted UInt8 DEFAULT 0");
   expect(statements[1]).toContain("ReplacingMergeTree(merge_version)");
@@ -43,4 +44,16 @@ test("v2 orders states by observation then acceptance and hides source and serie
   );
   expect(statements.find((s) => s.includes(".series "))).toContain("._series FINAL WHERE deleted=0");
   expect(BASE_SCHEMA_VERSIONS[0]!.statements(ctx).find((s) => s.includes("`_series`"))).toContain("ReplacingMergeTree(version)");
+});
+
+test("v3 creates only definer helper views over the same base and grants no internal table", () => {
+  const statements = BASE_SCHEMA_VERSIONS[2]!.statements(ctx);
+  expect(statements).toHaveLength(3);
+  for (const [i, name] of (["increase", "rate", "histogram_quantile"] as const).entries()) {
+    expect(READ_VIEWS).toContain(name);
+    expect(statements[i]).toStartWith(`CREATE OR REPLACE VIEW \`${ctx.database}\`.${name} DEFINER = CURRENT_USER SQL SECURITY DEFINER AS `);
+    expect(statements[i]).not.toMatch(/CREATE FUNCTION|sensitive|payload/);
+  }
+  expect(statements[0]).toContain("if(value>=previous_value,value-previous_value,value)");
+  expect(statements[2]).toContain("Histogram bucket bounds changed at ");
 });

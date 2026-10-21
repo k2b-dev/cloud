@@ -1,7 +1,7 @@
 import type { MapViewport } from "@k2b/stdlib";
 import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
-import { createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import { suppressTextSelection } from "../internal/text-selection";
@@ -124,7 +124,13 @@ export type ChartProps = {
         zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
       }
     : {}) &
-    (K extends "line" ? { /** Largest connected X distance; positive, finite, without area/errorBand fills. */ maxGap?: number } : {}) &
+    (K extends "line"
+      ? {
+          /** Largest connected X distance; positive, finite, without area/errorBand fills. */ maxGap?: number;
+          /** Wrap the legend above the plot inside the caller's total chart height. Requires legend=true. */
+          legendPlacement?: "top-start";
+        }
+      : {}) &
     (K extends "stateTimeline" ? StateTimelineChartOptions : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
@@ -132,7 +138,7 @@ export type ChartProps = {
 export type ChartRenderOptions = {
   [K in ChartKind]: Omit<
     Extract<ChartProps, { kind: K }>,
-    "class" | "style" | "labels" | "interactive" | "onSelect" | "selected" | "tooltip" | "cursor"
+    "class" | "style" | "labels" | "interactive" | "onSelect" | "selected" | "tooltip" | "cursor" | "legendPlacement"
   >;
 }[ChartKind];
 
@@ -168,8 +174,13 @@ export const renderChartSvg = (
     tooltip: _tooltip,
     cursor: _cursor,
     zoomFocus: _zoomFocus,
+    legendPlacement: _legendPlacement,
     ...opts
-  } = props as ChartProps & { interactive?: boolean; zoomFocus?: Pick<MapViewport, "latitude" | "longitude"> };
+  } = props as ChartProps & {
+    legendPlacement?: "top-start";
+    interactive?: boolean;
+    zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
+  };
   if (kind === "stateTimeline") {
     return responsiveChartSvg(
       renderStateTimelineSvg({
@@ -184,6 +195,7 @@ export const renderChartSvg = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let svg = (charts[kind] as (o: unknown) => string)({
     ...(opts as any),
+    ...(props.kind === "line" && props.legend && props.legendPlacement === "top-start" ? { legend: false } : {}),
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
     height,
@@ -237,6 +249,8 @@ const Chart = (props: ChartProps): JSX.Element => {
     width: 480,
     height: chartRenderHeight(props),
   });
+  const topLegend = () => props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
+  const legendSeries = () => (props.kind === "line" ? props.series : []);
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
   const initialMapViewport = props.kind === "map" ? normalizeMapViewport(props.viewport) : DEFAULT_MAP_VIEWPORT;
   const [mapViewport, setMapViewport] = createSignal<MapViewport>(initialMapViewport);
@@ -593,6 +607,7 @@ const Chart = (props: ChartProps): JSX.Element => {
         ref={containerRef}
         class={`k2b-chart ${props.class ?? ""}`}
         data-chart-kind={props.kind}
+        data-legend-placement={topLegend() ? "top-start" : undefined}
         data-drag={draggable() ? (dragging() ? "active" : "idle") : undefined}
         data-crosshair={!draggable() && props.kind === "line" ? "true" : undefined}
         data-interactive="true"
@@ -612,6 +627,27 @@ const Chart = (props: ChartProps): JSX.Element => {
         onWheel={handleWheel}
         onKeyDown={handleKeyDown}
       >
+        <Show when={topLegend()}>
+          <div class="k2b-chart__legend" role="group" aria-label={chartMessages().chartLegend} tabIndex={0}>
+            <For each={legendSeries()}>
+              {(series, index) => (
+                <span class="k2b-chart__legend-item">
+                  {/* Use the renderer's actual series classes/defaults, including consumer palette overrides. */}
+                  <svg
+                    class={`stdlib-chart k2b-chart__legend-swatch ${props.kind === "line" ? (props.className ?? "") : ""}`}
+                    viewBox="0 0 10 10"
+                    width="10"
+                    height="10"
+                    aria-hidden="true"
+                  >
+                    <rect x="1" y="1" width="8" height="8" rx="2" class={`stdlib-chart-series-${index() % 8}`} />
+                  </svg>
+                  <span>{series.label && series.label.length > 0 ? series.label : `Series ${index() + 1}`}</span>
+                </span>
+              )}
+            </For>
+          </div>
+        </Show>
         <div
           class="k2b-chart__svg"
           data-stretch={!preservesAspectRatio(props.kind) ? "true" : undefined}
