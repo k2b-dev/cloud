@@ -69,6 +69,7 @@ convention still needs a check or a test.
 | Advisory pull request compared with a stale fork `main` | The pull request in a security advisory fork compares its branch with the fork's own `main`, which GitHub does not keep current. It can show no conflict while its head conflicts with `main`, so the maintainer cannot merge it on the advisory page. | Convention: [before the maintainer merges](/en/docs/contributing/release-process#release-a-fix-merged-from-a-security-advisory), fast-forward the fork's `main` to `main`, merge `main` into the fork branch, and trial-merge its head onto `main` with `git merge-tree`. No check covers the fork yet. |
 | Silent truncation by a clamped page size | A caller asks for the whole collection with a page size above the helper's maximum and exports only the first page. | Check: `page-size` rejects oversized `pagination.perPage` literals. Tests: Contacts export pagination, cancellation, stream failure, serializer bytes, and the 1,001-contact integration case ([#1241](https://github.com/k2b-dev/cloud/issues/1241)). |
 | SQL parameters infer the wrong type | A date parameter in a SELECT, CASE, or arithmetic expression becomes text or an interval before assignment. | Tests: Pulse ingest identity, scrape, rollup, and store maintenance integration suites execute the SQL against PostgreSQL. |
+| SQLSTATE read from the wrong driver field | A schema retry checks only `code`, while Bun exposes PostgreSQL's SQLSTATE in `errno` with a generic `code`. | Tests: notification `catalog.test.ts` covers all supported schema states in both fields, retry completion, and propagation of initial non-schema errors. |
 | Claim and assignment diverge | A person works on a task while assignment-based lists still show it as unassigned, or a stale assignee replacement removes an active worker. | Tests: `packages/spaces/src/service/claim-assignment.integration.test.ts` checks transactional user claims, guarded assignee replacements, forced releases, completion, and idempotent backfill ([#1269](https://github.com/k2b-dev/cloud/issues/1269)). |
 | Paint outside a scrollport | An outline or outset shadow, such as a status ring, reaches past its element and a scrolling ancestor flush with it cuts it off. | Test: `packages/ui/src/layout/detail-panel-sections.browser.test.ts` checks that an avatar ring flush with the detail body paints inside the scrollport and keeps the avatar size. |
 | A tenant boundary that holds only on paper | A read user can reach another tenant, hidden fields, system metadata or external table functions, or can widen its resource limits. | Test: Pulse `store/read-access.integration.test.ts` runs the HTTP attack matrix against both bases and every read profile, checks exact grants, and proves its sensitive-column guard with a temporarily widened grant. |
@@ -771,6 +772,13 @@ convention still needs a check or a test.
 - **Root cause:** App color properties were set only on `.cloud-app-canvas`, while UI dialogs mount in a portal under the page shell's body, outside that canvas.
 - **Error class:** App colors lost at a dialog portal.
 - **Guard:** The page shell carries the current app's validated accent scope. `packages/cloud/src/ssr/Layout.render.test.tsx` checks exact body markup, invalid and absent accents, app Help, focus and admin pages, and unchanged minimal pages. `packages/cloud/src/ssr/dialog-app-colors.browser.test.ts` checks inherited settings and row colors, stable category geometry, and local accent overrides in light and dark mode at desktop and phone sizes.
+
+### Notification registration missed Bun schema errors
+
+- **What happened:** Notification registration threw a missing-table error instead of deferring registration until Core's schema was ready.
+- **Root cause:** The classifier read SQLSTATE only from `code`; Bun's server error used `errno: "42P01"` with `code: "ERR_POSTGRES_SERVER_ERROR"`.
+- **Error class:** SQLSTATE read from the wrong driver field.
+- **Guard:** Notification `catalog.test.ts` covers `42P01`, `42703`, and `3F000` in both `errno` and `code`, successful retry, and unchanged propagation of initial permission and other registration errors. When both fields exist, `errno` takes precedence. `catalog.integration.test.ts` exercises real Bun SQL errors from missing relations and columns.
 
 ### Date parameters inferred as text or intervals
 
