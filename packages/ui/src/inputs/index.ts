@@ -79,6 +79,15 @@ export type { NumberInputProps } from "./NumberInput";
 export { NumberInput } from "./NumberInput";
 export type { QrScannerError, QrScannerProps } from "./QrScanner";
 export { QrScanner } from "./QrScanner";
+export type {
+  RichSelectFact,
+  RichSelectFooter,
+  RichSelectItem,
+  RichSelectProps,
+  RichSelectSection,
+  RichSelectStatus,
+} from "./RichSelect";
+export { RichSelect, RichSelectFacts } from "./RichSelect";
 export type { ChoiceAppearance, SelectGridSize, SelectGroup, SelectOption, SelectProps, SelectSourceOption, SelectView } from "./Select";
 export { Select } from "./Select";
 export type { SelectChipOption, SelectChipProps } from "./SelectChip";

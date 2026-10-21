@@ -6442,6 +6442,510 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
+/* RichSelect: a dropdown whose rows explain each choice. A row is a name
+   plus at most one short line, nothing truncates, and an optional preview
+   sits beside the list at a fixed size, so moving through rows never moves
+   anything. Only colour changes between row states. */
+.k2b-ui .k2b-rich-select {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.k2b-ui .k2b-rich-select__trigger {
+  min-height: 2rem;
+  padding: 0.375rem 0.5rem 0.375rem 0.625rem;
+}
+
+.k2b-ui .k2b-rich-select__trigger > .k2b-choice-trigger__value[data-placeholder="true"] {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-rich-select__trigger > .k2b-rich-select__visual {
+  width: auto;
+  height: auto;
+}
+
+.k2b-ui .k2b-rich-select__trigger > .k2b-choice-trigger__chevron {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-rich-select__trigger[data-tone="warning"],
+.k2b-ui .k2b-rich-select__trigger[data-tone="warning"] > .k2b-choice-trigger__chevron {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-rich-select__popover {
+  width: 21.25rem;
+  max-height: min(27.5rem, calc(100dvh - 1rem));
+  gap: 0;
+  padding: 0;
+}
+
+.k2b-ui .k2b-rich-select__popover[data-preview="true"] {
+  width: 37.5rem;
+}
+
+.k2b-ui .k2b-rich-select__title {
+  flex: none;
+  padding: 0.75rem 0.875rem 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.71875rem;
+  font-weight: 600;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-rich-select__body {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.k2b-ui .k2b-rich-select__popover[data-preview="true"] .k2b-rich-select__body {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 18.75rem);
+}
+
+.k2b-ui .k2b-rich-select__column {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-rich-select__search {
+  margin: 0.625rem 0.625rem 0.25rem;
+  min-height: 2.25rem;
+  padding: 0 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-rich-select__search > input {
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-rich-select__list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.375rem;
+}
+
+/* Rows keep their wrapped height; the list scrolls instead of squeezing them. */
+.k2b-ui .k2b-rich-select__list > * {
+  flex: none;
+}
+
+.k2b-ui .k2b-rich-select__heading {
+  padding: 0.625rem 0.5rem 0.25rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.71875rem;
+  font-weight: 600;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-rich-select__option {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  grid-template-columns: minmax(0, 1fr) 1.125rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-rich-select__list[data-visual="true"] .k2b-rich-select__option {
+  grid-template-columns: 1.625rem minmax(0, 1fr) 1.125rem;
+}
+
+.k2b-ui .k2b-rich-select__option[data-active="true"] {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-rich-select__option[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.k2b-ui .k2b-rich-select__option[aria-disabled="true"] .k2b-rich-select__label {
+  color: var(--k2b-placeholder-color);
+}
+
+.k2b-ui .k2b-rich-select__option[aria-disabled="true"] .k2b-rich-select__visual {
+  opacity: 0.55;
+}
+
+.k2b-ui .k2b-rich-select__visual {
+  display: grid;
+  width: 1.625rem;
+  height: 1.625rem;
+  flex: none;
+  place-items: center;
+  color: var(--k2b-text-secondary);
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-rich-select__dot {
+  display: block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.25rem;
+}
+
+.k2b-ui .k2b-rich-select__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+
+.k2b-ui .k2b-rich-select__label {
+  font-size: 0.84375rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-rich-select__line {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-rich-select__line[data-reason="true"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-rich-select__check {
+  color: var(--k2b-action);
+  font-size: 1rem;
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-rich-select__option:is([aria-selected="true"], [aria-current="true"]) .k2b-rich-select__check {
+  visibility: visible;
+}
+
+.k2b-ui .k2b-rich-select__no-results {
+  padding: 0.75rem 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-rich-select__placeholder {
+  display: grid;
+  min-height: 2.75rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+}
+
+.k2b-ui .k2b-rich-select__placeholder[data-visual="true"] {
+  grid-template-columns: 1.625rem minmax(0, 1fr);
+}
+
+.k2b-ui .k2b-rich-select__placeholder-visual,
+.k2b-ui .k2b-rich-select__placeholder-lines > span,
+.k2b-ui .k2b-rich-select__preview-placeholder > span {
+  display: block;
+  border-radius: 0.375rem;
+  background: var(--k2b-surface-muted);
+  animation: k2b-parity-pulse 1.6s ease-in-out infinite;
+}
+
+.k2b-ui .k2b-rich-select__placeholder-visual {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.4375rem;
+}
+
+.k2b-ui .k2b-rich-select__placeholder-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+}
+
+.k2b-ui .k2b-rich-select__placeholder-lines > span {
+  height: 0.6875rem;
+}
+
+.k2b-ui .k2b-rich-select__preview {
+  min-width: 0;
+  min-height: 0;
+  margin: 0.5rem 0.5rem 0.5rem 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.125rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-rich-select__preview-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.k2b-ui .k2b-rich-select__preview-placeholder > span {
+  height: 0.75rem;
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-rich-select__preview-placeholder > span:first-child {
+  width: 60%;
+  height: 1rem;
+  margin-bottom: 0.375rem;
+}
+
+.k2b-ui .k2b-rich-select__preview-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 1.0625rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-rich-select__preview-title > .k2b-rich-select__visual {
+  width: auto;
+  height: auto;
+}
+
+.k2b-ui .k2b-rich-select__facts {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.875rem 0 0;
+  padding: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  list-style: none;
+}
+
+.k2b-ui .k2b-rich-select__facts > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-rich-select__facts > li > i {
+  flex: none;
+  margin-top: 0.1875rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-rich-select__facts > li[data-tone="warning"],
+.k2b-ui .k2b-rich-select__facts > li[data-tone="warning"] > i {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-rich-select__state {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 2.5rem 1.25rem;
+  color: var(--k2b-text);
+  text-align: center;
+}
+
+.k2b-ui .k2b-rich-select__state-icon {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 1.125rem;
+}
+
+.k2b-ui .k2b-rich-select__state[data-status="error"] .k2b-rich-select__state-icon {
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
+}
+
+.k2b-ui .k2b-rich-select__state-text {
+  max-width: 22.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.k2b-ui .k2b-rich-select__footer {
+  flex: none;
+  padding: 0 0.375rem 0.375rem;
+}
+
+.k2b-ui .k2b-rich-select__footer-action {
+  display: grid;
+  width: 100%;
+  min-height: 2.5rem;
+  grid-template-columns: 1.625rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-rich-select__footer-action:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-rich-select__footer-action:focus-visible,
+.k2b-ui .k2b-rich-select__info:focus-visible,
+.k2b-ui .k2b-rich-select__sheet-row > .k2b-rich-select__option:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-rich-select__create {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem;
+}
+
+.k2b-ui .k2b-rich-select__create-input {
+  min-width: 0;
+  min-height: 2rem;
+  flex: 1;
+  padding: 0 0.625rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  outline: none;
+}
+
+.k2b-ui .k2b-rich-select__create-input:focus-visible {
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-focus-inset);
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-rich-select__create-input:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+  }
+}
+
+/* The phone sheet: rows at touch size, an info button beside each row when
+   the picker has a preview, and the preview as a second level. */
+.k2b-ui .k2b-rich-select__sheet-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0 1rem;
+}
+
+.k2b-ui .k2b-rich-select__sheet-header > h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.96875rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-panel-dialog__body > .k2b-rich-select__list {
+  margin-inline: -0.5rem;
+  overflow: visible;
+  padding: 0;
+}
+
+.k2b-ui .k2b-panel-dialog__body > .k2b-rich-select__search {
+  margin-inline: 0;
+}
+
+.k2b-ui .k2b-panel-dialog__body > .k2b-rich-select__footer {
+  margin-inline: -0.5rem;
+  padding: 0;
+}
+
+.k2b-ui .k2b-rich-select__sheet-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.k2b-ui .k2b-rich-select__sheet-row[data-info="true"] {
+  grid-template-columns: minmax(0, 1fr) 2.75rem;
+}
+
+.k2b-ui .k2b-rich-select__sheet-row > .k2b-rich-select__option {
+  min-height: 3.25rem;
+}
+
+.k2b-ui .k2b-rich-select__sheet-row > .k2b-rich-select__option[aria-current="true"] {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-rich-select__info {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-rich-select__preview[data-level="detail"] {
+  flex-grow: 1;
+  margin: 0;
+}
+
+.k2b-ui .k2b-rich-select__choose {
+  width: 100%;
+}
+
+@media (hover: hover) {
+  .k2b-ui .k2b-rich-select__sheet-row > .k2b-rich-select__option:not([aria-disabled="true"]):hover,
+  .k2b-ui .k2b-rich-select__info:hover {
+    color: var(--k2b-text);
+    background: var(--k2b-hover);
+  }
+}
+
 .k2b-ui .k2b-multi-select-trigger {
   padding: 0.25rem 2rem 0.25rem 0.375rem;
 }
@@ -13792,6 +14296,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 
   .k2b-ui .k2b-choice-search > input,
+  .k2b-ui .k2b-rich-select__create-input,
   .k2b-ui .k2b-emoji-picker__search > input,
   .k2b-ui .k2b-chat-composer__command-search > input,
   .k2b-ui .k2b-pin-input__digit {

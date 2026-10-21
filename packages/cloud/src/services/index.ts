@@ -259,3 +259,7 @@ export {
 export { LASTING_ACCESS_SIGN_IN_SECONDS, requireConfirmedBrowserSignIn } from "./session/recent";
 
 export { deviceOffersApproval } from "./approvals/device";
+
+/** Core-owned geo implementation; applications use geoClient from the server entry. */
+export { coreGeo, createGeoService } from "./geo/service";
+export { migrate as migrateGeo } from "./geo/migrate";

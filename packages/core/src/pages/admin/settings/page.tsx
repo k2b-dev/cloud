@@ -134,6 +134,13 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       group: "gotenberg" as const,
     },
     {
+      id: "places",
+      title: t.placesSettings,
+      description: t.placesSettingsDescription,
+      icon: "ti ti-map-pin",
+      group: "geo" as const,
+    },
+    {
       id: "email-templates",
       title: t.emailTemplateSettings,
       description: t.emailTemplateSettingsDescription,

@@ -14,6 +14,7 @@ import { migrateCloudCapabilities, startCapabilityExecutionMaintenance } from "@
 import {
   browserNotifications,
   lifecycleJobs,
+  migrateGeo,
   migrateWeather,
   startMandateMaintenance,
   startNotificationRuntime,
@@ -121,6 +122,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
     { name: "weather", run: migrateWeather },
+    { name: "geo", run: migrateGeo },
     { name: "capabilities", run: migrateCloudCapabilities },
     { name: "ai", run: migrateCloudAi },
   ];
