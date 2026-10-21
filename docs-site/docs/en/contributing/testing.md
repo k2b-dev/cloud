@@ -836,9 +836,10 @@ Sync, runs before the file's own file-level `afterAll`. Put teardown that still
 needs either, such as stopping a live outbox, in an `afterAll` inside the
 suite's `describe`; Bun runs it when the suite ends.
 
-A new integration test needs no configuration of its own: import nothing
-special, use the resolved runtime variables, and name the file
-`*.integration.test.ts`.
+A new integration test needs no configuration of its own: import the appropriate
+suite gate from `scripts/fixtures/test-infra.ts`, use the resolved runtime
+variables, and conventionally name the file `*.integration.test.ts`. The shared
+gate import makes the file discoverable; the filename alone does not.
 
 bun:test does not stop a timed-out test body. An integration test ends the
 work it starts: teardown cancels and awaits every sync, job, or loop the test
@@ -856,6 +857,14 @@ must run every one of them. Assistant's runner, for example, gives its
 artifact service suite disposable PostgreSQL and rsql containers and runs
 every other Assistant integration file, such as the Code Mode PDF test against
 Gotenberg, against the `CLOUD_TEST_*` targets.
+
+Mail's entry point reuses the root runner's infrastructure-gate discovery,
+including gated files without an `.integration` suffix. It also retains the
+explicitly opted-in large-mailbox performance and IMAP connector suites. All
+selected files share the existing Mail disposable database and Sync preload;
+unit and browser files run through the normal test jobs instead. Inspect the
+selection without starting infrastructure with
+`bun run --cwd packages/mail test:integration --list`.
 
 ### Sync namespaces on the test broker
 

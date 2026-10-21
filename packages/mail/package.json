@@ -12,7 +12,7 @@
   "scripts": {
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
     "test": "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' packages/mail/src packages/mail/scripts packages/mail/test",
-    "test:integration": "bun --cwd=../.. test --timeout 30000 --preload ./scripts/fixtures/test-infra.ts --preload ./packages/mail/test/integration-preload.ts packages/mail/src packages/mail/scripts packages/mail/test"
+    "test:integration": "bun --no-env-file scripts/test-integration.ts"
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",
