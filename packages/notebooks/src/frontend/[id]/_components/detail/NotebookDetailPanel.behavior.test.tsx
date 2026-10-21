@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, set
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
-import { RECONNECT_EVENT, SYNC_STATE_EVENT } from "./events";
+import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT, RECONNECT_EVENT, SYNC_STATE_EVENT } from "./events";
 
 const now = "2026-10-16T19:30:00.000Z";
 const until = async (predicate: () => boolean) => {
@@ -58,7 +58,7 @@ describe("Notebook detail panel recovery and pagination", () => {
     dom.cleanup();
   });
 
-  const renderPanel = async () => {
+  const renderPanel = async (initiallyOpen = true) => {
     const { LocaleProvider } = await import("@k2b/ui");
     const { default: Panel } = await import("./NotebookDetailPanel.island");
     return render(
@@ -68,7 +68,7 @@ describe("Notebook detail panel recovery and pagination", () => {
           get children() {
             return createComponent(Panel, {
               mode: "edit",
-              initiallyOpen: true,
+              initiallyOpen,
               fullWidth: false,
               tocItems: [],
               taskProgress: { done: 0, total: 0 },
@@ -98,6 +98,33 @@ describe("Notebook detail panel recovery and pagination", () => {
   const button = (label: string) =>
     [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === label);
   const authors = () => [...dom.root.querySelectorAll(".notebook-activity-name")].map((item) => item.textContent);
+
+  test("shared reopen and editor toolbar keep one persisted visibility state", async () => {
+    const states: boolean[] = [];
+    const onState = (event: Event) => {
+      if (event instanceof CustomEvent) states.push(event.detail.isOpen);
+    };
+    window.addEventListener(DETAIL_PANEL_STATE_EVENT, onState);
+    const dispose = await renderPanel(false);
+    try {
+      const aside = dom.root.querySelector<HTMLElement>(".k2b-app-workspace__detail")!;
+      expect(aside.hidden).toBe(true);
+      aside.dispatchEvent(new CustomEvent("k2b-app-workspace-detail-open"));
+      expect(aside.hidden).toBe(false);
+      aside.dispatchEvent(new CustomEvent("k2b-app-workspace-detail-open"));
+      expect(aside.hidden).toBe(false);
+      window.dispatchEvent(new CustomEvent(DETAIL_PANEL_TOGGLE_EVENT));
+      expect(aside.hidden).toBe(true);
+      aside.dispatchEvent(new CustomEvent("k2b-app-workspace-detail-open"));
+      expect(aside.hidden).toBe(false);
+      aside.dispatchEvent(new CustomEvent("k2b-app-workspace-detail-close"));
+      expect(aside.hidden).toBe(true);
+      expect(states).toEqual([false, true, false, true, false]);
+    } finally {
+      dispose();
+      window.removeEventListener(DETAIL_PANEL_STATE_EVENT, onState);
+    }
+  });
 
   test("a manual reconnect becomes available again after five seconds without a connected event", async () => {
     const dispose = await renderPanel();

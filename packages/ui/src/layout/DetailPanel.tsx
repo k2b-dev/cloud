@@ -5,6 +5,8 @@ import { useDetailPanelMessages } from "./detail-panel-messages";
 import { createScrollFade } from "./scroll-fade";
 
 export type DetailPanelProps = {
+  /** Plain sections share their host surface, as in AppWorkspace.Detail. */
+  surface?: "default" | "plain";
   children: JSX.Element;
   class?: string;
 };
@@ -480,7 +482,9 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
 };
 
 const DetailPanel = ((props: DetailPanelProps): JSX.Element => (
-  <div class={classNames("k2b-detail-panel", props.class)}>{props.children}</div>
+  <div class={classNames("k2b-detail-panel", props.class)} data-surface={props.surface}>
+    {props.children}
+  </div>
 )) as DetailPanelComponent;
 
 DetailPanel.Header = DetailPanelHeader;

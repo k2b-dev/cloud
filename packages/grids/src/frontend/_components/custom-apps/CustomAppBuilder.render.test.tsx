@@ -187,6 +187,15 @@ const catalogWithAuthoringResources = (): CustomAppCatalog => {
 };
 
 describe("CustomAppBuilder", () => {
+  for (const editMode of [true, false]) {
+    test(`only the editable builder offers shared inspector reopening (${editMode})`, () => {
+      const html = renderToString(() => createComponent(CustomAppBuilder, { app: app(), baseId: "BASE01", catalog: catalog(), editMode }));
+      const toggle = html.match(/<button[^>]*data-app-workspace-detail-toggle[^>]*>/)?.[0];
+      if (editMode) expect(toggle).toContain('data-workspace-detail-reopen="true"');
+      else expect(toggle ?? "").not.toContain('data-workspace-detail-reopen="true"');
+    });
+  }
+
   test("renders the extracted chart controls with existing labels and formatting values", () => {
     const html = renderToString(() =>
       createComponent(CustomAppChartEditor, {

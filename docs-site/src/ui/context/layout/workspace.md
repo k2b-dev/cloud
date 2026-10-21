@@ -68,7 +68,12 @@ The head follows these rules as well:
 - The back link goes with the title. Beside a visible sidebar it remains
   only for pages deeper than the sidebar lists: the sidebar marks their
   container with `active="ancestor"`, not the page itself.
-- Tabs, chips, and actions share one row while they fit.
+- Tabs, chips, and actions share one row while they fit. As the head narrows,
+  the quiet count goes first, filters wrap, and views become compact with
+  “More +n” before scrolling sideways. The primary action then keeps only its
+  icon and accessible name. If the lead and actions still do not fit, they
+  use separate rows. The head measures its own width, including space lost
+  to neighboring panels; controls never draw over each other.
 - Exactly one action is filled. On the phone it becomes a round button; a
   host with a bottom bar, such as Cloud, places it beside the bar.
 - Files keeps its path in the head (exception D1 to "no title").
@@ -78,9 +83,10 @@ Grids table is the reference for tables.
 
 ### Compose the head row
 
-Place `AppWorkspace.Head` as a **direct child** of `AppWorkspace`, in any
-position. It is a slot: the workspace renders its parts in the existing head,
-leaving the other children in order. Individual parts may be islands. Give
+Place `AppWorkspace.Head` as a **direct child** of `AppWorkspace`, after the
+sidebar and before `Content`. Its existing head renders at that position, so
+object navigation precedes view controls in both reading and keyboard order.
+Callers without an explicit slot retain the automatic head. Individual parts may be islands. Give
 the chips `showValue`, keep secondary actions quiet, and put the one filled
 action in `primary`.
 
@@ -411,6 +417,10 @@ minimum plus the Detail width token plus an 8 px inset:
 | `lg` (480 px) | 808 px |
 | `xl` (544 px) | 872 px |
 
+An open waiting drawer uses `--k2b-shadow-side` to cast a soft shadow toward
+the covered content. The token mirrors the phone sheet: a leftward shadow
+in light and dark, with no change to the drawer size or Main.
+
 The column has no fill, frame, radius, or shadow; it shares the workspace
 surface. Its top, right, and bottom inset is 8 px. This replaces the earlier
 floating-detail appearance.
@@ -438,6 +448,25 @@ assistive-technology clicks count as keyboard choices and focus the Detail
 title; a completed primary pointer click keeps focus on the
 item. Live content updates alone leave it waiting. An initially open Detail,
 or one opened without a fresh Main choice, keeps waiting. The drawer is not modal.
+
+To keep the shared **Details** control available when closing only changes
+visibility, pass `onOpen` as well as `onClose`. The control then remains in
+the head at every width, including when the panel starts closed. `onOpen` asks
+the application to set its existing visibility state synchronously; it does not select an
+object or bypass the application's route or permissions. Set `available={false}`
+while there is no authorized current object: the head control is disabled and
+the panel stays hidden even if `open` is true. Omitting `available` allows the
+current content. Keep the same state for application controls, persistence,
+and URL navigation; do not add a second flag for the shared control.
+
+For details whose close action clears selection, omit `onOpen`. Closing keeps
+ending that selection, and the shared control never reopens retained content.
+An open waiting drawer still parks through its toggle, Escape, or a rightward
+swipe without changing application visibility. A reopenable column or phone
+sheet closes through `onClose`; X uses the application's same close action.
+Keyboard reopening focuses the detail heading; closing from inside returns
+focus to the shared head control. Pointer reopening keeps focus on that control
+except on a phone, where focus enters the sheet.
 
 Set `openOnChoice={false}` when Main shows the chosen item, as in Mail's reader
 beside a list. The waiting drawer then opens only from **Details** or a toggle
@@ -1033,6 +1062,7 @@ type AppWorkspaceMainPaneProps = {
 type AppWorkspaceDetailProps = {
   children: JSX.Element; open: boolean; id: string; class?: string; width?: AppWorkspaceDetailWidth; phone?: "sheet" | "page";
   viewTransitionName?: string; resizable?: boolean; minWidth?: number; maxWidth?: number;
+  onOpen?: () => void; available?: boolean; openOnChoice?: boolean;
   onClose?: () => void; onStep?: (direction: 1 | -1) => HTMLElement | null | undefined | void;
 };
 
@@ -1612,3 +1642,9 @@ On Cloud pages with `WorkspaceNavigation`, the phone header shows **Name ⌄**
 in place of the plain title. It opens the same app menu sheet as the app-menu
 button, so a hidden sidebar's navigation stays reachable. Pages without
 workspace navigation keep the plain title. Nothing changes from 48 rem.
+
+On phones, an outer workspace with `mobileSurface="flush"` places a visible
+stacked object row before the head. The host can show its shell surface behind
+that row; view tabs, filters and work content belong to the card below it.
+Tablet layouts and contained or nested workspaces retain their existing frame.
+The server and the first client render use the same region order.

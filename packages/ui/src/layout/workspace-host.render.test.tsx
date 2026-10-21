@@ -125,3 +125,47 @@ test("MainPane emits a workspace share fallback inside its own limits and a nume
   expect(html).toContain('data-workspace-default-size="share:0.25,-12,332,452"');
   expect(html).toContain('aria-valuenow="332"');
 });
+
+for (const available of [true, false]) {
+  test(`reopenable Detail exposes its closed trigger before hydration (${available})`, () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace.Detail, {
+        id: "reader",
+        open: false,
+        available,
+        onOpen: () => {},
+        children: "Context",
+      }),
+    );
+    const button = html.match(/<button[^>]*data-app-workspace-detail-toggle[^>]*>/)?.[0];
+    expect(button).toContain('data-workspace-detail-reopen="true"');
+    expect(button).toContain('aria-expanded="false"');
+    expect(Boolean(button?.match(/\sdisabled(?:[= >])/))).toBe(!available);
+    expect(html).toMatch(/<aside[^>]*hidden/);
+  });
+}
+
+for (const explicit of [true, false]) {
+  test(`object navigation retains SSR reading order with ${explicit ? "explicit" : "fallback"} head`, () => {
+    const markup = renderToString(() =>
+      createComponent(AppWorkspace, {
+        mobileSurface: "flush",
+        get children() {
+          return [
+            createComponent(AppWorkspace.Sidebar, { label: "Objects", mobile: "stacked", children: "Object links" }),
+            explicit ? createComponent(AppWorkspace.Head, { views: "View links" }) : null,
+            createComponent(AppWorkspace.Content, { children: "Work content" }),
+          ];
+        },
+      }),
+    );
+    expect(markup.match(/class="k2b-app-workspace__head[" ]/g)?.length).toBe(1);
+    const nav = markup.indexOf('aria-label="Objects"');
+    const head = markup.indexOf('class="k2b-app-workspace__head"');
+    const content = markup.indexOf('class="k2b-app-workspace__content');
+    if (explicit) expect(nav).toBeLessThan(head);
+    else expect(head).toBeLessThan(nav);
+    expect(nav).toBeLessThan(content);
+    expect(head).toBeLessThan(content);
+  });
+}

@@ -48,6 +48,8 @@ numbers, including bigint, and `Date` values stay on one line; strings wrap.
 
 Pass `getRowId` when selection or stable row identity matters. Use `selectedRowId` for a selected record, not the row index.
 Selected rows take the row selection fill without changing text weight or row geometry; see [Colors and selection](/en/ui/surfaces/color).
+Keyboard focus draws a ring inside the row, including while it is hovered or
+selected. Links and controls inside a cell keep their own focus indicator.
 
 The default cell renderer displays missing values as an em dash, dates with the current locale, and booleans as Yes or No.
 
