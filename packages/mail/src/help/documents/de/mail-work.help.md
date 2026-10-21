@@ -8,7 +8,7 @@ order: 20
 
 ## Die passende Unterhaltung finden {icon="search"}
 
-Öffne die Lupe im Kopf oder drücke `/`, um das Postfach zu durchsuchen. **Ort** steht zunächst auf **Ganzes Postfach**. Hast du in einem Ordner begonnen, kannst du die Suche dort auf diesen Ordner begrenzen. Das X im Eingabefeld entfernt den Text und lässt die Suche offen. **Zurücksetzen**, **Abbrechen** oder Escape bringt dich zur Ausgangsansicht zurück. Ist ein Optionsmenü offen, schließt das erste Escape nur dieses Menü.
+Öffne die Lupe im Kopf oder drücke `/`, um das Postfach zu durchsuchen. **Ort** steht zunächst auf **Ganzes Postfach**. Hast du in einem Ordner begonnen, kannst du die Suche dort auf diesen Ordner begrenzen. Wenn du die Suche mit der Lupe oder `/` geöffnet hast, bringt dich das X oder Löschen des Textes zur Ausgangsansicht zurück und lässt das Eingabefeld offen. **Zurücksetzen**, **Abbrechen** oder Escape bringt dich zur Ausgangsansicht zurück. Ist ein Optionsmenü offen, schließt das erste Escape nur dieses Menü.
 
 Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Das umfasst die synchronisierten Nachrichtenfelder und den aus Anhängen erkannten Text.
 
@@ -41,7 +41,7 @@ ohne diesen Zustand im gewählten Bereich zu finden.
 
 Wähle **Mindestens eine Bedingung**, damit mindestens ein ausgefülltes Feld passen muss. Wähle **Alle Bedingungen**, damit jedes ausgefüllte Feld passen muss. Suchfilter bleiben in der Seiten-URL. Ein Neuladen oder eine geteilte URL behält deshalb das aktuelle Ergebnis.
 
-Eine Suche merkt sich die Ansicht, in der du sie gestartet hast, etwa **Handlungsbedarf** oder einen Ordner. Um die Suche zu beenden, wähle **Leeren** im Suchfeld, lösche den Text, drücke Esc oder entferne den Chip **Suche** im Kopfbereich. **Zurücksetzen** entfernt ebenfalls die Filter. Mail kehrt dann zu dieser Ansicht zurück und öffnet die Unterhaltung, die vorher offen war. Die URL behält die Ausgangsansicht. Ein Neuladen oder Zurück behält sie deshalb auch.
+Eine Suche merkt sich die Ansicht, in der du sie gestartet hast, etwa **Handlungsbedarf** oder einen Ordner. **Zurücksetzen**, **Abbrechen** oder Escape schließt das Suchfeld und bringt dich zu dieser Ansicht und der zuvor geöffneten Unterhaltung zurück. Außerhalb des Textfeldes entfernt **Zurücksetzen** die erweiterten Suchfilter. Die URL behält die Ausgangsansicht. Ein Neuladen oder Zurück behält sie deshalb auch.
 
 Anbieter-Schlüsselwörter sind erweiterte synchronisierte Metadaten, kein normales System zum Kennzeichnen. Vorhandene Such-URLs mit Schlüsselwörtern funktionieren weiter, und du kannst sie weiter bearbeiten. Neue Filter nutzen für Kennzeichnungen, die Menschen lesen, lokale Tags.
 

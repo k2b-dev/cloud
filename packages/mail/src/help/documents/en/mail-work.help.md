@@ -13,7 +13,7 @@ Open the magnifier in the head or press `/` to **Search mailbox**. Text search c
 
 To narrow the search, use the search-in button. Choose any combination of **Sender**, **Recipients**, **Subject**, **Message body**, and **Attachment names**. With several words, a message matches when each word appears somewhere in it, for example the sender's name and a word from the subject.
 
-**Place** starts at **Whole mailbox**. If you started in a folder, choose that folder to search only there. The clear button in the input removes the text and keeps the field open. **Reset**, **Cancel**, or Escape returns to the view where you started; closing an open options menu with Escape leaves search open until you press Escape again.
+**Place** starts at **Whole mailbox**. If you started in a folder, choose that folder to search only there. After you open search with the magnifier or `/`, clearing or deleting the text restores the starting view and keeps the field open. **Reset**, **Cancel**, or Escape returns to the view where you started; closing an open options menu with Escape leaves search open until you press Escape again.
 
 For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **Search filters**.
 
@@ -41,7 +41,7 @@ either condition to find messages without that state in the chosen scope.
 
 Choose **Any condition** to match at least one filled field. Choose **All conditions** to require every filled field. Search filters stay in the page URL, so a reload or a shared URL keeps the current result.
 
-A search remembers the view where you started it, such as **Needs action** or a folder. To end the search, choose **Clear** in the search field, delete the text, press Esc, or remove the **Search** chip in the head. **Reset** also clears the filters. Mail then returns to that view and opens the conversation that was open before. The URL keeps the starting view, so a reload or Back keeps it too.
+A search remembers the view where you started it, such as **Needs action** or a folder. **Reset**, **Cancel**, or Escape closes the search field and returns to that view, including the conversation that was open before. Outside the text field, **Reset** removes structured search filters. The URL keeps the starting view, so a reload or Back keeps it too.
 
 Provider keywords are advanced synchronized metadata, not a normal labeling system. Existing search URLs with keywords still work, and you can still edit them. New filters use local tags for labels that people read.
 

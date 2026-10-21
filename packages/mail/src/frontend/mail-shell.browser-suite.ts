@@ -1761,7 +1761,10 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           const page = await open(widePath(), width, height);
           try {
             expect((await wide(page)).detail).toBe("waiting");
-            await page.getByRole("button", { name: "Options for Example support", exact: true }).click();
+            await page
+              .locator(".k2b-app-workspace__head")
+              .getByRole("button", { name: "Options for Example support", exact: true })
+              .click();
             await page.getByRole("menuitem", { name: "Hide conversation list" }).click();
             await settled(page);
             const frame = await wide(page);

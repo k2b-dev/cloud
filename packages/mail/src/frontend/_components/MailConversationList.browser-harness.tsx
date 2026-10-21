@@ -20,6 +20,8 @@ export type MailListHarnessOptions = {
   selectedConversationId: string | null;
   selectionMode?: boolean;
   sidebarCollapsed?: boolean;
+  /** Initial resizable list width for room-boundary fixtures. */
+  listSize?: number;
   /** Folders whose mail stays inside them, which All mail and the work views name one after another. */
   folderOnlyHints?: MailFolderView[];
   /**
@@ -232,7 +234,7 @@ window.mountMailList = (options) => {
                 label="Conversations"
                 scroll={false}
                 open
-                defaultSize={430}
+                defaultSize={options.listSize ?? 430}
                 minSize={300}
                 maxSize={620}
               >

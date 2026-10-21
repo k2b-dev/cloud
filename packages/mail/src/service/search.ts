@@ -1350,13 +1350,7 @@ const runSearch = async (params: {
           ELSE conversation_active_state.folder_ids
         END AS active_folder_ids,
         CASE
-          WHEN NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL THEN EXISTS (
-            SELECT 1 FROM mail.message_placements flagged_placement
-            WHERE flagged_placement.message_id = deduplicated.id
-              AND flagged_placement.deleted_at IS NULL
-              AND ${includedPlacement(sql`flagged_placement.folder_id`)}
-              AND ${"\\Flagged"} = ANY(flagged_placement.flags)
-          )
+          WHEN NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL THEN '\\Flagged' = ANY(deduplicated.flags)
           ELSE EXISTS (
             SELECT 1
             FROM mail.conversation_messages flagged_cm

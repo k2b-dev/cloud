@@ -202,17 +202,25 @@ suite("Mail flags belong to an included placement of the same message", () => {
     }
   });
 
-  test("message results retain an included flag even when a newer placement is unflagged", async () => {
-    for (const key of [undefined, "B"]) {
+  test("message results keep the newest included placement's flag independently of the matching placement", async () => {
+    // B is older and flagged; A is newer and unflagged. A flag predicate may
+    // match B without changing the placement whose state an old search returns.
+    const cases: Array<{ expression: MailSearchExpression; flagged: boolean }> = [
+      { expression: subject("alpha"), flagged: false },
+      { expression: and(subject("alpha"), folderExpression("B", true)), flagged: false },
+      { expression: and(subject("alpha"), flagExpression("flagged", undefined, true)), flagged: false },
+      { expression: and(subject("alpha"), flagExpression("flagged", "B", true)), flagged: false },
+    ];
+    for (const entry of cases) {
       const result = await searchMessages({
         context,
         mailboxId: mailbox().id,
         groupByConversation: false,
-        request: { expression: and(subject("alpha"), flagExpression("flagged", key, true)), sort: "newest", limit: 20 },
+        request: { expression: entry.expression, sort: "newest", limit: 20 },
       });
       if (!result.ok) throw new Error(result.error.message);
       expect(result.data.items).toHaveLength(1);
-      expect(result.data.items[0]!.flagged).toBe(true);
+      expect(result.data.items[0]!.flagged).toBe(entry.flagged);
     }
     const result = await searchMessages({
       context,
@@ -224,6 +232,16 @@ suite("Mail flags belong to an included placement of the same message", () => {
     if (!result.ok) throw new Error(result.error.message);
     expect(result.data.items).toHaveLength(1);
     expect(result.data.items[0]!.flagged).toBe(false);
+    const onlyFlaggedPlacement = await searchMessages({
+      context,
+      mailboxId: mailbox().id,
+      groupByConversation: false,
+      request: { expression: subject("alpha"), sort: "newest", limit: 20 },
+      excludedFolderIds: [folders.get("A")!.id],
+    });
+    if (!onlyFlaggedPlacement.ok) throw new Error(onlyFlaggedPlacement.error.message);
+    expect(onlyFlaggedPlacement.data.items).toHaveLength(1);
+    expect(onlyFlaggedPlacement.data.items[0]!.flagged).toBe(true);
   });
 
   test("AND applies to one message before grouping and pagination in either list mode", async () => {
