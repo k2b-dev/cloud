@@ -52,6 +52,13 @@ export function hasPanelLeaveGuard(): boolean {
 }
 
 export function panelCanLeave(target: Window): boolean {
+  // A cross-origin navigation already destroyed the provider document and its guards.
+  // It cannot participate in this same-origin contract or keep the host's slot trapped.
+  try {
+    void target.document;
+  } catch {
+    return true;
+  }
   const decision: LeaveDecision = { allowed: true };
   try {
     target.dispatchEvent(new CustomEvent<LeaveDecision>(LEAVE, { detail: decision }));

@@ -120,6 +120,8 @@ document.documentElement.dataset.panelProviderMounted = "true";
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/foreign-document")
+        return new Response("<!doctype html><p>External document</p>", { headers: { "content-type": "text/html" } });
       if (path.endsWith("/panel")) providerRequests++;
       if (path === "/panel-host.js" || path === "/panel-provider.js")
         return new Response(path === "/panel-host.js" ? host : provider, { headers: { "content-type": "text/javascript" } });
@@ -221,6 +223,61 @@ for (const width of [1440, 390]) {
       await context.close();
     }
   });
+}
+for (const width of [1440, 390]) {
+  for (const action of ["close", "switch", "retry"] as const) {
+    test(`a foreign-origin frame remains recoverable through ${action} at ${width}px`, async () => {
+      const { page, context } = await fixture(width);
+      try {
+        await page.evaluate(
+          (action) =>
+            window.dispatchEvent(
+              new CustomEvent("cloud.panel.request", {
+                detail: {
+                  action: "open",
+                  provider: "fixture",
+                  search: action === "retry" ? "guard=1&mode=silent" : "guard=1",
+                  accepted: false,
+                },
+              }),
+            ),
+          action,
+        );
+        const frame = page.frameLocator("[data-cloud-panel-frame]");
+        await frame.locator("#save-fixture").waitFor();
+        // The real native _self navigation destroys the old document, including its guard.
+        const external = new URL("/foreign-document", origin.replace("localhost", "127.0.0.1")).href;
+        await frame.locator("body").evaluate((body, href) => {
+          const link = document.createElement("a");
+          link.href = href;
+          link.target = "_self";
+          link.textContent = "External page";
+          body.append(link);
+        }, external);
+        await frame.getByRole("link", { name: "External page", exact: true }).click();
+        await frame.getByText("External document", { exact: true }).waitFor();
+        expect(await frame.locator("html").evaluate(() => location.origin)).not.toBe(origin);
+        if (action === "close") {
+          await page.locator("[data-cloud-panel-close]").click();
+          await closed(page);
+        } else if (action === "switch") {
+          await page.locator('[data-cloud-panel-provider="second"]').click();
+          await ready(page);
+          expect(await page.locator(slot).getAttribute("data-provider")).toBe("second");
+        } else {
+          // No ready message arrived: the normal bounded load error exposes Retry.
+          await page.locator("[data-cloud-panel-retry]").waitFor({ timeout: 12_000 });
+          await context.addCookies([{ name: "fixture_ready", value: "1", url: origin }]);
+          await page.locator("[data-cloud-panel-retry]").click();
+          await ready(page);
+          await frame.locator("#save-fixture").waitFor();
+        }
+        expect(await page.locator("[data-cloud-panel-leave=blocked]").isVisible()).toBe(false);
+      } finally {
+        await context.close();
+      }
+    });
+  }
 }
 async function fixture(
   width = 1440,

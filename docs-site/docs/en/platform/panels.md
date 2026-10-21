@@ -170,7 +170,9 @@ reload, and viewport or phone-history transitions that would unload the
 provider. Ordinary same-origin links from a guarded panel also pass through
 this check, including links to the full application. Modified clicks,
 downloads, explicit targets, form submissions, and script navigation retain
-their browser or application behavior.
+their browser or application behavior. If such navigation has already replaced
+the provider with a cross-origin document, the old guards no longer exist;
+Cloud allows closing, switching, or retrying that frame.
 
 When a guard blocks a change, Cloud shows a notice and a button that returns
 focus to the provider. Save, retry, conflict resolution, and send confirmation
