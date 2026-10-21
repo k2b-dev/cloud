@@ -1204,6 +1204,36 @@ for (const theme of ["light", "dark"] as const)
         expect(contrast).toBeGreaterThan(theme === "light" ? 25 : 6.5);
         const shadow = await detail.evaluate((element) => getComputedStyle(element).boxShadow);
         expect(shadow).toContain(theme === "light" ? "-14px 0px 36px" : "-16px 0px 40px");
+        // The leading shadow continues around the rounded corner and above the panel.
+        // Keep the sampled head surface uniform, independent of its controls and text.
+        await page.addStyleTag({ content: ".k2b-app-workspace__head > *{visibility:hidden}" });
+        await settled(page);
+        const topPng = await page.screenshot({
+          clip: { x: x + 64, y: opened.detail.top - 32, width: 8, height: 32 },
+        });
+        const topContrast = await page.evaluate(
+          async (src) => {
+            const image = new Image();
+            image.src = src;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = 8;
+            canvas.height = 32;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0);
+            const mean = (y: number) => {
+              const data = context.getImageData(0, y, 8, 4).data;
+              let total = 0;
+              for (let i = 0; i < data.length; i += 4) total += (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+              return total / 32;
+            };
+            return mean(0) - mean(28);
+          },
+          `data:image/png;base64,${topPng.toString("base64")}`,
+        );
+        console.info(`drawer top ${theme} ${width}: ${topContrast.toFixed(2)} luminance levels`);
+        expect(topContrast).toBeGreaterThan(theme === "light" ? 5 : 1);
+        expect(await detail.evaluate((element) => getComputedStyle(element).borderTopLeftRadius)).toBe("12px");
         await page.keyboard.press("Escape");
         await settled(page);
         expect((await geometry(page)).main).toEqual(before.main);
