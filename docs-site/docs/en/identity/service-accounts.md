@@ -138,10 +138,12 @@ Contacts it lists, searches, and resolves its contact books and contacts, and
 creates or changes contacts with a `write` grant. In Mail it lists and works in
 the mailboxes it was granted; REST, capabilities, the CLI, and queued mailbox
 work all use the lower of its grant and its token's scopes, so a `write` grant
-with a `read`-only token only reads. In Pulse it lists its bases and checks source health,
-and changes bases with a `write` grant. Agents have no measurement-query
-capability in this release; SQL access follows in step 4. By default, standalone
-and agent accounts
+with a `read`-only token only reads. In Pulse it lists its bases, checks source
+health, and runs read-only SQL through `sql.run` with a `read` grant. The API,
+CLI, and capability use the same base access check. A query sees only its own
+base; querying two bases requires two calls. Listing saved queries needs read
+access; saving and deleting them needs write access. Changing base settings
+needs base admin access. By default, standalone and agent accounts
 with write or admin credential scope can also create a Pulse base and receive
 its admin grant. A delegated account can create a base for its person, who
 receives the admin grant. Cloud admins can restrict creation under

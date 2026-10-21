@@ -3,6 +3,7 @@ import type { PermissionLevel } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
 import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
 import type { WorkspaceRouteState } from "./routes";
+import type { SavedQuery, SqlClientError, SqlLimits } from "./sql-client";
 
 export type { WorkspaceView } from "./routes";
 export type SourceCreateKind = "metrics" | "http_ingest";
@@ -20,6 +21,9 @@ export type PulseWorkspaceProps = {
   initialBaseId: string;
   initialRouteState: WorkspaceRouteState;
   initialSources: PulseSource[];
+  initialSettings?: { maxRawRetentionDays: number; admins: string[] };
+  initialPermissions?: { write: boolean; admin: boolean };
+  initialSql?: { limits: SqlLimits | null; query: SavedQuery | null; error: { code: string; details: SqlClientError["details"] } | null };
   initialSourceScrapes: Record<string, PulseSourceScrape[]>;
   initialSourceApiKeys: Record<string, ResourceApiKey[]>;
   initialQueryCoverage: { bases: boolean; baseData: boolean; sourceDetail: boolean };

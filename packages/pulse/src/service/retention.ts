@@ -108,6 +108,10 @@ export const createRetention =
           await tx`WITH victims AS(SELECT i.source_id,i.idempotency_key FROM pulse.ingest_idempotency i JOIN pulse.sources s ON s.id=i.source_id WHERE s.base_id=${base.id}::uuid AND i.expires_at<=${now} LIMIT ${BATCH})
           DELETE FROM pulse.ingest_idempotency i USING victims v WHERE i.source_id=v.source_id AND i.idempotency_key=v.idempotency_key`;
         result.idempotencyRecords += keys.count;
+        const queryKeys = await tx`WITH victims AS(SELECT operation_key FROM pulse.saved_query_operations
+          WHERE base_id=${base.id}::uuid AND expires_at<=${now} LIMIT ${BATCH})
+          DELETE FROM pulse.saved_query_operations op USING victims v WHERE op.base_id=${base.id}::uuid AND op.operation_key=v.operation_key`;
+        result.idempotencyRecords += queryKeys.count;
         const scrapes =
           await tx`WITH victims AS(SELECT id FROM pulse.source_scrapes WHERE base_id=${base.id}::uuid AND started_at<${rawCutoff} LIMIT ${BATCH}) DELETE FROM pulse.source_scrapes s USING victims v WHERE s.id=v.id`;
         result.scrapeRecords += scrapes.count;

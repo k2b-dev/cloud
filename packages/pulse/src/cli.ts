@@ -4,16 +4,18 @@ import { adminCommands } from "./cli/admin";
 import { baseCommands } from "./cli/bases";
 import { resolveBaseFromCommand, resolveSource } from "./cli/context";
 import { baseFlag, JSON_INPUT } from "./cli/flags";
+import { queryCommands } from "./cli/queries";
 import { jsonRequest, printJsonOrTable, readApi, readJsonInput } from "./cli/shared";
 import { sourceTokenCommands } from "./cli/source-tokens";
 import { sourceCommands } from "./cli/sources";
+import { sqlCommand } from "./cli/sql";
 import type { PulseIngestBatch } from "./contracts";
 
 type IngestResult = { metrics: number; events: number; states: number };
 
 const module = defineCliCommands({
   name: "pulse",
-  summary: "Manage Pulse bases, access, sources, and ingest.",
+  summary: "Manage Pulse bases, SQL, saved queries, sources, and ingest.",
   groupSummaries: {
     admin: "Administer Pulse as a Cloud admin: data store, base policy, limits and internal targets",
     "admin store": "Manage the Pulse ClickHouse connection",
@@ -24,8 +26,11 @@ const module = defineCliCommands({
     access: "Manage direct access to Pulse bases",
     "source-tokens": "Manage HTTP ingest tokens for Pulse sources",
     sources: "Create, inspect, and manage Pulse sources",
+    queries: "List, read, save, and delete SQL queries",
   },
   commands: [
+    sqlCommand,
+    ...queryCommands,
     ...adminCommands,
     ...baseCommands,
     ...pulseAccessCommands,

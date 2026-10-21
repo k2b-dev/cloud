@@ -10,6 +10,10 @@ export type PulseBase = {
   id: string;
   name: string;
   description: string | null;
+  shortId: string;
+  icon: string;
+  color: string;
+  timezone: string;
   rawRetentionDays: number;
   rollupRetentionDays: number;
   sensitiveRetentionHours: number;
@@ -26,6 +30,8 @@ export type PulseBase = {
 };
 
 export type PulseSource = {
+  seriesCount?: number;
+  todayCount?: number | null;
   id: string;
   baseId: string;
   kind: SourceKind;

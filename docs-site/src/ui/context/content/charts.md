@@ -45,6 +45,29 @@ import {
 
 TypeScript narrows the remaining properties from `kind`. `width` and `height` are removed from the accepted chart options: CSS fits the server-rendered SVG to the component’s box.
 
+## A legend above a line chart
+
+For `kind="line"`, combine `legend` with `legendPlacement="top-start"`
+to show complete series names in a wrapping legend above the plot. The
+legend and plot share the height you give the outer `class` or `style`;
+the legend does not add height outside that box. In a fixed-height box, the
+legend takes at most 44px or 40% of the height, whichever is smaller, leaving
+at least 60% for the plot. A single line uses 30px including its spacing.
+Longer legends scroll; focus the legend to scroll with the keyboard. Complete
+names remain available without truncation. Omitting the option preserves the SVG
+legend below the plot; `legend={false}` suppresses either legend.
+
+Names, fallback names (`Series N`), indices and palette overrides match the
+renderer, including empty series alongside populated series. The initial
+server and browser layout uses the same markup. Pointer inspection,
+keyboard inspection and linked cursors follow the actual plot below the legend.
+
+```tsx
+<Chart kind="line" legend legendPlacement="top-start"
+  style={{ height: "18rem" }}
+  series={[{ label: "Orders", data: [{ x: 1, y: 12 }, { x: 2, y: 18 }] }]} />
+```
+
 ## Props reference
 
 Use the discriminated `ChartProps` union to type data builders without widening

@@ -1494,6 +1494,47 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply relative block min-w-0;
 }
 
+/* Top legends share the caller's height with the plot. Geometry remains SVG-owned:
+ * inspection uses real SVG transforms and axis bounds, including this vertical offset. */
+.k2b-ui .k2b-chart[data-legend-placement="top-start"] {
+  display: flex;
+  flex-direction: column;
+}
+.k2b-ui .k2b-chart[data-legend-placement="top-start"] > .k2b-chart__svg {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+.k2b-ui .k2b-chart__legend {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  /* Bound wrapping while retaining at least 60% of small fixed viewports for data. */
+  box-sizing: border-box;
+  max-height: min(44px, 40%);
+  overflow-y: auto;
+  gap: 4px 14px;
+  padding: 6px 0 2px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.k2b-ui .k2b-chart__legend-item {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.k2b-ui .k2b-chart__legend-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+}
+
 /* `:where()` keeps this a fallback: a caller class that sets `color` still
  * wins, exactly like Cloud where the wrapper has no colour of its own. */
 .k2b-ui :where(.k2b-chart) {
@@ -4436,6 +4477,50 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-text-input[data-monospace="true"] .k2b-input {
   font-family: var(--k2b-font-mono);
+}
+
+/* Inline value fields compose into dense editor and tool rows without an icon well. */
+.k2b-ui .k2b-text-input[data-variant="compact"],
+.k2b-ui .k2b-text-input[data-variant="compact"]:hover,
+.k2b-ui .k2b-text-input[data-variant="compact"]:focus-within {
+  display: inline-flex;
+  flex: none;
+  min-height: 0;
+  height: 26px;
+  gap: 6px;
+  padding: 0 3px 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--k2b-surface);
+  box-shadow: none;
+  transition: none;
+}
+.k2b-ui .k2b-text-input[data-variant="compact"]:focus-within {
+  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring);
+}
+.k2b-ui .k2b-text-input[data-variant="compact"][data-invalid="true"],
+.k2b-ui .k2b-text-input[data-variant="compact"][data-invalid="true"]:focus-within {
+  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-danger-500);
+}
+.k2b-ui .k2b-text-input[data-variant="compact"] > .k2b-input {
+  flex: none;
+  width: auto;
+  min-height: 0;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.k2b-ui .k2b-text-input[data-variant="compact"] > .k2b-input:read-only {
+  color: var(--k2b-text-secondary);
+}
+.k2b-ui .k2b-text-input[data-variant="compact"] > .k2b-input-shell__affix {
+  margin: 0;
+}
+@media (pointer: coarse) {
+  .k2b-ui .k2b-text-input[data-variant="compact"] > .k2b-input {
+    font-size: max(1rem, 16px);
+  }
 }
 
 .k2b-ui .k2b-text-input[data-ai="true"] {
@@ -12539,6 +12624,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-panes__separator:focus-visible > span,
   .k2b-ui .k2b-chart[data-interactive="true"]:focus-visible,
   .k2b-ui .k2b-input-shell:focus-within,
+  .k2b-ui .k2b-text-input[data-variant="compact"]:focus-within,
+  .k2b-ui .k2b-text-input[data-variant="compact"][data-invalid="true"]:focus-within,
   .k2b-ui .k2b-choice-trigger:focus-visible,
   .k2b-ui .k2b-multi-select-trigger:focus-visible,
   .k2b-ui .k2b-combobox__input:focus-within,

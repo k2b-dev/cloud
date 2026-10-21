@@ -584,8 +584,12 @@ ClickHouse admins. Whoever operates ClickHouse as admin can read all Pulse data.
 
 Budget memory for the selected read profile and expected parallel work:
 **small** allows 1 GB per read, **normal** 2 GB, and **large** 4 GB. The
-maintenance profile allows 1 GB. Leave additional memory for ClickHouse itself
-and storage merges; the per-read limit is not an instance-wide memory budget.
+maintenance profile allows 1 GB. Pulse admits three concurrent reads per
+Cloud, one per base, with 20 waiting and a five-second wait deadline. Budget
+**3 × the largest selected read profile + 1 GB maintenance + reserve**. With
+normal profiles, provide at least **10 GB RAM**: 6 GB for queries, 1 GB for
+maintenance, and at least 3 GB reserve. Large profiles need a larger memory
+budget. Leave reserve for ClickHouse itself and storage merges.
 Each read profile has fixed execution, scan, and result limits that readers
 cannot override. A Cloud admin selects the profile and base limits under
 **Administration → Pulse → Bases**.
@@ -622,6 +626,15 @@ replicas and write paths. Buckets hold one minute’s allowance and refill
 continuously. Throttled ingest returns `429 PULSE_BASE_THROTTLED` with
 `Retry-After`; unavailable Valkey returns `503 PULSE_QUOTA_UNAVAILABLE` with
 `Retry-After: 30`. Scrapes record the refusal and wait for the next tick.
+
+SQL admission and hourly question quotas also use Valkey across replicas.
+Slot leases expire after the maximum profile time plus HTTP and release
+margin, so a dead replica cannot keep a slot indefinitely. The default quota
+is 600 admitted questions/SQL per base per clock hour. Input errors and queue
+refusals do not count. Exhaustion returns `429 QUOTA` with `Retry-After` and
+the next hour’s reset time. Busy admission returns `503 BUSY` or `QUEUE_FULL`.
+The quota is adjustable per base through the bases limits API and
+`cld pulse admin bases limits`.
 
 Every five minutes, Pulse measures storage and disk. A base at its storage
 threshold refuses new values with `409 PULSE_BASE_STORAGE_FULL`; a base admin

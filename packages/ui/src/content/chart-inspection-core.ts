@@ -322,7 +322,14 @@ export function createChartInspector(options: {
     if (hit && nodes.includes(hit)) return hit;
     if (seriesChart()) {
       const plot = updatePlotBounds();
-      if (plot && (x < plot.left || x > plot.right || y < plot.top || y > plot.bottom)) return;
+      // SVG transforms and DOM rectangles can round the same painted edge
+      // differently. Keep its half-pixel raster fringe inspectable.
+      const edgeTolerance = 0.5;
+      if (
+        plot &&
+        (x < plot.left - edgeTolerance || x > plot.right + edgeTolerance || y < plot.top - edgeTolerance || y > plot.bottom + edgeTolerance)
+      )
+        return;
     }
     // Exact shapes win. A small physical hit radius also reaches tiny or
     // zero-sized marks; distant whitespace leaves the chart unselected.

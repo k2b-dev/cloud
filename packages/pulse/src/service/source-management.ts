@@ -7,6 +7,7 @@ import { withShortId } from "../lib/short-id";
 import { SourceConfigSchema } from "../metric-filters";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
 import { checkScrapeTarget } from "./scrape-target";
+import { sourceCounts } from "./source-counts";
 import { tryMirrorSource } from "./source-mirror";
 import { iso, isoNullable } from "./telemetry-values";
 
@@ -154,7 +155,7 @@ const ensureHttpIngestSource = async (
 export const listSources = async (
   baseId: string,
   user: AccessScope,
-  params: { query?: string | null; limit?: number; offset?: number; now?: Date } = {},
+  params: { query?: string | null; limit?: number; offset?: number; now?: Date; signal?: AbortSignal } = {},
 ): Promise<Result<PulseSource[]>> => {
   const access = await requireBaseAccess(baseId, user, "read");
   if (!access.ok) return fail(access.error);
@@ -172,7 +173,14 @@ export const listSources = async (
     OFFSET ${offset}
   `;
   const now = params.now ?? new Date();
-  return ok(rows.map((row) => mapSource(row, now)));
+  const counts = await sourceCounts(baseId, now, params.signal);
+  return ok(
+    rows.map((row) => ({
+      ...mapSource(row, now),
+      seriesCount: counts.get(row.id)?.seriesCount ?? 0,
+      todayCount: counts.get(row.id)?.todayCount ?? (counts.has("") ? 0 : null),
+    })),
+  );
 };
 
 export const getSource = async (sourceId: string, user: AccessScope, now = new Date()): Promise<Result<PulseSource>> => {

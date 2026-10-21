@@ -126,6 +126,7 @@ const pageFlags = {
   offset: flag.int({ min: 0, description: "Page offset" }),
 };
 const limitFlags = {
+  queriesPerHour: flag.int({ name: "queries-per-hour", min: 1, description: "Questions and SQL runs per clock hour" }),
   valuesPerMinute: flag.int({ name: "values-per-minute", min: 1, description: "Values per minute" }),
   bytesPerMinute: flag.int({ name: "bytes-per-minute", min: 1, description: "Bytes per minute" }),
   storageBytes: flag.int({ name: "storage-bytes", min: 1, description: "Storage threshold in bytes" }),
@@ -167,6 +168,12 @@ adminCommands.push(
       maxBases: flag.int({ name: "max-bases", min: 1, description: "Maximum bases" }),
       maxRawRetentionDays: flag.int({ name: "max-raw-retention-days", min: 1, max: 3650, description: "Maximum raw retention" }),
       defaultProfile: flag.string({ name: "default-profile", description: "small, normal or large" }),
+      defaultQueriesPerHour: flag.int({
+        name: "default-queries-per-hour",
+        min: 1,
+        max: 2147483647,
+        description: "Default questions and SQL runs per clock hour",
+      }),
       defaultValuesPerMinute: flag.int({ name: "default-values-per-minute", min: 1, description: "Default values per minute" }),
       defaultBytesPerMinute: flag.int({ name: "default-bytes-per-minute", min: 1, description: "Default bytes per minute" }),
       defaultStorageBytes: flag.int({ name: "default-storage-bytes", min: 1, description: "Default storage bytes" }),
@@ -181,6 +188,7 @@ adminCommands.push(
         maxRawRetentionDays: flags.maxRawRetentionDays,
         defaultProfile: flags.defaultProfile,
         defaultLimits: {
+          queriesPerHour: flags.defaultQueriesPerHour,
           valuesPerMinute: flags.defaultValuesPerMinute,
           bytesPerMinute: flags.defaultBytesPerMinute,
           storageBytes: flags.defaultStorageBytes,
