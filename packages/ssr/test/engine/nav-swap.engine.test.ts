@@ -231,8 +231,9 @@ test(`${browserName}: a rejected body stops downloading before the document load
     const fetchEnded = page.waitForEvent("requestfailed", {
       predicate: (request) => request.url() === `${origin}/app/non-html-stream` && !request.isNavigationRequest(),
     });
-    await page.click("#non-html-stream");
-    await fetchEnded;
+    // The document response is held below: waiting for navigation here would deadlock its release.
+    await page.click("#non-html-stream", { noWaitAfter: true });
+    expect((await fetchEnded).failure()?.errorText).toMatch(/abort|cancel/i);
     streamDocument.resolve();
     await page.waitForFunction(() => location.pathname === "/app/non-html-stream" && document.documentElement.dataset.ready === "yes");
     expect(documents).toEqual([`${origin}/app/non-html-stream`]);
