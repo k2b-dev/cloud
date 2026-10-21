@@ -833,21 +833,29 @@ describe("Pulse base page after the cut", () => {
 
 test("Browser Back asks before discarding base settings and Cancel preserves the draft", async () => {
   const { tab } = await open(views[1]!, workspaceFixture);
+  const confirmation = tab.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
+  const confirmDiscard = confirmation.getByRole("button", { name: "Verwerfen", exact: true });
   try {
     await tab.getByRole("button", { name: "Einstellungen", exact: true }).click();
     const name = tab.getByRole("textbox", { name: "Name", exact: true });
     await name.fill("Laden Entwurf");
     await tab.evaluate(() => window.history.back());
-    await tab.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
-    await tab.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
+    await confirmation.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
+    await confirmation.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    await confirmation.waitFor({ state: "hidden" });
     expect(await name.inputValue()).toBe("Laden Entwurf");
     expect(new URL(tab.url()).searchParams.get("settings")).toBe("general");
     await name.press("Escape");
-    await tab.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
-    await tab.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
+    await confirmation.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
+    await confirmation.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    await confirmation.waitFor({ state: "hidden" });
     expect(await name.inputValue()).toBe("Laden Entwurf");
+    // The form also has a visible "Verwerfen" button. Back opens its confirmation asynchronously;
+    // selecting by button name alone can retain the form button just as the prompt hides it.
+    expect(await tab.getByRole("button", { name: "Verwerfen", exact: true }).isVisible()).toBe(true);
+    expect(await confirmDiscard.count()).toBe(0);
     await tab.evaluate(() => window.history.back());
-    await tab.getByRole("button", { name: "Verwerfen", exact: true }).click();
+    await confirmDiscard.click();
     await tab.waitForFunction(() => !new URL(window.location.href).searchParams.has("settings"));
     expect(await name.count()).toBe(0);
   } finally {
