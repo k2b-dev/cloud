@@ -209,6 +209,16 @@ Pulse's six default jobs are `pulse:metrics:scrape`, `pulse:rollup:hourly`,
 `pulse:retention`, `pulse:base-lifecycle`, `pulse:base-usage`, and
 `pulse:base-checkpoint`. Its scheduler `pulse` checks due scrapes every minute,
 submits hourly calculation at minute 23, and runs retention at 03:17 UTC.
+It also checks due SQL alerts and source freshness and resolves notification
+recipients every minute. Those scans are bounded and resume from PostgreSQL
+state on later ticks; they do not add per-base Sync resources. Alert events
+store `app.locale` as delivery metadata, including for retries after a language
+change. Its six schedules share four local handler slots. Scrape, rollup, and
+retention dispatch may briefly wait when all slots are occupied; each schedule
+remains serial across replicas, and the existing three global SQL slots still apply.
+Shutdown stops new scans and cancels in-flight alert SQL before draining workers.
+An intentional cancellation releases its owned claim for a later tick without
+recording an alert failure or sending a notification.
 Scheduler `pulse:stores` sweeps unfinished lifecycle work every minute,
 measures usage every five minutes, and writes checkpoints on the hour.
 Scheduler definitions are separate from the six jobs in the reservation table.
@@ -913,6 +923,32 @@ earlier and answers with the files it saved so far.
 After rollout, ask Assistant to build a small app with `index.html` and `app.js`.
 The turn should show one `code_write` per file, no approval, and each result
 should list line counts that match the files.
+
+### Store complete Action review content
+
+Update Core and capability callers before providers return complete review
+content. Cloud now accepts up to 16 MiB of serialized JSON content per review,
+in addition to the 32 KiB compact card. Ordinary capability results remain
+limited to 256 KiB. Old readers cannot present this contract safely.
+
+The existing `approvals.requests.details`, `ai.pending_actions.review`, and
+chat or task message review snapshots hold the content. Assistant script calls
+also keep their review in the existing `assistant.capability_calls.prepared`
+snapshot. There is no additional
+cache, table or retention setting. Budget database and backup capacity for
+these copies; a fork also copies its historical snapshots. Full-content text
+uses reversible JSON encoding inside JSONB, so control characters survive.
+Single readers load one bounded snapshot; list and stream projections omit it.
+
+Existing lifecycles still apply: open approvals wait at most 24 hours, approval
+requests are pruned 90 days after expiry, and conversation deletion removes
+its owned snapshots. Background turns and task transcripts follow the existing
+90-day run-history lifecycle, including after task deletion. Deleting an approval
+does not delete its historical chat copy. Roll back providers and callers together if reverting Core; an older
+reader does not understand complete-content references.
+
+Mail's coordinated caller migration is described under
+[required send fingerprints](/en/docs/reference/deprecations-and-migrations#mail-send-requires-a-content-fingerprint).
 
 ### Record approvals as platform requests
 

@@ -41,6 +41,10 @@ export type PulseSource = {
   bearerTokenConfigured: boolean;
   scrapeIntervalSeconds: number | null;
   metricFilters: string[];
+  revision: number;
+  expectEverySeconds: number | null;
+  expectDailyBy: string | null;
+  staleSince: string | null;
   status: {
     newestDataAt: string | null;
     throttled: boolean;

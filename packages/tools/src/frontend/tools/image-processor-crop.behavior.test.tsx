@@ -90,7 +90,20 @@ describe("Image Processor crop drag", () => {
     });
     const mocks = [...mockImages(), spyOn(defaultDeps, "decodeNative").mockRejectedValue(new Error("Damaged PNG"))];
     const { ImageProcessorView } = await import("./ImageProcessor.island.tsx");
-    const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image] }), dom.root);
+    const { AppWorkspace } = await import("@k2b/ui");
+    const dispose = render(
+      () =>
+        createComponent(AppWorkspace, {
+          get children() {
+            return createComponent(AppWorkspace.Content, {
+              get children() {
+                return createComponent(ImageProcessorView, { initialImages: [image] });
+              },
+            });
+          },
+        }),
+      dom.root,
+    );
     const inspector = () => dom.root.querySelector("#k2b-workspace-detail-image-processor-inspector");
     try {
       await settle();
@@ -99,6 +112,14 @@ describe("Image Processor crop drag", () => {
       await waitFor(() => !!dom.root.querySelector('[aria-label="Files that could not be added"]'));
       expect(dom.root.querySelector('[aria-label="Files that could not be added"]')?.textContent).toContain("broken.png");
       expect(inspector()?.hasAttribute("hidden")).toBe(true);
+      // The failure stays exposed until the person explicitly requests controls.
+      await settle();
+      expect(inspector()?.hasAttribute("hidden")).toBe(true);
+      const toggle = dom.root.querySelector<HTMLButtonElement>("[data-app-workspace-detail-toggle]")!;
+      expect(toggle.disabled).toBe(false);
+      toggle.click();
+      expect(inspector()?.hasAttribute("hidden")).toBe(false);
+      expect(dom.root.querySelector('[aria-label="Files that could not be added"]')?.textContent).toContain("broken.png");
     } finally {
       dispose();
       for (const mock of mocks) mock.mockRestore();

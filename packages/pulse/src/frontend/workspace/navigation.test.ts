@@ -166,3 +166,30 @@ test("settings preserves near-budget parameter overrides without replacing saved
   navigation.open("usage");
   expect(readSqlDraftHistory(state, "Base01", href)?.params).toEqual(params);
 });
+
+test("settings keeps an unresolved alert reference without manufacturing an empty history draft", () => {
+  let href = "/app/pulse/Base01/sql?alert=Alt001";
+  let state: unknown = { host: 2 };
+  const navigation = createPulseSettingsNavigation({
+    baseId: "Base01",
+    currentHref: () => href,
+    currentState: () => state,
+    push: (next, data) => {
+      href = next;
+      state = data;
+    },
+    replace: (next, data) => {
+      href = next;
+      state = data;
+    },
+    back: () => {},
+  });
+  for (const tab of ["general", "usage"] as const) {
+    navigation.open(tab);
+    expect(readWorkspacePathState(href, "Base01")).toMatchObject({ alertId: "Alt001", settings: tab });
+    expect(readWorkspacePathState(href, "Base01").sql).toBeUndefined();
+    expect(readSqlDraftHistory(state, "Base01", href)).toBeNull();
+    expect(state).toEqual({ host: 2 });
+  }
+  expect(readWorkspacePathState(`${href}&ignored=${"x".repeat(4000)}`, "Base01").sql).toBeUndefined();
+});

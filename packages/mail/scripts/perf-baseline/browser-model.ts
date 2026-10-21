@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
 import { z } from "zod";
 import { aggregate, metricsSchema, staticSchema } from "../../../../scripts/perf-baseline/model";
+import { pageChangesSchema, renderPageChanges } from "./page-change-model";
 
 export const engines = ["chromium", "webkit"] as const;
 export type Engine = (typeof engines)[number];
@@ -75,6 +76,7 @@ export function parseBrowsers(value: string): Engine[] {
 }
 
 export function parseInteractions(value: string): InteractionId[] {
+  if (value === "none") return [];
   const list = z.array(z.enum(interactionIds)).min(1).parse(value.split(","));
   if (new Set(list).size !== list.length) throw new Error("--interactions contains duplicates");
   return list;
@@ -204,6 +206,7 @@ export const browserSectionSchema = z.object({
   pages: z.array(loadPageSchema),
   interactions: z.array(interactionResultSchema),
   errors: z.array(z.string()),
+  pageChanges: pageChangesSchema.nullable().optional(),
 });
 export type BrowserSection = z.infer<typeof browserSectionSchema>;
 
@@ -614,6 +617,7 @@ export function renderBrowserSummary(section: BrowserSection) {
     lines.push("");
   }
   for (const error of section.errors) lines.push(`- Browser error: ${cell(error)}`);
+  if (section.pageChanges) lines.push(...renderPageChanges(section.pageChanges));
   return lines;
 }
 
@@ -672,6 +676,14 @@ export function timeMetrics(result: {
           for (const key of ["totalMs", "busyMs", "scriptMs", "parseCompileMs", "islandRenderMs", "styleLayoutMs", "otherMs"] as const)
             index.set(`interactionTrace.${interaction.id}.${profile.browser}.${profile.profile}.${key}`, profile.trace[key]);
       }
+  for (const profile of result.browser?.pageChanges?.profiles ?? []) {
+    if (profile.status !== "ok" || !profile.samples.length) continue;
+    for (const key of ["clickToMainMs", "clickToFirstActionMs", "panelContextMs"] as const) {
+      const values = profile.samples.flatMap((sample) => (sample[key] === null ? [] : [sample[key]]));
+      if (values.length)
+        index.set(`pageChange.${profile.id}.${profile.browser}.${profile.profile}.${profile.cache}.${key}`, median(values));
+    }
+  }
   return index;
 }
 

@@ -1757,6 +1757,8 @@ ALTER TABLE ONLY mail.outbox_submissions
 ALTER TABLE ONLY mail.outbox_submissions
     ADD CONSTRAINT outbox_submissions_pkey PRIMARY KEY (id);
 
+CREATE INDEX outbox_submissions_draft_idx ON mail.outbox_submissions (draft_id, created_at DESC);
+
 CREATE INDEX outbox_ready_idx ON mail.outbox_submissions USING btree (state, scheduled_at, id) WHERE (state = ANY (ARRAY['scheduled'::text, 'undo_window'::text, 'unknown'::text, 'sent_sync_pending'::text]));
 
 CREATE INDEX outbox_scheduled_view_idx ON mail.outbox_submissions USING btree (mailbox_id, requested_at, id) WHERE (state = ANY (ARRAY['scheduled'::text, 'undo_window'::text]));

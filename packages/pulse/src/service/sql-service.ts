@@ -2,6 +2,7 @@ import type { RequestActor } from "@k2b/cloud/contracts";
 import { type AccessSubject, ok } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { z } from "zod";
+import { ALERT_MAX_EXECUTION_MS } from "../alert-contracts";
 import { prepareSql, SqlInputError } from "../sql-params";
 import type { ReadProfileName } from "../store/admin-contracts";
 import { READ_LIMITS, READ_PROFILES } from "../store/setup-sql";
@@ -32,7 +33,7 @@ type RunBaseSqlInput = BaseSqlInput & {
   sql: string;
   params?: Record<string, string>;
   signal?: AbortSignal;
-  via: "api" | "capability" | "sources";
+  via: "api" | "capability" | "sources" | "overview";
   runId?: string;
 };
 const actorKey = (actor: RequestActor) => (actor.kind === "user" ? `user:${actor.user.id}` : `service_account:${actor.serviceAccount.id}`);
@@ -50,9 +51,12 @@ const authorizedBase = async (input: BaseSqlInput) => {
   if (!baseId) throw new SqlError("NO_READ_ACCESS", "Read access to this Pulse base is required");
   const access = await requireBaseAccess(baseId, scope.data, "read");
   if (!access.ok) throw new SqlError("NO_READ_ACCESS", "Read access to this Pulse base is required");
+  return loadSqlBase(baseId);
+};
+const loadSqlBase = async (baseId: string) => {
   const [row] = await sql<
     { id: string; timezone: string; profile: ReadProfileName; database_name: string; queries_per_hour: number; state: string }[]
-  >`SELECT b.id,b.timezone,s.profile,s.database_name,s.queries_per_hour,s.state FROM pulse.bases b JOIN pulse.base_stores s ON s.base_id=b.id WHERE b.id=${baseId}::uuid`;
+  >`SELECT b.id,b.timezone,s.profile,s.database_name,s.queries_per_hour,s.state FROM pulse.bases b JOIN pulse.base_stores s ON s.base_id=b.id WHERE b.id=${baseId}::uuid AND b.deletion_started_at IS NULL`;
   if (!row || row.state !== "active") throw new SqlError("STORE_UNAVAILABLE", "The Pulse base data store is not active");
   return row;
 };
@@ -81,16 +85,71 @@ export const baseSqlLimits = async (input: BaseSqlInput): Promise<SqlServiceResu
 /** Every interactive SQL entry calls here. The base comes from permission
  * resolution, never the SQL. All input checks run before admission/quota. */
 export const runBaseSql = async (input: RunBaseSqlInput): Promise<SqlServiceResult<SqlResult>> => {
+  try {
+    return await executeBaseSql(await authorizedBase(input), {
+      ...input,
+      ownerKey: actorKey(input.actor),
+      countQuota: input.via === "api" || input.via === "capability",
+    });
+  } catch (error) {
+    return sqlFailure(error);
+  }
+};
+
+/** App-owned scheduled work is authorized by a currently claimed, persisted rule.
+ * Callers cannot supply arbitrary SQL or impersonate the rule's former author. */
+export const runAlertSql = async (input: {
+  ruleId: string;
+  revision: number;
+  leaseId: string;
+  resetGeneration: number;
+  signal?: AbortSignal;
+}): Promise<SqlServiceResult<SqlResult>> => {
+  const executionDeadline = performance.now() + ALERT_MAX_EXECUTION_MS;
+  try {
+    const [rule] = await sql<{ base_id: string; sql: string; params: Record<string, string> }[]>`
+      SELECT r.base_id,r.sql,r.params FROM pulse.alert_rules r JOIN pulse.base_stores s ON s.base_id=r.base_id
+      WHERE r.id=${input.ruleId}::uuid AND r.revision=${input.revision}
+        AND r.lease_id=${input.leaseId}::uuid AND r.lease_until>now()
+        AND s.state='active' AND s.reset_generation=${input.resetGeneration}`;
+    if (!rule) throw new SqlError("CANCELLED", "This alert evaluation is no longer current");
+    return await executeBaseSql(await loadSqlBase(rule.base_id), {
+      sql: rule.sql,
+      params: rule.params,
+      ownerKey: `alert:${input.ruleId}:${input.revision}`,
+      countQuota: false,
+      freeOnly: true,
+      executionDeadline,
+      signal: input.signal,
+    });
+  } catch (error) {
+    return sqlFailure(error);
+  }
+};
+
+/** Both interactive and persisted background reads use the same admission,
+ * cancellation observation and runner, including reader-bound KILL and leases. */
+const executeBaseSql = async (
+  base: Awaited<ReturnType<typeof loadSqlBase>>,
+  input: {
+    sql: string;
+    params?: Record<string, string>;
+    signal?: AbortSignal;
+    runId?: string;
+    ownerKey: string;
+    countQuota: boolean;
+    freeOnly?: boolean;
+    executionDeadline?: number;
+  },
+): Promise<SqlServiceResult<SqlResult>> => {
   let lease: Awaited<ReturnType<typeof sqlAdmission.acquire>> | undefined;
   let registered: { baseId: string; runId: string } | undefined;
   try {
-    const base = await authorizedBase(input);
     prepareSql(input.sql, input.params, base.timezone);
     const runId = input.runId ?? crypto.randomUUID();
     if (!z.uuid().safeParse(runId).success) throw new SqlError("SQL_ERROR", "runId must be a UUID");
     if (input.signal?.aborted) throw new SqlError("CANCELLED", "Query cancelled");
-    if (!(await sqlAdmission.register(base.id, runId, actorKey(input.actor))))
-      throw new SqlError("SQL_ERROR", "This runId is already in use");
+    if (!(await sqlAdmission.register(base.id, runId, input.ownerKey))) throw new SqlError("SQL_ERROR", "This runId is already in use");
     registered = { baseId: base.id, runId };
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
@@ -101,7 +160,8 @@ export const runBaseSql = async (input: RunBaseSqlInput): Promise<SqlServiceResu
         baseId: base.id,
         runId,
         quota: base.queries_per_hour,
-        countQuota: input.via !== "sources",
+        countQuota: input.countQuota,
+        freeOnly: input.freeOnly,
         signal,
       });
       if (await sqlAdmission.cancelled(base.id, runId)) throw new SqlError("CANCELLED", "Query cancelled");
@@ -135,7 +195,7 @@ export const runBaseSql = async (input: RunBaseSqlInput): Promise<SqlServiceResu
           params: input.params,
           runId,
           signal,
-          executionDeadline: lease.executionDeadline,
+          executionDeadline: Math.min(lease.executionDeadline, input.executionDeadline ?? Infinity),
         });
       } catch (error) {
         throw observerError ?? error;

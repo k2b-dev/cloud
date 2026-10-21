@@ -4,7 +4,9 @@ Pulse collects metrics, events, and states in bases. Use `cld pulse` to inspect
 bases and source health, configure sources and access, and ingest batches.
 Read one base with `cld pulse sql` or the `sql.run` capability. Save reusable
 SQL with `cld pulse queries`. Read [SQL and saved queries](sql.md) for parameters,
-limits, cancellation, result formats, and exit codes.
+limits, cancellation, result formats, and exit codes. Use `queries save --pin`
+to show a saved number on the base overview (at most four), or `--unpin` to
+remove it. Read [Alert rules](alerts.md) for rule CRUD and source expectations.
 
 Read [Ingest](ingest.md) for the batch contract, retries, metric filters, and
 scrape limits. Read [Administration](admin.md) for ClickHouse setup, base

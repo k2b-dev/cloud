@@ -45,10 +45,10 @@ import {
   approvalOptions,
   approvalReviewText,
   boundedRaw,
-  isConfirmApproval,
   localQuestion,
   markdownTable,
   planEntries,
+  requiresCloudApproval,
   surveyForm,
   surveyResult,
   type ToolBlock,
@@ -548,7 +548,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
             },
             approvalOptions(action),
           );
-          if (choice === "cloud" || (isConfirmApproval(action) && choice !== "reject")) {
+          if (choice === "cloud" || (requiresCloudApproval(action) && choice !== "reject")) {
             await waitInCloud(action);
             result = await streamAssistantTurn(streamOptions());
             continue;

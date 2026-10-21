@@ -2169,6 +2169,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
 
       <AppWorkspace.Detail
         id="custom-app-inspector"
+        onOpen={props.editMode ? () => setInspectorOpen(true) : undefined}
+        available={props.editMode}
         onClose={() => setInspectorOpen(false)}
         open={props.editMode && inspectorOpen()}
         width="md"

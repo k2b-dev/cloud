@@ -123,7 +123,7 @@ test("the probe buffers resource, paint, shift and long-task entries and flushes
 
 test("interruption keeps completed profiles and the active profile's samples in the caller's array", async () => {
   const controller = new AbortController();
-  const browsers = new Browsers(controller.signal);
+  const browsers = new Browsers(controller.signal, "test-spki-no-browser-launched");
   const results: BrowserResult[] = [];
   const metrics = metricsSchema.parse(Object.fromEntries(metricNames.map((name) => [name, 100])));
   const interruption = new Error("test interruption");
