@@ -150,7 +150,7 @@ const server = Bun.serve({
       // Mail's accent, which Cloud's layout sets for the app.
       '<!doctype html><html class="light" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
         '<link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" style="margin:0">' +
-        '<div id="root" style="position:fixed;inset:56px 8px 8px 56px;display:flex;flex-direction:column"></div>' +
+        '<div id="root" style="position:fixed;inset:56px 8px 8px 56px;display:flex;flex-direction:column;container-type:inline-size;container-name:k2b-app-area"></div>' +
         '<script src="/harness.js"></script></body></html>',
       { headers: { "Content-Type": "text/html" } },
     );
@@ -1361,9 +1361,18 @@ describe("Mail search returns to the view it started from", () => {
         const page = await load({ context, requestUrl: origin });
         try {
           // The field's frame: the input inside it makes room for the clear button, the frame must not move.
+          await page.getByRole("button", { name: "Search (/)", exact: true }).click();
           const selector = 'form[role="search"] .k2b-input-shell';
           const field = page.locator('input[name="q"]');
+          await field.waitFor({ state: "visible" });
           const before = await box(page, selector);
+          expect(
+            await field.evaluate((element) => {
+              const rect = element.getBoundingClientRect();
+              const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+              return { inputReceivesPointer: hit === element, hit: hit?.tagName, width: rect.width };
+            }),
+          ).toMatchObject({ inputReceivesPointer: true, hit: "INPUT" });
           await field.click();
           await page.keyboard.type("invoice");
           await page.clock.runFor(350);
@@ -1376,8 +1385,15 @@ describe("Mail search returns to the view it started from", () => {
           } else await page.keyboard.press("Escape");
           await page.clock.runFor(350);
           expect(await page.evaluate(() => location.pathname + location.search)).toBe(origin);
-          expect(await field.inputValue()).toBe("");
-          expect(await box(page, selector)).toEqual(before);
+          if (method === "Escape") {
+            expect(await field.count()).toBe(0);
+            expect(
+              await page.getByRole("button", { name: "Search (/)", exact: true }).evaluate((element) => element === document.activeElement),
+            ).toBe(true);
+          } else {
+            expect(await field.inputValue()).toBe("");
+            expect(await box(page, selector)).toEqual(before);
+          }
           expect(page.errors).toEqual([]);
         } finally {
           await close(page);
@@ -1623,67 +1639,94 @@ for (const viewport of [
 
 describe("scoped flag search builder", () => {
   for (const type of ["unread", "flagged"] as const) {
-    test(`keeps ${type} folder scope through editing, negation, saving and reopening`, async () => {
-      const initial = { expression: { type, folderId: "Fold01" }, sort: "newest" };
-      const page = await load({ requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify(initial) })}` });
-      try {
-        await page.clock.resume();
-        await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
-          route.fulfill({
-            json: [
-              { id: "Fold01", name: "Inbox", parentId: null, selectable: true, role: "inbox" },
-              { id: "Fold02", name: "Archive", parentId: null, selectable: true, role: "archive" },
-            ],
-          }),
-        );
-        let saved: unknown;
-        await page.route("**/api/mail/mailboxes/Box001/saved-views", async (route) => {
-          saved = route.request().postDataJSON();
-          await route.fulfill({ json: { ...route.request().postDataJSON(), id: "View01", revision: 1 } });
-        });
-        const openBuilder = async () => {
-          await page.getByRole("button", { name: "Search filters", exact: true }).click();
-          await page.getByRole("dialog").waitFor({ state: "visible" });
-        };
-        const state = () => JSON.parse(new URL(page.url()).searchParams.get("search")!);
-        await openBuilder();
-        const folder = page.getByRole("combobox", { name: "Folder", exact: true });
-        await folder.click();
-        await page.getByRole("option", { name: "Archive", exact: true }).click();
-        await page.getByRole("button", { name: "Exclude this condition", exact: true }).click();
-        await page.getByRole("button", { name: "Search", exact: true }).click();
-        await page.getByRole("dialog").waitFor({ state: "hidden" });
-        expect(state()).toEqual({
-          expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: "Fold02" } }] },
-          sort: "newest",
-        });
-        await openBuilder();
-        await folder.filter({ hasText: "Archive" }).waitFor({ state: "visible" });
-        expect(await folder.textContent()).toContain("Archive");
-        await page.getByRole("button", { name: "Clear selection", exact: true }).click();
-        await page.getByRole("button", { name: "Search", exact: true }).click();
-        await page.getByRole("dialog").waitFor({ state: "hidden" });
-        expect(state()).toEqual({
-          expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: null } }] },
-          sort: "newest",
-        });
-        await openBuilder();
-        await folder.waitFor({ state: "visible" });
-        expect(await folder.textContent()).toContain("Any included folder");
-        await folder.click();
-        await page.getByRole("option", { name: "Inbox", exact: true }).click();
-        await page.getByRole("button", { name: "Save as view", exact: true }).click();
-        await page.getByRole("textbox", { name: "Name", exact: true }).fill("Flagged in folder");
-        await page.getByRole("button", { name: "Save view", exact: true }).click();
-        await page.waitForURL((url) => url.searchParams.get("savedView") === "View01");
-        expect(saved).toMatchObject({
-          filter: { expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: "Fold01" } }] }, sort: "newest" },
-        });
-        expect(page.errors).toEqual([]);
-      } finally {
-        await close(page);
-      }
-    });
+    for (const step of ["edit", "clear", "save", "sequence"] as const) {
+      // Cold WebKit setup plus opening, editing and reopening the lazy builder exceeds five seconds.
+      // Use the shell browser suite's bounded budget; keep every transition and payload assertion.
+      test(`${type}: ${step} retains folder scope and negation`, async () => {
+        // Each starting state is the preceding step's asserted persisted output.
+        const expression =
+          step === "edit" || step === "sequence"
+            ? { type, folderId: "Fold01" }
+            : { type: "and", expressions: [{ type: "not", expression: { type, folderId: step === "clear" ? "Fold02" : null } }] };
+        const initial = { expression, sort: "newest" };
+        const currentPage = await load({ requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify(initial) })}` });
+        try {
+          await currentPage.clock.resume();
+          let saved: unknown;
+          await currentPage.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+            route.fulfill({
+              json: [
+                { id: "Fold01", name: "Inbox", parentId: null, selectable: true, role: "inbox" },
+                { id: "Fold02", name: "Archive", parentId: null, selectable: true, role: "archive" },
+              ],
+            }),
+          );
+          await currentPage.route("**/api/mail/mailboxes/Box001/saved-views", async (route) => {
+            saved = route.request().postDataJSON();
+            await route.fulfill({ json: { ...route.request().postDataJSON(), id: "View01", revision: 1 } });
+          });
+          const openBuilder = async (currentPage: Awaited<ReturnType<typeof load>>) => {
+            const trigger = currentPage.getByRole("button", { name: "Search (/)", exact: true });
+            if (await trigger.count()) {
+              await trigger.focus();
+              await trigger.press("Enter");
+              await currentPage.locator('input[name="q"]').waitFor({ state: "visible" });
+            }
+            await currentPage.getByRole("button", { name: "Search filters", exact: true }).click();
+            await currentPage.getByRole("dialog").waitFor({ state: "visible" });
+          };
+          await openBuilder(currentPage);
+          const state = () => JSON.parse(new URL(currentPage.url()).searchParams.get("search")!);
+          const folder = currentPage.getByRole("combobox", { name: "Folder", exact: true });
+          if (step === "edit" || step === "sequence") {
+            await folder.click();
+            await currentPage.getByRole("option", { name: "Archive", exact: true }).click();
+            await currentPage.getByRole("button", { name: "Exclude this condition", exact: true }).click();
+            await currentPage.getByRole("button", { name: "Search", exact: true }).click();
+            await currentPage.getByRole("dialog").waitFor({ state: "hidden" });
+            expect(state()).toEqual({
+              expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: "Fold02" } }] },
+              sort: "newest",
+            });
+            await openBuilder(currentPage);
+            await folder.filter({ hasText: "Archive" }).waitFor({ state: "visible" });
+            expect(await folder.textContent()).toContain("Archive");
+          }
+          if (step === "clear" || step === "sequence") {
+            await folder.filter({ hasText: "Archive" }).waitFor({ state: "visible" });
+            await currentPage.getByRole("button", { name: "Clear selection", exact: true }).click();
+            await currentPage.getByRole("button", { name: "Search", exact: true }).click();
+            await currentPage.getByRole("dialog").waitFor({ state: "hidden" });
+            expect(state()).toEqual({
+              expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: null } }] },
+              sort: "newest",
+            });
+            await openBuilder(currentPage);
+            await folder.waitFor({ state: "visible" });
+            expect(await folder.textContent()).toContain("Any included folder");
+          }
+          if (step === "save" || step === "sequence") {
+            await folder.waitFor({ state: "visible" });
+            expect(await folder.textContent()).toContain("Any included folder");
+            await folder.click();
+            await currentPage.getByRole("option", { name: "Inbox", exact: true }).click();
+            await currentPage.getByRole("button", { name: "Save as view", exact: true }).click();
+            await currentPage.getByRole("textbox", { name: "Name", exact: true }).fill("Flagged in folder");
+            await currentPage.getByRole("button", { name: "Save view", exact: true }).click();
+            await currentPage.waitForURL((url) => url.searchParams.get("savedView") === "View01");
+            expect(saved).toMatchObject({
+              filter: {
+                expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: "Fold01" } }] },
+                sort: "newest",
+              },
+            });
+          }
+          expect(currentPage.errors).toEqual([]);
+        } finally {
+          await close(currentPage);
+        }
+      }, 20_000);
+    }
   }
 });
 
@@ -1698,6 +1741,8 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
         ? route.fulfill({ status: 503, json: { error: "Folder lookup temporarily unavailable" } })
         : route.fulfill({ json: [{ id: "Fold01", name: "Inbox", parentId: null, selectable: true, role: "inbox" }] }),
     );
+    if (await page.getByRole("button", { name: "Search (/)", exact: true }).count())
+      await page.getByRole("button", { name: "Search (/)", exact: true }).click();
     await page.getByRole("button", { name: "Search filters", exact: true }).click();
     await page.getByRole("alert").waitFor({ state: "visible" });
     expect(await page.getByRole("combobox", { name: "Folder", exact: true }).isDisabled()).toBe(true);

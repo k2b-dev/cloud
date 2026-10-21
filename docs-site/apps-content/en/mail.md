@@ -23,9 +23,17 @@ The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
 **Waiting for reply**, **Unassigned**, and **More** for the remaining and saved
 views), a **Tag** chip, and a **Search** chip for an active structured search.
 Remove that chip or use **Reset** to clear filters. Folders, Scheduled, and
-Send problems have no view tabs. **Choose list view**, the **…** mailbox menu,
-and **Compose** are also in the head. The mailbox menu contains details,
-tools, and Settings according to your access.
+Send problems have no view tabs. Use the magnifier or press `/` to search:
+the input replaces the views, with field and place options beside it (below it
+on a phone). Text searches the whole mailbox by default; **Place** can restrict
+it to the starting folder. The input's clear button keeps search open. **Reset**,
+**Cancel**, or Escape leaves search and returns to the starting view.
+
+**Select conversations**, the **…** mailbox menu, and **Compose** are also in
+the head. Selection replaces the views with its count and labeled actions;
+**Exit selection** restores them. The mailbox menu contains **Choose list view**
+for conversations or individual messages, plus details, tools, and Settings
+according to your access.
 
 Drafts and Scheduled show their count in the workspace head. Draft rows lead
 with the subject, followed by recipients and a preview, with the edit time and
@@ -772,7 +780,7 @@ the view and selection where filtering began.
 The seven- and thirty-day presets record the time range when chosen, so Back,
 reload, and a saved URL keep the same bounds. **Custom date range…** opens the
 existing search editor with the folder and current conditions already filled
-in. Text search still searches the whole mailbox.
+in. Text search defaults to the whole mailbox; its **Place** option can restrict it to the starting folder.
 
 ## Search by read state or flag
 

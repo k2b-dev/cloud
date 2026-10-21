@@ -9,8 +9,10 @@ import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationReader from "./MailConversationReader";
+import { MailSearchInput, MailSearchOptions, MailSearchTrigger } from "./MailWorkspaceSearch";
 import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
+import { createMailboxSearch } from "./mailbox-search";
 
 export type MailListHarnessOptions = {
   locale: "en" | "de";
@@ -49,6 +51,34 @@ declare global {
     mailNavigations: string[];
     folderHintDismissed: boolean;
   }
+}
+
+function HarnessHead(props: { requestUrl: string; onOpenHref: (href: string, replace?: boolean) => void }) {
+  const search = createMailboxSearch({
+    mailboxId: "Box001",
+    get requestUrl() {
+      return props.requestUrl;
+    },
+    get query() {
+      return new URL(props.requestUrl, location.origin).searchParams.get("q") ?? "";
+    },
+    get search() {
+      return resolveMailSearchRoute(new URL(props.requestUrl, location.origin));
+    },
+    savedViews: [],
+    activeSavedViewId: null,
+    folders: [],
+    localTags: [],
+    canWrite: true,
+    onOpenHref: (href, replace) => props.onOpenHref(href, replace),
+  });
+  return (
+    <AppWorkspace.Head
+      views={search.opened() ? <MailSearchInput search={search} mailboxName="Example Club" /> : "Inbox"}
+      filters={search.opened() ? <MailSearchOptions search={search} count={0} /> : undefined}
+      actions={!search.opened() ? <MailSearchTrigger search={search} /> : undefined}
+    />
+  );
 }
 
 window.mailNavigations = [];
@@ -194,6 +224,7 @@ window.mountMailList = (options) => {
               </AppWorkspace.SidebarBody>
             </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
+          <HarnessHead requestUrl={requestUrl()} onOpenHref={openHref} />
           <AppWorkspace.Content>
             <AppWorkspace.Main class="p-0" mobilePane={options.selectedConversationId ? "main" : "conversations"} scroll={false}>
               <AppWorkspace.MainPane

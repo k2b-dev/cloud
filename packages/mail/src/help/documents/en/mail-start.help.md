@@ -66,9 +66,9 @@ The sidebar contains **Focus** and your mailboxes, with pinned mailboxes first. 
 The head contains:
 
 - View tabs: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, and **Unassigned**. **More** contains **Later**, **Done**, **Recent activity**, **Kept**, and saved views. Folders, Scheduled, and Send problems have no view tabs.
-- A **Tag** chip when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. **Search filters** in the list head opens the filter builder.
-- **Choose list view** for conversations or individual messages.
-- **…** for mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations have no **…** in the head; the open mailbox's **…** in the sidebar offers them only pin and hide.
+- A **Tag** chip when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. The magnifier or `/` opens search in the head; **Search filters** opens its filter builder.
+- **Select conversations** replaces the views with a selection count and actions. **Exit selection** brings the views back.
+- **… → Choose list view** switches between conversations and individual messages. The menu also contains mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations can choose their list view here; the open mailbox's **…** in the sidebar offers them only pin and hide.
 - **Compose** as the primary action when you can send.
 
 On a phone, open the mailbox title to reach Focus, other mailboxes, and the open mailbox's folders. Use the head for views, filters, Compose, and **…**.

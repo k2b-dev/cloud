@@ -8,6 +8,8 @@ order: 20
 
 ## Die passende Unterhaltung finden {icon="search"}
 
+Öffne die Lupe im Kopf oder drücke `/`, um das Postfach zu durchsuchen. **Ort** steht zunächst auf **Ganzes Postfach**. Hast du in einem Ordner begonnen, kannst du die Suche dort auf diesen Ordner begrenzen. Das X im Eingabefeld entfernt den Text und lässt die Suche offen. **Zurücksetzen**, **Abbrechen** oder Escape bringt dich zur Ausgangsansicht zurück. Ist ein Optionsmenü offen, schließt das erste Escape nur dieses Menü.
+
 Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Das umfasst die synchronisierten Nachrichtenfelder und den aus Anhängen erkannten Text.
 
 Um die Suche einzugrenzen, nutze die Schaltfläche für den Suchbereich. Wähle eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.

@@ -9,9 +9,11 @@ kind: task
 
 ## Find the conversation you need {icon="search"}
 
-Use **Search mailbox** for a quick search across the current mailbox. **Everything** is selected by default. It covers the synchronized message fields and extracted attachment text.
+Open the magnifier in the head or press `/` to **Search mailbox**. Text search covers the current mailbox. **Everything** is selected by default. It covers the synchronized message fields and extracted attachment text.
 
 To narrow the search, use the search-in button. Choose any combination of **Sender**, **Recipients**, **Subject**, **Message body**, and **Attachment names**. With several words, a message matches when each word appears somewhere in it, for example the sender's name and a word from the subject.
+
+**Place** starts at **Whole mailbox**. If you started in a folder, choose that folder to search only there. The clear button in the input removes the text and keeps the field open. **Reset**, **Cancel**, or Escape returns to the view where you started; closing an open options menu with Escape leaves search open until you press Escape again.
 
 For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **Search filters**.
 
