@@ -541,7 +541,11 @@ key through an SPKI pin, allowing its HTTP cache to work. The harness reads
 only the public localhost leaf certificate from the tracked Caddy container,
 checks its run label and image, then addresses that container by its immutable
 ID. A CA certificate, wrong hostname, or expired leaf fails the run; the pin
-is never learned from an unverified network connection. WebKit uses its
+is never learned from an unverified network connection. The run-owned Playwright
+server permits launch arguments (`run-server --unsafe`) so Chromium receives
+the pin; Playwright otherwise filters it out. This disposable server shares
+Caddy’s network namespace and is published only on loopback. Its clients must
+be trusted, because this mode also accepts other launch options. WebKit uses its
 existing certificate-error override. A warm sample fails if eager JavaScript
 before destination readiness transfers any bytes; a document load also fails
 if its eager script entries are missing. A swap can reuse evaluated modules

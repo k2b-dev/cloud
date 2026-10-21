@@ -38,7 +38,8 @@ export function browserServer(version: string, port: number) {
   return {
     image: `mcr.microsoft.com/playwright:v${version}-noble`,
     args: ["--init", "--ipc=host", "--user", "pwuser", "--workdir", "/home/pwuser"],
-    tail: ["npx", "-y", `playwright@${version}`, "run-server", "--port", String(port), "--host", "0.0.0.0"],
+    // Playwright 1.64 filters client launch args unless this controlled, loopback-published server opts in.
+    tail: ["npx", "-y", `playwright@${version}`, "run-server", "--unsafe", "--port", String(port), "--host", "0.0.0.0"],
     endpoint: `ws://127.0.0.1:${port}/`,
   };
 }

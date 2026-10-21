@@ -53,11 +53,11 @@ test("skipping certificate verification applies only to the exact local HTTPS or
   expect(localTls("http://localhost:4100/health", "http://localhost:4100")).toEqual({});
 });
 
-test("both engines use the catalog-matching noble image with a server in Caddy’s namespace", () => {
+test("the run-owned browser server accepts certificate pin launch args in Caddy’s namespace", () => {
   expect(browserServer("1.63.0", 4200)).toEqual({
     image: "mcr.microsoft.com/playwright:v1.63.0-noble",
     args: ["--init", "--ipc=host", "--user", "pwuser", "--workdir", "/home/pwuser"],
-    tail: ["npx", "-y", "playwright@1.63.0", "run-server", "--port", "4200", "--host", "0.0.0.0"],
+    tail: ["npx", "-y", "playwright@1.63.0", "run-server", "--unsafe", "--port", "4200", "--host", "0.0.0.0"],
     endpoint: "ws://127.0.0.1:4200/",
   });
 });
