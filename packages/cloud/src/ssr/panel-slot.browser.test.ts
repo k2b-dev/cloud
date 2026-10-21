@@ -94,13 +94,24 @@ document.documentElement.dataset.panelHostMounted = "true";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import PanelRuntime from "./PanelRuntime.island";
-import { getContext, onContextChange } from "../browser/panel";
+import { getContext, onContextChange, onPanelBeforeLeave } from "../browser/panel";
+if (new URL(location.href).searchParams.get("guard") === "1") {
+  const input = document.querySelector("input");
+  let dirty = false;
+  input.addEventListener("input", () => { dirty = true; });
+  const save = document.createElement("button");
+  save.textContent = "Save fixture";
+  save.id = "save-fixture";
+  save.addEventListener("click", () => { dirty = false; });
+  input.after(save);
+  onPanelBeforeLeave(() => !dirty);
+}
 const showContext = () => document.getElementById("panel-context-probe").textContent = JSON.stringify(getContext());
 showContext();
 onContextChange(showContext);
 document.getElementById("prevent-escape").addEventListener("keydown", event => { if (event.key === "Escape") event.preventDefault(); });
 if (new URL(location.href).searchParams.get("mode") !== "silent" || document.cookie.includes("fixture_ready=1")) {
-  render(() => createComponent(PanelRuntime, { provider: document.querySelector("[data-cloud-panel-page]").dataset.panelProvider }), document.createElement("div"));
+  render(() => createComponent(PanelRuntime, { provider: document.querySelector("[data-cloud-panel-page]").dataset.panelProvider, scope: location.pathname }), document.createElement("div"));
 }
 document.documentElement.dataset.panelProviderMounted = "true";
 `,
@@ -148,6 +159,69 @@ const settle = (page: Page) => page.evaluate(() => new Promise((done) => request
 const panelCookie = async (page: Page) => (await storedCookie(page, "cloud_panel"))?.value;
 const modJ = async (page: Page) =>
   (await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent))) ? "Meta+j" : "Control+j";
+
+for (const width of [1440, 390]) {
+  test(`provider lifecycle checks the live frame before close, switch, retarget and full view at ${width}px`, async () => {
+    const { page, context } = await fixture(width);
+    try {
+      await page.locator("#open-panel").click();
+      await ready(page);
+      // The public request bridge selects a guarded destination in the real Layout slot.
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent("cloud.panel.request", {
+            detail: { action: "open", provider: "fixture", search: "guard=1", accepted: false },
+          }),
+        ),
+      );
+      await ready(page);
+      const frame = page.frameLocator("[data-cloud-panel-frame]");
+      await frame.locator("#save-fixture").waitFor();
+      await frame.getByLabel("Panel input", { exact: true }).evaluate((input: HTMLInputElement) => {
+        input.value = "Keep this unsent draft";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        // No event-loop turn in which a posted busy flag could catch up.
+        window.parent.dispatchEvent(new CustomEvent("cloud.panel.request", { detail: { action: "close" } }));
+      });
+      const original = await frame.locator("html").evaluate(() => location.href);
+      for (const request of [
+        { action: "close" },
+        { action: "open", provider: "second", accepted: false },
+        { action: "open", provider: "fixture", search: "other=1", accepted: false },
+      ]) {
+        await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("cloud.panel.request", { detail })), request);
+        expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("fixture");
+        expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Keep this unsent draft");
+        expect(await frame.locator("html").evaluate(() => location.href)).toBe(original);
+        expect(await page.locator("[data-cloud-panel-leave=blocked]").isVisible()).toBe(true);
+      }
+      await frame.locator("#leave-panel").click();
+      expect(page.url()).not.toContain("/next");
+      await page.setViewportSize({ width: width === 390 ? 1440 : 390, height: 900 });
+      expect(await frame.getByLabel("Panel input", { exact: true }).isVisible()).toBe(true);
+      expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Keep this unsent draft");
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(() => window.dispatchEvent(new PopStateEvent("popstate")));
+      expect(await frame.getByLabel("Panel input", { exact: true }).isVisible()).toBe(true);
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent("cloud.panel.consent", {
+            detail: { provider: "fixture", allowed: false },
+          }),
+        ),
+      );
+      await frame.locator("#panel-context-probe").filter({ hasText: "null" }).waitFor();
+      expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Keep this unsent draft");
+      await frame.locator("#save-fixture").click();
+      // Saving never runs an old navigation request.
+      expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("fixture");
+      await page.locator("[data-cloud-panel-close]").click();
+      await closed(page);
+    } finally {
+      await context.close();
+    }
+  });
+}
 async function fixture(
   width = 1440,
   cookie?: string,

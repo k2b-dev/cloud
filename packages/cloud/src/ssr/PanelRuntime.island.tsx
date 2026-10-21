@@ -1,6 +1,7 @@
 import { installAppWorkspaceController, installInputModeController, keyboardPlatform } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { installPanelContextReceiver } from "../browser/panel-context-receiver";
+import { hasPanelLeaveGuard } from "../browser/panel-leave";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
 export default function PanelRuntime(props: { provider?: string; scope?: string }) {
@@ -29,10 +30,17 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
       if (!anchor || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download")) return;
       const url = new URL(anchor.getAttribute("href")!, document.baseURI);
       if (url.origin !== location.origin) return;
+      if (url.pathname === location.pathname && url.search === location.search && url.hash) return;
       const scope = props.scope?.replace(/\/$/, "");
-      if (scope !== undefined && (url.pathname === scope || url.pathname.startsWith(`${scope}/`))) return;
+      const internal = scope !== undefined && (url.pathname === scope || url.pathname.startsWith(`${scope}/`));
+      if (!hasPanelLeaveGuard()) {
+        if (internal) return;
+        event.preventDefault();
+        window.parent.location.assign(url.href);
+        return;
+      }
       event.preventDefault();
-      window.parent.location.assign(url.href);
+      window.parent.postMessage({ type: "cloud.panel.navigate", v: 1, href: url.href }, location.origin);
     };
     const key = (event: KeyboardEvent) => {
       if (event.isComposing || event.defaultPrevented || event.altKey || event.shiftKey) return;

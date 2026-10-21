@@ -495,7 +495,13 @@ else {
     setup(1440, false, true, undefined, false, undefined, { context, consent, restored, ...(answer !== undefined ? { answer } : {}) });
   // A loaded provider document: its own location and the ready mark its PanelRuntime writes.
   const showDocument = (frame: HTMLIFrameElement, window: object, provider = frame.dataset.cloudPanelFrame) => {
-    Object.defineProperty(frame, "contentWindow", { configurable: true, value: window });
+    const events = document.createElement("span");
+    const target = Object.assign(window, {
+      dispatchEvent: events.dispatchEvent.bind(events),
+      addEventListener: events.addEventListener.bind(events),
+      removeEventListener: events.removeEventListener.bind(events),
+    });
+    Object.defineProperty(frame, "contentWindow", { configurable: true, value: target });
     Object.defineProperty(frame, "contentDocument", {
       configurable: true,
       value: { documentElement: { dataset: { cloudPanelReady: provider } } },

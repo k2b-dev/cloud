@@ -1,5 +1,5 @@
 import { attachResizeSeparator, LocaleProvider, parkWorkspaceDetailDrawers } from "@k2b/ui";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
@@ -15,6 +15,7 @@ import { helpShortcutGroups } from "../ssr/layout-help-start";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "./command-shortcuts";
+import PanelLeaveNotice from "./PanelLeaveNotice";
 import type { PanelRequest } from "./panel";
 import {
   PAGE_CONTEXT_CHANGED,
@@ -23,8 +24,9 @@ import {
   type PanelConsentRequest,
   type PanelState,
 } from "./panel-context-bridge";
+import { panelCanLeave } from "./panel-leave";
 import PanelMenu from "./panel-menu";
-import { isPanelCloseMessage, isPanelReadyMessage, isPanelSearchMessage } from "./panel-messages";
+import { isPanelCloseMessage, isPanelNavigateMessage, isPanelReadyMessage, isPanelSearchMessage } from "./panel-messages";
 import { importOnDemand } from "./reload";
 
 export const PANEL_READY_TIMEOUT_MS = 10_000;
@@ -59,6 +61,37 @@ export function installPanelSlot(): () => void {
   let provider = panel.providers.find((item) => item.id === slot.dataset.provider) ?? panel.providers[0]!;
   let frame = slot.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]");
   let disposed = false;
+  const [leaveBlocked, setLeaveBlocked] = createSignal(false);
+  const transitionTo = (action: () => void) => {
+    const target = frame?.contentWindow;
+    if (target && showsProvider() && !panelCanLeave(target)) {
+      setLeaveBlocked(true);
+      return;
+    }
+    setLeaveBlocked(false);
+    action();
+  };
+  const leaveHost = document.createElement("div");
+  body.before(leaveHost);
+  const disposeLeave = render(
+    () =>
+      createComponent(LocaleProvider, {
+        locale: lang,
+        get children() {
+          return createComponent(PanelLeaveNotice, {
+            get blocked() {
+              return leaveBlocked();
+            },
+            locale: lang,
+            resume: () => {
+              setLeaveBlocked(false);
+              frame?.focus();
+            },
+          });
+        },
+      }),
+    leaveHost,
+  );
   let base = panel.context ?? null;
   let context = base;
   let pageRoot = document.querySelector("[data-nav-root]");
@@ -587,9 +620,10 @@ export function installPanelSlot(): () => void {
     }
     main.focus();
   };
-  const close = () => {
+  const closeNow = () => {
     if (!isOpen()) return;
     canvas.removeAttribute(attribute());
+    if (!isPhone()) canvas.removeAttribute("data-panel-sheet");
     disposeResize();
     disposeResize = attachResize();
     unload();
@@ -598,7 +632,8 @@ export function installPanelSlot(): () => void {
     update();
     returnFocus();
   };
-  const open = (id: string, nextSearch?: string) => {
+  const close = () => transitionTo(closeNow);
+  const openNow = (id: string, nextSearch?: string) => {
     const next = panel.providers.find((item) => item.id === id);
     if (!next) return;
     parkWorkspaceDetailDrawers(document);
@@ -620,6 +655,7 @@ export function installPanelSlot(): () => void {
     if (frame) focusPanel();
     else focusPending = true;
   };
+  const open = (id: string, nextSearch?: string) => transitionTo(() => openNow(id, nextSearch));
   const request = (request: PanelRequest) => {
     if (request.action === "open") open(request.provider, request.search);
     else if (request.action === "close" || isOpen()) close();
@@ -629,7 +665,17 @@ export function installPanelSlot(): () => void {
     if (!frame || event.source !== frame.contentWindow || event.origin !== location.origin) return;
     if (isPanelReadyMessage(event.data, provider.id)) markReady();
     else if (isPanelCloseMessage(event.data)) close();
-    else if (isPanelSearchMessage(event.data)) {
+    else if (isPanelNavigateMessage(event.data)) {
+      if (!URL.canParse(event.data.href)) return;
+      const url = new URL(event.data.href, location.origin);
+      if (url.origin !== location.origin || !showsProvider()) return;
+      const scope = new URL(provider.href, location.origin).pathname.replace(/\/$/, "");
+      const internal = url.pathname === scope || url.pathname.startsWith(`${scope}/`);
+      transitionTo(() => {
+        if (internal) frame?.contentWindow?.location.assign(url.href);
+        else window.location.assign(url.href);
+      });
+    } else if (isPanelSearchMessage(event.data)) {
       const command = contextCommandsWithShortcuts().find((command) => command.id === "cloud.search" && command.shortcut);
       if (command) void importOnDemand(() => import("./commands")).then((commands) => commands?.runContextAwareCommand(command));
     }
@@ -640,8 +686,10 @@ export function installPanelSlot(): () => void {
     if (answer && isOpen()) void saveConsent({ provider: provider.id, allowed: answer.dataset.cloudPanelConsentAnswer === "allow" });
     else if (event.target.closest("[data-cloud-panel-close]")) close();
     else if (event.target.closest("[data-cloud-panel-retry]") && isOpen()) {
-      load(true);
-      frame?.focus();
+      transitionTo(() => {
+        load(true);
+        frame?.focus();
+      });
     } else if (event.target.closest("[data-cloud-panel-grow]") && isPhone()) {
       const full = slot.dataset.panelSize !== "full";
       if (full) slot.dataset.panelSize = "full";
@@ -677,17 +725,18 @@ export function installPanelSlot(): () => void {
     if (isOpen()) {
       seedWidth();
       load();
+    } else if (frame) {
+      // A viewport change must not hide an editor while its leave decision is blocked.
+      canvas.setAttribute(attribute(), "open");
+      transitionTo(closeNow);
     } else unload();
     disposeResize = attachResize();
     update();
   };
   const closeSheet = () => {
     const wasOpen = canvas.dataset.panelSheet === "open";
-    canvas.removeAttribute("data-panel-sheet");
-    if (wasOpen && isPhone()) {
-      unload();
-      update();
-    }
+    if (wasOpen && isPhone()) close();
+    else canvas.removeAttribute("data-panel-sheet");
   };
   const pageShow = (event: PageTransitionEvent) => {
     if (!event.persisted) return;
@@ -826,6 +875,8 @@ export function installPanelSlot(): () => void {
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    disposeLeave();
+    leaveHost.remove();
     disposeMenu();
     requests.abort();
     ++loadVersion;
