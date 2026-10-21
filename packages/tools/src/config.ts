@@ -7,7 +7,7 @@ export const app = defineApp({
   name: "Tools",
   icon: "ti ti-tools",
   description: "Utility tools for day-to-day work tasks.",
-  searchLinks: toolSearchLinks,
+  searchLinks: [{ label: "Tools", href: "/tools", keywords: ["tools", "utilities", "werkzeuge"] }, ...toolSearchLinks],
   appearance: { accent: "#475569", background: { from: "#64748b" } },
   presentation: {
     baseLocale: "en",
@@ -15,7 +15,7 @@ export const app = defineApp({
       de: {
         name: "Werkzeuge",
         description: "Praktische Werkzeuge für alltägliche Aufgaben.",
-        searchLinks: germanToolSearchLabels,
+        searchLinks: { "/tools": "Werkzeuge", ...germanToolSearchLabels },
         searchLinkDescriptions: germanToolSearchDescriptions,
       },
     },

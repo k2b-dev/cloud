@@ -10,6 +10,8 @@ type Props = {
   baseId: string;
   activeView: WorkspaceView;
   sourceCount: number;
+  attentionCount?: number;
+  openOverview: () => void;
   settingsDisabled: boolean;
   openSettings: () => void | Promise<void>;
   openSql: () => void;
@@ -30,6 +32,14 @@ export default function PulseSidebar(props: Props) {
   const navigation = createNavigation({
     switcher,
     items: () => [
+      {
+        id: "overview",
+        label: t().overview,
+        icon: "ti ti-home",
+        action: "overview",
+        badge: props.attentionCount || undefined,
+        active: props.activeView === "overview",
+      },
       { id: "sql", label: "SQL", icon: "ti ti-code", action: "sql", active: props.activeView === "sql" },
       {
         id: "sources",
@@ -49,7 +59,8 @@ export default function PulseSidebar(props: Props) {
       { id: "settings", label: t().settings, icon: "ti ti-settings", action: "settings", disabled: props.settingsDisabled },
     ],
     onAction: async (action) => {
-      if (action === "sql") props.openSql();
+      if (action === "overview") props.openOverview();
+      else if (action === "sql") props.openSql();
       else if (action === "sources") props.openSources();
       else if (action === "coming-back") props.openComingBack();
       else if (action === "settings") await props.openSettings();
@@ -62,6 +73,14 @@ export default function PulseSidebar(props: Props) {
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarSwitcher {...switcher()} />
           <AppWorkspace.SidebarBody scrollPreserveKey="pulse-sidebar" sidebarMode="expanded">
+            <AppWorkspace.SidebarItem
+              icon="ti ti-home"
+              active={props.activeView === "overview"}
+              onClick={props.openOverview}
+              meta={props.attentionCount || undefined}
+            >
+              {t().overview}
+            </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem icon="ti ti-code" active={props.activeView === "sql"} onClick={props.openSql}>
               SQL
             </AppWorkspace.SidebarItem>
@@ -82,6 +101,12 @@ export default function PulseSidebar(props: Props) {
             </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">
+            <AppWorkspace.SidebarIconAction
+              icon="ti ti-home"
+              label={t().overview}
+              active={props.activeView === "overview"}
+              onClick={props.openOverview}
+            />
             <AppWorkspace.SidebarIconAction icon="ti ti-code" label="SQL" active={props.activeView === "sql"} onClick={props.openSql} />
             <AppWorkspace.SidebarIconAction
               icon="ti ti-database"

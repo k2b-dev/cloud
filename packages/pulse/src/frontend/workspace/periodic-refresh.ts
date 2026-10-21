@@ -13,9 +13,11 @@ const MAX_BACKOFF_MS = 60_000;
  */
 export const installPeriodicRefresh = (deps: {
   active: Accessor<boolean>;
+  intervalMs?: number;
   refresh: () => Promise<void>;
 }): { failed: Accessor<boolean>; retry: () => void } => {
   const active = createMemo(deps.active);
+  const interval = deps.intervalMs ?? INTERVAL_MS;
   const [failed, setFailed] = createSignal(false);
   const [attempt, setAttempt] = createSignal(0);
   let inFlight = false;
@@ -33,7 +35,7 @@ export const installPeriodicRefresh = (deps: {
     };
     const run = () => {
       if (disposed) return;
-      if (document.hidden || inFlight) return schedule(INTERVAL_MS);
+      if (document.hidden || inFlight) return schedule(interval);
       inFlight = true;
       deps
         .refresh()
@@ -47,10 +49,10 @@ export const installPeriodicRefresh = (deps: {
         })
         .finally(() => {
           inFlight = false;
-          schedule(Math.min(MAX_BACKOFF_MS, INTERVAL_MS * 2 ** failures));
+          schedule(Math.min(Math.max(MAX_BACKOFF_MS, interval), interval * 2 ** failures));
         });
     };
-    schedule(now ? 0 : INTERVAL_MS);
+    schedule(now ? 0 : interval);
     onCleanup(() => {
       disposed = true;
       if (timer) clearTimeout(timer);

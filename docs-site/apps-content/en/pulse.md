@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Collect telemetry and query each base with read-only SQL.
 tags: [pulse, telemetry, metrics]
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # Pulse
@@ -17,6 +17,99 @@ to one ClickHouse database per base; Postgres keeps control data.
 Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a
 separate interface for these same operations; dashboards follow later.
+
+## See what needs attention
+
+A base opens on **Overview**. It shows source freshness, alert rules needing
+attention, up to four saved key numbers, and recent changes. Existing
+`/app/pulse/:baseId/sources` links still open the sources view.
+The workspace fills the available app height on desktop and phone. Longer
+content scrolls inside it; key numbers keep their natural size.
+The overview refreshes every 60 seconds while visible. **View** on an alert
+opens its authorized SQL and parameter values in the console without running
+it. The URL stores the rule reference, so long SQL survives reload and Back.
+Number-only updates keep the headline and tiles in place. When attention rows
+appear or disappear, the list grows or shrinks naturally and following sections
+move with it. An action that remains in the list keeps keyboard focus.
+
+**Ask AI** opens an unsent Assistant draft asking what needs attention in this
+base and why. The draft carries the base resource and the Pulse skill. Data
+texts remain evidence, never instructions; writing still requires approval.
+
+### Put a saved number on the overview
+
+In SQL's saved list, enable **On overview**, or save with `cld pulse queries
+save --pin`. At most four queries can be pinned per base. This needs write
+access; `--unpin` removes a pin. API `pinned` is optional: omitting it preserves
+an existing pin. Changing a pin uses the saved query's current revision.
+
+The result's first numeric column supplies the value from its last row. The
+first `DateTime` or `DateTime64` column supplies sparkline timestamps in result
+order. A scalar without a time column remains a valid number without a trend.
+Optional String columns in the last row supply `unit` and `detail`.
+`detailTone` accepts `neutral`, `success`, `warning`, or `danger`; missing or
+unknown tones are neutral. Invalid optional presentation metadata does not
+invalidate an otherwise valid number. These columns are text, never HTML or
+CSS. A missing or invalid final numeric value is shown as unavailable.
+
+For referenced parameters, Pulse supplies `from` and `to` for the preceding
+24 hours, aligned to a five-minute slot, and `bucket` for five minutes. Other
+saved parameters are preserved; `base_tz` retains its normal reserved meaning.
+There are at most four execution attempts per base in each aligned five-minute
+slot, shared across readers and replicas. Edits, pin replacement, cache expiry,
+and failed attempts do not refill that slot's budget. These executions use the
+overview budget, separate from questions.
+
+A failed refresh keeps the last successful values with their original times.
+Store outages show that the values are old; an unavailable value is never
+replaced with zero. Removing read access hides the protected overview, including
+previously loaded values. `GET /api/pulse/bases/:baseId/overview` has the same
+read boundary for people and agents. It returns bounded attention pages using
+`attentionLimit`/`attentionOffset` and activity pages using
+`activityLimit`/`activityCursor`; the response supplies the next offset/cursor.
+Page sizes range from 1 to 1,000. Recent activity identifies the actual person
+or service account when recorded; it does not infer an approving person.
+
+## Manage alert rules and source expectations
+
+Use `cld pulse alerts list|get|save|delete`, the alert HTTP routes, or the
+`alert.list`, `alert.read`, `alert.save`, and `alert.delete` capabilities.
+Reading needs base read access; changes need write access. There is no rule
+editor in the UI. **View** opens the rule in the SQL console.
+
+A rule returns `key` and finite numeric `value` columns, with at most 100
+unique keys. Configure an `above` or `below` comparison, warning and/or critical
+thresholds, a minimum duration, and an interval of at least 300 seconds. A base
+starts with a limit of 20 rules. Saving uses an idempotency key and, for an
+update, the current revision. A conflict requires rereading the rule.
+`alert.save` approval can be remembered; deletion always asks.
+
+Pulse checks due rules and source freshness every minute, independently of open
+tabs. Each rule has a ten-second SQL deadline and uses only free execution
+slots, without consuming the question quota. A missed check is an error, never
+an assumed success. Work is bounded per tick: at most 60 due rules and 2,000
+sources; a backlog continues on later ticks.
+
+Firing, escalation, missing data, errors, and recovery notify the base's admins
+through Cloud; browser and email delivery are recommended and respect their
+notification preferences. Pending thresholds do not notify. The state change
+and its notification event are committed together, and delivery checks admin
+access again. The event stores the installation language (`app.locale`) as
+delivery metadata. Browser text, email, and retries use that same language,
+even if the installation language changes before delivery. This is the
+installation language, not a recipient profile language.
+
+HTTP ingest sources accept either `expectEverySeconds`, `expectDailyBy`
+(`HH:MM` in the base timezone), or neither. The UI offers these under
+**Edit → Expected data**; the CLI uses `--expect-every`, `--expect-daily-by`,
+or `--clear-expectation`. The freshness measure is the newest data timestamp,
+not the last contact. It does not certify complete data for a day. Scraped
+sources use three configured intervals.
+
+The `source.create` and `source.update` capabilities always ask and expose
+neither tokens nor approval fields. Updates use the current source revision.
+A lost create response leaves the draft visible with **Check sources** and
+blocks another submission until the person checks the canonical source list.
 
 ## Connect the data store
 
@@ -245,7 +338,7 @@ budget, result limits, hourly usage and reset time, and queue limits.
 Three queries can run per Cloud, with one per base. Up to 20 runs can wait
 for five seconds. Input errors and admission refusals do not consume hourly
 quota. Quota is charged only when a query gets a slot and resets at the next
-clock hour. Alerts and dashboards will have separate quotas.
+clock hour. Overview executions and alert checks do not consume the questions quota.
 
 | Code | HTTP | Action |
 | --- | --- | --- |
@@ -266,7 +359,7 @@ started the run can cancel it. Closing the request also cancels the run.
 
 Use `/api/pulse/bases/:baseId/queries` to list or create queries, and
 `/queries/:queryId` to get, update, or delete one. Lists use Cloud pagination.
-Saved queries keep a name, SQL, string-valued parameters, and revision.
+Saved queries keep a name, SQL, string-valued parameters, revision, and an optional overview pin.
 The saved list shows each query’s name, SQL excerpt and last update time.
 Select its row to open it in the console.
 Names are unique within a base without regard to case. A `PATCH` supplies a

@@ -7,7 +7,11 @@ import type { PulseWorkspaceProps } from "./types";
 
 type SourceDetail = { baseId: string; sourceId: string; scrapes: PulseSourceScrape[]; apiKeys: ResourceApiKey[] };
 
-export const createPulseWorkspaceQueries = (props: PulseWorkspaceProps, selectedSourceId: Accessor<string>) => {
+export const createPulseWorkspaceQueries = (
+  props: PulseWorkspaceProps,
+  selectedSourceId: Accessor<string>,
+  loadSources?: Accessor<boolean>,
+) => {
   const baseId = props.initialBaseId;
   const bases = query.create({
     source: () => "bases",
@@ -15,6 +19,7 @@ export const createPulseWorkspaceQueries = (props: PulseWorkspaceProps, selected
     load: (_, { abortSignal }) => jsonFetch<PulseBase[]>("/api/pulse/bases", { signal: abortSignal }),
   });
   const baseData = query.create({
+    enabled: () => loadSources?.() ?? props.initialRouteState.view === "sources",
     source: () => baseId,
     initial: props.initialQueryCoverage.baseData ? { source: baseId, data: props.initialSources } : undefined,
     load: (id, { abortSignal }) => jsonFetch<PulseSource[]>(`/api/pulse/bases/${id}/sources`, { signal: abortSignal }),

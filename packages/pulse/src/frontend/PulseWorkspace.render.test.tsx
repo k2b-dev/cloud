@@ -28,6 +28,10 @@ const props: PulseWorkspaceProps = {
       bearerTokenConfigured: false,
       scrapeIntervalSeconds: null,
       metricFilters: [],
+      revision: 1,
+      expectEverySeconds: null,
+      expectDailyBy: null,
+      staleSince: null,
       status: {
         newestDataAt: null,
         throttled: false,

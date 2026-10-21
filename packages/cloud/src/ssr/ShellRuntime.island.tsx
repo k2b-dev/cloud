@@ -60,10 +60,13 @@ export type ShellRuntimeProps = {
 const searchItems = () => {
   const data = readShellData();
   if (!data) return [];
-  const apps = Object.entries(data.searchLinks).flatMap(([id, searchLinks]) => {
-    const app = data.apps.find((candidate) => candidate.id === id);
-    return app ? [{ id, name: app.label, icon: app.iconClass, searchLinks }] : [];
-  });
+  const apps = data.apps.map((app) => ({
+    id: app.id,
+    name: app.label,
+    icon: app.iconClass,
+    nav: { href: app.href },
+    searchLinks: data.searchLinks[app.id],
+  }));
   return navigationSearchItems(
     apps,
     apps.map((app) => app.id),

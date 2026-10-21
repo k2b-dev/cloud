@@ -12,12 +12,12 @@ Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: basePage } = await import("./[baseId]/page");
 
-test("workspace SSR keeps its raised timeout while loading counts and restores it after failure", async () => {
+test("workspace SSR keeps its raised timeout while loading workspace data and restores it after failure", async () => {
   const timeouts: number[] = [];
   const failure = new Error("fixture load failure");
   const load = spyOn(pageData, "loadPulseWorkspacePageData").mockImplementation(async () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    expect(timeouts).toEqual([40]);
+    expect(timeouts).toEqual([60]);
     throw failure;
   });
   const app = new Hono<AuthContext>().get("/:baseId/sources", ...basePage);
@@ -28,7 +28,7 @@ test("workspace SSR keeps its raised timeout while loading counts and restores i
   try {
     const response = await app.request("/Base01/sources", {}, { timeout: (_request: Request, seconds: number) => timeouts.push(seconds) });
     expect(response.status).toBe(500);
-    expect(timeouts).toEqual([40, REQUEST_IDLE_TIMEOUT_SECONDS]);
+    expect(timeouts).toEqual([60, REQUEST_IDLE_TIMEOUT_SECONDS]);
   } finally {
     load.mockRestore();
   }
