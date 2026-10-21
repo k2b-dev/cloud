@@ -35,11 +35,14 @@ export function NavigationDemo() {
         icon: "ti ti-inbox",
         badge: count(),
         active: active() === "inbox",
+        context: active() === "inbox",
         inlineActions: [{ id: "inbox-details", action: "inbox-details", label: "Inbox details", icon: "ti ti-info-circle" }],
       },
       {
         id: "projects",
         label: "Projects",
+        icon: "ti ti-folders",
+        context: active() === "work",
         children: [
           {
             id: "work",
@@ -100,8 +103,8 @@ export function NavigationDemo() {
     <DemoCard
       id="navigation"
       chip={{ kind: "component", name: "Navigation", from: "@k2b/ui" }}
-      description="One live navigation model, native links, local actions, readable nested rows, sections and a status slot that keeps its place. The host chooses where it renders."
-      code={`const navigation = createNavigation({\n  items: () => [{ id: "inbox", label: "Inbox", action: "inbox", badge: count() }],\n  onAction: id => setActive(id),\n});\n<Navigation navigation={navigation} label="Workspace" />`}
+      description="One live navigation model inline and in a sheet. Select the project: its parent stays strong while the child is active. Other container labels use secondary ink; status colors and unmarked rows keep their own appearance."
+      code={`const navigation = createNavigation({\n  items: () => [{\n    id: "projects", label: "Projects", context: active() === "work",\n    children: [{ id: "work", label: "Work", action: "work", active: active() === "work" }],\n  }],\n  onAction: id => setActive(id),\n});\n<Navigation navigation={navigation} label="Workspace" />`}
     >
       <div class="flex flex-col gap-3 max-w-xl">
         <Button onClick={() => void open()}>Open menu sheet</Button>

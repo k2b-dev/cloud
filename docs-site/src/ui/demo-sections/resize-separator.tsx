@@ -10,9 +10,9 @@ export function ResizeSeparatorDemo() {
     <DemoCard
       id="resize-separator"
       chip={[{ kind: "component", name: "ResizeSeparator", from: "@k2b/ui" }]}
-      description="Drag or use the arrow keys. Drag below 120 px and release to close the inspector."
+      description="Drag or use the arrow keys. Double-click to reset. Drag below 120 px and release to close the inspector."
       code={
-        '<ResizeSeparator label="Resize inspector" orientation="vertical" min={160} max={360} value={width()} grow="start" onResize={setWidth} />'
+        '<ResizeSeparator label="Resize inspector" orientation="vertical" min={160} max={360} value={width()} grow="start" onResize={setWidth} onReset={() => setWidth(240)} />'
       }
     >
       <div style={{ display: "flex", height: "180px", overflow: "hidden", background: "var(--k2b-surface-muted)" }}>
@@ -33,6 +33,7 @@ export function ResizeSeparatorDemo() {
             grow="start"
             collapseBelow={120}
             onResize={setWidth}
+            onReset={() => setWidth(240)}
             onCollapseIntent={setClosing}
             onCollapse={() => setOpen(false)}
           />

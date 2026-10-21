@@ -735,6 +735,12 @@ export function installPanelSlot(): () => void {
             committedWidth = value;
             writeCookie();
           },
+          onReset: () => {
+            committedWidth = undefined;
+            canvas.style.removeProperty("--cloud-panel-width-set");
+            writeCookie();
+            seedWidth();
+          },
           onCollapseIntent: (armed) => {
             if (armed) slot.dataset.closing = "true";
             else delete slot.dataset.closing;

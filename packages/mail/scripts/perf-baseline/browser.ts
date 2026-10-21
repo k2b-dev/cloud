@@ -19,13 +19,16 @@ import {
   type InteractionId,
   type InteractionProfile,
   type InteractionSample,
+  type InteractionTrace,
+  interactionRequestSizes,
+  interactionRequestTiming,
   interactionSample,
   interactions,
+  interactionTraceBreakdown,
   islandRenderMs,
   type LoadPage,
   type LoadProfile,
   type LoadSample,
-  loadPages,
   summarizeInteraction,
   summarizeLoads,
   syncMark,
@@ -36,10 +39,19 @@ import { draftSeedBodies } from "./requests";
 
 type Profile = (typeof profiles)[number];
 /** framesReported: every iframe inside reported its laid-out height (the HTML message frame does after its body). */
-type Condition = { selector: string; text?: string; visible?: boolean; writable?: boolean; mounted?: boolean; framesReported?: boolean };
+type Condition = {
+  selector: string;
+  text?: string;
+  visible?: boolean;
+  writable?: boolean;
+  mounted?: boolean;
+  framesReported?: boolean;
+  path?: string;
+  interactive?: boolean;
+};
 /** pointerdown/enter: the trusted input event; mark: the page calls __mailPerfMark; external: the host supplies t0. */
 type Watch = { id: string; conditions: Condition[]; action: "pointerdown" | "enter" | "mark" | "external" };
-type WatchState = Watch & { actionAt: number | null; inputAt: number | null; hitAt: number | null };
+type WatchState = Watch & { actionAt: number | null; inputAt: number | null; hitAt: number | null; mountWindows: [number, number][] };
 declare global {
   interface Window {
     __mailPerfArm?: (watch: Watch) => boolean;
@@ -65,7 +77,7 @@ const traceCategories = ["devtools.timeline", "disabled-by-default-devtools.time
  * time is taken in the frame callback that paints it. Times are epoch ms, comparable with
  * the host clock because the browser container shares the host kernel clock.
  */
-export function installInteractionProbe(key: string) {
+export function installInteractionProbe({ key, trace = false }: { key: string; trace?: boolean }) {
   // Init scripts also run in child frames; a sandboxed message iframe has no storage access,
   // and Playwright's service worker block throws there. Only the app's own document counts.
   if (window !== window.top) return;
@@ -97,7 +109,17 @@ export function installInteractionProbe(key: string) {
     },
     { capture: true },
   );
+  const mountWindows = (): [number, number][] =>
+    [...(window.__cloudPerf?.mounted ?? [])].flatMap(([island, end]): [number, number][] => {
+      const start = window.__cloudPerf?.started.get(island);
+      return start === undefined ? [] : [[performance.timeOrigin + start, performance.timeOrigin + end]];
+    });
+  addEventListener("pagehide", () => {
+    const state = read();
+    if (trace && state && state.hitAt === null) write({ ...state, mountWindows: [...state.mountWindows, ...mountWindows()] });
+  });
   const holds = (condition: Condition) => {
+    if (condition.path !== undefined && window.location.pathname !== condition.path) return false;
     for (const element of document.querySelectorAll(condition.selector)) {
       if (condition.text !== undefined && !(element.textContent ?? "").includes(condition.text)) continue;
       if (condition.writable) {
@@ -112,7 +134,8 @@ export function installInteractionProbe(key: string) {
         ![...element.querySelectorAll("iframe")].every((frame) => frame.contentWindow && reported.has(frame.contentWindow))
       )
         continue;
-      if (condition.mounted) {
+      if (condition.interactive && element.closest('[aria-busy="true"]')) continue;
+      if (condition.mounted || condition.interactive) {
         const island = element.closest("solid-island,solid-client");
         if (!island || !window.__cloudPerf?.mounted.has(island)) continue;
       }
@@ -130,8 +153,13 @@ export function installInteractionProbe(key: string) {
     requestAnimationFrame(function tick() {
       const state = read();
       if (!state || state.hitAt !== null) return;
+      if (state.action !== "external" && state.actionAt === null) {
+        requestAnimationFrame(tick);
+        return;
+      }
       if (matches(state)) {
         state.hitAt = now();
+        if (trace) state.mountWindows.push(...mountWindows());
         write(state);
       } else requestAnimationFrame(tick);
     });
@@ -171,7 +199,7 @@ export function installInteractionProbe(key: string) {
   window.__mailPerfArm = (watch) => {
     // An end state that already holds cannot be caused by the coming action.
     if (matches(watch)) return false;
-    write({ ...watch, actionAt: null, inputAt: null, hitAt: null });
+    write({ ...watch, actionAt: null, inputAt: null, hitAt: null, mountWindows: [] });
     loop();
     return true;
   };
@@ -209,6 +237,9 @@ type Setup = {
   plan: LargeMailboxPlan;
   fixture: { remoteResourceId: string; inboxId: string; senderIdentityId: string };
   mailbox: { shortId: string; uuid: string };
+  mailboxB: { shortId: string };
+  interactions: InteractionId[];
+  loads: LoadPage[];
   nextUid: () => number;
 };
 type Recorded = { request: Request; at: number };
@@ -245,13 +276,13 @@ class MailBrowser {
   private get inbox() {
     return `${this.base}?folder=${this.setup.plan.shape.largeFolderId}`;
   }
-  private async route(href: string) {
+  private async route(href: string, mailbox: { shortId: string } = this.setup.mailbox) {
     return listSchema.parse(
-      await this.setup.api.request(`/api/mail/mailboxes/${this.setup.mailbox.shortId}/workspace-route?href=${encodeURIComponent(href)}`),
+      await this.setup.api.request(`/api/mail/mailboxes/${mailbox.shortId}/workspace-route?href=${encodeURIComponent(href)}`),
     );
   }
-  private async first(href: string) {
-    const item = (await this.route(href)).listItems[0];
+  private async first(href: string, mailbox: { shortId: string } = this.setup.mailbox) {
+    const item = (await this.route(href, mailbox)).listItems[0];
     if (!item) throw new Error(`Fixture list is empty: ${href}`);
     return item;
   }
@@ -306,8 +337,11 @@ class MailBrowser {
   }
 
   /** A link that is visible now; on phones the navigation sits behind the app menu. */
-  private async reveal(page: Page, profile: Profile, selector: string): Promise<Locator> {
-    const link = page.locator(selector).filter({ visible: true }).first();
+  private async reveal(page: Page, profile: Profile, selector: string, phoneSelector = selector): Promise<Locator> {
+    const link = page
+      .locator(profile === "phone" ? phoneSelector : selector)
+      .filter({ visible: true })
+      .first();
     if ((await link.count()) === 0 && profile === "phone")
       await page.getByRole("button", { name: "Open apps", exact: true }).tap({ timeout: interactionTimeoutMs });
     await link.waitFor({ state: "visible", timeout: interactionTimeoutMs });
@@ -320,6 +354,29 @@ class MailBrowser {
   async prepare(id: InteractionId, live: { ready: Promise<void> }): Promise<Prepared> {
     const shape = this.setup.plan.shape;
     switch (id) {
+      case "mailbox-switch": {
+        const mailbox = this.setup.mailboxB;
+        const target = `/app/mail/${mailbox.shortId}`;
+        const row = await this.first(target, mailbox);
+        return {
+          startPath: this.inbox,
+          act: async (page, profile) => {
+            const link = await this.reveal(
+              page,
+              profile,
+              `.mail-sidebar-mailbox[data-mailbox="${mailbox.shortId}"] a[href="${target}"]`,
+              `dialog a[href="${target}"]`,
+            );
+            await this.arm(page, {
+              id,
+              action: "pointerdown",
+              conditions: [{ selector: rowSelector(row), visible: true, path: target, interactive: true }],
+            });
+            await this.press(profile, link);
+            return null;
+          },
+        };
+      }
       case "folder-switch": {
         // The first custom folder sits at the top level of the folder tree on every profile;
         // Archive is behind the collapsed More group on desktop.
@@ -546,93 +603,135 @@ class MailBrowser {
     }
   }
 
-  async interaction(browser: Browser, engine: Engine, profile: Profile, id: InteractionId): Promise<InteractionSample> {
+  async interaction(
+    browser: Browser,
+    engine: Engine,
+    profile: Profile,
+    id: InteractionId,
+    traced = false,
+  ): Promise<{ sample: InteractionSample; trace: InteractionTrace | null }> {
+    let tracing = false;
+    let trace: InteractionTrace | null = null;
     let resolveReady: () => void = () => {};
     const ready = new Promise<void>((resolve) => {
       resolveReady = resolve;
     });
     const prepared = await this.prepare(id, { ready });
     const url = new URL(prepared.startPath, this.setup.api.origin).href;
-    const { after } = await this.browsers.sample(browser, engine, profile, url, this.setup.api.cookie, {
-      timeoutMs: sampleTimeoutMs,
-      beforeLoad: async (page) => {
-        await page.addInitScript(installInteractionProbe, watchKey);
-        page.on("websocket", (socket) =>
-          socket.on("framereceived", (frame) => {
-            if (typeof frame.payload === "string" && /"t"\s*:\s*"ready"/.test(frame.payload)) resolveReady();
-          }),
-        );
-      },
-      afterLoad: async (page, _timing, cdp) => {
-        // The person just loaded the start page: like WebKit's fresh context, the interaction
-        // reuses what that load cached instead of the cold load's disabled Chromium cache.
-        await cdp?.send("Network.setCacheDisabled", { cacheDisabled: false });
-        const recorded: Recorded[] = [];
-        const settled = new Map<Request, (failure: string | null) => void>();
-        const outcomes = new Map<Request, Promise<string | null>>();
-        page.on("request", (request) => {
-          recorded.push({ request, at: monotonicMs() });
-          outcomes.set(request, new Promise((resolve) => settled.set(request, resolve)));
-        });
-        page.on("requestfinished", (request) => settled.get(request)?.(null));
-        // Navigation cancels requests of the previous document; they count with their failure and no bytes.
-        page.on("requestfailed", (request) => settled.get(request)?.(request.failure()?.errorText ?? "failed"));
-        const external = await prepared.act(page, profile);
-        const state = await this.outcome(page);
-        const actionAt = external ?? state.actionAt;
-        if (actionAt === null || state.hitAt === null) throw new Error(`${id}: the action was not observed in the page`);
-        if (id === "search-submit") {
-          const gap = state.inputAt === null ? "unknown" : (actionAt - state.inputAt).toFixed(0);
-          if (state.inputAt === null || actionAt - state.inputAt >= searchDebounceMs)
-            throw new Error(`search-submit: Enter came ${gap} ms after the typed input; the debounced search may have started first`);
-        }
-        if (state.hitAt < actionAt && external === null) throw new Error(`${id}: end state painted before the action`);
-        const hitAt = state.hitAt;
-        if (id === "compose-open") {
-          // Not timed: prove that the editor really takes input.
-          const editor = page.locator(composeEditor).filter({ visible: true }).first();
-          await editor.pressSequentially("x", { timeout: interactionTimeoutMs });
-          if (!(await editor.inputValue()).includes("x")) throw new Error("compose-open: the editor did not accept input");
-        }
-        const errors = await page.evaluate((key) => JSON.parse(sessionStorage.getItem(key) ?? "[]") as string[], errorsKey);
-        if (errors.length) throw new Error(`${id}: ${errors.join("; ")}`);
-        // Candidates by host event time, then the browser's own start time decides: only requests
-        // started between the action and the painted end state belong to the timed window.
-        const candidates = recorded.filter((entry) => entry.at >= actionAt - clockSlackMs && entry.at <= hitAt + clockSlackMs);
-        const settledRequests = await Promise.all(
-          candidates.map(async ({ request, at }) => {
-            // A request of a replaced document may never settle; it counts as unsettled without bytes.
-            const failed = await within(outcomes.get(request)!, unsettledMs, "").catch(
-              () => `unsettled ${unsettledMs} ms after the end state`,
-            );
-            const startTime = request.timing().startTime;
-            return { request, failed, startedAt: startTime > 0 ? startTime : at };
-          }),
-        );
-        const requests = await Promise.all(
-          settledRequests
-            .filter(({ startedAt }) => startedAt >= actionAt && startedAt <= hitAt)
-            .map(async ({ request, failed }) => {
-              const target = new URL(request.url());
-              const sizes = failed === null ? await request.sizes() : null;
-              const response = failed === null ? await request.response() : null;
-              return {
-                method: request.method(),
-                path: `${target.pathname}${target.search}`.slice(0, 300),
-                type: request.resourceType(),
-                status: response?.status() ?? null,
-                encoding: response ? (response.headers()["content-encoding"] ?? "identity") : null,
-                bytes: sizes ? sizes.responseBodySize + sizes.responseHeadersSize : 0,
-                failure: failed,
-              };
+    try {
+      const { after } = await this.browsers.sample(browser, engine, profile, url, this.setup.api.cookie, {
+        timeoutMs: sampleTimeoutMs,
+        beforeLoad: async (page) => {
+          await page.addInitScript(installInteractionProbe, { key: watchKey, trace: traced });
+          page.on("websocket", (socket) =>
+            socket.on("framereceived", (frame) => {
+              if (typeof frame.payload === "string" && /"t"\s*:\s*"ready"/.test(frame.payload)) resolveReady();
             }),
-        );
-        // A live arrival can paint before the worker's commit acknowledgement reaches the host.
-        return interactionSample(Math.max(0, hitAt - actionAt), requests);
-      },
-    });
-    if (!after) throw new Error(`${id}: no interaction result`);
-    return after;
+          );
+        },
+        afterLoad: async (page, _timing, cdp) => {
+          // The person just loaded the start page: like WebKit's fresh context, the interaction
+          // reuses what that load cached instead of the cold load's disabled Chromium cache.
+          await cdp?.send("Network.setCacheDisabled", { cacheDisabled: false });
+          const recorded: Recorded[] = [];
+          const settled = new Map<Request, (failure: string | null) => void>();
+          const outcomes = new Map<Request, Promise<string | null>>();
+          page.on("request", (request) => {
+            recorded.push({ request, at: monotonicMs() });
+            outcomes.set(request, new Promise((resolve) => settled.set(request, resolve)));
+          });
+          page.on("requestfinished", (request) => settled.get(request)?.(null));
+          // Navigation cancels requests of the previous document; they count with their failure and no bytes.
+          page.on("requestfailed", (request) => settled.get(request)?.(request.failure()?.errorText ?? "failed"));
+          let markTimeMs = 0;
+          let frameIds: string[] = [];
+          if (traced) {
+            if (!cdp) throw new Error("Interaction tracing requires Chromium");
+            const tree = z
+              .object({ frameTree: z.object({ frame: z.object({ id: z.string() }) }) })
+              .parse(await cdp.send("Page.getFrameTree"));
+            frameIds = [tree.frameTree.frame.id];
+            await browser.startTracing(page, { categories: traceCategories });
+            tracing = true;
+            markTimeMs = await page.evaluate((name) => performance.timeOrigin + performance.mark(name).startTime, syncMark);
+          }
+          const external = await prepared.act(page, profile);
+          const state = await this.outcome(page);
+          const actionAt = external ?? state.actionAt;
+          if (actionAt === null || state.hitAt === null) throw new Error(`${id}: the action was not observed in the page`);
+          if (id === "search-submit") {
+            const gap = state.inputAt === null ? "unknown" : (actionAt - state.inputAt).toFixed(0);
+            if (state.inputAt === null || actionAt - state.inputAt >= searchDebounceMs)
+              throw new Error(`search-submit: Enter came ${gap} ms after the typed input; the debounced search may have started first`);
+          }
+          if (state.hitAt < actionAt && external === null) throw new Error(`${id}: end state painted before the action`);
+          const hitAt = state.hitAt;
+          if (traced) {
+            const buffer = await browser.stopTracing();
+            tracing = false;
+            trace = interactionTraceBreakdown(JSON.parse(buffer.toString("utf8")), {
+              markTimeMs,
+              actionAt,
+              hitAt,
+              mountWindows: state.mountWindows,
+              frameIds,
+            });
+          }
+          if (id === "compose-open") {
+            // Not timed: prove that the editor really takes input.
+            const editor = page.locator(composeEditor).filter({ visible: true }).first();
+            await editor.pressSequentially("x", { timeout: interactionTimeoutMs });
+            if (!(await editor.inputValue()).includes("x")) throw new Error("compose-open: the editor did not accept input");
+          }
+          const errors = await page.evaluate((key) => JSON.parse(sessionStorage.getItem(key) ?? "[]") as string[], errorsKey);
+          if (errors.length) throw new Error(`${id}: ${errors.join("; ")}`);
+          // Candidates by host event time, then the browser's own start time decides: only requests
+          // started between the action and the painted end state belong to the timed window.
+          const candidates = recorded.filter((entry) => entry.at >= actionAt - clockSlackMs && entry.at <= hitAt + clockSlackMs);
+          const settledRequests = await Promise.all(
+            candidates.map(async ({ request, at }) => {
+              // A request of a replaced document may never settle; it counts as unsettled without bytes.
+              const failed = await within(outcomes.get(request)!, unsettledMs, "").catch(
+                () => `unsettled ${unsettledMs} ms after the end state`,
+              );
+              const startTime = request.timing().startTime;
+              return { request, failed, startedAt: startTime > 0 ? startTime : at };
+            }),
+          );
+          const requests = await Promise.all(
+            settledRequests
+              .filter(({ startedAt }) => startedAt >= actionAt && startedAt <= hitAt)
+              .map(async ({ request, failed }) => {
+                const target = new URL(request.url());
+                const sizes = failed === null ? await request.sizes() : null;
+                const response = failed === null ? await request.response() : null;
+                const timing = request.timing();
+                return {
+                  ...(failed === null ? interactionRequestTiming(timing) : {}),
+                  ...interactionRequestSizes(sizes),
+                  method: request.method(),
+                  path: `${target.pathname}${target.search}`.slice(0, 300),
+                  type: request.resourceType(),
+                  status: response?.status() ?? null,
+                  encoding: response ? (response.headers()["content-encoding"] ?? "identity") : null,
+                  failure: failed,
+                };
+              }),
+          );
+          // A live arrival can paint before the worker's commit acknowledgement reaches the host.
+          const target =
+            id === "mailbox-switch" ? `/app/mail/${this.setup.mailboxB.shortId}` : id === "folder-switch" ? this.base : undefined;
+          const sample = interactionSample(Math.max(0, hitAt - actionAt), requests, target);
+          if (trace && sample.mainRequest) trace.mainRequest = sample.mainRequest;
+          if (target && !sample.mainRequest) throw new Error(`${id}: no destination document or workspace request recorded`);
+          return sample;
+        },
+      });
+      if (!after) throw new Error(`${id}: no interaction result`);
+      return { sample: after, trace };
+    } finally {
+      if (tracing) await browser.stopTracing().catch(() => {});
+    }
   }
 
   async load(browser: Browser, engine: Engine, profile: Profile, page: LoadPage): Promise<{ sample: LoadSample; encoding: string }> {
@@ -755,11 +854,14 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
       const failures: string[] = [];
       for (let run = 0; run < section.runs; run++) {
         setup.signal.throwIfAborted();
+        console.log(`    ${engine} ${profile} sample ${run + 1}/${section.runs} start ${new Date().toISOString()}`);
         try {
           await sample(browser);
         } catch (error) {
           setup.signal.throwIfAborted();
           failures.push(`Run ${run + 1}: ${failure(error)}`);
+        } finally {
+          console.log(`    ${engine} ${profile} sample ${run + 1}/${section.runs} end ${new Date().toISOString()}`);
         }
       }
       if (failures.length) {
@@ -767,7 +869,7 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
         result.reason = failures.join("; ");
       }
     };
-    for (const id of loadPages) {
+    for (const id of setup.loads) {
       const page: BrowserSection["pages"][number] = { id, path: "", errors: [], static: null, profiles: [] };
       section.pages.push(page);
       try {
@@ -808,7 +910,8 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
           await save();
         }
     }
-    for (const { id } of interactions) {
+    for (const definition of interactions.filter((definition) => setup.interactions.includes(definition.id))) {
+      const { id } = definition;
       const entry = { id, profiles: [] as InteractionProfile[] };
       section.interactions.push(entry);
       for (const engine of section.engines)
@@ -817,9 +920,18 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
           const result: InteractionProfile = { browser: engine, profile, status: "ok", reason: null, samples: [], metrics: null };
           entry.profiles.push(result);
           await each(engine, profile, result, async (browser) => {
-            result.samples.push(await mail.interaction(browser, engine, profile, id));
+            result.samples.push((await mail.interaction(browser, engine, profile, id)).sample);
           });
           if (result.status === "ok") result.metrics = summarizeInteraction(result.samples);
+          const chromium = browsers.engines.get("chromium");
+          if ("trace" in definition && definition.trace && engine === "chromium" && chromium && result.status !== "skipped") {
+            try {
+              result.trace = (await mail.interaction(chromium, engine, profile, id, true)).trace;
+            } catch (error) {
+              setup.signal.throwIfAborted();
+              result.traceError = failure(error);
+            }
+          }
           await save();
         }
     }

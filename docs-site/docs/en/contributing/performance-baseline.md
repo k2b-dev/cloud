@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Measure production page performance
@@ -496,7 +496,7 @@ verify the probe and verdict contracts, not production performance.
 `packages/mail/scripts/perf-baseline.ts` measures the Mail server and its APIs
 at a realistic mailbox size. It reuses this page's isolated production stack.
 With `--browser`, it also measures client cost and interaction times in
-Chromium and WebKit on the same seeded mailbox:
+Chromium and WebKit on the same two seeded mailboxes:
 
 ```bash
 bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
@@ -506,18 +506,25 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts --browser chromium,webk
 The script needs Docker and takes the machine-wide heavy lock. It creates and
 removes only its own labelled containers, publishes them on free loopback
 ports, and never uses port 3000 or the development database. Builds and
-startup take 5–15 minutes, seeding 20,000 messages takes about 2 minutes, and
-measuring takes 2–5 minutes; a busy host takes longer. The browser part adds
+startup take 5–15 minutes. Seeding 20,000 messages takes about 2 minutes per
+mailbox, and measuring takes 2–5 minutes; a busy host takes longer. The browser part adds
 roughly 10–30 minutes. `--help` lists every flag without starting Docker.
 
 ### Fixture
 
-`packages/mail/test/fixtures/large-mailbox.ts` builds the mailbox from a fixed
+The runner creates two readable mailboxes, A and B, for the same user through
+`POST /api/mail/mailboxes`; B appears in A's sidebar. Both are always seeded,
+even when browser measurements are filtered.
+`packages/mail/test/fixtures/large-mailbox.ts` builds each mailbox from a fixed
 seed and a frozen anchor date (`2026-10-01T00:00:00Z`), so two runs with the
-same flags seed the same rows. The defaults are 20,000 messages, 3,000
+same flags seed the same rows. The defaults per mailbox are 20,000 messages, 3,000
 conversations, and 30 folders; `--messages` (up to 100,000),
 `--conversations`, `--folders`, and `--seed` change them. Use
-`--folders 350` for the folder scale reported in #1268.
+`--folders 350` for the folder scale reported in #1268. B has the same requested
+shape with seed + 1 (wrapping to 0 after 4294967295), different content, and
+short IDs reserved against A to prevent global unique-key collisions.
+Metadata records B's fixture parameters, digest, and seed duration separately;
+`seedDurationMs` continues to describe A.
 
 The shape follows a real shared mailbox: large Inbox and Archive, many small
 folders in a tree, 70% of threads with 1–3 messages, a tail up to 99, and one
@@ -541,7 +548,10 @@ view counts, a message arriving live, and opening compose for a new message
 and a reply. `list-paging-workspace` loads page 1 through `workspace-route`
 as an untimed cursor prerequisite, then measures list pages 2–5 through
 `workspace-list`. `folder-medium-list` measures page 1 of the medium folder
-through `workspace-list`.
+through `workspace-list`. The Mailbox switch group adds
+`mailbox-switch-route`, a GET of B's `workspace-route?href=/app/mail/<B>`,
+and `ssr-mailbox-b`, a document GET of `/app/mail/<B>`. The other scenarios
+continue to target A.
 
 For each scenario the run records cold, median, and p95 times, response and
 island props bytes, Server-Timing phases, and the statement count and
@@ -563,7 +573,28 @@ engine. `--browser-runs N` (1–20, default 3) sets the cold loads per page,
 interaction, engine, and profile. WebKit may skip with a recorded connection
 error, as on the page baseline.
 
-Two pages are loaded: the mailbox and the compose page of a fresh draft. For
+`--interactions <ids>` selects a comma-separated list from the interaction
+table below (default: all eight). `--loads mailbox,compose` selects standalone
+page-load measurements (default: both); `--loads none` skips them. Unknown or
+duplicate IDs fail before startup; `none` cannot be combined with page IDs.
+These flags leave server scenarios and seeding unchanged. For a focused
+before/after run:
+
+```bash
+bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 3 \
+  --browser chromium,webkit --browser-runs 5 \
+  --interactions mailbox-switch,folder-switch --loads none
+```
+
+For a browser-only remeasurement, add `--browser-only` with `--browser`.
+Both mailboxes are still seeded, but `scenarios` stays empty and no server
+scenario adds messages or draft seeds or warms the server caches. Matching
+fixture digests alone do not establish equivalent cache conditions. Each browser sample logs its UTC
+start and end, including start-page loading, so an external load disturbance
+can be matched to individual samples. Preserve disturbed results and rerun
+only affected measurements; do not silently combine incomplete profiles.
+
+By default, two pages are loaded: the mailbox and the compose page of a fresh draft. For
 each page the result has the eager and lazy JavaScript (Brotli bytes and
 module count) and, per engine and profile, FCP, LCP, TTI, the end of the
 last initial island mount, the island render time (the union of the initial
@@ -579,12 +610,13 @@ The Document transfer column shows the HTML body download time
 (`responseEnd - responseStart`), its transferred bytes, and its content
 encoding. An absent `content-encoding` header is recorded as `identity`.
 
-Seven interactions share one definition for both engines and both profiles.
+Eight interactions share one definition for both engines and both profiles.
 Each sample opens its start page in its own fresh page, waits for TTI, and
 then times one action:
 
 | Interaction | Action | Ends when |
 | --- | --- | --- |
+| `mailbox-switch` | From A's Inbox, click B in the sidebar; on the phone, open the app navigation sheet first | B's first Inbox row from workspace-route page 1 is on screen, the pathname is `/app/mail/<B>`, the workspace island containing the row has mounted, and the list/main pane is not busy |
 | `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
 | `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader; an HTML body also needs its message frame to report its laid-out height |
 | `conversation-open-large` | Start with a mailbox-wide exact subject search for conversation 0 (`Project correspondence 0`, newest first), then click its conversation row. This isolates `plan.shape.largestThreadId` on page 1 without scrolling; live arrivals have different subjects. Before each sample, the workspace API must return that row on page 1 or the sample fails with the start href | The reader loads the newest 100 messages of the thread (180 messages by default). The newest message's body is on screen, with a body-format marker; an HTML body also needs its frame to report its laid-out height. A missing newest body fails the sample |
@@ -610,12 +642,40 @@ take it. An interaction sample also fails on an uncaught error or rejection
 or on an island error in any of the app's documents during the sample, so an
 error in the start page still counts after compose navigated away. Errors
 inside the sandboxed message frame do not count.
+
+`mailbox-switch` uses the same end state for a full document load and an
+in-place workspace fetch. It uses the load probe's existing runtime mount
+signal, so SSR rows cannot finish the timer before MailWorkspace mounts;
+an already mounted workspace also works when switching in place. The watch
+persists in sessionStorage and the probe runs in the destination document.
+
 Each interaction records the requests that started from the
 action until its end state, with their encoded response bytes and content
 encoding (`identity` when the header is absent); a request
 that a navigation cancels counts with its error and no bytes. The summary
 shows the API requests and bytes, and lists request encodings. Failed or
-unsettled requests have `null` encoding.
+unsettled requests have `null` encoding. For mailbox and folder switches,
+`mainRequest` identifies the destination document or workspace-route/workspace-list
+fetch. Samples and the summary include its server time (`responseStart -
+requestStart` from Playwright request timing), transfer time (`responseEnd -
+responseStart`), encoded body bytes, and encoding. These times exclude
+connection setup; bytes for the other request totals still include headers.
+A browser can report an unavailable body size as a negative value for a cached
+response. That sample still counts: `encodedBytes` is omitted, and request
+totals include only the known nonnegative body and header sizes. They are a
+lower bound when a size is unavailable.
+
+Definitions with `trace: true` (`mailbox-switch` and `folder-switch`) add one
+extra traced Chromium sample per profile, excluded from timing samples.
+The **Interaction breakdown** table shows elapsed total, main-request server
+and transfer time, and main-thread task time split into JavaScript execution,
+parse/compile, island render, style/layout, and other, with shares of busy
+time. Busy time is the union of those main-thread task windows. The task window runs from the action to the end state. Renderer main
+threads are selected from the page's frame metadata, including a replacement
+renderer after navigation. Island render is the union of mount windows in
+that interval (zero when no island mounts); it owns nested JS, compile, and
+layout work. Remaining compile and layout work take precedence over JS, so
+these interaction shares do not overlap.
 
 Every sample uses a fresh browser context, so each start page loads cold.
 The interaction then reuses what that load cached, as for a person who just
@@ -623,6 +683,128 @@ opened the page: Chromium turns its cache back on after the start page, and
 WebKit keeps the context's cache. JavaScript and styles that only the next
 page needs, such as compose, still load from the network. These are local
 emulations in a container, not measurements on real phones.
+
+### Recorded mailbox-switch results
+
+On 20 October 2026, five samples per engine and profile compared document
+navigation on `c4b305b9d` with the in-place mailbox-switch checkpoint
+`d9137b4bd`. Both mailboxes used the default fixture above, with seeds
+20261001 and 20261002 and matching fixture digests between runs.
+Playwright was 1.64.1, Chromium 156.0.8078.4, and WebKit 27.2.
+
+These are observations from a busy shared host with 24 logical CPUs, **not
+isolated performance results**. The one-minute load average was 29.9 → 32.7
+for the Chromium before run, 16.4 → 25.7 for the earlier WebKit before run,
+and 32.2 → 24.1 after. Another lane's tests, browser fixtures, and typecheck
+overlapped the after run from 18:03:38 to 18:12:02 UTC. This affects both
+Chromium profiles, WebKit desktop, and the beginning of WebKit phone
+(18:11:55–18:12:40). The original output has no per-sample UTC bounds, so no
+individual WebKit phone sample can be certified as undisturbed. All before
+samples are retained; the first after values below are disturbed observations.
+The later browser-only remeasurement follows them separately.
+
+Each cell is median (min–max), in milliseconds:
+
+| Engine | Profile | Before | First after, disturbed |
+| --- | --- | ---: | ---: |
+| Chromium | Desktop | 1,436.9 (1,240–1,949.9) | 639.5 (605.9–675.7) |
+| Chromium | Phone, CPU/network throttled | 6,127.8 (5,878.6–6,500.2) | 2,539.3 (2,227.4–2,590.2) |
+| WebKit | Desktop | 4,755 (3,874–6,565) | 1,874 (1,682–4,409) |
+| WebKit | Phone viewport, unthrottled | 4,142 (3,906–4,707) | 1,394 (1,115–2,282) |
+
+The Chromium phone median fell by about 59%. The desktop target of less
+than 300 ms was **not met** in either engine. WebKit's phone row changes the
+viewport and input mode only; it is not comparable to Chromium's throttled
+phone profile.
+
+The main request changed from an uncompressed document of about 470 KB to
+one uncompressed `workspace-route` response of about 57 KB. Chromium's
+median server/transfer times changed from 333.5/5.2 to 168.7/1.1 ms on
+desktop and from 278.3/2,348.8 to 179.5/278.7 ms on the phone. Independent
+warm server scenarios measured B's workspace route at 209.3 → 189.0 ms and
+B's SSR document at 306.3 → 290.0 ms. The interaction improvement therefore
+also removes document transfer and client work; it does not establish a
+large server-side speedup.
+
+The extra Chromium traces, excluded from the five timing samples, give this
+disjoint main-thread breakdown. All values are milliseconds:
+
+| Profile / version | Elapsed | Busy | Island mount | Style/layout | JS execution | Parse/compile | Other |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop before | 1,354.6 | 1,095.8 | 565.2 | 317.8 | 33.0 | 13.3 | 166.4 |
+| Desktop after | 699.7 | 583.9 | 0 | 236.7 | 26.1 | 0 | 321.1 |
+| Phone before | 6,916.8 | 6,575.0 | 2,201.4 | 2,896.8 | 286.8 | 81.2 | 1,108.8 |
+| Phone after | 2,308.6 | 2,020.3 | 0 | 597.0 | 123.9 | 0 | 1,299.4 |
+
+The after trace has no new SSR island mount: the outer island stays mounted
+and recreates its mailbox content inside Solid. Zero in that column does
+not mean rendering is free; its work remains in the other categories.
+The list already fetches 50 rows and uses `content-visibility: auto` for
+offscreen rows. These traces do not isolate a further row-window change as
+the next fix.
+
+The before WebKit samples come from
+`.local/mail-perf/2026-10-20T16-49-52.806Z/result.json`. That run's Chromium
+profiles failed because cached responses reported negative body sizes;
+their results are excluded. Only Chromium was repeated in
+`.local/mail-perf/sol-before-20261020/result.json`, reusing the same before
+application bundles with the measurement-size correction. The after run is
+`.local/mail-perf/sol-after-20261020/result.json`, built from its recorded
+clean checkpoint. All four after profiles completed five samples, with no
+server, browser, or cleanup errors.
+
+#### Browser-only remeasurement
+
+The single follow-up run used the same application bundles built from
+`d9137b4bd`, without rebuilding or repeating server scenarios or before
+measurements. Before/after aggregate hashes of the core, Mail, and gateway
+bundle files matched. Its recorded source is `5f7b80d28` with the new scroll
+regression test uncommitted; that source marker identifies the measurement
+harness, rather than a new application build. Both fixture digests match the
+earlier runs.
+
+The run held the default machine heavy slot from 18:55:08 to 19:02:42 UTC.
+Lock snapshots at its start and 18:59:41 showed only that holder, after the
+other lane's extra-slot work ended. This establishes the checked scheduling
+boundaries, not an idle host: the one-minute load average was 23.86 → 18.47
+on the same 24 logical CPUs, with background services and unrelated work.
+The retained log records UTC bounds around every sample; the JSON timing
+samples themselves have no epoch fields.
+
+| Engine | Profile | Sample window, UTC | Median (min–max), ms |
+| --- | --- | --- | ---: |
+| Chromium | Desktop | 18:59:13–18:59:29 | 766.0 (619.7–830.7) |
+| Chromium | Phone, CPU/network throttled | 18:59:33–19:01:03 | 2,448.1 (2,151.7–2,960.6) |
+| WebKit | Desktop | 19:01:21–19:02:00 | 1,866 (1,721–4,426) |
+| WebKit | Phone viewport, unthrottled | 19:02:00–19:02:37 | 1,051 (996–1,348) |
+
+All four profiles completed five samples, with one workspace request per
+switch and no runner, browser, or cleanup errors. Chromium's main response
+was about 57 KB; median server/transfer time was 201.5/1.0 ms on desktop and
+209.5/279.1 ms on the throttled phone. Its phone median was about 60% below
+the retained before measurement. The desktop target below 300 ms remains
+unmet in both engines.
+
+The two separate Chromium trace samples, excluded from those medians, were:
+
+| Profile | Elapsed | Busy | Island mount | Style/layout | JS execution | Parse/compile | Other |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop | 1,010.6 | 818.0 | 0 | 261.2 | 32.0 | 0 | 524.8 |
+| Phone | 2,710.9 | 2,364.9 | 0 | 599.3 | 118.0 | 0 | 1,647.6 |
+
+The result is
+`.local/mail-perf/sol-after-browser-only-20261020/result.json`. Browser-only
+mode omits the earlier server scenarios' cache warming and fixture mutations;
+matching fixture digests do not establish equivalent cache conditions. Keep
+that limitation and the shared-host load alongside the observed reduction.
+
+Mailbox history now uses the shared SSR scroll-restoration completion
+contract: the destination restores after its asynchronous list content
+commits. Chromium and WebKit each pass the nonzero A/B scroll guard, including
+a delayed response followed by rapid Back/Forward reversal and Reload.
+Server, hydrated, and settled geometry agree. The existing guards also cover
+retained document/sidebar identity and mailbox URL parity. These correctness
+checks do not change the measured checkpoint or remove its timing limitations.
 
 ### Rank bottlenecks
 
@@ -638,7 +820,10 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts \
 The `metric` names a measured time in that result, for example
 `interaction.folder-switch.chromium.phone.median`,
 `load.mailbox.webkit.desktop.ttiMs`,
-`trace.compose.chromium.phone.styleLayoutMs`, or
+`trace.compose.chromium.phone.styleLayoutMs`,
+`interactionTrace.mailbox-switch.chromium.phone.styleLayoutMs` (also
+`scriptMs`, `parseCompileMs`, `islandRenderMs`, `otherMs`, `busyMs`, and
+`totalMs`), or
 `server.search-common.totalMs.median`. The command prints the five entries
 with the largest measured times as a Markdown table. It refuses an entry
 whose location is not an existing file and line, or whose metric has no
