@@ -30,6 +30,7 @@ export const SavedQuerySchema = z.object({
   name: z.string(),
   sql: z.string(),
   params: z.record(z.string(), z.string()),
+  pinned: z.boolean(),
   revision: z.number().int(),
   createdBy: z.string().nullable(),
   updatedBy: z.string().nullable(),

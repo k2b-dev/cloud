@@ -15,7 +15,7 @@ export type LegalLink = {
   icon?: string;
 };
 
-/** Static page links for the global search UI, ranked after resource results.
+/** Static page links for the global search UI, shown before resource results.
  * These declare navigation only; they do not create capabilities or readers.
  */
 export type AppSearchLink = {
@@ -24,6 +24,7 @@ export type AppSearchLink = {
   description?: string;
   href: string;
   icon?: string;
+  /** Alternate search terms. At `nav.href`, these also match the automatic app launcher. */
   keywords?: readonly string[];
 };
 

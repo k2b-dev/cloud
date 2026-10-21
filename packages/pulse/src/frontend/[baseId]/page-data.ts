@@ -6,7 +6,9 @@ import type { Context } from "hono";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
 import { accessScopeFor, requireBaseAccess } from "../../service/access-control";
+import { alertRules } from "../../service/alert-rules";
 import { readBasePolicy } from "../../service/base-policy";
+import { readOverview } from "../../service/overview";
 import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import { baseSqlLimits } from "../../service/sql-service";
@@ -40,7 +42,9 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   const [base, bases, sources, appUrl] = await Promise.all([
     pulseService.base.get(baseId, user),
     pulseService.base.list(user),
-    pulseService.source.list(baseId, user, { signal: c.req.raw.signal }),
+    route.view === "sources"
+      ? pulseService.source.list(baseId, user, { signal: c.req.raw.signal })
+      : Promise.resolve({ ok: true as const, data: [] }),
     getSetting<string>("app.url").catch(() => ""),
   ]);
   if (!base.ok) return { kind: "error", status: base.error.status };
@@ -66,13 +70,26 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     initialSources: await projectSources(sources.data),
     initialSourceScrapes: {},
     initialSourceApiKeys: {},
-    initialQueryCoverage: { bases: bases.ok, baseData: true, sourceDetail: true },
+    initialQueryCoverage: { bases: bases.ok, baseData: route.view === "sources", sourceDetail: true },
     initialDateConfig: getDateConfig(c),
     initialNow: new Date().toISOString(),
     initialOrigin: publicOrigin(appUrl, url.origin),
   };
+  if (route.view === "overview") {
+    const overview = await readOverview({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId, signal: c.req.raw.signal });
+    if (!overview.ok && [403, 404].includes(overview.error.status)) return { kind: "error", status: overview.error.status };
+    props.initialOverview = overview.ok
+      ? { data: overview.data, error: null }
+      : { data: null, error: { code: overview.error.code, message: overview.error.message } };
+  }
   if (route.view === "sql") {
     const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };
+    if (route.alertId) {
+      const rule = await alertRules.get({ ...identity, ruleId: route.alertId });
+      if (!rule.ok) return { kind: "error", status: rule.error.status };
+      route.sql = rule.data.sql;
+      route.params = rule.data.params;
+    }
     const [limits, query] = await Promise.all([
       baseSqlLimits(identity),
       route.queryId ? savedQueries.get({ ...identity, queryId: route.queryId }) : Promise.resolve(null),

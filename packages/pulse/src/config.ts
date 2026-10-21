@@ -13,8 +13,6 @@ export const app = defineApp({
     translations: {
       de: {
         description: "Metriken, Ereignisse und Zustände sammeln.",
-        adminGroups: { pulse: "Pulse" },
-        adminLinks: { "/admin/pulse": "Pulse" },
       },
     },
   },
@@ -31,7 +29,6 @@ export const app = defineApp({
   skills: SKILLS,
   notifications: NOTIFICATIONS,
   adminHref: "/admin/pulse",
-  adminNav: [{ id: "pulse", label: "Pulse", links: [{ label: "Pulse", href: "/admin/pulse", icon: "ti ti-activity-heartbeat" }] }],
   settings: {
     "pulse.max_bases": {
       kind: "number",

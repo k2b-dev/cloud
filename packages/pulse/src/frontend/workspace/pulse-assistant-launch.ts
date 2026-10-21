@@ -44,3 +44,30 @@ export const launchPulseSqlAssistant = (input: PulseAssistantLaunchInput): Promi
     },
   });
 };
+
+export const launchPulseOverviewAssistant = (input: { base: { id: string; name: string }; locale?: string }): Promise<AssistantLaunch> => {
+  const locale = input.locale ?? (typeof document === "undefined" ? "en" : document.documentElement.lang);
+  const t = pulseMessages.resolve([locale]).t;
+  return launchAssistant({
+    launchedByAppId: "pulse",
+    title: t.overviewAssistantTitle({ base: input.base.name }),
+    skills: ["cloud-pulse"],
+    preloadTools: [
+      { appId: "pulse", kind: "query", id: "sql.run" },
+      { appId: "pulse", kind: "query", id: "base.read" },
+      { appId: "pulse", kind: "query", id: "source.list" },
+    ],
+    draft: {
+      content: [
+        { type: "text", text: t.overviewAssistantPrompt({ base: input.base.name }) },
+        {
+          type: "resource",
+          ref: { type: "pulse.base", id: input.base.id },
+          title: input.base.name,
+          icon: "ti ti-activity-heartbeat",
+          href: pulseBaseHref(input.base.id),
+        },
+      ],
+    },
+  });
+};
