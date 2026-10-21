@@ -13,6 +13,53 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
     config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
   });
 
+  test("PDF links use the public Cloud origin while own headings stay PDF destinations", async () => {
+    const markdown = [
+      ":::query\nsource: notes\ncolumns:\n  - $title\n  - $tags\n:::",
+      "# Guide",
+      "[Other](note://DEF456) [Heading](note://DEF456#r%C3%A9sum%C3%A9) [File](attach://PDF001)",
+      "[Version](/api/notebooks/ABC123/attachments/PDF001/content?v=7&download=1)",
+      "[Own](note://SELF01#guide) [Top](note://SELF01) [Missing](note://SELF01#missing)",
+      "[Web](https://example.org/path?q=a%2Fb#section)",
+    ].join("\n\n");
+    const { html } = buildNotePdfHtml({
+      markdown,
+      notebookShortId: "ABC123",
+      noteShortId: "SELF01",
+      locale: "en",
+      publicOrigin: "https://public.example.test:8443",
+      queryResults: new Map([
+        [
+          1,
+          {
+            columns: ["$title", "$tags"],
+            items: [{ id: "DEF456", title: "Other", href: "/app/notebooks/ABC123/notes/DEF456", values: { $tags: ["Team/News & QA"] } }],
+            total: 1,
+            limit: 25,
+            truncated: false,
+            diagnostics: [],
+          },
+        ],
+      ]),
+    });
+    const raw = Buffer.from((await renderHtmlToPdfWithConfig({ html, title: "Guide" }, config)).pdf).toString("latin1");
+    const uris = [...raw.matchAll(/\/URI \(([^)]*)\)/g)].map((match) => match[1]);
+    expect(uris).toEqual(
+      expect.arrayContaining([
+        "https://public.example.test:8443/app/notebooks/ABC123/notes/DEF456?mode=book",
+        "https://public.example.test:8443/app/notebooks/ABC123/notes/DEF456?mode=book#heading-resume",
+        "https://public.example.test:8443/app/notebooks/ABC123/tags/team%2Fnews%20%26%20qa?mode=book",
+        "https://public.example.test:8443/api/notebooks/ABC123/attachments/PDF001/content?v=1",
+        "https://public.example.test:8443/api/notebooks/ABC123/attachments/PDF001/content?v=7&download=1",
+        "https://example.org/path?q=a%2Fb#section",
+      ]),
+    );
+    expect(uris.some((uri) => !uri?.startsWith("https://"))).toBe(false);
+    expect(raw).not.toContain("file://");
+    const destinations = [...raw.matchAll(/\/Subtype \/Link\b[^>]*\/Dest \/([^\s>]+)/g)].map((match) => match[1]);
+    expect(destinations).toEqual(["heading-guide", "top", "top"]);
+  }, 60_000);
+
   test("Book tables keep short numbers whole and the last column on the page", async () => {
     const description =
       "Fictional order for a wooden storage cabinet. Each panel is carefully packed for delivery. Assembly instructions and spare fittings are included in the shipment.";
@@ -25,7 +72,13 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       `| 110 | ${description} | 2 | 29.50 |`,
       `| 120 | ${description} ${token} | 3 | 39.50 |`,
     ].join("\n");
-    const { html } = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "de", templateId: "document" });
+    const { html } = buildNotePdfHtml({
+      markdown,
+      notebookShortId: "ABC123",
+      publicOrigin: "https://cloud.example.test",
+      locale: "de",
+      templateId: "document",
+    });
     const { pdf } = await renderHtmlToPdfWithConfig({ html, title: "Fictional order" }, config);
     const text = await pdfText(pdf, { layout: true });
 
@@ -55,6 +108,7 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       const { html } = buildNotePdfHtml({
         markdown,
         notebookShortId: "ABC123",
+        publicOrigin: "https://cloud.example.test",
         locale: "en",
         templateId,
         customCss: templateId ? undefined : "body { font: 10pt sans-serif; }",
@@ -76,7 +130,13 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
   test("a link to the exported note jumps within the PDF, to its heading or to its top", async () => {
     const markdown =
       "# Guide\n\n[Restore steps](note://DEF456#restore) [Missing](note://DEF456#nope) [Top](note://DEF456)\n\n## Restore\n\nDone.";
-    const { html } = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", noteShortId: "DEF456", locale: "en" });
+    const { html } = buildNotePdfHtml({
+      markdown,
+      notebookShortId: "ABC123",
+      publicOrigin: "https://cloud.example.test",
+      noteShortId: "DEF456",
+      locale: "en",
+    });
     const raw = Buffer.from((await renderHtmlToPdfWithConfig({ html, title: "Guide" }, config)).pdf).toString("latin1");
     // Chromium writes link annotations uncompressed; a named destination is a link inside the document.
     const links = raw.match(/\/Subtype \/Link\b[^>]*>/g) ?? [];
@@ -97,7 +157,14 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       attachments: new Map([["PDF001", { filename: "Markenrichtlinien-2026.pdf", sizeBytes: 4_200_000 }]]),
     };
     for (const templateId of ["document", "report", "compact"] as const) {
-      const { html } = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "de", templateId, references });
+      const { html } = buildNotePdfHtml({
+        markdown,
+        notebookShortId: "ABC123",
+        publicOrigin: "https://cloud.example.test",
+        locale: "de",
+        templateId,
+        references,
+      });
       const text = await pdfText((await renderHtmlToPdfWithConfig({ html, title: "Brand" }, config)).pdf);
       expect(text).toContain("Farbsystem › Akzentfarbe");
       expect(text).toMatch(/Affinity Designer ?↗/u);
@@ -114,7 +181,13 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
     ].join("\n\n");
     // In Gotenberg, Noto Sans (document) and Noto Serif (report body) form f-ligatures.
     for (const templateId of ["document", "report"] as const) {
-      const { html } = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", templateId });
+      const { html } = buildNotePdfHtml({
+        markdown,
+        notebookShortId: "ABC123",
+        publicOrigin: "https://cloud.example.test",
+        locale: "en",
+        templateId,
+      });
       const pdf = (await renderHtmlToPdfWithConfig({ html, title: "Ligatures" }, config)).pdf;
       // The ligature glyphs are really there, so the plain-letter checks below cover them.
       expect(pdfLigatures(pdf)).toEqual(expect.arrayContaining(["ffi", "ffl", "fi", "fl"]));

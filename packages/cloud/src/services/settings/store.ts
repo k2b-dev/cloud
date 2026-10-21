@@ -22,6 +22,10 @@ import { toPgTextArray } from "../postgres";
 import { requestCacheRedis } from "../request-cache-redis";
 import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
+import { SettingUnreadableError } from "./errors";
+import { assertGeoBudgetPair } from "./geo-budget";
+
+export { SettingUnreadableError } from "./errors";
 
 const REDIS_KEY = (k: string) => `settings:${k}`;
 
@@ -29,16 +33,6 @@ type SqlClient = typeof sql;
 
 export type StoredSettingState = "none" | "readable" | "unreadable";
 export type SettingRead = { value: unknown; stored: StoredSettingState };
-
-export class SettingUnreadableError extends HTTPException {
-  readonly code = "setting_unreadable" as const;
-
-  constructor(readonly key: string) {
-    const message = `The stored value of setting "${key}" cannot be read by this application. Replace it with a new value or reset it to the default.`;
-    super(409, { message, res: Response.json({ code: "setting_unreadable", message }, { status: 409 }) });
-    this.name = "SettingUnreadableError";
-  }
-}
 
 /**
  * Forget cached values so every container re-reads on next access.
@@ -233,6 +227,8 @@ export const deleteLegacyKeys = async (extraKnownKeys: readonly string[] = []): 
  * the caller explicitly replaces them. The row check and write share a transaction.
  * Lock with a no-op UPDATE so ROW EXCLUSIVE is acquired before the row lock,
  * preserving lock order with table-level SHARE locks (#1303 review).
+ * A caller passing `db` owns geo budget pair validation before mutations and
+ * cache invalidation after commit.
  */
 export const writeKey = async (key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> => {
   const def = SETTINGS_MAP.get(key);
@@ -274,16 +270,28 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
     throw new Error(`Could not write setting "${key}" after 3 attempts`);
   };
   if (db) await write(db);
-  else await sql.begin(write);
+  else
+    await sql.begin(async (tx) => {
+      await assertGeoBudgetPair(tx, { [key]: validated.value }, []);
+      await write(tx);
+    });
 
   // Passing a transaction means the caller owns invalidation, because the row
   // is not visible to anyone else until they commit.
   if (!db) await invalidateSettingsCache([key]);
 };
 
-/** Delete the DB row and invalidate Redis. See writeKey for the `db` contract. */
+/** Delete the DB row and invalidate Redis. With `db`, the caller owns geo budget pair validation and post-commit invalidation. */
 export const deleteKey = async (key: string, db?: SqlClient): Promise<void> => {
-  await (db ?? sql)`DELETE FROM settings.entries WHERE key = ${key}`;
+  const remove = async (tx: SqlClient) => {
+    await tx`DELETE FROM settings.entries WHERE key = ${key}`;
+  };
+  if (db) await remove(db);
+  else
+    await sql.begin(async (tx) => {
+      await assertGeoBudgetPair(tx, {}, [key]);
+      await remove(tx);
+    });
   if (!db) await invalidateSettingsCache([key]);
 };
 

@@ -292,6 +292,9 @@ export function MailAutomationActionEditor(props: {
         <Select
           label={messages().assignee}
           value={() => (props.action.kind === "assign_user" ? props.action.userId : "")}
+          selectedLabel={() =>
+            props.action.kind === "assign_user" && props.action.userId ? messages().assignedToSpecificPerson : undefined
+          }
           onValueChange={(userId) => props.onChange({ kind: "assign_user", userId: userId ?? "" })}
           options={props.catalog.assignableUsers.map((user) => ({ id: user.id, label: user.name }))}
         />

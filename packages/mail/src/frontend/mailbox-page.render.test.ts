@@ -9,6 +9,7 @@ import * as layoutHelp from "@k2b/cloud/ssr/help";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
+import { selectHtml } from "../../../../tests/fixtures/select-html";
 import { resolveMailSearchRoute } from "../search-state";
 import { focus, mailboxes, mailboxPreferences } from "../service";
 import * as integrations from "../service/app-integrations";
@@ -265,6 +266,11 @@ test("mailbox scope uses the public ID and Focus has no mailbox scope (#1471)", 
   const shell = JSON.parse(html.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!);
   expect(shell.panel.context.scope).toEqual({ type: "mail.mailbox", id: mailboxShortId });
   expect(shell.panel.context.scope.id).not.toBe(mailboxId);
+  // The keyed session must publish the open mailbox before the outer sidebar's first SSR render.
+  expect(await selectHtml(html, ".mail-workspace")).toHaveLength(1);
+  expect(await selectHtml(html, ".mail-workspace .k2b-app-workspace__head")).toHaveLength(1);
+  expect(await selectHtml(html, ".mail-workspace .mail-sidebar")).toHaveLength(1);
+  expect((await selectHtml(html, `[data-mailbox="${mailboxShortId}"]`))[0]?.attributes["data-open"]).toBe("true");
   spies.push(
     spyOn(mailboxes, "listMailboxes").mockResolvedValue({ ok: true, data: [] }),
     spyOn(mailboxPreferences, "listMailboxPreferences").mockResolvedValue({ pinnedMailboxIds: [], hiddenMailboxIds: [] }),

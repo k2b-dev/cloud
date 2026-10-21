@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
@@ -100,10 +100,10 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
     }),
   );
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
-  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}<script>${controller}</script><script type="module">
+  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button>' : ""}<script>${controller}</script><script type="module">
     const geometry=${geometrySource};
     const strip=${stripSource};
-    const step=(name)=>{document.documentElement.dataset.mailShellStep=name};
+    const step=(name)=>{document.documentElement.dataset.mailShellStep=name;performance.mark('mail-shell:'+name)};
     step('fonts');
     await document.fonts.ready;
     step('first frame');
@@ -116,8 +116,11 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
     step('hydrated frame');
     // The first frame the browser paints after hydration, as a person sees it.
     await new Promise(resolve=>requestAnimationFrame(resolve));
+    step('hydrated geometry');
     document.documentElement.dataset.hydratedGeometry=JSON.stringify(geometry());
+    step('hydrated strip');
     document.documentElement.dataset.hydratedStrip=JSON.stringify(strip());
+    step('ready');
     document.documentElement.dataset.mailShellReady='true';
     </script></body></html>`;
 };
@@ -132,13 +135,35 @@ beforeAll(async () => {
   for (const build of builds) if (!build.success) throw new AggregateError(build.logs, "Mail shell CSS failed");
   css = (await Promise.all(builds.flatMap((build) => build.outputs.map((output) => output.text())))).join("\n");
   const entry = join(root, "controller.ts");
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const built = await Bun.build({
     entrypoints: [entry],
     files: {
-      [entry]: `import {installAppWorkspaceController} from ${JSON.stringify(join(ui, "browser/index.js"))};installAppWorkspaceController();`,
+      [entry]: `import {installAppWorkspaceController} from ${JSON.stringify(join(ui, "browser/index.js"))};import {openCloudMobileMenu} from "@k2b/cloud/ssr/MobileNavigation";import {installPageSwap} from "@k2b/ssr/nav";if(new URL(location.href).searchParams.has("history"))sessionStorage.setItem("mail-shell-history","1");if(sessionStorage.getItem("mail-shell-history")==="1")installPageSwap();installAppWorkspaceController();document.getElementById("mailbox-navigation-test")?.addEventListener("click",()=>void openCloudMobileMenu({apps:[],legalLinks:[]}));`,
     },
     target: "browser",
     format: "iife",
+    conditions: ["browser"],
+    // The synthetic shell uses Cloud's real phone sheet and its history handling, outside the Mail island bundle.
+    plugins: [
+      {
+        name: "mail-shell-mobile-navigation",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            if (!result?.code) throw new Error(`Could not compile ${path}`);
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
   });
   if (!built.success) throw new AggregateError(built.logs, "Workspace controller failed");
   controller = await built.outputs[0]!.text();
@@ -198,12 +223,19 @@ const ready = async (page: Page) => {
   try {
     await page.waitForFunction(() => document.documentElement.dataset.mailShellReady === "true");
   } catch (error) {
-    // Name the page script's step that never finished, so a stall points at fonts, the first frame or the islands.
-    const step = await page
-      .locator("html")
-      .getAttribute("data-mail-shell-step", { timeout: 1000 })
+    const evidence = await page
+      .evaluate(() => ({
+        step: document.documentElement.dataset.mailShellStep ?? "page script not started",
+        ready: document.documentElement.dataset.mailShellReady,
+        visibility: document.visibilityState,
+        now: performance.now(),
+        phases: performance
+          .getEntriesByType("mark")
+          .filter((entry) => entry.name.startsWith("mail-shell:"))
+          .map((entry) => ({ name: entry.name, at: entry.startTime })),
+      }))
       .catch(() => "unreadable");
-    throw new Error(`Mail shell page never got ready (stopped at: ${step ?? "page script not started"})`, { cause: error });
+    throw new Error(`Mail shell page never got ready: ${JSON.stringify({ evidence, errors: pageErrors.get(page) })}`, { cause: error });
   }
   await page.waitForFunction(
     () => !Array.from(document.querySelectorAll(".k2b-app-workspace__main")).some((main) => main.getAttribute("aria-busy") === "true"),
@@ -217,7 +249,7 @@ const sizes = [
   [834, 1194],
   [390, 844],
 ] as const;
-const open = async (path: string, width = 1440, height = sizes.find(([w]) => w === width)?.[1] ?? 900) => {
+const open = async (path: string, width = 1440, height: number = sizes.find(([w]) => w === width)?.[1] ?? 900) => {
   const context = await browser.newContext({
     viewport: { width, height },
     isMobile: width === 390,
@@ -302,6 +334,103 @@ const clickTab = async (page: Page, href: string) => {
 /** The shell tests. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`mailbox context contrast ${theme} ${width}: folder selection and keyboard switch stay independent`, async () => {
+          const page = await open(`${boxPath}?folder=Inbox1&navigation=1&theme=${theme}`, width);
+          const appearance = (locator: Locator) =>
+            locator.evaluate((element) => {
+              const style = getComputedStyle(element);
+              const probe = document.createElement("span");
+              probe.style.color = "var(--k2b-text-muted)";
+              probe.style.backgroundColor = "var(--k2b-surface-muted)";
+              element.append(probe);
+              const muted = getComputedStyle(probe).color;
+              const background = getComputedStyle(probe).backgroundColor;
+              probe.remove();
+              return { color: style.color, muted, background, weight: style.fontWeight };
+            });
+          try {
+            for (const part of ["sender", "subject"]) {
+              const read = page.locator(`.mail-list-entry:not(.mail-list-entry-unread) .mail-row-${part}`).first();
+              const unread = page.locator(`.mail-list-entry-unread .mail-row-${part}`).first();
+              expect((await appearance(read)).weight).toBe("400");
+              expect((await appearance(unread)).weight).toBe("600");
+            }
+            const phone = width === 390;
+            if (phone) await page.getByRole("button", { name: "Open mailbox navigation", exact: true }).tap();
+            const navigation = phone ? page.locator("dialog .k2b-navigation") : sidebar(page);
+            await navigation.waitFor({ state: "visible" });
+            const current = phone ? navigation.locator(`a[href="${boxPath}"]`) : navigation.locator('[data-mailbox="Box001"] a').first();
+            const other = phone
+              ? navigation.locator('a[href="/app/mail/Box002"]')
+              : navigation.locator('[data-mailbox="Box002"] a').first();
+            const label = phone ? ".k2b-navigation__copy > span" : ".k2b-app-workspace__sidebar-item-label";
+            const currentInk = await appearance(current.locator(label));
+            const otherInk = await appearance(other.locator(label));
+            expect(currentInk.weight).toBe("600");
+            expect(otherInk.weight).toBe("400");
+            expect(otherInk.color).toBe(otherInk.muted);
+            expect(otherInk.color).not.toBe(currentInk.color);
+            const luminance = (color: string) => {
+              const [red, green, blue] = color
+                .match(/[\d.]+/g)!
+                .slice(0, 3)
+                .map((value) => {
+                  const channel = Number(value) / 255;
+                  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+                });
+              return red! * 0.2126 + green! * 0.7152 + blue! * 0.0722;
+            };
+            const ink = luminance(otherInk.color);
+            const background = luminance(otherInk.background);
+            // The shared muted-text contract retains 7:1 contrast even on the darker muted surface.
+            expect((Math.max(ink, background) + 0.05) / (Math.min(ink, background) + 0.05)).toBeGreaterThanOrEqual(7);
+            expect(await current.getAttribute("aria-current")).toBeNull();
+            expect(await other.getAttribute("aria-disabled")).toBeNull();
+            const folder = navigation.locator(`a[href="${boxPath}?folder=Inbox1"]`);
+            expect(await folder.getAttribute("aria-current")).toBe("page");
+            if (phone) {
+              expect(await current.locator("..").getAttribute("data-context")).toBe("true");
+              expect(await other.locator("..").getAttribute("data-context")).toBe("false");
+              const focus = navigation.locator('a[href="/app/mail"]');
+              expect(await focus.locator("..").getAttribute("data-context")).toBeNull();
+              expect((await appearance(focus.locator(label))).color).toBe(currentInk.color);
+            }
+            if (screenshots) {
+              mkdirSync(resolve(screenshots), { recursive: true });
+              await page.screenshot({ path: join(resolve(screenshots), `mailbox-context-${theme}-${width}.png`) });
+              writeFileSync(
+                join(resolve(screenshots), `mailbox-context-${theme}-${width}.json`),
+                JSON.stringify(
+                  {
+                    currentInk,
+                    otherInk,
+                    phases: await page.evaluate(() =>
+                      performance
+                        .getEntriesByType("mark")
+                        .filter((entry) => entry.name.startsWith("mail-shell:"))
+                        .map((entry) => ({ name: entry.name, at: entry.startTime })),
+                    ),
+                  },
+                  null,
+                  2,
+                ),
+              );
+            }
+            // A quieter selectable mailbox keeps native keyboard activation, also in the real phone sheet.
+            await other.focus();
+            await page.keyboard.press("Enter");
+            await page.waitForURL(new URL("/app/mail/Box002", server.url).href);
+            await ready(page);
+            await page.getByText("Example dispatch: Example request 1", { exact: true }).waitFor({ state: "visible" });
+            if (phone) await navigation.waitFor({ state: "hidden" });
+            else expect(await sidebar(page).locator('[data-mailbox="Box002"]').getAttribute("data-open")).toBe("true");
+          } finally {
+            await close(page);
+          }
+        });
+
     test("Focus and mailbox share the ordered navigation; switching mailbox takes one link", async () => {
       let label: string | null = null;
       let rows: string[] = [];
@@ -337,6 +466,180 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         } finally {
           await close(page);
         }
+      }
+    });
+
+    // These two cases belong to the existing behavior child (their names deliberately omit the geometry-matrix pattern).
+    test("mailbox switch preserves the document, sidebar and head through Back, Forward and reload", async () => {
+      const page = await open(boxPath);
+      const destination = "/app/mail/Box002";
+      let navigations = 0;
+      // Same-document history changes also emit framenavigated; count actual document requests.
+      page.on("request", (request) => {
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) ++navigations;
+      });
+      const marked = async () =>
+        expect(
+          await page.evaluate(() => [
+            Reflect.get(window, "mailboxSwitchMarker"),
+            Reflect.get(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker"),
+          ]),
+        ).toEqual(["kept", "kept"]);
+      const frame = async () =>
+        (await geometry(page)).filter(({ part }) =>
+          part.split(" ").some((name) => name === "mail-sidebar" || name === "k2b-app-workspace__head"),
+        );
+      try {
+        await page.evaluate(() => {
+          Reflect.set(window, "mailboxSwitchMarker", "kept");
+          Reflect.set(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker", "kept");
+        });
+        const before = await frame();
+        await sidebar(page).locator(`a[href="${destination}"]`).first().click();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await page.getByText("Example dispatch: Example request 1", { exact: true }).waitFor({ state: "visible" });
+        await ready(page);
+        await marked();
+        assertFrame(before, await frame(), "mailbox switch frame");
+        const switched = await geometry(page);
+        await page.goBack();
+        await page.waitForURL(new URL(boxPath, server.url).href);
+        await page.getByText("Example request 1", { exact: true }).first().waitFor({ state: "visible" });
+        await ready(page);
+        await marked();
+        await page.goForward();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await page.getByText("Example dispatch: Example request 1", { exact: true }).waitFor({ state: "visible" });
+        await ready(page);
+        await marked();
+        expect(navigations).toBe(0);
+        await page.reload();
+        await ready(page);
+        expect(new URL(page.url()).pathname).toBe(destination);
+        const serverFrame = await recordedFrame(page, "server");
+        assertFrame(switched, serverFrame, "B reload server");
+        assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "B reload hydrated");
+        assertFrame(serverFrame, await geometry(page), "B reload settled");
+      } finally {
+        await close(page);
+      }
+    });
+
+    test("mailbox history restores nonzero list scroll after async content commits, reversal and reload", async () => {
+      // Install the same shared history owner as Cloud before mounting the island. The two mailboxes use
+      // distinct scroll keys, and switching reconstructs their list elements after the traversal arrives.
+      const source = `${boxPath}?history=1`;
+      const destination = "/app/mail/Box002";
+      const page = await open(source, 1440, 600);
+      const releaseBack = Promise.withResolvers<void>();
+      const list = (id: string) => page.locator(`[data-scroll-preserve="mail-list-${id}"]`);
+      const position = (id: string) => list(id).evaluate((element) => element.scrollTop);
+      const setPosition = async (id: string, y: number) => {
+        await list(id).evaluate((element, y) => {
+          element.scrollTop = y;
+        }, y);
+        await settled(page);
+        expect(await position(id), `${id} fixture must really scroll`).toBe(y);
+      };
+      try {
+        await setPosition("Box001", 240);
+        await sidebar(page).locator(`a[href="${destination}"]`).first().click();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await list("Box002").waitFor();
+        await ready(page);
+        expect(await position("Box002"), "a newly opened mailbox starts at its list's top").toBe(0);
+        await setPosition("Box002", 400);
+        await page.goBack();
+        await page.waitForURL(new URL(source, server.url).href);
+        await list("Box001").waitFor();
+        await ready(page);
+        expect(await position("Box001"), "Back restores A after the asynchronous list replacement").toBe(240);
+        await page.goForward();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await list("Box002").waitFor();
+        await ready(page);
+        expect(await position("Box002"), "Forward restores B's own list position").toBe(400);
+
+        // Reverse a traversal while B is still shown. Its DOM must not become A's saved scroll snapshot.
+        const backRequested = Promise.withResolvers<void>();
+        const backReleased = Promise.withResolvers<void>();
+        const backRoute = "**/api/mail/mailboxes/Box001/workspace-route?*";
+        await page.route(backRoute, async (route) => {
+          try {
+            const response = await route.fetch();
+            backRequested.resolve();
+            await releaseBack.promise;
+            // Forward aborts this client's old fetch; releasing its response must not commit A late.
+            await route.fulfill({ response }).catch(() => undefined);
+          } catch (error) {
+            backRequested.reject(error);
+          } finally {
+            backReleased.resolve();
+          }
+        });
+        await page.goBack();
+        await backRequested.promise;
+        expect(new URL(page.url()).pathname).toBe(boxPath);
+        expect(await position("Box002"), "pending Back still shows the scrolled B list").toBe(400);
+        await page.goForward();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await ready(page);
+        releaseBack.resolve();
+        await backReleased.promise;
+        await page.unroute(backRoute);
+        await ready(page);
+        expect(await position("Box002"), "Forward supersedes the pending A response").toBe(400);
+        await page.goBack();
+        await page.waitForURL(new URL(source, server.url).href);
+        await list("Box001").waitFor();
+        await ready(page);
+        expect(await position("Box001"), "the pending reversal preserved A's own snapshot").toBe(240);
+        await page.goForward();
+        await page.waitForURL(new URL(destination, server.url).href);
+        await list("Box002").waitFor();
+        await ready(page);
+        expect(await position("Box002"), "B keeps its own snapshot after the reversal").toBe(400);
+        const beforeReload = await geometry(page);
+        await page.reload();
+        await ready(page);
+        expect(await position("Box002"), "reload keeps the shown entry's list position").toBe(400);
+        const serverFrame = await recordedFrame(page, "server");
+        assertFrame(beforeReload, serverFrame, "scrolled B reload server");
+        assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "scrolled B reload hydrated");
+        assertFrame(serverFrame, await geometry(page), "scrolled B reload settled");
+      } finally {
+        releaseBack.resolve();
+        await close(page);
+      }
+    });
+
+    test("phone mailbox navigation sheet switches in place, closes, and Back returns to A", async () => {
+      const source = `${boxPath}?navigation=1`;
+      const page = await open(source, 390);
+      let navigations = 0;
+      // Same-document history changes also emit framenavigated; count actual document requests.
+      page.on("request", (request) => {
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) ++navigations;
+      });
+      try {
+        await page.evaluate(() => Reflect.set(window, "mailboxSwitchMarker", "kept"));
+        await page.getByRole("button", { name: "Open mailbox navigation", exact: true }).tap();
+        const menu = page.locator("dialog .k2b-navigation");
+        await menu.waitFor({ state: "visible" });
+        await menu.locator('a[href="/app/mail/Box002"]').tap();
+        await page.waitForURL(new URL("/app/mail/Box002", server.url).href);
+        await page.getByText("Example dispatch: Example request 1", { exact: true }).waitFor({ state: "visible" });
+        await menu.waitFor({ state: "hidden" });
+        await ready(page);
+        expect(await page.evaluate(() => Reflect.get(window, "mailboxSwitchMarker"))).toBe("kept");
+        await page.goBack();
+        await page.waitForURL(new URL(source, server.url).href);
+        await page.getByText("Example request 1", { exact: true }).first().waitFor({ state: "visible" });
+        await ready(page);
+        expect(await page.evaluate(() => Reflect.get(window, "mailboxSwitchMarker"))).toBe("kept");
+        expect(navigations).toBe(0);
+      } finally {
+        await close(page);
       }
     });
 

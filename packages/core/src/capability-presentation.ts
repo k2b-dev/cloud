@@ -1,5 +1,7 @@
 import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
+import { geoCapabilityPresentation } from "./geo-capability-presentation";
+
 export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
@@ -19,6 +21,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        ...geoCapabilityPresentation,
         "ai.task.run.read": {
           title: "Lauf einer Assistant-Routine lesen",
           description:

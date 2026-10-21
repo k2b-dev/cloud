@@ -20,6 +20,8 @@ type NavigationEntry = {
    */
   status?: NavigationStatus | null;
   active?: boolean;
+  /** Current container, independently of its active destination. `false` quiets this row; omitted keeps the default ink. */
+  context?: boolean;
   disabled?: boolean;
   color?: string;
   children?: readonly NavigationItem[];
