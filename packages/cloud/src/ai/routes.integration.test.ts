@@ -157,6 +157,63 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test("queue receipt replay after a lost response preserves identity and current access", async () => {
+    const userId = await insertUser();
+    const stranger = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, draft: [{ type: "text", text: "Queue once" }] });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
+    const deniedHeaders = { Authorization: `Bearer ${await createTestSession(stranger)}`, "Content-Type": "application/json" };
+    const queueId = crypto.randomUUID();
+    const body = JSON.stringify({ draftRevision: chat.draft.revision, queueId, modelProfileId: "fixture-model" });
+    let arrived = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Real route/access/store, deterministic model preparation and no worker dispatch.
+    const prepare = spyOn(aiRuntime, "prepareAiChatTurn").mockImplementation(async (input) => {
+      if (++arrived === 2) release();
+      await gate;
+      return {
+        conversationId: input.conversationId,
+        modelProfileId: "fixture-model",
+        runConfig: { kind: "chat", input: "Queue once", toolSource: { kind: "none" } },
+        userMessage: input.userMessage,
+        expectedDraftRevision: input.expectedDraftRevision,
+        expectedProjectId: input.expectedProjectId,
+        truncateFromSeq: input.truncateFromSeq,
+        resources: input.resources,
+        retrySourceTurnId: input.retrySourceTurnId,
+      };
+    });
+    const wake = spyOn(aiRuntime, "wakeAiMessageQueue").mockImplementation(() => {});
+    const post = (auth = headers) => aiRoutes.request(`/conversations/${chat.shortId}/turns`, { method: "POST", headers: auth, body });
+    try {
+      const responses = await Promise.all([post(), post()]);
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      const [count] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid`;
+      expect(count!.count).toBe(1);
+      const getQueue = () => aiRoutes.request(`/conversations/${chat.shortId}/queue`, { headers });
+      expect((await (await getQueue()).json()).map((item: { id: string }) => item.id)).toEqual([queueId]);
+      // A submitted receipt is absent from the active queue; the exact POST still recognizes it.
+      await sql`UPDATE ai.queued_messages SET status='submitted' WHERE id=${queueId}::uuid`;
+      expect(await (await getQueue()).json()).toEqual([]);
+      expect((await post()).status).toBe(200);
+      expect(prepare).toHaveBeenCalledTimes(2);
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.draft.revision).toBe(chat.draft.revision + 1);
+      expect((await post(deniedHeaders)).status).toBe(404);
+      expect((await aiRoutes.request(`/conversations/${chat.shortId}/queue`, { headers: deniedHeaders })).status).toBe(404);
+    } finally {
+      release();
+      prepare.mockRestore();
+      wake.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${stranger}::uuid)`;
+    }
+  });
+
   test("archive and restore routes pause and resume the chat's routines", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

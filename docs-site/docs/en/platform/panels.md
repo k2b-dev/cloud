@@ -25,7 +25,17 @@ Chat keeps text drafts per reader and conversation in the current browser tab.
 Assistant saves drafts and uploaded references through its existing conversation
 service. Switching providers, closing, and opening the full view retain saved
 drafts; unfinished uploads, conflicting drafts, and unconfirmed sends keep the
-current provider open with recovery controls. On phones, reopen the sheet after
+current provider open with recovery controls. Both composers become editable only
+after their leave guard and draft restoration are ready. If a send or queue response
+is lost, Assistant offers a status check and a retry of the same submission. When
+its status remains unknown, **Leave despite unclear message status** requires
+confirmation. Leaving does not cancel or retry the message. The confirmation
+explains which local text and attachments will be discarded; other drafts and
+unfinished uploads or saves remain protected. An unconfirmed conversation creation
+keeps its original request identity for retries. An empty creation attempt can be
+abandoned with a separate explanation in the same exit dialog; this does not delete
+a conversation that may already exist. A nonempty new draft remains protected.
+On phones, reopen the sheet after
 a page reload. Browser termination and forced native navigation cannot guarantee
 recovery of unsaved work.
 

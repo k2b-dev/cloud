@@ -75,7 +75,9 @@ suite("AI conversation store integration", () => {
       await expect(aiConversations.createConversation(input)).rejects.toThrow("no longer available");
       await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
       await expect(aiConversations.createConversation(input)).rejects.toThrow("no longer available");
-      const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      const [count] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
       expect(count!.count).toBe(0);
       const deliberate = await aiConversations.createConversation({ ...input, requestId: crypto.randomUUID() });
       expect(deliberate.id).not.toBe(chat.id);

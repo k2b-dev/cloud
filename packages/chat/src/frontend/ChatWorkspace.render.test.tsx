@@ -155,5 +155,6 @@ test("the panel renders the same authorized chat with internal links and an expl
   expect(html).toContain('href="/app/chat/panel"');
   expect(html).toContain('href="/app/chat/c/Chat01"');
   expect(html).toContain("Open full view");
+  expect(html).toMatch(/<textarea[^>]*disabled/);
   expect(html).toContain(conversation.title);
 });

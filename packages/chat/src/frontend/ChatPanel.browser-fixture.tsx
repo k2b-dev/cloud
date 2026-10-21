@@ -25,10 +25,11 @@ export async function startConversationPanelFixture() {
       import("../../../assistant/src/frontend/AssistantWorkspace.island"),
       import("@k2b/cloud/server/middleware/settings"),
       import("@k2b/cloud/ssr/help"),
-      import("../../../cloud/src/services/panel-context-consent"),
+      import("@k2b/cloud/services/panel-context-consent"),
     ]);
   const backend = await startChatHarness();
   const assistant = assistantPanelFixture();
+  let contextAllowed = false;
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
   const cssBuild = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "../../../assistant/src/styles/app.css")],
@@ -43,7 +44,7 @@ export async function startConversationPanelFixture() {
     stubRailSnapshot(),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
     spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
-    spyOn(consent.panelContextConsent, "get").mockResolvedValue({ allowed: false, revision: 1 }),
+    spyOn(consent.panelContextConsent, "get").mockImplementation(async () => ({ allowed: contextAllowed, revision: 1 })),
   ];
   try {
     const person: User = {
@@ -167,8 +168,8 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { LocaleProvider } from "@k2b/ui";
 import { openPanel } from "@k2b/cloud/browser/panel";
-import ShellRuntime from "../../../cloud/src/ssr/ShellRuntime.island";
-import PanelRuntime from "../../../cloud/src/ssr/PanelRuntime.island";
+import ShellRuntime from "@k2b/cloud/ssr/ShellRuntime.island";
+import PanelRuntime from "@k2b/cloud/ssr/PanelRuntime.island";
 import ChatWorkspace from "./ChatWorkspace.island";
 import AssistantWorkspace from "../../../assistant/src/frontend/AssistantWorkspace.island";
 const embedded = document.querySelector("[data-cloud-panel-page]");
@@ -213,7 +214,7 @@ document.documentElement.dataset.fixtureReady = "true";
         if (url.pathname.startsWith("/api/me/panel-consent"))
           return Response.json({
             answers: {
-              assistant: { allowed: false, revision: 1 },
+              assistant: { allowed: contextAllowed, revision: 1 },
               chat: { allowed: false, revision: 1 },
               second: { allowed: false, revision: 1 },
             },
@@ -262,6 +263,9 @@ document.documentElement.dataset.fixtureReady = "true";
     return {
       backend,
       assistant,
+      allowContext: (allowed: boolean) => {
+        contextAllowed = allowed;
+      },
       url: server.url.href,
       stop: () => {
         server.stop(true);

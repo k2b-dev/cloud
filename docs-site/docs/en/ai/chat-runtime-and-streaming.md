@@ -157,6 +157,14 @@ draft revision. Missing records or revoked access can leave the outcome unknown.
 Keep the draft and make that uncertainty visible instead of sending it under a
 new revision.
 
+The browser controller also retains the original `queueId` and frozen body after
+an uncertain queued submission. Saving, sending, and conflict overwrite stay
+locked for that conversation. `reconcileSubmission` reads the existing queue;
+a matching entry proves acceptance, but absence may mean it already ran.
+`retrySubmission` replays the same body without another draft save, so the durable
+queue receipt also recognizes drained entries. Both paths keep the local draft
+locked until its post-submission revision has been read.
+
 Pass `skills: ["cloud-grids"]` to attach enabled, readable Skills by exact name
 when launching a chat. Core resolves them into ordinary `core.ai.skill` resource
 chips with stable IDs and names; no instructions are copied into the draft.

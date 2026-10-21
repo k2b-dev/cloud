@@ -486,6 +486,20 @@ describe("AI controller conversation transitions", () => {
           }
           return Response.json({ queued: true });
         }
+        if (path.endsWith("/queued-chat"))
+          return Response.json({
+            conversation: { ...conversation("queued-chat"), draft: { content: [], revision: 2, updatedAt: null } },
+            messages: [],
+            activeTurn: {
+              turnId: "running",
+              attempt: 1,
+              seq: 1,
+              status: "running",
+              blocks: [],
+              modelProfileId: null,
+              createdAt: "2026-09-14T00:00:00.000Z",
+            },
+          });
         return Response.json([]);
       },
       { preconnect: originalFetch.preconnect },
@@ -518,7 +532,13 @@ describe("AI controller conversation transitions", () => {
       storedFiles: [{ path: "/source.csv", mediaType: "text/csv", size: 12, version: 3 }],
     };
     expect(await controller.queueMessage(input)).toBe(false);
+    expect(controller.uncertainSubmissions()).toEqual({ "queued-chat": 1 });
+    expect(await controller.saveDraft({ ...input, message: "Later edit" })).toBeNull();
+    expect(await controller.queueMessage({ ...input, message: "Later edit" })).toBe(false);
+    expect(await controller.send(input)).toBe(false);
+    expect(await controller.reconcileSubmission(current.id)).toBe("unknown");
     expect(await controller.queueMessage(input)).toBe(true);
+    expect(controller.uncertainSubmissions()).toEqual({});
     expect(controller.error()).toBeNull();
     const submissions = requests.filter((request) => request.path.endsWith("/turns"));
     expect(submissions).toHaveLength(2);

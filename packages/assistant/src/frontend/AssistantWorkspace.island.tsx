@@ -35,7 +35,7 @@ import {
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
-import { type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { closePanel, type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
@@ -678,6 +678,8 @@ export default function AssistantWorkspace(props: Props) {
     navigate(href, { replace, scroll: "manual", viewTransition: false });
   };
   const creationRequests = new Map<string, { requestId: string; title: string; projectId?: string }>();
+  const [creationVersion, setCreationVersion] = createSignal(0);
+  const hasUnknownCreations = () => (creationVersion(), creationRequests.size > 0 && !newConversation.loading());
   const [savingPanelDrafts, setSavingPanelDrafts] = createSignal(false);
   const [panelStorageFailed, setPanelStorageFailed] = createSignal(false);
   const panelSelectionKey = `cloud.assistant.panel:${props.userId}`;
@@ -712,17 +714,19 @@ export default function AssistantWorkspace(props: Props) {
       if (!request) {
         request = { requestId: crypto.randomUUID(), title: t().newChat, ...(projectId ? { projectId } : {}) };
         creationRequests.set(key, request);
+        setCreationVersion((version) => version + 1);
       }
       const conversation = await chat.createConversation(request);
       if (conversation) {
         creationRequests.delete(key);
+        setCreationVersion((version) => version + 1);
         if (projectId) {
           session(key).baseRevision = conversation.draft.revision;
           setPendingProjectChats((all) => ({ ...all, [projectId]: conversation }));
         } else migrateNewComposer(conversation);
-        rememberPanelConversation(conversation.id);
       }
       if (conversation && chat.activeConversationId() === conversation.id) {
+        rememberPanelConversation(conversation.id);
         if (typeof shouldNavigate === "function" ? shouldNavigate() : shouldNavigate) {
           setProjectView(null);
           setApprovalsOpen(false);
@@ -738,8 +742,29 @@ export default function AssistantWorkspace(props: Props) {
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
   };
-  const hasUnsavedPanelState = () => {
+  type UnknownExit = { revisions: Record<string, number>; generations: Map<string, number>; creations: Map<string, string> };
+  let confirmedUnknownExit: UnknownExit | undefined;
+  const unknownExitSnapshot = (): UnknownExit => ({
+    revisions: { ...chat.uncertainSubmissions() },
+    generations: new Map([...new Set([...sessions.keys(), ...creationRequests.keys()])].map((key) => [key, session(key).editGeneration])),
+    creations: new Map([...creationRequests].map(([key, request]) => [key, request.requestId])),
+  });
+  const sessionConversation = (key: string) => (key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key);
+  const emptyCreationCovered = (key: string, exit?: UnknownExit) => {
+    const request = creationRequests.get(key);
+    return Boolean(
+      request &&
+        exit &&
+        exit.creations.get(key) === request.requestId &&
+        exit.generations.get(key) === session(key).editGeneration &&
+        !composerDraft(key) &&
+        !composerAttachmentsFor(key).length &&
+        !mentionsFor(key).length,
+    );
+  };
+  const hasUnsavedPanelState = (exit?: UnknownExit) => {
     sessionVersion();
+    creationVersion();
     return (
       panelStorageFailed() ||
       submissionChecking() ||
@@ -747,11 +772,45 @@ export default function AssistantWorkspace(props: Props) {
       composerPicking() > 0 ||
       composerSubmitting() ||
       newConversation.loading() ||
+      [...creationRequests.keys()].some((key) => !emptyCreationCovered(key, exit)) ||
       dictation.busy() ||
       artifactWorkspace.hasDirty() ||
-      Object.keys(chat.uncertainSubmissions()).length > 0 ||
-      [...sessions.values()].some((local) => local.dirty || local.saving || local.conflict)
+      Object.entries(chat.uncertainSubmissions()).some(([id, revision]) => exit?.revisions[id] !== revision) ||
+      [...sessions].some(([key, local]) => {
+        const target = sessionConversation(key);
+        const explicitlyDiscarded =
+          target &&
+          exit &&
+          chat.uncertainSubmissions()[target] !== undefined &&
+          exit.revisions[target] === chat.uncertainSubmissions()[target] &&
+          exit.generations.get(key) === local.editGeneration;
+        return local.saving || ((local.dirty || local.conflict) && !explicitlyDiscarded && !emptyCreationCovered(key, exit));
+      })
     );
+  };
+  const hasUnknownSends = () => Object.keys(chat.uncertainSubmissions()).length > 0;
+  const unknownExitLabel = () => (hasUnknownSends() ? t().panelLeaveUnknown : t().panelLeaveUnknownCreate);
+  const leaveUnknownSubmission = async () => {
+    const exit = unknownExitSnapshot();
+    if ((!Object.keys(exit.revisions).length && !exit.creations.size) || hasUnsavedPanelState(exit)) return;
+    if (
+      !(await prompts.confirm(
+        [
+          ...(Object.keys(exit.revisions).length ? [t().panelLeaveUnknownConfirm] : []),
+          ...(exit.creations.size ? [t().panelLeaveUnknownCreateConfirm] : []),
+        ].join("\n\n"),
+        {
+          title: unknownExitLabel(),
+          confirmText: unknownExitLabel(),
+          variant: "danger",
+        },
+      ))
+    )
+      return;
+    // The confirmation covers exactly these revisions and local edits, never newer work.
+    if (hasUnsavedPanelState(exit)) return;
+    confirmedUnknownExit = exit;
+    closePanel();
   };
   const savePanelDrafts = async () => {
     if (savingPanelDrafts() || composerPicking() || composerSubmitting() || dictation.busy()) return;
@@ -773,6 +832,9 @@ export default function AssistantWorkspace(props: Props) {
           setPanelStorageFailed(true);
           return;
         }
+      }
+      for (const request of [...creationRequests.values()]) {
+        if (!(await createConversation(false, request.projectId, false))) return;
       }
       for (const [original, local] of [...sessions]) {
         if (!local.dirty || local.conflict) continue;
@@ -797,8 +859,15 @@ export default function AssistantWorkspace(props: Props) {
   };
   onMount(() => {
     if (!props.embedded) return;
-    onCleanup(onPanelBeforeLeave(() => !hasUnsavedPanelState() && !dialogCore.isOpen()));
-    if (!window.location.search) {
+    onCleanup(
+      onPanelBeforeLeave(() => {
+        const exit = confirmedUnknownExit;
+        confirmedUnknownExit = undefined;
+        return !hasUnsavedPanelState(exit) && !dialogCore.isOpen();
+      }),
+    );
+    const selectors = new URLSearchParams(window.location.search);
+    if (!["conversation", "project", "artifact", "approvals"].some((key) => selectors.has(key))) {
       try {
         const selected = window.sessionStorage.getItem(panelSelectionKey);
         if (selected && /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)) {
@@ -1218,6 +1287,7 @@ export default function AssistantWorkspace(props: Props) {
         if (local.conflict) return false;
         local.saving = true;
         try {
+          submissionSnapshots.set(conversationId, input);
           const accepted = await chat.queueMessage({
             ...input,
             conversationId,
@@ -1795,15 +1865,39 @@ export default function AssistantWorkspace(props: Props) {
             </Button>
           </NoticeCard>
         </Show>
-        <Show when={Object.keys(chat.uncertainSubmissions()).length > 0}>
-          <NoticeCard tone="warning" title={t().panelUnknownSend}>
-            <p>{t().panelUnknownHint}</p>
-            <Button size="sm" variant="secondary" disabled={submissionChecking()} onClick={() => void checkSubmissions()}>
-              {t().panelCheckSend}
-            </Button>
-            <Button size="sm" variant="ghost" disabled={submissionChecking()} onClick={() => void checkSubmissions(true)}>
-              {t().panelRetrySend}
-            </Button>
+        <Show when={hasUnknownSends() || hasUnknownCreations()}>
+          <NoticeCard tone="warning" title={hasUnknownSends() ? t().panelUnknownSend : t().panelUnknownCreate}>
+            <Show when={hasUnknownCreations()}>
+              <p>{t().panelUnknownCreateHint}</p>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={savingPanelDrafts() || composerSubmitting() || composerPicking() > 0}
+                onClick={() => void savePanelDrafts()}
+              >
+                {t().panelRetryCreate}
+              </Button>
+            </Show>
+            <Show when={hasUnknownSends()}>
+              <p>{t().panelUnknownHint}</p>
+              <Button size="sm" variant="secondary" disabled={submissionChecking()} onClick={() => void checkSubmissions()}>
+                {t().panelCheckSend}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={submissionChecking()} onClick={() => void checkSubmissions(true)}>
+                {t().panelRetrySend}
+              </Button>
+            </Show>
+            <Show when={props.embedded}>
+              <p>{t().panelLeaveUnknownHint}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={hasUnsavedPanelState(unknownExitSnapshot())}
+                onClick={() => void leaveUnknownSubmission()}
+              >
+                {unknownExitLabel()}
+              </Button>
+            </Show>
           </NoticeCard>
         </Show>
         <dictation.Status />
@@ -2039,6 +2133,7 @@ export default function AssistantWorkspace(props: Props) {
             />
           }
           disabled={
+            (props.embedded && !workspaceMounted()) ||
             !canUseComposer() ||
             panelStorageFailed() ||
             submissionChecking() ||
@@ -2307,6 +2402,7 @@ export default function AssistantWorkspace(props: Props) {
                 <AssistantPanelContext
                   initial={props.initialPanelContext ?? null}
                   disabled={
+                    (props.embedded && !workspaceMounted()) ||
                     !canUseComposer() ||
                     panelStorageFailed() ||
                     submissionChecking() ||

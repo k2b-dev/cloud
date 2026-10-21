@@ -100,6 +100,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const drafts = new Map<string, string>();
   const [draft, setDraft] = createSignal("");
   const [draftStorageFailed, setDraftStorageFailed] = createSignal(false);
+  const [composerReady, setComposerReady] = createSignal(!props.embedded);
   const unsavedDrafts = new Set<string>();
   let savedDrafts: ReturnType<typeof chatDrafts> | undefined;
   const readDraft = (id: string) => {
@@ -559,6 +560,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
     onCleanup(onPanelBeforeLeave(() => !box.unsent() && !draftStorageFailed() && !dialogCore.isOpen() && pendingOpen === 0));
+    setComposerReady(true);
     const leave = (event: BeforeUnloadEvent) => {
       if (box.unsent() || draftStorageFailed()) {
         event.preventDefault();
@@ -724,7 +726,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
                         onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
                         focusKey={focusKey()}
-                        canWrite={current().permission !== "read" && !draftStorageFailed()}
+                        canWrite={composerReady() && current().permission !== "read" && !draftStorageFailed()}
                         notice={draftNotice()}
                         hint={
                           current().permission === "read"

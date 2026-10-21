@@ -853,7 +853,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return queueDraftOperation(async () => persistComposerDraft(input, await targetConversation));
   };
 
-  const queuedAttempts = new Map<string, { key: string; files?: File[]; id: string; saved: { revision: number } }>();
+  const queuedAttempts = new Map<string, { key: string; files?: File[]; id: string }>();
   const queueMessage = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
     if (!input.conversationId || !isComposerDraftSendable(input)) return Promise.resolve(false);
     const conversationId = input.conversationId;
@@ -865,38 +865,46 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       storedFiles: input.storedFiles,
       model: input.modelProfileId,
     });
+    const previous = queuedAttempts.get(conversationId);
+    if (uncertainSubmissions()[conversationId] !== undefined) {
+      const same =
+        previous?.key === key &&
+        (previous.files ?? []).length === (input.files ?? []).length &&
+        (previous.files ?? []).every((file, index) => file === input.files?.[index]);
+      return same ? retrySubmission(conversationId).then((result) => result === "accepted") : Promise.resolve(false);
+    }
     return queueDraftOperation(async () => {
+      if (uncertainSubmissions()[conversationId] !== undefined) return false;
+      let submittedRevision: number | undefined;
       try {
-        const previous = queuedAttempts.get(conversationId);
-        const same =
-          previous?.key === key &&
-          (previous.files ?? []).length === (input.files ?? []).length &&
-          (previous.files ?? []).every((file, index) => file === input.files?.[index]);
-        const saved = same ? previous.saved : await persistComposerDraft(input, conversationId);
+        const saved = await persistComposerDraft(input, conversationId);
         if (!saved) return false;
-        const queueId = same ? previous.id : crypto.randomUUID();
-        queuedAttempts.set(conversationId, { key, files: input.files, id: queueId, saved });
-        await request(
-          `/conversations/${conversationId}/turns`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              draftRevision: saved.revision,
-              queueId,
-              modelProfileId: input.modelProfileId,
-              clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
-            }),
-          },
-          "Failed to queue message",
-        );
+        const queueId = crypto.randomUUID();
+        const body = JSON.stringify({
+          draftRevision: saved.revision,
+          queueId,
+          modelProfileId: input.modelProfileId,
+          clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
+        });
+        queuedAttempts.set(conversationId, { key, files: input.files, id: queueId });
+        submissionBodies.set(conversationId, body);
+        submittedRevision = saved.revision;
+        await request(`/conversations/${conversationId}/turns`, { method: "POST", body }, "Failed to queue message");
         if (isActiveConversation(conversationId)) {
           if ((state.conversation?.draft.revision ?? 0) <= saved.revision)
             setState("conversation", "draft", { content: [], revision: saved.revision + 1, updatedAt: new Date().toISOString() });
         } else invalidateInactiveCache(conversationId);
         queuedAttempts.delete(conversationId);
+        submissionBodies.delete(conversationId);
         if (isActiveConversation(conversationId)) setGlobalError(null);
         return true;
       } catch (error) {
+        if (submittedRevision !== undefined && !(error instanceof AiRequestError && error.status >= 400 && error.status < 500)) {
+          setUncertainSubmissions((current) => ({ ...current, [conversationId]: submittedRevision! }));
+        } else {
+          queuedAttempts.delete(conversationId);
+          submissionBodies.delete(conversationId);
+        }
         setConversationError(conversationId, error instanceof Error ? error.message : "Failed to queue message");
         return false;
       }
@@ -1060,8 +1068,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     } else cache.delete(conversationId);
     if (disposed) return "unknown";
     submissionBodies.delete(conversationId);
+    queuedAttempts.delete(conversationId);
     clearUncertainSubmission(conversationId);
     clearPendingSend(conversationId);
+    if (isActiveConversation(conversationId)) setGlobalError(null);
     return "accepted";
   };
 
@@ -1070,12 +1080,26 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const revision = uncertainSubmissions()[conversationId];
     if (revision === undefined) return "none";
     try {
-      const result = await request<{ submission: { messageId: string; turnId: string | null } | null }>(
-        `/conversations/${conversationId}/submission/${revision}`,
-        {},
-        "Failed to check message status",
-      );
-      if (!result.submission || disposed || uncertainSubmissions()[conversationId] !== revision) return "unknown";
+      const queue = queuedAttempts.get(conversationId);
+      let accepted: boolean;
+      if (queue) {
+        const pending = await request<Array<{ id: string }>>(
+          `/conversations/${conversationId}/queue`,
+          {},
+          "Failed to check message status",
+        );
+        // Drained/cancelled entries disappear from this view. Absence never proves rejection;
+        // an explicit frozen retry still uses the server's durable queue receipt.
+        accepted = pending.some((message) => message.id === queue.id);
+      } else {
+        const result = await request<{ submission: { messageId: string; turnId: string | null } | null }>(
+          `/conversations/${conversationId}/submission/${revision}`,
+          {},
+          "Failed to check message status",
+        );
+        accepted = Boolean(result.submission);
+      }
+      if (!accepted || disposed || uncertainSubmissions()[conversationId] !== revision) return "unknown";
       return await finishAcceptedSubmission(conversationId);
     } catch (error) {
       setConversationError(conversationId, error instanceof Error ? error.message : "Failed to check message status");

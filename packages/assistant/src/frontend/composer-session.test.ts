@@ -4,8 +4,8 @@ import {
   editComposerSession,
   newComposerSession,
   observeComposerRevision,
-  sendBesideComposer,
   sameComposerSubmission,
+  sendBesideComposer,
 } from "./composer-session";
 
 test("a remote refresh cannot lend its revision to old local text", () => {

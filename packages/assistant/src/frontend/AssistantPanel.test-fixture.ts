@@ -38,6 +38,12 @@ export function assistantPanelFixture() {
   let lostSend = false;
   let rejectSend = false;
   let uploads = 0;
+  let createGate: Promise<void> | undefined;
+  let sendGate: Promise<void> | undefined;
+  let statusDenied = false;
+  let creationDenied = false;
+  const running = new Set<string>();
+  const queues = new Map<string, { conversationId: string; content: AiConversation["draft"]["content"] }>();
   let uploadGate: Promise<void> | undefined;
   const reset = () => {
     conversations.clear();
@@ -50,11 +56,27 @@ export function assistantPanelFixture() {
     rejectSend = false;
     uploads = 0;
     uploadGate = undefined;
+    createGate = undefined;
+    sendGate = undefined;
+    statusDenied = false;
+    creationDenied = false;
+    running.clear();
+    queues.clear();
   };
   const detail = (id: string) => ({
     conversation: conversations.get(id)!,
     messages: messages.get(id) ?? [],
-    activeTurn: null,
+    activeTurn: running.has(id)
+      ? {
+          turnId: "fixture-running",
+          attempt: 1,
+          seq: 1,
+          status: "running" as const,
+          blocks: [],
+          modelProfileId: "standard",
+          createdAt: now,
+        }
+      : null,
     timeline: [],
     hasMoreMessages: false,
   });
@@ -100,6 +122,7 @@ export function assistantPanelFixture() {
     if (path === "/api/approvals") return Response.json({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
     if (!path.startsWith("/api/ai/")) return null;
     if (path === "/api/ai/conversations" && request.method === "POST") {
+      if (creationDenied) return Response.json({ message: "Creation unavailable" }, { status: 404 });
       const input = await request.json();
       let id = creations.get(input.requestId);
       if (!id) {
@@ -111,6 +134,7 @@ export function assistantPanelFixture() {
         lostCreate = false;
         return new Response("Lost creation response", { status: 502 });
       }
+      await createGate;
       return Response.json(conversations.get(id));
     }
     const match = /^\/api\/ai\/conversations\/([^/]+)(.*)$/.exec(path);
@@ -119,6 +143,12 @@ export function assistantPanelFixture() {
       suffix = match[2]!,
       chat = conversations.get(id);
     if (!chat) return Response.json({ message: "Not found" }, { status: 404 });
+    if (statusDenied && (!suffix || suffix.startsWith("/submission/") || suffix === "/queue"))
+      return Response.json({ message: "Access denied" }, { status: 403 });
+    if (suffix === "/queue")
+      return Response.json(
+        [...queues].filter(([, q]) => q.conversationId === id).map(([id, q]) => ({ id, content: q.content, failed: false })),
+      );
     if (suffix === "/files" && request.method === "POST") {
       uploads++;
       const data = await request.formData();
@@ -136,12 +166,23 @@ export function assistantPanelFixture() {
       return Response.json(chat.draft);
     }
     if (suffix === "/turns" && request.method === "POST") {
+      await sendGate;
       const body = await request.json();
       if (rejectSend) {
         rejectSend = false;
         return new Response("Request lost before acceptance", { status: 502 });
       }
+      if (body.queueId && queues.has(body.queueId)) return Response.json({ queued: true });
       if (body.draftRevision !== chat.draft.revision) return Response.json({ message: "Draft conflict" }, { status: 409 });
+      if (body.queueId) {
+        queues.set(body.queueId, { conversationId: id, content: chat.draft.content });
+        chat.draft = { content: [], revision: chat.draft.revision + 1, updatedAt: now };
+        if (lostSend) {
+          lostSend = false;
+          return new Response("Lost queue response", { status: 502 });
+        }
+        return Response.json({ queued: true });
+      }
       const seq = (messages.get(id)?.length ?? 0) + 1;
       const message: AiStoredMessage = {
         id: `Msg${seq}`,
@@ -188,6 +229,37 @@ export function assistantPanelFixture() {
   };
   return {
     requests,
+    addConversation: (id: string, title = "Project planning") => {
+      const chat = conversation(id);
+      chat.title = title;
+      conversations.set(id, chat);
+      return chat;
+    },
+    run: (id: string) => {
+      running.add(id);
+      conversations.get(id)!.runStatus = "running";
+    },
+    denyCreate: () => {
+      creationDenied = true;
+    },
+    denyStatus: () => {
+      statusDenied = true;
+    },
+    queued: () => queues.size,
+    holdSend: () => {
+      let release!: () => void;
+      sendGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
+    holdCreate: () => {
+      let release!: () => void;
+      createGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
     snapshot,
     respond,
     reset,
