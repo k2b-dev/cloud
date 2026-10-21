@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import type { JobContext } from "@k2b/sync";
 import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -1088,6 +1089,7 @@ suite("mail provider lease fairness", () => {
         kind: "send",
         draftId: draft.data.id,
         expectedDraftRevision: current!.revision,
+        expectedContentHash: await reviewedDraftContentHash(context, other.mailboxId, draft.data.id, current!.revision),
         senderIdentityId: other.identityId,
         undoSeconds: 0,
         idempotencyKey: `other-send-${suffix}`,

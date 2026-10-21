@@ -1057,7 +1057,7 @@ A **sends message must be complete**: show the effective `from`, every recipient
 class and attachment, scheduled `sendAt`, and the app's own safety `warnings`.
 Any positive `more.to`, `more.cc`, `more.bcc`, or `moreAttachments` requires an
 `open` link to the complete reviewed revision, on every message preview,
-including receipts. Every truncated preview also requires an `open` link.
+including receipts. Reviews can instead supply complete `content` as described below. Every truncated preview requires that content or an `open` link.
 Cloud rejects a message preview without `from` when the declared policy or the
 review's own `ask` is `sends`; the application is responsible
 for truthfully supplying its schedule and warnings. The `from` requirement
@@ -1079,10 +1079,53 @@ also checks:
 - Sentence forms, slot strings, consequences and single-line preview fields
   reject controls, invisible format characters and line separators. Multiline
   preview fields allow newline and tab, and reject the other unsafe characters.
+  These strings must be well-formed Unicode: do not split a surrogate pair when
+  shortening a preview. Full review content preserves the original code units.
 - The review locale is canonical BCP 47 and belongs to the app's presentation
   locales or falls back to one through its locale ancestors.
-- The serialized review is at most **32 KiB of UTF-8 JSON**, including all
-  preview fields and slots.
+- The serialized compact review is at most **32 KiB of UTF-8 JSON**, including
+  all preview fields and slots, but excluding the optional complete `content`.
+
+#### Supply the complete proposed content
+
+A policy review may include `content: CapabilityReviewContent` from
+`@k2b/cloud/contracts`. Use it when the proposal is unsaved or a resource link
+cannot reproduce exactly what the person is approving. Return the complete
+proposed value, including changes beyond the compact preview's limits.
+
+`content` is a passive `message` or `page` with `format: "plain"`. A message
+contains `subject`, `body`, `to`, optional `from`, `cc`, `bcc`, `attachments`
+(`name`, optional byte `size`), `sendAt`, and `warnings`. It supports 600 total
+recipients, 202 attachment descriptions and six warnings of 300 characters.
+Names are bounded to 200 characters, addresses to 320, subjects to 998 and
+attachment names to 255. A page contains `title`, optional `place`, and `body`.
+Both kinds may include the nonnegative integer `baseRevision` of the resource
+used to prepare the proposal. Recipient-free draft proposals are valid. A sends review, whether declared by
+policy or requested per call, requires a sender and at least one full recipient.
+Applications supply every attachment, schedule and safety warning themselves.
+
+The complete content is bounded to **16 MiB of serialized UTF-8 JSON**.
+Oversize content fails before approval; never shorten it or substitute a saved
+older version. HTML and attachment bytes do not belong in this field. Preserve
+source characters: Cloud displays control and invisible characters visibly,
+without changing the stored value or digest. Short and complete content both
+participate in the approval digest.
+
+Upgrade Core and callers before providers return this field. Review responses
+have a dedicated bound of 16 MiB plus the 32 KiB compact review and JSON
+structure. Ordinary Query and Action results retain their 256 KiB limit.
+Direct `reviewCapabilityAction()` calls return the full bounded review without
+creating an approval or application object. `cld capabilities review <app-id>
+<action-id> --input <json>` prints the review as JSON.
+
+Cloud persists the full snapshot in its existing approval and chat records.
+Lists, chat history and streams contain a compact presentation with a
+Cloud-generated `contentRef: { href, digest }`; providers must not supply it.
+Read that exact snapshot with `readCapabilityReviewContent(ref, options)` from
+`@k2b/cloud/capabilities`. The helper accepts the normal HTTP client options and
+an abort signal, validates the route and response, and disables caching.
+The reference grants no access. See [approval readers](/en/docs/identity/approvals#approval-routes)
+for authorization and [storage and upgrades](/en/docs/operations/deployment-requirements#store-complete-action-review-content).
 
 Use `assertCapabilityReview(review, context?)` and
 `checkActionReviewMessages({ locales, forms, slots })` from

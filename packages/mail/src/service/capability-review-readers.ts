@@ -2,119 +2,43 @@
 import type { CapabilityPerson } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { type DraftPreviewSource, reviewPerson } from "../capability-reviews";
+import type { DraftPreviewSource } from "../capability-reviews";
 import type { MailDraft } from "../contracts";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
-import { sha256Json } from "./canonical";
-import { renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
-import { mailboxLogoContentId } from "./mailbox-logos";
+import { loadSendContent } from "./send-content";
 
-type SendParts = {
-  origin: "user" | "workflow";
-  raw_body: string;
-  display_name: string;
-  from_address: string;
-  vcard: string | null;
-  reply_to: string | null;
-  mailbox_name: string;
-  mailbox_description: string | null;
-  signature: string | null;
-  custom_css: string;
-  actor_name: string | null;
-  actor_uid: string | null;
-  actor_mail: string | null;
-  account_name: string | null;
-  logo_id: string | null;
-  logo_type: "image/png" | "image/jpeg" | null;
-  logo_size: number | null;
-  logo_width: number | null;
-  logo_height: number | null;
-  logo_display_width: number | null;
-  logo_alt: string | null;
-};
-/** One extra lookup supplies render inputs and generated MIME-part metadata from the
- * same sources as createSendOutbox/renderComposeDraft. Reuse the actual renderer;
- * identity defaults and calendar attendees are materialized before send, never added here.
- */
+/** Shared render snapshot, under the caller's execution identity. Authorization is checked by the owning service. */
 export const loadSendReviewContent = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   draft: MailDraft;
   senderIdentityId: string;
 }): Promise<Result<{ draft: DraftPreviewSource; from: CapabilityPerson; contentHash: string }>> => {
-  const actor = actorRefFromRequest(params.context);
-  const actorUserId = actor.kind === "user" ? actor.userId : actor.kind === "service_account" ? actor.delegatedUserId : null;
-  const accountId = actor.kind === "service_account" ? actor.serviceAccountId : null;
-  if (params.draft.senderIdentityId !== params.senderIdentityId || params.draft.state !== "draft")
-    return fail(err.badInput("Draft or sender identity is not ready for sending"));
-  if (!params.draft.to.length && !params.draft.cc.length && !params.draft.bcc.length)
-    return fail(err.badInput("At least one recipient is required before sending"));
-  const [parts] = await sql<SendParts[]>`
-    SELECT d.origin, d.body_markdown AS raw_body, si.display_name, si.from_address, si.reply_to, si.vcard,
-      m.name AS mailbox_name, m.description AS mailbox_description,
-      signature.body_template AS signature, COALESCE(style.custom_css, '') AS custom_css,
-      u.display_name AS actor_name, u.uid AS actor_uid, u.mail AS actor_mail, account.name AS account_name,
-      logo.id AS logo_id, logo.content_type AS logo_type, octet_length(logo.content)::int AS logo_size,
-      logo.pixel_width AS logo_width, logo.pixel_height AS logo_height,
-      logo.display_width AS logo_display_width, logo.alt_text AS logo_alt
-    FROM mail.mailboxes m
-    JOIN mail.drafts d ON d.mailbox_id = m.id AND d.id = ${params.draft.id}::uuid AND d.revision = ${params.draft.revision}
-    JOIN mail.sender_identities si ON si.id = d.sender_identity_id AND si.mailbox_id = m.id AND si.id = ${params.senderIdentityId}::uuid AND si.status = 'verified'
-    LEFT JOIN mail.compose_templates signature ON signature.id = d.signature_template_id
-      AND signature.mailbox_id = m.id AND signature.kind = 'signature' AND signature.archived_at IS NULL
-    LEFT JOIN mail.compose_styles style ON style.mailbox_id = m.id
-    LEFT JOIN mail.mailbox_logo_versions logo ON logo.id = m.logo_version_id AND logo.mailbox_id = m.id
-    LEFT JOIN auth.users u ON u.id = ${actorUserId}::uuid
-    LEFT JOIN auth.service_accounts account ON account.id = ${accountId}::uuid
-    WHERE m.id = ${params.mailboxId}::uuid AND m.deleted_at IS NULL
-  `;
-  if (!parts) return fail(err.badInput("Draft or sender identity is not ready for sending"));
-  if (actorUserId && !parts.actor_uid) return fail(err.badInput("The delegated compose user is no longer available"));
-  const d = params.draft;
-  const rendered = renderComposeContent({
-    body: parts.signature ? withoutSignatureSegments(parts.raw_body, parts.signature) : parts.raw_body,
-    format: d.format,
-    signature: parts.signature,
-    customCss: parts.custom_css,
-    renderLiquid: parts.origin === "user",
-    context: {
-      actor: {
-        display_name: parts.actor_name || parts.actor_uid || parts.account_name || "Mailbox automation",
-        email: parts.actor_mail ?? "",
-      },
-      mailbox: { name: parts.mailbox_name, description: parts.mailbox_description ?? "" },
-      sender: { display_name: parts.display_name || parts.from_address, email: parts.from_address, reply_to: parts.reply_to ?? "" },
-      message: { subject: d.subject, to: d.to.map((p) => p.address), cc: d.cc.map((p) => p.address) },
-    },
-    logo: parts.logo_id
-      ? {
-          src: `cid:${mailboxLogoContentId(parts.logo_id, parts.from_address)}`,
-          altText: parts.logo_alt ?? "",
-          displayWidth: parts.logo_display_width!,
-          pixelWidth: parts.logo_width!,
-          pixelHeight: parts.logo_height!,
-          byteLength: parts.logo_size!,
-        }
-      : null,
+  if (params.draft.state !== "draft") return fail(err.badInput("Draft is not ready for sending"));
+  const loaded = await loadSendContent({
+    db: sql,
+    mailboxId: params.mailboxId,
+    draftId: params.draft.id,
+    expectedRevision: params.draft.revision,
+    senderIdentityId: params.senderIdentityId,
+    actor: actorRefFromRequest(params.context),
   });
-  if (!rendered.ok) return rendered;
-  const attachments: DraftPreviewSource["attachments"] = d.attachments.map((a) => ({ filename: a.filename, byteLength: a.byteLength }));
-  if (d.format === "markdown" && parts.logo_id && rendered.data.html && rendered.data.logoUsed)
-    attachments.push({ filename: parts.logo_type === "image/png" ? "logo.png" : "logo.jpg", byteLength: parts.logo_size! });
-  if (parts.vcard) attachments.push({ filename: "contact.vcf", byteLength: Buffer.byteLength(parts.vcard) });
-  // rendered.text is the MIME text alternative, including the resolved signature and HTML-to-text conversion.
+  if (!loaded.ok) return loaded;
+  const snapshot = loaded.data.snapshot;
+  const attachments: DraftPreviewSource["attachments"] = snapshot.attachments.map((a) => ({
+    filename: a.filename,
+    byteLength: a.byteLength,
+  }));
+  if (snapshot.inlineLogo)
+    attachments.push({
+      filename: snapshot.inlineLogo.contentType === "image/png" ? "logo.png" : "logo.jpg",
+      byteLength: snapshot.inlineLogo.byteLength,
+    });
+  if (snapshot.vcard) attachments.push({ filename: "contact.vcf", byteLength: Buffer.byteLength(snapshot.vcard) });
   return ok({
-    // Bind the full effective message, including time-dependent Liquid output and
-    // generated MIME parts. Unused actor metadata must not invalidate the same message.
-    contentHash: sha256Json({
-      draft: d,
-      rendered: rendered.data,
-      from: { name: parts.display_name, address: parts.from_address, replyTo: parts.reply_to },
-      vcard: parts.vcard,
-      logoVersion: parts.logo_id,
-    }),
-    from: reviewPerson({ name: parts.display_name, address: parts.from_address }),
-    draft: { ...d, body: rendered.data.text, format: "plain", attachments },
+    contentHash: loaded.data.contentHash,
+    from: snapshot.from,
+    draft: { ...snapshot, body: snapshot.renderedText!, format: "plain", attachments },
   });
 };
 

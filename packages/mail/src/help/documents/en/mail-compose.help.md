@@ -28,7 +28,7 @@ The Assistant chat does not copy the message into a separate Mail draft and does
 
 When the Assistant asks to send this draft, a band above the draft shows the waiting request. Review the request there. You can approve or reject it without returning to the chat.
 
-The send question shows the sender, To, Cc and Bcc, attachments, delivery time, and Mail warnings. Open its draft link to read the complete message with its signature and generated attachments. If the draft has changed, ask Assistant to review it again. After approval, “queued” or “scheduled” confirms the request, not delivery.
+The send question shows the sender, To, Cc and Bcc, attachments, delivery time, and Mail warnings. Choose **Read the complete proposal** to read the exact proposed message, including its signature and generated attachment descriptions. Approval becomes available after this snapshot loads. The draft link opens the current draft, which may have changed. If the sending content changes after your check, Mail stops and queues no message: open the draft, check it again and approve a new attempt. Mail does not retry automatically. A signature that changes with the current time may need editing first. After approval, “queued” or “scheduled” confirms the request, not delivery.
 
 ## Use Cloud Mail for email links {icon="link"}
 

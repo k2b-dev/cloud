@@ -947,7 +947,7 @@ describe("mail capabilities", () => {
     spyOn(composeSafety, "reviewDraftComposeSafety").mockResolvedValue({ ok: true, data: { warnings: [] } } as never);
 
     const review = await mailCapabilities.actions["draft.send"].review(
-      DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2 }),
+      DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
       context,
     );
 
@@ -990,7 +990,7 @@ describe("mail capabilities", () => {
     });
 
     const review = await mailCapabilities.actions["draft.send"].review(
-      DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2 }),
+      DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
       context,
     );
 
@@ -1601,7 +1601,7 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["draft.send"],
         run: () =>
           mailCapabilities.actions["draft.send"].run(
-            DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2 }),
+            DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2, expectedContentHash: "a".repeat(64) }),
             idempotentContext,
           ),
       },
@@ -2698,9 +2698,12 @@ describe("mail capabilities", () => {
       draftId: "DrG789",
       expectedRevision: 2,
       senderIdentityId,
+      expectedContentHash: "a".repeat(64),
       safetyApproval: { revision: 2, fingerprint: "a".repeat(64), warningIds: ["missing_attachment"] },
     };
     expect(DraftSendInputSchema.safeParse(input).success).toBeTrue();
+    expect(DraftSendInputSchema.safeParse({ ...input, expectedContentHash: undefined }).success).toBeFalse();
+    expect(DraftSendInputSchema.safeParse({ ...input, expectedContentHash: "tampered" }).success).toBeFalse();
     expect(DraftSendInputSchema.safeParse({ ...input, safetyApproval: { warningIds: [] } }).success).toBeFalse();
   });
 

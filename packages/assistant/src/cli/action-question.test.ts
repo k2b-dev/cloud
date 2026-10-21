@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AiPendingTurnAction } from "@k2b/cloud/ai";
 import type { CapabilityActionCallReview } from "@k2b/cloud/contracts/capabilities";
-import { pendingActionQuestion } from "./action-question";
+import { pendingActionQuestion, printPendingActionContent } from "./action-question";
 
 const ctx = { options: { profile: "test", server: "https://cloud.example", token: "test", output: "text" as const, locale: "en" } };
 const people = ["a", "b", "c", "d"].map((name) => ({ name, address: `${name}@example.com` }));
@@ -37,4 +37,37 @@ test("the input shows without a review, and when the question leaves something o
   // An old review cannot say whether it shortened anything.
   const legacy = { message: "Create note", details: [{ label: "Text", value: "Shortened…" }] };
   expect(pendingActionQuestion(ctx, { ...action(), review: legacy }).showInput).toBe(true);
+});
+
+test("terminal full content preserves valid JSON, complete text and invisible source characters", async () => {
+  const content = { kind: "page", title: "Proposal", body: `${"x".repeat(80_000)}\u0000\u202e\ud800\u{e0001}`, format: "plain" };
+  const pending = action();
+  pending.review = {
+    ...review(),
+    contentRef: { href: "/api/approvals/11111111-1111-4111-8111-111111111111/content", digest: "a".repeat(64) },
+  };
+  const printed: string[] = [];
+  await printPendingActionContent(
+    {
+      fetch: async () => Response.json(content),
+      print: (text) => {
+        printed.push(text ?? "");
+      },
+    },
+    pending,
+  );
+  expect(printed).toHaveLength(1);
+  expect(JSON.parse(printed[0]!)).toEqual(content);
+  expect(printed[0]).not.toContain("\u202e");
+  await expect(
+    printPendingActionContent(
+      {
+        fetch: async () => new Response("denied", { status: 403 }),
+        print: () => {
+          throw new Error("Must not print unavailable content");
+        },
+      },
+      pending,
+    ),
+  ).rejects.toThrow();
 });

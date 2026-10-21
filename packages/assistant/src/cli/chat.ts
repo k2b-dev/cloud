@@ -13,7 +13,7 @@ import type {
 } from "@k2b/cloud/ai";
 import { guessAiMediaType } from "@k2b/cloud/ai/browser";
 import { arg, cloudResourceUrl, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
-import { pendingActionQuestion } from "./action-question";
+import { pendingActionQuestion, printPendingActionContent } from "./action-question";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
@@ -515,6 +515,24 @@ export const assistantManagementCommands = [
         })),
         [{ key: "call" }, { key: "type" }, { key: "name" }, { key: "detail" }],
       );
+    },
+  }),
+  command("actions content", {
+    summary: "Read one pending call's complete reviewed proposal",
+    args: {
+      chat: arg.required({ valueLabel: "chat-id" }),
+      turn: arg.required({ valueLabel: "turn-id" }),
+      call: arg.required({ valueLabel: "call-id" }),
+    },
+    async run({ ctx, args }) {
+      const actions = await readApi<AiPendingTurnAction[]>(
+        ctx,
+        conversationPath(args.chat, `/pending-actions/${encodeURIComponent(args.turn)}`),
+      );
+      const action = actions.find((entry) => entry.callId === args.call);
+      if (!action || action.type !== "approval_request") throw new Error("The pending question is no longer available.");
+      for (const line of pendingActionQuestion(ctx, action).lines) ctx.print(line);
+      await printPendingActionContent(ctx, action);
     },
   }),
   ...(["approve", "reject"] as const).map((action) =>

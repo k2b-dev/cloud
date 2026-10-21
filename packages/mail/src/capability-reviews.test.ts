@@ -13,6 +13,7 @@ import {
   buildMailReview,
   buildSendReview,
   draftPreview,
+  draftReviewContent,
   folderDisplayReceipt,
   mailActionReviews,
   mailReceipt,
@@ -182,6 +183,7 @@ describe("Mail review contract", () => {
     for (const field of ["bcc", "attachments", "body"] as const) {
       const incomplete = structuredClone(review);
       delete incomplete.links;
+      delete incomplete.content;
       if (incomplete.preview?.kind !== "message") throw new Error("Expected message");
       if (field === "bcc") incomplete.preview.more = { bcc: 1 };
       if (field === "attachments") incomplete.preview.moreAttachments = 1;
@@ -194,7 +196,7 @@ describe("Mail review contract", () => {
     const eight = buildSendReview({ ...sendSource, expectedRevision: 8 }, "en");
     expect(JSON.stringify(seven)).not.toBe(JSON.stringify(eight));
     expect(eight.check?.input.expectedRevision).toBe(8);
-    expect(eight.links?.[0]?.href).toContain("?revision=8&sendContent=");
+    expect(eight.links?.[0]?.href).toBe(sendSource.href);
   });
   test("valid worst-case Mail content fits the whole review and retains overflow counts", () => {
     for (const locale of ["en", "de"]) {
@@ -212,7 +214,9 @@ describe("Mail review contract", () => {
       for (const scheduledAt of [undefined, "2026-10-20T06:00:00.000Z"]) {
         const review = buildSendReview({ ...source, scheduledAt }, locale);
         assertCapabilityReview(review, reviewContext);
-        expect(Buffer.byteLength(JSON.stringify(review))).toBeLessThanOrEqual(32768);
+        const { content, ...compact } = review;
+        expect(content?.body).toBe(draft.body);
+        expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThanOrEqual(32768);
         if (review.preview?.kind !== "message") throw new Error("Expected message");
         for (const role of ["to", "cc", "bcc"] as const)
           expect((review.preview[role]?.length ?? 0) + (review.preview.more?.[role] ?? 0)).toBe(60);
@@ -402,4 +406,54 @@ describe("Mail review contract", () => {
     ] as const)
       expect(mailCapabilities.queries[id].openWorld).toBeTrue();
   });
+});
+
+test("full draft proposal preserves source, base revision, 600 recipients and 202 MIME descriptions", () => {
+  const people = Array.from({ length: 200 }, (_, i) => ({ name: `Person ${i}\u202e`, address: `person${i}@example.test` }));
+  const draft = {
+    ...sendSource.draft,
+    revision: 7,
+    body: `${"x".repeat(80_000)}UNSAVED\u0000`,
+    to: people,
+    cc: people,
+    bcc: people,
+    attachments: Array.from({ length: 202 }, (_, i) => ({ filename: `file-${i}\u202e.txt`, byteLength: i })),
+  };
+  const content = draftReviewContent(draft);
+  expect(content.body).toBe(draft.body);
+  expect(content.baseRevision).toBe(7);
+  expect(content.to).toEqual(people);
+  expect(content.cc).toEqual(people);
+  expect(content.bcc).toEqual(people);
+  expect(content.attachments).toHaveLength(202);
+  expect(content.attachments?.at(-1)).toEqual({ name: "file-201\u202e.txt", size: 201 });
+  const review = buildSendReview({
+    ...sendSource,
+    draft,
+    from: { name: "Sender\u202e", address: "sender@example.test" },
+    warnings: [{ title: "Warning\u202e", description: "Complete description" }],
+  });
+  assertCapabilityReview(review, reviewContext);
+  expect(review.content).toMatchObject({
+    ...content,
+    from: { name: "Sender\u202e", address: "sender@example.test" },
+    warnings: ["Warning\u202e. Complete description"],
+  });
+});
+
+test("compact Mail excerpts preserve Unicode boundaries without changing the full proposal", () => {
+  const source = { ...sendSource.draft, body: "x".repeat(9_999) + "😀tail\ud800" };
+  const preview = draftPreview(source);
+  if (preview.kind !== "message") throw new Error("Expected message preview");
+  expect(preview.body.isWellFormed()).toBe(true);
+  expect(preview.body).toBe("x".repeat(9_999));
+  expect(preview.truncated).toBe(true);
+  expect(draftReviewContent(source).body).toBe(source.body);
+  const title = reviewObject("x".repeat(199) + "😀tail");
+  if (title.kind !== "object") throw new Error("Expected object slot");
+  expect(title.title).toBe("x".repeat(199));
+  const target = "x".repeat(1_999) + "😀tail";
+  const rows = reviewFieldRows("Target", target);
+  expect(rows.map((row) => row.value).join("")).toBe(target);
+  expect(rows.every((row) => row.value.isWellFormed() && row.value.length <= 2_000)).toBe(true);
 });

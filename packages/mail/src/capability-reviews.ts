@@ -4,6 +4,7 @@ import type {
   CapabilityActionReceipt,
   CapabilityPerson,
   CapabilityPreview,
+  CapabilityReviewContent,
   CapabilitySlot,
   CloudResourceRef,
 } from "@k2b/cloud/contracts";
@@ -12,8 +13,16 @@ import { mailCapabilityMessages } from "./capability-messages";
 import { type MailReviewMessage, mailReviewCopy, mailReviewLocale, mailReviewMessages } from "./capability-review-messages";
 import type { MailAddress } from "./contracts";
 
+/** Compact text must remain valid Unicode for JSONB, including when a UTF-16 bound cuts an emoji. */
+const reviewSlice = (value: string, max: number): string => {
+  const before = value.charCodeAt(max - 1);
+  const after = value.charCodeAt(max);
+  const splitsPair = before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+  return value.slice(0, splitsPair ? max - 1 : max).toWellFormed();
+};
+
 /** Review projections have smaller display bounds than the durable Mail objects. */
-export const reviewLine = (value: string, max = 200): string => value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, " ").slice(0, max);
+export const reviewLine = (value: string, max = 200): string => reviewSlice(value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, " "), max);
 const block = (value: string) =>
   value.replace(/[^\S\n\t]/gu, " ").replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, (c) => (c === "\n" || c === "\t" ? c : ""));
 export const reviewObject = (title: string, ref?: CloudResourceRef, icon = "ti ti-mail"): CapabilitySlot => ({
@@ -52,10 +61,13 @@ export const reviewCount = (value: number, locale?: string): CapabilitySlot => (
 /** Fields have no truncation flag: split long identifiers instead of hiding the target. */
 export const reviewFieldRows = (label: string, value: string) => {
   const text = reviewLine(value, value.length) || "—";
-  return Array.from({ length: Math.ceil(text.length / 2000) }, (_, index) => ({
-    label: reviewLine(index ? `${label} (${index + 1})` : label, 60),
-    value: text.slice(index * 2000, (index + 1) * 2000),
-  }));
+  const rows: { label: string; value: string }[] = [];
+  for (let offset = 0; offset < text.length; ) {
+    const value = reviewSlice(text.slice(offset), 2000);
+    rows.push({ label: reviewLine(rows.length ? `${label} (${rows.length + 1})` : label, 60), value });
+    offset += value.length;
+  }
+  return rows;
 };
 
 export type MailReviewOptions = Omit<CapabilityActionCallReview, "locale" | "sentence" | "slots">;
@@ -88,11 +100,15 @@ export const buildMailReview = (
   const slotData = structuredClone(slots);
   const extra = structuredClone({ ...fixedReviewAsk(message), ...options });
   const review = { locale: language, sentence: mailReviewMessages(language)[message], slots: slotData, ...extra };
-  // Budget the full UTF-8 envelope. Counts plus the revision link preserve completeness even
-  // when long Unicode names cannot all fit the platform's 32 KiB display contract.
+  // Budget the compact UTF-8 envelope separately from complete review content.
+  // Counts make omissions in the card explicit.
+  const compactBytes = () => {
+    const { content: _content, ...compact } = review;
+    return Buffer.byteLength(JSON.stringify(compact));
+  };
   const p = review.preview;
   if (p?.kind === "message") {
-    while (Buffer.byteLength(JSON.stringify(review)) > CAPABILITY_MAX_REVIEW_BYTES) {
+    while (compactBytes() > CAPABILITY_MAX_REVIEW_BYTES) {
       const lists = ["to", "cc", "bcc"] as const;
       const longest = lists.reduce((a, b) => ((p[a]?.length ?? 0) >= (p[b]?.length ?? 0) ? a : b));
       if ((p[longest]?.length ?? 0) > 1) {
@@ -102,7 +118,7 @@ export const buildMailReview = (
         p.attachments!.pop();
         p.moreAttachments = (p.moreAttachments ?? 0) + 1;
       } else if (p.body.length > 0) {
-        p.body = p.body.slice(0, Math.floor(p.body.length / 2));
+        p.body = reviewSlice(p.body, Math.floor(p.body.length / 2));
         p.truncated = true;
       } else {
         // The person slot is a summary, the preview retains each address or its explicit count.
@@ -114,8 +130,8 @@ export const buildMailReview = (
   }
   if (p?.kind === "message" && p.attachments?.length === 0) delete p.attachments;
   if (p?.kind === "page")
-    while (Buffer.byteLength(JSON.stringify(review)) > CAPABILITY_MAX_REVIEW_BYTES && p.body.length) {
-      p.body = p.body.slice(0, Math.floor(p.body.length / 2));
+    while (compactBytes() > CAPABILITY_MAX_REVIEW_BYTES && p.body.length) {
+      p.body = reviewSlice(p.body, Math.floor(p.body.length / 2));
       p.truncated = true;
     }
   // Assignment batches can name two different audiences. Preserve their full counts
@@ -123,7 +139,7 @@ export const buildMailReview = (
   const personSlots = [...Object.values(slotData), ...(extra.consequences ?? []).flatMap((c) => Object.values(c.slots ?? {}))].filter(
     (s) => s.kind === "person",
   );
-  while (Buffer.byteLength(JSON.stringify(review)) > CAPABILITY_MAX_REVIEW_BYTES) {
+  while (compactBytes() > CAPABILITY_MAX_REVIEW_BYTES) {
     const largest = personSlots.reduce<(typeof personSlots)[number] | undefined>(
       (a, b) => (!a || b.people.length > a.people.length ? b : a),
       undefined,
@@ -149,6 +165,7 @@ export const mailReceipt = (
   ),
 });
 export type DraftPreviewSource = {
+  revision?: number;
   subject: string;
   body: string;
   format: "plain" | "markdown";
@@ -158,7 +175,7 @@ export type DraftPreviewSource = {
   attachments: { filename: string; byteLength?: number }[];
 };
 export const draftPreview = (draft: DraftPreviewSource, locale?: string): CapabilityPreview => {
-  const body = block(draft.body).slice(0, 10_000);
+  const body = reviewSlice(block(draft.body), 10_000);
   const truncated = body.length < block(draft.body).length;
   if (draft.to.length + draft.cc.length + draft.bcc.length === 0)
     return {
@@ -196,10 +213,22 @@ export const draftPreview = (draft: DraftPreviewSource, locale?: string): Capabi
     ...(draft.attachments.length > 50 ? { moreAttachments: draft.attachments.length - 50 } : {}),
   };
 };
+/** Exact proposed source; controls are made visible by Cloud's reader, never removed here. */
+export const draftReviewContent = (draft: DraftPreviewSource): Extract<CapabilityReviewContent, { kind: "message" }> => ({
+  kind: "message",
+  ...(draft.revision === undefined ? {} : { baseRevision: draft.revision }),
+  subject: draft.subject,
+  body: draft.body,
+  format: "plain",
+  to: draft.to.map((p) => ({ address: p.address, ...(p.name == null ? {} : { name: p.name }) })),
+  cc: draft.cc.map((p) => ({ address: p.address, ...(p.name == null ? {} : { name: p.name }) })),
+  bcc: draft.bcc.map((p) => ({ address: p.address, ...(p.name == null ? {} : { name: p.name }) })),
+  attachments: draft.attachments.map((a) => ({ name: a.filename, ...(a.byteLength === undefined ? {} : { size: a.byteLength }) })),
+});
 export const commentPreview = (text: string, locale?: string, before?: string): CapabilityPreview => ({
   kind: "page",
   title: mailReviewCopy(locale).comment,
-  body: block(text).slice(0, 10_000),
+  body: reviewSlice(block(text), 10_000),
   format: "plain",
   truncated: block(text).length > 10_000,
   ...(before !== undefined && block(before).length <= 2_000 ? { changes: [{ change: "removed", text: block(before) }] } : {}),
@@ -221,16 +250,21 @@ export const buildSendReview = (source: SendReviewSource, locale?: string): Capa
   if (!recipients.length) throw new Error("At least one recipient is required before sending");
   const p = draftPreview(source.draft, locale);
   if (p.kind !== "message") throw new Error("A send preview must be a message");
-  p.from = source.from;
+  p.from = {
+    ...source.from,
+    ...(source.from.name === undefined ? {} : { name: reviewLine(source.from.name) }),
+    ...(source.from.address === undefined ? {} : { address: reviewLine(source.from.address, 320) }),
+  };
   if (source.scheduledAt) p.sendAt = source.scheduledAt;
   const warningLead = (title: string) => (/\p{P}$/u.test(title) ? title : title + ".");
-  const warnings = source.warnings.map((w) => reviewLine(warningLead(reviewLine(w.title, 150)) + " " + w.description, 300));
+  const warnings = source.warnings.map((w) => warningLead(w.title) + " " + w.description);
+  const compactWarnings = warnings.map((warning) => reviewLine(warning, 300));
   // Six kinds currently exist. Keep complete first four, then every remaining lead.
   p.warnings =
-    warnings.length <= 5
-      ? warnings
+    compactWarnings.length <= 5
+      ? compactWarnings
       : [
-          ...warnings.slice(0, 4),
+          ...compactWarnings.slice(0, 4),
           source.warnings
             .slice(4)
             .map((w) => warningLead(reviewLine(w.title, 140)))
@@ -247,7 +281,13 @@ export const buildSendReview = (source: SendReviewSource, locale?: string): Capa
     {
       ask: "sends",
       preview: p,
-      links: [{ rel: "open", href: `${source.href}?revision=${source.expectedRevision}&sendContent=${source.contentHash}` }],
+      content: {
+        ...draftReviewContent(source.draft),
+        from: source.from,
+        ...(source.scheduledAt ? { sendAt: source.scheduledAt } : {}),
+        warnings,
+      },
+      links: [{ rel: "open", href: source.href }],
       check: {
         query: "draft.send.check",
         input: { mailboxId: source.mailboxId, draftId: source.draftId, expectedRevision: source.expectedRevision },

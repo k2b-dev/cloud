@@ -16,6 +16,7 @@ import type {
   CapabilityAskReason,
   CapabilityConsequence,
   CapabilityPreview,
+  CapabilityReviewContentRef,
   CapabilitySemanticLink,
   CapabilitySlot,
 } from "../../contracts/capabilities";
@@ -78,6 +79,7 @@ export type ActionCard = {
   preview: ActionPreviewModel | null;
   /** Opens exactly this version of the thing. */
   readMore?: string;
+  contentRef?: CapabilityReviewContentRef;
   /** The review's other links, such as editing the draft, each with its words. */
   links: { href: string; label: string }[];
   /** Where the thing itself opens, for an outcome Cloud could not see. */
@@ -247,7 +249,10 @@ const slotValues = (slots: CapabilitySlot[], context: { locale: string; timeZone
   unlisted: slots.some((slot) => slot.kind === "person" && (slot.total ?? slot.people.length) > slot.people.length),
 });
 
-export const reviewActionCard = (review: CapabilityActionCallReview, context: ActionCardContext): ActionCard => {
+export const reviewActionCard = (
+  review: CapabilityActionCallReview & { contentRef?: CapabilityReviewContentRef },
+  context: ActionCardContext,
+): ActionCard => {
   const locale = review.locale;
   const tz = { timeZone: context.timeZone };
   const parts = (form: Parameters<typeof capabilityReviewSentenceParts>[1]) =>
@@ -287,6 +292,7 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
               : {}),
           }
         : null,
+    contentRef: review.contentRef,
     readMore: firstLink(review.links, ["open", "preview"]),
     links: otherLinks(review.links, locale, context.app.name),
     open: firstLink(review.links, ["open", "edit", "status"]) ?? firstObjectHref(review),

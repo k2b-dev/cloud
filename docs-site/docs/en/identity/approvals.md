@@ -281,7 +281,17 @@ An actor without a user gets `403`. An unauthenticated caller gets `401`.
 | --- | --- | --- |
 | `GET /api/approvals` | Optional query fields `app`, `link`, and `cursor` | `{ items, nextCursor, count, elsewhere }` |
 | `GET /api/approvals/counts` | None | `{ total, apps }` |
+| `GET /api/approvals/:id/content` | UUID `id`, SHA-256 `digest` query | One complete pending review content object |
+| `GET /api/approvals/conversations/:conversationId/turns/:turnId/reviews/:callId` | Conversation and turn UUIDs, call ID, SHA-256 `digest` query | One historical chat review content object |
 | `POST /api/approvals/:id/decision` | UUID `id` and JSON `{ approved, remember? }` | `{ status: "approved" }` or `{ status: "rejected" }` |
+
+Full-content readers require the matching snapshot digest and normal user
+credentials. The pending-request reader also checks the approver, pending
+execution, expiry and current sign-out epoch. Historical chat reads require
+ownership of an unarchived conversation and the exact turn and call; they
+remain available after the approval is consumed. Missing or inaccessible
+snapshots return `404`. Responses are private and use `Cache-Control: no-store`.
+Lists omit the complete content and retain its `contentRef` instead.
 
 `app` matches the effect owner or requester app. `link` matches an exact review
 link href that starts with `/`. Both filters apply when both are present.

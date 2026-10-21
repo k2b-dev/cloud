@@ -9,6 +9,7 @@ import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_RESULT_BYTES,
+  CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
   type CapabilityActionDefinition,
   type CapabilityActionManifest,
@@ -194,7 +195,7 @@ const providerPayload = (code: string, message: string, details?: Record<string,
 /** Serializes one framework-owned provider response exactly once and enforces the public byte bound. */
 export const serializeCapabilityProviderResult = (
   result: CapabilityProviderResult,
-  options: { nonIdempotentAction?: boolean } = {},
+  options: { nonIdempotentAction?: boolean; review?: boolean } = {},
 ): { body: string; status: number } => {
   if (options.nonIdempotentAction && !result.ok && result.error.code === CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse) {
     const unknown = providerPayload(
@@ -207,7 +208,9 @@ export const serializeCapabilityProviderResult = (
   const payload = result.ok ? result.data : providerPayload(result.error.code, result.error.message, result.error.details);
   try {
     const body = JSON.stringify(payload);
-    if (new TextEncoder().encode(body).byteLength <= CAPABILITY_MAX_RESULT_BYTES) {
+    if (
+      new TextEncoder().encode(body).byteLength <= (options.review ? CAPABILITY_MAX_REVIEW_RESPONSE_BYTES : CAPABILITY_MAX_RESULT_BYTES)
+    ) {
       return { body, status: result.ok ? 200 : result.error.status };
     }
   } catch {
