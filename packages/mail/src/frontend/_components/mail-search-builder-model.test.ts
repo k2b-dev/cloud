@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { MailSearchExpression } from "../../contracts";
 import {
   appendMailSearchExpression,
-  createMailSearchCondition,
   countMailSearchNodes,
+  createMailSearchCondition,
   ensureMailSearchRootGroup,
   MAIL_SEARCH_FIELD_GROUPS,
   MAIL_SEARCH_FIELD_OPTIONS,

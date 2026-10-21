@@ -513,7 +513,6 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             expect(during?.height).toBe(before?.height);
             expect(await page.getByRole("button", { name: "Options for Example support", exact: true }).isVisible()).toBe(width !== 390);
             expect(await page.getByRole("button", { name: "Cancel", exact: true }).isVisible()).toBe(true);
-            const screenshots = process.env.MAIL_SHELL_SCREENSHOTS;
             if (screenshots) {
               const directory = join(screenshots, browserName);
               mkdirSync(directory, { recursive: true });
@@ -604,7 +603,6 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
               ),
             ).toBe(true);
             expect(await page.getByRole("button", { name: "Options for Example support", exact: true }).isVisible()).toBe(width !== 390);
-            const screenshots = process.env.MAIL_SHELL_SCREENSHOTS;
             if (screenshots) {
               const directory = join(screenshots, browserName);
               mkdirSync(directory, { recursive: true });

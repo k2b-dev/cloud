@@ -1514,7 +1514,7 @@
   grid-template-columns: 2rem minmax(0, 1fr) auto;
   gap: 0.1875rem 0.75rem;
   padding: 1rem;
-  color: var(--k2b-text-primary);
+  color: var(--k2b-text);
   text-decoration: none;
 }
 .mail-draft-row + .mail-draft-row {
