@@ -860,6 +860,7 @@ export const defineApp = <
               kind === "review" ? await reviewCompiledCapability(invocation) : await invokeCompiledCapability({ ...invocation, kind });
             const operation = kind === "action" ? compiledCapabilities.actions.get(invocation.localId) : undefined;
             const serialized = serializeCapabilityProviderResult(result, {
+              review: kind === "review",
               nonIdempotentAction: kind === "action" && operation?.manifest.idempotency === "none",
             });
             return new Response(serialized.body, {

@@ -80,6 +80,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.outbox_submissions ADD COLUMN IF NOT EXISTS inline_logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id) ON DELETE SET NULL`.simple();
   await tx`CREATE INDEX IF NOT EXISTS outbox_inline_logo_version_idx ON mail.outbox_submissions (inline_logo_version_id) WHERE inline_logo_version_id IS NOT NULL`.simple();
 
+  await tx`CREATE INDEX IF NOT EXISTS outbox_submissions_draft_idx ON mail.outbox_submissions (draft_id, created_at DESC)`.simple();
+
   // NULL = no status decision since Mail linked the message; true = a decision covers it and its
   // hydration keeps the status; false = a later decision released it. Moving the message to another
   // conversation resets it to NULL.

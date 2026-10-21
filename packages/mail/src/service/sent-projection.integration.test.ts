@@ -6,6 +6,7 @@ import { sql } from "bun";
 import type { FetchMessageObject, MessageAddressObject } from "imapflow";
 import { type AddressObject, simpleParser } from "mailparser";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { logoPng } from "../../test/mailbox-logo-fixtures";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -641,6 +642,7 @@ suite("mail sent message projection", () => {
         kind: "send",
         draftId,
         expectedDraftRevision: revision,
+        expectedContentHash: await reviewedDraftContentHash(options.as ?? context, mailbox.mailboxId, draftId, revision),
         senderIdentityId: mailbox.identityId,
         undoSeconds: 0,
         idempotencyKey: `${key}-${suffix}`,
@@ -1133,6 +1135,7 @@ suite("mail sent message projection", () => {
         kind: "send",
         draftId,
         expectedDraftRevision: revision,
+        expectedContentHash: await reviewedDraftContentHash(context, mailbox.mailboxId, draftId, revision),
         senderIdentityId: mailbox.identityId,
         scheduledAt: new Date(Date.now() + 60 * 60_000).toISOString(),
         undoSeconds: 0,
@@ -2432,6 +2435,7 @@ suite("mail sent message projection", () => {
           kind: "send",
           draftId: draft.id,
           expectedDraftRevision: draft.revision,
+          expectedContentHash: await reviewedDraftContentHash(context, mailbox.mailboxId, draft.id, draft.revision),
           senderIdentityId: mailbox.identityId,
           undoSeconds: 0,
           scheduledAt: scheduledAt.toISOString(),
@@ -2536,6 +2540,7 @@ suite("mail sent message projection", () => {
           kind: "send",
           draftId: draft.id,
           expectedDraftRevision: draft.revision,
+          expectedContentHash: await reviewedDraftContentHash(context, mailbox.mailboxId, draft.id, draft.revision),
           senderIdentityId: mailbox.identityId,
           undoSeconds: 0,
           scheduledAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString(),
@@ -2607,6 +2612,7 @@ suite("mail sent message projection", () => {
           kind: "send",
           draftId: draft.id,
           expectedDraftRevision: draft.revision,
+          expectedContentHash: await reviewedDraftContentHash(context, mailbox.mailboxId, draft.id, draft.revision),
           senderIdentityId: mailbox.identityId,
           undoSeconds: 0,
           scheduledAt: new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString(),
@@ -2685,6 +2691,7 @@ suite("mail sent message projection", () => {
           kind: "send",
           draftId: draft.id,
           expectedDraftRevision: draft.revision,
+          expectedContentHash: await reviewedDraftContentHash(context, mailbox.mailboxId, draft.id, draft.revision),
           senderIdentityId: mailbox.identityId,
           undoSeconds: 10,
           idempotencyKey: `retried-reply-${suffix}`,

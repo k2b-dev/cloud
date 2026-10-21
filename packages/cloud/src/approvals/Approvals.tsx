@@ -179,9 +179,11 @@ function BandDecision(props: {
       <Button size="sm" variant="ghost" disabled={props.busy} onClick={() => props.decide({ approved: false })}>
         {t().reject}
       </Button>
-      <Button size="sm" variant="primary" loading={props.busy} onClick={() => props.decide({ approved: true })}>
-        {t().approve}
-      </Button>
+      <Show when={!(props.item.review && "contentRef" in props.item.review && props.item.review.contentRef)}>
+        <Button size="sm" variant="primary" loading={props.busy} onClick={() => props.decide({ approved: true })}>
+          {t().approve}
+        </Button>
+      </Show>
     </div>
   );
 }

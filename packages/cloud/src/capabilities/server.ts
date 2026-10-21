@@ -6,6 +6,7 @@ import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabiliti
 import { env } from "../config/env";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
+  CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CapabilityActionReviewDataSchema,
   type CapabilityOrigin,
   capabilityResultSchema,
@@ -263,7 +264,12 @@ export const reviewCapabilityAction = async <TInput = unknown>(
         locale: caller.locale ?? undefined,
         origin: caller.origin ?? "app",
       });
-      return readCapabilityResponse(outcome, CapabilityActionReviewDataSchema);
+      return await readCapabilityResponse(
+        outcome,
+        CapabilityActionReviewDataSchema,
+        CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
+        combineCapabilitySignals(caller.signal, invocation.signal),
+      );
     }
     const response = await (caller.transport ?? fetch)(
       new Request(
@@ -276,7 +282,12 @@ export const reviewCapabilityAction = async <TInput = unknown>(
         { body: JSON.stringify({ input: invocation.input }) },
       ),
     );
-    return readCapabilityResponse(response, CapabilityActionReviewDataSchema);
+    return await readCapabilityResponse(
+      response,
+      CapabilityActionReviewDataSchema,
+      CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
+      combineCapabilitySignals(caller.signal, invocation.signal),
+    );
   } catch (cause) {
     return unavailable(cause, undefined, caller.locale ?? undefined);
   }

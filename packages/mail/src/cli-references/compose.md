@@ -354,6 +354,18 @@ cld --json mail scheduled cancel <scheduled-send-id> --discard --yes
 
 After successful delivery, the item leaves the scheduled list and becomes normal sent mail.
 
+## When content changes before sending
+
+`mail send` prepares a fingerprint of the effective content before submitting
+its command. `SEND_CONTENT_CHANGED` means Mail queued no message. Read the
+draft and check it again, then explicitly start a new send attempt. Do not
+reuse that attempt's idempotency key or retry automatically. An unknown network
+outcome is different: inspect the existing command before starting a new one.
+
+Capability clients must first call `draft.send.review` as the sending actor,
+then pass its `contentHash` as required `expectedContentHash` to `draft.send`,
+with the same draft revision and any required safety approval.
+
 ## Inspect durable send commands
 
 Inspect, wait for, or cancel command-journal entries:
