@@ -159,14 +159,20 @@ describe("RichSelect shipped browser contract", () => {
       await page.addStyleTag({ content: ".k2b-ui .k2b-rich-select__trigger { transition-duration: 1s; }" });
       await settled(page);
       await page.locator("body").evaluate((element) => element.setAttribute("data-theme", "dark"));
-      const running = await page.evaluate(() =>
-        document
-          .getAnimations()
-          .flatMap((animation) =>
-            animation instanceof CSSTransition && animation.playState === "running" ? [animation.transitionProperty] : [],
-          ),
-      );
-      expect(running).toContain("background-color");
+      const running = await page
+        .getByRole("combobox", { name: "Move card" })
+        .evaluate((element) =>
+          element
+            .getAnimations()
+            .some(
+              (animation) =>
+                animation instanceof CSSTransition &&
+                animation.timeline === document.timeline &&
+                animation.transitionProperty === "background-color" &&
+                animation.playState === "running",
+            ),
+        );
+      expect(running).toBe(true);
       expect(await accessibilityViolations(page)).toEqual([]);
     } finally {
       await close();
