@@ -42,3 +42,26 @@ Hourly values and sensitive event fields have separate periods. Current states d
 Expired events, history, hourly values, and sensitive fields are removed during storage cleanup.
 Raw metric partitions are removed nightly only after their whole day has expired and its recorded hours are sealed.
 The base settings preview affected data before you confirm a shorter period.
+
+## Read data with SQL
+
+SQL sees only the selected base. Read views exclude sensitive event fields, payloads, credentials, and internal tables.
+Use `samples`, `rollups`, `series`, `events`, `states`, and `sources`.
+
+:::reference
+- **Parameters:** Use `:name` and supply a value. Pulse supplies `:base_tz` from the base timezone.
+- **Input:** SQL allows 16 KiB of UTF-8 text, 32 parameters, and 2 KiB per value.
+- **Results:** Each read allows 10,000 rows and 4 MiB. Reaching 10,000 rows means more rows can exist.
+- **Query quota:** The default is 600 admitted questions and SQL runs per base per clock hour.
+- **Saved queries:** **View** access permits listing. **Edit** access permits saving and deleting. Updates check the saved revision.
+:::
+
+`increase(metric='name',from=:from,to=:to)` uses reset-safe counter increases.
+`rate` accepts the same arguments and divides increase by observed seconds.
+Both helpers combine raw data with older hourly values. Expired raw hours require complete-hour windows.
+
+`histogram_quantile(metric='family',from=:from,to=:to,quantile=0.95)` uses histogram bucket increases.
+It keeps source and label groups separate. Changed bucket bounds produce an error with a time.
+
+Use native `toStartOfInterval(ts,toIntervalSecond(:bucket),:base_tz)` for fixed time buckets.
+Use `INTERVAL 1 DAY` for calendar days. A local day can have 23 or 25 hours.

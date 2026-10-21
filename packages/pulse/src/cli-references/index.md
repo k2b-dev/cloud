@@ -2,8 +2,11 @@
 
 Pulse collects metrics, events, and states in bases. Use `cld pulse` to inspect
 bases and source health, configure sources and access, and ingest batches.
-SQL questions and new dashboards arrive in later updates; there is no
-measurement-query command or capability now.
+Read one base with `cld pulse sql` or the `sql.run` capability. Save reusable
+SQL with `cld pulse queries`. Read [SQL and saved queries](sql.md) for parameters,
+limits, cancellation, result formats, and exit codes. Use `queries save --pin`
+to show a saved number on the base overview (at most four), or `--unpin` to
+remove it. Read [Alert rules](alerts.md) for rule CRUD and source expectations.
 
 Read [Ingest](ingest.md) for the batch contract, retries, metric filters, and
 scrape limits. Read [Administration](admin.md) for ClickHouse setup, base
@@ -29,6 +32,12 @@ people and agents with write or admin credential scope can create bases and
 receive `admin` access. A delegated agent creates for its person. Cloud
 administrators can restrict this policy. Source-bound credentials cannot create
 bases. Managing source tokens remains limited to people.
+
+`get` includes the base icon, color, and IANA timezone. A base admin can use
+`update --icon <icon> --color <color> --timezone Europe/Berlin`. Icons use the
+shared `@k2b/ui` picker list. Colors use the shared accent palette:
+`zinc`, `blue`, `emerald`, `amber`, and `red`. A new base inherits `app.timezone`.
+Its six-character identifier stays read-only.
 
 New bases provision before accepting changes. `get --json` includes the store
 state, operation, write-block reason, profile, limits, and measured usage.
@@ -126,12 +135,15 @@ response; `--jsonl` emits list items separately. Base and source objects carry
 `permalink`; share it instead of constructing a URL.
 
 ```text
+cld pulse sql --base <id-or-short-id> [--file <path> | - | <sql>] [--param name=value ...]
+cld pulse queries list|get|save|delete --base <id-or-short-id>
 cld pulse list
 cld pulse use <base>
 cld pulse current
 cld pulse get [base]
 cld pulse create <name> [--description <text>] [--use]
 cld pulse update [base] [--name <name>] [--description <text>]
+  [--icon <icon>] [--color <color>] [--timezone <IANA-zone>]
   [--raw-retention-days <1-3650>] [--rollup-retention-days <1-3650>]
   [--sensitive-retention-hours <1-8760>] [--confirm-shorter-retention]
 cld pulse delete [base] --yes

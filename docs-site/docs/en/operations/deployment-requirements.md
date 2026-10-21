@@ -209,6 +209,16 @@ Pulse's six default jobs are `pulse:metrics:scrape`, `pulse:rollup:hourly`,
 `pulse:retention`, `pulse:base-lifecycle`, `pulse:base-usage`, and
 `pulse:base-checkpoint`. Its scheduler `pulse` checks due scrapes every minute,
 submits hourly calculation at minute 23, and runs retention at 03:17 UTC.
+It also checks due SQL alerts and source freshness and resolves notification
+recipients every minute. Those scans are bounded and resume from PostgreSQL
+state on later ticks; they do not add per-base Sync resources. Alert events
+store `app.locale` as delivery metadata, including for retries after a language
+change. Its six schedules share four local handler slots. Scrape, rollup, and
+retention dispatch may briefly wait when all slots are occupied; each schedule
+remains serial across replicas, and the existing three global SQL slots still apply.
+Shutdown stops new scans and cancels in-flight alert SQL before draining workers.
+An intentional cancellation releases its owned claim for a later tick without
+recording an alert failure or sending a notification.
 Scheduler `pulse:stores` sweeps unfinished lifecycle work every minute,
 measures usage every five minutes, and writes checkpoints on the hour.
 Scheduler definitions are separate from the six jobs in the reservation table.
@@ -584,8 +594,12 @@ ClickHouse admins. Whoever operates ClickHouse as admin can read all Pulse data.
 
 Budget memory for the selected read profile and expected parallel work:
 **small** allows 1 GB per read, **normal** 2 GB, and **large** 4 GB. The
-maintenance profile allows 1 GB. Leave additional memory for ClickHouse itself
-and storage merges; the per-read limit is not an instance-wide memory budget.
+maintenance profile allows 1 GB. Pulse admits three concurrent reads per
+Cloud, one per base, with 20 waiting and a five-second wait deadline. Budget
+**3 × the largest selected read profile + 1 GB maintenance + reserve**. With
+normal profiles, provide at least **10 GB RAM**: 6 GB for queries, 1 GB for
+maintenance, and at least 3 GB reserve. Large profiles need a larger memory
+budget. Leave reserve for ClickHouse itself and storage merges.
 Each read profile has fixed execution, scan, and result limits that readers
 cannot override. A Cloud admin selects the profile and base limits under
 **Administration → Pulse → Bases**.
@@ -622,6 +636,15 @@ replicas and write paths. Buckets hold one minute’s allowance and refill
 continuously. Throttled ingest returns `429 PULSE_BASE_THROTTLED` with
 `Retry-After`; unavailable Valkey returns `503 PULSE_QUOTA_UNAVAILABLE` with
 `Retry-After: 30`. Scrapes record the refusal and wait for the next tick.
+
+SQL admission and hourly question quotas also use Valkey across replicas.
+Slot leases expire after the maximum profile time plus HTTP and release
+margin, so a dead replica cannot keep a slot indefinitely. The default quota
+is 600 admitted questions/SQL per base per clock hour. Input errors and queue
+refusals do not count. Exhaustion returns `429 QUOTA` with `Retry-After` and
+the next hour’s reset time. Busy admission returns `503 BUSY` or `QUEUE_FULL`.
+The quota is adjustable per base through the bases limits API and
+`cld pulse admin bases limits`.
 
 Every five minutes, Pulse measures storage and disk. A base at its storage
 threshold refuses new values with `409 PULSE_BASE_STORAGE_FULL`; a base admin

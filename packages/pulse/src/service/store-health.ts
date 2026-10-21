@@ -1,23 +1,37 @@
-import { accounts, logger, notifications, settings } from "@k2b/cloud/services";
+import { accounts, logger, notifications } from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
 import { sql } from "bun";
 import { app } from "../config";
+import { requireBaseAccess } from "./access-control";
+import { type BaseNotice, notificationLocale } from "./base-notifications";
 
 const log = logger("pulse:store-health");
 type Notice =
   | { kind: "storageThresholdReached"; data: { baseName: string; threshold: number } }
   | { kind: "storeDiskLow"; data: { freePercent: number } }
   | { kind: "storeUnavailable"; data: Record<string, never> };
-type NoticeRow = Notice & { id: string; attempts: number; user_id: string; locale: string };
+type NoticeRow = (Notice | BaseNotice) & { id: string; attempts: number; user_id: string; locale: string; base_id: string | null };
 export const notificationOutbox = createPgOutbox<NoticeRow>({
   table: "pulse.notification_outbox",
   name: "pulse:notifications",
   orderBy: "user_id",
   sequence: "seq",
+  where: { dispatch_kind: "delivery" },
   reconcileIntervalMs: 10_000,
   publish: async (row) => {
+    if (
+      (row.kind === "alert" || row.kind === "source_stale") &&
+      (!row.base_id || !(await requireBaseAccess(row.base_id, { id: row.user_id }, "admin")).ok)
+    )
+      return;
     const options = { recipient: { userId: row.user_id }, idempotencyKey: row.id, locale: row.locale };
     switch (row.kind) {
+      case "alert":
+        await notifications.send(app.notifications.alert, { ...options, data: row.data });
+        break;
+      case "source_stale":
+        await notifications.send(app.notifications.sourceStale, { ...options, data: row.data });
+        break;
       case "storageThresholdReached":
         await notifications.send(app.notifications.storageThresholdReached, { ...options, data: row.data });
         break;
@@ -42,8 +56,6 @@ const cloudAdmins = async (): Promise<string[]> => {
     if (!result.pagination.has_next) return ids;
   }
 };
-export const notificationLocale = (locale?: string): Promise<string> =>
-  locale ? Promise.resolve(locale) : settings.get<string>("app.locale");
 const enqueue = async (db: typeof sql, ids: string[], notice: Notice, locale: string) => {
   if (!ids.length) return;
   for (const id of ids)
