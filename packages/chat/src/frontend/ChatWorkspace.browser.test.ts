@@ -997,3 +997,57 @@ describe("ChatWorkspace start chats and members", () => {
     }
   }
 });
+
+// Route-owned visibility must use the same info route from every entry point.
+describe("Chat info reopening", () => {
+  beforeEach(() => harness.reset());
+  for (const { name, options } of viewports) {
+    test(`info stays reachable after X and preserves Back on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], count: 8, end: harness.now() });
+      const { page, errors } = await load(options, { chat });
+      try {
+        const toggle = page.locator('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]');
+        expect(await toggle.isVisible()).toBe(true);
+        expect(await toggle.isEnabled()).toBe(true);
+        // A surviving Info link must remain a real hit target beside People,
+        // including the phone's fixed conversation header.
+        await toggle.click({ trial: true });
+        await page.locator(".chat-conversation__header").getByRole("button", { name: "Add people", exact: true }).click({ trial: true });
+        await toggle.focus();
+        await page.keyboard.press("Enter");
+        await page.waitForURL("**?panel=info");
+        expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+        await page.getByRole("button", { name: "Close chat info", exact: true }).click();
+        await page.waitForURL(`**/c/${chat}`);
+        expect(await toggle.isVisible()).toBe(true);
+        expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+        await toggle.click();
+        await page.waitForURL("**?panel=info");
+        await page.goBack();
+        await page.waitForURL(`**/c/${chat}`);
+        expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+        await page.reload();
+        // This harness mounts explicitly rather than hydrating an island.
+        await page.evaluate((props) => window.mountChat(props, "en"), harness.props({ chat }));
+        await settle(page);
+        expect(await toggle.isVisible()).toBe(true);
+        expect(await toggle.isEnabled()).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+  test("no info action can reveal a retained chat without selection", async () => {
+    const { page, errors } = await load(viewports[0]!.options, {});
+    try {
+      const toggle = page.locator("[data-app-workspace-detail-toggle]");
+      expect(await toggle.isVisible()).toBe(false);
+      expect(await page.locator('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]').count()).toBe(0);
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  });
+});

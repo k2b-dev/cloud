@@ -1138,8 +1138,14 @@ describe("workspace head navigation", () => {
         }),
       );
       expect(html).toContain('data-row=""');
-      expect(html.indexOf("VIEW SLOT")).toBeLessThan(html.indexOf("FIRST CHILD"));
-      expect(html.indexOf("FIRST CHILD")).toBeLessThan(html.indexOf("SECOND CHILD"));
+      // An explicit head stays where the author declared it, including after
+      // object navigation. Only the automatic fallback head is prepended.
+      const order = ["FIRST CHILD", "SECOND CHILD"];
+      order.splice(position, 0, "VIEW SLOT");
+      const positions = order.map((value) => html.indexOf(value));
+      expect(positions.every((index) => index >= 0)).toBe(true);
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+      expect(html.match(/class="k2b-app-workspace__head"/g)).toHaveLength(1);
     }
   });
   const workspace = (filtered: boolean, head = true) =>
@@ -1172,11 +1178,12 @@ describe("workspace head navigation", () => {
         },
       }),
     );
-  test("collects a direct Head slot at any position, with one primary after secondary actions", () => {
+  test("keeps a direct Head after preceding content, with one primary after secondary actions", () => {
     const html = workspace(true);
     expect(html).toContain('data-row=""');
     expect(html.match(/data-workspace-primary=""/g)).toHaveLength(1);
     const order = [
+      "Main content",
       "k2b-app-workspace__head-lead",
       "k2b-app-workspace__head-toggle",
       "k2b-page-title",
@@ -1188,7 +1195,6 @@ describe("workspace head navigation", () => {
       "k2b-app-workspace__head-actions",
       "SECONDARY",
       "data-workspace-primary",
-      "Main content",
     ];
     const positions = order.map((value) => html.indexOf(value));
     expect(positions.every((index) => index >= 0)).toBe(true);

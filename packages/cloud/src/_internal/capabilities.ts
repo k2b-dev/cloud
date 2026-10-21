@@ -1092,7 +1092,48 @@ const schemaSemantics = (value: unknown): unknown => {
 const sameSchema = (left: unknown, right: unknown): boolean =>
   JSON.stringify(stableJsonValue(schemaSemantics(left))) === JSON.stringify(stableJsonValue(schemaSemantics(right)));
 
+const isSchemaObject = (value: unknown): value is JsonSchema => typeof value === "object" && value !== null && !Array.isArray(value);
+
+// Input recursion visits schema nodes explicitly. Never strip annotation names from
+// property maps or literal enum/const values when proving that old inputs survive.
+const inputConstraints = (schema: unknown): unknown =>
+  isSchemaObject(schema) ? Object.fromEntries(Object.entries(schema).filter(([key]) => key !== "title" && key !== "description")) : schema;
+const sameInputSchema = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(stableJsonValue(inputConstraints(left))) === JSON.stringify(stableJsonValue(inputConstraints(right)));
+
+/** Only finite scalar tags: object/array equality and general schema exclusion are outside this proof. */
+const discriminatorValues = (schema: unknown): unknown[] | undefined => {
+  if (!isSchemaObject(schema)) return;
+  const values = Object.hasOwn(schema, "const") ? [schema.const] : schema.enum;
+  if (
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.every(
+      (value) =>
+        value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)),
+    )
+  )
+    return values;
+};
+
+const disjointObjectBranches = (left: unknown, right: unknown): boolean => {
+  if (!isSchemaObject(left) || !isSchemaObject(right) || left.type !== "object" || right.type !== "object") return false;
+  const leftProperties = left.properties;
+  const rightProperties = right.properties;
+  const leftRequired = left.required;
+  const rightRequired = right.required;
+  if (!isSchemaObject(leftProperties) || !isSchemaObject(rightProperties) || !Array.isArray(leftRequired) || !Array.isArray(rightRequired))
+    return false;
+  return leftRequired.some((name) => {
+    if (typeof name !== "string" || !rightRequired.includes(name)) return false;
+    const leftValues = discriminatorValues(leftProperties[name]);
+    const rightValues = discriminatorValues(rightProperties[name]);
+    return Boolean(leftValues && rightValues && leftValues.every((value) => !rightValues.includes(value)));
+  });
+};
+
 const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: string, direction: "input" | "data"): string[] => {
+  const schemasMatch = direction === "input" ? sameInputSchema : sameSchema;
   for (const keyword of ["oneOf", "anyOf"] as const) {
     const previousBranches = previous[keyword];
     const nextBranches = next[keyword];
@@ -1101,9 +1142,25 @@ const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: str
     const nextRest = { ...next };
     delete previousRest[keyword];
     delete nextRest[keyword];
-    if (!sameSchema(previousRest, nextRest) || previousBranches.length !== nextBranches.length) {
-      return [`${path} changed`];
+    if (!schemasMatch(previousRest, nextRest)) return [`${path} changed`];
+    if (direction === "input") {
+      if (!previousBranches.every(isSchemaObject) || !nextBranches.every(isSchemaObject)) return [`${path} changed`];
+      if (nextBranches.length < previousBranches.length) return [`${path} changed`];
+      // anyOf is monotonic under branch additions. oneOf is not: a newly overlapping
+      // branch rejects previously valid input, even when the branch count stays the same.
+      if (
+        keyword === "oneOf" &&
+        !sameInputSchema(previousBranches, nextBranches) &&
+        !nextBranches.every((branch, index) => nextBranches.slice(index + 1).every((other) => disjointObjectBranches(branch, other)))
+      )
+        return [`${path} oneOf branches are not provably disjoint`];
+      return previousBranches.flatMap((branch, index) =>
+        nextBranches.some((candidate) => schemaEvolutionIssues(branch, candidate, path, direction).length === 0)
+          ? []
+          : [`${path} ${keyword}[${index}] was removed or narrowed`],
+      );
     }
+    if (previousBranches.length !== nextBranches.length) return [`${path} changed`];
     return previousBranches.flatMap((branch, index) =>
       schemaEvolutionIssues(branch as JsonSchema, nextBranches[index] as JsonSchema, `${path} ${keyword}[${index}]`, direction),
     );
@@ -1115,16 +1172,16 @@ const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: str
     const nextItems = nextRest.items;
     delete previousRest.items;
     delete nextRest.items;
-    const issues = sameSchema(previousRest, nextRest) ? [] : [`${path} constraints changed`];
+    const issues = schemasMatch(previousRest, nextRest) ? [] : [`${path} constraints changed`];
     if (previousItems && nextItems) {
       issues.push(...schemaEvolutionIssues(previousItems as JsonSchema, nextItems as JsonSchema, `${path} items`, direction));
-    } else if (!sameSchema(previousItems, nextItems)) {
+    } else if (!schemasMatch(previousItems, nextItems)) {
       issues.push(`${path} items changed`);
     }
     return issues;
   }
   if (previous.type !== "object" || next.type !== "object") {
-    return sameSchema(previous, next) ? [] : [`${path} changed`];
+    return schemasMatch(previous, next) ? [] : [`${path} changed`];
   }
   const issues: string[] = [];
   const previousRest = { ...previous };
@@ -1133,10 +1190,15 @@ const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: str
   delete previousRest.required;
   delete nextRest.properties;
   delete nextRest.required;
-  if (!sameSchema(previousRest, nextRest)) issues.push(`${path} constraints changed`);
+  if (!schemasMatch(previousRest, nextRest)) issues.push(`${path} constraints changed`);
 
   const previousProperties = (previous.properties ?? {}) as Record<string, JsonSchema>;
   const nextProperties = (next.properties ?? {}) as Record<string, JsonSchema>;
+  if (direction === "input" && (previous.additionalProperties !== false || previous.patternProperties !== undefined)) {
+    for (const name of Object.keys(nextProperties)) {
+      if (!Object.hasOwn(previousProperties, name)) issues.push(`${path}.${name} may constrain previously allowed additional input`);
+    }
+  }
   for (const [name, schema] of Object.entries(previousProperties)) {
     const nextSchema = nextProperties[name];
     if (!nextSchema) issues.push(`${path}.${name} was removed`);

@@ -1,7 +1,7 @@
 import { commandPath } from "@k2b/cloud/contracts/commands";
 import { AppWorkspace, LocaleProvider, ViewTabs } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
-import { Match, Switch } from "solid-js";
+import { Match, Show, Switch } from "solid-js";
 import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceTag } from "@/contracts";
 import SpacesOverview from "../../../SpacesOverview.island";
 import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
@@ -23,13 +23,16 @@ type Props = {
   itemsResult: ItemListResult;
   buckets: KanbanBucketInitial[];
   people: SpaceAssignableUser[];
+  locale?: "en" | "de";
+  /** An open task detail, as when a task is selected. */
+  detail?: boolean;
 };
 
 /** The production head islands and shared sidebar, with real list and board route islands. */
 export default function SpaceHeadFixture(props: Props) {
   const source = new URL(props.source, "http://spaces.local");
   return (
-    <LocaleProvider locale="en">
+    <LocaleProvider locale={props.locale ?? "en"}>
       <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
         <AppWorkspace.Sidebar label="Spaces" collapsible>
           <AppWorkspace.SidebarDesktop>
@@ -96,7 +99,14 @@ export default function SpaceHeadFixture(props: Props) {
             />
           }
           primary={{
-            label: props.view === "calendar" ? "New event" : "New task",
+            label:
+              props.locale === "de"
+                ? props.view === "calendar"
+                  ? "Neuer Termin"
+                  : "Neue Aufgabe"
+                : props.view === "calendar"
+                  ? "New event"
+                  : "New task",
             icon: "ti ti-plus",
             href: commandPath(props.source, props.view === "calendar" ? "spaces.event.compose" : "spaces.task.compose", {
               spaceId: "Space1",
@@ -137,6 +147,11 @@ export default function SpaceHeadFixture(props: Props) {
               </Match>
             </Switch>
           </AppWorkspace.Main>
+          <Show when={props.detail}>
+            <AppWorkspace.Detail id="space-detail-panel" open onClose={() => {}}>
+              <p>Clear out shelf B</p>
+            </AppWorkspace.Detail>
+          </Show>
         </AppWorkspace.Content>
       </AppWorkspace>
     </LocaleProvider>

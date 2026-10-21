@@ -608,3 +608,49 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     }
   }, 20_000);
 });
+
+// Error class: flat DetailPanel styles scoped to one host leave reused panels
+// with nested boxes. Exercise the real sidebar's column, drawer, and sheet.
+for (const theme of ["light", "dark"] as const)
+  for (const width of [1440, 834, 390])
+    test(`${width} ${theme}: chat context shares one surface with flat sections`, async () => {
+      const page = await clientPage(width);
+      try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.evaluate((theme) => document.documentElement.classList.toggle("dark", theme === "dark"), theme);
+        if (width < 896) await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
+        const panel = page.locator(width === 390 ? ".assistant-context-sheet" : ".assistant-context-sidebar__panel");
+        await panel.waitFor();
+        const paint = await panel.evaluate((element) => {
+          const sections = Array.from(
+            element.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-detail-panel__section"),
+          );
+          const aside = element.closest(".assistant-context-sidebar");
+          const surface = document.createElement("span");
+          surface.style.background = "var(--k2b-surface)";
+          element.append(surface);
+          const color = getComputedStyle(surface).backgroundColor;
+          surface.remove();
+          return {
+            count: sections.length,
+            flat: sections.every((section) => {
+              const style = getComputedStyle(section);
+              return style.backgroundColor === "rgba(0, 0, 0, 0)" && style.borderRadius === "0px";
+            }),
+            color,
+            background: aside && getComputedStyle(aside).backgroundColor,
+            border: aside && getComputedStyle(aside).borderInlineStartWidth,
+            shadow: aside && getComputedStyle(aside).boxShadow,
+          };
+        });
+        expect(paint.count).toBeGreaterThan(0);
+        expect(paint.flat).toBe(true);
+        if (width !== 390) {
+          expect(paint.background).toBe(paint.color);
+          expect(paint.border).toBe("0px");
+        }
+        if (width === 834) expect(paint.shadow).toContain(theme === "light" ? "-14px 0px 36px" : "-16px 0px 40px");
+      } finally {
+        await page.close();
+      }
+    }, 20_000);

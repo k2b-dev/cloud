@@ -13,6 +13,10 @@ test("the shell modes cover every width exactly once", async () => {
 
   expect(widthQueries).toEqual([
     "not all and (min-width: 768px)",
+    // The overview card hands its paint to the workspace only while both
+    // Cloud's px phone mode and the workspace's rem phone mode apply.
+    "not all and (min-width: 768px)",
+    "not all and (min-width: 48rem)",
     // The phone bar switches with Tailwind's `md`, as the header and the rail
     // do, so it stays in step with them under a larger default font size.
     "not all and (min-width: 48rem)",
@@ -27,4 +31,14 @@ test("the shell modes cover every width exactly once", async () => {
     "not all and (min-width: 1024px)",
     "(min-width: 1024px)",
   ]);
+});
+
+test("overview card paint requires both phone modes, rather than either one", async () => {
+  const css = await Bun.file(resolve(import.meta.dir, "global.css")).text();
+  // Keep the conditions nested (an intersection). Parallel queries or a
+  // comma-separated union would also move card paint on tablet widths when
+  // the browser's default font size changes the rem boundary.
+  expect(css).toMatch(
+    /@media not all and \(min-width: 768px\)\s*\{\s*@media not all and \(min-width: 48rem\)\s*\{\s*\.cloud-app-canvas\[data-layout-authenticated\] \.layout-content-main:has\(/,
+  );
 });

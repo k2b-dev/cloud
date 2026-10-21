@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-ui-head-hydration-"));
@@ -15,13 +15,13 @@ const fixturePath = resolve(import.meta.dir, "workspace-head-hydration.fixture.t
 // Keep real JSX prop getters: preconstructed elements would hide double slot reads.
 const fixture = (entry: string) => `
 import { AppWorkspace, ViewTabs, FilterChip, IconButton, PageTrailProvider } from ${JSON.stringify(entry)};
-export function Fixture() {
+export function Fixture(props: { stacked?: boolean }) {
   const views = Array.from({ length: 6 }, (_, index) => ({ id: String(index + 1), label: "View " + (index + 1), href: "?view=" + (index + 1) }));
   const options = [{ options: [{ value: "open", label: "Open" }] }];
   return <PageTrailProvider trail={{ title: "Project", ancestors: [{ title: "Projects", href: "/projects" }] }}>
-    <AppWorkspace>
-      <AppWorkspace.Sidebar label="Navigation"><AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarItem href="/project" active>Project</AppWorkspace.SidebarItem>
+    <AppWorkspace mobileSurface={props.stacked ? "flush" : undefined}>
+      <AppWorkspace.Sidebar label="Navigation" mobile={props.stacked ? "stacked" : undefined}><AppWorkspace.SidebarDesktop>
+        <AppWorkspace.SidebarBody><AppWorkspace.SidebarItem href="/project" active>Project</AppWorkspace.SidebarItem></AppWorkspace.SidebarBody>
       </AppWorkspace.SidebarDesktop></AppWorkspace.Sidebar>
       <AppWorkspace.Head
         views={<ViewTabs label="Views" items={views} current="2" />}
@@ -45,7 +45,7 @@ const serverBuild = await Bun.build({
     [serverEntry]: `import { createComponent } from "solid-js";
 import { renderToString, generateHydrationScript } from "solid-js/web";
 import { Fixture } from "./workspace-head-hydration.fixture";
-export const render = () => renderToString(() => createComponent(Fixture, {}));
+export const render = (stacked = false) => renderToString(() => createComponent(Fixture, { stacked }));
 export const hydrationScript = generateHydrationScript();`,
   },
   target: "node",
@@ -82,7 +82,7 @@ export const hydrationScript = generateHydrationScript();`,
 if (!serverBuild.success) throw new AggregateError(serverBuild.logs, "Could not bundle head SSR fixture");
 const modulePath = resolve(directory, "server.mjs");
 writeFileSync(modulePath, await serverBuild.outputs[0]!.text());
-const { render, hydrationScript }: { render: () => string; hydrationScript: string } = await import(modulePath);
+const { render, hydrationScript }: { render: (stacked?: boolean) => string; hydrationScript: string } = await import(modulePath);
 const clientEntry = resolve(import.meta.dir, "workspace-head-hydration.client-fixture.ts");
 const clientBuild = await Bun.build({
   entrypoints: [clientEntry],
@@ -92,7 +92,7 @@ const clientBuild = await Bun.build({
     [clientEntry]: `import { createComponent } from "solid-js";
 import { hydrate } from "solid-js/web";
 import { Fixture } from "./workspace-head-hydration.fixture";
-hydrate(() => createComponent(Fixture, {}), document.getElementById("app"));
+hydrate(() => createComponent(Fixture, { stacked: document.body.dataset.stacked === "true" }), document.getElementById("app"));
 document.body.dataset.ready = "true";`,
   },
   plugins: [
@@ -129,9 +129,10 @@ beforeAll(async () => {
       if (new URL(request.url).pathname === "/client.js") {
         return new Response(script, { headers: { "Content-Type": "application/javascript" } });
       }
+      const stacked = new URL(request.url).searchParams.has("stacked");
       return new Response(
         `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head>
-<body class="k2b-ui" style="margin:0"><div id="app" style="container:k2b-app-area / inline-size;height:900px">${render()}</div>${hydrationScript}</body></html>`,
+<body class="k2b-ui" style="margin:0" data-stacked="${stacked}"><div id="app" style="container:k2b-app-area / inline-size;height:900px">${render(stacked)}</div>${hydrationScript}</body></html>`,
         { headers: { "Content-Type": "text/html" } },
       );
     },
@@ -146,8 +147,6 @@ afterAll(async () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
-const frames = (page: Page) =>
-  page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 const boxes = (page: Page) =>
   page
     .locator(
@@ -173,12 +172,12 @@ describe("workspace head hydration", () => {
     try {
       await page.goto(origin);
       await page.evaluate(() => document.fonts.ready.then(() => undefined));
-      await frames(page);
+      await settled(page);
       const before = await boxes(page);
       await page.addScriptTag({ url: `${origin}/client.js` });
       expect(errors).toEqual([]);
       await page.waitForSelector('body[data-ready="true"]');
-      await frames(page);
+      await settled(page);
       expect(await boxes(page)).toEqual(before);
       for (const [selector, count] of [
         [".k2b-view-tabs", 1],
@@ -212,3 +211,47 @@ describe("workspace head hydration", () => {
     }
   }, 30_000);
 });
+
+for (const width of [390, 834, 1440]) {
+  test(`stacked objects and explicit head hydrate once at ${width}px`, async () => {
+    const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    try {
+      await page.goto(`${origin}?stacked=1`);
+      await settled(page);
+      const before = await boxes(page);
+      const sidebar = page.locator(".k2b-app-workspace__sidebar");
+      const head = page.locator(".k2b-app-workspace__head");
+      expect(
+        await sidebar.evaluate(
+          (nav) => !!(nav.compareDocumentPosition(document.querySelector(".k2b-app-workspace__head")!) & Node.DOCUMENT_POSITION_FOLLOWING),
+        ),
+      ).toBe(true);
+      if (width === 390) {
+        const navBox = (await sidebar.boundingBox())!;
+        expect((await head.boundingBox())!.y).toBeGreaterThanOrEqual(navBox.y + navBox.height);
+      }
+      await page.evaluate(() => Reflect.set(window, "originalHead", document.querySelector(".k2b-app-workspace__head")));
+      await page.addScriptTag({ url: `${origin}/client.js` });
+      await page.waitForSelector('body[data-ready="true"]');
+      await settled(page);
+      expect(await page.evaluate(() => Reflect.get(window, "originalHead") === document.querySelector(".k2b-app-workspace__head"))).toBe(
+        true,
+      );
+      expect(await boxes(page)).toEqual(before);
+      if (width === 390) {
+        await page.getByRole("link", { name: "Project", exact: true }).focus();
+        await page.keyboard.press("Tab");
+        expect(
+          await page.getByRole("button", { name: "All Navigation", exact: true }).evaluate((el) => el === document.activeElement),
+        ).toBe(true);
+        await page.keyboard.press("Tab");
+        expect(await page.locator(".k2b-app-workspace__head").evaluate((el) => el.contains(document.activeElement))).toBe(true);
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+}
