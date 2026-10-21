@@ -208,6 +208,12 @@ const overviewActivity = [
 /** Screenshots for review, light and dark at every width; nothing personal, all invented. */
 const shots = join(tmpdir(), "spaces-white-canvas", browserName);
 mkdirSync(shots, { recursive: true });
+// Only successful captures from this run can replace a duplicate page visit.
+const capturedShots = new Set<string>();
+const capture = async (page: Page, name: string) => {
+  await page.screenshot({ path: join(shots, name) });
+  capturedShots.add(name);
+};
 const people: SpaceAssignableUser[] = Array.from({ length: 6 }, (_, index) => ({
   id: `${index + 1}1111111-1111-4111-8111-111111111111`,
   uid: `person${index}`,
@@ -421,6 +427,8 @@ describe(`Spaces shared head in ${browserName}`, () => {
             const frame = await geometry(page);
             // querySelectorAll records all four rows even when the phone sidebar has zero-sized rectangles.
             expect(frame.filter((part) => part.class.includes("k2b-app-workspace__sidebar-item"))).toHaveLength(4);
+            // The review matrix needs this exact initial state too; capture before reload or interaction.
+            if (theme === "light" || view === "kanban" || width === 1440) await capture(page, `${view}-${theme}-${width}.png`);
             await page.reload();
             await ready(page);
             await expectStableFrame(page);
@@ -455,20 +463,28 @@ describe(`Spaces shared head in ${browserName}`, () => {
     for (const item of [false, true])
       test(`${view}${item ? " with a task detail" : ""}: head controls never overlap or leave the head at 1024 to 834 px`, async () => {
         const problems: string[] = [];
-        for (const panel of [0, 416])
-          for (const width of [1024, 960, 900, 834]) {
-            const page = await open(`/app/spaces/Space1?view=${view}&locale=de&shell=1&panel=${panel}${item ? "&item=Item01" : ""}`, width);
-            try {
+        for (const panel of [0, 416]) {
+          const page = await open(`/app/spaces/Space1?view=${view}&locale=de&shell=1&panel=${panel}${item ? "&item=Item01" : ""}`, 1024);
+          try {
+            for (const width of [1024, 960, 900, 834]) {
+              if (width !== 1024) {
+                await page.setViewportSize({ width, height: 1000 });
+                // Keep a fresh server render and island mount at every width,
+                // while reusing this scenario's browser context and asset cache.
+                await page.reload();
+                await ready(page);
+              }
               const result = await page.evaluate(headOverlaps, undefined);
               expect(
                 result.controls.some((name) => name.startsWith("primary")),
                 `primary at ${width}`,
               ).toBe(true);
               for (const problem of result.problems) problems.push(`${width} panel ${panel}: ${problem}`);
-            } finally {
-              await page.context().close();
             }
+          } finally {
+            await page.context().close();
           }
+        }
         expect(problems).toEqual([]);
       }, 60_000);
   test("tab clicks keep every neighboring tab in place", async () => {
@@ -745,13 +761,16 @@ describe(`Spaces shared head in ${browserName}`, () => {
           "/app/spaces",
         ]) {
           if (theme === "dark" && path !== "/app/spaces/Space1?view=kanban" && width !== 1440) continue;
+          const name = path === "/app/spaces" ? "overview" : new URL(path, server.url).searchParams.get("view");
+          const filename = `${name}-${theme}-${width}.png`;
+          if (capturedShots.has(filename)) continue;
           const page = await open(`${path}${path.includes("?") ? "&" : "?"}theme=${theme}`, width);
           try {
-            const name = path === "/app/spaces" ? "overview" : new URL(path, server.url).searchParams.get("view");
-            await page.screenshot({ path: join(shots, `${name}-${theme}-${width}.png`) });
+            await capture(page, filename);
           } finally {
             await page.context().close();
           }
         }
+    expect(capturedShots.size).toBe(28);
   }, 180_000);
 });
