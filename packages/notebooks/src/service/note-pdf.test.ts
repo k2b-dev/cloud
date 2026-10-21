@@ -14,7 +14,7 @@ const NOTICES = ["note", "info", "success", "warning", "danger"] as const;
 const TONES = { note: "neutral", info: "info", success: "success", warning: "warning", danger: "danger" } as const;
 
 const build = (markdown: string, extra: Partial<Parameters<typeof buildNotePdfHtml>[0]> = {}) =>
-  buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", ...extra }).html;
+  buildNotePdfHtml({ markdown, notebookShortId: "ABC123", publicOrigin: "https://cloud.example.test", locale: "en", ...extra }).html;
 
 describe("note PDF HTML", () => {
   test("prints the editor and Book's ordered-label cycle and nested lists", () => {
@@ -96,7 +96,7 @@ describe("note PDF HTML", () => {
     expect(selected).toEqual(["!=", "->", "<-", "<->", "<=", "<=>", "=>", ">="].sort());
   });
 
-  test("links to the exported note jump within the PDF; links to other notes keep their address", () => {
+  test("links to the exported note jump within the PDF; other notes open at the public Cloud address", () => {
     const html = build(
       [
         "# Guide",
@@ -112,7 +112,7 @@ describe("note PDF HTML", () => {
     expect(html.match(/href="#top"/g)).toHaveLength(3);
     expect(html).not.toContain("#heading-nope");
     expect(html).not.toContain("/notes/DEF456");
-    expect(html).toContain('href="/app/notebooks/ABC123/notes/GHI789?mode=book#heading-restore"');
+    expect(html).toContain('href="https://cloud.example.test/app/notebooks/ABC123/notes/GHI789?mode=book#heading-restore"');
   });
 
   test("layers note styles between the preset and custom CSS", () => {
@@ -153,6 +153,7 @@ test("PDF builder returns the renderer's omissions alongside unchanged print HTM
   const built = buildNotePdfHtml({
     markdown: "![Map](attach://ABC123)\n\n```mermaid\ngraph TD\nA-->B\n```",
     notebookShortId: "ABC123",
+    publicOrigin: "https://cloud.example.test",
     locale: "en",
   });
   expect(built.omissions).toEqual([{ code: "not_rendered", kind: "diagram", label: "graph TD" }]);
@@ -161,7 +162,10 @@ test("PDF builder returns the renderer's omissions alongside unchanged print HTM
   expect(built.html).toContain(
     '<figcaption>Diagram source</figcaption><pre><code class="language-mermaid">graph TD\nA--&gt;B</code></pre>',
   );
-  expect(buildNotePdfHtml({ markdown: "# Clean\n\nText.", notebookShortId: "ABC123", locale: "en" }).omissions).toEqual([]);
+  expect(
+    buildNotePdfHtml({ markdown: "# Clean\n\nText.", notebookShortId: "ABC123", publicOrigin: "https://cloud.example.test", locale: "en" })
+      .omissions,
+  ).toEqual([]);
 });
 
 // The packer uses real Book slots and fake encoded bytes, so budget and placement checks share the public HTML seam.
@@ -220,6 +224,7 @@ describe("PDF attachment packing", () => {
           markdown: "![found](attach://ABC123) ![missing](attach://ZZZZZZ) ![escaped](attach\\://DEF456)",
           notebookId: "notebook",
           notebookShortId: "ABC123",
+          publicOrigin: "https://cloud.example.test",
           noteId: "note",
           userId: null,
           serviceAccountId: null,
@@ -257,6 +262,7 @@ describe("PDF attachment packing", () => {
         markdown: "![photo](attach://ABC123)",
         notebookId: "notebook",
         notebookShortId: "ABC123",
+        publicOrigin: "https://cloud.example.test",
         noteId: "note",
         userId: null,
         serviceAccountId: null,
@@ -496,7 +502,13 @@ test("print image styles retain Book proportions and the effective preset's body
     ["report", 247],
     ["compact", 267],
   ] as const) {
-    const built = buildNotePdfHtml({ markdown: "Image", notebookShortId: "ABC123", locale: "en", templateId });
+    const built = buildNotePdfHtml({
+      markdown: "Image",
+      notebookShortId: "ABC123",
+      publicOrigin: "https://cloud.example.test",
+      locale: "en",
+      templateId,
+    });
     expect(built.preset).toBe(templateId);
     expect(built.html).toContain(`height: auto; max-height: ${height}mm; object-fit: contain;`);
     expect(built.html).not.toContain("notebook-book-image-label");
@@ -505,15 +517,22 @@ test("print image styles retain Book proportions and the effective preset's body
     buildNotePdfHtml({
       markdown: "Image",
       notebookShortId: "ABC123",
+      publicOrigin: "https://cloud.example.test",
       locale: "en",
       templateId: "compact",
       customCss: "body { color: black; }",
     }).preset,
   ).toBe("compact");
   // Custom CSS alone prints on the document page box, as buildPresetPdfHtml does.
-  expect(buildNotePdfHtml({ markdown: "Image", notebookShortId: "ABC123", locale: "en", customCss: "body { color: black; }" }).preset).toBe(
-    "document",
-  );
+  expect(
+    buildNotePdfHtml({
+      markdown: "Image",
+      notebookShortId: "ABC123",
+      publicOrigin: "https://cloud.example.test",
+      locale: "en",
+      customCss: "body { color: black; }",
+    }).preset,
+  ).toBe("document");
 });
 
 test("non-web, non-attachment image sources are blocked without fetching or reading bytes", async () => {

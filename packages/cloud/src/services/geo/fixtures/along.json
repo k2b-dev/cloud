@@ -1,0 +1,355 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Dollar General",
+        "country": "United States",
+        "country_code": "us",
+        "region": "West Tennessee",
+        "state": "Tennessee",
+        "county": "Shelby County",
+        "city": "Memphis",
+        "postcode": "38122",
+        "street": "Summer Avenue",
+        "housenumber": "4111",
+        "iso3166_2": "US-TN",
+        "lon": -89.9237661,
+        "lat": 35.1484713,
+        "state_code": "TN",
+        "formatted": "Dollar General, 4111 Summer Avenue, Memphis, TN 38122, United States of America",
+        "address_line1": "Dollar General",
+        "address_line2": "4111 Summer Avenue, Memphis, TN 38122, United States of America",
+        "categories": ["commercial", "commercial.discount_store"],
+        "details": ["details", "details.contact"],
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright",
+          "raw": {
+            "name": "Dollar General",
+            "shop": "variety_store",
+            "brand": "Dollar General",
+            "phone": "+1-901-452-1618",
+            "osm_id": 4944605516,
+            "website": "https://www.dollargeneral.com/store-directory/tn/memphis/11958",
+            "osm_type": "n",
+            "addr:city": "Memphis",
+            "addr:state": "TN",
+            "addr:street": "Summer Avenue",
+            "addr:postcode": 38122,
+            "opening_hours": "Mo-Su 8:00-22:00",
+            "brand:wikidata": "Q145168",
+            "addr:housenumber": 4111
+          }
+        },
+        "website": "https://www.dollargeneral.com/store-directory/tn/memphis/11958",
+        "opening_hours": "Mo-Su 8:00-22:00",
+        "brand": "Dollar General",
+        "brand_details": {
+          "wikidata": "Q145168"
+        },
+        "contact": {
+          "phone": "+1-901-452-1618"
+        },
+        "commercial": {
+          "type": "variety_store"
+        },
+        "distance": 943,
+        "place_id": "51d229d9fb1e7b56c059b938881b01934140f00103f9014cb1b8260100000092030e446f6c6c61722047656e6572616c"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-89.9237661, 35.148471299662056]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Jiffy Lube",
+        "country": "United States",
+        "country_code": "us",
+        "region": "West Tennessee",
+        "state": "Tennessee",
+        "county": "Shelby County",
+        "city": "Memphis",
+        "postcode": "38122",
+        "street": "North Graham Street",
+        "housenumber": "630",
+        "iso3166_2": "US-TN",
+        "lon": -89.927624,
+        "lat": 35.1483556,
+        "state_code": "TN",
+        "formatted": "Jiffy Lube, 630 North Graham Street, Memphis, TN 38122, United States of America",
+        "address_line1": "Jiffy Lube",
+        "address_line2": "630 North Graham Street, Memphis, TN 38122, United States of America",
+        "categories": [
+          "building",
+          "building.commercial",
+          "commercial",
+          "service",
+          "service.vehicle",
+          "service.vehicle.repair",
+          "service.vehicle.repair.car"
+        ],
+        "details": ["details", "details.contact"],
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright",
+          "raw": {
+            "name": "Jiffy Lube",
+            "shop": "car_repair",
+            "brand": "Jiffy Lube",
+            "phone": "+1-901-458-1292",
+            "osm_id": 836214347,
+            "building": "yes",
+            "osm_type": "w",
+            "addr:city": "Memphis",
+            "addr:state": "TN",
+            "addr:street": "North Graham Street",
+            "addr:postcode": 38122,
+            "opening_hours": "Mo-Sa 07:00-19:00; Su 10:00-17:00",
+            "brand:wikidata": "Q6192247",
+            "addr:housenumber": 630,
+            "service:vehicle:oil_change": "yes"
+          }
+        },
+        "opening_hours": "Mo-Sa 07:00-19:00; Su 10:00-17:00",
+        "brand": "Jiffy Lube",
+        "brand_details": {
+          "wikidata": "Q6192247"
+        },
+        "contact": {
+          "phone": "+1-901-458-1292"
+        },
+        "commercial": {
+          "type": "car_repair"
+        },
+        "distance": 656,
+        "place_id": "51be96d8305e7b56c05944fd8c50fd924140f00102f9014b9ed7310000000092030a4a69666679204c756265"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-89.92762395049337, 35.14835554966206]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Duke's Automotive",
+        "country": "United States",
+        "country_code": "us",
+        "region": "West Tennessee",
+        "state": "Tennessee",
+        "county": "Shelby County",
+        "city": "Memphis",
+        "postcode": "38122",
+        "street": "North Graham Street",
+        "housenumber": "596",
+        "iso3166_2": "US-TN",
+        "lon": -89.927658,
+        "lat": 35.1480699,
+        "state_code": "TN",
+        "formatted": "Duke's Automotive, 596 North Graham Street, Memphis, TN 38122, United States of America",
+        "address_line1": "Duke's Automotive",
+        "address_line2": "596 North Graham Street, Memphis, TN 38122, United States of America",
+        "categories": ["commercial", "service", "service.vehicle", "service.vehicle.repair", "service.vehicle.repair.car"],
+        "details": ["details", "details.contact"],
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright",
+          "raw": {
+            "name": "Duke's Automotive",
+            "shop": "car_repair",
+            "phone": "+1-901-323-9837",
+            "osm_id": 4944605520,
+            "osm_type": "n",
+            "addr:city": "Memphis",
+            "addr:state": "TN",
+            "addr:street": "North Graham Street",
+            "addr:postcode": 38122,
+            "opening_hours": "Mo-Fr 07:30-17:30",
+            "addr:housenumber": 596,
+            "service:vehicle:car_parts": "yes",
+            "service:vehicle:car_repair": "yes"
+          }
+        },
+        "opening_hours": "Mo-Fr 07:30-17:30",
+        "contact": {
+          "phone": "+1-901-323-9837"
+        },
+        "commercial": {
+          "type": "car_repair"
+        },
+        "distance": 641,
+        "place_id": "51daf7a8bf5e7b56c059044958f4f3924140f00103f90150b1b8260100000092031144756b652773204175746f6d6f74697665"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-89.92765799999998, 35.14806989966203]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "High Point Terrace Shopping Center",
+        "country": "United States",
+        "country_code": "us",
+        "region": "West Tennessee",
+        "state": "Tennessee",
+        "county": "Shelby County",
+        "city": "Memphis",
+        "postcode": "38122",
+        "street": "Philwood Avenue",
+        "iso3166_2": "US-TN",
+        "lon": -89.9376452,
+        "lat": 35.1449256,
+        "state_code": "TN",
+        "formatted": "High Point Terrace Shopping Center, Philwood Avenue, Memphis, TN 38122, United States of America",
+        "address_line1": "High Point Terrace Shopping Center",
+        "address_line2": "Philwood Avenue, Memphis, TN 38122, United States of America",
+        "categories": ["commercial", "commercial.shopping_mall"],
+        "details": [],
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright",
+          "raw": {
+            "name": "High Point Terrace Shopping Center",
+            "shop": "mall",
+            "osm_id": 223786578,
+            "osm_type": "w"
+          }
+        },
+        "commercial": {
+          "type": "mall"
+        },
+        "distance": 463,
+        "place_id": "51b289f860027c56c05948730bec8c924140f00102f90152b6560d000000009203224869676820506f696e7420546572726163652053686f7070696e672043656e746572"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-89.93764518996502, 35.1449255996618]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "High Point Barber Shop",
+        "country": "United States",
+        "country_code": "us",
+        "region": "West Tennessee",
+        "state": "Tennessee",
+        "county": "Shelby County",
+        "city": "Memphis",
+        "postcode": "38122",
+        "street": "High Point Terrace",
+        "housenumber": "477",
+        "iso3166_2": "US-TN",
+        "lon": -89.9378035,
+        "lat": 35.1447958,
+        "state_code": "TN",
+        "formatted": "High Point Barber Shop, 477 High Point Terrace, Memphis, TN 38122, United States of America",
+        "address_line1": "High Point Barber Shop",
+        "address_line2": "477 High Point Terrace, Memphis, TN 38122, United States of America",
+        "categories": ["commercial", "service", "service.beauty", "service.beauty.hairdresser"],
+        "details": ["details.contact", "details.payment"],
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright",
+          "raw": {
+            "name": "High Point Barber Shop",
+            "shop": "hairdresser",
+            "phone": "+1-901-715-8883",
+            "osm_id": 12613343782,
+            "osm_type": "n",
+            "addr:city": "Memphis",
+            "addr:unit": "#C",
+            "addr:state": "TN",
+            "addr:street": "High Point Terrace",
+            "hairdresser": "barber",
+            "payment:cash": "yes",
+            "addr:postcode": 38122,
+            "addr:housenumber": 477
+          }
+        },
+        "contact": {
+          "phone": "+1-901-715-8883"
+        },
+        "payment_options": {
+          "cash": true
+        },
+        "commercial": {
+          "type": "hairdresser"
+        },
+        "distance": 500,
+        "place_id": "51c2a4f8f8047c56c059a11234ab88924140f00103f901265ad0ef020000009203164869676820506f696e74204261726265722053686f70"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-89.9378035, 35.144795799661786]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "High Point Grocery",
+        "country": "United States",
+        "country_code": "us",
+        "region": "West Tennessee",
+        "state": "Tennessee",
+        "county": "Shelby County",
+        "city": "Memphis",
+        "hamlet": "Hedgemoor",
+        "postcode": "38122",
+        "street": "High Point Terrace",
+        "housenumber": "469",
+        "iso3166_2": "US-TN",
+        "lon": -89.9376722,
+        "lat": 35.1444938,
+        "state_code": "TN",
+        "formatted": "High Point Grocery, 469 High Point Terrace, Memphis, TN 38122, United States of America",
+        "address_line1": "High Point Grocery",
+        "address_line2": "469 High Point Terrace, Memphis, TN 38122, United States of America",
+        "categories": ["commercial", "commercial.supermarket"],
+        "details": ["details"],
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright",
+          "raw": {
+            "name": "High Point Grocery",
+            "shop": "supermarket",
+            "osm_id": 2326594332,
+            "twitter": "https://twitter.com/HighPointGrocer/",
+            "website": "https://www.highpointgrocery.com/",
+            "osm_type": "n",
+            "addr:street": "High Point Terrace",
+            "addr:postcode": 38122,
+            "addr:housenumber": 469
+          }
+        },
+        "website": "https://www.highpointgrocery.com/",
+        "commercial": {
+          "type": "supermarket"
+        },
+        "distance": 483,
+        "place_id": "51935742d2027c56c059d402d8c57e924140f00103f9011c03ad8a000000009203124869676820506f696e742047726f63657279"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-89.9376722, 35.144493799661774]
+      }
+    }
+  ]
+}

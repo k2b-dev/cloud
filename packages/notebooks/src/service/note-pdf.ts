@@ -92,6 +92,8 @@ const KATEX_PRINT_CSS = katexCss.replace(/@font-face\s*\{[^}]*\}/g, "");
 export type NotePdfHtmlInput = {
   markdown: string;
   notebookShortId: string;
+  /** Canonical public Cloud origin from app.url, never the upstream request URL. */
+  publicOrigin: string;
   /** The exported note; links to it jump within the PDF. */
   noteShortId?: string;
   locale: string;
@@ -116,6 +118,7 @@ export const buildNotePdfHtml = (
     queryResults: input.queryResults,
     references: input.references,
     print: true,
+    publicOrigin: input.publicOrigin,
   });
   const css = html.includes("notebook-book-math") ? `${NOTE_PRINT_CSS}\n${KATEX_PRINT_CSS}` : NOTE_PRINT_CSS;
   const imageCss = `.notebook-book-image { max-width: 100%; height: auto; max-height: ${NOTE_PDF_PAGE_BOX_MM[preset].height}mm; object-fit: contain; }

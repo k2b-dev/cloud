@@ -6,6 +6,7 @@ test("documentation links preserve mirror prefixes and use the published English
   expect(settingsDocumentationHref("https://docs.example.org/cloud/", "user.appApproval")).toBe(
     "https://docs.example.org/cloud/en/docs/accounts/app-sign-in",
   );
+  expect(settingsDocumentationHref("https://cloud.k2b.dev", "places")).toBe("https://cloud.k2b.dev/en/docs/platform/places-and-maps");
   expect(settingsDocumentationHref("https://cloud.k2b.dev", "user.expiry")).toEndWith("/en/docs/accounts/lifecycle#account-expiry");
 });
 

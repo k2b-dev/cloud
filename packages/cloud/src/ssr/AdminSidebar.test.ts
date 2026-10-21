@@ -13,6 +13,23 @@ const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
 });
 
 describe("buildAdminGroups", () => {
+  it("makes the places settings reachable and active in both locales", () => {
+    const href = "/admin/settings?tab=places";
+    for (const [locale, label] of [
+      ["en", "Places and addresses"],
+      ["de", "Orte und Adressen"],
+    ] as const) {
+      const links = buildAdminGroups([], locale).flatMap((group) => group.links);
+      expect(links).toContainEqual({ href, icon: "ti-map-pin", label });
+      expect(
+        activeAdminHref(
+          href,
+          links.map((link) => link.href),
+        ),
+      ).toBe(href);
+    }
+  });
+
   it("links to AI usage in both supported locales", () => {
     for (const [locale, label] of [
       ["en", "Usage"],

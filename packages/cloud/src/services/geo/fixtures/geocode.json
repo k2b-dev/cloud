@@ -1,0 +1,129 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright"
+        },
+        "name": "Asian Art Museum of San Francisco",
+        "country": "United States",
+        "country_code": "us",
+        "state": "California",
+        "city": "San Francisco",
+        "postcode": "94102",
+        "district": "Civic Center",
+        "suburb": "Civic Center",
+        "street": "Larkin Street",
+        "housenumber": "200",
+        "iso3166_2": "US-CA",
+        "lon": -122.4159922,
+        "lat": 37.780315,
+        "state_code": "CA",
+        "result_type": "amenity",
+        "formatted": "Asian Art Museum of San Francisco, 200 Larkin Street, San Francisco, CA 94102, United States of America",
+        "address_line1": "Asian Art Museum of San Francisco",
+        "address_line2": "200 Larkin Street, San Francisco, CA 94102, United States of America",
+        "category": "entertainment.museum",
+        "timezone": {
+          "name": "America/Los_Angeles",
+          "offset_STD": "-08:00",
+          "offset_DST": "-07:00",
+          "offset_STD_seconds": -28800,
+          "offset_DST_seconds": -25200,
+          "abbreviation_STD": "PST",
+          "abbreviation_DST": "PDT"
+        },
+        "plus_code": "849VQHJM+4J",
+        "plus_code_short": "JM+4J San Francisco, California, United States",
+        "rank": {
+          "importance": 0.40308494416412793,
+          "popularity": 7.947566780780423,
+          "confidence": 1,
+          "confidence_city_level": 1,
+          "confidence_street_level": 1,
+          "confidence_building_level": 1,
+          "match_type": "inner_part"
+        },
+        "place_id": "510899bf9d9f9a5ec05904caa65ce1e34240f00102f901052f770100000000c00201920321417369616e20417274204d757365756d206f662053616e204672616e636973636f"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-122.4159922, 37.780315]
+      },
+      "bbox": [-122.4166302, 37.7799687, -122.4153648, 37.7805223]
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright"
+        },
+        "name": "Asian Art Museum Cafe",
+        "country": "United States",
+        "country_code": "us",
+        "state": "California",
+        "city": "San Francisco",
+        "postcode": "94102",
+        "district": "Civic Center",
+        "suburb": "Civic Center",
+        "street": "Larkin Street",
+        "housenumber": "200",
+        "iso3166_2": "US-CA",
+        "lon": -122.4160624,
+        "lat": 37.780058,
+        "state_code": "CA",
+        "result_type": "amenity",
+        "formatted": "Asian Art Museum Cafe, 200 Larkin Street, San Francisco, CA 94102, United States of America",
+        "address_line1": "Asian Art Museum Cafe",
+        "address_line2": "200 Larkin Street, San Francisco, CA 94102, United States of America",
+        "category": "catering.cafe",
+        "timezone": {
+          "name": "America/Los_Angeles",
+          "offset_STD": "-08:00",
+          "offset_DST": "-07:00",
+          "offset_STD_seconds": -28800,
+          "offset_DST_seconds": -25200,
+          "abbreviation_STD": "PST",
+          "abbreviation_DST": "PDT"
+        },
+        "plus_code": "849VQHJM+2H",
+        "plus_code_short": "JM+2H San Francisco, California, United States",
+        "rank": {
+          "importance": 8.251392385743523e-5,
+          "popularity": 7.947566780780423,
+          "confidence": 1,
+          "confidence_city_level": 1,
+          "confidence_street_level": 1,
+          "confidence_building_level": 1,
+          "match_type": "inner_part"
+        },
+        "place_id": "51194630c4a09a5ec059d87dc7f0d8e34240f00103f901792d95a702000000c00201920315417369616e20417274204d757365756d2043616665"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-122.4160624, 37.780058]
+      },
+      "bbox": [-122.4161124, 37.780008, -122.4160124, 37.780108]
+    }
+  ],
+  "query": {
+    "text": "200 Larkin Street, San Francisco, CA 94102, United States",
+    "parsed": {
+      "housenumber": "200",
+      "street": "larkin street",
+      "postcode": "94102",
+      "city": "san francisco",
+      "state": "ca",
+      "country": "united states",
+      "expected_type": "building"
+    }
+  }
+}

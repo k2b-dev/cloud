@@ -103,7 +103,7 @@ try {
       throw new Error("public root did not resolve to packed dist/ssr/index.js: " + resolved);
     }
     const ui = await import("@k2b/ui");
-    const required = ["Button", "Chart", "DatePicker", "Panes", "createPanesLayout", "prompts", "ReactionBar", "reactionPeople"];
+    const required = ["Button", "Chart", "DatePicker", "Panes", "createPanesLayout", "prompts", "ReactionBar", "reactionPeople", "RichSelect", "RichSelectFacts"];
     const missing = required.filter((name) => ui[name] === undefined);
     if (missing.length) throw new Error("missing representative exports: " + missing.join(", "));
     const { mapStyle, mapPalette, mapAttribution } = ui;
@@ -118,6 +118,13 @@ try {
     const { renderToString } = await import("solid-js/web");
     const html = renderToString(() => ui.Button({ children: "Packed button" }));
     if (!html.includes("Packed button")) throw new Error("packed SSR component did not render");
+    const picker = renderToString(() => ui.RichSelect({
+      label: "Destination", value: "review", items: [{ value: "review", label: "Review" }],
+    }));
+    const trigger = picker.match(new RegExp('<button[^>]*role="combobox"[^>]*>(.*?)</button>', "s"))?.[1];
+    if (!trigger?.includes("Review")) {
+      throw new Error("packed RichSelect did not render its selected value and control");
+    }
   `;
   for (const nodeEnv of ["development", "production"]) {
     run([process.execPath, "--no-install", "-e", serverSmoke], consumer, { ...process.env, NODE_ENV: nodeEnv });

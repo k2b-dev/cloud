@@ -916,3 +916,35 @@ describe("typed PDF omissions", () => {
     ).toEqual([]);
   });
 });
+
+test("print resolves safe Cloud links after rendering without changing browser links or reference styling", () => {
+  const markdown = [
+    "[File](attach://PDF001) [Note](note://DEF456#r%C3%A9sum%C3%A9)",
+    "[Version](/api/notebooks/ABC123/attachments/PDF001/content?v=9&download=1)",
+    "[Escaped](/path?x=%22%3E&y=%26) [Web](https://example.org/path?q=a%2Fb#h)",
+    "[Bad](javascript:alert) [Protocol](//evil.test/path) [Slash](/%5Cevil.test)",
+    "[Own](#heading-guide) [Mail](mailto:reader@example.org)",
+    "# Guide",
+    "#Team/News",
+    "| Link |\n| --- |\n| [Table](note://DEF456) |",
+  ].join("\n\n");
+  const input = { markdown, notebookId: 'book/&"ä', locale: "en", publicOrigin: "https://public.example.test:8443" };
+  const browser = renderNotebookBook(input).html;
+  const print = renderNotebookBook({ ...input, print: true }).html;
+  const notebookPath = "/app/notebooks/book%2F%26%22%C3%A4";
+  expect(browser).toContain(`href="${notebookPath}/notes/DEF456?mode=book#heading-resume"`);
+  expect(browser).not.toContain(input.publicOrigin);
+  expect(print).toContain(`href="${input.publicOrigin}${notebookPath}/notes/DEF456?mode=book#heading-resume"`);
+  expect(print).toContain(`href="${input.publicOrigin}${notebookPath}/tags/team%2Fnews?mode=book"`);
+  expect(print).toContain('href="https://public.example.test:8443/api/notebooks/ABC123/attachments/PDF001/content?v=9&amp;download=1"');
+  expect(print).toContain('href="https://public.example.test:8443/path?x=%22%3E&amp;y=%26"');
+  expect(print).toContain('href="https://example.org/path?q=a%2Fb#h"');
+  expect(print).toContain('href="#heading-guide"');
+  expect(print).toContain('href="mailto:reader@example.org"');
+  expect(print).not.toContain('href="javascript:');
+  expect(print).not.toContain('href="//');
+  expect(print).not.toContain('href="https://evil.test');
+  expect(print).toContain('data-reference="heading"');
+  expect(print).toContain('data-reference="file"');
+  expect(print.match(/href="https:\/\/public.example.test:8443[^"]*notes\/DEF456/g)).toHaveLength(2);
+});
