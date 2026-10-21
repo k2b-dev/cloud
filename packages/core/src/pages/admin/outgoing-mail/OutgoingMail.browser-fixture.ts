@@ -7,7 +7,7 @@ import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
-import { renderToString, ssr } from "solid-js/web";
+import { Dynamic, renderToString } from "solid-js/web";
 import type { OutgoingMailState } from "./OutgoingMail.island";
 
 const initial: OutgoingMailState = {
@@ -145,10 +145,19 @@ export async function outgoingMailBrowserFixture() {
         title,
         get children() {
           // Same app-rows as page.tsx; the extra element only identifies the test's mount target.
-          return ssr(
-            ['<div class="app-rows"><div id="outgoing-mail-fixture">', "</div></div>"],
-            createComponent(OutgoingMail, { initial }),
-          );
+          return createComponent(Dynamic, {
+            component: "div",
+            class: "app-rows",
+            get children() {
+              return createComponent(Dynamic, {
+                component: "div",
+                id: "outgoing-mail-fixture",
+                get children() {
+                  return createComponent(OutgoingMail, { initial });
+                },
+              });
+            },
+          });
         },
       }),
     );
@@ -166,7 +175,11 @@ export async function outgoingMailBrowserFixture() {
         const path = resolve(root, `.${url.pathname}`);
         return path.startsWith(`${publicDir}/`) ? new Response(Bun.file(path)) : new Response(null, { status: 404 });
       }
-      // No accidental live fetch; tests provide controlled API responses in the browser.
+      // Captures exercise the same localized rejection as the browser test, without a live write.
+      if (request.method === "PUT" && url.pathname === "/api/admin/core/outgoing-mail/apps/backoffice/log-access") {
+        return Response.json({ code: "invalid_profile", message: "Synthetic rejection" }, { status: 400 });
+      }
+      // No accidental live fetch; other test responses are controlled in the browser.
       if (url.pathname.startsWith("/api/")) return Response.json({ message: "Synthetic fixture: service unavailable" }, { status: 503 });
       return pages.fetch(request);
     },

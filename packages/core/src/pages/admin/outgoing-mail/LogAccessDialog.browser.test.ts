@@ -96,12 +96,15 @@ test("real admin action opens the shared host; keyboard, scope, failed save and 
       expect(await save.isVisible()).toBe(true);
       await dialog.getByRole("button", { name: de ? "Abbrechen" : "Cancel", exact: true }).click();
       await page.locator("dialog[open]").waitFor({ state: "detached" });
+      // The shared host restores focus in the next frame after removing the dialog.
+      await page.waitForFunction((element) => element === document.activeElement, await trigger.elementHandle());
       expect(await trigger.evaluate((element) => element === document.activeElement)).toBe(true);
       await open();
       expect(await page.locator("dialog[open]").getByRole("combobox").first().textContent()).toBe(de ? "Kein Zugriff" : "No access");
       await page.keyboard.press("Escape");
       await page.locator("dialog[open]").waitFor({ state: "detached" });
       expect(await trigger.isVisible()).toBe(true);
+      await page.waitForFunction((element) => element === document.activeElement, await trigger.elementHandle());
       expect(await trigger.evaluate((element) => element === document.activeElement)).toBe(true);
       expect(errors).toEqual([]);
     } finally {
