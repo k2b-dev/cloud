@@ -35,6 +35,7 @@ import {
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
+import { type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
@@ -49,6 +50,7 @@ import {
   dialogCore,
   IconButton,
   LocaleProvider,
+  NoticeCard,
   openSpotlightSearch,
   Placeholder,
   prompts,
@@ -81,6 +83,7 @@ import {
 import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
+import AssistantPanelContext from "./AssistantPanelContext";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
@@ -97,7 +100,6 @@ import {
   matchesAssistantInvalidation,
 } from "./assistant-live";
 import {
-  ASSISTANT_APPROVALS_HREF,
   assistantApprovalsOpenFromHref,
   assistantArtifactHref,
   assistantArtifactPathFromHref,
@@ -135,6 +137,7 @@ import {
   editComposerSession,
   newComposerSession,
   observeComposerRevision,
+  sameComposerSubmission,
   sendBesideComposer,
 } from "./composer-session";
 import { isPlainChat } from "./conversation-view";
@@ -163,6 +166,8 @@ type InitialDetail = {
 };
 
 type Props = {
+  embedded?: boolean;
+  initialPanelContext?: ReturnType<typeof getContext>;
   initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
   userId: string;
   cloudUrl: string;
@@ -201,6 +206,8 @@ type ProjectViewState = {
 };
 
 export default function AssistantWorkspace(props: Props) {
+  const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
+  const approvalsHref = `${basePath}?approvals=1`;
   const locale = useLocale();
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
@@ -331,7 +338,7 @@ export default function AssistantWorkspace(props: Props) {
     setProjectView(null);
     setApprovalsRendered(false);
     setApprovalsOpen(true);
-    navigate(ASSISTANT_APPROVALS_HREF, { scroll: "manual", viewTransition: false });
+    navigate(approvalsHref, { scroll: "manual", viewTransition: false });
   };
   const activeProject = () => {
     const projectId = projectView()?.projectId;
@@ -527,16 +534,19 @@ export default function AssistantWorkspace(props: Props) {
   const mentionsFor = (key: string) => composerMentions()[key] ?? [];
   const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
     editComposerSession(session(key));
+    touchSession();
     setComposerMentions((all) => ({ ...all, [key]: mentions }));
   };
   const setComposerDraft = (key: string, value: string) => {
     setMentionsFor(key, reconcileChatMentions(composerDraft(key), value, mentionsFor(key)));
     editComposerSession(session(key));
+    touchSession();
     setComposerDrafts((current) => ({ ...current, [key]: value }));
   };
   const composerAttachmentsFor = (key: string) => composerAttachments()[key] ?? [];
   const setComposerAttachmentsFor = (key: string, attachments: AiComposerAttachment[]) => {
     editComposerSession(session(key));
+    touchSession();
     setComposerAttachments((current) => ({ ...current, [key]: attachments }));
   };
 
@@ -569,6 +579,45 @@ export default function AssistantWorkspace(props: Props) {
       } else if (existing.conflict) touchSession();
     }
   });
+  const submissionSnapshots = new Map<string, AiComposerSendInput>();
+  const [acceptedSubmissions, setAcceptedSubmissions] = createSignal<string[]>([]);
+  const [submissionChecking, setSubmissionChecking] = createSignal(false);
+  const settleSubmission = (id: string, remote: AiConversation["draft"]) => {
+    const keys = [
+      id,
+      ...Object.entries(pendingProjectChats())
+        .filter(([, value]) => value.id === id)
+        .map(([project]) => projectComposerKey(project)),
+    ];
+    for (const key of keys) {
+      const submitted = submissionSnapshots.get(key);
+      if (!session(key).dirty || (submitted && sameComposerSubmission(composerInput(key), submitted))) hydrateComposer(key, remote);
+      else if (submitted) {
+        setServerDrafts((all) => ({ ...all, [key]: remote }));
+        session(key).conflict = true;
+        touchSession();
+      }
+      submissionSnapshots.delete(key);
+    }
+  };
+  createEffect(() => {
+    const conversation = chat.conversation();
+    if (!conversation || !acceptedSubmissions().includes(conversation.id)) return;
+    settleSubmission(conversation.id, conversation.draft);
+    setAcceptedSubmissions((ids) => ids.filter((id) => id !== conversation.id));
+  });
+  const checkSubmissions = async (retry = false) => {
+    if (submissionChecking()) return;
+    setSubmissionChecking(true);
+    try {
+      for (const id of Object.keys(chat.uncertainSubmissions())) {
+        if ((await (retry ? chat.retrySubmission(id) : chat.reconcileSubmission(id))) !== "accepted") continue;
+        setAcceptedSubmissions((ids) => [...ids, id]);
+      }
+    } finally {
+      setSubmissionChecking(false);
+    }
+  };
   const composerSaves = new Map<string, Promise<unknown>>();
   const serializeComposer = <T,>(key: string, action: () => Promise<T>): Promise<T> => {
     const next = (composerSaves.get(key) ?? Promise.resolve()).then(action, action);
@@ -591,7 +640,7 @@ export default function AssistantWorkspace(props: Props) {
     const overrideGeneration = override ? session(key).editGeneration : undefined;
     return serializeComposer(key, async () => {
       const local = session(key);
-      if (local.conflict) return null;
+      if (local.conflict || chat.uncertainSubmissions()[target] !== undefined) return null;
       const generation = overrideGeneration ?? local.editGeneration;
       local.saving = true;
       try {
@@ -628,12 +677,51 @@ export default function AssistantWorkspace(props: Props) {
     if (href === current) return;
     navigate(href, { replace, scroll: "manual", viewTransition: false });
   };
+  const creationRequests = new Map<string, { requestId: string; title: string; projectId?: string }>();
+  const [savingPanelDrafts, setSavingPanelDrafts] = createSignal(false);
+  const [panelStorageFailed, setPanelStorageFailed] = createSignal(false);
+  const panelSelectionKey = `cloud.assistant.panel:${props.userId}`;
+  const rememberPanelConversation = (id: string) => {
+    if (!props.embedded) return;
+    try {
+      window.sessionStorage.setItem(panelSelectionKey, id);
+      setPanelStorageFailed(false);
+    } catch {
+      setPanelStorageFailed(true);
+    }
+  };
+  const migrateNewComposer = (conversation: AiConversation) => {
+    const from = "__new__";
+    if (!sessions.get(from)?.dirty) return;
+    setComposerDraft(conversation.id, composerDraft(from));
+    setComposerAttachmentsFor(conversation.id, composerAttachmentsFor(from));
+    setMentionsFor(conversation.id, mentionsFor(from));
+    session(conversation.id).baseRevision = conversation.draft.revision;
+    setComposerDrafts((all) => ({ ...all, [from]: "" }));
+    setComposerAttachments((all) => ({ ...all, [from]: [] }));
+    setComposerMentions((all) => ({ ...all, [from]: [] }));
+    sessions.delete(from);
+  };
   const newConversation = mutation.create<
     AiConversation | null,
     { focus: boolean; projectId?: string; navigate?: boolean | (() => boolean) }
   >({
     mutation: async ({ focus, projectId, navigate: shouldNavigate = true }) => {
-      const conversation = await chat.createConversation({ title: t().newChat, ...(projectId ? { projectId } : {}) });
+      const key = projectId ? projectComposerKey(projectId) : "__new__";
+      let request = creationRequests.get(key);
+      if (!request) {
+        request = { requestId: crypto.randomUUID(), title: t().newChat, ...(projectId ? { projectId } : {}) };
+        creationRequests.set(key, request);
+      }
+      const conversation = await chat.createConversation(request);
+      if (conversation) {
+        creationRequests.delete(key);
+        if (projectId) {
+          session(key).baseRevision = conversation.draft.revision;
+          setPendingProjectChats((all) => ({ ...all, [projectId]: conversation }));
+        } else migrateNewComposer(conversation);
+        rememberPanelConversation(conversation.id);
+      }
       if (conversation && chat.activeConversationId() === conversation.id) {
         if (typeof shouldNavigate === "function" ? shouldNavigate() : shouldNavigate) {
           setProjectView(null);
@@ -650,6 +738,83 @@ export default function AssistantWorkspace(props: Props) {
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
   };
+  const hasUnsavedPanelState = () => {
+    sessionVersion();
+    return (
+      panelStorageFailed() ||
+      submissionChecking() ||
+      savingPanelDrafts() ||
+      composerPicking() > 0 ||
+      composerSubmitting() ||
+      newConversation.loading() ||
+      dictation.busy() ||
+      artifactWorkspace.hasDirty() ||
+      Object.keys(chat.uncertainSubmissions()).length > 0 ||
+      [...sessions.values()].some((local) => local.dirty || local.saving || local.conflict)
+    );
+  };
+  const savePanelDrafts = async () => {
+    if (savingPanelDrafts() || composerPicking() || composerSubmitting() || dictation.busy()) return;
+    setSavingPanelDrafts(true);
+    try {
+      if (panelStorageFailed()) {
+        try {
+          const selected = window.sessionStorage.getItem(panelSelectionKey);
+          setPanelStorageFailed(false);
+          if (
+            !chat.activeConversationId() &&
+            !session("__new__").dirty &&
+            selected &&
+            /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)
+          ) {
+            await openAndFocusConversation(selected);
+          }
+        } catch {
+          setPanelStorageFailed(true);
+          return;
+        }
+      }
+      for (const [original, local] of [...sessions]) {
+        if (!local.dirty || local.conflict) continue;
+        let key = original;
+        let target = key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key === "__new__" ? undefined : key;
+        if (!target) {
+          const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
+          const created = await createConversation(false, projectId, !projectId);
+          if (!created) return;
+          target = created.id;
+          if (!projectId) key = target;
+        }
+        if (chat.uncertainSubmissions()[target] !== undefined) continue;
+        if (!(await saveComposer(key, target))) return;
+        rememberPanelConversation(target);
+      }
+      const target = chat.activeConversationId();
+      if (target) rememberPanelConversation(target);
+    } finally {
+      setSavingPanelDrafts(false);
+    }
+  };
+  onMount(() => {
+    if (!props.embedded) return;
+    onCleanup(onPanelBeforeLeave(() => !hasUnsavedPanelState() && !dialogCore.isOpen()));
+    if (!window.location.search) {
+      try {
+        const selected = window.sessionStorage.getItem(panelSelectionKey);
+        if (selected && /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)) {
+          void openAndFocusConversation(selected).catch((error) =>
+            chat.setError(error instanceof Error ? error.message : t().openConversationFailed),
+          );
+        }
+      } catch {
+        setPanelStorageFailed(true);
+      }
+    }
+  });
+  createEffect(() => {
+    const id = chat.activeConversationId();
+    if (workspaceMounted() && id) rememberPanelConversation(id);
+  });
   createEffect(() => {
     if (activeProject() || composerSubmitting() || composerPicking()) return;
     const key = composerSessionKey();
@@ -666,10 +831,6 @@ export default function AssistantWorkspace(props: Props) {
         const created = await createConversation(false);
         if (!created) return;
         conversationId = created.id;
-        setComposerDraft(conversationId, composerDraft(key));
-        setComposerAttachmentsFor(conversationId, composerAttachmentsFor(key));
-        setMentionsFor(conversationId, mentionsFor(key));
-        session(conversationId).baseRevision = created.draft.revision;
       }
       await saveComposer(conversationId, conversationId);
     }, 2_000);
@@ -868,7 +1029,7 @@ export default function AssistantWorkspace(props: Props) {
       registerSearchNavigation(async ({ href, ref }) => {
         if (ref?.type !== "assistant.chat" && ref?.type !== "assistant.message") return false;
         const target = new URL(href, props.cloudUrl);
-        if (target.origin !== new URL(props.cloudUrl).origin || target.pathname !== "/app/assistant") return false;
+        if (target.origin !== new URL(props.cloudUrl).origin || target.pathname !== basePath) return false;
         const conversationId = assistantConversationIdFromHref(href);
         if (!conversationId) return false;
         const generation = navigationRequest + 1;
@@ -887,7 +1048,7 @@ export default function AssistantWorkspace(props: Props) {
     artifactWorkspace.restore();
     setWorkspaceMounted(true);
     const guardUnsaved = (event: BeforeUnloadEvent) => {
-      if (artifactWorkspace.hasDirty()) {
+      if (hasUnsavedPanelState()) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -914,7 +1075,7 @@ export default function AssistantWorkspace(props: Props) {
       }
       setApprovalsOpen(false);
       if (projectId) {
-        void openProject(projectId).catch(() => navigateTo("/app/assistant"));
+        void openProject(projectId).catch(() => navigateTo(basePath));
         return;
       }
       if (!conversationId) {
@@ -959,6 +1120,7 @@ export default function AssistantWorkspace(props: Props) {
         if (local.conflict) return false;
         local.saving = true;
         try {
+          submissionSnapshots.set(target, input);
           const result = await chat.send({
             ...input,
             conversationId: target,
@@ -1000,6 +1162,7 @@ export default function AssistantWorkspace(props: Props) {
           if (local.conflict) return false;
           local.saving = true;
           try {
+            submissionSnapshots.set(key, message);
             const sent = await chat.send({ ...message, conversationId: target, expectedDraftRevision: local.baseRevision });
             const draft = chat.conversation()?.draft;
             if (draft) local.baseRevision = draft.revision;
@@ -1012,12 +1175,15 @@ export default function AssistantWorkspace(props: Props) {
         });
       },
       rememberPending: (conversation) => setPendingProjectChats((current) => ({ ...current, [projectId]: conversation })),
-      clearPending: () =>
+      clearPending: () => {
+        const draft = chat.conversation()?.draft;
+        if (draft) hydrateComposer(projectComposerKey(projectId), draft);
         setPendingProjectChats((current) => {
           const next = { ...current };
           delete next[projectId];
           return next;
-        }),
+        });
+      },
       navigate: (conversationId) => navigateTo(assistantConversationHref(window.location.href, conversationId)),
     });
   };
@@ -1301,7 +1467,7 @@ export default function AssistantWorkspace(props: Props) {
     return false;
   };
 
-  const addResolvedComposerResource = async (sessionKey: string, ref: { type: string; id: string }) => {
+  const addResolvedComposerResource = async (sessionKey: string, ref: { type: string; id: string }, isCurrent = () => true) => {
     if (!requireComposerAttachmentsAvailable(sessionKey)) return;
     const current = composerAttachmentsFor(sessionKey);
     if (current.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
@@ -1313,6 +1479,7 @@ export default function AssistantWorkspace(props: Props) {
       return;
     }
     const resource = await resolveAssistantCloudResource(ref);
+    if (!isCurrent()) return;
     const latest = composerAttachmentsFor(sessionKey);
     if (latest.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
       chat.setError(t().resourceAlreadyAttached);
@@ -1433,9 +1600,7 @@ export default function AssistantWorkspace(props: Props) {
         setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
         return { key, target: created.id };
       }
-      setComposerDraft(created.id, composerDraft(key));
-      setComposerAttachmentsFor(created.id, composerAttachmentsFor(key));
-      session(created.id).baseRevision = created.draft.revision;
+
       return { key: created.id, target: created.id };
     },
     apply: async (key, target, id) => {
@@ -1519,13 +1684,8 @@ export default function AssistantWorkspace(props: Props) {
             session(key).baseRevision = created.draft.revision;
             setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
           } else {
-            const from = key;
             key = created.id;
-            if (signal.aborted) {
-              setComposerDraft(key, composerDraft(from));
-              setComposerAttachmentsFor(key, composerAttachmentsFor(from));
-              setMentionsFor(key, mentionsFor(from));
-            } else {
+            if (!signal.aborted) {
               setComposerDraft(key, draft.value);
               setComposerAttachmentsFor(key, attachments);
               setMentionsFor(key, draft.mentions);
@@ -1622,8 +1782,32 @@ export default function AssistantWorkspace(props: Props) {
             />
           )}
         </Show>
+        <Show when={props.embedded && hasUnsavedPanelState()}>
+          <NoticeCard tone="warning" title={t().panelUnsaved}>
+            <p>{t().panelSaveHint}</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={savingPanelDrafts() || composerPicking() > 0 || composerSubmitting()}
+              onClick={() => void savePanelDrafts()}
+            >
+              {t().panelSave}
+            </Button>
+          </NoticeCard>
+        </Show>
+        <Show when={Object.keys(chat.uncertainSubmissions()).length > 0}>
+          <NoticeCard tone="warning" title={t().panelUnknownSend}>
+            <p>{t().panelUnknownHint}</p>
+            <Button size="sm" variant="secondary" disabled={submissionChecking()} onClick={() => void checkSubmissions()}>
+              {t().panelCheckSend}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={submissionChecking()} onClick={() => void checkSubmissions(true)}>
+              {t().panelRetrySend}
+            </Button>
+          </NoticeCard>
+        </Show>
         <dictation.Status />
-        <Show when={(sessionVersion(), session(sessionKey()).conflict)}>
+        <Show when={(sessionVersion(), session(sessionKey()).conflict) && Object.keys(chat.uncertainSubmissions()).length === 0}>
           <div role="status" class="space-y-2 rounded-lg border border-border p-3 text-sm">
             <p>{audioCopy().conflict}</p>
             <Show when={serverDrafts()[sessionKey()]}>
@@ -1854,7 +2038,14 @@ export default function AssistantWorkspace(props: Props) {
               onRefresh={quotas.refresh}
             />
           }
-          disabled={!canUseComposer() || (newConversation.loading() && !commandCreating()) || chat.loadingConversation()}
+          disabled={
+            !canUseComposer() ||
+            panelStorageFailed() ||
+            submissionChecking() ||
+            Object.keys(chat.uncertainSubmissions()).length > 0 ||
+            (newConversation.loading() && !commandCreating()) ||
+            chat.loadingConversation()
+          }
           state={
             projectComposer()
               ? newConversation.loading() && !commandCreating()
@@ -2012,7 +2203,7 @@ export default function AssistantWorkspace(props: Props) {
       delete next[archived.id];
       return next;
     });
-    if (archived.id === chat.activeConversationId()) navigateTo("/app/assistant");
+    if (archived.id === chat.activeConversationId()) navigateTo(basePath);
   };
 
   // While a turn runs, its work line says that the chat reconnects.
@@ -2082,6 +2273,9 @@ export default function AssistantWorkspace(props: Props) {
     <AssistantLiveProvider value={liveHub}>
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <AssistantSidebar
+          fullViewConversationId={activeProject() ? pendingProjectChats()[activeProject()!.id]?.id : undefined}
+          embedded={props.embedded}
+          basePath={basePath}
           conversations={conversations}
           timeZone={props.timeZone}
           renderedAt={props.renderedAt}
@@ -2094,7 +2288,7 @@ export default function AssistantWorkspace(props: Props) {
           onNewConversation={() => void createAndFocusConversation()}
           onCreateProject={async () => {
             const project = await openAssistantCreateProjectDialog();
-            if (project) navigateTo(assistantProjectHref("/app/assistant", project.id));
+            if (project) navigateTo(assistantProjectHref(basePath, project.id));
           }}
           onOpenProject={openProject}
           onOpenConversation={openAndFocusConversation}
@@ -2109,6 +2303,25 @@ export default function AssistantWorkspace(props: Props) {
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
             <AppWorkspace.MainPane id="chat" label={artifactCopy().chat} scroll={false} class="assistant-chat-pane flex min-h-0 flex-col">
+              <Show when={props.embedded && !approvalsOpen()}>
+                <AssistantPanelContext
+                  initial={props.initialPanelContext ?? null}
+                  disabled={
+                    !canUseComposer() ||
+                    panelStorageFailed() ||
+                    submissionChecking() ||
+                    Object.keys(chat.uncertainSubmissions()).length > 0 ||
+                    composerSubmitting() ||
+                    newConversation.loading() ||
+                    chat.loadingConversation() ||
+                    chat.running()
+                  }
+                  attach={(ref, current) => {
+                    const key = activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey();
+                    return trackComposerPicking(addResolvedComposerResource(key, ref, current));
+                  }}
+                />
+              </Show>
               <Show
                 when={!approvalsOpen()}
                 fallback={<AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />}

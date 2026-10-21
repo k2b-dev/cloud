@@ -4,6 +4,9 @@ export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      openFullView: "Open full view",
+      draftNotSaved: "Draft could not be kept in this tab",
+      draftNotSavedDescription: "Keep this view open and copy your text before leaving. You can try saving again.",
       newChat: "New chat",
       people: "People",
       guestPickerDescription: "You can add people you already share a chat with.",
@@ -172,6 +175,10 @@ export const chatMessages = i18n.define({
       logs: "Logs",
     },
     de: {
+      openFullView: "In Vollansicht öffnen",
+      draftNotSaved: "Entwurf konnte in diesem Tab nicht gesichert werden",
+      draftNotSavedDescription:
+        "Lass diese Ansicht geöffnet und kopiere deinen Text vor dem Verlassen. Du kannst das Sichern erneut versuchen.",
       newChat: "Neuer Chat",
       people: "Personen",
       guestPickerDescription: "Du kannst Personen hinzufügen, mit denen du schon einen Chat teilst.",

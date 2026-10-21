@@ -1,3 +1,4 @@
+import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -6,9 +7,11 @@ import {
   announce,
   Button,
   Dropdown,
+  dialogCore,
   IconButton,
   IconButtonLink,
   type MessageRowStatus,
+  NoticeCard,
   Placeholder,
   prompts,
   toast,
@@ -25,18 +28,21 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
+import { chatDrafts } from "./chat-drafts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
-import { panelHref, parseRoute, type Route } from "./route";
+import { panelHref as conversationHref, parseRoute, type Route } from "./route";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Store = ReturnType<typeof createChatStore>;
 type Sends = ReturnType<typeof createChatSends>;
 
 export type ChatWorkspaceProps = {
+  /** The same workspace served without the Cloud shell in its provider route. */
+  embedded?: boolean;
   /** The live cursor the server read before every part of this snapshot. */
   cursor: string;
   sidebar: z.infer<typeof ConversationPageSchema>;
@@ -72,6 +78,8 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat =>
  * Below 64 rem the list and a chat are separate pages.
  */
 export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
+  const basePath = props.embedded ? "/app/chat/panel" : "/app/chat";
+  const panelHref = (id: string, info: "info" | null, message?: string | null) => conversationHref(id, info, message, basePath);
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const [route, setRoute] = createSignal<Route>({ chatId: props.chatId, messageId: props.open?.focus ?? null, panel: props.panel });
@@ -91,6 +99,60 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [now, setNow] = createSignal(new Date(props.now));
   const drafts = new Map<string, string>();
   const [draft, setDraft] = createSignal("");
+  const [draftStorageFailed, setDraftStorageFailed] = createSignal(false);
+  const unsavedDrafts = new Set<string>();
+  let savedDrafts: ReturnType<typeof chatDrafts> | undefined;
+  const readDraft = (id: string) => {
+    if (drafts.has(id)) return drafts.get(id)!;
+    try {
+      if (!savedDrafts) throw new Error("Draft storage unavailable");
+      const text = savedDrafts.read(id);
+      drafts.set(id, text);
+      return text;
+    } catch {
+      setDraftStorageFailed(true);
+      return "";
+    }
+  };
+  const changeDraft = (text: string) => {
+    const id = route().chatId;
+    setDraft(text);
+    if (!id) return;
+    drafts.set(id, text);
+    unsavedDrafts.add(id);
+    try {
+      if (!savedDrafts) throw new Error("Draft storage unavailable");
+      savedDrafts.write(id, text);
+      unsavedDrafts.delete(id);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+  };
+  const retryDraftStorage = () => {
+    try {
+      savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
+      for (const id of unsavedDrafts) {
+        savedDrafts.write(id, drafts.get(id)!);
+        unsavedDrafts.delete(id);
+      }
+      const id = route().chatId;
+      if (id && !drafts.has(id)) drafts.set(id, savedDrafts.read(id));
+      if (id) setDraft(drafts.get(id) ?? "");
+      if (props.embedded) savedDrafts.select(id);
+      setDraftStorageFailed(false);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+  };
+  const draftNotice = () => (
+    <Show when={draftStorageFailed()}>
+      <NoticeCard tone="danger" title={t().draftNotSaved} detail={t().draftNotSavedDescription}>
+        <Button variant="ghost" onClick={retryDraftStorage}>
+          {t().retry}
+        </Button>
+      </NoticeCard>
+    </Show>
+  );
   // A stored message keeps the key of the send it came from, so its row is not replaced when it arrives.
   const sendKeys = new Map<string, string>();
   let store: Store | undefined;
@@ -117,7 +179,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const noAccess = () => route().chatId !== null && openChat() === null;
   const breadcrumbs = (title?: string) => [
     { title: t().start, href: "/" },
-    title ? { title: t().appName, href: "/app/chat" } : { title: t().appName },
+    title ? { title: t().appName, href: basePath } : { title: t().appName },
     ...(title ? [{ title }] : []),
   ];
   // The trail names the chat in the address. It follows live renames and lost access, and keeps its last title while
@@ -302,13 +364,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
 
   const applyRoute = (next: Route) => {
-    const previous = route().chatId;
-    if (previous) drafts.set(previous, draft());
     setRoute(next);
     setPanel(next.panel);
-    setDraft(next.chatId ? (drafts.get(next.chatId) ?? "") : "");
+    setDraft(next.chatId ? readDraft(next.chatId) : "");
     setNow(new Date());
     sortRows();
+    if (props.embedded) {
+      try {
+        if (!savedDrafts) throw new Error("Draft storage unavailable");
+        savedDrafts.select(next.chatId);
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    }
   };
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
   const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
@@ -450,7 +518,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
-    if (!current || !outbox || !text.trim()) return false;
+    if (!current || !outbox || !text.trim() || draftStorageFailed()) return false;
     if (current.hasNewer) await store?.loadLatest();
     outbox.send(current.id, text);
     feed?.scrollToEnd();
@@ -458,6 +526,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
 
   onMount(() => {
+    try {
+      savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+    if (route().chatId) setDraft(readDraft(route().chatId!));
     phone = window.matchMedia("(max-width: 47.999rem)");
     const live = createChatStore({
       viewerId: props.viewerId,
@@ -484,8 +558,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
+    onCleanup(onPanelBeforeLeave(() => !box.unsent() && !draftStorageFailed() && !dialogCore.isOpen() && pendingOpen === 0));
     const leave = (event: BeforeUnloadEvent) => {
-      if (box.unsent()) {
+      if (box.unsent() || draftStorageFailed()) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -519,10 +594,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
     onCleanup(
       layout.handleUp((href) => {
-        if (new URL(href, location.href).pathname !== "/app/chat" || !route().chatId) return false;
+        if (new URL(href, location.href).pathname !== basePath || !route().chatId) return false;
         const depth = listDepth();
         if (depth > 0) history.go(-depth);
-        else void open({ chatId: null, messageId: null, panel: null }).then((result) => result === "applied" && navigate("/app/chat"));
+        else void open({ chatId: null, messageId: null, panel: null }).then((result) => result === "applied" && navigate(basePath));
         return true;
       }),
     );
@@ -539,10 +614,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       box.dispose();
       live.dispose();
     });
+    if (props.embedded) {
+      try {
+        const selected = props.chatId ?? savedDrafts?.selection();
+        if (props.chatId) savedDrafts?.select(props.chatId);
+        else if (selected) {
+          void open({ chatId: selected, messageId: null, panel: null }).then((result) => {
+            if (result === "applied") navigate(panelHref(selected, null), { replace: true, scroll: "manual" });
+          });
+        }
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    }
   });
 
   const list = (): JSX.Element => (
     <ChatList
+      basePath={basePath}
       rows={listRows()}
       activeId={openChat()?.id ?? null}
       viewerId={props.viewerId}
@@ -564,156 +653,176 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" class="chat-workspace h-full">
-      <AppWorkspace.Sidebar label={t().chats}>
-        <AppWorkspace.SidebarDesktop>
-          <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">
-            <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-              {t().newChat}
-            </AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-              <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
-                {list()}
-              </Show>
-            </AppWorkspace.SidebarSection>
-          </AppWorkspace.SidebarBody>
-        </AppWorkspace.SidebarDesktop>
-      </AppWorkspace.Sidebar>
-      <AppWorkspace.Content>
-        <AppWorkspace.Main scroll={false} aria-busy={busy()}>
-          <Switch>
-            <Match when={openChat()?.id}>
-              {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
-              <Show when={openChat()?.id} keyed>
-                <Show when={conversation()}>
-                  {(current) => (
-                    <ChatConversation
-                      actions={
-                        <>
-                          <Show when={current().permission === "admin"}>
-                            <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
-                              <i class="ti ti-user-plus" aria-hidden="true" />
-                            </IconButton>
-                          </Show>
-                          <IconButtonLink
-                            label={t().chatInfo}
-                            href={panelHref(current().id, panel() === "info" ? null : "info", route().messageId)}
-                            navigation="enhanced"
-                            onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
-                            aria-expanded={panel() === "info"}
-                            aria-controls="k2b-workspace-detail-chat-info"
-                          >
-                            <i class="ti ti-info-circle" aria-hidden="true" />
-                          </IconButtonLink>
-                        </>
-                      }
-                      chatId={current().id}
-                      title={current().title}
-                      memberCount={current().memberCount}
-                      items={items()}
-                      hasOlder={openChat()?.hasOlder ?? false}
-                      hasNewer={openChat()?.hasNewer ?? false}
-                      onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
-                      onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
-                      onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
-                      focusKey={focusKey()}
-                      canWrite={current().permission !== "read"}
-                      hint={
-                        current().permission === "read"
-                          ? t().readOnly
-                          : liveStopped()
-                            ? t().liveStopped
-                            : waiting()
-                              ? t().messagesWaiting
-                              : undefined
-                      }
-                      draft={draft()}
-                      onDraftChange={setDraft}
-                      onSend={send}
-                      onBack={backToList}
-                      busy={busy()}
-                      dateConfig={props.dateConfig}
-                      now={now}
-                      controller={(controller) => {
-                        feed = controller;
-                      }}
-                      markerKey={marker()}
-                      onVisibleChange={reportVisible}
-                      onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
-                      // With the info open, Esc closes it first; the workspace owns that.
-                      onEscape={() => panel() === null && markOpenRead()}
-                    />
-                  )}
-                </Show>
-              </Show>
-            </Match>
-            <Match when={noAccess()}>
-              <Placeholder
-                variant="panel"
-                class="flex-1"
-                icon="ti ti-lock"
-                title={t().noAccessTitle}
-                description={t().noAccessDescription}
-              />
-            </Match>
-            <Match when={rows().length === 0}>
-              <Placeholder
-                variant="panel"
-                class="flex-1"
-                icon="ti ti-messages"
-                title={t().noChatsTitle}
-                description={t().noChatsDescription}
-                action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
-              />
-            </Match>
-            <Match when={true}>
-              <nav class="chat-list-page" aria-label={t().chats}>
-                <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-                  {t().newChat}
-                </AppWorkspace.SidebarItem>
-                <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
+    <>
+      <Show when={!openChat()}>{draftNotice()}</Show>
+      <Show when={props.embedded && !openChat()}>
+        <div class="flex shrink-0 justify-end p-1">
+          <IconButtonLink
+            href={route().chatId ? conversationHref(route().chatId!, null, route().messageId) : "/app/chat"}
+            label={t().openFullView}
+          >
+            <i class="ti ti-arrows-maximize" aria-hidden="true" />
+          </IconButtonLink>
+        </div>
+      </Show>
+      <AppWorkspace mobileSurface="flush" class={`chat-workspace ${props.embedded ? "flex-1 min-h-0" : "h-full"}`}>
+        <AppWorkspace.Sidebar label={t().chats}>
+          <AppWorkspace.SidebarDesktop>
+            <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">
+              <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+                {t().newChat}
+              </AppWorkspace.SidebarItem>
+              <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
+                <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
                   {list()}
-                </AppWorkspace.SidebarSection>
-              </nav>
-              <div class="chat-select">
+                </Show>
+              </AppWorkspace.SidebarSection>
+            </AppWorkspace.SidebarBody>
+          </AppWorkspace.SidebarDesktop>
+        </AppWorkspace.Sidebar>
+        <AppWorkspace.Content>
+          <AppWorkspace.Main scroll={false} aria-busy={busy()}>
+            <Switch>
+              <Match when={openChat()?.id}>
+                {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
+                <Show when={openChat()?.id} keyed>
+                  <Show when={conversation()}>
+                    {(current) => (
+                      <ChatConversation
+                        listHref={basePath}
+                        actions={
+                          <>
+                            <Show when={props.embedded}>
+                              <IconButtonLink href={conversationHref(current().id, null, route().messageId)} label={t().openFullView}>
+                                <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                              </IconButtonLink>
+                            </Show>
+                            <Show when={current().permission === "admin"}>
+                              <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
+                                <i class="ti ti-user-plus" aria-hidden="true" />
+                              </IconButton>
+                            </Show>
+                            <IconButtonLink
+                              label={t().chatInfo}
+                              href={panelHref(current().id, panel() === "info" ? null : "info", route().messageId)}
+                              navigation="enhanced"
+                              onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
+                              aria-expanded={panel() === "info"}
+                              aria-controls="k2b-workspace-detail-chat-info"
+                            >
+                              <i class="ti ti-info-circle" aria-hidden="true" />
+                            </IconButtonLink>
+                          </>
+                        }
+                        chatId={current().id}
+                        title={current().title}
+                        memberCount={current().memberCount}
+                        items={items()}
+                        hasOlder={openChat()?.hasOlder ?? false}
+                        hasNewer={openChat()?.hasNewer ?? false}
+                        onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
+                        onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
+                        onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
+                        focusKey={focusKey()}
+                        canWrite={current().permission !== "read" && !draftStorageFailed()}
+                        notice={draftNotice()}
+                        hint={
+                          current().permission === "read"
+                            ? t().readOnly
+                            : liveStopped()
+                              ? t().liveStopped
+                              : waiting()
+                                ? t().messagesWaiting
+                                : undefined
+                        }
+                        draft={draft()}
+                        onDraftChange={changeDraft}
+                        onSend={send}
+                        onBack={backToList}
+                        busy={busy()}
+                        dateConfig={props.dateConfig}
+                        now={now}
+                        controller={(controller) => {
+                          feed = controller;
+                        }}
+                        markerKey={marker()}
+                        onVisibleChange={reportVisible}
+                        onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
+                        // With the info open, Esc closes it first; the workspace owns that.
+                        onEscape={() => panel() === null && markOpenRead()}
+                      />
+                    )}
+                  </Show>
+                </Show>
+              </Match>
+              <Match when={noAccess()}>
+                <Placeholder
+                  variant="panel"
+                  class="flex-1"
+                  icon="ti ti-lock"
+                  title={t().noAccessTitle}
+                  description={t().noAccessDescription}
+                />
+              </Match>
+              <Match when={rows().length === 0}>
                 <Placeholder
                   variant="panel"
                   class="flex-1"
                   icon="ti ti-messages"
-                  title={t().selectChatTitle}
-                  description={t().selectChatDescription}
+                  title={t().noChatsTitle}
+                  description={t().noChatsDescription}
+                  action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
                 />
-              </div>
-            </Match>
-          </Switch>
-        </AppWorkspace.Main>
-        <AppWorkspace.Detail
-          id="chat-info"
-          phone="page"
-          width="md"
-          open={panel() === "info" && conversation() !== null}
-          onClose={() => closeInfo()}
-        >
-          {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
-          <Show when={openChat()?.id} keyed>
-            <Show when={conversation()}>
-              {(current) => (
-                <ChatInfoPanel
-                  conversation={current()}
-                  viewerId={props.viewerId}
-                  active={panel() === "info"}
-                  revision={(openChat()?.membershipRev ?? 0) + localBumps()}
-                  store={liveStore()}
-                  onClose={() => closeInfo()}
-                  onAddPeople={() => void addPeople()}
-                  onEditDetails={editDetails}
-                  onLeave={() => void leaveChat()}
-                />
-              )}
+              </Match>
+              <Match when={true}>
+                <nav class="chat-list-page" aria-label={t().chats}>
+                  <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+                    {t().newChat}
+                  </AppWorkspace.SidebarItem>
+                  <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
+                    {list()}
+                  </AppWorkspace.SidebarSection>
+                </nav>
+                <div class="chat-select">
+                  <Placeholder
+                    variant="panel"
+                    class="flex-1"
+                    icon="ti ti-messages"
+                    title={t().selectChatTitle}
+                    description={t().selectChatDescription}
+                  />
+                </div>
+              </Match>
+            </Switch>
+          </AppWorkspace.Main>
+          <AppWorkspace.Detail
+            id="chat-info"
+            phone="page"
+            width="md"
+            open={panel() === "info" && conversation() !== null}
+            onClose={() => closeInfo()}
+          >
+            {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
+            <Show when={openChat()?.id} keyed>
+              <Show when={conversation()}>
+                {(current) => (
+                  <ChatInfoPanel
+                    conversation={current()}
+                    viewerId={props.viewerId}
+                    active={panel() === "info"}
+                    revision={(openChat()?.membershipRev ?? 0) + localBumps()}
+                    store={liveStore()}
+                    onClose={() => closeInfo()}
+                    onAddPeople={() => void addPeople()}
+                    onEditDetails={editDetails}
+                    onLeave={() => void leaveChat()}
+                  />
+                )}
+              </Show>
             </Show>
-          </Show>
-        </AppWorkspace.Detail>
-      </AppWorkspace.Content>
-    </AppWorkspace>
+          </AppWorkspace.Detail>
+        </AppWorkspace.Content>
+      </AppWorkspace>
+    </>
   );
 }

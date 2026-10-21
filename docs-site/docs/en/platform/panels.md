@@ -5,7 +5,7 @@ section: Platform services
 order: 588
 description: Offer an authorized application page beside the current Cloud app.
 tags: [panels, applications, layout, ssr]
-updated: 2026-10-19
+updated: 2026-10-21
 ---
 
 # Offer a panel
@@ -16,9 +16,25 @@ tabs, loading feedback, and focus return. The application owns the page, its
 routes, data, and authorization. Built-in and third-party applications use the
 same contract.
 
-Core's Help is the first provider: every signed-in reader has Help in this
-slot. It uses the same `panel`, `PanelLayout`, and context APIs as any other
-application.
+Core's Help is available to every signed-in reader. Installed Chat and
+Assistant applications also offer their existing conversation workspaces in
+the slot, subject to their normal route and conversation permissions. All
+three use the same `panel`, `PanelLayout`, and context APIs as other applications.
+
+Chat keeps text drafts per reader and conversation in the current browser tab.
+Assistant saves drafts and uploaded references through its existing conversation
+service. Switching providers, closing, and opening the full view retain saved
+drafts; unfinished uploads, conflicting drafts, and unconfirmed sends keep the
+current provider open with recovery controls. On phones, reopen the sheet after
+a page reload. Browser termination and forced native navigation cannot guarantee
+recovery of unsaved work.
+
+Assistant starts without choosing an unrelated recent conversation. Its
+conversation selector stays inside the panel, and **Open full view** opens the
+current conversation in the application window. A shared page reference enters
+the draft only through **Attach current view**, after the existing resource
+reader checks access. Later host context changes never reassign that attachment
+or an already submitted turn.
 
 ## Declare and serve the page
 
@@ -114,6 +130,45 @@ phone header. A single provider has a title instead of tabs; use its app action
 or the shortcut to open it. Tab arrows and Home/End move focus; click, Enter,
 or Space activates a provider. Switching unloads the old iframe, leaving only
 one provider loaded.
+
+### Protect unfinished work
+
+An editable provider can prevent the slot from removing its current page:
+
+```ts
+import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+
+const dispose = onPanelBeforeLeave(() =>
+  draftsAreSaved() && !hasUnconfirmedSends() && !hasPendingUploads()
+);
+// Call dispose when the editor unmounts.
+```
+
+Register before enabling editing. Cloud calls the guard synchronously in the
+current same-origin provider window, so it sees the latest input rather than a
+previously posted busy flag. Return `true` only when the page can be restored
+safely. A `false` result, exception, or non-boolean result keeps the current
+provider open. If several guards are registered, all must allow leaving.
+Providers without guards keep their existing behavior.
+
+The guard covers slot-controlled close, provider switch, search retarget,
+reload, and viewport or phone-history transitions that would unload the
+provider. Ordinary same-origin links from a guarded panel also pass through
+this check, including links to the full application. Modified clicks,
+downloads, explicit targets, form submissions, and script navigation retain
+their browser or application behavior.
+
+When a guard blocks a change, Cloud shows a notice and a button that returns
+focus to the provider. Save, retry, conflict resolution, and send confirmation
+remain the application's responsibility. After resolving them, the reader
+requests the change again. Cloud never queues the blocked destination or
+discards work automatically. `openPanel()` still returns whether the opening
+request was accepted; `true` does not mean that a guarded switch completed.
+
+Keep normal draft persistence and native `beforeunload` protection as well.
+The guard cannot prevent hard navigation, closing a tab, browser termination,
+or a security-driven removal. Native unload prompts are browser best effort.
+Context withdrawal takes effect immediately and cannot be vetoed.
 
 Ctrl+J, or Cmd+J on Apple devices, opens or closes the panel. It also closes the
 panel from inside a provider. Escape closes it when focus is inside the slot or
