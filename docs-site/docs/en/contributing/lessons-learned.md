@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # Lessons learned
@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Draft consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Shared interaction behavior implemented for only some consumers | Resize handles differ in cue, keyboard behavior, or reset depending on the region. | Tests: UI `resize-cue.browser.test.ts` covers every workspace edge and standalone separator; separator, workspace controller, and Cloud panel behavior tests cover reset callbacks and saved-size removal. |
 | Unread fetch error bodies | A reader returns its fallback after response headers but leaves the unused body open, keeping a browser request pending. | Tests: Cloud `app-badges.behavior.test.tsx` covers cleanup rejection, absent bodies, aborts and disposal; `app-badges.browser.test.ts` checks real finite and streaming error responses, terminal network events and server disconnects through `watchAppBadges`. |
 | Incomplete stored-state fixtures | A direct SQL fixture omits one of the fields that domain writers persist together, creating a state that normal writes cannot produce. | Test: `yjs-snapshot-projections.integration.test.ts` checks the persisted cursor and its matching sequence before publishing in both initialization cases, then asserts that the real snapshot save succeeds ([#1651](https://github.com/k2b-dev/cloud/pull/1651)). |
@@ -861,6 +862,13 @@ convention still needs a check or a test.
 - **Root cause:** The renderer kept Cloud URLs relative, and Gotenberg resolved them against its local HTML file.
 - **Error class:** Relative navigation URLs crossing from a web page into an offline document.
 - **Guard:** Notebooks `note-pdf.integration.test.ts` inspects actual PDF URI annotations for the configured public origin and rejects `file://`; renderer tests preserve browser URLs, escaping, and internal anchors, and the API test checks the configured origin passed to export.
+
+### Oversized Chat messages lost their editable text
+
+- **What happened:** Chat queued messages over 20,000 characters and cleared the composer. Every retry failed, and discarding the failed message lost its text ([#1184](https://github.com/k2b-dev/cloud/issues/1184)).
+- **Root cause:** Only the server checked the message body; the browser consumed the draft before checking whether it could be accepted.
+- **Error class:** Draft consumed before deterministic validation.
+- **Guard:** The API and composer share `MessageBodySchema`. Chat behavior and desktop/phone browser tests cover oversized ASCII and emoji, preserved text, and successful correction at the code-point limit; the behavior test also covers an unsupported null character.
 
 ## Add a lesson
 
