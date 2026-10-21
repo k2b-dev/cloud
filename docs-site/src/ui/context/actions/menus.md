@@ -19,6 +19,9 @@ user is editing:
 | Choose several values | `MultiSelectInput` |
 | Filter an existing result set | `FilterChip` |
 
+For rows that explain each choice or show unavailable reasons, use
+[RichSelect](../input/rich-select) instead of building select rows in a `Dropdown`.
+
 See [Select inputs](../input/select) for the controlled selection contracts.
 
 Use an item's optional `trailing` JSX for quiet information such as a view

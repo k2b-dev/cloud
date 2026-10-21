@@ -1,0 +1,61 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "datasource": {
+          "sourcename": "openstreetmap",
+          "attribution": "© OpenStreetMap contributors",
+          "license": "Open Database License",
+          "url": "https://www.openstreetmap.org/copyright"
+        },
+        "name": "Old Saint Stephens Church",
+        "country": "United States",
+        "country_code": "us",
+        "state": "Massachusetts",
+        "county": "Suffolk County",
+        "city": "Boston",
+        "postcode": "02109",
+        "suburb": "North End",
+        "street": "Clark Street",
+        "housenumber": "24",
+        "iso3166_2": "US-MA",
+        "lon": -71.0526773,
+        "lat": 42.3653541,
+        "state_code": "MA",
+        "distance": 0,
+        "result_type": "amenity",
+        "formatted": "Old Saint Stephens Church, 24 Clark Street, Boston, MA 02109, United States of America",
+        "address_line1": "Old Saint Stephens Church",
+        "address_line2": "24 Clark Street, Boston, MA 02109, United States of America",
+        "timezone": {
+          "name": "America/New_York",
+          "offset_STD": "-05:00",
+          "offset_DST": "-04:00",
+          "offset_STD_seconds": -18000,
+          "offset_DST_seconds": -14400,
+          "abbreviation_STD": "EST",
+          "abbreviation_DST": "EDT"
+        },
+        "plus_code": "87JC9W8W+4W",
+        "plus_code_short": "8W+4W, 02109 Boston, United States",
+        "rank": {
+          "importance": 0.14389741120638372,
+          "popularity": 8.536661234137748
+        },
+        "place_id": "51762f9c105fc351c059d17a53ecc32e4540f00102f901ddf3530e00000000c002019203194f6c64205361696e74205374657068656e7320436875726368"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-71.0526773, 42.3653541]
+      },
+      "bbox": [-71.0529219, 42.3651972, -71.0524232, 42.365485]
+    }
+  ],
+  "query": {
+    "lat": 42.365344,
+    "lon": -71.052655,
+    "plus_code": "87JC9W8W+4W"
+  }
+}

@@ -43,26 +43,25 @@ import {
 import { CapabilityStreamSchema } from "../contracts/capability-streams";
 import { CommandLinkSchema, CommandRequestSchema } from "../contracts/commands";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { getLocale, LOCALE_HEADER, preferredLocale } from "../server/locale";
 import {
   type AuthContext,
   auth,
-  getLocale,
   jsonResponse,
-  LOCALE_HEADER,
-  preferredLocale,
   type RequestAuthority,
   rejectReservedWorkloadCredential,
   requiresAuth,
   v,
-} from "../server";
+} from "../server/middleware";
 import { noTransform } from "../server/middleware/no-transform";
-import { logger, settings } from "../services";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import type { InvocationAuthority } from "../services/identity/invocation-token";
 import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { logger } from "../services/logging";
 import { withMandateIssueAuthority } from "../services/mandates";
+import * as settings from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";

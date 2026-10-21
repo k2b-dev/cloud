@@ -7,6 +7,7 @@ export * from "./capability-compatibility";
 export * from "./commands";
 export * from "./contact-directory";
 export * from "./file-provider";
+export * from "./geo";
 export * from "./geoip";
 export * from "./notification-types";
 export * from "./outgoing-mail";

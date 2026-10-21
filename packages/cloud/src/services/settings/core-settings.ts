@@ -204,6 +204,93 @@ export const CORE_SETTINGS = {
     description: "Five-field cron schedule used by all automatic cleanup jobs in app.timezone",
   },
 
+  // ── Places and addresses ──────────────────────────────────────────────
+  "geo.api_key": {
+    kind: "secret",
+    label: "Geoapify API key",
+    description: "Used only for HTTPS requests to the fixed EU endpoint.",
+    default: "",
+    presentation: {
+      translations: { de: { label: "Geoapify-Schlüssel", description: "Nur für HTTPS-Anfragen an den festen EU-Endpunkt." } },
+    },
+  },
+  "geo.plan": {
+    kind: "enum",
+    label: "Geoapify plan",
+    description: "Sets requests per second and the provider daily allowance.",
+    default: "free",
+    options: [
+      { value: "free", label: "Free" },
+      { value: "api10", label: "API 10" },
+      { value: "api25", label: "API 25" },
+      { value: "api50", label: "API 50" },
+      { value: "api100", label: "API 100" },
+      { value: "api250", label: "API 250" },
+      { value: "custom", label: "Custom" },
+    ],
+    presentation: {
+      translations: {
+        de: {
+          label: "Geoapify-Tarif",
+          description: "Bestimmt Anfragen pro Sekunde und das Tageskontingent des Anbieters.",
+          options: { custom: "Eigener" },
+        },
+      },
+    },
+  },
+  "geo.custom_rps": {
+    kind: "number",
+    label: "Custom requests per second",
+    description: "Used only with the custom plan.",
+    default: 5,
+    integer: true,
+    min: 1,
+    max: Math.floor(Number.MAX_SAFE_INTEGER / 9000),
+    presentation: { translations: { de: { label: "Eigene Anfragen pro Sekunde", description: "Gilt nur beim eigenen Tarif." } } },
+  },
+  "geo.custom_daily_credits": {
+    kind: "number",
+    label: "Custom daily provider credits",
+    description: "Provider allowance; used only with the custom plan.",
+    default: 3000,
+    integer: true,
+    min: 1,
+    max: Math.floor(Number.MAX_SAFE_INTEGER / 1000),
+    presentation: {
+      translations: { de: { label: "Eigene tägliche Anbieter-Credits", description: "Anbieterkontingent; gilt nur beim eigenen Tarif." } },
+    },
+  },
+  "geo.monthly_budget_credits": {
+    kind: "number",
+    label: "Monthly geo budget (credits)",
+    description: "Cloud-wide hard limit per calendar month in app.timezone.",
+    default: 90000,
+    integer: true,
+    min: 0,
+    max: Math.floor(Number.MAX_SAFE_INTEGER / 1000),
+    presentation: {
+      translations: { de: { label: "Monatsbudget Geo (Credits)", description: "Harte Cloud-Grenze je Kalendermonat in app.timezone." } },
+    },
+  },
+  "geo.person_daily_credits": {
+    kind: "number",
+    label: "Daily geo credits per person",
+    description: "Hard limit per access subject and local day; must not exceed the monthly budget. Agents and service accounts count too.",
+    default: 300,
+    integer: true,
+    min: 0,
+    max: Math.floor(Number.MAX_SAFE_INTEGER / 1000),
+    presentation: {
+      translations: {
+        de: {
+          label: "Tägliche Geo-Credits pro Person",
+          description:
+            "Harte Grenze je Zugriffsidentität und lokalem Tag; darf das Monatsbudget nicht überschreiten. Gilt auch für Agenten und Dienstkonten.",
+        },
+      },
+    },
+  },
+
   // ── AI ──────────────────────────────────────────────────────────────────
   "ai.enabled": {
     kind: "boolean",

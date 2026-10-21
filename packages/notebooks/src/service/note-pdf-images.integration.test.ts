@@ -33,6 +33,7 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
         markdown,
         notebookId: notebook.id,
         notebookShortId: notebook.short_id,
+        publicOrigin: "https://cloud.example.test",
         noteId: notebook.id,
         locale: "en",
         userId: null,
@@ -163,7 +164,12 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
   test("a real byte budget keeps the image prefix and marks the rest in order", async () => {
     const repeated = [ids[0]!, await insert(jpeg, "image/jpeg", "second.jpg"), await insert(jpeg, "image/jpeg", "third.jpg")];
     const markdown = repeated.map((id, n) => `![photo ${n}](attach://${id} =100x60)`).join(" ");
-    const built = buildNotePdfHtml({ markdown, notebookShortId: notebook.short_id, locale: "en" });
+    const built = buildNotePdfHtml({
+      markdown,
+      notebookShortId: notebook.short_id,
+      publicOrigin: "https://cloud.example.test",
+      locale: "en",
+    });
     const reference = await prepareNotePdfImages({
       ...built,
       notebookId: notebook.id,

@@ -133,7 +133,8 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     getGotenbergConfig.mockReset().mockResolvedValue(gotenbergConfig);
     getSetting
       .mockReset()
-      .mockImplementation((async (key: string) => (key === "notebooks.max_attachment_size_mb" ? 10 : undefined)) as never);
+      .mockImplementation((async (key: string) =>
+        key === "notebooks.max_attachment_size_mb" ? 10 : key === "app.url" ? "public.example.test:8443/app/" : undefined) as never);
   });
   afterAll(() => {
     for (const spy of [
@@ -239,6 +240,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       expect(renderPdf).toHaveBeenCalledWith(
         {
           markdown,
+          publicOrigin: "https://public.example.test:8443",
           title: "Trip plan",
           templateId: "report",
           customCss: undefined,

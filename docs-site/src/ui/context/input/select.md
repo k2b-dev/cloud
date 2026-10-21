@@ -1,7 +1,7 @@
 # Select inputs
 
-`Select`, `MultiSelectInput`, and `SelectChip` cover three different selection
-tasks. The parent owns every selected value.
+`Select`, `MultiSelectInput`, `SelectChip`, and `RichSelect` cover different
+selection tasks. The parent owns every selected value.
 
 ## Use select inputs
 
@@ -9,6 +9,7 @@ Choose from the state transition, not from the desired visual shape:
 
 | Task                                        | Component            | Value contract                 |
 | ------------------------------------------- | -------------------- | ------------------------------ |
+| Choose with explanations and optional preview | [`RichSelect`](rich-select) | one controlled value or `null` |
 | Choose one value in a form                  | `Select`             | one controlled value or `null` |
 | Type, validate, and keep one remote value   | `AutocompleteSelect` | one controlled ID or `null`    |
 | Choose several values                       | `MultiSelectInput`   | one controlled ID array        |
@@ -22,6 +23,27 @@ listbox, or radio semantics and makes alignment and keyboard behavior the
 consumer's responsibility. `Dropdown` therefore accepts only declarative
 actions and choices. See [Dropdown and ContextMenu](../actions/menus) for
 action menus.
+
+## Which dropdown when
+
+Start with the task. Add a preview only when an option has several consequences
+that change the choice and those consequences differ per option. When one line
+says the difference, there is no preview.
+
+| Component | Use it for | Preview |
+| --- | --- | --- |
+| `Select` | One form value, with static options or remote loading | No |
+| `AutocompleteSelect` | Type and validate one remote ID, keeping the chosen value | No |
+| `MultiSelectInput` | Several controlled values | No |
+| `SelectChip` | One compact toolbar value | No |
+| `FilterChip` | Filtering an existing result set | No |
+| `Combobox` | Find an item, run an action, then clear the query | No |
+| `Dropdown` | Secondary actions and links | No |
+| `RichSelect` | Mail sender: signature, visibility, copies, and replies differ | Yes |
+| `RichSelect` | Sharing level: one short line per level says the difference | No |
+
+Use [RichSelect](rich-select) for explained choices and unavailable reasons;
+do not build select rows inside an action menu.
 
 ## Import
 

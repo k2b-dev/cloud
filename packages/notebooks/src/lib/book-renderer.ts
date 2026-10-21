@@ -63,6 +63,8 @@ export type NotebookBookInput = {
    * placeholders by the service; math leaves out MathML the PDF drops.
    */
   print?: boolean;
+  /** Installation origin for links in exported PDFs; ignored by browser rendering. */
+  publicOrigin?: string;
   /** Short ID of the rendered note. In print, a link to this note stays inside the document. */
   noteId?: string;
   /** Authorized results from the service, keyed by the query's one-based source line. */
@@ -634,7 +636,15 @@ export const renderNotebookBook = (
       return "";
     },
   );
-  html = sanitizeNotebookBookHtml(html, resolveUrl);
+  // Resolve navigation only after link presentation is chosen. Gotenberg opens a
+  // local file; relative Cloud links would otherwise become file:/// URIs.
+  const resolveLink = (raw: string): string | null => {
+    const url = resolveUrl(raw);
+    return input.print && input.publicOrigin && url && !url.startsWith("#") && !/^[a-z][a-z\d+.-]*:/i.test(url)
+      ? new URL(url, input.publicOrigin).href
+      : url;
+  };
+  html = sanitizeNotebookBookHtml(html, resolveLink);
   html = html.replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathSlots[Number(index)] ?? "");
   const restoreCharts = (html: string) =>
     html.replace(new RegExp(`${prefix}CHART(\\d+)END`, "g"), (_raw, index: string) => chartSlots[Number(index)] ?? "");
@@ -644,7 +654,7 @@ export const renderNotebookBook = (
     images,
     diagnostics: [...queryResult.diagnostics, ...tocResult.diagnostics, ...chartResult.diagnostics],
     headings,
-    blocks: [...blockHtml].map(([line, html]) => ({ line, html: restoreCharts(sanitizeNotebookBookHtml(html, resolveUrl)) })),
+    blocks: [...blockHtml].map(([line, html]) => ({ line, html: restoreCharts(sanitizeNotebookBookHtml(html, resolveLink)) })),
   };
 };
 
