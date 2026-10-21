@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
 
-test("base pages default to sources", () => {
-  expect(readWorkspacePathState("/app/pulse/Base01", "Base01")).toEqual({ view: "sources", sourceId: "" });
+test("base pages default to overview while old source URLs keep working", () => {
+  expect(readWorkspacePathState("/app/pulse/Base01", "Base01")).toEqual({ view: "overview", sourceId: "" });
   expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001", "Base01")).toEqual({ view: "sources", sourceId: "Src001" });
-  expect(readWorkspacePathState("/app/pulse/Base012/dashboards", "Base01").view).toBe("sources");
+  expect(readWorkspacePathState("/app/pulse/Base012/dashboards", "Base01").view).toBe("overview");
 });
 
 test("historical view URLs share the coming-back view without looking up deleted data", () => {
@@ -97,4 +97,16 @@ test("settings tabs preserve underlying source/SQL URL state", () => {
     settings: "general",
   });
   expect(readWorkspacePathState("/app/pulse/Base01/sources?settings=bogus", "Base01")).not.toHaveProperty("settings");
+});
+
+test("overview and authorized alert references survive settings, reload and oversized SQL", () => {
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "overview" } })).toBe("/app/pulse/Base01");
+  const href = buildPulseWorkspaceHref({
+    baseId: "Base01",
+    state: { view: "sql", alertId: "Alt001", sql: "SELECT '" + "ä".repeat(5000) + "'", params: { host: "web-01" }, settings: "general" },
+  });
+  expect(href).toBe("/app/pulse/Base01/sql?settings=general&alert=Alt001");
+  expect(readWorkspacePathState(href, "Base01")).toMatchObject({ view: "sql", alertId: "Alt001", settings: "general" });
+  expect(readWorkspacePathState("/app/pulse/Base01/sql/Qry001?alert=Alt001", "Base01")).not.toHaveProperty("alertId");
+  expect(readWorkspacePathState("/app/pulse/Base01/sql?alert=%2Fbad", "Base01")).not.toHaveProperty("alertId");
 });

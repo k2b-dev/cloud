@@ -8,6 +8,16 @@ order: 100
 ---
 Pulse sammelt Metriken, Ereignisse und Zustände in Bases. Öffne eine Base, um Quellen einzurichten und eingehende Daten zu prüfen.
 
+## Lies die Übersicht
+
+Eine Base öffnet die **Übersicht**. Sie zeigt, was Aufmerksamkeit braucht, bis zu vier wichtige Zahlen und letzte Änderungen. Sie aktualisiert sich alle 60 Sekunden, solange sie sichtbar ist. **Ansehen** öffnet die SQL-Abfrage eines Alarms mit ihren Parameterwerten, ohne sie auszuführen.
+
+Aktualisierte Zahlen bleiben an ihrem Platz. Neue oder erledigte Hinweise verlängern oder verkürzen die Liste und verschieben die Abschnitte darunter. Eine fokussierte Aktion behält den Fokus, solange ihr Eintrag bestehen bleibt.
+
+Mit **Mit KI fragen** bereitest du eine Frage zu dieser Base vor. Der Assistant-Entwurf wird nicht automatisch gesendet. Unter **Neue Quelle** hilft derselbe Einstieg, einen Adapter für deinen Shop oder einen anderen Dienst vorzubereiten.
+
+Um eine wichtige Zahl hinzuzufügen, öffne die Liste gespeicherter Abfragen unter **SQL** und aktiviere **Auf Übersicht**. Dafür brauchst du Zugriff **Bearbeiten**; eine Base kann vier Abfragen anzeigen. Die letzte Ergebniszeile liefert den Wert, eine optionale Zeitspalte den Verlauf. Scheitert eine Aktualisierung, bleiben der letzte erfolgreiche Wert und sein Zeitpunkt sichtbar.
+
 ## Verbinde eine Quelle
 
 Pulse braucht einen verbundenen Datenspeicher. Wenn **Pulse ist noch nicht eingerichtet** erscheint, wende dich an die Cloud-Administration.

@@ -1,15 +1,29 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { sql } from "bun";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
-import { updateBase } from "./base-management";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { savedQueries } from "./saved-queries";
 
 suiteFor("database")("saved SQL queries", () => {
-  beforeAll(migrate);
+  let updateBase: typeof import("./base-management").updateBase;
+  let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
+  beforeAll(async () => {
+    database = await useFreshDatabase("pulse_saved_queries");
+    const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
+    await runCoreSetup();
+    await migrate("Europe/Berlin");
+    ({ updateBase } = await import("./base-management"));
+  }, 30_000);
+  afterAll(async () => {
+    if (database) {
+      await sql.close();
+      await database.drop();
+    }
+  });
   test("read grants list and get; writes require write; revisions and replay are atomic", async () => {
     const baseId = crypto.randomUUID(),
       baseRef = newShortId();
@@ -52,6 +66,12 @@ suiteFor("database")("saved SQL queries", () => {
       expect(saved.ok).toBe(true);
       if (!saved.ok) throw new Error("SAVE_FAILED");
       expect(saved.data).toMatchObject({ baseId: baseRef, revision: 1, params: input.params, createdBy: writer!.id });
+      expect(await savedQueries.save(input)).toEqual(saved);
+      // Simulate an unexpired pre-pin receipt: identical legacy hash and no new field.
+      const legacyHash = createHash("sha256")
+        .update(JSON.stringify([null, null, input.name, input.sql, input.params]))
+        .digest("hex");
+      await sql`UPDATE pulse.saved_query_operations SET input_hash=${legacyHash},response=response-'pinned' WHERE base_id=${baseId}::uuid`;
       expect(await savedQueries.save(input)).toEqual(saved);
       expect(await savedQueries.save({ ...input, name: "Changed" })).toMatchObject({ ok: false, error: { status: 409 } });
       expect(await savedQueries.get({ ...read, queryId: saved.data.id })).toEqual(saved);
@@ -126,6 +146,37 @@ suiteFor("database")("saved SQL queries", () => {
         ok: false,
         error: { code: "INPUT_TOO_LARGE" },
       });
+      const pins = await Promise.all(
+        Array.from({ length: 5 }, (_, index) =>
+          savedQueries.save({ ...identity, name: `Pinned ${index}`, sql: "SELECT 1", pinned: true, requestId: `pin-${index}` }),
+        ),
+      );
+      expect(pins.filter((result) => result.ok)).toHaveLength(4);
+      expect(pins.filter((result) => !result.ok && result.error.status === 409)).toHaveLength(1);
+      const pinned = pins.find((result) => result.ok);
+      if (!pinned?.ok) throw new Error("PIN_FAILED");
+      expect(
+        await savedQueries.save({ ...identity, queryId: pinned.data.id, expectedRevision: 1, name: pinned.data.name, sql: "SELECT 2" }),
+      ).toMatchObject({ ok: true, data: { pinned: true, revision: 2 } });
+      expect(
+        await savedQueries.save({
+          ...identity,
+          queryId: pinned.data.id,
+          expectedRevision: 2,
+          name: pinned.data.name,
+          sql: "SELECT 2",
+          pinned: false,
+        }),
+      ).toMatchObject({ ok: true, data: { pinned: false, revision: 3 } });
+      expect(await savedQueries.save({ ...identity, name: "Replacement pin", sql: "SELECT 1", pinned: true })).toMatchObject({
+        ok: true,
+        data: { pinned: true },
+      });
+      const activities = await sql<
+        { actor: { id: string }; request_id: string }[]
+      >`SELECT actor,request_id FROM pulse.base_activity WHERE base_id=${baseId}::uuid AND request_id LIKE 'pin-%'`;
+      expect(activities).toHaveLength(4);
+      expect(activities.every((row) => row.actor.id === user!.id)).toBe(true);
       expect(await savedQueries.list({ ...identity, limit: 1001 })).toMatchObject({ ok: false, error: { status: 400 } });
     } finally {
       await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;

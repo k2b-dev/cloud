@@ -1,6 +1,6 @@
 import { SQL_MAX_BYTES, SQL_MAX_PARAMETERS, SQL_PARAMETER_MAX_BYTES } from "../../sql-params";
 
-export type WorkspaceView = "sources" | "coming-back" | "sql";
+export type WorkspaceView = "overview" | "sources" | "coming-back" | "sql";
 export const PULSE_SIDEBAR_SQL_ID = "sql";
 export const PULSE_SETTINGS_TABS = ["general", "members", "retention", "usage", "danger"] as const;
 export type PulseSettingsTab = (typeof PULSE_SETTINGS_TABS)[number];
@@ -8,6 +8,7 @@ export type WorkspaceRouteState = {
   view: WorkspaceView;
   sourceId: string;
   queryId?: string;
+  alertId?: string;
   sql?: string;
   params?: Record<string, string>;
   settings?: PulseSettingsTab;
@@ -41,18 +42,20 @@ export const readConsoleParams = (raw: unknown): Record<string, string> | null =
 export const readWorkspacePathState = (path: string, baseId: string): WorkspaceRouteState => {
   const url = new URL(path, "http://pulse.invalid");
   const basePath = `/app/pulse/${encodeURIComponent(baseId)}`;
-  let state: WorkspaceRouteState = { view: "sources", sourceId: "" };
+  let state: WorkspaceRouteState = { view: "overview", sourceId: "" };
   if (!baseId || (url.pathname !== basePath && !url.pathname.startsWith(`${basePath}/`))) return state;
   const [view, id] = url.pathname.slice(basePath.length).split("/").filter(Boolean);
-  if (view === "sources") state.sourceId = decode(id ?? "");
+  if (view === "sources") state = { view: "sources", sourceId: decode(id ?? "") };
   else if (view && removedViews.has(view)) state.view = "coming-back";
   else if (view === "sql") {
     state = { view: "sql", sourceId: "", queryId: decode(id ?? ""), sql: undefined, params: {} };
-    if (!state.queryId) state.sql = "";
+    const alertId = url.searchParams.get("alert");
+    if (!state.queryId && alertId && /^[A-Za-z0-9-]{6,36}$/.test(alertId)) state.alertId = alertId;
+    if (!state.queryId && !state.alertId) state.sql = "";
     if (`${url.pathname}${url.search}`.length <= MAX_PULSE_WORKSPACE_HREF_LENGTH) {
       const sql = url.searchParams.get("sql");
       if (sql !== null && bytes(sql) <= SQL_MAX_BYTES) state.sql = sql;
-      else if (!state.queryId) state.sql = "";
+      else if (!state.queryId && !state.alertId) state.sql = "";
       try {
         state.params = readConsoleParams(JSON.parse(url.searchParams.get("params") ?? "{}")) ?? {};
       } catch {
@@ -70,15 +73,18 @@ export const buildPulseWorkspaceHref = ({ baseId, state }: WorkspaceHrefOptions)
   if (!baseId) return "/app/pulse";
   const base = `/app/pulse/${encodeURIComponent(baseId)}`;
   const path =
-    state.view === "coming-back"
-      ? `${base}/dashboards`
-      : state.view === "sql"
-        ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
-        : `${base}/sources${state.sourceId ? `/${encodeURIComponent(state.sourceId)}` : ""}`;
+    state.view === "overview"
+      ? base
+      : state.view === "coming-back"
+        ? `${base}/dashboards`
+        : state.view === "sql"
+          ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
+          : `${base}/sources${state.sourceId ? `/${encodeURIComponent(state.sourceId)}` : ""}`;
   const search = new URLSearchParams();
   if (state.settings) search.set("settings", state.settings);
+  if (state.view === "sql" && state.alertId && !state.queryId) search.set("alert", state.alertId);
   const fallback = `${path}${search.size ? `?${search}` : ""}`;
-  if (state.view === "sql") {
+  if (state.view === "sql" && !state.alertId) {
     if (state.sql !== undefined && bytes(state.sql) <= SQL_MAX_BYTES) search.set("sql", state.sql);
     else if (state.sql !== undefined) return fallback;
     const params = readConsoleParams(state.params) ?? {};
