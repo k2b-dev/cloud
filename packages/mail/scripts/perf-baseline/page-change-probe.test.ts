@@ -78,6 +78,17 @@ test("main content, island readiness and a responding trusted input are separate
     window.__cloudPerf.mounted.set(island, 1);
     tick();
     expect(window.__mailPageChange.read()?.readyAt).toBeNumber();
+    const eagerAtReady = [
+      new URL("/_ssr/version/mail.js", document.baseURI).href,
+      new URL("/_ssr/version/shared.js", document.baseURI).href,
+    ];
+    expect(window.__mailPageChange.eagerScripts()).toEqual(eagerAtReady);
+    // Bun can append modulepreload links for the first action's later dynamic imports.
+    const latePreload = document.createElement("link");
+    latePreload.rel = "modulepreload";
+    latePreload.href = "/_ssr/version/first-action-only.js";
+    document.head.append(latePreload);
+    expect(window.__mailPageChange.eagerScripts()).toEqual(eagerAtReady);
     const input = document.querySelector("input")!;
     input.value = "x";
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -92,6 +103,8 @@ test("main content, island readiness and a responding trusted input are separate
     tick();
     expect(window.__mailPageChange.read()?.firstActionAt).toBeNumber();
     expect(frames).toHaveLength(0);
+    window.__mailPageChange.stop();
+    expect(window.__mailPageChange.eagerScripts()).toEqual([latePreload.href, ...eagerAtReady]);
   } finally {
     for (const [name, descriptor] of previous)
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

@@ -61,9 +61,11 @@ export function installPageChangeProbe({ key, panel }: { key: string; panel: typ
     );
   };
   let frame: number | undefined;
+  let eagerAtReady: string[] | undefined;
   const stop = () => {
     if (frame !== undefined) cancelAnimationFrame(frame);
     frame = undefined;
+    eagerAtReady = undefined;
   };
   const tick = () => {
     frame = undefined;
@@ -83,8 +85,11 @@ export function installPageChangeProbe({ key, panel }: { key: string; panel: typ
         island &&
         window.__cloudPerf.mounted.has(island) &&
         watch.readyAt === null
-      )
+      ) {
         watch.readyAt = now();
+        // Later dynamic imports can add modulepreloads after this measurement window.
+        eagerAtReady = window.__mailPageChange.eagerScripts();
+      }
       if (watch.trustedInput && watch.firstActionAt === null) {
         const response = watch.responseSelector ? document.querySelector(watch.responseSelector) : null;
         if (response && visible(response)) watch.firstActionAt = now();
@@ -116,6 +121,7 @@ export function installPageChangeProbe({ key, panel }: { key: string; panel: typ
     stop,
     panelReady,
     eagerScripts: () => {
+      if (eagerAtReady) return eagerAtReady;
       const urls = new Set(
         [...document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src],link[rel="modulepreload"]')].map((element) =>
           element instanceof HTMLScriptElement ? element.src : element.href,
