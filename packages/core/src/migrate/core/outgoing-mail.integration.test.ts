@@ -231,13 +231,15 @@ databaseSuite()("outgoing mail migration", () => {
     await db`ALTER TABLE outgoing_mail.app_log_access DROP COLUMN level`.simple();
     await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES ('reader', 'old-source')`;
     await migrate(db);
-    expect(await db`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "metadata" }]);
+    expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "metadata" }]);
     await db`UPDATE outgoing_mail.app_log_access SET level = 'content'`;
     await migrate(db);
-    expect(await db`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "content" }]);
+    expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "content" }]);
     await expect(db`UPDATE outgoing_mail.app_log_access SET level = 'invalid'`).rejects.toThrow();
     await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES ('reader', 'old-writer')`;
-    expect(await db`SELECT level FROM outgoing_mail.app_log_access WHERE source_app_id = 'old-writer'`).toEqual([{ level: "metadata" }]);
+    expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access WHERE source_app_id = 'old-writer'`).toEqual([
+      { level: "metadata" },
+    ]);
   });
   test("log grants and immutable search functions are additive and repeatable", async () => {
     await migrate(db);
