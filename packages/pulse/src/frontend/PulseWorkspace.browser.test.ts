@@ -424,7 +424,7 @@ test("SQL usage loading and failure preserve known base facts and recover withou
       expect(await dialog.getByText("Noch nicht gemessen", { exact: true }).count()).toBe(0);
       fail = false;
       await dialog.getByRole("alert").getByRole("button").click();
-      await tab.waitForFunction(() => !document.querySelector('dialog[open] [role="alert"]'));
+      await dialog.getByText("16 KiB · 32 × 2 KiB", { exact: true }).waitFor();
       expect(await dialog.getByText("Nutzung konnte nicht geladen werden", { exact: true }).count()).toBe(0);
       expect(await dialog.locator(".k2b-skeleton").count()).toBe(0);
       await dialog.getByRole("tab", { name: "Leeren und löschen", exact: true }).click();
