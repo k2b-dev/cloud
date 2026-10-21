@@ -1485,6 +1485,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       for (const theme of ["light", "dark"]) {
         test(`phone pane head: reader Details, persistence and Back in ${theme}`, async () => {
           const page = await open(`${boxPath}?conversation=Conv01&persist-details=1&theme=${theme}`, 390, 844);
+          const releaseBack = Promise.withResolvers<void>();
           try {
             const head = page.locator(".mail-workspace > .k2b-app-workspace__head");
             const shared = page.locator(".mail-workspace [data-app-workspace-detail-toggle]");
@@ -1551,9 +1552,27 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             expect(await shared.isVisible()).toBe(true);
             expect(await shared.isDisabled()).toBe(true);
             if (shots) await page.screenshot({ path: resolve(shots, browserName, `f6-list-${theme}-390.png`) });
-            await page.goBack();
+            const backRoute = "**/api/mail/mailboxes/Box001/workspace-route?*";
+            await page.route(
+              backRoute,
+              async (route) => {
+                await releaseBack.promise;
+                await route.continue();
+              },
+              { times: 1 },
+            );
+            await Promise.all([page.waitForRequest(backRoute), page.goBack()]);
             await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
             await settled(page);
+            // History moves the URL before Mail commits its asynchronous selection.
+            // While the response is held, the still-shown list must keep its head.
+            const main = page.locator(".mail-workspace .k2b-app-workspace__main");
+            expect(await main.getAttribute("aria-busy")).toBe("true");
+            expect(await main.getAttribute("data-mobile-pane")).toBe("conversations");
+            expect(await head.isVisible()).toBe(true);
+            releaseBack.resolve();
+            await ready(page);
+            expect(await main.getAttribute("data-mobile-pane")).toBe("main");
             expect(await head.isVisible()).toBe(false);
             expect(await reader.isVisible()).toBe(true);
             await page.setViewportSize({ width: 834, height: 1194 });
@@ -1561,7 +1580,12 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             expect(await head.isVisible()).toBe(true);
             expect(await shared.isVisible()).toBe(true);
           } finally {
-            await close(page);
+            releaseBack.resolve();
+            try {
+              await page.unrouteAll({ behavior: "wait" });
+            } finally {
+              await close(page);
+            }
           }
         });
       }
