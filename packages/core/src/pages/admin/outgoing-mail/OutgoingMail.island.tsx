@@ -18,6 +18,7 @@ import {
   panelDialogOptions,
   prompts,
   SegmentedControl,
+  Select,
   StatusBadge,
   Switch,
   TextInput,
@@ -85,7 +86,14 @@ const accessLabel = (app: AdminMailApp, profiles: readonly AdminMailProfile[], t
 /** Names the other apps whose send log this app may read; its own mail is always readable. */
 const logLabel = (app: AdminMailApp, apps: readonly AdminMailApp[], t: Messages): string =>
   app.logApps.length
-    ? t.logAlso({ names: app.logApps.map((id) => apps.find((entry) => entry.appId === id)?.name ?? id).join(", ") })
+    ? t.logAlso({
+        names: app.logApps
+          .map(
+            (id) =>
+              `${apps.find((entry) => entry.appId === id)?.name ?? id} (${app.logContentApps?.includes(id) ? t.logContent : t.logMetadata})`,
+          )
+          .join(", "),
+      })
     : t.logOwnOnly;
 
 type BounceError = NonNullable<NonNullable<AdminMailProfile["bounces"]>["error"]>;
@@ -658,10 +666,11 @@ export function AccessDialog(props: { app: AdminMailApp; profiles: readonly Admi
   );
 }
 
-/** Exported for the layout test: toggling apps never changes the dialog's height. */
+/** Exported for the layout test: changing access levels keeps the dialog height. */
 export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly AdminMailApp[]; close: () => void; onSaved: () => void }) {
   const t = messages();
   const [selected, setSelected] = createSignal<string[]>(props.app.logApps);
+  const [content, setContent] = createSignal<string[]>(props.app.logContentApps ?? []);
   // Core's system email is never readable by apps; grants for apps that went offline stay visible.
   const candidates = () =>
     [
@@ -673,7 +682,7 @@ export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly Admin
   const save = mutation.create({
     mutation: async (_: void, { abortSignal }) => {
       const response = await api.apps[":appId"]["log-access"].$put(
-        { param: { appId: props.app.appId }, json: { apps: selected() } },
+        { param: { appId: props.app.appId }, json: { apps: selected(), contentApps: content() } },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw await failure(response, t().logAccessFailed, t());
@@ -684,8 +693,10 @@ export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly Admin
     },
   });
   onCleanup(() => save.abort());
-  const toggle = (appId: string, checked: boolean) =>
-    setSelected((current) => (checked ? [...new Set([...current, appId])] : current.filter((entry) => entry !== appId)));
+  const choose = (appId: string, level: string) => {
+    setSelected((current) => (level === "none" ? current.filter((id) => id !== appId) : [...new Set([...current, appId])]));
+    setContent((current) => (level === "content" ? [...new Set([...current, appId])] : current.filter((id) => id !== appId)));
+  };
   return (
     <form
       class="flex flex-col gap-4"
@@ -702,12 +713,16 @@ export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly Admin
         <div class="flex flex-col gap-2" role="group" aria-label={t().apps}>
           <For each={candidates()}>
             {(app) => (
-              <CheckboxCard
-                variant="input"
+              <Select
                 label={app.name}
                 description={app.registered ? app.appId : `${app.appId} · ${t().notRegistered}`}
-                value={selected().includes(app.appId)}
-                onValueChange={(checked) => toggle(app.appId, checked)}
+                value={content().includes(app.appId) ? "content" : selected().includes(app.appId) ? "metadata" : "none"}
+                onValueChange={(level) => choose(app.appId, level ?? "none")}
+                options={[
+                  { value: "none", label: t().logNoAccess },
+                  { value: "metadata", label: t().logMetadata },
+                  { value: "content", label: t().logContent },
+                ]}
                 disabled={save.loading()}
               />
             )}

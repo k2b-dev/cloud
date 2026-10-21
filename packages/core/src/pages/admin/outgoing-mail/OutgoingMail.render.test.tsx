@@ -137,12 +137,12 @@ test("shows profiles, the default, and each app's effective access in English an
 
 test("shows whose sent mail each app may read, on the page and in its dialog", () => {
   const en = render("en", state);
-  expect(en).toContain("Own mail and Files");
+  expect(en).toContain("Own mail and Files (Metadata)");
   expect(en).toContain("Requests send log access");
   expect(en).toContain("Own mail only");
   expect(en).toContain("Does not request send log access");
   const de = render("de", state);
-  expect(de).toContain("Eigene Mails und Files");
+  expect(de).toContain("Eigene Mails und Files (Metadaten)");
   expect(de).toContain("Fordert keine Einsicht ins Sendeprotokoll an");
 
   const dialog = (locale: string, appId: string) =>
@@ -159,6 +159,9 @@ test("shows whose sent mail each app may read, on the page and in its dialog", (
   // Core's system email is never offered, and an app does not need a grant for its own mail.
   expect(invoices).not.toContain(">Core<");
   expect(invoices).not.toContain(">Invoices<");
+  expect(invoices).toContain("Metadata");
+  expect(invoices).toContain("Content");
+  expect(invoices).toContain("No access");
   expect(invoices).toContain(">Files<");
   expect(invoices).toContain("legacy · Not registered");
   expect(invoices).not.toContain("does not request send log access");
@@ -170,6 +173,16 @@ test("shows whose sent mail each app may read, on the page and in its dialog", (
     "Empfänger, Betreff, Status, Zustellfehler, wer sie gesendet hat, Datensatzverweise und Anhangsnamen, aber nicht den Text",
   );
   expect(dialog("de", "files")).toContain("liest daher unabhängig von dieser Auswahl nur ihre eigenen Mails");
+});
+
+test("content grants are labelled separately, while missing old-server fields remain metadata", () => {
+  const content = {
+    ...state,
+    apps: { ...state.apps, items: state.apps.items.map((app) => (app.appId === "invoices" ? { ...app, logContentApps: ["files"] } : app)) },
+  };
+  expect(render("en", content)).toContain("Own mail and Files (Content)");
+  expect(render("de", content)).toContain("Eigene Mails und Files (Inhalt)");
+  expect(render("en", state)).toContain("Own mail and Files (Metadata)");
 });
 
 test("lists apps that request mail before the others", () => {

@@ -226,13 +226,26 @@ databaseSuite()("outgoing mail migration", () => {
       >`SELECT imap_port, imap_uid_validity::text AS validity, imap_last_uid::text AS uid FROM outgoing_mail.profiles`,
     ).toEqual([{ imap_port: 993, validity: "4294967295", uid: "4294967295" }]);
   });
+  test("content levels upgrade old rows as metadata and survive repeated migration", async () => {
+    await migrate(db);
+    await db`ALTER TABLE outgoing_mail.app_log_access DROP COLUMN level`.simple();
+    await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES ('reader', 'old-source')`;
+    await migrate(db);
+    expect(await db`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "metadata" }]);
+    await db`UPDATE outgoing_mail.app_log_access SET level = 'content'`;
+    await migrate(db);
+    expect(await db`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "content" }]);
+    await expect(db`UPDATE outgoing_mail.app_log_access SET level = 'invalid'`).rejects.toThrow();
+    await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES ('reader', 'old-writer')`;
+    expect(await db`SELECT level FROM outgoing_mail.app_log_access WHERE source_app_id = 'old-writer'`).toEqual([{ level: "metadata" }]);
+  });
   test("log grants and immutable search functions are additive and repeatable", async () => {
     await migrate(db);
     await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id, created_by)
       VALUES ('reader', 'source', 'admin')`;
     await Promise.all([migrate(db), migrate(db)]);
-    expect(await db<Record<string, unknown>[]>`SELECT app_id, source_app_id, created_by FROM outgoing_mail.app_log_access`).toEqual([
-      { app_id: "reader", source_app_id: "source", created_by: "admin" },
+    expect(await db<Record<string, unknown>[]>`SELECT app_id, source_app_id, created_by, level FROM outgoing_mail.app_log_access`).toEqual([
+      { app_id: "reader", source_app_id: "source", created_by: "admin", level: "metadata" },
     ]);
     // Setup leaves the search indexes to the background build, so Core starts without waiting for them.
     expect(await searchIndexes()).toEqual([]);

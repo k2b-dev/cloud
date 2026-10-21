@@ -227,6 +227,8 @@ export type { WebVitalsOverview, WebVitalsQuery, WebVitalMetric, WebVitalName } 
 
 export { mail } from "./outgoing-mail";
 export type {
+  MailContent,
+  MailContentContext,
   MailProfile,
   MailAttachment,
   MailMessage,
