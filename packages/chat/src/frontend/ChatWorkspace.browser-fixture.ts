@@ -50,6 +50,27 @@ type Subscription = { socket: ServerWebSocket<unknown>; id: string; channel: str
 /** Midday in Berlin keeps even the longest seeded history on one fixed calendar day. */
 export const chatTestNow = new Date("2026-10-14T10:00:00.000Z");
 
+/**
+ * Starts the page's wall clock at the harness clock and lets it flow from there; each new document starts again at that
+ * instant. Only `Date` changes: Playwright's `clock` also replaces timers, animation frames, and `performance`, and
+ * WebKit then stops reporting reads in the read-state tests.
+ */
+export const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name: "Robin Example" };
 export const nora: Person = { id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" };
 export const tobias: Person = { id: "33333333-3333-4333-8333-333333333333", name: "Tobias Brandt" };
@@ -111,7 +132,7 @@ const messageId = (chat: string, seq: number) => `${chat}${String(seq).padStart(
  * the live socket. Tests add messages from others with `receive`, which the server stores and delivers live like
  * the chat app does, and make the next sends fail with `failSends`.
  */
-export const startChatHarness = async () => {
+export const startChatHarness = async (options: { renderPage?: (request: Request) => Promise<Response> } = {}) => {
   const started = performance.now();
   const now = () => new Date(chatTestNow.getTime() + (performance.now() - started));
   const [harness, css, fontAssets] = await Promise.all([
@@ -670,6 +691,7 @@ export const startChatHarness = async () => {
         }
       }
       if (url.pathname.startsWith("/api/")) return Response.json({ message: "Not part of this harness" }, { status: 404 });
+      if (options.renderPage) return options.renderPage(request);
       const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
       return new Response(
         `<!doctype html><html class="${theme}" style="--app-accent:#7c3aed"><head><meta charset="utf-8">` +

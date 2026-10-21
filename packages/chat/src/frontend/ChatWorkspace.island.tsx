@@ -580,7 +580,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main scroll={false} aria-busy={busy()}>
+        <AppWorkspace.Main class="chat-workspace__main" scroll={false} aria-busy={busy()}>
           <Switch>
             <Match when={openChat()?.id}>
               {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}

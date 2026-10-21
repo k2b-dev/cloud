@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A fixed screen trapped in an ancestor stacking context | A phone screen has a higher z-index than shell navigation, but its positioned ancestor stacks below that navigation, so the shell intercepts touches. | Test: Chat `ChatWorkspace.shell.browser.test.ts` renders the real Cloud Layout and checks unforced phone touch, focus and acknowledged send, desktop keyboard send, resize and return navigation in Chromium and WebKit ([#1676](https://github.com/k2b-dev/cloud/issues/1676)). |
 | Shared interaction behavior implemented for only some consumers | Resize handles differ in cue, keyboard behavior, or reset depending on the region. | Tests: UI `resize-cue.browser.test.ts` covers every workspace edge and standalone separator; separator, workspace controller, and Cloud panel behavior tests cover reset callbacks and saved-size removal. |
 | Unread fetch error bodies | A reader returns its fallback after response headers but leaves the unused body open, keeping a browser request pending. | Tests: Cloud `app-badges.behavior.test.tsx` covers cleanup rejection, absent bodies, aborts and disposal; `app-badges.browser.test.ts` checks real finite and streaming error responses, terminal network events and server disconnects through `watchAppBadges`. |
 | Incomplete stored-state fixtures | A direct SQL fixture omits one of the fields that domain writers persist together, creating a state that normal writes cannot produce. | Test: `yjs-snapshot-projections.integration.test.ts` checks the persisted cursor and its matching sequence before publishing in both initialization cases, then asserts that the real snapshot save succeeds ([#1651](https://github.com/k2b-dev/cloud/pull/1651)). |
@@ -861,6 +862,13 @@ convention still needs a check or a test.
 - **Root cause:** The renderer kept Cloud URLs relative, and Gotenberg resolved them against its local HTML file.
 - **Error class:** Relative navigation URLs crossing from a web page into an offline document.
 - **Guard:** Notebooks `note-pdf.integration.test.ts` inspects actual PDF URI annotations for the configured public origin and rejects `file://`; renderer tests preserve browser URLs, escaping, and internal anchors, and the API test checks the configured origin passed to export.
+
+### Chat’s phone composer was covered by the shell tab bar
+
+- **What happened:** The Cloud Chat tab intercepted taps on the phone conversation composer at 390 × 844 in the nightly WebKit smoke ([#1676](https://github.com/k2b-dev/cloud/issues/1676)).
+- **Root cause:** The fixed conversation’s z-index of 25 was trapped inside AppWorkspace.Main’s positioned stacking context at 1, below the sibling shell tab bar at 10. The application-only browser fixture omitted that shell boundary.
+- **Error class:** A fixed screen trapped in an ancestor stacking context.
+- **Guard:** Chat removes its Main stacking context only while the phone conversation is open. The full-shell browser test uses the actual Layout and verifies normal touch, focus and acknowledged send, first client header/composer geometry, desktop keyboard send, resize, info layering and return to the list in both engines; the original code fails at the normal textarea tap in each engine.
 
 ## Add a lesson
 
