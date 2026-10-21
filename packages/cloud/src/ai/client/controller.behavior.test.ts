@@ -232,6 +232,132 @@ describe("AI controller draft submission", () => {
       dispose();
     });
 
+  test.skipIf(isServer)("keeps the confirmed submission revision after a lost response and only reconciles its own message", async () => {
+    const current = conversation("own-chat");
+    let reads = 0;
+    let posts = 0;
+    let saves = 0;
+    let accepted = false;
+    let failRefresh = false;
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path.endsWith("/draft")) {
+          saves++;
+          return Response.json({ content: [{ type: "text", text: "One submission" }], revision: 7, updatedAt: null });
+        }
+        if (path.endsWith("/turns")) {
+          posts++;
+          throw new Error("response lost after commit");
+        }
+        if (path.endsWith("/timeline")) return Response.json([]);
+        if (path.endsWith("/submission/7")) return Response.json({ submission: accepted ? { messageId: "saved", turnId: "turn1" } : null });
+        if (path.endsWith("/own-chat")) {
+          reads++;
+          if (failRefresh) throw new Error("Refresh unavailable");
+          return Response.json({
+            conversation: { ...current, draft: { content: [], revision: 8, updatedAt: null } },
+            messages: [
+              {
+                id: "saved",
+                shortId: "saved",
+                conversationId: current.id,
+                seq: 1,
+                kind: "message",
+                message: { role: "user", content: [{ type: "text", text: "One submission" }] },
+                meta: { submittedDraftRevision: accepted ? 7 : 6 },
+              },
+            ],
+            activeTurn: null,
+          });
+        }
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+        streamTransport: { subscribe: () => ({ close() {} }) },
+      });
+    });
+    try {
+      expect(await controller.send({ message: "One submission", expectedDraftRevision: 0 })).toBe(false);
+      expect(controller.uncertainSubmissions()).toEqual({ "own-chat": 7 });
+      expect(await controller.send({ message: "One submission" })).toBe(false);
+      expect(await controller.saveDraft({ message: "Do not overwrite" })).toBeNull();
+      expect(await controller.reconcileSubmission(current.id)).toBe("unknown");
+      expect(controller.uncertainSubmissions()).toEqual({ "own-chat": 7 });
+      accepted = true;
+      failRefresh = true;
+      expect(await controller.reconcileSubmission(current.id)).toBe("unknown");
+      expect(controller.uncertainSubmissions()).toEqual({ "own-chat": 7 });
+      expect(await controller.saveDraft({ message: "Still locked" })).toBeNull();
+      failRefresh = false;
+      expect(await controller.reconcileSubmission(current.id)).toBe("accepted");
+      expect(controller.uncertainSubmissions()).toEqual({});
+      expect(posts).toBe(1);
+      expect(saves).toBe(1);
+      expect(reads).toBeGreaterThan(0);
+    } finally {
+      dispose();
+    }
+  });
+
+  test.skipIf(isServer)("explicit recovery retries only the frozen submission without another draft save", async () => {
+    const current = conversation("retry-chat");
+    const bodies: string[] = [];
+    let saves = 0;
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path.endsWith("/draft")) {
+          saves++;
+          return Response.json({ content: [{ type: "text", text: "Only once" }], revision: 9, updatedAt: null });
+        }
+        if (path.endsWith("/turns")) {
+          bodies.push(String(init?.body));
+          if (bodies.length === 1) throw new Error("network disconnected before acceptance");
+          return Response.json({ message: { id: "saved" }, turn: { id: "turn1" } });
+        }
+        if (path.includes("/submission/")) return Response.json({ submission: null });
+        if (path.endsWith("/retry-chat"))
+          return Response.json({
+            conversation: { ...current, draft: { content: [], revision: 10, updatedAt: null } },
+            messages: [],
+            activeTurn: null,
+          });
+        return Response.json([]);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+        streamTransport: { subscribe: () => ({ close() {} }) },
+      });
+    });
+    try {
+      expect(await controller.send({ message: "Only once", modelProfileId: "chosen", expectedDraftRevision: 0 })).toBe(false);
+      expect(await controller.retrySubmission(current.id)).toBe("accepted");
+      expect(bodies).toHaveLength(2);
+      expect(bodies[1]).toBe(bodies[0]);
+      expect(JSON.parse(bodies[1]!)).toEqual({ draftRevision: 9, modelProfileId: "chosen" });
+      expect(saves).toBe(1);
+      expect(controller.uncertainSubmissions()).toEqual({});
+    } finally {
+      dispose();
+    }
+  });
+
   test("submits a Cloud resource without leaking the draft discriminator into its marker", async () => {
     let savedContent: AiConversation["draft"]["content"] = [];
     globalThis.fetch = Object.assign(

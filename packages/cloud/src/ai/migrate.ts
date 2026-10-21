@@ -2668,6 +2668,8 @@ export const migrateCloudAi = async (): Promise<void> => {
     );
   }
   await backfillApprovalRequests();
+  await sql`CREATE INDEX IF NOT EXISTS idx_ai_messages_submitted_draft
+    ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();
   console.log("  ✓ ai conversation tables");
 };
 

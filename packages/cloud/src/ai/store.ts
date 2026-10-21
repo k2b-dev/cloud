@@ -1322,11 +1322,28 @@ export const saveAiDraftInTransaction = async (
 
 export class AiConversationCreationError extends Error {
   constructor(readonly reason: "conflict" | "unavailable") {
-    super(reason === "conflict" ? "This creation request was already used with different input." : "The conversation from this request is no longer available.");
+    super(
+      reason === "conflict"
+        ? "This creation request was already used with different input."
+        : "The conversation from this request is no longer available.",
+    );
   }
 }
 
 export const aiConversations: AiConversationService = {
+  getDraftSubmission: async ({ conversationId, ownerUserId, revision }) => {
+    const [row] = await sql<{ message_id: string; turn_id: string | null }[]>`
+      SELECT message.short_id AS message_id, turn.short_id AS turn_id
+      FROM ai.messages message
+      JOIN ai.conversations conversation ON conversation.id = message.conversation_id
+      LEFT JOIN ai.turns turn ON turn.id::text = message.loop_id AND turn.conversation_id = conversation.id
+      WHERE conversation.id = ${conversationId}::uuid AND conversation.created_by_user_id = ${ownerUserId}::uuid
+        AND conversation.archived_at IS NULL AND message.role = 'user'
+        AND message.meta->>'submittedDraftRevision' = ${String(revision)}
+      LIMIT 1
+    `;
+    return row ? { messageId: row.message_id, turnId: row.turn_id } : null;
+  },
   createConversation: async (input) => {
     const normalized = {
       title: input.title?.trim() || "New chat",
@@ -1338,7 +1355,10 @@ export const aiConversations: AiConversationService = {
       launchedByAppId: input.launchedByAppId?.trim() || null,
     };
     const insert = async (db: SQL) => {
-      const rows = await withAiShortIdForDb(db, "idx_ai_conversations_short_id", (attempt, shortId) => attempt<ConversationRow[]>`
+      const rows = await withAiShortIdForDb(
+        db,
+        "idx_ai_conversations_short_id",
+        (attempt, shortId) => attempt<ConversationRow[]>`
       INSERT INTO ai.conversations (
         short_id,
         title,
@@ -1367,7 +1387,8 @@ export const aiConversations: AiConversationService = {
       WHERE ${input.projectId ?? null}::uuid IS NULL
          OR EXISTS (SELECT 1 FROM ai.projects project WHERE project.id = ${input.projectId ?? null}::uuid)
       RETURNING *
-      `);
+      `,
+      );
       if (!rows[0]) throw new Error("Project does not exist.");
       return rowToConversation(rows[0]);
     };

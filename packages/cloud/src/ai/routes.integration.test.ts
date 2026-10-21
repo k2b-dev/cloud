@@ -73,9 +73,12 @@ suite("global AI conversation boundaries", () => {
     const token = await createTestSession(userId);
     const otherToken = await createTestSession(otherId);
     const requestId = crypto.randomUUID();
-    const post = (body: unknown, auth = token) => aiRoutes.request("/conversations", {
-      method: "POST", headers: { Authorization: `Bearer ${auth}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
-    });
+    const post = (body: unknown, auth = token) =>
+      aiRoutes.request("/conversations", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${auth}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
     try {
       const body = { requestId, title: "Panel draft" };
       const first = await post(body);
@@ -95,6 +98,62 @@ suite("global AI conversation boundaries", () => {
     } finally {
       await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${userId}::uuid, ${otherId}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherId}::uuid)`;
+    }
+  });
+
+  test("lost submission response and concurrent same-revision retries accept one turn, including compacted lookup", async () => {
+    const userId = await insertUser();
+    const stranger = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, draft: [{ type: "text", text: "Send once" }] });
+    const token = await createTestSession(userId);
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    let arrived = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Deterministic model/worker seam; admission and draft consumption are the actual store transaction.
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (input) => {
+      arrived++;
+      if (arrived === 2) release();
+      await gate;
+      const accepted = await aiConversations.submitChatTurn({
+        conversationId: input.conversationId,
+        modelProfileId: "fixture-model",
+        runConfig: { kind: "chat", input: "Send once", toolSource: { kind: "none" } },
+        userMessage: input.userMessage,
+        expectedDraftRevision: input.expectedDraftRevision,
+        expectedProjectId: input.expectedProjectId,
+      });
+      expect(accepted.message.meta?.submittedDraftRevision).toBe(chat.draft.revision);
+      throw new Error("Response lost after durable acceptance");
+    });
+    const post = () =>
+      aiRoutes.request(`/conversations/${chat.shortId}/turns`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ draftRevision: chat.draft.revision, modelProfileId: "fixture-model" }),
+      });
+    try {
+      await Promise.all([post(), post()]);
+      const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.turns WHERE conversation_id = ${chat.id}::uuid`;
+      expect(count!.count).toBe(1);
+      await sql`UPDATE ai.messages SET compacted_at = '2026-10-21T20:00:00Z' WHERE conversation_id = ${chat.id}::uuid`;
+      const path = `/conversations/${chat.shortId}/submission/${chat.draft.revision}`;
+      const found = await aiRoutes.request(path, { headers });
+      expect(found.status).toBe(200);
+      expect((await found.json()).submission).toMatchObject({ messageId: expect.any(String), turnId: expect.any(String) });
+      expect((await post()).status).toBe(409);
+      expect(submit).toHaveBeenCalledTimes(2);
+      const denied = await aiRoutes.request(path, { headers: { Authorization: `Bearer ${await createTestSession(stranger)}` } });
+      expect(denied.status).toBe(404);
+      const missing = await aiRoutes.request(`/conversations/${chat.shortId}/submission/100`, { headers });
+      expect(await missing.json()).toEqual({ submission: null });
+    } finally {
+      release();
+      submit.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${stranger}::uuid)`;
     }
   });
 
