@@ -133,11 +133,11 @@ export default function SqlConsoleView(props: {
   );
   const Diagnosis = (props: { band: SqlStatusBand }) => (
     <div class="flex max-w-[680px] flex-col items-start gap-1.5 py-2.5 text-sm [overflow-wrap:anywhere]">
-      <h2 class="text-base font-semibold" style={{ color: toneColor(props.band.kind) }}>
-        {props.band.title ?? props.band.message}
+      <h2 class="text-base font-semibold" style={{ color: toneColor(props.band.diagnosis?.kind ?? props.band.kind) }}>
+        {props.band.diagnosis?.title ?? props.band.title ?? props.band.message}
       </h2>
-      <Show when={props.band.title && props.band.message !== props.band.title}>
-        <p class="text-secondary">{props.band.message}</p>
+      <Show when={props.band.diagnosis || (props.band.title && props.band.message !== props.band.title)}>
+        <p class="text-secondary">{props.band.diagnosis?.message ?? props.band.message}</p>
       </Show>
       <Show when={props.band.action}>
         <div class="mt-1.5 flex flex-wrap gap-2">
@@ -386,9 +386,6 @@ export default function SqlConsoleView(props: {
           </p>
           <div
             data-sql-region="status"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
             data-tone={band().kind}
             class="mt-1 mb-1.5 flex h-10 items-center gap-2.5 text-[13px] text-dimmed @max-[760px]/k2b-app-area:h-[52px]"
           >
@@ -401,42 +398,54 @@ export default function SqlConsoleView(props: {
               aria-label={t().sqlConsole}
               class="max-h-full min-h-0 min-w-0 flex-1 overflow-auto [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--k2b-focus-ring)"
             >
-              <strong class="font-semibold" style={{ color: toneColor(band().kind) }}>
-                {band().kind === "ok" && displayedResult()
-                  ? t().sqlResultRows({ count: displayedResult()!.rowCount, formatted: formatCount(displayedResult()!.rowCount) })
-                  : c.state().kind === "empty" && band().kind === "neutral"
-                    ? t().sqlReady
-                    : (band().title ?? band().message)}
-              </strong>
-              <Show
-                when={band().kind === "ok" && displayedResult()}
-                fallback={
-                  <Show when={band().title && band().message !== band().title}>
-                    <span>
-                      {" · "}
-                      {band().message}
-                    </span>
-                  </Show>
-                }
-              >
-                <span>
+              <span role="status" aria-live="polite" aria-atomic="true">
+                <strong class="font-semibold" style={{ color: toneColor(band().kind) }}>
+                  {band().kind === "ok" && displayedResult()
+                    ? t().sqlResultRows({ count: displayedResult()!.rowCount, formatted: formatCount(displayedResult()!.rowCount) })
+                    : c.state().kind === "empty" && band().kind === "neutral"
+                      ? t().sqlReady
+                      : (band().title ?? band().message)}
+                </strong>
+                <Show
+                  when={band().kind === "ok" && displayedResult()}
+                  fallback={
+                    <Show when={band().title && band().message !== band().title}>
+                      <span>
+                        {" · "}
+                        {band().message}
+                      </span>
+                    </Show>
+                  }
+                >
+                  <span>
+                    {" · "}
+                    {t().sqlResultStats({
+                      elapsed: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(displayedResult()!.stats.elapsedMs),
+                      read: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(
+                        displayedResult()!.stats.readBytes / 1024 ** 2,
+                      ),
+                    })}
+                  </span>
+                </Show>
+                <Show when={c.state().kind === "empty" && band().kind === "neutral"}>
+                  <span>
+                    {" · "}
+                    {t().sqlEmptyDetail}
+                  </span>
+                </Show>
+                <Show when={missing() && band().action?.kind !== "focus-parameter"}>
+                  <span class="block text-(--k2b-danger-text)">
+                    {t().sqlParameterMissing}
+                    {" · "}
+                    {t().sqlMissingParameter({ name: missing()!.name })}
+                  </span>
+                </Show>
+              </span>
+              <Show when={running()}>
+                <span role="timer" aria-live="off">
                   {" · "}
-                  {t().sqlResultStats({
-                    elapsed: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(displayedResult()!.stats.elapsedMs),
-                    read: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(
-                      displayedResult()!.stats.readBytes / 1024 ** 2,
-                    ),
-                  })}
+                  {c.runningElapsedText()}
                 </span>
-              </Show>
-              <Show when={c.state().kind === "empty" && band().kind === "neutral"}>
-                <span>
-                  {" · "}
-                  {t().sqlEmptyDetail}
-                </span>
-              </Show>
-              <Show when={missing() && missing()?.message !== band().message}>
-                <span class="block text-(--k2b-danger-text)">{missing()?.message}</span>
               </Show>
             </div>
           </div>
@@ -473,12 +482,13 @@ export default function SqlConsoleView(props: {
               </div>
             </Show>
             <div class="flex max-w-[680px] flex-col items-start gap-1.5 py-2.5 text-sm [overflow-wrap:anywhere]" hidden={!missing()}>
-              <h2 class="text-base font-semibold text-(--k2b-danger-text)">{t().sqlParameterMissing}</h2>
+              <h2 class="text-base font-semibold text-(--k2b-danger-text)">{t().sqlNotStarted}</h2>
               <p id={missingErrorId} class="text-secondary">
                 {missing()?.message}
               </p>
               <div class="mt-1.5 flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => focusParameter(missing()?.name ?? "")}>
+                <Button variant="subtle" size="sm" onClick={() => focusParameter(missing()?.name ?? "")}>
+                  <i class="ti ti-forms" aria-hidden="true" />
                   {t().sqlParameterFocus}
                 </Button>
               </div>
@@ -588,6 +598,9 @@ export default function SqlConsoleView(props: {
                     onLoadMore={() => setVisibleRows((count) => count + 100)}
                     scrollClass="max-h-[326px]"
                   />
+                  <Show when={result().truncated}>
+                    <p class="mt-2 text-xs text-dimmed">{t().sqlTableCut({ rows: formatCount(result().rowCount) })}</p>
+                  </Show>
                 </>
               )}
             </Show>

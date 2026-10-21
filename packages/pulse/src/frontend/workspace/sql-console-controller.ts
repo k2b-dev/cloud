@@ -28,8 +28,9 @@ export type SqlRunState =
 export type SqlStatusBand = {
   kind: "neutral" | "running" | "ok" | "warning" | "error";
   message: string;
-  /** Optional presentation heading; message remains the complete localized diagnosis. */
+  /** Short status heading; an optional diagnosis supplies the full recovery explanation. */
   title?: string;
+  diagnosis?: { title: string; message: string; kind?: "error" };
   action?: {
     kind:
       | "retry"
@@ -152,6 +153,8 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
   };
   let disposed = false;
   let activeRun: { id: string; abort: AbortController } | null = null;
+  const [elapsedSeconds, setElapsedSeconds] = createSignal(0);
+  let stopRunTimer: (() => void) | undefined;
   let stopQuotaTimer: (() => void) | undefined;
   const lifetime = new AbortController();
   let limitsVersion = 0;
@@ -245,6 +248,14 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     ++limitsVersion; // An older GET must never replace the newer run's quota snapshot.
     setLimitsLoading(false);
     setState({ kind: "running", runId: id });
+    const startedAt = clock.now();
+    setElapsedSeconds(0);
+    const tick = () => {
+      if (disposed || activeRun?.id !== id) return;
+      setElapsedSeconds(Math.max(0, Math.floor((clock.now() - startedAt) / 1000)));
+      stopRunTimer = clock.schedule(tick, 1000);
+    };
+    stopRunTimer = clock.schedule(tick, 1000);
     try {
       const result = await client.run(options.base.id, { ...input, runId: id }, abort.signal);
       if (disposed || activeRun?.id !== id) return;
@@ -262,7 +273,11 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
       }
       setState(editAtRun === contentVersion ? { kind: "error", ...failure } : { kind: sql().trim() ? "ready" : "empty" });
     } finally {
-      if (activeRun?.id === id) activeRun = null;
+      if (activeRun?.id === id) {
+        stopRunTimer?.();
+        stopRunTimer = undefined;
+        activeRun = null;
+      }
     }
   };
   const cancel = async () => {
@@ -271,6 +286,8 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     // Start cancellation with its own signal before aborting the response stream.
     const cancellation = client.cancel(options.base.id, running.id, lifetime.signal);
     activeRun = null;
+    stopRunTimer?.();
+    stopRunTimer = undefined;
     running.abort.abort();
     setState({ kind: "error", code: "CANCELLED", details: {} });
     try {
@@ -437,7 +454,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
   const missingParameter = () => {
     const current = state();
     if (current.kind !== "error" || !current.details.parameterName) return null;
-    return { name: current.details.parameterName, message: t().sqlMissingParameter({ name: current.details.parameterName }) };
+    return { name: current.details.parameterName, message: t().sqlMissingHelp({ name: current.details.parameterName }) };
   };
   const assistantBand = (): SqlStatusBand | null => {
     const messages = t();
@@ -445,7 +462,9 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     if (assistantState() === "failed")
       return {
         kind: "error",
-        message: messages.sqlAssistantFailed,
+        title: messages.sqlAssistantFailureTitle,
+        message: messages.sqlAssistantUnchanged,
+        diagnosis: { title: messages.sqlAssistantFailureTitle, message: messages.sqlAssistantHelp },
         action: { kind: "retry-assistant", label: messages.sqlRetry, run: launchAssistant },
       };
     return null;
@@ -487,6 +506,10 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
             new Date(quotaResetAt()!),
           ),
         })}${limitsError() ? ` · ${messages.sqlUsageRefreshFailed}` : ""}`,
+        diagnosis: {
+          title: messages.sqlQuota,
+          message: `${messages.sqlQuotaReset({ resetAt: new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" }).format(new Date(quotaResetAt()!)) })}. ${messages.sqlQuotaHelp}${limitsError() ? ` ${messages.sqlUsageRefreshFailed}` : ""}`,
+        },
         action: limitsError() ? { kind: "retry-limits", label: messages.sqlRetry, run: refreshLimits } : undefined,
       };
     return null;
@@ -504,13 +527,53 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
         MEMORY_LIMIT: messages.sqlMemoryLimit,
         RESULT_TOO_LARGE: messages.sqlResultTooLarge,
         INPUT_TOO_LARGE: `${messages.sqlInputTooLarge} · ${inputBytes()} · ${messages.sqlInputParameters({ used: number(parameterNames().length, 0), max: number(SQL_MAX_PARAMETERS, 0) })}`,
-        PARAMETER_MISSING: missingParameter()?.message ?? messages.sqlMissingParameter({ name: detail.parameterName ?? "" }),
+        PARAMETER_MISSING: messages.sqlMissingParameter({ name: detail.parameterName ?? "" }),
         BUSY: messages.sqlBusy,
         QUEUE_FULL: messages.sqlQueueFull,
         QUOTA: messages.sqlQuota,
         STORE_UNAVAILABLE: messages.sqlStoreUnavailable,
         NO_READ_ACCESS: messages.sqlNoReadAccess,
         CANCELLED: messages.sqlCancelled,
+      };
+      const value = limits();
+      const profile = value
+        ? baseStoreMessages.resolve([locale()]).t[
+            ({ small: "profileSmall", normal: "profileNormal", large: "profileLarge" } as const)[value.profile]
+          ]
+        : "";
+      const time = value ? messages.sqlProfileTime({ profile, seconds: number(value.timeSeconds) }) : "";
+      const memory = value ? messages.sqlProfileMemory({ profile, memory: number(value.memoryBytes / 1e9) }) : "";
+      const presentations: Record<string, { title: string; message: string; diagnosis: NonNullable<SqlStatusBand["diagnosis"]> }> = {
+        TIME_LIMIT: {
+          title: messages.sqlTimeLimit,
+          message: time || messages.sqlTimeLimit,
+          diagnosis: { title: messages.sqlTimeLimit, message: [time, messages.sqlTimeHelp].filter(Boolean).join(". ") },
+        },
+        MEMORY_LIMIT: {
+          title: messages.sqlMemoryTitle,
+          message: memory || messages.sqlMemoryTitle,
+          diagnosis: { title: messages.sqlMemoryTitle, message: [memory, messages.sqlMemoryHelp].filter(Boolean).join(". ") },
+        },
+        BUSY: {
+          title: messages.sqlBusyTitle,
+          message: messages.sqlBusyDetail,
+          diagnosis: { title: messages.sqlBusyTitle, message: messages.sqlBusyHelp, kind: "error" },
+        },
+        QUEUE_FULL: {
+          title: messages.sqlBusyTitle,
+          message: messages.sqlQueueDetail,
+          diagnosis: { title: messages.sqlBusyTitle, message: messages.sqlQueueHelp, kind: "error" },
+        },
+        STORE_UNAVAILABLE: {
+          title: messages.sqlStoreUnavailable,
+          message: messages.sqlStoreUnavailable,
+          diagnosis: { title: messages.sqlStoreUnavailable, message: messages.sqlStoreHelp },
+        },
+        NO_READ_ACCESS: {
+          title: messages.sqlNoReadTitle,
+          message: messages.sqlNoReadTitle,
+          diagnosis: { title: messages.sqlNoReadTitle, message: messages.sqlNoReadAccess },
+        },
       };
       const action =
         current.code === "PARAMETER_MISSING" && detail.parameterName
@@ -537,6 +600,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
           current.code === "SQL_ERROR" && current.message
             ? `${byCode.SQL_ERROR} · ${current.message}`
             : (byCode[current.code] ?? messages.sqlRequestFailed),
+        ...presentations[current.code],
         action,
       };
     }
@@ -568,13 +632,16 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     if (current.kind === "ok" && result)
       return {
         kind: result.truncated ? "warning" : "ok",
-        message: `${result.truncated ? `${messages.sqlTruncated} · ` : ""}${messages.sqlResultSummary({ rows: number(result.rowCount, 0), elapsed: number(result.stats.elapsedMs), read: number(result.stats.readBytes / 1024 ** 2) })}`,
+        title: result.truncated ? messages.sqlTruncated : undefined,
+        message: `${messages.sqlResultSummary({ rows: number(result.rowCount, 0), elapsed: number(result.stats.elapsedMs), read: number(result.stats.readBytes / 1024 ** 2) })}`,
       };
     return { kind: "neutral", message: current.kind === "empty" ? messages.sqlEmpty : messages.sqlReady };
   };
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    stopRunTimer?.();
+    stopRunTimer = undefined;
     stopQuotaTimer?.();
     lifetime.abort();
     activeRun?.abort.abort();
@@ -609,6 +676,7 @@ export const createSqlConsoleController = (options: SqlConsoleControllerOptions)
     limitSegments,
     limitsLine,
     statusBand,
+    runningElapsedText: () => t().sqlRequestElapsed({ seconds: number(elapsedSeconds(), 0) }),
     missingParameter,
     assistantBand,
     saveErrorBand,

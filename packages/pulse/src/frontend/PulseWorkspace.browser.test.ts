@@ -28,7 +28,10 @@ const open = async (
   view: (typeof views)[number],
   props: PulseWorkspaceProps,
   locale = "de",
-  answer: (url: string) => { status: number; json: unknown } = () => ({ status: 500, json: { code: "UNEXPECTED" } }),
+  answer: (url: string) => { status: number; json: unknown } | Promise<{ status: number; json: unknown }> = () => ({
+    status: 500,
+    json: { code: "UNEXPECTED" },
+  }),
 ) => {
   const tab = await browser.newPage({ viewport: { width: view.width, height: view.height }, isMobile: view.touch, hasTouch: view.touch });
   // Timers are frozen at the fixture's time: the first frame comes from the server snapshot, and a refresh runs
@@ -36,9 +39,9 @@ const open = async (
   await tab.clock.install({ time: new Date("2026-10-19T12:40:00.000Z") });
   await tab.clock.pauseAt(new Date("2026-10-19T12:40:00.000Z"));
   const calls: string[] = [];
-  await tab.route(`${origin}/api/**`, (route) => {
+  await tab.route(`${origin}/api/**`, async (route) => {
     calls.push(new URL(route.request().url()).pathname);
-    return route.fulfill(answer(route.request().url()));
+    return route.fulfill(await answer(route.request().url()));
   });
   await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: page(props, locale) }));
   await tab.goto(
@@ -180,7 +183,7 @@ describe("Pulse base page after the cut", () => {
     await tab.clock.install({ time: new Date("2026-10-19T12:40:00.000Z") });
     await tab.clock.pauseAt(new Date("2026-10-19T12:40:00.000Z"));
     const calls: string[] = [];
-    await tab.route(`${origin}/api/**`, (route) => {
+    await tab.route(`${origin}/api/**`, async (route) => {
       const path = new URL(route.request().url()).pathname;
       calls.push(`${route.request().method()} ${path}`);
       if (path.endsWith("/retry")) return route.fulfill({ status: 200, json: deleting });
@@ -385,5 +388,47 @@ test("base settings preserve arbitrary values and show only measured usage on ph
     expect(await dialog.getByText("Nur Admins der Base können diese Einstellungen ändern.", { exact: false }).isVisible()).toBe(true);
   } finally {
     await tab.close();
+  }
+}, 60_000);
+
+test("SQL usage loading and failure preserve known base facts and recover without a false measurement", async () => {
+  for (const view of views) {
+    let release: (() => void) | undefined;
+    let fail = true;
+    const { tab } = await open(
+      view,
+      { ...workspaceFixture, initialRouteState: { view: "sources", sourceId: "", settings: "usage" } },
+      "de",
+      async (url) => {
+        if (!new URL(url).pathname.endsWith("/sql/limits")) return { status: 200, json: [] };
+        if (fail) {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return { status: 503, json: { code: "REQUEST_FAILED" } };
+        }
+        return { status: 200, json: sqlTestLimits };
+      },
+    );
+    try {
+      const dialog = tab.locator("dialog[open]");
+      await dialog.getByRole("status").filter({ hasText: "SQL-Nutzung und Grenzen werden geladen" }).waitFor();
+      expect(await dialog.locator(".k2b-skeleton").count()).toBe(6);
+      expect(await dialog.getByText("1,8 GB", { exact: false }).count()).toBeGreaterThan(0);
+      release?.();
+      await dialog.getByRole("alert").filter({ hasText: "SQL-Nutzung und Grenzen konnten nicht geladen werden" }).waitFor();
+      expect(await dialog.getByText("Nutzung konnte nicht geladen werden", { exact: true }).isVisible()).toBe(true);
+      expect(await dialog.getByText("Noch nicht gemessen", { exact: true }).count()).toBe(0);
+      fail = false;
+      await dialog.getByRole("alert").getByRole("button").click();
+      await tab.waitForFunction(() => !document.querySelector('dialog[open] [role="alert"]'));
+      expect(await dialog.getByText("Nutzung konnte nicht geladen werden", { exact: true }).count()).toBe(0);
+      expect(await dialog.locator(".k2b-skeleton").count()).toBe(0);
+      await dialog.getByRole("tab", { name: "Leeren und löschen", exact: true }).click();
+      expect(await dialog.locator('button[data-variant="danger"]').count()).toBe(0);
+    } finally {
+      release?.();
+      await tab.close();
+    }
   }
 }, 60_000);

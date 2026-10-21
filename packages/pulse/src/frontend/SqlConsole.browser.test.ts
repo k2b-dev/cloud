@@ -72,7 +72,10 @@ test("SQL anchors remain stable while result height follows the original chart b
       await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
       await tab
         .locator('[data-sql-region="result"] p[id]')
-        .filter({ hasText: "Parameter fehlt · :missing ohne Wert · nichts gerechnet" })
+        .filter({
+          hasText:
+            "Für :missing fehlt ein Wert. Jeder Parameter im SQL braucht einen Wert. Trag ihn unten im Editor ein. Pulse prüft das vor dem Start.",
+        })
         .waitFor();
       expect(runs).toHaveLength(0);
       expect(await geometry(tab)).toEqual(before);
@@ -440,7 +443,7 @@ test("the last of 32 parameters keeps its visible external diagnosis alongside s
     await tab.route(`${origin}/api/ai/conversations`, (route) => route.fulfill({ status: 500, json: { code: "REQUEST_FAILED" } }));
     await tab.getByRole("button", { name: "Mit KI fragen", exact: true }).click();
     const assistantDiagnosis = result.getByRole("heading", {
-      name: "Der Assistant ließ sich nicht öffnen · dein SQL ist unverändert",
+      name: "Der Assistant ließ sich nicht öffnen",
       exact: true,
     });
     await assistantDiagnosis.waitFor();
@@ -452,7 +455,12 @@ test("the last of 32 parameters keeps its visible external diagnosis alongside s
     const run = tab.getByRole("button", { name: "Ausführen", exact: true });
     await run.click();
     const diagnosis = result.locator("p[id]");
-    await diagnosis.filter({ hasText: "Parameter fehlt · :p31 ohne Wert · nichts gerechnet" }).waitFor();
+    await diagnosis
+      .filter({
+        hasText:
+          "Für :p31 fehlt ein Wert. Jeder Parameter im SQL braucht einen Wert. Trag ihn unten im Editor ein. Pulse prüft das vor dem Start.",
+      })
+      .waitFor();
     expect(runs).toHaveLength(0);
     expect(await run.evaluate((element) => document.activeElement === element)).toBe(true);
     expect(await tab.locator('[data-sql-region="editor"] input').count()).toBe(32);
@@ -461,7 +469,7 @@ test("the last of 32 parameters keeps its visible external diagnosis alongside s
     expect(await diagnosis.isVisible()).toBe(true);
     expect(await tab.locator('[data-sql-region="editor"] .k2b-field__error').count()).toBe(0);
     expect(await result.locator('[role="alert"], [aria-live]').count()).toBe(0);
-    const status = tab.locator('[data-sql-region="status"][role="status"]');
+    const status = tab.locator('[data-sql-region="status"] [role="status"]');
     expect(await status.count()).toBe(1);
     expect(await status.innerText()).toContain("Parameter fehlt · :p31 ohne Wert · nichts gerechnet");
     expect(await saveDiagnosis.isVisible()).toBe(true);
@@ -590,5 +598,69 @@ test("SQL composition keeps phone orientation, local syntax colors and monospace
     } finally {
       await tab.close();
     }
+  }
+}, 30_000);
+
+test("failed runs show short status, visible recovery help and the correct retry on phone and desktop", async () => {
+  for (const width of [390, 1440]) {
+    const { tab, answer, runs } = await open(width);
+    try {
+      for (const [code, title, help] of [
+        ["TIME_LIMIT", "Zeitlimit erreicht", "Ein kürzerer Zeitraum"],
+        ["MEMORY_LIMIT", "Speichergrenze erreicht", "Weniger Spalten"],
+        ["BUSY", "Pulse ist ausgelastet", "nicht gestartet"],
+        ["QUEUE_FULL", "Pulse ist ausgelastet", "nicht eingereiht"],
+        ["STORE_UNAVAILABLE", "Pulse erreicht den Datenspeicher nicht", "Dein SQL bleibt hier stehen"],
+        ["NO_READ_ACCESS", "Kein Lesezugriff", "SQL braucht"],
+      ]) {
+        answer({ status: 422, json: { code } });
+        await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
+        const result = tab.locator('[data-sql-region="result"]');
+        await result.locator("p").filter({ hasText: help }).waitFor();
+        expect(await tab.locator('[data-sql-region="status"] strong').innerText()).toBe(title!);
+        expect(await result.getByRole("heading").innerText()).toBe(title!);
+        expect(await result.getByRole("button", { name: "Erneut versuchen", exact: true }).count()).toBe(code === "NO_READ_ACCESS" ? 0 : 1);
+        expect(await tab.getByRole("textbox", { name: "SQL", exact: true }).inputValue()).toBe("SELECT :host");
+        if (code !== "NO_READ_ACCESS") {
+          const before = runs.length;
+          answer({ status: 200, json: sqlTestResult });
+          await result.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+          await tab.getByRole("region", { name: "SQL-Ergebnis", exact: true }).waitFor();
+          expect(runs.length).toBe(before + 1);
+        }
+      }
+    } finally {
+      await tab.close();
+    }
+  }
+}, 60_000);
+
+test("elapsed request time stays outside the single live status and disappears on cancel", async () => {
+  const { tab } = await open(390);
+  let release: (() => void) | undefined;
+  try {
+    await tab.route(`${origin}/api/pulse/bases/*/sql`, async (route) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await route.fulfill({ json: sqlTestResult }).catch(() => {});
+    });
+    await tab.route(`${origin}/api/pulse/bases/*/sql/cancel`, (route) => route.fulfill({ json: { cancelled: true } }));
+    await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
+    await tab.getByRole("timer").waitFor();
+    await tab.clock.runFor(2100);
+    expect(await tab.getByRole("timer").innerText()).toContain("Anfrage läuft seit 2 s");
+    expect(
+      await tab.getByRole("timer").evaluate((element) => element.parentElement?.closest('[role="status"], [aria-live="polite"]') === null),
+    ).toBe(true);
+    const status = tab.locator('[data-sql-region="status"] [role="status"]');
+    expect(await status.count()).toBe(1);
+    expect(await status.innerText()).toBe("Läuft");
+    await tab.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    await tab.getByRole("timer").waitFor({ state: "detached" });
+    release?.();
+  } finally {
+    release?.();
+    await tab.close();
   }
 }, 30_000);

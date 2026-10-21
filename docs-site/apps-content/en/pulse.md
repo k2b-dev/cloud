@@ -107,6 +107,11 @@ comments and quoted strings.
 Editing SQL or parameter values clears the previous result. A response from a
 run started before that edit does not appear under the changed query.
 
+While a request runs, the console shows its elapsed request time. This includes
+waiting and transport, not just database execution. Cancel stops the request;
+the elapsed-time display stops when the request ends. Failed queries keep the
+SQL and parameter values, explain the failure, and offer recovery where possible.
+
 The result contains column names and ClickHouse types, compact row arrays,
 `rowCount`, `truncated`, execution statistics, and limits. The wrapper applies
 `LIMIT 10000`. Exactly 10,000 returned rows sets `truncated: true`: **the

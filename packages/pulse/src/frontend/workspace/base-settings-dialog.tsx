@@ -10,12 +10,14 @@ import {
   IconInput,
   NoticeCard,
   NumberInput,
+  Placeholder,
   ProgressBar,
   prompts,
   SettingsField,
   SettingsGroup,
   SettingsModal,
   SettingsPanelFooter,
+  Skeleton,
   StatusBadge,
   TextInput,
   toast,
@@ -648,7 +650,15 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   <p class="text-[13px] text-dimmed">{t().settingsQueriesPerHour}</p>
                   <Show
                     when={!usage.error() && usage.data()}
-                    fallback={<p class="mt-2 text-sm text-secondary">{usage.loading() ? t().settingsLoading : storeT().notMeasured}</p>}
+                    fallback={
+                      <Show
+                        when={usage.loading() && !usage.error()}
+                        fallback={<p class="mt-2 text-sm text-secondary">{t().settingsUsageFailed}</p>}
+                      >
+                        <Skeleton class="mt-2 h-7 w-32" />
+                        <Skeleton class="mt-2 h-1 w-full" />
+                      </Show>
+                    }
                   >
                     {(limits) => (
                       <>
@@ -672,14 +682,26 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
               <SettingsGroup title={t().settingsSqlLimits}>
                 <div class="min-h-48">
                   <Show when={usage.error()}>
-                    <NoticeCard tone="danger" title={t().sqlRequestFailed}>
-                      <Button onClick={() => void usage.refresh()}>{t().retry}</Button>
-                    </NoticeCard>
+                    <Placeholder
+                      state="error"
+                      align="left"
+                      title={t().settingsSqlFailed}
+                      description={t().settingsSqlRetryHelp}
+                      onRetry={() => void usage.refresh()}
+                    />
                   </Show>
-                  <Show when={usage.loading()}>
-                    <p role="status">{t().settingsLoading}</p>
+                  <Show when={usage.loading() && !usage.error()}>
+                    <p role="status" class="sr-only">
+                      {t().settingsSqlLoading}
+                    </p>
+                    <div class="flex flex-col gap-4 py-2">
+                      <Skeleton class="h-4 w-3/4" />
+                      <Skeleton class="h-4 w-full" />
+                      <Skeleton class="h-4 w-2/3" />
+                      <Skeleton class="h-4 w-1/2" />
+                    </div>
                   </Show>
-                  <Show when={usage.data()}>
+                  <Show when={!usage.loading() && !usage.error() && usage.data()}>
                     {(limits) => (
                       <DescriptionList
                         layout="rows"
@@ -716,7 +738,8 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                 <SettingsGroup.Action>
                   <Button
                     type="button"
-                    variant="danger"
+                    variant="ghost"
+                    class="text-(--k2b-danger-text)!"
                     size="sm"
                     disabled={!options.canAdmin || options.loading() || options.writeBlocked() || clearBlocked()}
                     onClick={() => void options.clearBaseData()}
@@ -730,7 +753,8 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                 <SettingsGroup.Action>
                   <Button
                     type="button"
-                    variant="danger"
+                    variant="ghost"
+                    class="text-(--k2b-danger-text)!"
                     size="sm"
                     disabled={!options.canAdmin || options.loading() || options.writeBlocked()}
                     onClick={() => void options.deleteBase().then((deleted) => deleted && close())}

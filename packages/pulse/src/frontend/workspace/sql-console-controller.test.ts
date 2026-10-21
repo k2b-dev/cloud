@@ -673,7 +673,11 @@ test("missing diagnosis and recovery survive simultaneous save and Assistant err
   const saving = c.saveAs("Answer");
   c.setSql("SELECT :missing");
   await c.run();
-  const diagnosis = { name: "missing", message: "Parameter fehlt · :missing ohne Wert · nichts gerechnet" };
+  const diagnosis = {
+    name: "missing",
+    message:
+      "Für :missing fehlt ein Wert. Jeder Parameter im SQL braucht einen Wert. Trag ihn unten im Editor ein. Pulse prüft das vor dem Start.",
+  };
   expect(c.missingParameter()).toEqual(diagnosis);
   save.reject(new Error("Save unavailable"));
   await saving;
@@ -683,7 +687,7 @@ test("missing diagnosis and recovery survive simultaneous save and Assistant err
   expect(c.assistantBand()?.action?.kind).toBe("retry-assistant");
   expect(c.saveErrorBand()?.action?.kind).toBe("retry-save");
   expect(c.missingParameter()).toEqual(diagnosis);
-  expect(c.runErrorBand()?.message).toBe(diagnosis.message);
+  expect(c.runErrorBand()?.message).toBe(":missing ohne Wert · nichts gerechnet");
   await c.runErrorBand()?.action?.run();
   expect(focused).toBe("missing");
   expect(requests.filter((request) => request.kind === "run")).toHaveLength(0);
@@ -744,4 +748,53 @@ test.each(["SQL_ERROR", "QUOTA"])("a delayed %s cannot attach to a programmatica
   expect(c.missingParameter()).toBeNull();
   expect(c.quotaBlocked()).toBe(code === "QUOTA");
   expect(c.statusBand().message).not.toContain("Old query failed");
+});
+
+test("request elapsed time uses the local clock and releases its timer on success, failure, cancel and disposal", async () => {
+  for (const ending of ["success", "failure", "cancel", "dispose"] as const) {
+    const pending = deferred<SqlResult>();
+    const { controller: c, advance, timers } = harness({}, { run: () => pending.promise });
+    c.setSql("SELECT 1");
+    const running = c.run();
+    expect(timers.size).toBe(1);
+    advance(2100);
+    expect(c.runningElapsedText()).toBe("Anfrage läuft seit 2 s");
+    expect(c.statusBand().message).toBe("Läuft");
+    if (ending === "cancel") await c.cancel();
+    if (ending === "dispose") c.dispose();
+    if (ending === "failure") pending.reject(new SqlClientError("TIME_LIMIT", "timeout", 422));
+    else pending.resolve(sqlTestResult);
+    await running;
+    expect(timers.size).toBe(0);
+    advance(5000);
+    expect(c.runningElapsedText()).toBe("Anfrage läuft seit 2 s");
+  }
+});
+
+test("localized run failures separate short status from recovery without inventing profile limits", async () => {
+  for (const locale of ["en", "de"]) {
+    for (const code of ["TIME_LIMIT", "MEMORY_LIMIT", "BUSY", "QUEUE_FULL", "STORE_UNAVAILABLE", "NO_READ_ACCESS"]) {
+      for (const knownLimits of [true, false]) {
+        const { controller: c } = harness(
+          { locale: () => locale, initial: { limits: knownLimits ? sqlTestLimits : null } },
+          {
+            run: async () => {
+              throw new SqlClientError(code, "fixture", 422);
+            },
+          },
+        );
+        c.setSql("SELECT 1");
+        await c.run();
+        const band = c.runErrorBand()!;
+        expect(band.title).toBeTruthy();
+        expect(band.diagnosis?.message).toBeTruthy();
+        expect(band.diagnosis?.message).not.toBe(band.title);
+        expect(band.action?.kind).toBe(code === "NO_READ_ACCESS" ? undefined : "retry");
+        if (["TIME_LIMIT", "MEMORY_LIMIT"].includes(code)) {
+          expect(band.message.includes("normal")).toBe(knownLimits);
+          if (!knownLimits) expect(band.message).not.toMatch(/\d/);
+        }
+      }
+    }
+  }
 });
