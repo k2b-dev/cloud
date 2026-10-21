@@ -137,8 +137,26 @@ suite("SQL HTTP and agent capability share the base read boundary", () => {
         expect(response.status).toBe(200);
         expect(await pulseCapabilities.queries["sql.run"].run({ baseId: base.shortId, sql: query }, context)).toMatchObject({ ok: true });
       }
+      // Authenticated HTTP rate limits key on the user, not x-forwarded-for.
+      // Each attack is an independent reader fixture with the same grant as the
+      // agent. A fast negative matrix must still reach SQL, never the burst gate.
+      const deniedAsReader = async (query: string) => {
+        const reader = await createActor("SQL attack reader");
+        let grant: string | undefined;
+        try {
+          grant = await grantUser(base, reader.id, "read");
+          const response = await reader.request(base, "/sql", { body: { sql: query } });
+          const limit = Number(response.headers.get("X-RateLimit-Limit"));
+          expect(limit).toBeGreaterThan(0);
+          expect(Number(response.headers.get("X-RateLimit-Remaining"))).toBe(limit - 1);
+          return response;
+        } finally {
+          if (grant) await sql`DELETE FROM auth.access WHERE id=${grant}::uuid`;
+          await sql`DELETE FROM auth.users WHERE id=${reader.id}::uuid`;
+        }
+      };
       for (const query of deniedReadQueries(base, other)) {
-        const response = await person.request(base, "/sql", { body: { sql: query } });
+        const response = await deniedAsReader(query);
         const body: unknown = await response.json();
         if (response.status !== 400) throw new Error(`HTTP attack was not refused as SQL_ERROR (${response.status}): ${query}`);
         expect(body).toMatchObject({ code: "SQL_ERROR" });
