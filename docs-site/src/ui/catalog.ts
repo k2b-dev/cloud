@@ -65,6 +65,12 @@ const portableSections = [
       page("number", "NumberInput", "ti ti-number", "Bounded and formatted numeric input with steppers and clear state."),
       page("boolean", "Boolean inputs", "ti ti-toggle-right", "Switch, checkbox, and descriptive checkbox-card controls."),
       page("select", "Selection controls", "ti ti-list-check", "Single, multi, and compact controlled selection."),
+      page(
+        "rich-select",
+        "RichSelect",
+        "ti ti-list-details",
+        "Dropdown picker whose rows explain each choice, with an optional preview of the consequences.",
+      ),
       page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
       page(
         "autocomplete-select",
@@ -397,7 +403,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 152;
+export const portableUiComponentCount = 154;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

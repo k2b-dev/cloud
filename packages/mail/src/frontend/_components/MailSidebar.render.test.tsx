@@ -103,6 +103,35 @@ describe("Mail sidebar", () => {
     ]);
   });
 
+  test("mailbox navigation is enhanced only when its island owns mailbox switches", () => {
+    for (const enhanced of [false, true]) {
+      const html = renderSidebar({ open: openMailboxFixture(), onOpenMailbox: enhanced ? () => {} : undefined });
+      const snapshot = JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)![1]!);
+      const entry = snapshot.items.find((item: { id: string }) => item.id === "mailboxes").children[0];
+      expect(entry.navigation).toBe(enhanced ? "enhanced" : undefined);
+      expect(entry.scroll).toBe(enhanced ? "preserve" : undefined);
+    }
+  });
+
+  test("phone navigation distinguishes the mailbox context from its active folder", () => {
+    const html = renderSidebar({
+      mailboxes: [
+        { id: "Box001", name: "Support", health: "active", healthReason: null, receivingAddress: null },
+        { id: "Box002", name: "Sales", health: "active", healthReason: null, receivingAddress: null },
+      ],
+      open: openMailboxFixture({ activeFolderId: "Inbox1", folders: [folder("Inbox1", "Inbox", "inbox", 20, 5)] }),
+    });
+    type Entry = { id: string; context?: boolean; active?: boolean; children?: Entry[] };
+    const snapshot: { items: Entry[] } = JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)![1]!);
+    const boxes = snapshot.items.find((item) => item.id === "mailboxes")!.children!;
+    const current = boxes.find((item) => item.id === "mailbox:Box001")!;
+    expect(current.context).toBe(true);
+    expect(current.active).toBe(false);
+    expect(current.children!.find((item) => item.id === "folder:Inbox1")!.active).toBe(true);
+    expect(boxes.find((item) => item.id === "mailbox:Box002")!.context).toBe(false);
+    expect(snapshot.items.find((item) => item.id === "focus")!.context).toBeUndefined();
+  });
+
   test("a hidden open mailbox stays expanded, and a folder marks its own row instead of the mailbox", async () => {
     const html = renderSidebar({
       preferences: createMailboxPreferences({ pinnedMailboxIds: [], hiddenMailboxIds: ["Box001"] }),

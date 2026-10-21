@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import { clientFixture, type FixtureOptions, workspaceCss, workspaceFrames, workspaceTree } from "../../test/workspace-host-fixture";
 
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-one-surface-"));
@@ -97,9 +97,10 @@ for (const dark of [false, true]) {
   });
 }
 
-test("1440: panes have 12px of space and sidebar/pane handles show only a grip on hover or keyboard focus", async () => {
+test("1440: panes have 12px of space; sidebar/pane grips and shadows appear only during interaction", async () => {
   const page = await load(1440);
   try {
+    await settled(page);
     const gap = await page.locator('.k2b-app-workspace__main-pane[data-surface="navigation"]').evaluate((pane) => {
       const style = getComputedStyle(pane);
       const primary = pane.parentElement!.querySelector(".k2b-app-workspace__main-primary")!;
@@ -115,24 +116,58 @@ test("1440: panes have 12px of space and sidebar/pane handles show only a grip o
     expect(gap.space).toBeGreaterThanOrEqual(12);
     for (const kind of ["pane", "sidebar"]) {
       const handle = page.locator(`[data-app-workspace-resize="${kind}"]`).first();
-      const grip = handle.locator(":scope > span");
+      const expectCue = async (visible: boolean) => {
+        const cue = await handle.evaluate((element) => {
+          const line = getComputedStyle(element, "::before");
+          const shadow = getComputedStyle(element, "::after");
+          const generated = (style: CSSStyleDeclaration) =>
+            style.content !== "none" && style.content !== "normal" && style.display !== "none";
+          return {
+            line: generated(line),
+            shadow: generated(shadow),
+            shadowPaint: shadow.backgroundImage,
+            shadowOpacity: shadow.opacity,
+            gripOpacity: getComputedStyle(element.querySelector("span")!).opacity,
+          };
+        });
+        expect(cue.line).toBe(false);
+        expect(cue.shadow).toBe(true);
+        expect(cue.shadowPaint).not.toBe("none");
+        expect(cue.shadowOpacity).toBe(visible ? "1" : "0");
+        expect(cue.gripOpacity).toBe(visible ? "1" : "0");
+      };
       await page.mouse.move(0, 0);
-      expect(await grip.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
-      expect(await handle.evaluate((element) => getComputedStyle(element, "::before").display)).toBe("none");
+      await settled(page);
+      const box = await handle.boundingBox();
+      if (!box) throw new Error(`Missing ${kind} resize handle`);
+      await expectCue(false);
+
       await handle.hover();
-      await page.waitForFunction(
-        (kind) => getComputedStyle(document.querySelector(`[data-app-workspace-resize="${kind}"] > span`)!).opacity === "1",
-        kind,
-      );
+      await settled(page);
+      await expectCue(true);
+      expect(await handle.boundingBox()).toEqual(box);
+
+      await page.mouse.down();
+      await handle.evaluate((element) => (element as HTMLElement).blur());
+      await settled(page);
+      expect(await handle.getAttribute("data-workspace-resize-active")).toBe("true");
+      await expectCue(true);
+      expect(await handle.boundingBox()).toEqual(box);
+      await page.mouse.up();
       await page.mouse.move(0, 0);
+      await settled(page);
+      expect(await handle.getAttribute("data-workspace-resize-active")).toBeNull();
+      await expectCue(false);
+
       await page.keyboard.press("Tab");
       await handle.focus();
+      await settled(page);
       expect(await handle.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
-      await page.waitForFunction(
-        (kind) => getComputedStyle(document.querySelector(`[data-app-workspace-resize="${kind}"] > span`)!).opacity === "1",
-        kind,
-      );
+      await expectCue(true);
+      expect(await handle.boundingBox()).toEqual(box);
       await handle.evaluate((element) => (element as HTMLElement).blur());
+      await settled(page);
+      await expectCue(false);
     }
   } finally {
     await page.close();

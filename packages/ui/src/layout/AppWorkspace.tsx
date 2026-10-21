@@ -951,6 +951,7 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
           defaultSize={defaultWidth()}
           minSize={minWidth()}
           maxSize={maxWidth()}
+          shadow
           style={sizeStyle()}
         />
       </Show>

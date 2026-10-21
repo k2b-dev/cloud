@@ -1,6 +1,8 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
+import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
+import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import {
   captureScroll,
   documentNavigate,
@@ -23,7 +25,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
@@ -44,8 +46,8 @@ import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/Ma
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
-import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
-import MailSidebar, { type MailSidebarMailbox } from "./_components/MailSidebar";
+import { observeMailUserPreferences, readMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
+import MailSidebar, { type MailSidebarMailbox, type MailSidebarOpenMailbox } from "./_components/MailSidebar";
 import { MailboxHeadFilters, MailboxViewTabs, MailListModeMenu } from "./_components/MailWorkspaceHead";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import { createMailActionQueue } from "./_components/mail-action-queue";
@@ -122,6 +124,7 @@ import {
   requireMailWorkspaceRefresh,
 } from "./_components/mail-workspace-refresh";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
+import { mailPageMessages } from "./pages-messages";
 import { assertCursorProgress } from "./pagination";
 
 /**
@@ -155,7 +158,7 @@ const pageNextCursor = (snapshot: MailboxListView): string | null | undefined =>
       ? snapshot.draftsPage?.nextCursor
       : snapshot.nextListCursor;
 
-function MailWorkspaceView(props: {
+type MailWorkspaceProps = {
   data: MailboxPageData;
   /** Route as `pathname + search`; resolved against the browser origin, never an upstream URL. */
   requestPath: string;
@@ -174,7 +177,28 @@ function MailWorkspaceView(props: {
     pinnedMailboxIds: string[];
     hiddenMailboxIds: string[];
   };
-}) {
+};
+
+type MailboxSession = Pick<MailWorkspaceProps, "data" | "requestPath" | "initialPreferences" | "initialUserPreferences">;
+type MailboxSessionControls = {
+  open: Accessor<MailSidebarOpenMailbox>;
+  onOpenPlaceRowHiddenChange: (hidden: boolean) => void;
+  preferences: Accessor<MailWorkspacePreferences>;
+  handle: {
+    listMode(): MailboxPageData["listMode"];
+    supersede(): void;
+    navigateHere(nav: LinkNavigateEvent): Promise<void>;
+  };
+};
+
+function MailboxWorkspace(
+  props: MailWorkspaceProps & {
+    switching: Accessor<boolean>;
+    onReady: (controls: MailboxSessionControls) => void;
+    onNavigationStart: () => void;
+    onOpenMailboxHistory: (url: URL, completeScrollRestore: () => void) => void;
+  },
+) {
   const locale = useLocale();
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
   const conversationText = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
@@ -538,7 +562,8 @@ function MailWorkspaceView(props: {
     },
     getNextCursor: (page) => pageNextCursor(pageList(page)),
   });
-  routeLoading = () => workspaceQuery.loading() || workspaceQuery.refreshing() || workspaceQuery.loadingMore() || conversationOpening();
+  routeLoading = () =>
+    props.switching() || workspaceQuery.loading() || workspaceQuery.refreshing() || workspaceQuery.loadingMore() || conversationOpening();
 
   const preserveCurrentDetail = (next: MailboxPageData): MailboxPageData =>
     next.selectedConversationId && next.selectedConversationId === data.selectedConversationId
@@ -562,7 +587,7 @@ function MailWorkspaceView(props: {
       const generation = routeGeneration;
       return workspaceQuery.invalidate().then(
         () => (generation === routeGeneration ? "applied" : "stale"),
-        () => "failed" as const,
+        () => (generation === routeGeneration ? "failed" : "stale"),
       );
     }
     cancelConversationDetail();
@@ -679,7 +704,12 @@ function MailWorkspaceView(props: {
 
   // A later head or link navigation wins over pending search text.
   let searchControls: { cancelPending: () => void } | undefined;
+  const navigationStart = (href: string) => {
+    // An explicit link to the current view is still newer than a mailbox switch; background reads bypass this helper.
+    if (resolveMailWorkspaceUrl(href, mailboxId, window.location.origin)) props.onNavigationStart();
+  };
   const navigateWorkspace = async (nav: LinkNavigateEvent) => {
+    navigationStart(nav.href);
     searchControls?.cancelPending();
     // A later navigation wins over a conversation still opening, also when it reloads the shown view.
     cancelConversationDetail();
@@ -694,6 +724,7 @@ function MailWorkspaceView(props: {
   };
 
   const closeConversation = async (nav: LinkNavigateEvent) => {
+    navigationStart(nav.href);
     const previousConversationId = data.selectedConversationId;
     const result = inCurrentList(nav.href) ? closeConversationInList(nav.href) : await replaceWorkspaceRoute(nav.href);
     if (result === "applied") {
@@ -703,6 +734,7 @@ function MailWorkspaceView(props: {
   };
 
   const transitionWorkspaceHref = async (href: string, replace = false): Promise<MailWorkspaceRefreshResult> => {
+    navigationStart(href);
     cancelConversationDetail();
     captureSearchStart(href);
     const result = await replaceWorkspaceRoute(href);
@@ -751,6 +783,7 @@ function MailWorkspaceView(props: {
 
   const updateListMode = (listMode: MailboxPageData["listMode"]) => {
     if (listMode === data.listMode) return;
+    props.onNavigationStart();
     const previousListMode = data.listMode;
     updateMailWorkspacePreferences({ listMode });
     setConversationSelection(emptyMailConversationSelection());
@@ -1071,13 +1104,18 @@ function MailWorkspaceView(props: {
         },
       },
     );
-    const stopPopState = listenPopState(({ url }) => {
+    const stopPopState = listenPopState(({ url, deferScrollRestore }) => {
+      // The shared history owner keeps the destination snapshot until this navigation commits its list DOM.
+      const completeScrollRestore = deferScrollRestore();
       if (!isMailWorkspaceUrl(url, mailboxId, window.location.origin)) {
-        documentNavigate(url.href, { replace: true });
+        props.onOpenMailboxHistory(url, completeScrollRestore);
         return;
       }
+      const href = `${url.pathname}${url.search}`;
+      // Every traversal is a newer intent, even when returning to the still-shown mailbox during a pending switch.
+      // The phone navigation sheet completes its transient Back before invoking the selected link.
+      props.onNavigationStart();
       void (async () => {
-        const href = `${url.pathname}${url.search}`;
         if (inCurrentList(href)) {
           // Back and Forward between selections of the shown list open and close them like the list and the reader do.
           const conversationId = url.searchParams.get("conversation");
@@ -1085,6 +1123,7 @@ function MailWorkspaceView(props: {
           const result = conversationId
             ? await openConversationInList(href, conversationId, row?.sourceFolderId ?? data.folderId, row?.subject ?? "")
             : closeConversationInList(href);
+          if (!disposed && result === "applied") completeScrollRestore();
           if (!disposed && result === "failed") {
             navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
             toast.error(t().restoreViewFailed);
@@ -1097,7 +1136,8 @@ function MailWorkspaceView(props: {
           const snapshot = searchScrollSnapshot(href);
           const source = routeSource();
           if (snapshot) restoreScroll(snapshot.scroll);
-          void restoreSearchScroll(snapshot, source);
+          await restoreSearchScroll(snapshot, source);
+          completeScrollRestore();
         }
         if (!disposed && result === "failed") {
           navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
@@ -1113,7 +1153,10 @@ function MailWorkspaceView(props: {
 
   onCleanup(() => {
     disposed = true;
+    ++routeGeneration;
     if (preferenceTimer) clearTimeout(preferenceTimer);
+    if (Object.keys(pendingPreferences).length > 0) updateMailWorkspacePreferences(pendingPreferences);
+    actionQueue.flush();
     conversationDetailRequest?.abort();
     workspaceTransition?.resolve("stale");
     workspaceTransition = null;
@@ -1357,6 +1400,7 @@ function MailWorkspaceView(props: {
   };
 
   const navigateConversation = async (href: string, item: MailListItem, activation: "keyboard" | "pointer") => {
+    navigationStart(href);
     const result = item.conversationId ? await applyConversationRoute(href, item, activation) : await replaceWorkspaceRoute(href);
     if (result === "applied") {
       setConversationOpenIntent((intent) => intent + 1);
@@ -1587,6 +1631,7 @@ function MailWorkspaceView(props: {
     { conversationId: string; revision: number; subject: string }
   >({
     mutation: async (source, { abortSignal }) => {
+      const generation = routeGeneration;
       const { conversationId: sourceConversationId, revision: sourceRevision } = source;
       const target = await chooseConversationTarget(sourceConversationId);
       if (!target || abortSignal.aborted || disposed) return;
@@ -1614,6 +1659,8 @@ function MailWorkspaceView(props: {
       );
       if (!response.ok) throw new Error(await readApiError(response, t().mergeFailed));
       if (abortSignal.aborted || disposed) return;
+      // The write succeeded, but its follow-up selection must not override a newer navigation.
+      if (generation !== routeGeneration) return { refreshError: null };
       const refreshError = await captureMailWorkspaceRefreshError(() =>
         requireMailWorkspaceRefresh(() => transitionWorkspaceHref(conversationHref(target.conversationId), true), t().mergedOpenFailed),
       );
@@ -1699,6 +1746,7 @@ function MailWorkspaceView(props: {
     { messageId: string; conversationId: string; revision: number }
   >({
     mutation: async ({ messageId, conversationId, revision }, { abortSignal }) => {
+      const generation = routeGeneration;
       const confirmed = await prompts.confirm(t().splitQuestion, {
         title: t().splitTitle,
         icon: "ti ti-arrows-split-2",
@@ -1720,6 +1768,7 @@ function MailWorkspaceView(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().splitFailed));
       const result = await response.json();
       if (abortSignal.aborted || disposed) return;
+      if (generation !== routeGeneration) return { refreshError: null };
       const refreshError = await captureMailWorkspaceRefreshError(() =>
         requireMailWorkspaceRefresh(() => transitionWorkspaceHref(conversationHref(result.created.id), true), t().splitOpenFailed),
       );
@@ -2383,7 +2432,6 @@ function MailWorkspaceView(props: {
   };
 
   const sidebarText = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
-  const mailboxPreferences = createMailboxPreferences(props.sidebar);
   const mailboxMenu = createMailboxMenu(() => ({
     mailboxId: data.mailbox.id,
     syncEnabled: data.mailbox.syncEnabled,
@@ -2448,41 +2496,57 @@ function MailWorkspaceView(props: {
   /** A search narrows the list: the head offers Reset back to where the search started. */
   const searchFiltered = () => Boolean(data.query.trim() || activeSearch().expression);
 
+  props.onReady({
+    open: () => ({
+      mailboxId: data.mailbox.id,
+      mailboxName: data.mailbox.name,
+      canWrite: canWrite(),
+      assignedOnly: assignedOnly(),
+      mailbox: { health: data.mailbox.health, healthReason: data.mailbox.healthReason, receivingAddress: data.receivingAddress },
+      folders: listCounts().folders,
+      scheduledMode: data.scheduledMode,
+      scheduledCount: data.scheduledCount,
+      activeFolderId: data.folderId,
+      activeView: data.query ? null : data.activeView,
+      viewCounts: listCounts().viewCounts,
+      menu: mailboxMenu,
+      onCompose: (options) => void startCompose(options),
+      onMoveConversation: (input) => {
+        // The dragged row, not the first row of its conversation: in a message list, rows of one
+        // conversation can sit in different folders.
+        const item = selectableRows().find((candidate) => candidate.id === input.itemId);
+        const target = item ? actionTargetForItem(item, "move") : null;
+        return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
+      },
+      onNavigate: navigateWorkspace,
+    }),
+    onOpenPlaceRowHiddenChange: setOpenPlaceRowHidden,
+    preferences: () => ({
+      ...props.initialPreferences,
+      listCollapsed: listCollapsed(),
+      detailsOpen: detailsOpen(),
+      toolbarActions: toolbarActions(),
+      listMode: data.listMode,
+    }),
+    handle: {
+      listMode: () => data.listMode,
+      navigateHere: navigateWorkspace,
+      supersede: () => {
+        searchControls?.cancelPending();
+        ++routeGeneration;
+        cancelConversationDetail();
+        workspaceTransition?.resolve("stale");
+        workspaceTransition = null;
+        if (routeSource() !== committedRouteSource) setRouteSource(committedRouteSource);
+      },
+    },
+  });
+  createEffect(() => {
+    onCleanup(publishPageContext({ scope: { type: "mail.mailbox", id: mailboxId } }));
+  });
+
   return (
-    <AppWorkspace mobileSurface="flush" class="mail-workspace">
-      <MailSidebar
-        canCreate={Boolean(props.currentUserId)}
-        currentUserEmail={props.currentUserEmail}
-        contactDirectory={props.contactDirectory}
-        mailboxes={props.sidebar.mailboxes}
-        preferences={mailboxPreferences}
-        // Other mailboxes' counts require the cross-mailbox Focus read; keep mailbox opens fast.
-        counts={[]}
-        onOpenPlaceRowHiddenChange={setOpenPlaceRowHidden}
-        open={{
-          mailboxId: data.mailbox.id,
-          mailboxName: data.mailbox.name,
-          canWrite: canWrite(),
-          assignedOnly: assignedOnly(),
-          mailbox: { health: data.mailbox.health, healthReason: data.mailbox.healthReason, receivingAddress: data.receivingAddress },
-          folders: listCounts().folders,
-          scheduledMode: data.scheduledMode,
-          scheduledCount: data.scheduledCount,
-          activeFolderId: data.folderId,
-          activeView: data.query ? null : data.activeView,
-          viewCounts: listCounts().viewCounts,
-          menu: mailboxMenu,
-          onCompose: (options) => void startCompose(options),
-          onMoveConversation: (input) => {
-            // The dragged row, not the first row of its conversation: in a message list, rows of one
-            // conversation can sit in different folders.
-            const item = selectableRows().find((candidate) => candidate.id === input.itemId);
-            const target = item ? actionTargetForItem(item, "move") : null;
-            return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
-          },
-          onNavigate: navigateWorkspace,
-        }}
-      />
+    <>
       <AppWorkspace.Head
         views={
           currentTab() !== null ? (
@@ -2622,6 +2686,7 @@ function MailWorkspaceView(props: {
                           }
                     }
                     onOpenHref={openWorkspaceHref}
+                    onNavigationStart={props.onNavigationStart}
                     onSearchControls={(controls) => {
                       searchControls = controls;
                     }}
@@ -2781,14 +2846,127 @@ function MailWorkspaceView(props: {
           </Show>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
-    </AppWorkspace>
+    </>
   );
 }
 
-export default function MailWorkspace(props: Parameters<typeof MailWorkspaceView>[0]) {
+export default function MailWorkspace(props: MailWorkspaceProps) {
+  const locale = useLocale();
+  const mailboxPreferences = createMailboxPreferences(props.sidebar);
+  const [session, setSession] = createSignal<MailboxSession>({
+    data: props.data,
+    requestPath: props.requestPath,
+    initialPreferences: props.initialPreferences,
+    initialUserPreferences: props.initialUserPreferences,
+  });
+  const [controls, setControls] = createSignal<MailboxSessionControls>();
+  const [switching, setSwitching] = createSignal(false);
+  let switchRequest: AbortController | undefined;
+  let switchGeneration = 0;
+  const cancelSwitch = () => {
+    ++switchGeneration;
+    switchRequest?.abort();
+    switchRequest = undefined;
+    setSwitching(false);
+  };
+  onCleanup(cancelSwitch);
+
+  const switchMailbox = async (url: URL, nav?: LinkNavigateEvent, completeScrollRestore?: () => void) => {
+    const shown = controls();
+    if (nav && shown && isMailWorkspaceUrl(url, session().data.mailbox.id, window.location.origin)) {
+      // Clicking the shown mailbox is a newer intent even when its default URL is already current.
+      cancelSwitch();
+      await shown.handle.navigateHere(nav);
+      return;
+    }
+    const target = props.sidebar.mailboxes.find((mailbox) => isMailWorkspaceUrl(url, mailbox.id, window.location.origin));
+    const fallback = () => (nav ? nav.fallback() : documentNavigate(url.href, { replace: true }));
+    if (!target || target.id === session().data.mailbox.id || !shown) {
+      cancelSwitch();
+      fallback();
+      return;
+    }
+    cancelSwitch();
+    const generation = switchGeneration;
+    const request = new AbortController();
+    switchRequest = request;
+    shown.handle.supersede();
+    setSwitching(true);
+    try {
+      const response = await apiClient.mailboxes[":mailboxId"]["workspace-route"].$get(
+        { param: { mailboxId: target.id }, query: { href: `${url.pathname}${url.search}`, listMode: shown.handle.listMode() } },
+        { init: { signal: request.signal } },
+      );
+      if (!response.ok) throw new Error(`Mailbox workspace: ${response.status}`);
+      const data = await response.json();
+      if (request.signal.aborted || generation !== switchGeneration) return;
+      const initialPreferences = shown.preferences();
+      nav?.push(undefined, { scroll: "preserve" });
+      setSession({
+        data,
+        requestPath: `${url.pathname}${url.search}`,
+        initialUserPreferences: readMailUserPreferences(target.id),
+        initialPreferences,
+      });
+      const { t } = mailPageMessages.resolve([locale()]);
+      layout.update({
+        breadcrumbs: [
+          { title: t.breadcrumbStart, href: "/" },
+          { title: t.breadcrumbMail, href: "/app/mail" },
+          { title: data.mailbox.name },
+        ],
+      });
+      announce(data.mailbox.name);
+      completeScrollRestore?.();
+    } catch {
+      if (!request.signal.aborted && generation === switchGeneration) fallback();
+    } finally {
+      if (generation === switchGeneration) {
+        switchRequest = undefined;
+        setSwitching(false);
+      }
+    }
+  };
+
   return (
     <MailContactDirectoryProvider value={props.contactDirectory}>
-      <MailWorkspaceView {...props} />
+      <AppWorkspace mobileSurface="flush" class="mail-workspace">
+        {(() => {
+          // Resolve the session before the sidebar, so its first server and browser render already has the open mailbox.
+          const workspace = (
+            <Show when={session()} keyed>
+              {(s) => (
+                <MailboxWorkspace
+                  {...props}
+                  {...s}
+                  switching={switching}
+                  onReady={setControls}
+                  onNavigationStart={cancelSwitch}
+                  onOpenMailboxHistory={(url, completeScrollRestore) => {
+                    void switchMailbox(url, undefined, completeScrollRestore);
+                  }}
+                />
+              )}
+            </Show>
+          );
+          return (
+            <>
+              <MailSidebar
+                canCreate={Boolean(props.currentUserId)}
+                currentUserEmail={props.currentUserEmail}
+                contactDirectory={props.contactDirectory}
+                mailboxes={props.sidebar.mailboxes}
+                preferences={mailboxPreferences}
+                counts={[]}
+                open={controls()?.open() ?? null}
+                onOpenPlaceRowHiddenChange={(hidden) => controls()?.onOpenPlaceRowHiddenChange(hidden)}
+                onOpenMailbox={(nav) => switchMailbox(new URL(nav.href, window.location.origin), nav)}
+              />
+              {workspace}
+            </>
+          );
+        })()}
+      </AppWorkspace>
     </MailContactDirectoryProvider>
   );
 }

@@ -13,7 +13,10 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: ResizeSeparator } = await import("./ResizeSeparator");
 
 test("renders a named focusable separator with orientation, limits and controlled region", () => {
-  for (const orientation of ["vertical", "horizontal"] as const) {
+  for (const [orientation, grow] of [
+    ["vertical", "start"],
+    ["horizontal", "end"],
+  ] as const) {
     const html = renderToString(() =>
       createComponent(ResizeSeparator, {
         label: "Resize inspector",
@@ -23,7 +26,7 @@ test("renders a named focusable separator with orientation, limits and controlle
         value: 24.125,
         controls: "inspector",
         class: "custom",
-        grow: "start",
+        grow,
         onResize: () => {},
       }),
     );
@@ -33,6 +36,7 @@ test("renders a named focusable separator with orientation, limits and controlle
       'class="k2b-resize-separator custom"',
       `aria-orientation="${orientation}"`,
       `data-orientation="${orientation}"`,
+      `data-resize-edge="${grow}"`,
       'aria-valuemin="20"',
       'aria-valuemax="36"',
       'aria-valuenow="24.13"',

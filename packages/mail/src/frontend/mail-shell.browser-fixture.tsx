@@ -178,7 +178,7 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedConversationId = url.searchParams.get("conversation");
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
-    receivingAddress: "support@example.test",
+    receivingAddress: selectedMailbox.id === "Box001" ? "support@example.test" : selectedMailbox.receivingAddress,
     mailbox: selectedMailbox,
     permission,
     access: { scope: variant === "assigned-only" ? "assigned" : "mailbox", permission },
@@ -212,7 +212,17 @@ export function mailboxData(url: URL): MailboxPageData {
     search,
     selectedConversationId,
     selectedMessageId: url.searchParams.get("message"),
-    listItems: scheduledMode || draftsMode ? [] : listRows,
+    listItems:
+      scheduledMode || draftsMode
+        ? []
+        : selectedMailbox.id === "Box001"
+          ? listRows
+          : listRows.map((row) => ({
+              ...row,
+              id: `${selectedMailbox.id}-${row.id}`,
+              conversationId: `${selectedMailbox.id}-${row.conversationId}`,
+              subject: `${selectedMailbox.name}: ${row.subject}`,
+            })),
     listCursor: null,
     nextListCursor: null,
     listError: null,
@@ -406,7 +416,7 @@ export default function MailShellFixture(props: {
               ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
               : {}),
           }}
-          initialUserPreferences={readMailUserPreferencesFromCookieHeader("", "Box001")}
+          initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
           initialTheme={props.theme}
           calendarIntegrationAvailable={false}
           sidebar={sidebar}

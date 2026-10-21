@@ -58,8 +58,10 @@ including from Book view. Use the overview to start from a template.
   Report, Compact, or Custom print style. PDF generation uses the current live
   editor content and does not store a generated copy. In the PDF, links to the
   note itself jump within the document: to the linked heading, or to the top
-  when the note has no such heading. After the download, the dialog lists what
-  the PDF left out, with a reason and what to do. The PDF marks each item in
+  when the note has no such heading. Links to other notes, their headings, tags,
+  and attachments open in Cloud at the installation's public address. Opening
+  them still requires sign-in and notebook access. After the download, the
+  dialog lists what the PDF left out, with a reason and what to do. The PDF marks each item in
   place. Attached JPEG, PNG, WebP and GIF images appear at the size Book shows
   them. Images share the administrator's **Max input bytes** budget; large
   images print at 300, 200 or 150 dpi. Preparing images gets the same time as

@@ -9,6 +9,30 @@ mobile launcher.
 
 Active rows use `--k2b-app-workspace-selected` with `--k2b-app-workspace-active` ink.
 
+## Container context
+
+Use `context: true` on the current container, such as a mailbox whose folder
+is the active destination. Its name stays semibold while the folder alone
+keeps `active` and `aria-current="page"`. Set `context: false` on other
+containers to show their names and icons in the readable muted text tone. Omit
+`context` to keep the existing appearance.
+
+This presentation applies only to the marked row. Children, status colors,
+actions, and keyboard focus keep their own treatment. A context marker never
+selects or disables a destination; `active` still controls selection ink and
+fill, even on a row with `context: false`. The owner derives both fields from
+its existing location state. The renderer adds no navigation state.
+
+```tsx
+{
+  id: "mailbox",
+  label: "Support",
+  href: "/mail/support",
+  context: true,
+  children: [{ id: "inbox", label: "Inbox", href: "/mail/support/inbox", active: true }],
+}
+```
+
 ## Label overflow
 
 Navigation labels fade, never end in an ellipsis. Use the shared utilities for
@@ -66,7 +90,7 @@ const navigation = createNavigation({
 
 Items use stable, unique `id` values, a `label`, and either `href`, an `action`
 key, or `children`. Optional fields are `icon`, `iconLabel`, `badge` (string or
-number), `description`, `status`, `active`, `disabled`, `color`, secondary
+number), `description`, `status`, `active`, `context`, `disabled`, `color`, secondary
 `actions`, and `inlineActions`. Everything in the item tree is serializable;
 functions remain in the controller.
 
@@ -185,7 +209,8 @@ The host owns opening, closing, history, and the source of live updates.
 
 ## Example
 
-The live showcase renders one controller inline and inside a sheet. Simulate a
+The live showcase renders one controller inline and inside a sheet. Select the
+project to see its parent context stay strong beside the active child. Simulate a
 live update while the sheet is open to check that the badge changes in place
 and that the status of the first row under **Today** comes and goes without
 moving a row.

@@ -4,16 +4,73 @@ import { delegateEvents, render } from "solid-js/web";
 import { createNavigation, type NavigationItem } from "../src/layout/navigation-model";
 import { createDomTestHarness } from "./dom";
 
+test("container context updates in place without selecting or disabling a destination", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const [current, setCurrent] = createSignal("project");
+  const actions: string[] = [];
+  const navigation = createNavigation({
+    items: () => [
+      {
+        id: "project",
+        label: "Project",
+        href: "/project",
+        context: current() === "project",
+        children: [{ id: "work", label: "Work", href: "/project/work", active: current() === "project" }],
+      },
+      { id: "other", label: "Other", action: "other", context: current() === "other" },
+      { id: "help", label: "Help", href: "/help" },
+    ],
+    onAction: (action) => {
+      actions.push(action);
+      setCurrent(action);
+    },
+  });
+  delegateEvents(["click"], dom.document);
+  const dispose = render(() => <Navigation navigation={navigation} label="Projects" />, dom.root);
+  try {
+    const project = dom.root.querySelector<HTMLAnchorElement>('a[href="/project"]')!;
+    const work = dom.root.querySelector<HTMLAnchorElement>('a[href="/project/work"]')!;
+    const other = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((row) => row.textContent === "Other")!;
+    const help = dom.root.querySelector<HTMLAnchorElement>('a[href="/help"]')!;
+    expect(project.parentElement!.dataset.context).toBe("true");
+    expect(project.hasAttribute("aria-current")).toBe(false);
+    expect(work.getAttribute("aria-current")).toBe("page");
+    expect(work.parentElement!.hasAttribute("data-context")).toBe(false);
+    expect(help.parentElement!.hasAttribute("data-context")).toBe(false);
+    expect(other.parentElement!.dataset.context).toBe("false");
+    expect(other.disabled).toBe(false);
+    other.focus();
+    other.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(actions).toEqual(["other"]);
+    expect(project.parentElement!.dataset.context).toBe("false");
+    expect(other.parentElement!.dataset.context).toBe("true");
+    expect(dom.document.activeElement).toBe(other);
+    expect(work.hasAttribute("aria-current")).toBe(false);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 describe("Navigation", () => {
   test("keeps row focus across snapshots and performs actions only after host dismissal", async () => {
     const dom = createDomTestHarness();
+    // Importing a cached component does not register its delegated click on a new document.
+    delegateEvents(["click"], dom.document);
     const { default: Navigation } = await import("../src/layout/Navigation");
     const [items, setItems] = createSignal<NavigationItem[]>([{ id: "new", label: "New", action: "new", badge: 1 }]);
     const events: string[] = [];
+    const dismissal = Promise.withResolvers<void>();
+    const actionFinished = Promise.withResolvers<void>();
+    let dismissing = false;
     const nav = createNavigation({
       items,
       onAction: (action) => {
         events.push(action);
+        actionFinished.resolve();
       },
     });
     const dispose = render(
@@ -21,26 +78,35 @@ describe("Navigation", () => {
         <Navigation
           navigation={nav}
           label="App"
-          beforeSelect={() => {
+          beforeSelect={async () => {
+            dismissing = true;
+            await dismissal.promise;
             events.push("closed");
           }}
         />
       ),
       dom.root,
     );
-    const button = dom.root.querySelector<HTMLButtonElement>("button")!;
-    button.focus();
-    setItems([{ id: "new", label: "New", action: "new", badge: 2 }]);
-    expect(dom.document.activeElement).toBe(button);
-    expect(button.textContent).toContain("2");
-    button.click();
-    await Bun.sleep(0);
-    expect(events).toEqual(["closed", "new"]);
-    setItems([{ id: "new", label: "New", action: "new", disabled: true }]);
-    await nav.activate("new");
-    expect(events).toEqual(["closed", "new"]);
-    dispose();
-    dom.cleanup();
+    try {
+      const button = dom.root.querySelector<HTMLButtonElement>("button")!;
+      button.focus();
+      setItems([{ id: "new", label: "New", action: "new", badge: 2 }]);
+      expect(dom.document.activeElement).toBe(button);
+      expect(button.textContent).toContain("2");
+      button.click();
+      expect(dismissing).toBe(true);
+      expect(events).toEqual([]);
+      dismissal.resolve();
+      await actionFinished.promise;
+      expect(events).toEqual(["closed", "new"]);
+      setItems([{ id: "new", label: "New", action: "new", disabled: true }]);
+      await nav.activate("new");
+      expect(events).toEqual(["closed", "new"]);
+    } finally {
+      dismissal.resolve();
+      dispose();
+      dom.cleanup();
+    }
   });
 
   test("parent links and disclosure are separate; modified clicks stay native", async () => {
