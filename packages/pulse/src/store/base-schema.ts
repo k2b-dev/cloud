@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { SQL_HELPER_VIEWS, sqlHelperStatements } from "./sql-helpers";
 import { quoteIdentifier as q, StorePrefix } from "./validation";
 
-export const READ_VIEWS = ["samples", "rollups", "series", "events", "states", "sources"] as const;
+export const READ_VIEWS = ["samples", "rollups", "series", "events", "states", "sources", ...SQL_HELPER_VIEWS] as const;
 export const DATA_TABLES = ["_samples", "_rollups", "_series", "_events", "_states_current", "_state_changes"] as const;
 export type BaseRetention = { rawRetentionDays: number; rollupRetentionDays: number; sensitiveRetentionHours: number };
 export type BaseSchemaContext = BaseRetention & { database: string; prefix: string };
@@ -166,5 +167,6 @@ export const BASE_SCHEMA_VERSIONS = [
       ];
     },
   },
+  { version: 3, statements: (ctx: BaseSchemaContext): string[] => sqlHelperStatements(assertStoreName(ctx.database, ctx.prefix)) },
 ];
-export const LATEST_BASE_SCHEMA_VERSION = 2;
+export const LATEST_BASE_SCHEMA_VERSION = 3;

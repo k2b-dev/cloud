@@ -10,6 +10,7 @@ import {
 const positive = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const BaseLimitsSchema = z
   .object({
+    queriesPerHour: positive.max(2147483647),
     valuesPerMinute: positive,
     bytesPerMinute: positive,
     storageBytes: positive,

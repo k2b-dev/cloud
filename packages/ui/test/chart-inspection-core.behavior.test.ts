@@ -258,19 +258,43 @@ describe("framework-free chart inspection", () => {
     Object.defineProperty(tooltip, "matches", {
       value: (selector: string) => (selector === ":popover-open" ? open : matches(selector)),
     });
-    const move = (target: Element, clientX: number) =>
+    const move = (target: Element, clientX: number, clientY = 100) =>
       target.dispatchEvent(
         new dom.window.PointerEvent("pointermove", {
           bubbles: true,
           pointerType: "mouse",
           clientX,
-          clientY: 100,
+          clientY,
         }) as unknown as PointerEvent,
       );
     try {
       move(container.querySelector("[data-chart-datum]")!, 199);
       await nextFrame();
       expect(open).toBe(true);
+      // A visible series path can cover the mark. Its rounded point center
+      // still belongs to the same painted edge, without a direct metadata hit.
+      const path = container.querySelector(".stdlib-chart-line")!;
+      for (const [x, y] of [
+        [199.99998, 100],
+        [400.00002, 100],
+        [300, -0.00002],
+        [300, 280.00002],
+      ]) {
+        move(path, x!, y!);
+        await nextFrame();
+        expect(open).toBe(true);
+      }
+      // The raster allowance must not turn axes/legend space into plot hits.
+      for (const [x, y] of [
+        [199, 100],
+        [401, 100],
+        [300, -1],
+        [300, 281],
+      ]) {
+        move(path, x!, y!);
+        await nextFrame();
+        expect(open).toBe(false);
+      }
       // Empty space outside the plot still closes inspection.
       move(container.querySelector("svg")!, 150);
       await nextFrame();

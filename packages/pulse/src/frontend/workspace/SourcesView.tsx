@@ -46,6 +46,13 @@ const renderSourceTitleCell = (source: PulseSource, t: Messages, newest: string)
       <p class="mt-0.5 truncate text-xs text-dimmed" title={source.endpointUrl ?? undefined}>
         {sourceSubtitle(source, t)}
       </p>
+      <p class="mt-0.5 text-xs text-dimmed">
+        {source.kind === "metrics"
+          ? t.sqlSeriesCount({ count: source.seriesCount ?? 0 })
+          : source.todayCount == null
+            ? "—"
+            : t.sqlTodayCount({ count: source.todayCount })}
+      </p>
       <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-dimmed sm:hidden">
         {renderSourceStatusCell(source, t, "dot")}
         <span class="truncate">
@@ -118,7 +125,7 @@ export default function SourcesView(props: SourcesViewProps) {
           disabled={!props.selectedBaseId() || props.loading()}
           onClick={() => void props.addSource()}
         >
-          <i class="ti ti-plus" /> {t().addSource}
+          <i class="ti ti-plus" aria-hidden="true" /> {t().addSource}
         </Button>
       </div>
       <DataTable

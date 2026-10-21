@@ -77,6 +77,10 @@ describe("Pulse public resource IDs", () => {
     expect(
       BaseSchema.safeParse({
         id: "Base01",
+        shortId: "Base01",
+        icon: "ti ti-chart-line",
+        color: "blue",
+        timezone: "UTC",
         name: "Operations",
         store: {
           state: "active",
@@ -86,6 +90,7 @@ describe("Pulse public resource IDs", () => {
           writeBlockReason: null,
           profile: "normal",
           limits: {
+            queriesPerHour: 600,
             valuesPerMinute: 2000,
             bytesPerMinute: 5242880,
             storageBytes: 5000000000,

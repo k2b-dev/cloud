@@ -102,3 +102,95 @@ test("an explicit app context browses static links and keeps fuzzy matching loca
   expect(matchNavigationSearchItems(items, { query: "cdgn", tags: [] })).toHaveLength(0);
   expect(matchNavigationSearchItems(items, { query: "", tags: [] })).toHaveLength(0);
 });
+
+describe("app launcher", () => {
+  const launcherApp = {
+    ...app,
+    nav: { href: "/utilities", section: "more" as const },
+    searchLinks: [
+      { label: "Tools", href: "/utilities", keywords: ["utilities", "Werkzeug", "Rechner"] },
+      ...app.searchLinks!,
+      { label: "Duplicate", href: "/utilities/qr" },
+    ],
+  };
+  const match = (query: string) => matchNavigationSearchItems(navigationSearchItems([launcherApp], [app.id]), { query, tags: [] });
+
+  test("automatically opens the localized navigation entry, merging entry aliases and duplicate hrefs", () => {
+    const localized = resolveAppPresentation(launcherApp, "de");
+    const items = navigationSearchItems([localized], [app.id]);
+    expect(matchNavigationSearchItems(items, { query: "code", tags: [] })).toHaveLength(1);
+    for (const query of ["Werkzeuge", "utilities", "Tools", "Rechner", "werkzege"]) {
+      expect(matchNavigationSearchItems(items, { query, tags: [] })[0]).toMatchObject({
+        kind: "app",
+        title: "Werkzeuge",
+        icon: app.icon,
+        href: "/utilities",
+        readable: false,
+        ref: { type: "cloud.navigation" },
+      });
+    }
+    expect(match("Utilities")[0]?.title).toBe("Utilities");
+    expect(navigationSearchItems([launcherApp], [])).toEqual([]);
+    expect(navigationSearchItems([{ ...launcherApp, nav: undefined, searchLinks: [] }], [app.id])).toEqual([]);
+  });
+
+  test("ranks exact names and aliases before word starts, substrings and conservative whole-name typos", () => {
+    const candidates = ["Utilities Plus", "Xutilities", "Utilites", "Utilities"].map((name, index) => ({
+      id: `${index}`,
+      name,
+      icon: app.icon,
+      nav: { href: `/apps/${index}` },
+      searchLinks: [],
+    }));
+    const items = navigationSearchItems(
+      candidates,
+      candidates.map((candidate) => candidate.id),
+    );
+    const result = matchNavigationSearchItems(items, { query: "utilities", tags: [] });
+    expect(result.map((item) => item.title)).toEqual(["Utilities", "Utilities Plus", "Xutilities", "Utilites"]);
+    // Extra keywords never add scores; equal matches preserve the authorized catalog order.
+    const many = { ...candidates[0]!, searchLinks: [{ label: "Utilities Plus", href: "/apps/0", keywords: Array(50).fill("utilities") }] };
+    expect(
+      matchNavigationSearchItems(navigationSearchItems([many, candidates[3]!], ["0", "3"]), { query: "utilities", tags: [] }).map(
+        (item) => item.appId,
+      ),
+    ).toEqual(["0", "3"]);
+  });
+
+  test("keeps the owning launcher when another app contributes the same href as a page", () => {
+    const other = { ...app, id: "other", searchLinks: [{ label: "Utilities page", href: "/utilities" }] };
+    const items = navigationSearchItems([other, launcherApp], [other.id, launcherApp.id]);
+    const global = matchNavigationSearchItems(items, { query: "utilities", tags: [] });
+    expect(global).toHaveLength(1);
+    expect(global[0]).toMatchObject({ appId: app.id, kind: "app", title: app.name });
+    expect(matchNavigationSearchItems(items, { query: "", tags: [], appId: "other" })[0]).toMatchObject({
+      title: "Utilities page",
+      kind: undefined,
+    });
+  });
+
+  test("does not fuzz descriptions, short accidental subsequences or unrelated aliases", () => {
+    for (const query of ["utlt", "xxutilitiesxx", "unrelated", "drckbre", "", "u"]) expect(match(query)).toEqual([]);
+    // Static pages retain substring search in their full text.
+    expect(match("printable")[0]?.href).toBe("/utilities/qr");
+    expect(match("utilites")[0]?.href).toBe("/utilities");
+  });
+
+  test("keeps launchers out of empty, app, tag and resource-picker searches", () => {
+    const items = navigationSearchItems([launcherApp], [app.id]);
+    expect(matchNavigationSearchItems(items, { query: "", tags: [] })).toEqual([]);
+    expect(matchNavigationSearchItems(items, { query: "", tags: [], appId: app.id }).map((item) => item.href)).toEqual([
+      "/utilities",
+      "/utilities/qr",
+    ]);
+    expect(matchNavigationSearchItems(items, { query: "Tools", tags: [], appId: app.id })[0]).toMatchObject({
+      kind: undefined,
+      title: "Tools",
+      href: "/utilities",
+    });
+    const automaticOnly = navigationSearchItems([{ ...launcherApp, searchLinks: [] }], [app.id]);
+    expect(matchNavigationSearchItems(automaticOnly, { query: "", tags: [], appId: app.id })).toEqual([]);
+    expect(matchNavigationSearchItems(items, { query: "utilities", tags: ["note"] })).toEqual([]);
+    expect(matchNavigationSearchItems(items, { query: "utilities", tags: [], requireReader: true })).toEqual([]);
+  });
+});

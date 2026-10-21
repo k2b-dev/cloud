@@ -16,12 +16,12 @@ import {
 } from "@k2b/ui";
 ```
 
-`CodeDisplayLanguage` supports TypeScript, JavaScript, script, Markdown, and plain text modes. Line numbers and copy are enabled by default and can be disabled independently.
+`CodeDisplayLanguage` supports TypeScript, JavaScript, script, SQL, Markdown, and plain text modes. Line numbers and copy are enabled by default and can be disabled independently.
 
 ## API reference
 
 ```ts
-type CodeDisplayLanguage = "ts" | "tsx" | "js" | "jsx" | "script" | "markdown" | "md" | "text";
+type CodeDisplayLanguage = "ts" | "tsx" | "js" | "jsx" | "script" | "markdown" | "md" | "text" | "sql";
 
 type CodeDisplayProps = {
   code: string; title?: string; language?: CodeDisplayLanguage; copy?: boolean; lineNumbers?: boolean;

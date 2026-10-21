@@ -587,3 +587,12 @@ entries. Imported dependencies still participate in the selected app's bundle.
 
 An SSR dependency update requires rebuilding affected application images;
 restarting source-mounted containers alone keeps their old installed dependency.
+
+## App launcher in global search
+
+The shell now adds app entries from each request's authorized navigation
+catalog, including Administration for administrators. Application aliases reuse
+`searchLinks` at `nav.href`; there is no new environment setting, service or
+data migration. Deploy the shared Cloud package and application declarations
+together through the normal image release. Destination routes continue to
+enforce their own authorization. See [Universal search](/en/docs/platform/search).

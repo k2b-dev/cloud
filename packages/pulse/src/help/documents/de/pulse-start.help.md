@@ -8,6 +8,16 @@ order: 100
 ---
 Pulse sammelt Metriken, Ereignisse und Zustände in Bases. Öffne eine Base, um Quellen einzurichten und eingehende Daten zu prüfen.
 
+## Lies die Übersicht
+
+Eine Base öffnet die **Übersicht**. Sie zeigt, was Aufmerksamkeit braucht, bis zu vier wichtige Zahlen und letzte Änderungen. Sie aktualisiert sich alle 60 Sekunden, solange sie sichtbar ist. **Ansehen** öffnet die SQL-Abfrage eines Alarms mit ihren Parameterwerten, ohne sie auszuführen.
+
+Aktualisierte Zahlen bleiben an ihrem Platz. Neue oder erledigte Hinweise verlängern oder verkürzen die Liste und verschieben die Abschnitte darunter. Eine fokussierte Aktion behält den Fokus, solange ihr Eintrag bestehen bleibt.
+
+Mit **Mit KI fragen** bereitest du eine Frage zu dieser Base vor. Der Assistant-Entwurf wird nicht automatisch gesendet. Unter **Neue Quelle** hilft derselbe Einstieg, einen Adapter für deinen Shop oder einen anderen Dienst vorzubereiten.
+
+Um eine wichtige Zahl hinzuzufügen, öffne die Liste gespeicherter Abfragen unter **SQL** und aktiviere **Auf Übersicht**. Dafür brauchst du Zugriff **Bearbeiten**; eine Base kann vier Abfragen anzeigen. Die letzte Ergebniszeile liefert den Wert, eine optionale Zeitspalte den Verlauf. Scheitert eine Aktualisierung, bleiben der letzte erfolgreiche Wert und sein Zeitpunkt sichtbar.
+
 ## Verbinde eine Quelle
 
 Pulse braucht einen verbundenen Datenspeicher. Wenn **Pulse ist noch nicht eingerichtet** erscheint, wende dich an die Cloud-Administration.
@@ -32,7 +42,16 @@ Ausgeschlossene Familien zählen nicht gegen die Grenzen für Messwerte oder Rei
 Die Quelle zeigt abgelehnte Histogramme, übersprungene Summary-Messwerte und kürzliche Drosselung.
 Nutze diese Angaben, um den Endpunkt zu korrigieren oder weniger Metriken auszuwählen.
 
-## Stelle Fragen, sobald SQL verfügbar ist
+## Lies Messdaten mit SQL
 
-**Dashboards und Fragen kommen zurück** erklärt, dass SQL-Fragen und neue Dashboards mit dem nächsten Update kommen.
-Wähle **Zu den Quellen**, um jetzt den Empfang zu prüfen.
+Zugriff **Ansehen** erlaubt Abfragen in einer Base. Zugriff **Bearbeiten** erlaubt das Speichern und Löschen von Abfragen.
+Nutze `cld pulse sql --base <base> --file query.sql`, um SQL auszuführen.
+Nutze `cld pulse queries list --base <base>`, um gespeicherte Abfragen zu finden.
+Lies `cld pulse reference sql.md` für Parameter und Exportformate.
+
+Übergib Werte mit `--param name=value`. Halte SQL-Text und Werte getrennt.
+Strg-C bricht eine laufende Abfrage ab. Wenn Pulse ausgelastet ist, warte die angegebene Zeit vor dem nächsten Versuch.
+Ein Ergebnis mit 10.000 Zeilen hat die Grenze erreicht. Es kann weitere Zeilen geben.
+Verkürze den Zeitraum oder gruppiere die Daten, um eine vollständige Antwort zu erhalten.
+
+Öffne **SQL** in einer Base, um eine Abfrage auszuführen, Tabelle und Zeitdiagramm zu sehen oder eine gespeicherte Abfrage zu öffnen. **Mit KI fragen** öffnet einen ungesendeten Assistant-Entwurf mit Base, SQL und Parameterwerten. Die Einstellungen öffnen ein Modal mit Allgemein, Mitglieder, Aufbewahrung, Nutzung und Grenzen sowie Leeren und löschen.
