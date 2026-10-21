@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import type { SearchItem, SearchStreamLine } from "../api/search/schemas";
 
 // Whether rows that arrive later move the ones already shown depends on real layout, so this runs in a browser
@@ -259,6 +259,7 @@ describe("streamed search in a browser", () => {
         await waitForText(page, "Mail is still searching…");
         const first = await layout(page);
         // The status line sits below the results.
+        await settled(page);
         const statusTop = await page.locator(".cloud-resource-search__status").evaluate((element) => element.getBoundingClientRect().top);
         expect(statusTop).toBeGreaterThanOrEqual(first.rows[2]![1]! + first.rows[2]![3]!);
         await page.keyboard.press("ArrowDown");
@@ -443,6 +444,7 @@ test("launcher and chosen resources keep their positions and selection while pro
     expect(await launcher.getAttribute("aria-selected")).toBe("true");
     await view.page.keyboard.press("ArrowDown");
     const resource = view.page.getByRole("option").nth(1);
+    await view.page.getByRole("option", { selected: true }).filter({ hasText: "Utilities invoice" }).waitFor();
     const resourceBefore = await resource.boundingBox();
     second.open();
     await waitForRows(view.page, 3);
