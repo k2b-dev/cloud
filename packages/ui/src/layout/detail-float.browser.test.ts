@@ -25,6 +25,13 @@ const button = (index) => {
   return element;
 };
 const mainContent = () => {
+  if (params.has("nested-shadow")) return [button(0), createComponent(AppWorkspace, {
+    resizable:false, class:"nested-shadow-workspace", get children() { return createComponent(AppWorkspace.Content, {
+      get children() { return [createComponent(AppWorkspace.Main, {children:"Nested main"}), createComponent(AppWorkspace.Detail, {
+        id:"nested-record", width:"sm", open:true, children:"Nested detail",
+      })]; },
+    }); },
+  })];
   const toolbar = document.createElement("div");
   toolbar.id = "toolbar";
   toolbar.textContent = "Fixed toolbar";
@@ -1241,6 +1248,123 @@ for (const theme of ["light", "dark"] as const)
         await page.close();
       }
     });
+
+// A column's paint belongs to the workspace edge, not the inset scrollport.
+for (const theme of ["light", "dark"] as const) {
+  test(`${theme}: detail column shadow spans the workspace and retains a soft bottom edge`, async () => {
+    const page = await load(2560, 900, `initial=1&reopen&request-control&width=lg&card${theme === "dark" ? "&island" : ""}`);
+    try {
+      await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
+      await page.addStyleTag({
+        content:
+          ".fixture-main{background:var(--k2b-surface)}.fixture-main>*{visibility:hidden}.k2b-app-workspace__head>*{visibility:hidden}",
+      });
+      await settlePanel(page);
+      await settled(page);
+      const before = await geometry(page);
+      const workspace = await page.locator("[data-k2b-app-workspace]").boundingBox();
+      if (!workspace) throw new Error("Workspace geometry missing");
+      const png = await page.screenshot({
+        clip: { x: Math.floor(before.detail.left) - 40, y: workspace.y + 1, width: 40, height: workspace.height - 2 },
+      });
+      const contrast = await page.evaluate(
+        async (src) => {
+          const image = new Image();
+          image.src = src;
+          await image.decode();
+          const canvas = document.createElement("canvas");
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const context = canvas.getContext("2d")!;
+          context.drawImage(image, 0, 0);
+          const mean = (x: number, y: number) => {
+            const data = context.getImageData(x, y, 2, 4).data;
+            let sum = 0;
+            for (let i = 0; i < data.length; i += 4) sum += (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+            return sum / 8;
+          };
+          const edge = (y: number) => mean(2, y) - mean(38, y);
+          return { top: edge(0), middle: edge(100), bottom: edge(image.height - 4) };
+        },
+        `data:image/png;base64,${png.toString("base64")}`,
+      );
+      console.info(`column shadow ${theme}: ${JSON.stringify(contrast)}`);
+      expect(contrast.top).toBeGreaterThan(theme === "light" ? 5 : 0.5);
+      expect(contrast.top).toBeLessThan(theme === "light" ? 13 : 5);
+      expect(Math.abs(contrast.top - contrast.middle)).toBeLessThan(1);
+      expect(contrast.bottom).toBeGreaterThan(theme === "light" ? 1 : 0.2);
+      expect(contrast.bottom).toBeLessThan(contrast.middle);
+      // Removing paint alone must not change the panel or Main geometry.
+      const suppress = await page.addStyleTag({ content: ".k2b-app-workspace__content::after{content:none!important}" });
+      await settled(page);
+      expect(await geometry(page)).toEqual(before);
+      await suppress.evaluate((element) => element.parentNode?.removeChild(element));
+      await settled(page);
+      const content = page.locator(".k2b-app-workspace__content");
+      const paint = () =>
+        content.evaluate((element) => {
+          const style = getComputedStyle(element, "::after");
+          return { content: style.content, width: parseFloat(style.width), pointerEvents: style.pointerEvents };
+        });
+      expect((await paint()).pointerEvents).toBe("none");
+      const handle = page.locator('[data-app-workspace-resize="detail"]');
+      await handle.focus();
+      await page.keyboard.press("ArrowLeft");
+      await settled(page);
+      expect((await geometry(page)).detail.width).toBeGreaterThan(before.detail.width);
+      expect((await paint()).width).toBe(24);
+      await page.locator("#close").click();
+      await settlePanel(page);
+      await settled(page);
+      expect((await paint()).content).toBe("none");
+      await page.locator("[data-app-workspace-detail-toggle]").click();
+      await settlePanel(page);
+      await settled(page);
+      expect((await paint()).width).toBe(24);
+      await page.setViewportSize({ width: 834, height: 900 });
+      await settlePanel(page);
+      await settled(page);
+      // Waiting tracks collapse before the drawer opens; no column paint leaks.
+      expect((await paint()).width || 0).toBe(0);
+      await page.locator("[data-app-workspace-detail-toggle]").click();
+      await settlePanel(page);
+      await settled(page);
+      expect((await paint()).content).toBe("none");
+      await page.setViewportSize({ width: 390, height: 900 });
+      await settlePanel(page);
+      await settled(page);
+      expect((await paint()).content).toBe("none");
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test("a nested fixed Detail owns only its own column shadow", async () => {
+  const page = await load(2560, 900, "nested-shadow&card");
+  try {
+    await settled(page);
+    const inner = page.locator(".nested-shadow-workspace");
+    const paints = () =>
+      page.locator(".k2b-app-workspace__content").evaluateAll((elements) =>
+        elements.map((element) => {
+          const style = getComputedStyle(element, "::after");
+          return { content: style.content, width: parseFloat(style.width) || 0 };
+        }),
+      );
+    expect((await paints())[0]!.content).toBe("none");
+    expect((await paints())[1]!.width).toBe(24);
+    expect(await inner.locator('[data-app-workspace-resize="detail"]').count()).toBe(0);
+    await inner.evaluate((element) => {
+      element.style.width = "500px";
+    });
+    await settled(page);
+    expect((await paints())[0]!.content).toBe("none");
+    expect((await paints())[1]!.width).toBe(0);
+  } finally {
+    await page.close();
+  }
+});
 
 // Separate app visibility must not remove the way to reopen an available Detail.
 for (const width of [1920, 834, 390]) {

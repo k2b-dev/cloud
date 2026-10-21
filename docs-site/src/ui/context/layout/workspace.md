@@ -7,9 +7,8 @@ The application owns the content and which regions are open.
 For browser printing, mark the complete readable content with `data-print-region`, or provide an export hint through Cloud Layout `printHint`. See [Browser printing](/en/ui/layout/print) for the region and fallback contract.
 
 The sidebar and `Main` share one base surface, white in the light theme,
-separated by space. A Detail
-column is part of that surface, with no fill, frame, or shadow. The bottom
-drawer uses the subtle surface.
+separated by space. A Detail column is part of that surface, with no fill or
+frame and a subtle leading shadow. The bottom drawer uses the subtle surface.
 Keep region wrappers transparent. A view that fills `Main`—a canvas, graph,
 editor, or empty state—is `Main`'s surface and draws no radius or border of its
 own. Placeholders in `Main` draw no box, and new views add no inset cards or
@@ -422,9 +421,12 @@ Its `--k2b-shadow-side` shadow extends toward the covered content and above the
 panel, continuing around that corner in light and dark. The drawer size and
 Main stay unchanged.
 
-The column has no fill, frame, radius, or shadow; it shares the workspace
-surface. Its top, right, and bottom inset is 8 px. This replaces the earlier
-floating-detail appearance.
+The column shares the workspace surface without its own fill, frame, or radius.
+A subtle 24 px shadow extends to its left, from the workspace's top to its
+bottom. Over the final 96 px it becomes lighter while retaining a visible
+edge. The panel content keeps its 8 px top, right, and bottom inset. This
+paint does not move content or alter the resize handle; it disappears when
+Detail closes or becomes a drawer or phone sheet.
 
 A waiting Detail stays mounted and `open` stays true. Its **Details** button
 in the head controls it through `aria-controls` and `aria-expanded`. The head
