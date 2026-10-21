@@ -124,6 +124,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(), created_by TEXT,
       PRIMARY KEY(app_id, source_app_id), CHECK(app_id <> source_app_id), CHECK(source_app_id <> 'core')
     )`.simple();
+    await tx`ALTER TABLE outgoing_mail.app_log_access
+      ADD COLUMN IF NOT EXISTS level TEXT NOT NULL DEFAULT 'metadata' CHECK(level IN ('metadata', 'content'))`.simple();
     await tx`CREATE OR REPLACE FUNCTION outgoing_mail.search_text(subject pg_catalog.text, addresses pg_catalog.text[])
       RETURNS pg_catalog.text LANGUAGE sql IMMUTABLE PARALLEL SAFE
       AS $$ SELECT pg_catalog.lower(subject OPERATOR(pg_catalog.||) E'\\n' OPERATOR(pg_catalog.||)
