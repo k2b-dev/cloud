@@ -603,8 +603,28 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             expect(await page.locator('.mail-sidebar[data-mobile="stacked"]').count()).toBe(1);
             const chip = await page.locator('.mail-sidebar [data-mailbox="Box002"] a:visible').first().boundingBox();
             expect(chip).not.toBeNull();
-            // The shared workspace puts the head first on phones: the tabs are the card's top row, the chips follow.
-            expect(chip!.y).toBeGreaterThanOrEqual(views.y + views.height);
+            // P5 keeps object navigation before the card; view tabs are the
+            // card's first row, not the whole workspace's first row.
+            const head = (await page.locator(".k2b-app-workspace__head").boundingBox())!;
+            expect(chip!.y + chip!.height).toBeLessThanOrEqual(head.y);
+            const names = ["mail-sidebar", "k2b-app-workspace__head", "k2b-app-workspace__head-views"];
+            const regions = (frame: Frame) => frame.filter(({ part }) => names.some((name) => part.split(" ").includes(name)));
+            const server = regions(await recordedFrame(page, "server"));
+            const hydrated = regions(await recordedFrame(page, "hydrated"));
+            const current = regions(await geometry(page));
+            for (const frame of [server, hydrated, current]) {
+              // querySelectorAll records DOM/reading order as well as geometry.
+              expect(frame.map(({ part }) => names.find((name) => part.split(" ").includes(name)))).toEqual(names);
+              const [objects, cardHead, viewRow] = frame;
+              expect(objects!.height).toBeGreaterThan(0);
+              expect(cardHead!.height).toBeGreaterThan(0);
+              expect(viewRow!.height).toBeGreaterThan(0);
+              expect(objects!.y + objects!.height).toBeLessThanOrEqual(cardHead!.y);
+              expect(viewRow!.y).toBeGreaterThanOrEqual(cardHead!.y);
+              expect(viewRow!.y + viewRow!.height).toBeLessThanOrEqual(cardHead!.y + cardHead!.height);
+            }
+            assertFrame(server, hydrated, "Overview object row hydration");
+            assertFrame(server, current, "Overview object row settled");
           }
           const firstRowY = await page.locator(".k2b-app-workspace__head").evaluate((head) => {
             const style = getComputedStyle(head);
