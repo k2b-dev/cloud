@@ -118,7 +118,12 @@ test("a failed stylesheet rejects the page change even when destination content 
     });
     expect((await response).status()).toBe(503);
     // Chromium may classify an HTTP error stylesheet as a failed resource; both must reject.
-    await expect(recorder.finish(1000)).rejects.toThrow(/Page-change resource (returned 503|failed)/);
+    const failure: unknown = await recorder.finish(1000).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure instanceof Error ? failure.message : "").toMatch(/Page-change resource (returned 503|failed)/);
   } finally {
     recorder.stop();
     await context.close();
@@ -130,7 +135,12 @@ test("an error document containing matching markup is never a successful destina
   const recorder = recordPageChangeNetwork(page, "/bad", cdp);
   try {
     await page.goto(new URL("/bad", server.url).href);
-    await expect(recorder.finish(1000)).rejects.toThrow("returned 500");
+    const failure: unknown = await recorder.finish(1000).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure instanceof Error ? failure.message : "").toContain("returned 500");
   } finally {
     recorder.stop();
     await context.close();

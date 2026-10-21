@@ -537,7 +537,11 @@ fresh context; Chromium keeps its HTTP cache disabled through the change.
 WebKit has no equivalent cache-disable command, so its start document may
 already have cached shared assets. Warm visits each destination first with
 caching enabled. Chromium trusts only the run's local certificate public
-key through an SPKI pin, allowing its HTTP cache to work. WebKit uses its
+key through an SPKI pin, allowing its HTTP cache to work. The harness reads
+only the public localhost leaf certificate from the tracked Caddy container,
+checks its run label and image, then addresses that container by its immutable
+ID. A CA certificate, wrong hostname, or expired leaf fails the run; the pin
+is never learned from an unverified network connection. WebKit uses its
 existing certificate-error override. A warm sample fails if eager JavaScript
 before destination readiness transfers any bytes; a document load also fails
 if its eager script entries are missing. A swap can reuse evaluated modules
