@@ -200,7 +200,7 @@ export const overviewWorkspaceFixture: PulseWorkspaceProps = {
 };
 
 /** Render the real server component in an isolated Bun process, leaving browser tests' module conditions alone. */
-export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale: string) => {
+export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale: string, withLayout = false) => {
   const script = `
     import { mkdtempSync, rmSync } from "node:fs";
     import { tmpdir } from "node:os";
@@ -213,16 +213,48 @@ export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale
     try {
       Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
       const { default: Workspace } = await import(${JSON.stringify(new URL("./PulseWorkspace.island.tsx", import.meta.url).pathname)});
-      const { props, locale } = JSON.parse(await Bun.stdin.text());
+      const { props, locale, withLayout } = JSON.parse(await Bun.stdin.text());
+      if (withLayout) {
+        const { spyOn, setSystemTime } = await import("bun:test");
+        const { Hono } = await import("hono");
+        const { person } = await import("../cloud/src/_internal/define-app.test-fixture");
+        const rail = await import("../cloud/src/services/rail-snapshot");
+        const settings = await import("../cloud/src/server/middleware/settings");
+        const help = await import("../cloud/src/ssr/help");
+        const consent = await import("../cloud/src/ssr/panel-consent");
+        const { defaultRailPreferences } = await import("../cloud/src/contracts/rail-preferences");
+        const { app } = await import("./src/config");
+        const pageData = await import("./src/frontend/[baseId]/page-data");
+        const spies = [
+          spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+          spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+          spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
+          spyOn(consent, "preloadPanelConsent").mockResolvedValue(undefined),
+          spyOn(pageData, "loadPulseWorkspacePageData").mockResolvedValue({ kind: "ok", baseName: "Laden", workspaceProps: props }),
+        ];
+        setSystemTime(new Date(props.initialNow));
+        try {
+          const { default: basePage } = await import("./src/frontend/[baseId]/page");
+          const server = new Hono().use(async (c, next) => {
+            c.set("runtime", { apps: [app.meta] });
+            c.set("user", person);
+            await next();
+          }).get("/app/pulse/:baseId", ...basePage);
+          const response = await server.request("/app/pulse/" + props.initialBaseId, { headers: { "Accept-Language": locale } });
+          if (response.status !== 200) throw new Error("Pulse page snapshot status " + response.status);
+          process.stdout.write(await response.text());
+        } finally { for (const spy of spies) spy.mockRestore(); }
+      } else {
       process.stdout.write(renderToString(() => createComponent(LocaleProvider, {
         locale, get children() { return createComponent(Workspace, props); }
       })));
+      }
     } finally { rmSync(root, { recursive: true, force: true }); }
   `;
   const child = Bun.spawn([process.execPath, "--no-env-file", "-e", script], {
     cwd: resolve(import.meta.dir, "../.."),
     timeout: 15_000,
-    stdin: new Response(JSON.stringify({ props, locale })),
+    stdin: new Response(JSON.stringify({ props, locale, withLayout })),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -288,11 +320,21 @@ export const buildWorkspaceHarness = async () => {
     locale = "de",
     dark = false,
     overview?: ComponentProps<typeof PulseOverview>,
-    mount?: { serverHtml: string; deferMount: boolean },
-  ) =>
-    `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8">` +
-    `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-    `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" data-app-id="pulse">` +
-    `<main class="layout-content-main min-h-0 min-w-0 flex-1 p-4"><div id="root">${mount?.serverHtml ?? ""}</div></main></div>` +
-    `<script>window.__pulse=${JSON.stringify({ locale, props, overview, deferMount: mount?.deferMount })}</script><script>${bundle}</script></body></html>`;
+    mount?: { serverHtml: string; deferMount: boolean; pageDocument?: boolean },
+  ) => {
+    const content = mount?.pageDocument
+      ? mount.serverHtml
+          .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "")
+          .replace(/^[\s\S]*?<body[^>]*>/, "")
+          .replace(/<\/body>[\s\S]*$/, "")
+          .replace(/<solid-island\b([^>]*data-file="PulseWorkspace\.island\.tsx"[^>]*)>/, '<solid-island id="root"$1>')
+      : `<div class="cloud-app-canvas relative flex h-dvh w-full overflow-hidden" data-app-id="pulse" data-layout-full-page="true">` +
+        `<main class="layout-content-main flex min-h-0 min-w-0 flex-1 flex-col"><solid-island id="root">${mount?.serverHtml ?? ""}</solid-island></main></div>`;
+    return (
+      `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8">` +
+      `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+      `<body class="k2b-ui">${content}` +
+      `<script>window.__pulse=${JSON.stringify({ locale, props, overview, deferMount: mount?.deferMount })}</script><script>${bundle}</script></body></html>`
+    );
+  };
 };

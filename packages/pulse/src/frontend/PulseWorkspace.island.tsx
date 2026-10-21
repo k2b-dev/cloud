@@ -186,7 +186,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       .find((query) => query.error())
       ?.error();
   return (
-    <AppWorkspace mobileSurface="flush" class="min-h-[760px]">
+    <AppWorkspace mobileSurface="flush">
       <PulseSidebar
         title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
         bases={overview.accessLost() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}

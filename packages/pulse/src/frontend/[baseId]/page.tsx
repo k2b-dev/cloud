@@ -22,7 +22,12 @@ export default ssr<AuthContext>(async (c) => {
   const workspaceProps = data.workspaceProps;
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/pulse" }, { title: data.baseName }]}>
+    <Layout
+      c={c}
+      fullWidth
+      fullPage
+      title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/pulse" }, { title: data.baseName }]}
+    >
       <PulseWorkspace {...workspaceProps} />
     </Layout>
   );

@@ -23,6 +23,8 @@ separate interface for these same operations; dashboards follow later.
 A base opens on **Overview**. It shows source freshness, alert rules needing
 attention, up to four saved key numbers, and recent changes. Existing
 `/app/pulse/:baseId/sources` links still open the sources view.
+The workspace fills the available app height on desktop and phone. Longer
+content scrolls inside it; key numbers keep their natural size.
 The overview refreshes every 60 seconds while visible. **View** on an alert
 opens its authorized SQL and parameter values in the console without running
 it. The URL stores the rule reference, so long SQL survives reload and Back.

@@ -59,6 +59,107 @@ const overflow = (tab: Awaited<ReturnType<typeof open>>["tab"]) =>
   tab.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 
 describe("Pulse base overview", () => {
+  test("the real SSR page fills the available app height and keeps long content in its own scroller", async () => {
+    let desktopNumberHeight: number | undefined;
+    for (const view of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+      { width: 1440, height: 600 },
+    ]) {
+      const props: PulseWorkspaceProps =
+        view.width === 390 || view.height === 600
+          ? {
+              ...overviewWorkspaceFixture,
+              initialOverview: {
+                error: null,
+                data: {
+                  ...baseOverviewFixture,
+                  attention: {
+                    total: 12,
+                    nextOffset: null,
+                    items: Array.from({ length: 12 }, (_, index) => ({
+                      ...baseOverviewFixture.attention.items[0]!,
+                      id: `Alert${index}`,
+                      name: `Response ${index + 1}`,
+                    })),
+                  },
+                },
+              },
+            }
+          : overviewWorkspaceFixture;
+      const serverHtml = await renderWorkspaceSnapshot(props, "de", true);
+      const tab = await browser.newPage({ viewport: view });
+      tab.setDefaultTimeout(5_000);
+      const errors: string[] = [];
+      tab.on("pageerror", (error) => errors.push(error.message));
+      await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 503, json: { code: "UNEXPECTED" } }));
+      await tab.route(`${origin}/app/pulse/**`, (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: page(props, "de", false, undefined, { serverHtml, deferMount: true, pageDocument: true }),
+        }),
+      );
+      const geometry = () =>
+        tab.evaluate(() => {
+          const rect = (selector: string, content = false) => {
+            const element = document.querySelector(selector);
+            if (!element) throw new Error(`Missing ${selector}`);
+            const box = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const topInset = content ? Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.paddingTop) : 0;
+            const bottomInset = content ? Number.parseFloat(style.borderBottomWidth) + Number.parseFloat(style.paddingBottom) : 0;
+            return { top: box.top + topInset, bottom: box.bottom - bottomInset, height: box.height - topInset - bottomInset };
+          };
+          return {
+            host: rect(".layout-content-main", true),
+            workspace: rect(".k2b-app-workspace"),
+            numbers: rect(".pulse-overview__numbers"),
+            documentHeight: document.documentElement.scrollHeight,
+            documentWidth: document.documentElement.scrollWidth,
+          };
+        });
+      try {
+        await tab.clock.install({ time: new Date(props.initialNow!) });
+        await tab.clock.pauseAt(new Date(props.initialNow!));
+        await tab.goto(`${origin}/app/pulse/Lad001`);
+        await tab.evaluate(() => document.fonts.ready);
+        await tab.locator(".pulse-overview__headline").waitFor();
+        const before = await geometry();
+        expect(before.workspace.top).toBeCloseTo(before.host.top, 0);
+        expect(before.workspace.bottom).toBeCloseTo(before.host.bottom, 0);
+        expect(before.host.bottom).toBeLessThanOrEqual(view.height);
+        expect(before.documentHeight).toBeLessThanOrEqual(view.height + 1);
+        expect(before.documentWidth).toBeLessThanOrEqual(view.width);
+        if (view.width === 1440) {
+          if (desktopNumberHeight !== undefined) expect(before.numbers.height).toBeCloseTo(desktopNumberHeight, 0);
+          desktopNumberHeight = before.numbers.height;
+        }
+        expect(await tab.locator(".cloud-app-canvas").getAttribute("data-layout-full-page")).toBe("true");
+        expect(await tab.locator("#root").getAttribute("data-mounted")).toBeNull();
+        await tab.evaluate(() => {
+          const mount = Reflect.get(window, "__pulseMount");
+          if (typeof mount !== "function") throw new Error("Missing deferred mount");
+          mount();
+        });
+        await tab.locator('#root[data-mounted="true"]').waitFor();
+        expect(await geometry()).toEqual(before);
+        if (view.width === 390 || view.height === 600) {
+          const scroller = tab.locator(".k2b-app-workspace__main");
+          expect(await scroller.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+          await scroller.evaluate((node) => node.scrollTo(0, node.scrollHeight));
+          expect(await scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+          const activity = await tab.locator(".pulse-overview__activity").boundingBox();
+          const visibleMain = await scroller.boundingBox();
+          expect(activity!.y + activity!.height).toBeLessThanOrEqual(visibleMain!.y + visibleMain!.height);
+          expect(await tab.evaluate(() => window.scrollY)).toBe(0);
+        }
+        expect(errors).toEqual([]);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 60_000);
+
   test("initial loading ends only when the overview response is available", async () => {
     const response = Promise.withResolvers<{ status: number; json: unknown }>();
     const { tab } = await open(views[0]!, { ...overviewWorkspaceFixture, initialOverview: undefined }, "de", () => response.promise);
