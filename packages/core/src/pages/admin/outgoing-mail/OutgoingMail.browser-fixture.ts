@@ -128,7 +128,7 @@ export async function outgoingMailBrowserFixture() {
       panelConsent: undefined;
       railPreferences: undefined;
       announcements: undefined;
-      page: { title?: string };
+      page: { title?: string; theme: "light" };
     };
   }>();
   pages.get("/admin/core/outgoing-mail", (c) => {
@@ -138,6 +138,7 @@ export async function outgoingMailBrowserFixture() {
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     const title = outgoingMailMessages.resolve([locale]).t.title;
+    c.set("page", { title, theme: "light" });
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,
