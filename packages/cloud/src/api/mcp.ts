@@ -16,6 +16,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { capabilitySentenceText } from "../_internal/capability-sentences";
+import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import {
   HELP_SEARCH_MAX_LIMIT,
   helpAgentMarkdown,
@@ -781,42 +782,47 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
     .use("/mcp/v1", dependencies.authenticate ?? mcpAuthentication(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", rejectReservedWorkloadCredential)
     .use("/mcp/v1", dependencies.limit ?? rateLimit())
-    .all("/mcp/v1", async (c) => {
-      if (c.req.method !== "POST") {
-        return new Response(null, { status: 405, headers: { Allow: "POST" } });
-      }
-      let request = c.req.raw;
-      const parsed = await readBoundedJson(request, CAPABILITY_MAX_REQUEST_BYTES);
-      if (!parsed.ok) {
-        return c.json(
-          {
-            jsonrpc: "2.0",
-            id: null,
-            error: {
-              code: parsed.reason === "too_large" ? -32600 : -32700,
-              message: parsed.reason === "too_large" ? "MCP request is too large" : "MCP request body must be JSON",
+    .all("/mcp/v1", async (c) =>
+      withCapabilityRequestTimeout(c, "query", async () => {
+        if (c.req.method !== "POST") {
+          return new Response(null, { status: 405, headers: { Allow: "POST" } });
+        }
+        let request = c.req.raw;
+        const parsed = await readBoundedJson(request, CAPABILITY_MAX_REQUEST_BYTES);
+        if (!parsed.ok) {
+          return c.json(
+            {
+              jsonrpc: "2.0",
+              id: null,
+              error: {
+                code: parsed.reason === "too_large" ? -32600 : -32700,
+                message: parsed.reason === "too_large" ? "MCP request is too large" : "MCP request body must be JSON",
+              },
             },
-          },
-          parsed.reason === "too_large" ? 413 : 400,
-        );
-      }
-      const headers = new Headers(request.headers);
-      headers.delete("content-length");
-      request = new Request(request.url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(parsed.data),
-        signal: request.signal,
-      });
-      const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      const server = createMcpServer(request, dependencies, c.get("oauthScopes") ?? null, auth.getAuthority(c));
-      await server.connect(transport);
-      try {
-        return await transport.handleRequest(request);
-      } finally {
-        await transport.close();
-        await server.close();
-      }
-    });
+            parsed.reason === "too_large" ? 413 : 400,
+          );
+        }
+        const headers = new Headers(request.headers);
+        headers.delete("content-length");
+        request = new Request(request.url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(parsed.data),
+          signal: request.signal,
+        });
+        const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+        const server = createMcpServer(request, dependencies, c.get("oauthScopes") ?? null, auth.getAuthority(c));
+        try {
+          await server.connect(transport);
+          return await transport.handleRequest(request);
+        } finally {
+          try {
+            await transport.close();
+          } finally {
+            await server.close();
+          }
+        }
+      }),
+    );
 
 export type McpApiType = ReturnType<typeof createMcpRoutes>;

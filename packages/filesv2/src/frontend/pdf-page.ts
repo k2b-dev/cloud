@@ -5,6 +5,7 @@ import { apiError, describeError } from "../api/api-error";
 import { inlinePdfResponse } from "../api/inline-pdf";
 import { ssr } from "../config";
 import { DownloadInputSchema } from "../contracts";
+import { requestCall } from "../files-call";
 import { filesService } from "../service";
 import { browserMessages } from "./browser-messages";
 import { filesUrl } from "./urls";
@@ -24,7 +25,7 @@ export const pdfPage = new Hono<AuthContext>().get(
     const path = DownloadInputSchema.shape.path.safeParse(c.req.param("path"));
     if (!path.success) return ssr.error(c, 404);
     try {
-      return inlinePdfResponse(await filesService.inlinePdf(c.get("actor"), { baseId, path: path.data }, c.req.raw.signal));
+      return inlinePdfResponse(await filesService.inlinePdf(requestCall(c), { baseId, path: path.data }, c.req.raw.signal));
     } catch (error) {
       const { code, status } = apiError(error);
       if (status >= 500) log.error("Files PDF could not be opened", { code, status, error: describeError(error) });

@@ -239,3 +239,43 @@ describe("Chart default inspection SSR", () => {
     expect(html).toContain('role="tooltip"');
   });
 });
+
+describe("Line chart top legend", () => {
+  const series = [
+    { label: "", data: [] },
+    {
+      label: "Orders <total>",
+      data: [
+        { x: 1, y: 2 },
+        { x: 2, y: 3 },
+      ],
+    },
+  ];
+  test("keeps every original index and escapes names, without the bottom legend", () => {
+    const html = renderToString(() =>
+      createComponent(Chart, {
+        kind: "line",
+        series,
+        legend: true,
+        legendPlacement: "top-start",
+        className: "report-palette",
+        style: { height: "200px" },
+      }),
+    );
+    expect(html).toContain('data-legend-placement="top-start"');
+    expect(html).toContain('class="stdlib-chart k2b-chart__legend-swatch report-palette"');
+    expect(html).toContain("height:200px");
+    expect(html).toContain("Series 1");
+    expect(html).toContain("Orders &lt;total>");
+    expect(html).toContain('class="stdlib-chart-series-1"');
+    expect(html).not.toContain('class="stdlib-chart-legend"');
+    expect(html.indexOf("k2b-chart__legend-item")).toBeLessThan(html.indexOf('class="k2b-chart__svg"'));
+  });
+  test("preserves opt-out, default callers and empty states", () => {
+    const render = (options: import("./Chart").ChartProps) => renderToString(() => createComponent(Chart, options));
+    expect(render({ kind: "line", series, legend: true })).toContain('class="stdlib-chart-legend"');
+    expect(render({ kind: "line", series, legend: false, legendPlacement: "top-start" })).not.toContain("k2b-chart__legend-item");
+    expect(render({ kind: "line", series: [], legend: true, legendPlacement: "top-start" })).toContain("k2b-chart__empty");
+    expect(render({ kind: "line", series: [], legend: true, legendPlacement: "top-start" })).not.toContain("k2b-chart__legend-item");
+  });
+});

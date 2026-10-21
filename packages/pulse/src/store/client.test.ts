@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { clickhouseQuery, type QueryOptions, StoreQueryError, storeAllowlist } from "./client";
+import {
+  CLICKHOUSE_MAX_URL_BYTES,
+  CLICKHOUSE_UUID_CHUNK_SIZE,
+  clickhouseQuery,
+  type QueryOptions,
+  StoreQueryError,
+  storeAllowlist,
+} from "./client";
 
 const marker = "REMOTE_BODY_MUST_NEVER_LEAK";
 const requests: Request[] = [];
@@ -72,4 +79,60 @@ test("POSTs SQL as body, parameter values as parameters and UTF8 credentials onl
 test("a caller abort becomes an unreachable error without the abort reason", async () => {
   const signal = AbortSignal.abort(new Error(marker));
   await expect(clickhouseQuery({ ...options, query: "SELECT version()", signal })).rejects.toMatchObject({ kind: "unreachable" });
+});
+
+test("rejects oversized encoded parameters and settings before transport", async () => {
+  for (const field of ["params", "settings"] as const) {
+    const before = requests.length;
+    await expect(
+      clickhouseQuery({ ...options, query: "SELECT 1", [field]: { value: "é".repeat(CLICKHOUSE_MAX_URL_BYTES / 6) } }),
+    ).rejects.toThrow("ClickHouse request URL exceeds the 524288-byte budget; chunk query parameters");
+    expect(requests).toHaveLength(before);
+  }
+});
+test("a full UUID and Int64 pair chunk fits the URL budget with transport overhead", async () => {
+  const ids = Array.from({ length: CLICKHOUSE_UUID_CHUNK_SIZE }, () => "ffffffff-ffff-4fff-8fff-ffffffffffff");
+  await clickhouseQuery({
+    ...options,
+    query: "SELECT 1",
+    params: {
+      series: `[${ids.map((id) => `'${id}'`).join(",")}]`,
+      times: `[${ids.map(() => "-9223372036854775808").join(",")}]`,
+      minTime: "-9223372036854775808",
+      cutoff: "-9223372036854775808",
+    },
+    settings: { insert_deduplicate: 0, async_insert: 0 },
+  });
+  expect(new TextEncoder().encode(requests.at(-1)!.url).byteLength).toBeLessThan(CLICKHOUSE_MAX_URL_BYTES);
+});
+
+test("streaming ClickHouse failures after JSON headers retain their safe exception class", async () => {
+  const transport: QueryOptions["transport"] = async () =>
+    new Response('{"meta":[],"data":[\nCode: 396. DB::Exception: Limit for result exceeded, bytes', {
+      headers: { "X-ClickHouse-Query-Id": "fixture" },
+    });
+  await expect(clickhouseQuery({ ...options, query: "SELECT 1", transport })).rejects.toMatchObject({ kind: "clickhouse", code: 396 });
+});
+test("error-shaped text inside valid JSON is only data", async () => {
+  const transport: QueryOptions["transport"] = async () =>
+    Response.json({ data: [{ value: "\nCode: 241. DB::Exception: text" }] }, { headers: { "X-ClickHouse-Query-Id": "fixture" } });
+  expect(await clickhouseQuery({ ...options, query: "SELECT 1", transport })).toEqual([{ value: "\nCode: 241. DB::Exception: text" }]);
+});
+test("empty HTTP failure cannot bypass status validation", async () => {
+  const transport: QueryOptions["transport"] = async () =>
+    new Response("", { status: 500, headers: { "X-ClickHouse-Query-Id": "fixture" } });
+  await expect(clickhouseQuery({ ...options, query: "SELECT 1", transport })).rejects.toMatchObject({ kind: "unreachable" });
+});
+
+test("all 32 maximum-size SQL String bindings fit after Escaped and URL encoding", async () => {
+  const { prepareSql } = await import("../sql-params");
+  const params = Object.fromEntries(Array.from({ length: 32 }, (_, i) => [`p${i}`, "\\".repeat(2048)]));
+  const prepared = prepareSql(
+    `SELECT ${Object.keys(params)
+      .map((name) => `:${name}`)
+      .join(", ")}`,
+    params,
+  );
+  await clickhouseQuery({ ...options, query: prepared.sql, params: prepared.params });
+  expect(new TextEncoder().encode(requests.at(-1)!.url).byteLength).toBeLessThan(CLICKHOUSE_MAX_URL_BYTES);
 });

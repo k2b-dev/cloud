@@ -225,8 +225,13 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
  * Titles inside islands render in the browser anyway. Returns the disposer.
  */
 export const followPageTrail = (root: ParentNode = document): (() => void) => {
-  const disposers: Array<() => void> = [];
+  const disposers = new Map<Text, () => void>();
   const upgrade = () => {
+    for (const [place, dispose] of disposers) {
+      if (place.isConnected) continue;
+      dispose();
+      disposers.delete(place);
+    }
     const trail = readPageTrail();
     for (const element of root.querySelectorAll<HTMLElement>(".k2b-page-title[data-k2b-server]")) {
       const row = element.parentElement;
@@ -250,7 +255,8 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
       const place = document.createTextNode("");
       row.insertBefore(place, element);
       element.remove();
-      disposers.push(
+      disposers.set(
+        place,
         createRoot((dispose) => {
           const live = usePageTrail();
           insert(
@@ -288,6 +294,7 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
   window.addEventListener(PAGE_TRAIL_EVENT, upgrade);
   return () => {
     window.removeEventListener(PAGE_TRAIL_EVENT, upgrade);
-    for (const dispose of disposers.splice(0)) dispose();
+    for (const dispose of disposers.values()) dispose();
+    disposers.clear();
   };
 };

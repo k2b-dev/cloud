@@ -4,7 +4,13 @@ import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import type { PanelPageContext } from "../contracts/panel-context";
-import { isPanelShortcut, PANEL_CONTEXT_PARAM, panelProviderNeedsConsent, withPanelContext } from "../contracts/panel-context-plain";
+import {
+  isPanelPageContext,
+  isPanelShortcut,
+  PANEL_CONTEXT_PARAM,
+  panelProviderNeedsConsent,
+  withPanelContext,
+} from "../contracts/panel-context-plain";
 import { helpShortcutGroups } from "../ssr/layout-help-start";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
@@ -53,13 +59,69 @@ export function installPanelSlot(): () => void {
   let provider = panel.providers.find((item) => item.id === slot.dataset.provider) ?? panel.providers[0]!;
   let frame = slot.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]");
   let disposed = false;
-  let context = panel.context ?? null;
+  let base = panel.context ?? null;
+  let context = base;
+  let pageRoot = document.querySelector("[data-nav-root]");
+  let documentPageId = context?.pageId;
+  let lastSeq = context?.seq ?? 0;
+  // The retained provider may have locked onto this document before a swap and this lazy installer.
+  try {
+    const raw = frame && new URL(frame.src, location.href).searchParams.get(PANEL_CONTEXT_PARAM);
+    const initial: unknown = raw ? JSON.parse(raw) : null;
+    if (isPanelPageContext(initial)) {
+      documentPageId = initial.pageId;
+      lastSeq = context?.pageId === documentPageId ? Math.max(lastSeq, initial.seq) : initial.seq;
+      if (context && context.pageId !== documentPageId) context = { ...context, pageId: documentPageId, seq: ++lastSeq };
+    }
+  } catch {
+    // A malformed or absent URL context leaves the shown page's context in charge.
+  }
+  // Set when a swapped page's context has not been delivered yet; cleared by the next delivery.
+  let pageUnsent = false;
+  const followPage = () => {
+    const nextRoot = document.querySelector("[data-nav-root]");
+    if (nextRoot === pageRoot) return;
+    pageRoot = nextRoot;
+    pageUnsent = true;
+    const arriving = readShellData()?.panel;
+    // The arriving page carries the server's current consent answer, as a reload would; a newer revision wins.
+    const consent = arriving?.consent;
+    if (consent) {
+      // Page observations fence pending choices even when a read already learned this revision or the provider changed.
+      if (consent.revision > (observedRevisions.get(consent.provider) ?? 0)) observedRevisions.set(consent.provider, consent.revision);
+      if (consent.revision > (revisions.get(consent.provider) ?? 0)) {
+        answers.set(consent.provider, consent.allowed);
+        revisions.set(consent.provider, consent.revision);
+      }
+    }
+    if (consent && consent.provider === provider.id) {
+      if (consent.allowed !== answers.get(consent.provider) || consent.revision !== revisions.get(consent.provider)) {
+        // An older or unreadable answer (`allowed: null`) is what a reload would show: stop and read again.
+        void revalidate();
+      }
+    } else if (provider.consent && isOpen()) {
+      // The server sends an answer only while the shared cookie shows this provider open; without it, read again.
+      void revalidate();
+    } else if (consentPending === 0) {
+      // A reload would read these answers again when a consent provider opens; so does the next open here.
+      for (const item of panel.providers) if (item.consent) answers.delete(item.id);
+      answersRead = undefined;
+    }
+    base = arriving?.context ?? null;
+    if (base) {
+      documentPageId ??= base.pageId;
+      context = { ...base, pageId: documentPageId, seq: ++lastSeq };
+    } else context = null;
+  };
   let loadVersion = 0;
   const answers = new Map<string, boolean | null>();
   const revisions = new Map<string, number>();
+  // A newer server page supersedes choices made before it, including queued saves and conflict retries.
+  const observedRevisions = new Map<string, number>();
   if (panel.consent) {
     answers.set(panel.consent.provider, panel.consent.allowed);
     revisions.set(panel.consent.provider, panel.consent.revision);
+    observedRevisions.set(panel.consent.provider, panel.consent.revision);
   }
   const saving = new Set<string>();
   const errors = new Set<string>();
@@ -106,6 +168,7 @@ export function installPanelSlot(): () => void {
   let lastShortcutsJson: string | undefined;
   const canSend = () => isOpen() && allowed() && !!context && slot.dataset.state === "ready" && !!frame?.contentWindow && showsProvider();
   const sendContext = () => {
+    pageUnsent = false;
     if (!canSend()) return;
     const list = !panelProviderNeedsConsent(provider.id) ? shortcuts() : undefined;
     frame?.contentWindow?.postMessage(
@@ -158,15 +221,16 @@ export function installPanelSlot(): () => void {
     if (forgetUrlContext()) disclosed = false;
   };
   const collectContext = () => {
+    followPage();
     if (!context) return;
     const collection: PageContextCollection = { sources: [] };
     window.dispatchEvent(new CustomEvent(PAGE_CONTEXT_COLLECT, { detail: collection }));
     const source = collection.sources.findLast((source) => source.scope !== undefined);
     const parsed = source ? CloudResourceRefSchema.safeParse(source.scope) : undefined;
-    const scope = source ? (parsed?.success ? parsed.data : undefined) : panel.context?.scope;
+    const scope = source ? (parsed?.success ? parsed.data : undefined) : base?.scope;
     if (scope?.type === context.scope?.type && scope?.id === context.scope?.id) return;
-    const { scope: _previous, ...base } = context;
-    context = { ...base, seq: context.seq + 1, ...(scope ? { scope } : {}) };
+    const { scope: _previous, ...previous } = context;
+    context = { ...previous, seq: ++lastSeq, ...(scope ? { scope } : {}) };
     sendContext();
   };
   // Share or stop sharing after every consent step; an open question or its absence follows in update().
@@ -220,8 +284,13 @@ export function installPanelSlot(): () => void {
     }
     for (const item of panel.providers) {
       if (!item.consent) continue;
+      const knownRevision = revisions.get(item.id) ?? 0;
+      const readRevision = nextRevisions.get(item.id);
+      // A page swap can observe a newer answer while this request is in flight. Never rewind that answer.
+      if (readRevision !== undefined && readRevision < knownRevision) continue;
       answers.set(item.id, next.get(item.id) ?? null);
-      revisions.set(item.id, nextRevisions.get(item.id) ?? 0);
+      // An unreadable answer still stops sharing, but must not forget the newest observed revision.
+      revisions.set(item.id, readRevision ?? knownRevision);
     }
     answersStale = false;
   };
@@ -330,7 +399,7 @@ export function installPanelSlot(): () => void {
     clearTimer();
     slot.dataset.state = "ready";
     if (status) status.textContent = "";
-    if (allowed()) {
+    if (allowed() && context) {
       sendContext();
       return;
     }
@@ -427,6 +496,8 @@ export function installPanelSlot(): () => void {
     if (!item || typeof request.allowed !== "boolean" || saving.has(item.id)) return;
     saving.add(item.id);
     errors.delete(item.id);
+    const observedRevision = observedRevisions.get(item.id);
+    const current = () => observedRevisions.get(item.id) === observedRevision;
     const questionHadFocus = slot.querySelector("[data-cloud-panel-consent]")?.contains(document.activeElement);
     // Enqueueing blocks sharing at once, so a withdrawal stops disclosure before its save even starts.
     // keepalive: leaving the page does not cancel the save. A save the browser gives up on (timeout) is rolled back
@@ -441,11 +512,14 @@ export function installPanelSlot(): () => void {
       });
     void enqueueConsent(async () => {
       try {
+        if (!current()) return;
         let response = await put();
+        if (!current()) return;
         // Changed meanwhile (another tab, or a read that failed): the person's choice now is the newest one, so read
         // the current revision and save it once more. A second conflict shows the question again.
         if (response.status === 409) {
           await readAnswersNow();
+          if (!current()) return;
           response = await put();
         }
         if (!response.ok) throw new Error("Panel consent was not saved");
@@ -463,13 +537,17 @@ export function installPanelSlot(): () => void {
           saved.revision <= 0
         )
           throw new Error("Invalid panel consent answer");
-        answers.set(item.id, request.allowed);
-        revisions.set(item.id, saved.revision);
+        if (current() && saved.revision >= (revisions.get(item.id) ?? 0)) {
+          answers.set(item.id, request.allowed);
+          revisions.set(item.id, saved.revision);
+        }
       } catch {
+        // A superseded request cannot invalidate the newer page's answer either.
+        if (!current()) return;
         // Not saved: nothing is shared until the person answers again; the read learns the current revision.
         errors.add(item.id);
         await readAnswersNow();
-        answers.set(item.id, null);
+        if (current()) answers.set(item.id, null);
       } finally {
         saving.delete(item.id);
       }
@@ -657,6 +735,12 @@ export function installPanelSlot(): () => void {
             committedWidth = value;
             writeCookie();
           },
+          onReset: () => {
+            committedWidth = undefined;
+            canvas.style.removeProperty("--cloud-panel-width-set");
+            writeCookie();
+            seedWidth();
+          },
           onCollapseIntent: (armed) => {
             if (armed) slot.dataset.closing = "true";
             else delete slot.dataset.closing;
@@ -680,7 +764,18 @@ export function installPanelSlot(): () => void {
         })
       : () => {};
   let disposeResize = attachResize();
+  // A column island may already have published its place while it mounted; each page's context goes out once.
+  const swapped = () => {
+    collectContext();
+    if (pageUnsent) {
+      pageUnsent = false;
+      if (context && allowed()) sendContext();
+      else stopSharing();
+    } else if (provider.consent && !allowed()) stopSharing();
+    update();
+  };
   collectContext();
+  window.addEventListener("ssr:nav-swapped", swapped);
   window.addEventListener(PAGE_CONTEXT_CHANGED, collectContext);
   window.addEventListener(COMMANDS_CHANGED, commandsChanged);
   window.addEventListener("cloud.panel.consent", consentRequest);
@@ -693,6 +788,7 @@ export function installPanelSlot(): () => void {
   // Restored from the back/forward cache before this lazy module arrived: the server's answers may be outdated.
   if (document.documentElement.hasAttribute("data-cloud-page-restored")) void revalidate();
   window.addEventListener("popstate", closeSheet);
+  window.addEventListener("ssr:nav-popstate", closeSheet);
   window.navigation?.addEventListener("currententrychange", entryChange);
   window.addEventListener("resize", seedWidth);
   // An SSR iframe can have posted its one-shot ready before this lazy module
@@ -737,6 +833,7 @@ export function installPanelSlot(): () => void {
     clearTimer();
     disposeResize();
     removeFallbackFocus();
+    window.removeEventListener("ssr:nav-swapped", swapped);
     window.removeEventListener(PAGE_CONTEXT_CHANGED, collectContext);
     window.removeEventListener(COMMANDS_CHANGED, commandsChanged);
     window.removeEventListener("cloud.panel.consent", consentRequest);
@@ -747,6 +844,7 @@ export function installPanelSlot(): () => void {
     column.removeEventListener("change", modeChange);
     window.removeEventListener("pageshow", pageShow);
     window.removeEventListener("popstate", closeSheet);
+    window.removeEventListener("ssr:nav-popstate", closeSheet);
     window.navigation?.removeEventListener("currententrychange", entryChange);
     window.removeEventListener("resize", seedWidth);
     installed = undefined;

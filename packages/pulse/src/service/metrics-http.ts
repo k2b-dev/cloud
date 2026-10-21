@@ -9,13 +9,14 @@ import {
   resolveAllowedNetworkAddresses,
 } from "@k2b/cloud/services/network-security";
 import { type NetworkAllowlist, networkAddressFamily, normalizeNetworkHostname } from "@k2b/cloud/shared";
-import { scrapeAllowlist, scrapeTargetBlocked } from "./scrape-target";
+import { baseScrapeAllowlist, scrapeTargetBlocked } from "./scrape-target";
 
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const TIMEOUT_MESSAGE = "Metrics scrape timed out after 15 seconds";
 type RequestFactory = (options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest;
 export type MetricsHttpDeps = {
   allowlist?: NetworkAllowlist;
+  readAllowlist?: () => Promise<NetworkAllowlist>;
   lookup?: NetworkLookup;
   request?: RequestFactory;
 };
@@ -118,8 +119,8 @@ export const requestMetrics = async (
       controller.abort();
     }, timeoutMs);
   });
+  let blockedHost = "";
   try {
-    const allowlist = deps.allowlist ?? scrapeAllowlist();
     const original = new URL(rawUrl);
     const basic =
       original.username || original.password
@@ -132,9 +133,17 @@ export const requestMetrics = async (
       if (url.protocol !== "http:" && url.protocol !== "https:") throw new MetricsHttpError("Metrics endpoint must use HTTP or HTTPS", 400);
       url.username = "";
       url.password = "";
+      blockedHost = url.hostname;
+      const allowlist = await Promise.race([
+        deps.readAllowlist ? deps.readAllowlist() : Promise.resolve(deps.allowlist ?? (await baseScrapeAllowlist())),
+        deadline,
+      ]);
       let addresses: PublicNetworkAddress[];
       try {
-        addresses = await Promise.race([resolveAllowedNetworkAddresses(url.hostname, allowlist, deps.lookup), deadline]);
+        addresses = await Promise.race([
+          resolveAllowedNetworkAddresses(url.hostname, allowlist, deps.lookup, Number(url.port || (url.protocol === "https:" ? 443 : 80))),
+          deadline,
+        ]);
       } catch (error) {
         if (error instanceof NetworkTargetBlockedError || error instanceof MetricsHttpError) throw error;
         throw new MetricsHttpError("Metrics endpoint host could not be resolved");
@@ -151,7 +160,7 @@ export const requestMetrics = async (
       return ok(response.body);
     }
   } catch (error) {
-    if (error instanceof NetworkTargetBlockedError) return fail(scrapeTargetBlocked());
+    if (error instanceof NetworkTargetBlockedError) return fail(scrapeTargetBlocked(blockedHost));
     if (error instanceof MetricsHttpError) return fail(error.status === 400 ? err.badInput(error.message) : err.internal(error.message));
     return fail(err.internal("Metrics endpoint connection failed"));
   } finally {

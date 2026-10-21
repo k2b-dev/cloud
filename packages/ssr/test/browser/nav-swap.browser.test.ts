@@ -2302,3 +2302,246 @@ test("a traversal restores stored window and region scroll after mounting the ne
   expect(document.querySelector<HTMLElement>('[data-scroll-preserve="list"]')?.scrollTop).toBe(110);
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 240);
 });
+
+test.each([false, true])("page-owned regions start at the top on a swap (replace: %p)", async (replace) => {
+  const content = '<div data-scroll-preserve="page" data-scroll-page></div><div data-scroll-preserve="shared"></div>';
+  document.querySelector("[data-nav-root]")!.insertAdjacentHTML("beforeend", content);
+  document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')!.scrollTop = 240;
+  document.querySelector<HTMLElement>('[data-scroll-preserve="shared"]')!.scrollTop = 80;
+  install();
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new", content)));
+  await swapPage("/app/new", { replace });
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')?.scrollTop).toBe(0);
+  expect(document.querySelector<HTMLElement>('[data-scroll-preserve="shared"]')?.scrollTop).toBe(80);
+  expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0);
+  if (!replace) {
+    spyOn(globalThis, "fetch").mockResolvedValue(response(html("old", content), {}, "https://example.test/app/old"));
+    const back = swapped("old");
+    window.history.back();
+    await back;
+    expect(document.querySelector<HTMLElement>('[data-scroll-preserve="page"]')?.scrollTop).toBe(240);
+    expect(document.querySelector<HTMLElement>('[data-scroll-preserve="shared"]')?.scrollTop).toBe(80);
+  }
+});
+
+test("committed swap signal follows mount, scroll, focus and announcement for click, replace and Back", async () => {
+  install();
+  const signals: Element[] = [];
+  const swapped = (event: Event) => {
+    if (!(event instanceof CustomEvent)) throw new Error("Expected a custom event");
+    signals.push(event.detail.root);
+    expect(event.detail.root).toBe(document.querySelector("[data-nav-root]"));
+    expect(document.querySelector("solid-island b")?.textContent).toBe(document.title);
+    expect(document.activeElement).toBe(document.querySelector("h1"));
+    expect(document.querySelector("[data-nav-announcer]")?.textContent).toBe(document.title);
+    expect(window.scrollTo).toHaveBeenCalled();
+  };
+  window.addEventListener("ssr:nav-swapped", swapped);
+  const done = () => new Promise<void>((resolve) => window.addEventListener("ssr:nav-swapped", () => resolve(), { once: true }));
+  try {
+    spyOn(globalThis, "fetch").mockImplementation(Object.assign(async () => response(), { preconnect: fetch.preconnect }));
+    const clicked = done();
+    click("/app/new");
+    await clicked;
+    expect(signals).toHaveLength(1);
+    await swapPage("/app/new", { replace: true });
+    expect(signals).toHaveLength(2);
+    spyOn(globalThis, "fetch").mockResolvedValue(response(html("old"), {}, "https://example.test/app/old"));
+    const back = done();
+    window.history.back();
+    await back;
+    expect(signals).toHaveLength(3);
+  } finally {
+    window.removeEventListener("ssr:nav-swapped", swapped);
+  }
+});
+
+test("fallback emits no committed swap signal", async () => {
+  install();
+  const swapped = mock(() => {});
+  window.addEventListener("ssr:nav-swapped", swapped);
+  try {
+    spyOn(globalThis, "fetch").mockResolvedValue(response("forbidden", { status: 403 }));
+    await swapPage("/app/new");
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(swapped).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener("ssr:nav-swapped", swapped);
+  }
+});
+
+const asyncScrollFixture = () => {
+  const region = document.createElement("div");
+  region.dataset.scrollPreserve = "async-list";
+  document.querySelector("[data-nav-root]")!.append(region);
+  install();
+  const first = window.history.state;
+  region.scrollTop = 240;
+  window.history.pushState(null, "", "/app/old?tab=B");
+  const second = window.history.state;
+  region.scrollTop = 400;
+  const completions: Array<() => void> = [];
+  const stop = listenPopState(({ deferScrollRestore }) => completions.push(deferScrollRestore()));
+  return { region, first, second, completions, stop };
+};
+
+test("deferred traversal scroll restores the saved entry after a late DOM commit, once", () => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    expect(f.region.scrollTop).toBe(400);
+    const replacement = f.region.cloneNode() as HTMLElement;
+    f.region.replaceWith(replacement);
+    replacement.scrollTop = 0;
+    f.completions[0]!();
+    expect(replacement.scrollTop).toBe(240);
+    replacement.scrollTop = 60;
+    f.completions[0]!();
+    expect(replacement.scrollTop).toBe(60);
+    arrive(f.second, "/app/old?tab=B");
+    f.completions[1]!();
+    expect(replacement.scrollTop).toBe(400);
+  } finally {
+    f.stop();
+  }
+});
+
+test("deferred traversal scroll keeps the target snapshot through another traversal before commit", () => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    arrive(f.second, "/app/old?tab=B");
+    f.completions[0]!(); // stale completion cannot restore A onto B
+    expect(f.region.scrollTop).toBe(400);
+    f.completions[1]!();
+    arrive(f.first, "/app/old");
+    f.region.scrollTop = 0;
+    f.completions[2]!();
+    expect(f.region.scrollTop).toBe(240); // A was never rendered during the first traversal
+  } finally {
+    f.stop();
+  }
+});
+
+test("deferred traversal scroll rejects an old completion even after returning to the same entry", () => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    arrive(f.second, "/app/old?tab=B");
+    f.completions[1]!();
+    arrive(f.first, "/app/old");
+    f.region.scrollTop = 0;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(0);
+    f.completions[2]!();
+    expect(f.region.scrollTop).toBe(240);
+  } finally {
+    f.stop();
+  }
+});
+
+test.each(["push", "replace", "helper", "wheel", "uninstall"])("deferred traversal scroll yields to %s", (intent) => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    if (intent === "push") window.history.pushState(null, "", "/app/old?new");
+    if (intent === "replace") window.history.replaceState(null, "", "/app/old?new");
+    if (intent === "helper") cancelPageSwap();
+    if (intent === "wheel") window.dispatchEvent(new Event("wheel"));
+    if (intent === "uninstall") uninstall();
+    f.region.scrollTop = 70;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(70);
+  } finally {
+    f.stop();
+  }
+});
+
+test("deferred traversal scroll survives a same-URL state replace and persists its target before a pending reload", () => {
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    window.history.replaceState({ application: true }, "");
+    window.dispatchEvent(new Event("pagehide"));
+    expect(window.history.state[markerKey].scroll.regions.find((r: { key: string }) => r.key === "async-list").y).toBe(240);
+    f.region.scrollTop = 0;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(240);
+  } finally {
+    f.stop();
+  }
+});
+
+test("deferred traversal scroll without an installed owner is inert", () => {
+  let complete = () => {};
+  const stop = listenPopState(({ deferScrollRestore }) => {
+    complete = deferScrollRestore();
+  });
+  try {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(() => complete()).not.toThrow();
+  } finally {
+    stop();
+  }
+});
+
+test.each([false, true])("deferred traversal scroll yields to an unprevented native form (prevented: %p)", (prevented) => {
+  const f = asyncScrollFixture();
+  const form = document.createElement("form");
+  document.body.append(form);
+  form.addEventListener("submit", (event) => {
+    event.stopPropagation();
+    if (prevented) event.preventDefault();
+  });
+  try {
+    arrive(f.first, "/app/old");
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    f.region.scrollTop = 70;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(prevented ? 240 : 70);
+  } finally {
+    f.stop();
+    form.remove();
+  }
+});
+
+test.each([false, true])("deferred traversal scroll yields to native Navigation API events (prevented: %p)", (prevented) => {
+  const navigation = Object.assign(new EventTarget(), { currentEntry: { key: "current", index: 1 } });
+  Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+  const f = asyncScrollFixture();
+  try {
+    arrive(f.first, "/app/old");
+    if (prevented) navigation.addEventListener("navigate", (event) => event.preventDefault(), { once: true });
+    navigation.dispatchEvent(
+      Object.assign(new Event("navigate", { cancelable: true }), {
+        navigationType: "push",
+        hashChange: false,
+        destination: { key: "new-document", sameDocument: false },
+      }),
+    );
+    f.region.scrollTop = 70;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(prevented ? 240 : 70);
+  } finally {
+    f.stop();
+    uninstall();
+    Reflect.deleteProperty(window, "navigation");
+  }
+});
+
+test("deferred traversal scroll ignores forms targeting another window", () => {
+  const f = asyncScrollFixture();
+  const form = document.createElement("form");
+  form.target = "_blank";
+  document.body.append(form);
+  try {
+    arrive(f.first, "/app/old");
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    f.region.scrollTop = 70;
+    f.completions[0]!();
+    expect(f.region.scrollTop).toBe(240);
+  } finally {
+    f.stop();
+    form.remove();
+  }
+});

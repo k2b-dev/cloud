@@ -15,6 +15,7 @@ import { filesCapabilityPresentation } from "./capability-presentation";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { fileActions, fileQueries } from "./file-capabilities";
+import { capabilityCall } from "./files-call";
 import { filesUrl } from "./frontend/urls";
 import { ENTRY_TYPE } from "./resource-ref";
 import { FilesError, filesService } from "./service";
@@ -64,7 +65,7 @@ export const filesCapabilities = defineCapabilities({
         const actor = userActor(context);
         if (!actor) return fail(err.forbidden("File entries are read on behalf of a signed-in user."));
         try {
-          const result = await filesService.entryById(actor, input.id);
+          const result = await filesService.entryById(capabilityCall(context), input.id);
           return ok({
             refs: [{ type: ENTRY_TYPE, id: input.id, title: result.entry.name }],
             links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(input.id)}` }],
@@ -101,12 +102,16 @@ export const filesCapabilities = defineCapabilities({
         const actor = userActor(context);
         if (!actor) return fail(err.forbidden("File search runs on behalf of a signed-in user."));
         const q = query.trim();
-        const available = (await filesService.bases(actor)).items;
+        const available = (await filesService.bases(capabilityCall(context))).items;
         const readable = available.filter((base) => base.status === "existing");
         const bases = readable.slice(0, SEARCH_BASE_LIMIT);
         // Query failures are failures, never empty search results. Promise.all bounds fan-out to ten.
         const pages = await Promise.all(
-          bases.map((base) => (q ? filesService.search(actor, { baseId: base.id, q }) : filesService.list(actor, { baseId: base.id }))),
+          bases.map((base) =>
+            q
+              ? filesService.search(capabilityCall(context), { baseId: base.id, q })
+              : filesService.list(capabilityCall(context), { baseId: base.id }),
+          ),
         );
         const entries = pages.flatMap((page) =>
           (q ? page.items : [...page.items].sort((a, b) => b.modified.localeCompare(a.modified))).map((entry) => ({ page, entry })),

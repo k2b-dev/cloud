@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import { CAPABILITY_DISCOVERY_TIMEOUT_MS } from "../_internal/capability-timeout";
 import { listCapabilities } from "../_internal/registry";
-import { type CapabilityDispatchParams, dispatchCapability, QUERY_TIMEOUT_MS } from "../api/capabilities";
+import { type CapabilityDispatchParams, dispatchCapability } from "../api/capabilities";
 import {
   CloudResourceRefSchema,
   capabilityResultSchema,
@@ -108,7 +109,7 @@ export const listAiRecentResources = async (input: {
   dependencies?: AiRecentResourceDependencies;
 }): Promise<AiRecentResource[]> => {
   const deps = input.dependencies ?? {};
-  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(deps.timeoutMs ?? QUERY_TIMEOUT_MS)]);
+  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(deps.timeoutMs ?? CAPABILITY_DISCOVERY_TIMEOUT_MS)]);
   // Unreadable history is no answer, not an empty one: the request fails, so the browser asks again at its next opening.
   const sent = await withinBudget(signal, () =>
     (deps.store ?? aiConversations).listRecentSentResourceRefs({ ownerUserId: input.ownerUserId }),

@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { unlink } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
 import pulseCli from "./cli";
-import { withResourcePermalinkForBase } from "./cli/inventory-commands";
 
 type FetchCall = {
   path: string;
@@ -13,7 +12,6 @@ type FetchCall = {
 
 const baseId = "Base01";
 const sourceId = "Src001";
-const dashboardId = "Dash01";
 const userId = "33333333-3333-4333-8333-333333333333";
 const accessId = "44444444-4444-4444-8444-444444444444";
 
@@ -106,71 +104,21 @@ const source = {
   endpointUrl: null,
   bearerTokenConfigured: false,
   scrapeIntervalSeconds: null,
+  metricFilters: [],
+  status: {
+    newestDataAt: "2026-07-07T00:00:00.000Z",
+    throttled: false,
+    throttledAt: null,
+    refusedHistograms: [],
+    skippedSummaries: 0,
+    lastError: null,
+    lastErrorAt: null,
+  },
   lastSeenAt: "2026-07-07T00:00:00.000Z",
   lastError: null,
   lastErrorAt: null,
   createdAt: "2026-07-07T00:00:00.000Z",
   updatedAt: "2026-07-07T00:00:00.000Z",
-};
-
-const inventory = {
-  resources: [
-    {
-      key: "host:macbook",
-      id: "macbook",
-      label: "MacBook",
-      type: "host",
-      sourceIds: [sourceId],
-      metricSeriesCount: 1,
-      metricCount: 1,
-      eventCount: 0,
-      stateCount: 1,
-      lastSeenAt: "2026-07-07T12:00:00.000Z",
-      dimensions: { host: "macbook" },
-    },
-  ],
-  metrics: [
-    {
-      seriesId: "33333333-3333-4333-8333-333333333333",
-      resourceKey: "host:macbook",
-      resourceId: "macbook",
-      resourceType: "host",
-      metric: "system.memory.usage",
-      type: "gauge",
-      unit: "percent",
-      sourceId,
-      dimensions: { host: "macbook" },
-      lastSeenAt: "2026-07-07T12:00:00.000Z",
-      latestValue: 61.2,
-      latestSampleAt: "2026-07-07T12:00:00.000Z",
-    },
-  ],
-  states: [
-    {
-      variantKey: "fixture-0",
-      key: "system.host.online",
-      value: true,
-      sourceId,
-      resourceKey: "host:macbook",
-      resourceType: "host",
-      dimensions: { host: "macbook" },
-      updatedAt: "2026-07-07T12:00:00.000Z",
-    },
-  ],
-  events: [],
-  fields: [
-    {
-      sourceId,
-      scope: "event",
-      signalName: "page.viewed",
-      role: "attribute",
-      key: "request_id",
-      valueType: "string",
-      observedCount: 42,
-      firstSeenAt: "2026-07-07T11:00:00.000Z",
-      lastSeenAt: "2026-07-07T12:00:00.000Z",
-    },
-  ],
 };
 
 describe("pulse CLI", () => {
@@ -200,18 +148,6 @@ describe("pulse CLI", () => {
     await expect(pulseCli.run(ctx)).rejects.toThrow('Ambiguous Pulse base "Ops123". Use an ID.');
   });
 
-  test("deletes a saved query by short ID without listing saved queries", async () => {
-    const { ctx, calls } = createContext(["query", "delete", baseId, "Query1"], { yes: true }, [
-      jsonResponse(base),
-      jsonResponse({ message: "Query removed" }),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([`/api/pulse/bases/${baseId}`, `/api/pulse/bases/${baseId}/saved-queries/Query1`]);
-    expect(calls[1]?.init?.method).toBe("DELETE");
-  });
-
   test("updates all V1 retention classes explicitly", async () => {
     const updated = {
       ...base,
@@ -235,6 +171,37 @@ describe("pulse CLI", () => {
       sensitiveRetentionHours: 12,
     });
     expect(lines).toEqual([`Updated Pulse base Test (${baseId}).`]);
+  });
+
+  for (const output of ["text", "json"] as const)
+    test(`shorter retention prints its preview and requires explicit confirmation (${output})`, async () => {
+      const preview = [
+        { kind: "raw", retention: 7, cutoff: "2026-10-10T12:00:00.000Z", rows: 25, bytes: 1024 },
+        { kind: "sensitive", retention: 12, cutoff: "2026-10-17T00:00:00.000Z", rows: 5, bytes: 64 },
+      ];
+      const confirmation = { code: "PULSE_RETENTION_CONFIRMATION_REQUIRED", preview };
+      const { ctx, calls, lines, tables } = createContext(
+        ["update", baseId],
+        { "raw-retention-days": "7", "sensitive-retention-hours": "12" },
+        [jsonResponse(base), jsonResponse(confirmation, 409)],
+        output,
+      );
+      await expect(pulseCli.run(ctx)).rejects.toThrow("--confirm-shorter-retention");
+      expect(calls).toHaveLength(2);
+      expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ rawRetentionDays: 7, sensitiveRetentionHours: 12 });
+      if (output === "json") expect(JSON.parse(lines[0]!)).toEqual(confirmation);
+      else expect(tables).toEqual([preview]);
+    });
+
+  test("shorter retention sends confirmation only with --confirm-shorter-retention", async () => {
+    const { ctx, calls } = createContext(["update", baseId], { "raw-retention-days": "7", "confirm-shorter-retention": true }, [
+      jsonResponse(base),
+      jsonResponse({ ...base, rawRetentionDays: 7 }),
+    ]);
+    await pulseCli.run(ctx);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ rawRetentionDays: 7, confirmShorterRetention: true });
   });
 
   test("lists Pulse base access entries", async () => {
@@ -325,23 +292,60 @@ describe("pulse CLI", () => {
     ]);
   });
 
-  test("creates source ingest tokens through the source-token command group", async () => {
-    const { ctx, calls, lines } = createContext(["source-tokens", "create", baseId, "docker"], { name: "docker-host" }, [
+  test.each(["text", "json", "jsonl"] as const)(
+    "#11 token creation writes a private file without printing the token (%s)",
+    async (output) => {
+      const directory = await mkdtemp(join(tmpdir(), "pulse-token-"));
+      const path = join(directory, "token");
+      try {
+        const { ctx, calls, lines } = createContext(
+          ["source-tokens", "create", baseId, "docker"],
+          { name: "docker-host", "output-file": path },
+          [jsonResponse(base), jsonResponse([source]), jsonResponse({ credential: sourceToken, token: "secret-token" }, 201)],
+          output,
+        );
+        await pulseCli.run(ctx);
+        expect(calls[2]?.init?.method).toBe("POST");
+        expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ name: "docker-host", permission: "write", expiresAt: null });
+        expect(await readFile(path, "utf8")).toBe("secret-token");
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+        expect(lines.join("\n")).not.toContain("secret-token");
+        expect(lines.join("\n")).toContain(path);
+        if (output !== "text") expect(JSON.parse(lines[0]!)).toEqual({ id: sourceToken.id, name: sourceToken.name, path });
+        const second = createContext(["source-tokens", "create", baseId, "docker"], { name: "other", "output-file": path }, [
+          jsonResponse(base),
+          jsonResponse([source]),
+        ]);
+        await expect(pulseCli.run(second.ctx)).rejects.toThrow("EEXIST");
+        expect(second.calls).toHaveLength(2);
+        expect(await readFile(path, "utf8")).toBe("secret-token");
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("#11 token creation requires --output-file before making API calls", async () => {
+    const { ctx, calls } = createContext(["source-tokens", "create", baseId, "docker"], { name: "docker-host" });
+    await expect(pulseCli.run(ctx)).rejects.toThrow("--output-file");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("#12 source CLI sends repeated filters and can clear them", async () => {
+    const create = createContext(
+      ["sources", "create", baseId],
+      { name: "filtered", kind: "metrics", "endpoint-url": "https://example.org/metrics", "metric-filter": ["node_*", "up"] },
+      [jsonResponse(base), jsonResponse(source)],
+    );
+    await pulseCli.run(create.ctx);
+    expect(JSON.parse(String(create.calls[1]?.init?.body)).metricFilters).toEqual(["node_*", "up"]);
+    const update = createContext(["sources", "update", baseId, "docker"], { "clear-metric-filters": true }, [
       jsonResponse(base),
       jsonResponse([source]),
-      jsonResponse({ credential: sourceToken, token: "secret-token" }, 201),
+      jsonResponse(source),
     ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/sources`,
-      `/api/pulse/bases/${baseId}/sources/${sourceId}/api-keys`,
-    ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ name: "docker-host", permission: "write", expiresAt: null });
-    expect(lines).toEqual([`Created token docker-host (${sourceToken.id}).`, "secret-token"]);
+    await pulseCli.run(update.ctx);
+    expect(JSON.parse(String(update.calls[2]?.init?.body)).metricFilters).toEqual([]);
   });
 
   test("revokes source ingest tokens through the source-token command group", async () => {
@@ -362,251 +366,6 @@ describe("pulse CLI", () => {
     ]);
     expect(calls[3]?.init?.method).toBe("DELETE");
     expect(lines).toEqual(["Revoked token docker-host."]);
-  });
-
-  test("lists metrics for a resolved resource", async () => {
-    const { ctx, calls, tables } = createContext(["resources", "metrics", baseId, "MacBook"], {}, [
-      jsonResponse(base),
-      jsonResponse(inventory.resources),
-      jsonResponse(inventory.metrics),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/resources?ref=MacBook&limit=20`,
-      `/api/pulse/bases/${baseId}/resource-metrics?resourceKey=host%3Amacbook`,
-    ]);
-    expect(tables[0]).toEqual([
-      {
-        id: "33333333",
-        metric: "system.memory.usage",
-        type: "gauge",
-        unit: "percent",
-        source: "Src001",
-        resource: "host:macbook",
-        value: "61.2",
-        lastSeenAt: "2026-07-07T12:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("filters metric summaries by source name through the metrics endpoint", async () => {
-    const { ctx, calls, tables } = createContext(["metrics", baseId], { source: "docker" }, [
-      jsonResponse(base),
-      jsonResponse([source]),
-      jsonResponse([
-        {
-          name: "system.memory.usage",
-          type: "gauge",
-          unit: "percent",
-          seriesCount: 1,
-          lastSeenAt: "2026-07-07T12:00:00.000Z",
-        },
-      ]),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/sources`,
-      `/api/pulse/bases/${baseId}/metrics?sourceId=${sourceId}`,
-    ]);
-    expect(tables[0]).toEqual([
-      {
-        metric: "system.memory.usage",
-        type: "gauge",
-        unit: "percent",
-        series: 1,
-        lastSeenAt: "2026-07-07T12:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("lists bounded field definitions by source and role", async () => {
-    const { ctx, calls, tables } = createContext(["fields", "list", baseId], { source: "docker", role: "attribute", q: "request" }, [
-      jsonResponse(base),
-      jsonResponse([source]),
-      jsonResponse(inventory.fields),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/sources`,
-      `/api/pulse/bases/${baseId}/fields?q=request&sourceId=${sourceId}&role=attribute&limit=100`,
-    ]);
-    expect(tables[0]).toEqual([
-      {
-        scope: "event",
-        signal: "page.viewed",
-        role: "attribute",
-        field: "request_id",
-        type: "string",
-        source: "Src001",
-        observations: 42,
-        lastSeenAt: "2026-07-07T12:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("filters metric summaries by resource through bounded resource endpoints", async () => {
-    const { ctx, calls, tables } = createContext(["metrics", baseId], { resource: "MacBook" }, [
-      jsonResponse(base),
-      jsonResponse(inventory.resources),
-      jsonResponse(inventory.metrics),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/resources?ref=MacBook&limit=20`,
-      `/api/pulse/bases/${baseId}/resource-metrics?resourceKey=host%3Amacbook&limit=500`,
-    ]);
-    expect(tables[0]).toEqual([
-      {
-        metric: "system.memory.usage",
-        type: "gauge",
-        unit: "percent",
-        series: 1,
-        lastSeenAt: "2026-07-07T12:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("filters states by resource through bounded resource endpoints", async () => {
-    const { ctx, calls, tables } = createContext(["states", baseId], { resource: "MacBook" }, [
-      jsonResponse(base),
-      jsonResponse(inventory.resources),
-      jsonResponse(inventory.states),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/resources?ref=MacBook&limit=20`,
-      `/api/pulse/bases/${baseId}/resource-states?resourceKey=host%3Amacbook`,
-    ]);
-    expect(tables[0]).toEqual([
-      {
-        key: "system.host.online",
-        value: "true",
-        source: "Src001",
-        resource: "host:macbook",
-        resourceType: "host",
-        updatedAt: "2026-07-07T12:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("filters series by resource through bounded resource endpoints", async () => {
-    const { ctx, calls, tables } = createContext(["series", baseId, "system.memory.usage"], { resource: "MacBook" }, [
-      jsonResponse(base),
-      jsonResponse(inventory.resources),
-      jsonResponse(inventory.metrics),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/resources?ref=MacBook&limit=20`,
-      `/api/pulse/bases/${baseId}/resource-metrics?resourceKey=host%3Amacbook&q=system.memory.usage&limit=500`,
-    ]);
-    expect(tables[0]).toEqual([
-      {
-        id: "33333333",
-        metric: "system.memory.usage",
-        type: "gauge",
-        unit: "percent",
-        source: "Src001",
-        resource: "host:macbook",
-        value: "61.2",
-        lastSeenAt: "2026-07-07T12:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("keeps resources JSON compact without signal payloads", async () => {
-    const { ctx, lines } = createContext(
-      ["resources", "list", baseId],
-      {},
-      [jsonResponse(base), jsonResponse(inventory.resources)],
-      "json",
-    );
-
-    await pulseCli.run(ctx);
-
-    const payload = JSON.parse(lines[0]!);
-    expect(payload.resources).toEqual([
-      {
-        key: "host:macbook",
-        permalink: "http://cloud.test/open/pulse.resource/~Base01%2Fhost%3Amacbook",
-        id: "macbook",
-        label: "MacBook",
-        type: "host",
-        sourceIds: [sourceId],
-        metricSeriesCount: 1,
-        metricCount: 1,
-        eventCount: 0,
-        stateCount: 1,
-        lastSeenAt: "2026-07-07T12:00:00.000Z",
-        dimensions: { host: "macbook" },
-      },
-    ]);
-    expect(payload.metrics).toBeUndefined();
-    expect(payload.states).toBeUndefined();
-    expect(payload.events).toBeUndefined();
-  });
-
-  test("prints resources as compact table rows", async () => {
-    const { ctx, calls, tables } = createContext(["resources", "list", baseId], { limit: "50", offset: "100" }, [
-      jsonResponse(base),
-      jsonResponse(inventory.resources),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.at(-1)?.path).toBe(`/api/pulse/bases/${baseId}/resources?limit=50&offset=100`);
-
-    expect(tables[0]).toEqual([
-      {
-        key: "host:macbook",
-        type: "host",
-        label: "MacBook",
-        metrics: 1,
-        states: 1,
-        events: 0,
-        sources: 1,
-        lastSeenAt: "2026-07-07T12:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("does not match resource labels as state identities", async () => {
-    const { ctx, tables } = createContext(["resources", "states", baseId, "MacBook"], {}, [
-      jsonResponse(base),
-      jsonResponse(inventory.resources),
-      jsonResponse(inventory.states),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(tables[0]).toEqual([
-      {
-        key: "system.host.online",
-        value: "true",
-        source: "Src001",
-        resource: "host:macbook",
-        resourceType: "host",
-        updatedAt: "2026-07-07T12:00:00.000Z",
-      },
-    ]);
   });
 
   test("streams list results as JSONL without rendering a table", async () => {
@@ -662,212 +421,6 @@ describe("pulse CLI", () => {
 
     expect(JSON.parse(String(calls[2]?.init?.body))).toMatchObject({ bearerToken: null });
   });
-
-  test("creates dashboards from DSL without sending compiled layout", async () => {
-    const dsl = 'dashboard "Ops" {}';
-    const dashboard = {
-      id: dashboardId,
-      baseId,
-      name: "Ops",
-      config: { dsl, layout: null, refreshIntervalSeconds: 5 },
-      publicEnabled: false,
-      createdAt: "2026-07-07T00:00:00.000Z",
-      updatedAt: "2026-07-07T00:00:00.000Z",
-    };
-    const { ctx, calls, lines } = createContext(["dashboards", "create", baseId], { name: "Ops", content: dsl }, [
-      jsonResponse(base),
-      jsonResponse({ ok: true, diagnostics: [], config: dashboard.config }),
-      jsonResponse(dashboard, 201),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      "/api/pulse/dashboard-dsl/compile",
-      `/api/pulse/bases/${baseId}/dashboards`,
-    ]);
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
-      name: "Ops",
-      config: { dsl, refreshIntervalSeconds: 5 },
-    });
-    expect(lines).toEqual([`Created dashboard Ops (${dashboardId}).`]);
-  });
-
-  test("renders an authenticated dashboard snapshot without publishing it", async () => {
-    const dashboard = {
-      id: dashboardId,
-      baseId,
-      name: "Ops",
-      config: { dsl: 'dashboard "Ops" {}', layout: null, refreshIntervalSeconds: 5 },
-      publicEnabled: false,
-      createdAt: "2026-07-07T00:00:00.000Z",
-      updatedAt: "2026-07-07T00:00:00.000Z",
-    };
-    const snapshot = {
-      dashboard: { id: dashboardId, name: "Ops", config: { layout: null, refreshIntervalSeconds: 5 } },
-      points: { cpu: [{ ts: "2026-07-07T12:00:00.000Z", value: 42 }] },
-      events: { deploys: [{ id: "event", kind: "deploy", ts: "2026-07-07T12:00:00.000Z", value: {} }] },
-      states: {
-        health: [
-          {
-            variantKey: "fixture-3",
-            key: "service.online",
-            value: true,
-            updatedAt: "2026-07-07T12:00:00.000Z",
-          },
-        ],
-      },
-    };
-    const { ctx, calls, lines } = createContext(["dashboards", "snapshot", baseId, "Ops"], {}, [
-      jsonResponse(base),
-      jsonResponse([dashboard]),
-      jsonResponse(snapshot),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/dashboards`,
-      `/api/pulse/dashboards/${dashboardId}/snapshot`,
-    ]);
-    expect(lines).toEqual(["Ops: 1 points, 1 events, 1 states"]);
-  });
-
-  test("updates dashboard DSL without sending compiled layout", async () => {
-    const dsl = 'dashboard "Ops" {}';
-    const dashboard = {
-      id: dashboardId,
-      baseId,
-      name: "Ops",
-      config: { dsl, layout: null, refreshIntervalSeconds: null },
-      publicEnabled: false,
-      createdAt: "2026-07-07T00:00:00.000Z",
-      updatedAt: "2026-07-07T00:00:00.000Z",
-    };
-    const { ctx, calls, lines } = createContext(["dashboards", "update", baseId, "Ops"], { content: dsl }, [
-      jsonResponse(base),
-      jsonResponse([dashboard]),
-      jsonResponse({ ok: true, diagnostics: [], config: { dsl, layout: null } }),
-      jsonResponse(dashboard),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/dashboards`,
-      "/api/pulse/dashboard-dsl/compile",
-      `/api/pulse/dashboards/${dashboardId}`,
-    ]);
-    expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({
-      config: { dsl, refreshIntervalSeconds: null },
-    });
-    expect(lines).toEqual([`Updated dashboard Ops (${dashboardId}).`]);
-  });
-
-  test("preserves dashboard refresh while replacing DSL and supports explicit refresh updates", async () => {
-    const previousDsl = 'dashboard "Ops" {}';
-    const nextDsl = 'dashboard "Operations" {}';
-    const dashboard = {
-      id: dashboardId,
-      baseId,
-      name: "Ops",
-      config: { dsl: previousDsl, layout: null, refreshIntervalSeconds: 60 },
-      publicEnabled: false,
-      createdAt: "2026-07-07T00:00:00.000Z",
-      updatedAt: "2026-07-07T00:00:00.000Z",
-    };
-    const { ctx, calls } = createContext(["dashboards", "update", baseId, "Ops"], { content: nextDsl }, [
-      jsonResponse(base),
-      jsonResponse([dashboard]),
-      jsonResponse({ ok: true, diagnostics: [], config: { dsl: nextDsl, layout: null } }),
-      jsonResponse({ ...dashboard, config: { ...dashboard.config, dsl: nextDsl } }),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({
-      config: { dsl: nextDsl, refreshIntervalSeconds: 60 },
-    });
-
-    const { ctx: refreshCtx, calls: refreshCalls } = createContext(["dashboards", "update", baseId, "Ops"], { refresh: "never" }, [
-      jsonResponse(base),
-      jsonResponse([dashboard]),
-      jsonResponse({ ...dashboard, config: { ...dashboard.config, refreshIntervalSeconds: null } }),
-    ]);
-
-    await pulseCli.run(refreshCtx);
-
-    expect(JSON.parse(String(refreshCalls[2]?.init?.body))).toEqual({
-      config: { dsl: previousDsl, refreshIntervalSeconds: null },
-    });
-  });
-
-  test("prints a stable public display URL", async () => {
-    const dashboard = {
-      id: dashboardId,
-      baseId,
-      name: "Ops",
-      config: { dsl: 'dashboard "Ops" {}', layout: null, refreshIntervalSeconds: 5 },
-      publicEnabled: true,
-      createdAt: "2026-07-07T00:00:00.000Z",
-      updatedAt: "2026-07-07T00:00:00.000Z",
-    };
-    const { ctx, calls, lines } = createContext(["dashboards", "public-url", baseId, "Ops"], { theme: "dark", height: "full", yes: true }, [
-      jsonResponse(base),
-      jsonResponse([dashboard]),
-      jsonResponse({ dashboard, token: "public-token" }),
-    ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.at(-1)?.path).toBe(`/api/pulse/dashboards/${dashboardId}/public-token`);
-    expect(calls.at(-1)?.init?.method).toBe("POST");
-    expect(lines).toEqual(["http://cloud.test/app/pulse/display/public-token?theme=dark&height=full"]);
-  });
-
-  test("requires confirmation before creating or showing a public display URL", async () => {
-    const { ctx } = createContext(["dashboards", "public-url", baseId, "Ops"]);
-
-    await expect(pulseCli.run(ctx)).rejects.toThrow("Refusing to enable or show a public link without --yes.");
-  });
-
-  test("requires confirmation for every public-enabling dashboard command", async () => {
-    const dsl = 'dashboard "Ops" {}';
-    const { ctx: create } = createContext(["dashboards", "create", baseId], { name: "Ops", content: dsl, public: true });
-    await expect(pulseCli.run(create)).rejects.toThrow("Refusing to create a public link without --yes.");
-
-    const { ctx: publish } = createContext(["dashboards", "publish", baseId, "Ops"]);
-    await expect(pulseCli.run(publish)).rejects.toThrow("Refusing to publish without --yes.");
-  });
-
-  test("keeps overview JSON compact unless inventory is requested", async () => {
-    const { ctx, lines } = createContext(
-      ["overview", baseId],
-      {},
-      [jsonResponse(base), jsonResponse([source]), jsonResponse(inventory), jsonResponse([]), jsonResponse([])],
-      "json",
-    );
-
-    await pulseCli.run(ctx);
-
-    const payload = JSON.parse(lines[0]!);
-    expect(payload.inventory).toBeUndefined();
-    expect(payload.summary).toEqual({
-      base: "Test",
-      sources: 1,
-      resources: 1,
-      resourceTypes: 1,
-      metrics: 0,
-      metricSeries: 1,
-      events: 0,
-      states: 1,
-      fields: 1,
-    });
-    expect(payload.topResources).toHaveLength(1);
-  });
 });
 
 test("ingests into an explicit source through the authenticated source endpoint", async () => {
@@ -880,15 +433,9 @@ test("ingests into an explicit source through the authenticated source endpoint"
   await pulseCli.run(ctx);
   expect(calls.at(-1)?.path).toBe(`/api/pulse/bases/${baseId}/sources/${sourceId}/ingest`);
   expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual(batch);
-});
-
-test("resource URLs use the base and resource key instead of the external ID", () => {
-  const ctx = { options: { profile: "test", token: "test", server: "https://cloud.test", output: "json" as const } };
-  const resource = { id: "external-host-id", key: "host:a/b", label: "Host" };
-  expect(withResourcePermalinkForBase(ctx, "Base01", resource)).toEqual({
-    ...resource,
-    permalink: "https://cloud.test/open/pulse.resource/~Base01%2Fhost%3Aa%2Fb",
-  });
+  const { default: api } = await import("./api/index");
+  const path = calls.at(-1)!.path.replace(/^\/api\/pulse/, "");
+  expect(api.router.match("POST", path)[0].some(([[, route]]) => route.method === "POST")).toBe(true);
 });
 
 describe("Pulse data store administration", () => {
@@ -960,4 +507,227 @@ describe("Pulse data store administration", () => {
         await unlink(path);
       }
     });
+});
+
+describe("Pulse base administration CLI", () => {
+  test.each([
+    { args: ["admin", "policy", "get"], flags: {}, path: "/api/pulse/admin/policy", method: undefined },
+    {
+      args: ["admin", "policy", "set"],
+      flags: { "max-bases": "10", "default-values-per-minute": "100" },
+      path: "/api/pulse/admin/policy",
+      method: "PUT",
+    },
+    {
+      args: ["admin", "bases", "list"],
+      flags: { limit: "3", offset: "2", query: "ops" },
+      path: "/api/pulse/admin/bases?limit=3&offset=2&q=ops",
+      method: undefined,
+    },
+    {
+      args: ["admin", "bases", "limits", "Base01"],
+      flags: { profile: "small", "storage-bytes": "2000000000" },
+      path: "/api/pulse/admin/bases/Base01/limits",
+      method: "PUT",
+    },
+    ...["retry", "recheck", "recreate"].map((action) => ({
+      args: ["admin", "bases", action, "Base01"],
+      flags: action === "recreate" ? { yes: true } : {},
+      path: `/api/pulse/admin/bases/Base01/${action}`,
+      method: "POST",
+    })),
+    { args: ["admin", "orphans", "list"], flags: {}, path: "/api/pulse/admin/orphans", method: undefined },
+    {
+      args: ["admin", "orphans", "list"],
+      flags: { limit: "3", after: "pulse_00000000000040008000000000000000" },
+      path: "/api/pulse/admin/orphans?limit=3&after=pulse_00000000000040008000000000000000",
+      method: undefined,
+    },
+    {
+      args: ["admin", "orphans", "delete", "pulse_fixture"],
+      flags: { yes: true },
+      path: "/api/pulse/admin/orphans/pulse_fixture",
+      method: "DELETE",
+    },
+    { args: ["admin", "targets", "list"], flags: { base: "Base01" }, path: "/api/pulse/admin/targets?baseId=Base01", method: undefined },
+    { args: ["admin", "targets", "add", "web-01:9100"], flags: { base: "Base01" }, path: "/api/pulse/admin/targets", method: "POST" },
+    { args: ["admin", "targets", "remove", "target-id"], flags: {}, path: "/api/pulse/admin/targets/target-id", method: "DELETE" },
+  ])("routes $args to the admin API", async ({ args, flags, path, method }) => {
+    const cleanFlags: CloudCliFlags = {};
+    for (const [key, value] of Object.entries(flags)) if (value !== undefined) cleanFlags[key] = value;
+    const { ctx, calls } = createContext([...args], cleanFlags, [jsonResponse({ ok: true })]);
+    await pulseCli.run(ctx);
+    expect(calls[0]?.path).toBe(path);
+    expect(calls[0]?.init?.method).toBe(method);
+  });
+  test.each([{ args: ["admin", "bases", "recreate", "Base01"] }, { args: ["admin", "orphans", "delete", "pulse_fixture"] }])(
+    "refuses the destructive $args without --yes",
+    async ({ args }) => {
+      const { ctx, calls } = createContext([...args], {}, [jsonResponse({ ok: true })]);
+      await expect(pulseCli.run(ctx)).rejects.toThrow("without --yes");
+      expect(calls).toHaveLength(0);
+    },
+  );
+  test("fixed admin denial names the repair path without reflecting remote messages", async () => {
+    const { ctx } = createContext(["admin", "policy", "get"], {}, [
+      jsonResponse({ code: "ACCESS_DENIED", message: "REMOTE_MUST_NOT_LEAK" }, 403),
+    ]);
+    await expect(pulseCli.run(ctx)).rejects.toThrow("ACCESS_DENIED: A Cloud admin");
+  });
+});
+
+test("the removed deployment snapshot command makes no API call", async () => {
+  const { ctx, calls } = createContext(["capabilities"]);
+  await expect(pulseCli.run(ctx)).rejects.toThrow("Unknown pulse command");
+  expect(calls).toHaveLength(0);
+});
+
+describe("Pulse SQL CLI", () => {
+  const result = {
+    runId: "00000000-0000-4000-8000-000000000001",
+    columns: [{ name: "text", type: "String" }],
+    rows: [['a,"b']],
+    rowCount: 1,
+    truncated: false,
+    stats: { elapsedMs: 1, readRows: 1, readBytes: 4 },
+    limits: {},
+  };
+  test.each(["table", "json", "csv"])("prints %s and binds parameter values as data", async (format) => {
+    const context = createContext(["sql", "SELECT :value"], { base: baseId, param: ['value=a,\"b'], format }, [jsonResponse(result)]);
+    expect(await pulseCli.run(context.ctx)).toBe(0);
+    expect(context.calls[0]?.path).toBe(`/api/pulse/bases/${baseId}/sql`);
+    const body = JSON.parse(String(context.calls[0]?.init?.body));
+    expect(body.params).toEqual({ value: 'a,"b' });
+    expect(body.runId).toMatch(/^[a-f0-9-]{36}$/);
+    if (format === "json") expect(JSON.parse(context.lines[0]!)).toEqual(result);
+    else if (format === "csv") expect(context.lines).toEqual(["text", '"a,""b"']);
+    else expect(context.tables).toEqual([[{ 0: 'a,"b' }]]);
+  });
+  test("reads SQL from a file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pulse-sql-cli-"));
+    const path = join(directory, "query.sql");
+    await Bun.write(path, "SELECT :metric");
+    try {
+      const context = createContext(["sql"], { base: baseId, file: path, param: ["metric=cpu"] }, [jsonResponse(result)]);
+      expect(await pulseCli.run(context.ctx)).toBe(0);
+      expect(JSON.parse(String(context.calls[0]?.init?.body)).sql).toBe("SELECT :metric");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+  test("reads SQL from stdin", async () => {
+    const { spyOn } = await import("bun:test");
+    const stdin = spyOn(Bun.stdin, "text").mockResolvedValue("SELECT 1");
+    try {
+      const context = createContext(["sql", "-"], { base: baseId }, [jsonResponse(result)]);
+      expect(await pulseCli.run(context.ctx)).toBe(0);
+      expect(JSON.parse(String(context.calls[0]?.init?.body)).sql).toBe("SELECT 1");
+    } finally {
+      stdin.mockRestore();
+    }
+  });
+  test.each([
+    ["INPUT_TOO_LARGE", 2],
+    ["PARAMETER_MISSING", 2],
+    ["SQL_ERROR", 3],
+    ["TIME_LIMIT", 4],
+    ["MEMORY_LIMIT", 4],
+    ["RESULT_TOO_LARGE", 4],
+    ["BUSY", 5],
+    ["QUEUE_FULL", 5],
+    ["QUOTA", 5],
+    ["NO_READ_ACCESS", 6],
+    ["STORE_UNAVAILABLE", 7],
+  ] as const)("maps %s to exit %s", async (code, expected) => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId }, [jsonResponse({ code, message: "Query refused." }, 400)]);
+    expect(await pulseCli.run(context.ctx)).toBe(expected);
+    expect(context.lines).toEqual([`${code}: Query refused.`]);
+  });
+  test("rejects invalid input before any HTTP request", async () => {
+    const context = createContext(["sql", "SELECT :missing"], { base: baseId });
+    expect(await pulseCli.run(context.ctx)).toBe(2);
+    expect(context.calls).toHaveLength(0);
+    expect(context.lines.join()).toContain("PARAMETER_MISSING");
+  });
+  test("unknown upstream failures never print credentials or response bodies", async () => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId }, [
+      jsonResponse({ code: "REMOTE", message: "SECRET_MUST_NOT_PRINT" }, 500),
+    ]);
+    expect(await pulseCli.run(context.ctx)).toBe(7);
+    expect(context.lines.join()).not.toContain("SECRET_MUST_NOT_PRINT");
+    expect(context.lines.join()).not.toContain(context.ctx.options.token);
+  });
+  test.each([true, false])("Ctrl-C cancels visibly even if the response races the abort (transport rejects: %s)", async (rejects) => {
+    const context = createContext(["sql", "SELECT 1"], { base: baseId });
+    let sent: Record<string, unknown> | undefined;
+    context.ctx.fetch = async (path, init) => {
+      context.calls.push({ path, init });
+      if (path.endsWith("/cancel")) {
+        sent = JSON.parse(String(init?.body));
+        return jsonResponse({ cancelled: true });
+      }
+      // Emitting immediately exercises cancellation before the first response byte.
+      process.emit("SIGINT");
+      expect(init?.signal?.aborted).toBe(true);
+      if (rejects) throw new DOMException("Aborted", "AbortError");
+      return jsonResponse(result);
+    };
+    expect(await pulseCli.run(context.ctx)).toBe(130);
+    const request = JSON.parse(String(context.calls[0]?.init?.body));
+    expect(sent).toEqual({ runId: request.runId });
+    expect(context.calls[1]?.path).toBe(`/api/pulse/bases/${baseId}/sql/cancel`);
+    expect(context.lines).toContain("CANCELLED: Query cancelled.");
+  });
+  test.each(["sql", "queries list", "queries get", "queries save", "queries delete"])("help for %s sends no request", async (command) => {
+    const context = createContext([...command.split(" "), "--help"]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls).toHaveLength(0);
+    expect(context.lines.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Pulse saved query CLI", () => {
+  const query = {
+    id: "Query1",
+    baseId,
+    name: "Count",
+    sql: "SELECT 1",
+    params: {},
+    revision: 2,
+    createdBy: userId,
+    updatedBy: userId,
+    createdAt: "2026-10-20T10:00:00Z",
+    updatedAt: "2026-10-20T10:00:00Z",
+  };
+  test("lists a bounded page", async () => {
+    const context = createContext(["queries", "list"], { base: baseId, page: "2", "per-page": "5" }, [
+      jsonResponse({ items: [query], total: 6, nextOffset: null }),
+    ]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.path).toBe(`/api/pulse/bases/${baseId}/queries?limit=5&offset=5`);
+  });
+  test("saves an update with its expected revision and retry key", async () => {
+    const context = createContext(
+      ["queries", "save", "SELECT 1"],
+      { base: baseId, name: "Count", query: "Query1", "expected-revision": "1", "idempotency-key": "fixture-save" },
+      [jsonResponse(query)],
+    );
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.init?.method).toBe("PATCH");
+    expect(new Headers(context.calls[0]?.init?.headers).get("Idempotency-Key")).toBe("fixture-save");
+    expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({ name: "Count", sql: "SELECT 1", params: {}, expectedRevision: 1 });
+  });
+  test("delete sends the revision that was confirmed", async () => {
+    const context = createContext(["queries", "delete", "Query1"], { base: baseId, "expected-revision": "2", yes: true }, [
+      jsonResponse({ deleted: true }),
+    ]);
+    await pulseCli.run(context.ctx);
+    expect(context.calls[0]?.init?.method).toBe("DELETE");
+    expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({ expectedRevision: 2 });
+  });
+  test("delete needs confirmation", async () => {
+    const context = createContext(["queries", "delete", "Query1"], { base: baseId, "expected-revision": "1" });
+    await expect(pulseCli.run(context.ctx)).rejects.toThrow("without --yes");
+    expect(context.calls).toHaveLength(0);
+  });
 });

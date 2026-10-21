@@ -35,6 +35,26 @@ bun run --cwd packages/ui build
 bun --no-env-file scripts/scale-acceptance.ts
 ```
 
+## Allow synchronous capability responses
+
+Synchronous capability Queries now have a shared 45-second dispatch budget,
+including preparation and response reading. Reviews remain at 15 seconds and
+Actions at 30 seconds. See [Deadlines and cancellation](/en/docs/platform/capabilities#deadlines-and-cancellation).
+
+The framework's JSON invocation handlers keep their request idle timeout at
+the operation budget plus 10 seconds of transport headroom and restore the
+normal 10 seconds after answering or failing. The gateway still waits up to
+240 seconds for upstream response headers; its client-side idle maximum stays
+255 seconds. An operator-owned reverse proxy must allow the synchronous
+response to arrive. App-owned query limits, queues, and cancellation cleanup
+still bound the underlying work; the larger transport budget adds no SQL
+execution time and requires no new environment variable.
+
+Execution-history inserts remain best effort with a 10-second wait budget
+and a database statement timeout. A connection acquired too late cannot start
+the insert. A Query response does not wait beyond its dispatch
+budget for that insert; history may appear shortly after the response.
+
 ## What scales horizontally, what must stay single and why
 
 Every application can run several replicas, except Assistant. The table names

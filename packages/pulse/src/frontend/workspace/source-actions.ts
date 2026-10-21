@@ -16,6 +16,7 @@ type SourceCreateRequest =
       kind: "metrics";
       name: string;
       scrapeIntervalSeconds: number;
+      metricFilters?: string[];
     }
   | {
       kind: "http_ingest";
@@ -30,6 +31,7 @@ export const sourceCreateRequest = (input: CreateSourceInput): SourceCreateReque
       name,
       endpointUrl: normalizeEndpointInput(String(input.endpointUrl ?? "").trim()),
       bearerToken: input.bearerToken?.trim() || null,
+      metricFilters: input.metricFilters,
       scrapeIntervalSeconds: parseScrapeInterval(String(input.scrapeIntervalSeconds ?? 60)),
     };
   }

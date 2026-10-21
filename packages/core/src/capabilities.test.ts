@@ -268,9 +268,12 @@ describe("Core AI capabilities", () => {
     expect(operation.input.safeParse({ ...newGrant, principal: { type: "public" } }).success).toBe(false);
     expect(operation.input.safeParse({ ...newGrant, principal: { type: "authenticated" } }).success).toBe(true);
   });
-  test("publishes closed-world AI capabilities under the core.ai namespace", () => {
+  test("publishes Core AI capabilities and provider-backed geo queries", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     const queries = [
+      "address.autocomplete",
+      "address.geocode",
+      "address.reverse",
       "ai.chat.read",
       "ai.chat.resources",
       "ai.chat.search",
@@ -284,6 +287,8 @@ describe("Core AI capabilities", () => {
       "ai.task.run.read",
       "ai.tasks.list",
       "entities.search",
+      "geo.availability",
+      "place.search",
     ];
     const actions = [
       "ai.chat.message",
@@ -305,7 +310,12 @@ describe("Core AI capabilities", () => {
     expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual(["core.ai.chat", "core.ai.skill", "core.ai.task"]);
     expect(Object.keys(aiCapabilities.queries).sort()).toEqual(queries);
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(queries);
-    expect(manifest.queries.every((query) => query.openWorld === false)).toBe(true);
+    expect(
+      manifest.queries
+        .filter((query) => query.openWorld)
+        .map((query) => query.localId)
+        .sort(),
+    ).toEqual(["address.autocomplete", "address.geocode", "address.reverse", "place.search"]);
     expect(manifest.actions.map((action) => action.localId).sort()).toEqual(actions);
     expect(manifest.actions.every((action) => action.openWorld === false)).toBe(true);
     expect(

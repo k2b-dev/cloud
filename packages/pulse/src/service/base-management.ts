@@ -9,25 +9,34 @@ import {
   type Result,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
-import { type ServiceAccountKind, toPgUuidArray } from "@k2b/cloud/services";
+import { type ServiceAccountKind, get as settingsGet, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { BaseAppearanceSchema, BaseTimezoneSchema } from "../base-settings";
 import type { PulseBase } from "../contracts";
 import { withShortId } from "../lib/short-id";
+import type { BaseRetention } from "../store/admin-contracts";
+import { baseStoreStatus, insertBaseStore } from "../store/base-status";
+import type { baseStore } from "../store/base-store";
+import { RetentionStoreUnavailable, retentionPreview } from "../store/retention";
 import {
   type AccessScope,
   listBaseIdsVisibleTo,
   PULSE_BASE_RESOURCE_TYPE,
   requireBaseAccess,
-  type UserScope,
+  requireBaseActive,
   userIdForScope,
 } from "./access-control";
-import { submitBaseDataClearJob, submitBaseDeletionJob } from "./base-lifecycle";
+import { submitBaseLifecycleJob } from "./base-lifecycle";
+import { readBasePolicy } from "./base-policy";
 import { PULSE_APP_ID, PULSE_SOURCE_RESOURCE_TYPE } from "./source-management";
 import { iso, isoNullable } from "./telemetry-values";
 
 type BaseRow = {
   id: string;
   short_id: string;
+  icon: string;
+  color: string;
+  timezone: string;
   name: string;
   description: string | null;
   retention_days: number;
@@ -56,6 +65,9 @@ type AccessRow = {
 };
 
 type BaseUpdateInput = {
+  icon?: string;
+  color?: string;
+  timezone?: string;
   name?: string;
   description?: string | null;
   rawRetentionDays?: number;
@@ -64,6 +76,9 @@ type BaseUpdateInput = {
 };
 
 type BaseUpdateValues = {
+  icon: string;
+  color: string;
+  timezone: string;
   name: string;
   description: string | null;
   rawRetentionDays: number;
@@ -71,8 +86,13 @@ type BaseUpdateValues = {
   sensitiveRetentionHours: number;
 };
 
-const mapBase = (row: BaseRow): PulseBase => ({
+const mapBase = async (row: BaseRow): Promise<PulseBase> => ({
+  store: await baseStoreStatus(row.id),
   id: row.id,
+  shortId: row.short_id,
+  icon: row.icon,
+  color: row.color,
+  timezone: row.timezone,
   name: row.name,
   description: row.description,
   rawRetentionDays: row.retention_days,
@@ -140,25 +160,68 @@ export const listBases = async (
       AND b.id = ANY(${toPgUuidArray(baseIds)}::uuid[])
     ORDER BY b.updated_at DESC, b.name ASC, b.id ASC
   `;
-  return ok(rows.map(mapBase));
+  return ok(await Promise.all(rows.map(mapBase)));
 };
 
-export const createBase = async (params: { name: string; description?: string | null; user: UserScope }): Promise<Result<PulseBase>> => {
+/** Bases the scope administers whose deletion still runs or failed; the overview keeps them until the deletion finishes. */
+export const listDeletingBases = async (user: AccessScope): Promise<Result<PulseBase[]>> => {
+  const baseIds = await listBaseIdsVisibleTo(user, { deleting: true, limit: 100 });
+  if (baseIds.length === 0) return ok([]);
+  const rows = await sql<BaseRow[]>`
+    SELECT b.*
+    FROM pulse.bases b
+    WHERE b.deletion_started_at IS NOT NULL
+      AND b.id = ANY(${toPgUuidArray(baseIds)}::uuid[])
+    ORDER BY b.updated_at DESC, b.name ASC, b.id ASC
+  `;
+  return ok(await Promise.all(rows.map(mapBase)));
+};
+
+export const createBase = async (params: {
+  name: string;
+  description?: string | null;
+  user: AccessScope;
+  isCloudAdmin?: boolean;
+  agent: boolean;
+}): Promise<Result<PulseBase>> => {
+  const policy = await readBasePolicy();
+  if (
+    ("subject" in params.user &&
+      (params.user.serviceAccount.kind === "resource_bound" || !params.user.scopes.some((s) => s === "write" || s === "admin"))) ||
+    (policy.baseCreation === "people" && params.agent) ||
+    (policy.baseCreation === "admins" && (params.agent || !params.isCloudAdmin))
+  )
+    return fail({
+      code: "PULSE_BASE_CREATION_NOT_ALLOWED",
+      status: 403,
+      message: "Creating bases is restricted by policy. A Cloud admin can change this under Administration -> Pulse -> Bases.",
+    });
+  const creator = userIdForScope(params.user);
+  const serviceAccountId = "subject" in params.user ? params.user.subject.serviceAccountId : null;
   const name = params.name.trim();
   if (!name) return fail(err.badInput("Base name is required"));
 
+  const timezone = BaseTimezoneSchema.parse((await settingsGet<string>("app.timezone")) || "UTC");
   const created = await withShortId("base", (shortId) =>
     sql.begin(async (tx): Promise<Result<BaseRow>> => {
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended('pulse.base.creation',0))`;
+      const [count] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM pulse.bases WHERE deletion_started_at IS NULL`;
+      if ((count?.count ?? 0) >= policy.maxBases)
+        return fail({
+          code: "PULSE_BASE_LIMIT_REACHED",
+          status: 409,
+          message: "Base limit reached. A Cloud admin can raise the maximum under Administration -> Pulse -> Bases.",
+        });
       const [base] = await tx<BaseRow[]>`
-      INSERT INTO pulse.bases (short_id, name, description, created_by)
-      VALUES (${shortId}, ${name}, ${params.description?.trim() || null}, ${params.user.id}::uuid)
+      INSERT INTO pulse.bases (short_id, name, description, created_by,retention_days,timezone)
+      VALUES (${shortId}, ${name}, ${params.description?.trim() || null}, ${creator}::uuid,${Math.min(30, policy.maxRawRetentionDays)},${timezone})
       RETURNING *
     `;
       if (!base) return fail(err.internal("Failed to create Pulse base"));
 
       const [access] = await tx<{ id: string }[]>`
-      INSERT INTO auth.access (user_id, permission)
-      VALUES (${params.user.id}::uuid, 'admin'::auth.permission_level)
+      INSERT INTO auth.access (user_id, service_account_id, permission)
+      VALUES (${creator}::uuid, ${serviceAccountId}::uuid, 'admin'::auth.permission_level)
       RETURNING id
     `;
       if (!access) return fail(err.internal("Failed to create base access"));
@@ -166,12 +229,14 @@ export const createBase = async (params: { name: string; description?: string | 
       INSERT INTO pulse.base_access (base_id, access_id)
       VALUES (${base.id}::uuid, ${access.id}::uuid)
     `;
+      await insertBaseStore(base.id, policy, tx);
       return ok(base);
     }),
   );
 
   if (!created.ok) return created;
-  return ok(mapBase(created.data));
+  await submitBaseLifecycleJob(created.data.id, created.data.short_id);
+  return ok(await mapBase(created.data));
 };
 
 export const listBaseAccess = async (baseId: string, user: AccessScope): Promise<Result<AccessEntry[]>> => {
@@ -197,6 +262,10 @@ export const grantBaseAccess = async (params: {
   if (!access.ok) return fail(access.error);
 
   const created = await sql.begin(async (tx): Promise<Result<AccessRow>> => {
+    const active = await requireBaseActive(params.baseId, tx);
+    if (!active.ok) return active;
+    const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
+    if (!authorized.ok) return authorized;
     let userId: string | null = null;
     let groupId: string | null = null;
     let serviceAccountId: string | null = null;
@@ -258,6 +327,8 @@ const changeBaseAccess = (
     await tx`SELECT id FROM pulse.bases WHERE id = ${params.baseId}::uuid FOR UPDATE`;
     const access = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!access.ok) return fail(access.error);
+    const active = await requireBaseActive(params.baseId, tx);
+    if (!active.ok) return active;
     const rows = await tx<(AccessRow & { service_account_kind: ServiceAccountKind | null })[]>`
       SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at,
              sa.kind AS service_account_kind
@@ -299,16 +370,8 @@ export const getBase = async (baseId: string, user: AccessScope): Promise<Result
     SELECT *
     FROM pulse.bases
     WHERE id = ${baseId}::uuid
-      AND deletion_started_at IS NULL
   `;
-  return row ? ok(mapBase(row)) : fail(err.notFound("Pulse base"));
-};
-
-const getMutableBase = async (baseId: string): Promise<Result<BaseRow>> => {
-  const [existing] = await sql<BaseRow[]>`SELECT * FROM pulse.bases WHERE id = ${baseId}::uuid`;
-  if (!existing) return fail(err.notFound("Pulse base"));
-  if (existing.deletion_started_at) return fail(err.conflict("Pulse base is being deleted"));
-  return ok(existing);
+  return row ? ok(await mapBase(row)) : fail(err.notFound("Pulse base"));
 };
 
 const normalizeBaseName = (input: BaseUpdateInput, existing: BaseRow): string => input.name?.trim() || existing.name;
@@ -331,7 +394,14 @@ const normalizeBaseUpdateValues = (input: BaseUpdateInput, existing: BaseRow): R
   if (!rollup.ok) return fail(rollup.error);
   const sensitive = validateSensitiveRetentionHours(input.sensitiveRetentionHours ?? existing.sensitive_retention_hours);
   if (!sensitive.ok) return fail(sensitive.error);
+  const appearance = BaseAppearanceSchema.safeParse({
+    icon: input.icon ?? existing.icon,
+    color: input.color ?? existing.color,
+    timezone: input.timezone ?? existing.timezone,
+  });
+  if (!appearance.success) return fail(err.badInput("Use a supported base icon, color and IANA timezone"));
   return ok({
+    ...appearance.data,
     name: normalizeBaseName(input, existing),
     description: normalizeBaseDescription(input, existing),
     rawRetentionDays: raw.data,
@@ -340,10 +410,11 @@ const normalizeBaseUpdateValues = (input: BaseUpdateInput, existing: BaseRow): R
   });
 };
 
-const persistBaseUpdate = async (baseId: string, values: BaseUpdateValues): Promise<Result<BaseRow>> => {
-  const [row] = await sql<BaseRow[]>`
+const persistBaseUpdate = async (baseId: string, values: BaseUpdateValues, db: typeof sql = sql): Promise<Result<BaseRow>> => {
+  const [row] = await db<BaseRow[]>`
     UPDATE pulse.bases
     SET name = ${values.name},
+        icon = ${values.icon}, color = ${values.color}, timezone = ${values.timezone},
         description = ${values.description},
         retention_days = ${values.rawRetentionDays},
         rollup_retention_days = ${values.rollupRetentionDays},
@@ -358,20 +429,81 @@ const persistBaseUpdate = async (baseId: string, values: BaseUpdateValues): Prom
 export const updateBase = async (params: {
   baseId: string;
   user: AccessScope;
+  icon?: string;
+  color?: string;
+  timezone?: string;
   name?: string;
   description?: string | null;
   rawRetentionDays?: number;
   rollupRetentionDays?: number;
   sensitiveRetentionHours?: number;
+  confirmShorterRetention?: boolean;
+  expectedRetention?: BaseRetention;
+  clock?: () => Date;
+  store?: typeof baseStore;
 }): Promise<Result<PulseBase>> => {
-  const access = await requireBaseAccess(params.baseId, params.user, "write");
-  if (!access.ok) return fail(access.error);
-  const existing = await getMutableBase(params.baseId);
-  if (!existing.ok) return fail(existing.error);
-  const values = normalizeBaseUpdateValues(params, existing.data);
-  if (!values.ok) return fail(values.error);
-  const row = await persistBaseUpdate(params.baseId, values.data);
-  return row.ok ? ok(mapBase(row.data)) : fail(row.error);
+  const access = await requireBaseAccess(params.baseId, params.user, "admin");
+  if (!access.ok) return access;
+  const active = await requireBaseActive(params.baseId);
+  if (!active.ok) return active;
+  const [before] = await sql<BaseRow[]>`SELECT * FROM pulse.bases WHERE id=${params.baseId}::uuid`;
+  if (!before) return fail(err.notFound("Pulse base"));
+  const proposed = normalizeBaseUpdateValues(params, before);
+  if (!proposed.ok) return proposed;
+  const policy = await readBasePolicy();
+  if (proposed.data.rawRetentionDays !== before.retention_days && proposed.data.rawRetentionDays > policy.maxRawRetentionDays)
+    return fail(err.badInput(`Raw retention must be between 1 and ${policy.maxRawRetentionDays} days`));
+  // ClickHouse scans must not hold the row lock that ingest and scrapes share.
+  // A confirmed save needs no preview, and so no data store.
+  const preview = params.confirmShorterRetention
+    ? []
+    : await retentionPreview(params.baseId, before, proposed.data, params.clock, params.store).catch(() => {
+        throw new RetentionStoreUnavailable();
+      });
+  const result = await sql.begin(async (tx): Promise<Result<BaseRow>> => {
+    await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
+    const access = await requireBaseAccess(params.baseId, params.user, "admin", tx);
+    if (!access.ok) return access;
+    const active = await requireBaseActive(params.baseId, tx);
+    if (!active.ok) return active;
+    const [existing] = await tx<BaseRow[]>`SELECT * FROM pulse.bases WHERE id=${params.baseId}::uuid`;
+    if (!existing) return fail(err.notFound("Pulse base"));
+    if (
+      existing.retention_days !== before.retention_days ||
+      existing.rollup_retention_days !== before.rollup_retention_days ||
+      existing.sensitive_retention_hours !== before.sensitive_retention_hours ||
+      (params.expectedRetention !== undefined &&
+        (existing.retention_days !== params.expectedRetention.rawRetentionDays ||
+          existing.rollup_retention_days !== params.expectedRetention.rollupRetentionDays ||
+          existing.sensitive_retention_hours !== params.expectedRetention.sensitiveRetentionHours))
+    )
+      return fail({
+        code: "PULSE_BASE_CHANGED",
+        status: 409,
+        message: "The base changed while the preview was computed. Review the preview again.",
+      });
+    if (preview.length && !params.confirmShorterRetention)
+      return fail({
+        code: "PULSE_RETENTION_CONFIRMATION_REQUIRED",
+        status: 409,
+        message: "Shorter retention removes older data. Confirm the preview to continue.",
+        preview,
+        previewedFrom: {
+          rawRetentionDays: before.retention_days,
+          rollupRetentionDays: before.rollup_retention_days,
+          sensitiveRetentionHours: before.sensitive_retention_hours,
+        },
+      });
+    // Preserve unrelated concurrent name/description changes when those fields were omitted.
+    const values = normalizeBaseUpdateValues(params, existing);
+    if (!values.ok) return values;
+    const row = await persistBaseUpdate(params.baseId, values.data, tx);
+    if (row.ok) await tx`UPDATE pulse.base_stores SET reconcile_needed=true,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
+    return row;
+  });
+  if (!result.ok) return result;
+  await submitBaseLifecycleJob(result.data.id, result.data.short_id);
+  return ok(await mapBase(result.data));
 };
 
 export const deleteBase = async (params: { baseId: string; user: AccessScope }): Promise<Result<void>> => {
@@ -381,13 +513,14 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
 
-  if (existing.deletion_started_at) {
-    await deleteBoundServiceAccounts(params.baseId);
-    await submitBaseDeletionJob(params.baseId, existing.short_id);
-    return ok();
-  }
-
+  // Settings reads use the global pool: never wait for a second connection inside the locked transaction.
+  const policy = await readBasePolicy();
   const queued = await sql.begin(async (tx): Promise<Result<void>> => {
+    await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
+    const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
+    if (!authorized.ok) return authorized;
+    await insertBaseStore(params.baseId, policy, tx);
+    await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1,state='deleting',operation='delete',attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases
       SET deletion_started_at = now(),
@@ -398,26 +531,15 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
     `;
     await tx`
       UPDATE pulse.sources
-      SET enabled = FALSE, updated_at = now()
+      SET enabled = FALSE, updated_at = greatest(now(), updated_at)
       WHERE base_id = ${params.baseId}::uuid
     `;
     await deleteBoundServiceAccounts(params.baseId, tx);
-    await tx`
-      INSERT INTO pulse.base_deletions (base_id, requested_by, status, phase, updated_at)
-      VALUES (${params.baseId}::uuid, ${userIdForScope(params.user)}::uuid, 'queued', 'queued', now())
-      ON CONFLICT (base_id)
-      DO UPDATE SET
-        requested_by = EXCLUDED.requested_by,
-        status = 'queued',
-        phase = 'queued',
-        error_message = NULL,
-        updated_at = now()
-    `;
     return ok();
   });
 
   if (!queued.ok) return fail(queued.error);
-  await submitBaseDeletionJob(params.baseId, existing.short_id);
+  await submitBaseLifecycleJob(params.baseId, existing.short_id);
   return ok();
 };
 
@@ -428,13 +550,22 @@ export const clearBaseData = async (params: { baseId: string; user: AccessScope 
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
 
-  if (existing.deletion_started_at) return fail(err.conflict("Pulse base is being deleted"));
-  if (existing.data_clear_started_at && !existing.data_clear_completed_at && !existing.data_clear_failed_at) {
-    await submitBaseDataClearJob(params.baseId, existing.short_id);
-    return ok();
-  }
-
   const queued = await sql.begin(async (tx): Promise<Result<void>> => {
+    await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
+    const active = await requireBaseActive(params.baseId, tx);
+    if (!active.ok) return active;
+    const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
+    if (!authorized.ok) return authorized;
+    const [store] = await tx`SELECT write_block_reason FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
+    if (store?.write_block_reason != null)
+      return fail({
+        code: "PULSE_BASE_WRITE_BLOCKED",
+        status: 409,
+        message:
+          "Writes to this base are blocked after a checkpoint mismatch. A Cloud admin decides under Administration -> Pulse -> Bases.",
+      });
+    // A clear gets a fresh checkpoint identity; retries of this clear keep the one its first run prepared.
+    await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1,state='clearing',operation='clear',pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases
       SET data_clear_started_at = now(),
@@ -444,44 +575,10 @@ export const clearBaseData = async (params: { baseId: string; user: AccessScope 
           updated_at = now()
       WHERE id = ${params.baseId}::uuid
     `;
-    await tx`
-      INSERT INTO pulse.base_data_clears (
-        base_id,
-        requested_by,
-        status,
-        phase,
-        deleted_rows,
-        last_batch_rows,
-        error_message,
-        completed_at,
-        updated_at
-      )
-      VALUES (
-        ${params.baseId}::uuid,
-        ${userIdForScope(params.user)}::uuid,
-        'queued',
-        'queued',
-        0,
-        0,
-        NULL,
-        NULL,
-        now()
-      )
-      ON CONFLICT (base_id)
-      DO UPDATE SET
-        requested_by = EXCLUDED.requested_by,
-        status = 'queued',
-        phase = 'queued',
-        deleted_rows = 0,
-        last_batch_rows = 0,
-        error_message = NULL,
-        completed_at = NULL,
-        updated_at = now()
-    `;
     return ok();
   });
 
   if (!queued.ok) return fail(queued.error);
-  await submitBaseDataClearJob(params.baseId, existing.short_id);
+  await submitBaseLifecycleJob(params.baseId, existing.short_id);
   return ok();
 };

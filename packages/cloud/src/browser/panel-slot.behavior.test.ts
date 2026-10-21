@@ -2,8 +2,9 @@ import { afterEach, expect, jest, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import type { PanelPageContext } from "../contracts/panel-context";
-import { isPanelContextMessage } from "../contracts/panel-context-plain";
+import type { PanelConsentSnapshot, PanelPageContext } from "../contracts/panel-context";
+import { isPanelContextMessage, PANEL_CONTEXT_PARAM } from "../contracts/panel-context-plain";
+import { readShellData } from "../ssr/shell-data";
 import { type ContextAwareCommand, registerContextAwareCommand } from "./command-bridge";
 
 if (isServer) test.skip("requires browser conditions and solid-dom-preload", () => {});
@@ -450,6 +451,26 @@ else {
     expect(h.slot.dataset.state).toBe("loading");
   });
 
+  test("double-click forgets a committed width and follows the responsive CSS default again", () => {
+    const h = setup();
+    h.open();
+    const separator = h.slot.querySelector<HTMLElement>(".cloud-panel__resize")!;
+    const key = () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true }));
+    key();
+    expect(separator.getAttribute("aria-valuenow")).toBe("25");
+    separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("");
+    expect(document.cookie).toContain("cloud_panel=1:fixture:");
+    expect(separator.getAttribute("aria-valuenow")).toBe("26");
+    h.resize(1194);
+    expect(separator.getAttribute("aria-valuenow")).toBe("21.5");
+    key();
+    expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("22.5rem");
+    separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("");
+    expect(separator.getAttribute("aria-valuenow")).toBe("21.5");
+  });
+
   test("without a stored width, viewport resize keeps ARIA and the next key step on the CSS default", () => {
     const h = setup(1440, false, false);
     h.open();
@@ -499,6 +520,419 @@ else {
   const commandBurst = () => {
     for (let i = 0; i < 20; i++) window.dispatchEvent(new Event(COMMANDS_CHANGED));
   };
+
+  test("a lazy installer clears the retained frame's URL context when the arriving page disables sharing", () => {
+    const h = setup(
+      1440,
+      true,
+      true,
+      undefined,
+      false,
+      (id) => `/app/${id}/panel?${new URLSearchParams({ [PANEL_CONTEXT_PARAM]: JSON.stringify(pageContext) })}`,
+      { context: null, consent: false, providerIds: ["core", "fixture"] },
+    );
+    const shown = new URL(h.frame().src);
+    const post = mock((_data: unknown, _origin: string) => {});
+    showDocument(h.frame(), {
+      postMessage: post,
+      location: shown,
+      history: {
+        state: null,
+        replaceState: (_state: unknown, _unused: string, url: string) => {
+          shown.href = new URL(url, shown).href;
+        },
+      },
+    });
+    ready(h);
+    expect(post.mock.calls.map(([data]) => data).filter(isPanelContextMessage)).toEqual([
+      { type: "cloud.panel.context", v: 1, context: null },
+    ]);
+    expect(shown.searchParams.has(PANEL_CONTEXT_PARAM)).toBe(false);
+    if (!h.serverFrame) throw new Error("Expected an SSR iframe");
+    expect(h.frame()).toBe(h.serverFrame);
+  });
+
+  test.each([
+    { provider: "fixture", allowed: null, revision: 0 },
+    { provider: "fixture", allowed: null, revision: 1 },
+    { provider: "fixture", allowed: false, revision: 0 },
+    { provider: "fixture", allowed: false, revision: 1 },
+    { provider: "fixture", allowed: true, revision: 0 },
+  ] satisfies PanelConsentSnapshot[])(
+    "a swapped page's differing consent snapshot stops sharing until a fresh read: %j",
+    async (consent) => {
+      const read = Promise.withResolvers<Response>();
+      const fetch = spyOn(globalThis, "fetch").mockReturnValue(read.promise);
+      fetchSpy = fetch;
+      const h = setupContext(pageContext, true, true);
+      h.open();
+      const post = spyFrame(h);
+      ready(h);
+      const contexts = () => post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
+      expect(contexts().at(-1)?.context).toEqual(pageContext);
+      const data = readShellData();
+      if (!data?.panel) throw new Error("Expected panel shell data");
+      const root = document.createElement("div");
+      root.setAttribute("data-nav-root", "");
+      const script = document.getElementById("cloud-shell-data");
+      if (!script) throw new Error("Expected shell data script");
+      const next = { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] };
+      const arriving = script.cloneNode();
+      arriving.textContent = JSON.stringify({ ...data, panel: { ...data.panel, context: next, consent } });
+      root.append(arriving);
+      script.replaceWith(root);
+      try {
+        window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+        expect(contexts().at(-1)?.context).toBeNull();
+        expect(contexts().some((message) => message.context?.help?.includes("next-help"))).toBe(false);
+        expect(h.slot.dataset.contextAllowed).toBe("false");
+        await tick();
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch.mock.calls[0]?.[0]).toBe("/api/me/panel-consent");
+        expect(contexts().at(-1)?.context).toBeNull();
+        read.resolve(Response.json({ answers: { fixture: { allowed: true, revision: 2 } } }));
+        await tick();
+        expect(contexts().at(-1)?.context).toEqual({ ...next, pageId: pageContext.pageId, seq: 1 });
+      } finally {
+        read.resolve(Response.json({ answers: {} }));
+        await tick();
+      }
+    },
+  );
+
+  const swapShellData = (panel: (current: Record<string, unknown>) => Record<string, unknown>) => {
+    const data = readShellData();
+    const script = document.getElementById("cloud-shell-data");
+    if (!data?.panel || !script) throw new Error("Expected panel shell data");
+    const root = document.createElement("div");
+    root.setAttribute("data-nav-root", "");
+    const arriving = script.cloneNode();
+    arriving.textContent = JSON.stringify({ ...data, panel: panel(data.panel) });
+    root.append(arriving);
+    script.replaceWith(root);
+    window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+  };
+  const nextContext = { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] };
+
+  test("an open consent provider reads its answer again when the swapped page carries none", async () => {
+    const read = Promise.withResolvers<Response>();
+    const fetch = spyOn(globalThis, "fetch").mockReturnValue(read.promise);
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    // Another tab closed the panel: the shared cookie is closed, so the server sent no answer.
+    swapShellData(({ consent: _consent, ...panel }) => ({ ...panel, context: nextContext }));
+    const contexts = () => post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
+    expect(contexts().some((message) => message.context?.help?.includes("next-help"))).toBe(false);
+    await tick();
+    expect(fetch.mock.calls[0]?.[0]).toBe("/api/me/panel-consent");
+    read.resolve(Response.json({ answers: { fixture: { allowed: false, revision: 2 } } }));
+    await tick();
+    expect(contexts().some((message) => message.context?.help?.includes("next-help"))).toBe(false);
+  });
+
+  test("a closed panel forgets cached consent after a swap without an answer and reads it on open", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ answers: { fixture: { allowed: false, revision: 2 } } }));
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    ready(h);
+    h.click("[data-cloud-panel-close]");
+    expect(fetch).not.toHaveBeenCalled();
+    swapShellData(({ consent: _consent, ...panel }) => ({ ...panel, context: nextContext }));
+    h.open();
+    await tick();
+    expect(fetch.mock.calls.map(([url]) => url)).toContain("/api/me/panel-consent");
+  });
+
+  for (const request of ["GET", "PUT"] as const) {
+    test(`a delayed consent ${request} cannot override a newer answer from a swapped page`, async () => {
+      const response = Promise.withResolvers<Response>();
+      const fetch = spyOn(globalThis, "fetch").mockReturnValue(response.promise);
+      fetchSpy = fetch;
+      const h = setupContext(pageContext, true, request === "GET");
+      h.open();
+      const { post, shown } = loadedDocument(h, h.frame().src);
+      ready(h);
+      if (request === "GET") restore();
+      else h.click('[data-cloud-panel-consent-answer="allow"]');
+      await tick();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch.mock.calls[0]?.[1]?.method ?? "GET").toBe(request);
+      swapShellData((panel) => ({
+        ...panel,
+        context: nextContext,
+        consent: { provider: "fixture", allowed: false, revision: 3 },
+      }));
+      const before = post.mock.calls.length;
+      response.resolve(
+        Response.json(
+          request === "GET"
+            ? { answers: { fixture: { allowed: true, revision: 2 } } }
+            : { provider: "fixture", allowed: true, revision: 2 },
+        ),
+      );
+      await tick();
+      await tick();
+      ready(h);
+      expect(h.slot.dataset.contextAllowed).toBe("false");
+      expect(shown.searchParams.has(PANEL_CONTEXT_PARAM)).toBe(false);
+      expect(
+        post.mock.calls
+          .slice(before)
+          .map(([data]) => data)
+          .filter(isPanelContextMessage)
+          .every((message) => message.context === null),
+      ).toBe(true);
+    });
+  }
+
+  for (const state of ["queued", "conflict"] as const) {
+    test(`a ${state} Allow operation cannot overwrite a newer swapped-page withdrawal`, async () => {
+      const pending = Promise.withResolvers<Response>();
+      const fetch = spyOn(globalThis, "fetch")
+        .mockReturnValueOnce(pending.promise)
+        .mockResolvedValueOnce(Response.json({ answers: { fixture: { allowed: false, revision: 3 } } }))
+        .mockResolvedValueOnce(Response.json({ provider: "fixture", allowed: true, revision: 4 }));
+      fetchSpy = fetch;
+      const h = setupContext(pageContext, true, false);
+      h.open();
+      const { post, shown } = loadedDocument(h, h.frame().src);
+      ready(h);
+      if (state === "queued") restore();
+      h.click('[data-cloud-panel-consent-answer="allow"]');
+      await tick();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      swapShellData((panel) => ({
+        ...panel,
+        context: nextContext,
+        consent: { provider: "fixture", allowed: false, revision: 3 },
+      }));
+      pending.resolve(
+        state === "conflict"
+          ? new Response(null, { status: 409 })
+          : Response.json({ answers: { fixture: { allowed: false, revision: 1 } } }),
+      );
+      await tick();
+      await tick();
+      const writes = fetch.mock.calls.filter(([, init]) => init?.method === "PUT");
+      expect(writes).toHaveLength(state === "queued" ? 0 : 1);
+      expect(h.slot.dataset.contextAllowed).toBe("false");
+      expect(shown.searchParams.has(PANEL_CONTEXT_PARAM)).toBe(false);
+      expect(
+        post.mock.calls
+          .map(([data]) => data)
+          .filter(isPanelContextMessage)
+          .every((message) => message.context === null),
+      ).toBe(true);
+    });
+  }
+
+  test("a swapped withdrawal fences an Allow retry even when its revision was already read", async () => {
+    const retry = Promise.withResolvers<Response>();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(Response.json({ answers: { fixture: { allowed: false, revision: 3 } } }))
+      .mockReturnValueOnce(retry.promise);
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, false);
+    h.open();
+    ready(h);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    swapShellData((panel) => ({
+      ...panel,
+      context: nextContext,
+      consent: { provider: "fixture", allowed: false, revision: 3 },
+    }));
+    retry.resolve(Response.json({ provider: "fixture", allowed: true, revision: 4 }));
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
+  test("a swapped withdrawal fences pending Allow for an inactive provider", async () => {
+    const pending = Promise.withResolvers<Response>();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce(Response.json({ answers: { fixture: { allowed: false, revision: 3 } } }))
+      .mockResolvedValueOnce(Response.json({ provider: "fixture", allowed: true, revision: 4 }));
+    fetchSpy = fetch;
+    const h = setup(1440, false, true, undefined, false, undefined, {
+      context: pageContext,
+      consent: true,
+      answer: false,
+      providerIds: ["fixture", "core"],
+    });
+    h.open();
+    ready(h);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    h.open("core");
+    swapShellData((panel) => ({
+      ...panel,
+      context: nextContext,
+      consent: { provider: "fixture", allowed: false, revision: 3 },
+    }));
+    pending.resolve(new Response(null, { status: 409 }));
+    await tick();
+    await tick();
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(1);
+    h.open("fixture");
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
+  test("a swapped page with the same consent answer shares at once and reads nothing", () => {
+    const fetch = spyOn(globalThis, "fetch");
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    const data = readShellData();
+    const script = document.getElementById("cloud-shell-data");
+    if (!data?.panel || !script) throw new Error("Expected panel shell data");
+    const root = document.createElement("div");
+    root.setAttribute("data-nav-root", "");
+    const arriving = script.cloneNode();
+    const next = { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] };
+    arriving.textContent = JSON.stringify({ ...data, panel: { ...data.panel, context: next } });
+    root.append(arriving);
+    script.replaceWith(root);
+    window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+    const contexts = post.mock.calls.map(([message]) => message).filter(isPanelContextMessage);
+    expect(contexts.at(-1)?.context).toEqual({ ...next, pageId: pageContext.pageId, seq: 1 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("a lazy installer keeps the SSR frame's document identity after a page swap", () => {
+    const initial = { ...pageContext, seq: 7, help: ["mail-help"] };
+    const next: PanelPageContext = {
+      ...pageContext,
+      seq: 20,
+      pageId: "22222222-2222-4222-8222-222222222222",
+      app: "files",
+      scope: { type: "files.folder", id: "folder2" },
+      help: ["files-help"],
+    };
+    const h = setup(
+      1440,
+      true,
+      true,
+      undefined,
+      false,
+      (id) => `/app/${id}/panel?${new URLSearchParams({ [PANEL_CONTEXT_PARAM]: JSON.stringify(initial) })}`,
+      { context: next, consent: false, providerIds: ["core", "fixture"] },
+    );
+    const post = spyFrame(h);
+    ready(h);
+    const first = post.mock.calls.map(([data]) => data).find(isPanelContextMessage)?.context;
+    expect(first).toEqual({ ...next, pageId: initial.pageId, seq: initial.seq + 1 });
+    if (!h.serverFrame) throw new Error("Expected an SSR iframe");
+    expect(h.frame()).toBe(h.serverFrame);
+  });
+
+  test.each(["{", '{"pageId":"invalid","seq":7}'])("a malformed SSR frame context is ignored: %s", (raw) => {
+    const h = setup(1440, true, true, undefined, false, (id) => `/app/${id}/panel?${new URLSearchParams({ [PANEL_CONTEXT_PARAM]: raw })}`, {
+      context: pageContext,
+      consent: false,
+      providerIds: ["core", "fixture"],
+    });
+    const post = spyFrame(h);
+    ready(h);
+    expect(post.mock.calls.map(([data]) => data).find(isPanelContextMessage)?.context).toEqual(pageContext);
+  });
+
+  test("a swapped column follows server context with the document pageId and increasing seq", () => {
+    const h = setupCore();
+    h.open();
+    const frame = h.frame();
+    const post = spyFrame(h);
+    ready(h);
+    const swap = (context: PanelPageContext | null) => {
+      const oldScript = document.getElementById("cloud-shell-data")!;
+      const data = JSON.parse(oldScript.textContent ?? "{}");
+      oldScript.remove();
+      const root = document.createElement("div");
+      root.setAttribute("data-nav-root", "");
+      const arriving = document.createElement("script");
+      arriving.id = "cloud-shell-data";
+      arriving.type = "application/json";
+      arriving.textContent = JSON.stringify({ ...data, panel: { ...data.panel, context } });
+      const toggle = document.createElement("button");
+      toggle.setAttribute("data-cloud-panel-toggle", "");
+      toggle.textContent = "Panel";
+      root.append(arriving, toggle);
+      const old = document.querySelector("[data-nav-root]");
+      if (old) old.replaceWith(root);
+      else h.canvas.prepend(root);
+      window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+      expect(root.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+      expect(h.frame()).toBe(frame);
+    };
+    const next: PanelPageContext = {
+      ...pageContext,
+      pageId: "22222222-2222-4222-8222-222222222222",
+      app: "files",
+      scope: { type: "files.folder", id: "folder2" },
+      help: ["files-help"],
+    };
+    swap(next);
+    const messages = () => post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
+    const first = messages().at(-1)?.context;
+    expect(first).toEqual({ ...next, pageId: pageContext.pageId, seq: 1 });
+    swap(null);
+    expect(messages().at(-1)?.context).toBeNull();
+    swap({ ...next, app: "mail", help: ["mail-help"] });
+    expect(messages().at(-1)?.context).toEqual({ ...next, app: "mail", help: ["mail-help"], pageId: pageContext.pageId, seq: 2 });
+  });
+
+  test("a swapped page's newer consent answer applies before its context is shared", () => {
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    expect(
+      post.mock.calls
+        .map(([data]) => data)
+        .filter(isPanelContextMessage)
+        .at(-1)?.context,
+    ).toEqual(pageContext);
+    // Another tab withdrew sharing; the next server page carries that answer, as a reload would.
+    const data = JSON.parse(document.getElementById("cloud-shell-data")?.textContent ?? "{}");
+    document.getElementById("cloud-shell-data")?.remove();
+    const root = document.createElement("div");
+    root.setAttribute("data-nav-root", "");
+    const arriving = document.createElement("script");
+    arriving.id = "cloud-shell-data";
+    arriving.type = "application/json";
+    arriving.textContent = JSON.stringify({
+      ...data,
+      panel: {
+        ...data.panel,
+        context: { ...pageContext, pageId: "22222222-2222-4222-8222-222222222222", help: ["next-help"] },
+        consent: { provider: "fixture", allowed: false, revision: 2 },
+      },
+    });
+    root.append(arriving);
+    h.canvas.prepend(root);
+    window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root } }));
+    const contexts = post.mock.calls.map(([data]) => data).filter(isPanelContextMessage);
+    expect(contexts.at(-1)?.context).toBeNull();
+    expect(contexts.some((message) => message.context?.help?.includes("next-help"))).toBe(false);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
+  test("cross-page nav popstate closes the phone panel sheet", () => {
+    const h = setup(390);
+    h.open();
+    expect(h.canvas.dataset.panelSheet).toBe("open");
+    window.dispatchEvent(new CustomEvent("ssr:nav-popstate"));
+    expect(h.canvas.dataset.panelSheet).toBeUndefined();
+  });
 
   test("foreign providers receive no URL or live context until consent; allow delivers live without reloading", async () => {
     const fetch = spyOn(globalThis, "fetch")

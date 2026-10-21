@@ -7,6 +7,7 @@ for (const cell of ["![Map](attach://ABC123)", "abc![Map](attach://ABC123)", "![
     const built = buildNotePdfHtml({
       markdown: `| Image |\n| --- |\n| ${cell} |`,
       notebookShortId: "ABC123",
+      publicOrigin: "https://cloud.example.test",
       locale: "en",
     });
     expect(built.images).toHaveLength(1);

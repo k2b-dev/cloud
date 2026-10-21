@@ -695,6 +695,7 @@ export type CapabilityExecutionContext = {
   requestId: string;
   /** Cloud surface that invoked this capability. */
   origin: CapabilityOrigin;
+  /** Caller cancellation or shared dispatch deadline; forward it to expensive work. */
   signal: AbortSignal;
 };
 

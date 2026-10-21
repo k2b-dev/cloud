@@ -4,14 +4,13 @@ import { crypto } from "@k2b/stdlib";
 export const SHORT_ID_LENGTH = 6;
 export const SHORT_ID_REGEX = /^[0-9A-Za-z]{6}$/;
 
-export type PulseShortIdTable = "base" | "source" | "dashboard" | "saved_query";
+export type PulseShortIdTable = "base" | "source" | "saved_query";
 
 const MAX_ATTEMPTS = 10;
 
 const constraintByTable: Record<PulseShortIdTable, string> = {
   base: "idx_pulse_bases_short_id",
   source: "idx_pulse_sources_short_id",
-  dashboard: "idx_pulse_dashboards_short_id",
   saved_query: "idx_pulse_saved_queries_short_id",
 };
 

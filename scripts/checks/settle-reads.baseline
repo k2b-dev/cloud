@@ -28,7 +28,7 @@ packages/cloud/src/ssr/compact-shell.browser.test.ts | 15
 packages/cloud/src/ssr/dialog-app-colors.browser.test.ts | 3
 packages/cloud/src/ssr/layout-viewport.browser.test.ts | 2
 packages/cloud/src/ssr/page-trail.browser.test.ts | 24
-packages/cloud/src/ssr/panel-slot.browser.test.ts | 9
+packages/cloud/src/ssr/panel-slot.browser.test.ts | 8
 packages/cloud/src/ssr/print.browser.test.ts | 11
 packages/cloud/src/ssr/shell-focus.browser.test.ts | 8
 packages/cloud/src/ssr/soft-shell-frames.browser.test.ts | 5
@@ -91,7 +91,6 @@ packages/ui/src/chat/chat-composer.browser.test.ts | 20
 packages/ui/src/chat/chat-decision.browser.test.ts | 5
 packages/ui/src/content/calendar-days.browser.test.ts | 1
 packages/ui/src/content/calendar-month.browser.test.ts | 4
-packages/ui/src/content/chart-tooltips.browser.test.ts | 2
 packages/ui/src/content/content-styles.browser.test.ts | 2
 packages/ui/src/content/data-panel-header.browser.test.ts | 1
 packages/ui/src/content/data-table-minimal.browser.test.ts | 8
@@ -136,15 +135,13 @@ packages/ui/src/layout/workspace-head-hydration.browser.test.ts | 2
 packages/ui/src/layout/workspace-head-row.browser.test.ts | 37
 packages/ui/src/layout/workspace-host.browser.test.ts | 19
 packages/ui/src/layout/workspace-levels.browser.test.ts | 32
-packages/ui/src/layout/workspace-one-surface.browser.test.ts | 33
+packages/ui/src/layout/workspace-one-surface.browser.test.ts | 30
 packages/ui/src/layout/workspace-print.browser.test.ts | 7
 packages/ui/src/styles/focus-rings.browser.test.ts | 3
 packages/ui/src/styles/icon-tile.browser.test.ts | 4
 packages/ui/src/styles/motion.browser.test.ts | 1
 packages/ui/src/styles/selection-colors.browser.test.ts | 9
-packages/ui/src/styles/touch-field-text.browser.test.ts | 1
 packages/ui/src/surfaces/avatar-tints.browser.test.ts | 1
-packages/ui/src/surfaces/calm-states.browser.test.ts | 1
 packages/ui/src/surfaces/resource-card.browser.test.ts | 8
 packages/ui/src/surfaces/single-frame.browser.test.ts | 4
 pwas/pwa-auth/src/decision.browser.test.ts | 1

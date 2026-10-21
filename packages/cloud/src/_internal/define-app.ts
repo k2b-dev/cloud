@@ -2,8 +2,10 @@ import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, valid
 import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
+import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { invokeCapabilityStream } from "./capability-streams";
+import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
@@ -137,6 +139,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   appearance?: AppAppearance;
   /** URL prefix for SSR asset isolation. Omit for the global `/_ssr/` path (core). */
   basePath?: string;
+  /** Swap Layout content within this app while keeping the rail, tab bar and panel document. Default: false; focusMode pages still load a document. */
+  pageSwap?: boolean;
   /** Base URL as seen by other containers (e.g. "http://app-notebooks:3000"). */
   baseUrl: string;
   adminHref?: string;
@@ -530,6 +534,8 @@ export const defineApp = <
   // cannot override.
   const ssr = Object.assign(
     createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
+      if (opts.pageSwap)
+        registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`);
       c.get("page").lang = getLocale(c);
       c.get("page").themePreference = readThemePreferenceFromCookieHeader(c.req.header("Cookie"));
       const user = c.get("user");
@@ -797,69 +803,70 @@ export const defineApp = <
       }
 
       if (compiledCapabilities) {
-        const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") => {
-          // Framework-owned endpoints run before the app's settings middleware,
-          // so the operator default is read directly instead of via a snapshot.
-          const requestLocale = resolveLocale(c.req.raw.headers, await get<string>("app.locale"));
-          const messages = capabilityMessages(requestLocale);
-          const parsedBody = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
-          if (!parsedBody.ok) {
-            const message = parsedBody.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
-            return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message }, 400);
-          }
-          if (
-            typeof parsedBody.data !== "object" ||
-            parsedBody.data === null ||
-            Array.isArray(parsedBody.data) ||
-            !Object.hasOwn(parsedBody.data, "input") ||
-            Object.keys(parsedBody.data).length !== 1
-          ) {
-            return c.json(
-              {
-                code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed,
-                message: messages.requestInputOnly,
+        const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>
+          withCapabilityRequestTimeout(c, kind, async () => {
+            // Framework-owned endpoints run before the app's settings middleware,
+            // so the operator default is read directly instead of via a snapshot.
+            const requestLocale = resolveLocale(c.req.raw.headers, await get<string>("app.locale"));
+            const messages = capabilityMessages(requestLocale);
+            const parsedBody = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
+            if (!parsedBody.ok) {
+              const message = parsedBody.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
+              return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message }, 400);
+            }
+            if (
+              typeof parsedBody.data !== "object" ||
+              parsedBody.data === null ||
+              Array.isArray(parsedBody.data) ||
+              !Object.hasOwn(parsedBody.data, "input") ||
+              Object.keys(parsedBody.data).length !== 1
+            ) {
+              return c.json(
+                {
+                  code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed,
+                  message: messages.requestInputOnly,
+                },
+                400,
+              );
+            }
+            const body = parsedBody.data as { input: unknown };
+            const actor = c.get("actor");
+            const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+            const idempotencyKey = c.req.header("idempotency-key") || undefined;
+            const invocation = {
+              compiled: compiledCapabilities,
+              localId: c.req.param("capabilityId") ?? "",
+              input: body.input,
+              expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
+              context: {
+                actor,
+                accessSubject: c.get("accessSubject"),
+                user,
+                idempotencyKey,
+                locale: requestLocale,
+                requestId: normalizeInvocationRequestId(c.req.header("x-request-id")) ?? crypto.randomUUID(),
+                origin: CapabilityOriginSchema.catch("http").parse(c.req.header(CAPABILITY_ORIGIN_HEADER)),
+                signal: c.req.raw.signal,
               },
-              400,
-            );
-          }
-          const body = parsedBody.data as { input: unknown };
-          const actor = c.get("actor");
-          const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
-          const idempotencyKey = c.req.header("idempotency-key") || undefined;
-          const invocation = {
-            compiled: compiledCapabilities,
-            localId: c.req.param("capabilityId") ?? "",
-            input: body.input,
-            expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
-            context: {
-              actor,
-              accessSubject: c.get("accessSubject"),
-              user,
-              idempotencyKey,
-              locale: requestLocale,
-              requestId: normalizeInvocationRequestId(c.req.header("x-request-id")) ?? crypto.randomUUID(),
-              origin: CapabilityOriginSchema.catch("http").parse(c.req.header(CAPABILITY_ORIGIN_HEADER)),
-              signal: c.req.raw.signal,
-            },
-            onUnexpectedError: (error: unknown) =>
-              log.error(kind === "review" ? "Capability review failed" : "Capability execution failed", {
-                appId: meta.id,
-                kind,
-                capabilityId: c.req.param("capabilityId") ?? "",
-                error: error instanceof Error ? error.message : String(error),
-              }),
-          };
-          const result =
-            kind === "review" ? await reviewCompiledCapability(invocation) : await invokeCompiledCapability({ ...invocation, kind });
-          const operation = kind === "action" ? compiledCapabilities.actions.get(invocation.localId) : undefined;
-          const serialized = serializeCapabilityProviderResult(result, {
-            nonIdempotentAction: kind === "action" && operation?.manifest.idempotency === "none",
+              onUnexpectedError: (error: unknown) =>
+                log.error(kind === "review" ? "Capability review failed" : "Capability execution failed", {
+                  appId: meta.id,
+                  kind,
+                  capabilityId: c.req.param("capabilityId") ?? "",
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+            };
+            const result =
+              kind === "review" ? await reviewCompiledCapability(invocation) : await invokeCompiledCapability({ ...invocation, kind });
+            const operation = kind === "action" ? compiledCapabilities.actions.get(invocation.localId) : undefined;
+            const serialized = serializeCapabilityProviderResult(result, {
+              nonIdempotentAction: kind === "action" && operation?.manifest.idempotency === "none",
+            });
+            return new Response(serialized.body, {
+              status: serialized.status,
+              headers: { "content-type": "application/json" },
+            });
           });
-          return new Response(serialized.body, {
-            status: serialized.status,
-            headers: { "content-type": "application/json" },
-          });
-        };
         const capabilityAuth = (kind: "queries" | "actions", review = false) =>
           requireInvocation((c) => {
             const localId = c.req.param("capabilityId") ?? "";

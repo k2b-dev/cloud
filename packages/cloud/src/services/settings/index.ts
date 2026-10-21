@@ -185,7 +185,8 @@ export async function get<T = unknown>(key: string): Promise<T> {
 
 /**
  * Write a setting. Pass `db` to run inside a caller's transaction — then the
- * caller must also call `invalidateSettingsCache` once it commits.
+ * caller owns geo budget pair validation before mutations and must call
+ * `invalidateSettingsCache` once it commits.
  */
 export async function set(key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> {
   await writeKey(key, value, db, options);

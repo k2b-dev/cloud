@@ -3,64 +3,39 @@ import { pulseAccessCommands } from "./cli/access";
 import { adminCommands } from "./cli/admin";
 import { baseCommands } from "./cli/bases";
 import { resolveBaseFromCommand, resolveSource } from "./cli/context";
-import { dashboardCommands } from "./cli/dashboards";
 import { baseFlag, JSON_INPUT } from "./cli/flags";
-import { inventoryCommands } from "./cli/inventory-commands";
 import { queryCommands } from "./cli/queries";
-import { jsonRequest, printJsonOrTable, readApi, readJsonInput, yesNo } from "./cli/shared";
-import { signalCommands } from "./cli/signals";
+import { jsonRequest, printJsonOrTable, readApi, readJsonInput } from "./cli/shared";
 import { sourceTokenCommands } from "./cli/source-tokens";
 import { sourceCommands } from "./cli/sources";
-import type { PulseCapabilitySnapshot, PulseIngestBatch } from "./contracts";
+import { sqlCommand } from "./cli/sql";
+import type { PulseIngestBatch } from "./contracts";
 
 type IngestResult = { metrics: number; events: number; states: number };
 
 const module = defineCliCommands({
   name: "pulse",
-  summary: "Inspect Pulse data and manage Pulse bases, sources, queries, and dashboards.",
+  summary: "Manage Pulse bases, SQL, saved queries, sources, and ingest.",
   groupSummaries: {
-    admin: "Connect and check the operator-provided Pulse data store",
+    admin: "Administer Pulse as a Cloud admin: data store, base policy, limits and internal targets",
     "admin store": "Manage the Pulse ClickHouse connection",
+    "admin policy": "Read and set who may create bases and the starting values for new bases",
+    "admin bases": "List bases with state and usage, set their limits, and recover failed or blocked bases",
+    "admin orphans": "List and delete ClickHouse databases that belong to no base",
+    "admin targets": "Release and revoke internal scrape targets per base",
     access: "Manage direct access to Pulse bases",
-    dashboards: "Create, inspect, and publish Pulse dashboards",
-    fields: "Inspect observed telemetry fields",
-    query: "Compile, run, and manage Pulse queries",
-    resources: "Inspect Pulse resources, metrics, states, and events",
     "source-tokens": "Manage HTTP ingest tokens for Pulse sources",
     sources: "Create, inspect, and manage Pulse sources",
+    queries: "List, read, save, and delete SQL queries",
   },
   commands: [
+    sqlCommand,
+    ...queryCommands,
     ...adminCommands,
-    command("capabilities", {
-      summary: "Show Pulse deployment capabilities",
-      async run({ ctx }) {
-        const capabilities = await readApi<PulseCapabilitySnapshot>(ctx, "/capabilities");
-        printJsonOrTable(
-          ctx,
-          capabilities,
-          [
-            {
-              timescaleEnabled: yesNo(capabilities.timescaleEnabled),
-              timeBucketAvailable: yesNo(capabilities.timeBucketAvailable),
-              continuousAggregatesAvailable: yesNo(capabilities.continuousAggregatesAvailable),
-            },
-          ],
-          [
-            { key: "timescaleEnabled", label: "Timescale" },
-            { key: "timeBucketAvailable", label: "time_bucket" },
-            { key: "continuousAggregatesAvailable", label: "continuous aggregates" },
-          ],
-        );
-      },
-    }),
     ...baseCommands,
     ...pulseAccessCommands,
     ...sourceCommands,
     ...sourceTokenCommands,
-    ...inventoryCommands,
-    ...signalCommands,
-    ...queryCommands,
-    ...dashboardCommands,
     command("ingest", {
       summary: "Ingest a Pulse JSON batch through the authenticated API",
       flags: { ...baseFlag, source: flag.string({ required: true, description: "Ingest source ID or exact name" }), batch: JSON_INPUT },

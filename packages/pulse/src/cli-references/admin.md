@@ -1,12 +1,13 @@
 # Connect the Pulse data store
 
 Only a Cloud admin can use these commands. A Pulse base grant does not grant
-store administration. Pulse currently keeps its telemetry in Postgres and works
-without ClickHouse; connecting now prepares the store for later releases.
+store administration. Without a saved ClickHouse connection, Pulse data APIs return
+`PULSE_STORE_NOT_CONFIGURED`. Pulse administration and other Cloud apps remain available.
 
 1. Ask the operator for a dedicated ClickHouse 26.9 or newer instance reachable
-   from Pulse over HTTP or HTTPS. Its admin can read all Pulse data. The Pulse
-   service user manages users instance-wide and could alter even admins, so do
+   from Pulse over HTTP or HTTPS, as one node with its own persistent volume.
+   Its admin can read all Pulse data. The Pulse service user manages users
+   instance-wide and could alter even admins, so do
    not share the instance with other applications.
 2. Have the operator place the chosen service password in a private file or
    provide it on stdin. Never read the file into agent context, pass the value
@@ -68,3 +69,45 @@ Request refusals also name their code and fix: `STORE_NOT_CONFIGURED` when
 `check` runs before a connection is saved, `PASSWORD_REQUIRED` when `set`
 changes the address or user without password input, `STORE_BUSY` while another
 save runs, and `INVALID_INPUT` for a malformed address, user or password.
+
+## Base policy, amounts and recovery
+
+```sh
+cld pulse admin policy get
+cld pulse admin policy set --base-creation everyone --max-bases 200 --max-raw-retention-days 730 --default-profile normal --default-queries-per-hour 600
+cld pulse admin bases list --limit 50 --offset 0 --query operations
+cld pulse admin bases limits Base01
+cld pulse admin bases limits Base01 --profile small --values-per-minute 2000 --bytes-per-minute 5242880 --storage-bytes 5000000000 --max-series 50000 --max-event-kinds 2000 --max-state-keys 2000 --queries-per-hour 600
+cld pulse admin bases retry Base01
+cld pulse admin bases recheck Base01
+cld pulse admin bases recreate Base01 --yes
+cld pulse admin orphans list --limit 50
+cld pulse admin orphans delete pulse_00000000000040008000000000000000 --yes
+cld pulse admin targets list --base Base01
+cld pulse admin targets add --base Base01 web-01:9100
+cld pulse admin targets remove <targetId>
+```
+
+Policy defaults use `--default-values-per-minute`, `--default-bytes-per-minute`,
+`--default-storage-bytes`, `--default-max-series`, `--default-max-event-kinds`,
+`--default-max-state-keys`, and `--default-queries-per-hour` (initially 600).
+Use `admin bases limits <base> --queries-per-hour <count>` to change one base.
+The question quota resets at the next clock hour. Creation allows `everyone` (people and agents),
+`people`, or `admins`. Source-bound credentials never create bases.
+
+**Recreate discards measurements** and, like orphan deletion, needs `--yes`. It keeps sources and tokens. Retry resumes a failed operation. Recheck verifies matching backups
+and recreates read access after restore. Orphan deletion rechecks that no base
+references the database. Administration shows amounts and state, never contents.
+Use **Administration → Pulse → Internal targets** for the same target policy.
+Host and CIDR target entries cover every port; host:port covers one. `/0` is
+refused. Revocation blocks the next scrape, including redirect targets.
+
+Base lists include deleting bases and failed deletions until their rows are
+removed; use Retry to resume a failed delete. Recreate also repairs missing
+tables and views in a partially restored database.
+
+Orphan lists return `items` and `nextCursor`. Pass a non-null cursor as
+`cld pulse admin orphans list --after <nextCursor>`. Each request scans at most
+four batches of 500 database names, so an empty page can still have a cursor.
+Continue until `nextCursor` is null. Names reserved by a store row or base UUID
+are excluded.

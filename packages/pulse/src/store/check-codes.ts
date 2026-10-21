@@ -18,6 +18,7 @@ export const REQUIRED_RIGHTS = [
   "OPTIMIZE",
   "SYSTEM PARTS",
   "SYSTEM DISKS",
+  "SYSTEM PROCESSES",
   "KILL QUERY",
 ] as const;
 export type StoreCheckCode =

@@ -1,12 +1,24 @@
-import { expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { resolvePulseMessages } from "../messages";
+import { seedActiveBaseStore } from "../service/base-store.test-fixture";
+import { settingsFixture } from "../store/settings.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
 import pulseApi from ".";
 
+let settings: ReturnType<typeof settingsFixture> | undefined;
+beforeAll(() => {
+  settings = settingsFixture();
+  settings.values["pulse.clickhouse_connection"] = JSON.stringify({
+    url: "http://127.0.0.1:1",
+    user: "fixture",
+    password: "fixture-password",
+  });
+});
+afterAll(() => settings?.restore());
 const suite = databaseSuite();
 setDefaultTimeout(30_000);
 
@@ -55,6 +67,7 @@ suite("Pulse REST access for standalone agents", () => {
     await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES
       (${granted.id}::uuid, ${granted.shortId}, ${`Agent granted ${suffix}`}),
       (${other.id}::uuid, ${other.shortId}, ${`Agent other ${suffix}`})`;
+    await seedActiveBaseStore(granted.id, other.id);
     const accountIds: string[] = [];
     try {
       const agent = await insertAccount(`Pulse agent ${suffix}`);
@@ -65,17 +78,17 @@ suite("Pulse REST access for standalone agents", () => {
       await grant(granted.id, bound.id, "read");
       await grant(other.id, bound.id, "read");
 
-      // With a grant, an agent lists, reads, and changes the base like a person with the same grant.
+      // With a grant, an agent lists and reads the base like a person with the same grant.
       const call = await apiAs(agent, ["openid", "read", "write"]);
       const bases = await call("/bases");
       expect(bases.status).toBe(200);
       expect(await listedIds(bases)).toEqual([granted.shortId]);
       expect((await call(`/bases/${granted.shortId}`)).status).toBe(200);
-      expect((await call(`/bases/${granted.shortId}/saved-queries`)).status).toBe(200);
+      expect((await call(`/bases/${granted.shortId}/sources`)).status).toBe(200);
       expect((await call(`/bases/${other.shortId}`)).status).toBe(403);
       const renamed = await call(`/bases/${granted.shortId}`, { method: "PATCH", body: { name: `Renamed ${suffix}` } });
-      expect(renamed.status).toBe(200);
-      expect(await renamed.json()).toMatchObject({ id: granted.shortId, name: `Renamed ${suffix}` });
+      expect(renamed.status).toBe(403);
+      // General base settings require a base-admin grant, including for agents.
       // Managing access needs an `admin` grant.
       expect((await call(`/bases/${granted.shortId}/access`)).status).toBe(403);
 
@@ -117,16 +130,15 @@ suite("Pulse REST access for standalone agents", () => {
 
 suite("Pulse source target policy at the REST boundary", () => {
   test("create and changed endpoints refuse internal targets; existing sources persist and scrape errors localize", async () => {
-    const previous = process.env.PULSE_SCRAPE_ALLOWED_TARGETS;
-    delete process.env.PULSE_SCRAPE_ALLOWED_TARGETS;
     const base = { id: crypto.randomUUID(), shortId: newShortId() };
     const source = { id: crypto.randomUUID(), shortId: newShortId() };
     const account = await insertAccount(`Pulse target policy ${base.id}`);
     try {
       await sql`INSERT INTO pulse.bases(id, short_id, name) VALUES(${base.id}::uuid, ${base.shortId}, 'Target policy')`;
+      await seedActiveBaseStore(base.id);
       await grant(base.id, account.id, "write");
       const call = await apiAs(account, ["read", "write"]);
-      const refused = { code: "PULSE_SCRAPE_TARGET_BLOCKED", message: resolvePulseMessages("de").t.scrapeTargetBlocked };
+      const refused = { code: "PULSE_SCRAPE_TARGET_BLOCKED", message: `127.0.0.1 ${resolvePulseMessages("de").t.scrapeTargetBlocked}` };
       const root = `/bases/${base.shortId}/sources`;
       const created = await call(root, {
         method: "POST",
@@ -145,16 +157,16 @@ suite("Pulse source target policy at the REST boundary", () => {
         body: { endpointUrl: "http://127.0.0.2:1/new" },
       });
       expect(changed.status).toBe(400);
-      expect(await changed.json()).toEqual(refused);
+      expect(await changed.json()).toEqual({ ...refused, message: refused.message.replace("127.0.0.1", "127.0.0.2") });
       expect((await call(`${root}/${source.shortId}`, { method: "PATCH", body: { name: "Still editable" } })).status).toBe(200);
       const scraped = await call(`${root}/${source.shortId}/scrape`, { method: "POST", locale: "de" });
       expect(scraped.status).toBe(400);
       expect(await scraped.json()).toEqual(refused);
       const [row] = await sql`SELECT endpoint_url, last_error FROM pulse.sources WHERE id=${source.id}::uuid`;
       expect(row.endpoint_url).toBe("http://127.0.0.1:1/old");
-      expect(row.last_error).toBe(resolvePulseMessages("en").t.scrapeTargetBlocked);
+      expect(row.last_error).toBe(`127.0.0.1 ${resolvePulseMessages("en").t.scrapeTargetBlocked}`);
       // An operator entry permits create/update; preflight sends no HTTP request.
-      process.env.PULSE_SCRAPE_ALLOWED_TARGETS = "127.0.0.0/8";
+      await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${base.id}::uuid,'127.0.0.0/8')`;
       expect(
         (await call(root, { method: "POST", body: { kind: "metrics", name: "Allowed", endpointUrl: "http://127.0.0.1:1/metrics" } }))
           .status,
@@ -162,11 +174,9 @@ suite("Pulse source target policy at the REST boundary", () => {
       expect((await call(`${root}/${source.shortId}`, { method: "PATCH", body: { endpointUrl: "http://127.0.0.2:1/new" } })).status).toBe(
         200,
       );
-      delete process.env.PULSE_SCRAPE_ALLOWED_TARGETS;
+      await sql`DELETE FROM pulse.base_internal_targets WHERE base_id=${base.id}::uuid`;
       expect((await call(root, { method: "POST", body: { kind: "http_ingest", name: "Ingest" } })).status).toBe(201);
     } finally {
-      if (previous === undefined) delete process.env.PULSE_SCRAPE_ALLOWED_TARGETS;
-      else process.env.PULSE_SCRAPE_ALLOWED_TARGETS = previous;
       await sql`DELETE FROM pulse.bases WHERE id=${base.id}::uuid`;
       await sql`DELETE FROM auth.service_account_credentials WHERE service_account_id=${account.id}::uuid`;
       await sql`DELETE FROM auth.access WHERE service_account_id=${account.id}::uuid`;

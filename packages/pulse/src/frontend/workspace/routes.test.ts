@@ -1,62 +1,100 @@
-import { describe, expect, test } from "bun:test";
-import { buildPulseWorkspaceHref } from "./route-href";
-import { readWorkspacePathState } from "./route-path";
-import { readActivityQueryState, readDashboardControlQueryState, readResourceQueryState } from "./route-query";
+import { expect, test } from "bun:test";
+import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
 
-describe("Pulse workspace routes", () => {
-  test("reads dashboard control values without trimming or dropping empty overrides", () => {
-    expect(readDashboardControlQueryState("?c_range=24h&c_search=&q=ignored&c_label=hello%20world")).toEqual({
-      range: "24h",
-      search: "",
-      label: "hello world",
-    });
+test("base pages default to sources", () => {
+  expect(readWorkspacePathState("/app/pulse/Base01", "Base01")).toEqual({ view: "sources", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001", "Base01")).toEqual({ view: "sources", sourceId: "Src001" });
+  expect(readWorkspacePathState("/app/pulse/Base012/dashboards", "Base01").view).toBe("sources");
+});
+
+test("historical view URLs share the coming-back view without looking up deleted data", () => {
+  for (const path of [
+    "dashboards",
+    "dashboards/Old001",
+    "dashboards/Old001/edit",
+    "explorer",
+    "signals",
+    "signals/events",
+    "signals/states",
+    "signals/metrics",
+    "resources",
+    "resources/service%3Aapi",
+    "events",
+    "events/order.created",
+    "metrics",
+    "metrics/cpu",
+    "states",
+    "states/online",
+    "query-reference",
+  ]) {
+    expect(readWorkspacePathState(`/app/pulse/Base01/${path}`, "Base01")).toEqual({ view: "coming-back", sourceId: "" });
+  }
+});
+
+test("navigation exposes sources and one stable coming-back URL", () => {
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "coming-back" } })).toBe("/app/pulse/Base01/dashboards");
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01/sources");
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001" } })).toBe(
+    "/app/pulse/Base01/sources/Src001",
+  );
+  expect(buildPulseWorkspaceHref({ baseId: "", state: { view: "sources" } })).toBe("/app/pulse");
+});
+
+test("SQL routes restore unsaved SQL/values and saved UUID or short IDs", () => {
+  const state = { view: "sql" as const, sql: "SELECT :host WHERE x = 'ä & ?'", params: { host: "db/01" } };
+  const href = buildPulseWorkspaceHref({ baseId: "Base01", state });
+  expect(readWorkspacePathState(href, "Base01")).toEqual({ ...state, sourceId: "", queryId: "" });
+  for (const queryId of ["Qry001", "00000000-0000-4000-8000-000000000001"]) {
+    const href = buildPulseWorkspaceHref({ baseId: "Base01", state: { ...state, queryId } });
+    expect(href).toContain("sql=");
+    expect(readWorkspacePathState(href, "Base01")).toEqual({ view: "sql", sourceId: "", sql: state.sql, queryId, params: state.params });
+  }
+  expect(readWorkspacePathState("/app/pulse/Base01/sql", "Base01")).toEqual({
+    view: "sql",
+    sourceId: "",
+    queryId: "",
+    sql: "",
+    params: {},
   });
+});
 
-  test("normalizes activity and resource query params", () => {
-    expect(readActivityQueryState("?q=%20cpu%20&type=counter")).toEqual({ q: "cpu", type: "counter" });
-    expect(readActivityQueryState("?q=cpu&type=invalid")).toEqual({ q: "cpu", type: "" });
-    expect(readResourceQueryState("?q=%20host%20&source=%20docker%20&type=%20container%20")).toEqual({
-      q: "host",
-      sourceId: "docker",
-      type: "container",
+test("URL payload bounds omit whole drafts, keep saved identity/settings, and reject malformed values", () => {
+  for (const queryId of ["", "Qry001"]) {
+    const href = buildPulseWorkspaceHref({
+      baseId: "Base01",
+      state: {
+        view: "sql",
+        queryId,
+        sql: "SELECT '" + "ä".repeat(4000) + "'",
+        params: { a: "x".repeat(2048), b: "x".repeat(2048) },
+        settings: "usage",
+      },
     });
-  });
+    expect(href).toBe(`/app/pulse/Base01/sql${queryId ? `/${queryId}` : ""}?settings=usage`);
+    expect(href.length).toBeLessThanOrEqual(4000);
+  }
+  for (const raw of ["{", "[]", "null", '{"base_tz":"UTC"}', '{"a":12}', '{"__proto__":"x"}']) {
+    const state = readWorkspacePathState(`/app/pulse/Base01/sql?params=${encodeURIComponent(raw)}`, "Base01");
+    // __proto__ is a valid SQL parameter name and remains an own data property, never a prototype write.
+    expect(state.params).toEqual(raw.includes("__proto__") ? JSON.parse(raw) : {});
+  }
+  expect(readWorkspacePathState("/app/pulse/Base01/sql?sql=" + "a".repeat(4000), "Base01").sql).toBe("");
+  expect(readWorkspacePathState("/app/pulse/Base01/sql/%ZZ", "Base01").queryId).toBe("");
+  expect(readWorkspacePathState("/app/pulse/Base01/sql/Qry001?sql=SELECT+2", "Base01").sql).toBe("SELECT 2");
+});
 
-  test("reads workspace path state from canonical paths", () => {
-    const baseId = "Base01";
-
-    expect(readWorkspacePathState(`/app/pulse/${baseId}/resources/container%3Aapp-core`, baseId)).toEqual({
-      view: "resource-detail",
-      dashboardId: "",
-      sourceId: "",
-      signalId: "container:app-core",
+test("settings tabs preserve underlying source/SQL URL state", () => {
+  for (const settings of ["general", "members", "retention", "usage", "danger"] as const) {
+    const href = buildPulseWorkspaceHref({
+      baseId: "Base01",
+      state: { view: "sql", queryId: "Qry001", params: { host: "web-01" }, settings },
     });
-    expect(readWorkspacePathState(`/app/pulse/${baseId}/signals/metrics`, baseId)).toEqual({
-      view: "activity-metrics",
-      dashboardId: "",
-      sourceId: "",
-      signalId: "",
-    });
-    expect(readWorkspacePathState(`/app/pulse/${baseId}/explorer`, baseId).view).toBe("explorer");
+    expect(readWorkspacePathState(href, "Base01")).toMatchObject({ view: "sql", queryId: "Qry001", params: { host: "web-01" }, settings });
+  }
+  expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001?settings=general", "Base01")).toEqual({
+    view: "sources",
+    sourceId: "Src001",
+    settings: "general",
   });
-
-  test("builds hrefs with scoped query state", () => {
-    const baseId = "Base01";
-
-    expect(
-      buildPulseWorkspaceHref({
-        baseId,
-        state: { view: "resources" },
-        resources: { q: "app", sourceId: "docker", type: "container" },
-      }),
-    ).toBe(`/app/pulse/${baseId}/resources?q=app&source=docker&type=container`);
-
-    expect(
-      buildPulseWorkspaceHref({
-        baseId,
-        state: { view: "metric-detail", signalId: "system.cpu.usage" },
-        focusedSearch: "app-core",
-      }),
-    ).toBe(`/app/pulse/${baseId}/metrics/system.cpu.usage?q=app-core`);
-  });
+  expect(readWorkspacePathState("/app/pulse/Base01/sources?settings=bogus", "Base01")).not.toHaveProperty("settings");
 });

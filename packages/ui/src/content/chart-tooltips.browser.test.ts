@@ -1,7 +1,25 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
+
+const topLegendFixture = `
+import { createChartCursor } from "../src/content/chart-cursor";
+const linkedTopCursor = createChartCursor();
+const topHost = document.createElement("div"); document.body.append(topHost);
+const topSeries = Array.from({length:8}, (_,i) => ({
+  label:i === 0 ? "" : "Complete series " + (i + 1) + " descriptive name with the full measurement and aggregation",
+  data:i === 0 ? [] : [{x:1,y:i+2},{x:2,y:i+4}],
+}));
+render(() => <>
+  <Chart kind="line" class="top-line" className="report-palette" style={{height: window.innerWidth < 760 ? "180px" : "200px"}} series={topSeries} legend legendPlacement="top-start" cursor={linkedTopCursor} />
+  <Chart kind="line" class="top-pulse" style={{height: window.innerWidth < 760 ? "210px" : "230px"}} series={topSeries} legend legendPlacement="top-start" />
+  <Chart kind="line" class="top-short" style={{height: window.innerWidth < 760 ? "210px" : "230px"}} series={[{label:"Requests",data:[{x:1,y:2},{x:2,y:3}]}]} legend legendPlacement="top-start" />
+  <Chart kind="line" class="top-tiny" style={{height:"80px"}} series={topSeries} legend legendPlacement="top-start" />
+  <Chart kind="line" class="top-linked" style={{height:"160px"}} series={topSeries} cursor={linkedTopCursor} />
+  <Chart kind="line" class="top-natural" series={topSeries.slice(1,2)} legend legendPlacement="top-start" />
+</>, topHost);
+`;
 
 let browser: Browser;
 let bundle: string;
@@ -20,7 +38,8 @@ beforeAll(async () => {
         name: "chart-tooltips-dom",
         setup(builder) {
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
-            const result = await transformAsync(await Bun.file(path).text(), {
+            const source = await Bun.file(path).text();
+            const result = await transformAsync(source + (path.endsWith("chart-tooltips.browser-harness.tsx") ? topLegendFixture : ""), {
               filename: path,
               babelrc: false,
               configFile: false,
@@ -82,6 +101,7 @@ test("a plain bar chart shows label and value on hover without shifting layout",
   const page = await open();
   try {
     const chart = page.locator(".plain-bar");
+    await settled(page);
     const before = await chart.boundingBox();
     expect(before).not.toBeNull();
     await chart.locator(".stdlib-chart-bar").first().hover();
@@ -160,6 +180,7 @@ test("a StatCell trend has a named sparkline with hover inspection and stable ge
   try {
     const chart = page.locator('.requests-trend [data-chart-kind="sparkline"]');
     expect(await chart.getAttribute("aria-label")).toBe("Requests");
+    await settled(page);
     const before = await chart.boundingBox();
     expect(before).not.toBeNull();
     await chart.locator("[data-chart-datum] circle").last().hover();
@@ -224,3 +245,88 @@ test("a StatCell trend formatter replaces the default with a period title and un
     await page.close();
   }
 });
+
+for (const width of [390, 1440])
+  test(`top line legends wrap inside the budget and keep real inspection at ${width}px`, async () => {
+    const page = await open({ viewport: { width, height: 1000 } });
+    try {
+      const chart = page.locator(".top-line");
+      await chart.scrollIntoViewIfNeeded();
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      const plot = chart.locator(".k2b-chart__svg");
+      await settled(page);
+      const outer = await chart.boundingBox();
+      const legend = await chart.locator(".k2b-chart__legend").boundingBox();
+      const drawing = await plot.boundingBox();
+      expect(outer!.height).toBe(width < 760 ? 180 : 200);
+      expect(legend!.height).toBeLessThanOrEqual(Math.min(44, outer!.height * 0.4) + 1);
+      for (const [selector, total, legendHeight] of [
+        [".top-pulse", width < 760 ? 210 : 230, 44],
+        [".top-short", width < 760 ? 210 : 230, 30],
+        [".top-tiny", 80, 32],
+      ] as const) {
+        const sample = page.locator(selector);
+        expect((await sample.boundingBox())!.height).toBe(total);
+        expect((await sample.locator(".k2b-chart__legend").boundingBox())!.height).toBe(legendHeight);
+        expect((await sample.locator(".k2b-chart__svg").boundingBox())!.height).toBe(total - legendHeight);
+      }
+      expect(drawing!.height).toBeGreaterThanOrEqual(outer!.height * 0.6 - 1);
+      expect(drawing!.y).toBeGreaterThanOrEqual(legend!.y + legend!.height - 1);
+      expect(drawing!.y + drawing!.height).toBeLessThanOrEqual(outer!.y + outer!.height + 1);
+      expect((await page.locator(".top-natural").boundingBox())!.height).toBeGreaterThan(100);
+      expect(await chart.locator(".k2b-chart__legend-item").count()).toBe(8);
+      expect(await chart.locator(".k2b-chart__legend-item").first().textContent()).toContain("Series 1");
+      expect(await chart.locator(".k2b-chart__svg .stdlib-chart-legend").count()).toBe(0);
+      expect(await chart.locator(".k2b-chart__legend").evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+      if (width === 390) {
+        const legendControl = chart.getByRole("group", { name: "Legend", exact: true });
+        expect(await legendControl.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+        await legendControl.focus();
+        await legendControl.press("End");
+        await page.waitForFunction(() => {
+          const element = document.querySelector(".top-line .k2b-chart__legend");
+          return element && element.scrollTop + element.clientHeight >= element.scrollHeight - 1;
+        });
+        expect(await legendControl.textContent()).toContain("Complete series 8 descriptive name with the full measurement and aggregation");
+        expect(await chart.locator("[role=tooltip]:popover-open").count()).toBe(0);
+        const lastName = await chart.locator(".k2b-chart__legend-item").last().boundingBox();
+        const viewport = await legendControl.boundingBox();
+        expect(lastName!.y + lastName!.height).toBeLessThanOrEqual(viewport!.y + viewport!.height + 1);
+      }
+      for (const theme of ["light", "dark"]) {
+        await page.locator("body").evaluate((body, theme) => (body.dataset.theme = theme), theme);
+        // The same renderer classes must take both default and consumer palette overrides.
+        if (theme === "dark") await page.addStyleTag({ content: ".stdlib-chart.report-palette { --stdlib-chart-c2: rgb(123, 45, 67); }" });
+        const colors = await chart.evaluate((e) => ({
+          legend: getComputedStyle(e.querySelector(".k2b-chart__legend-item:nth-child(2) rect")!).fill,
+          series: getComputedStyle(e.querySelector(".stdlib-chart-line.stdlib-chart-series-1")!).stroke,
+        }));
+        expect(colors.legend).toBe(colors.series);
+        if (theme === "dark") expect(colors.legend).toBe("rgb(123, 45, 67)");
+      }
+      await chart.focus();
+      await chart.press("ArrowRight");
+      await chart.locator("[role=tooltip]:popover-open").waitFor();
+      expect(await chart.locator("[role=tooltip]:popover-open").textContent()).toContain("Complete series");
+      expect(await page.locator(".top-linked [data-inspected]").count()).toBeGreaterThan(0);
+      await chart.press("Escape");
+      // A rendered line can cover its own invisible inspection circle. Move a real
+      // pointer to the point instead of requiring the circle to receive the event.
+      const point = chart.locator("[data-chart-datum] circle").last();
+      await point.scrollIntoViewIfNeeded();
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      await settled(page);
+      const pointBox = await point.boundingBox();
+      expect(pointBox).not.toBeNull();
+      await page.mouse.move(pointBox!.x + pointBox!.width / 2, pointBox!.y + pointBox!.height / 2);
+      await chart.locator("[role=tooltip]:popover-open").waitFor();
+      expect(await chart.locator("[role=tooltip]:popover-open").textContent()).toContain("Complete series");
+      const anchor = await chart.locator(".k2b-chart__anchor").boundingBox();
+      const currentPlot = await plot.boundingBox();
+      expect(anchor!.y).toBeGreaterThanOrEqual(currentPlot!.y);
+      expect(anchor!.y).toBeLessThanOrEqual(currentPlot!.y + currentPlot!.height);
+      expect(await page.locator(".top-linked [data-inspected]").count()).toBeGreaterThan(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);

@@ -1,6 +1,15 @@
 import { z } from "zod";
 import { anchor } from "../../test/fixtures/large-mailbox";
-import { browserSectionSchema, type Engine, parseBrowsers, renderBrowserSummary } from "./browser-model";
+import {
+  browserSectionSchema,
+  type Engine,
+  interactionIds,
+  loadPages,
+  parseBrowsers,
+  parseInteractions,
+  parseLoads,
+  renderBrowserSummary,
+} from "./browser-model";
 
 export { sortedJson } from "../../../../scripts/perf-baseline/model";
 
@@ -8,9 +17,9 @@ export const help = `Usage: bun --no-env-file packages/mail/scripts/perf-baselin
 
 Measure Mail server/API performance with isolated production core/mail/gateway
 and Caddy HTTPS; with --browser also client cost and interaction times in
-Chromium and WebKit on the same seeded mailbox. Requires dependencies and
+Chromium and WebKit on the same two seeded mailboxes. Requires dependencies and
 Docker access.
-Allow roughly 5–15 minutes for builds/startup, about 2 minutes to seed
+Allow roughly 5–15 minutes for builds/startup, about 2 minutes per mailbox to seed
 20,000 messages and 2–5 minutes to measure; busy hosts take longer. Takes the machine-wide heavy lock.
 Only starts/removes run-owned labelled containers, networks and volumes.
 Uses free 127.0.0.1 ports, never port 3000 or the dev/CI database.
@@ -34,6 +43,9 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
                      recorded connect error.
   --browser-runs N   1..20 cold loads per page, interaction, engine and
                      profile (default 3). Adds roughly 10-30 minutes.
+  --browser-only     Seed both mailboxes but skip server scenarios (requires --browser)
+  --interactions ids Comma list of interaction ids (default all; see below)
+  --loads pages      Comma list of mailbox,compose, or none (default both)
   --rank <result.json> --bottlenecks <candidates.json>
                      Print the top 5 bottlenecks as Markdown and exit: each
                      candidate {title, location "path:line", metric, evidence,
@@ -45,16 +57,20 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
 
 Browser part: mailbox and compose page loads (eager/lazy JS brotli and
 modules, FCP, LCP, TTI, island mount end, island render time, long tasks,
-one extra traced Chromium load for main-thread shares), and seven interactions
+one extra traced Chromium load for main-thread shares), and eight interactions
 timed from the input event (or ingest commit) to the painted DOM end state:
-folder-switch, conversation-open, conversation-open-large, list-scroll,
+mailbox-switch, folder-switch, conversation-open, conversation-open-large, list-scroll,
 search-submit, live-arrival, compose-open. Desktop 1440x900 and phone 390x844;
+folder-switch and mailbox-switch add one traced Chromium sample per profile
+(excluded from timings) for JS, parse/compile, island render, style/layout and other task time.
 Chromium phone has 4x CPU slowdown and a 1.6 Mbit/s, 150 ms network.
 Local emulation, not real phones.
 
 Cold means first scenario invocation, not flushed database/OS caches. Scenarios
-share a seeded installation; background noise is recorded in a 5-second idle
-window. One untimed auto_explain pass follows each scenario. Local emulation,
+share a seeded installation with two mailboxes of the requested shape (B uses
+seed + 1, wrapping at 2^32); B seed duration is recorded separately; background noise is recorded in a 5-second idle
+window. Mailbox switch scenarios: mailbox-switch-route (B workspace-route) and
+ssr-mailbox-b (B document). One untimed auto_explain pass follows each scenario. Local emulation,
 not provider/network performance. Message dates use ${anchor}.
 `;
 export function parseArgs(args: string[]) {
@@ -71,6 +87,9 @@ export function parseArgs(args: string[]) {
     keep: false,
     browsers: [] as Engine[],
     browserRuns: 3,
+    browserOnly: false,
+    interactions: [...interactionIds],
+    loads: [...loadPages],
     rank: undefined as string | undefined,
     bottlenecks: undefined as string | undefined,
   };
@@ -79,6 +98,7 @@ export function parseArgs(args: string[]) {
     if (flag === "--help") options.help = true;
     else if (flag === "--keep") options.keep = true;
     else if (flag === "--skip-build") options.skipBuild = true;
+    else if (flag === "--browser-only") options.browserOnly = true;
     else if (
       [
         "--messages",
@@ -90,6 +110,8 @@ export function parseArgs(args: string[]) {
         "--compare",
         "--browser",
         "--browser-runs",
+        "--interactions",
+        "--loads",
         "--rank",
         "--bottlenecks",
       ].includes(flag ?? "")
@@ -99,6 +121,8 @@ export function parseArgs(args: string[]) {
       if (flag === "--out") options.out = value;
       else if (flag === "--compare") options.compare = value;
       else if (flag === "--browser") options.browsers = parseBrowsers(value);
+      else if (flag === "--interactions") options.interactions = parseInteractions(value);
+      else if (flag === "--loads") options.loads = parseLoads(value);
       else if (flag === "--rank") options.rank = value;
       else if (flag === "--bottlenecks") options.bottlenecks = value;
       else {
@@ -141,6 +165,7 @@ export function parseArgs(args: string[]) {
   if ((options.rank === undefined) !== (options.bottlenecks === undefined)) throw new Error("--rank and --bottlenecks go together");
   if (options.rank && args.some((arg) => arg.startsWith("--") && !["--rank", "--bottlenecks", "--help"].includes(arg)))
     throw new Error("--rank only takes --bottlenecks; it reads an existing result and starts nothing");
+  if (options.browserOnly && !options.browsers.length) throw new Error("--browser-only requires --browser");
   return options;
 }
 export type Options = ReturnType<typeof parseArgs>;
@@ -230,6 +255,13 @@ export const resultSchema = z.object({
     fixtureDigest: z.string(),
     shape: z.record(z.string(), z.json()),
     seedDurationMs: number.nullable(),
+    mailboxB: z
+      .object({
+        fixture: z.object({ seed: number, anchor: z.string(), messages: number, conversations: number, folders: number }),
+        fixtureDigest: z.string(),
+        seedDurationMs: number.nullable(),
+      })
+      .optional(),
     bm25: z.boolean().nullable(),
     pgTextsearch: z.boolean().nullable(),
     postgresVersion: z.string().nullable(),
@@ -281,6 +313,11 @@ export function renderSummary(result: Result, previous?: Result) {
     `CPU: ${m.cpuModel} × ${m.cpuCount}. Load: ${m.loadAverage.start.join(", ")} → ${m.loadAverage.end.join(", ")}.`,
     `Fixture: ${m.fixture.messages} messages, ${m.fixture.conversations} conversations, ${m.fixture.folders} folders; seed ${m.fixture.seed}, anchor ${m.fixture.anchor}.`,
     `Digest: ${m.fixtureDigest}. Seed: ${fmt(m.seedDurationMs)} ms. PostgreSQL: ${m.postgresVersion ?? "unknown"}. BM25 index: ${m.bm25 ?? "unknown"}; pg_textsearch: ${m.pgTextsearch ?? "unknown"}.`,
+    ...(m.mailboxB
+      ? [
+          `Mailbox B: seed ${m.mailboxB.fixture.seed}; digest ${m.mailboxB.fixtureDigest}; seed duration ${fmt(m.mailboxB.seedDurationMs)} ms.`,
+        ]
+      : []),
     `Warm runs: ${m.runs}. Idle statements/s: ${result.idle ? fmt(result.idle.calls / (result.idle.windowMs / 1000)) : "unknown"}.`,
     "",
     "Times are milliseconds; byte sizes are decoded body bytes and locally recompressed Brotli. Compound scenarios sum request TTFB and bytes. Cold is first invocation; caches are not flushed.",

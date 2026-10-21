@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { request } from "node:http";
+import { requestPublicHttps, resolvePublicNetworkAddresses } from "@k2b/cloud/services";
 import * as pdfModule from "@k2b/cloud/services/pdf";
 import { type GotenbergConfig, preparePdfImage } from "@k2b/cloud/services/pdf";
 import { sql } from "bun";
@@ -31,6 +33,7 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
         markdown,
         notebookId: notebook.id,
         notebookShortId: notebook.short_id,
+        publicOrigin: "https://cloud.example.test",
         noteId: notebook.id,
         locale: "en",
         userId: null,
@@ -161,7 +164,12 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
   test("a real byte budget keeps the image prefix and marks the rest in order", async () => {
     const repeated = [ids[0]!, await insert(jpeg, "image/jpeg", "second.jpg"), await insert(jpeg, "image/jpeg", "third.jpg")];
     const markdown = repeated.map((id, n) => `![photo ${n}](attach://${id} =100x60)`).join(" ");
-    const built = buildNotePdfHtml({ markdown, notebookShortId: notebook.short_id, locale: "en" });
+    const built = buildNotePdfHtml({
+      markdown,
+      notebookShortId: notebook.short_id,
+      publicOrigin: "https://cloud.example.test",
+      locale: "en",
+    });
     const reference = await prepareNotePdfImages({
       ...built,
       notebookId: notebook.id,
@@ -196,8 +204,49 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
       );
       expect(await trap.takeRequests()).toEqual([]);
       expect((await pdfImages(result.pdf)).filter(({ type }) => type === "image")).toHaveLength(1);
-      expect(result.omissions.map(({ code }) => code)).toEqual(["not_rendered", "blocked"]);
+      expect(result.omissions.map(({ code }) => code)).toEqual(["blocked", "blocked"]);
     } finally {
+      await trap.stop();
+    }
+  }, 60000);
+
+  test("external JPEGs are fetched once and uploaded; Gotenberg requests no image addresses", async () => {
+    const trap = await startGotenbergTrap(config.url);
+    const upload = spyOn(pdfModule, "renderHtmlToPdfWithConfig");
+    let server: ReturnType<typeof Bun.serve> | undefined;
+    let requests = 0;
+    try {
+      server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch() {
+          requests++;
+          return new Response(new Uint8Array(jpeg), { headers: { "content-type": "image/jpeg" } });
+        },
+      });
+      const url = `https://images.example.test:${server.port}/photo.jpg`;
+      const result = await render(`![photo](${url}) ![again](${url}) ![private](${trap.origin}/x.png)`, {
+        imageDependencies: {
+          request: (input) =>
+            requestPublicHttps(input, {
+              resolve: async (host) =>
+                host === "images.example.test" ? [{ address: "127.0.0.1", family: 4 }] : resolvePublicNetworkAddresses(host),
+              // Local HTTP fixture exercises pinned byte transport; production always uses node:https.
+              request: (options, callback) => request({ ...options, protocol: "http:" }, callback),
+            }),
+        },
+      });
+      expect(requests).toBe(1);
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(upload.mock.calls[0]![0].assets?.map(({ name }) => name)).toEqual(["img-1.jpg"]);
+      const images = await pdfImages(result.pdf);
+      expect(images.length).toBeGreaterThan(0);
+      for (const image of images) expect(image).toMatchObject({ type: "image", width: 480, height: 320, enc: "jpeg" });
+      expect(result.omissions).toEqual([{ code: "blocked", kind: "image", label: `private (${trap.origin}/x.png)` }]);
+      expect(await trap.takeRequests()).toEqual([]);
+    } finally {
+      upload.mockRestore();
+      await server?.stop(true);
       await trap.stop();
     }
   }, 60000);

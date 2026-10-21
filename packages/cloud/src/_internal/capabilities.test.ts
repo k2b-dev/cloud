@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import {
@@ -1514,3 +1514,39 @@ test("search scope declarations survive localization and reject unsupported dire
   expect(accepted.ok).toBe(true);
   expect(invoked).toBe(true);
 });
+
+for (const kind of ["query", "action", "review"] as const) {
+  test(`an aborted invocation never starts application ${kind} code`, async () => {
+    const definitions = example();
+    const run = mock(definitions.queries!.get!.run);
+    const action = mock(definitions.actions!.rename!.run);
+    const review = mock(definitions.actions!.rename!.review!);
+    const compiled = compileCapabilities("example", {
+      ...definitions,
+      queries: { get: { ...definitions.queries!.get!, run } },
+      actions: { rename: { ...definitions.actions!.rename!, run: action, review } },
+    });
+    const signal = AbortSignal.abort();
+    const result =
+      kind === "review"
+        ? await reviewCompiledCapability({
+            compiled,
+            localId: "rename",
+            input: { id: "one", name: "Two" },
+            expectedSchemaHash: compiled.manifest.actions[0]!.schemaHash,
+            context: { ...context, signal },
+          })
+        : await invokeCompiledCapability({
+            compiled,
+            kind,
+            localId: kind === "query" ? "get" : "rename",
+            input: kind === "query" ? { id: "one" } : { id: "one", name: "Two" },
+            expectedSchemaHash: (kind === "query" ? compiled.manifest.queries[0] : compiled.manifest.actions[0])!.schemaHash,
+            context: { ...context, signal, ...(kind === "action" ? { idempotencyKey: "cancelled-action" } : {}) },
+          });
+    expect(result).toMatchObject({ ok: false, error: { code: "REQUEST_CANCELLED", status: 499 } });
+    expect(run).not.toHaveBeenCalled();
+    expect(action).not.toHaveBeenCalled();
+    expect(review).not.toHaveBeenCalled();
+  });
+}

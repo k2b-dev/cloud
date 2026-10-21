@@ -1,5 +1,5 @@
 import type { ResourceApiKey, ResourceApiKeysProps } from "@k2b/cloud/access/ui";
-import { Button, DataTable, type DataTableColumn, TextInput, useLocale } from "@k2b/ui";
+import { Button, DataTable, type DataTableColumn, StatusBadge, TextInput } from "@k2b/ui";
 import { type Accessor, type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
 import { localizedSourceError, type pulseMessages } from "../../messages";
@@ -7,22 +7,13 @@ import { usePulseMessages } from "../use-messages";
 import { compactDateWithDelta, type PulseDateContext, sourceKindIcon, sourceStatus } from "./helpers";
 import SourceDetailView from "./SourceDetailView";
 
-type PublishedCounts = {
-  resources: number;
-  metricVariants: number;
-  states: number;
-  events: number;
-};
-
 type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
 
 const sourceColumns = (t: Messages): DataTableColumn<PulseSource>[] => [
-  { id: "source", header: t.source, value: "name", cellClass: "min-w-56" },
-  { id: "status", header: t.status, cellClass: "w-28 whitespace-nowrap" },
-  { id: "resources", header: t.resources, cellClass: "w-24 whitespace-nowrap" },
-  { id: "signals", header: t.signals, cellClass: "w-32 whitespace-nowrap" },
-  { id: "target", header: t.target, cellClass: "min-w-48" },
-  { id: "seen", header: t.lastSeen, cellClass: "w-48 whitespace-nowrap" },
+  // A phone shows one column: status and newest data move into the source cell.
+  { id: "source", header: t.source, value: "name", cellClass: "min-w-56 max-sm:min-w-0" },
+  { id: "status", header: t.status, headerClass: "max-sm:hidden", cellClass: "w-32 whitespace-nowrap max-sm:hidden" },
+  { id: "newest", header: t.newestData, headerClass: "max-sm:hidden", cellClass: "w-44 whitespace-nowrap max-sm:hidden" },
 ];
 
 const sourceScrapeColumns = (t: Messages): DataTableColumn<PulseSourceScrape>[] => [
@@ -33,55 +24,44 @@ const sourceScrapeColumns = (t: Messages): DataTableColumn<PulseSourceScrape>[] 
   { id: "error", header: t.error, cellClass: "min-w-40" },
 ];
 
-const renderSourceTitleCell = (source: PulseSource): JSX.Element => {
-  return (
-    <div class="flex min-w-0 items-center gap-2">
-      <span class="k2b-icon-tile h-8 w-8 text-secondary" aria-hidden="true">
-        <i class={`${sourceKindIcon(source.kind)} text-base`} />
-      </span>
-      <div class="min-w-0">
-        <p class="truncate text-sm font-medium text-primary">{source.name}</p>
-        <p class="mt-0.5 truncate text-xs text-dimmed">{source.kind}</p>
+const sourceSubtitle = (source: PulseSource, t: Messages): string =>
+  source.kind === "metrics"
+    ? [t.metricsEndpoint, t.scrapeEvery({ seconds: source.scrapeIntervalSeconds ?? 60 }), source.endpointUrl ?? t.noEndpointShort].join(
+        " · ",
+      )
+    : `${t.httpIngest} · ${t.tokenIngestEndpoint}`;
+
+const renderSourceStatusCell = (source: PulseSource, t: Messages, variant: "chip" | "dot" = "chip"): JSX.Element => {
+  const status = sourceStatus(source, t);
+  return <StatusBadge label={status.label} tone={status.tone} title={status.title} variant={variant} />;
+};
+
+const renderSourceTitleCell = (source: PulseSource, t: Messages, newest: string): JSX.Element => (
+  <div class="flex min-w-0 items-center gap-2">
+    <span class="k2b-icon-tile h-8 w-8 text-secondary" aria-hidden="true">
+      <i class={`${sourceKindIcon(source.kind)} text-base`} />
+    </span>
+    <div class="min-w-0">
+      <p class="truncate text-sm font-medium text-primary">{source.name}</p>
+      <p class="mt-0.5 truncate text-xs text-dimmed" title={source.endpointUrl ?? undefined}>
+        {sourceSubtitle(source, t)}
+      </p>
+      <p class="mt-0.5 text-xs text-dimmed">
+        {source.kind === "metrics"
+          ? t.sqlSeriesCount({ count: source.seriesCount ?? 0 })
+          : source.todayCount == null
+            ? "—"
+            : t.sqlTodayCount({ count: source.todayCount })}
+      </p>
+      <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-dimmed sm:hidden">
+        {renderSourceStatusCell(source, t, "dot")}
+        <span class="truncate">
+          {t.newestData}: {newest}
+        </span>
       </div>
     </div>
-  );
-};
-
-const renderSourceStatusCell = (source: PulseSource, t: Messages): JSX.Element => {
-  const status = sourceStatus(source, { paused: t.paused, error: t.error, healthy: t.healthy, waiting: t.waiting });
-  return (
-    <span class={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ${status.text}`}>
-      <i class={status.icon} />
-      {status.label}
-    </span>
-  );
-};
-
-const renderSourceSignalsCell = (counts: PublishedCounts, locale: string): JSX.Element => {
-  const total = counts.metricVariants + counts.states + counts.events;
-  return (
-    <span class="text-xs text-secondary">
-      {total.toLocaleString(locale)}{" "}
-      <span class="text-dimmed">
-        ({counts.metricVariants}m/{counts.states}s/{counts.events}e)
-      </span>
-    </span>
-  );
-};
-
-const renderSourceTargetCell = (source: PulseSource, t: Messages): JSX.Element => {
-  if (source.kind === "metrics") {
-    return (
-      <div class="min-w-0">
-        <p class="truncate text-xs text-secondary" title={source.endpointUrl ?? ""}>
-          {source.endpointUrl ?? t.noEndpointShort}
-        </p>
-        <p class="mt-1 text-xs text-dimmed">{t.scrapeEvery({ seconds: source.scrapeIntervalSeconds ?? 60 })}</p>
-      </div>
-    );
-  }
-  return <span class="text-xs text-secondary">{t.tokenIngestEndpoint}</span>;
-};
+  </div>
+);
 
 export type SourcesViewProps = {
   search: Accessor<string>;
@@ -95,12 +75,10 @@ export type SourcesViewProps = {
   selectedSourceApiKeys: Accessor<ResourceApiKey[]>;
   origin: Accessor<string>;
   dateContext: Accessor<PulseDateContext>;
-  publishedCounts: (sourceId: string) => PublishedCounts;
   copySetupText: (text: string, label: string) => void;
   addSource: () => void | Promise<void>;
   selectSource: (source: PulseSource) => void;
   closeSource: () => void;
-  openSourceResources: (source: PulseSource) => void;
   editSource: (source: PulseSource) => void | Promise<void>;
   toggleSource: (source: PulseSource) => void | Promise<void>;
   scrape: (source: PulseSource) => void | Promise<void>;
@@ -114,21 +92,16 @@ export type SourcesViewProps = {
 
 export default function SourcesView(props: SourcesViewProps) {
   const t = usePulseMessages();
-  const locale = useLocale();
+  const newestData = (source: PulseSource) =>
+    source.status.newestDataAt ? compactDateWithDelta(source.status.newestDataAt, props.dateContext()) : t().noDataYet;
   const renderSourceCell = (
     source: PulseSource,
     col: DataTableColumn<PulseSource>,
     render: (value: unknown) => JSX.Element,
   ): JSX.Element => {
-    if (col.id === "source") return renderSourceTitleCell(source);
+    if (col.id === "source") return renderSourceTitleCell(source, t(), newestData(source));
     if (col.id === "status") return renderSourceStatusCell(source, t());
-    if (col.id === "resources") {
-      const counts = props.publishedCounts(source.id);
-      return <span class="text-xs text-secondary">{counts.resources.toLocaleString(locale())}</span>;
-    }
-    if (col.id === "signals") return renderSourceSignalsCell(props.publishedCounts(source.id), locale());
-    if (col.id === "target") return renderSourceTargetCell(source, t());
-    if (col.id === "seen") return source.lastSeenAt ? compactDateWithDelta(source.lastSeenAt, props.dateContext()) : t().waiting;
+    if (col.id === "newest") return <span class="text-xs text-secondary">{newestData(source)}</span>;
     return render(source[col.id as keyof PulseSource]);
   };
 
@@ -208,7 +181,6 @@ export function SourcesDetailPanel(props: SourcesViewProps) {
       {(source) => (
         <SourceDetailView
           source={source}
-          published={props.publishedCounts(source.id)}
           origin={props.origin()}
           dateContext={props.dateContext()}
           loading={props.loading()}
@@ -217,7 +189,6 @@ export function SourcesDetailPanel(props: SourcesViewProps) {
           scrapeColumns={sourceScrapeColumns(t())}
           renderScrapeCell={renderSourceScrapeCell}
           copySetupText={props.copySetupText}
-          openSourceResources={props.openSourceResources}
           editSource={props.editSource}
           toggleSource={props.toggleSource}
           close={props.closeSource}

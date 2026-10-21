@@ -10,9 +10,10 @@ import { newShortId } from "../lib/short-id";
 import { storeAdmin } from "../store/service";
 import pulseApi from ".";
 import adminRoutes from "./routes/admin";
+import baseAdminRoutes from "./routes/base-admin";
 
 const suite = databaseSuite();
-const api = new Hono<AuthContext>().route("/api/pulse/admin/store", adminRoutes);
+const api = new Hono<AuthContext>().route("/api/pulse/admin/store", adminRoutes).route("/api/pulse/admin", baseAdminRoutes);
 const password = "obviously-fake-admin-store-fixture-password",
   marker = "REMOTE_CLICKHOUSE_BODY_MUST_NEVER_LEAK";
 const asUser = (id: string, admin = false): User => ({
@@ -39,6 +40,9 @@ const paths = [
   ["PUT", "/api/pulse/admin/store"],
   ["POST", "/api/pulse/admin/store/check"],
   ["POST", "/api/pulse/admin/store/setup-sql"],
+  ["GET", "/api/pulse/admin/policy"],
+  ["PUT", "/api/pulse/admin/policy"],
+  ["PUT", "/api/pulse/admin/bases/Base01/limits"],
 ] as const;
 suite("Pulse store admin API", () => {
   let server: ReturnType<typeof Bun.serve>;
@@ -46,7 +50,20 @@ suite("Pulse store admin API", () => {
   let received = 0;
   // The saved connection is one encrypted tuple; the fixture keeps it as the JSON the service writes.
   const saved = { url: "", user: "fixture_service", password };
-  const current: Record<"pulse.clickhouse_connection", string> = { "pulse.clickhouse_connection": "" };
+  const current = {
+    "pulse.clickhouse_connection": "",
+    "pulse.base_creation": "everyone",
+    "pulse.max_bases": 200,
+    "pulse.max_raw_retention_days": 730,
+    "pulse.default_profile": "normal",
+    "pulse.default_values_per_minute": 2000,
+    "pulse.default_bytes_per_minute": 5242880,
+    "pulse.default_storage_bytes": 5000000000,
+    "pulse.default_max_series": 50000,
+    "pulse.default_max_event_kinds": 2000,
+    "pulse.default_max_state_keys": 2000,
+    "pulse.default_queries_per_hour": 600,
+  };
   const store = () => {
     current["pulse.clickhouse_connection"] = JSON.stringify(saved);
   };
@@ -92,13 +109,12 @@ suite("Pulse store admin API", () => {
     saved.url = server.url.origin;
     store();
     get = spyOn(app.settings, "get").mockImplementation(async (key) => current[key]);
-    read = spyOn(app.settings, "read").mockImplementation(async (key) =>
-      storedState === "unreadable"
-        ? { value: "", stored: "unreadable" }
-        : { value: current[key], stored: current[key] ? "readable" : "none" },
-    );
+    read = spyOn(app.settings, "read").mockImplementation(async (key) => ({
+      value: current[key],
+      stored: storedState === "unreadable" ? "unreadable" : current[key] ? "readable" : "none",
+    }));
     set = spyOn(app.settings, "set").mockImplementation(async (key, value) => {
-      current[key] = value;
+      Object.assign(current, { [key]: value });
     });
     sessionLookup = spyOn(session, "authenticateRequest").mockImplementation(async (_c, token) =>
       token === "person-fixture" || token === "admin-fixture"
@@ -172,7 +188,7 @@ suite("Pulse store admin API", () => {
           method === "GET" ? undefined : { url: server.url.origin, user: "fixture_service", password },
         );
         expect(response.status).toBe(403);
-        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(response.headers.get("cache-control")).toContain("no-store");
         expect(await response.text()).not.toContain(password);
       }
     await expect(
@@ -251,7 +267,8 @@ suite("Pulse store admin API", () => {
         c.set("oauthScopes", ["read"]);
         await next();
       })
-      .route("/api/pulse/admin/store", adminRoutes);
+      .route("/api/pulse/admin/store", adminRoutes)
+      .route("/api/pulse/admin", baseAdminRoutes);
     received = 0;
     for (const [method, path] of paths) {
       const response = await scoped.request(path, {
@@ -262,6 +279,24 @@ suite("Pulse store admin API", () => {
       expect(response.status).toBe(403);
     }
     expect(received).toBe(0);
+  });
+  test("setup gate leaves admin store and policy available without a connection", async () => {
+    const before = current["pulse.clickhouse_connection"];
+    current["pulse.clickhouse_connection"] = "";
+    try {
+      const scoped = new Hono<AuthContext>().route("/api/pulse", pulseApi);
+      const headers = { cookie: "session_token=admin-fixture" };
+      for (const path of ["/api/pulse/admin/store", "/api/pulse/admin/policy"]) {
+        const response = await scoped.request(path, { headers });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toContain("no-store");
+      }
+      const data = await scoped.request("/api/pulse/bases", { headers });
+      expect(data.status).toBe(503);
+      expect(await data.json()).toMatchObject({ code: "PULSE_STORE_NOT_CONFIGURED" });
+    } finally {
+      current["pulse.clickhouse_connection"] = before;
+    }
   });
   test("the store routes' middleware stays inside /admin/store", async () => {
     // Mounted like production: a read-scoped OAuth caller still reads its bases, uncached rules untouched.
