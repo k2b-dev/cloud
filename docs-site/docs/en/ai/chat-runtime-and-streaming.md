@@ -118,6 +118,14 @@ application explicitly opens Assistant. Core stores that attribution on the
 new conversation for AI usage accounting. Omit it for chats created directly
 inside Assistant.
 
+Conversation creation accepts an optional UUID `requestId`. Keep it and the
+same creation input until `POST /api/ai/conversations` returns the conversation.
+Concurrent requests or retries after a lost response return that same conversation
+for the authenticated owner. Changed input returns a conflict. A deleted or
+archived conversation is unavailable; the request never creates a replacement.
+Project access is checked again on replay. Use a new UUID only for a new,
+deliberate creation. Without `requestId`, each request creates a conversation.
+
 The structured composer draft contains text, exact stored-file versions, and
 zero or more Cloud resource refs. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves

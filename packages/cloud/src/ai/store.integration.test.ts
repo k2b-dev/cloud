@@ -22,7 +22,7 @@ import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import { buildBlocksFromMessages } from "./protocol";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
-import { aiConversations, recordAiToolCheck, recordAiToolReview } from "./store";
+import { AiConversationCreationError, aiConversations, recordAiToolCheck, recordAiToolReview } from "./store";
 import { loadAiStreamState } from "./stream";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
@@ -58,6 +58,33 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("creation request identity survives concurrency, changed input, archive and deletion", async () => {
+    const userId = await insertUser();
+    const otherUserId = await insertUser();
+    const input = { ownerUserId: userId, requestId: crypto.randomUUID(), title: "One chat" };
+    try {
+      const created = await Promise.all(Array.from({ length: 8 }, () => aiConversations.createConversation(input)));
+      expect(new Set(created.map((chat) => chat.id)).size).toBe(1);
+      const chat = created[0]!;
+      expect((await aiConversations.createConversation({ ...input, title: " One chat " })).id).toBe(chat.id);
+      await expect(aiConversations.createConversation({ ...input, title: "Changed" })).rejects.toBeInstanceOf(AiConversationCreationError);
+      await expect(aiConversations.createConversation({ ...input, allowedTools: [] })).rejects.toThrow("different input");
+      const other = await aiConversations.createConversation({ ...input, ownerUserId: otherUserId });
+      expect(other.id).not.toBe(chat.id);
+      await sql`UPDATE ai.conversations SET archived_at = '2026-10-21T20:00:00Z' WHERE id = ${chat.id}::uuid`;
+      await expect(aiConversations.createConversation(input)).rejects.toThrow("no longer available");
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await expect(aiConversations.createConversation(input)).rejects.toThrow("no longer available");
+      const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      expect(count!.count).toBe(0);
+      const deliberate = await aiConversations.createConversation({ ...input, requestId: crypto.randomUUID() });
+      expect(deliberate.id).not.toBe(chat.id);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${userId}::uuid, ${otherUserId}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherUserId}::uuid)`;
+    }
+  });
+
   test.each((["done", "not_done", "pending"] as const).flatMap((state) => [false, true].map((background) => ({ state, background }))))(
     "projects $state Action checks into loaded model history (background=$background)",
     async ({ state, background }) => {

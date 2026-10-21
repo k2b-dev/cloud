@@ -67,6 +67,37 @@ suite("global AI conversation boundaries", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("creation API replays the same identity and rechecks owner and availability", async () => {
+    const userId = await insertUser();
+    const otherId = await insertUser();
+    const token = await createTestSession(userId);
+    const otherToken = await createTestSession(otherId);
+    const requestId = crypto.randomUUID();
+    const post = (body: unknown, auth = token) => aiRoutes.request("/conversations", {
+      method: "POST", headers: { Authorization: `Bearer ${auth}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    try {
+      const body = { requestId, title: "Panel draft" };
+      const first = await post(body);
+      expect(first.status).toBe(201);
+      const created = await first.json();
+      const replay = await post(body);
+      expect(replay.status).toBe(201);
+      expect((await replay.json()).id).toBe(created.id);
+      expect((await post({ ...body, title: "Different" })).status).toBe(409);
+      const other = await post(body, otherToken);
+      expect(other.status).toBe(201);
+      expect((await other.json()).id).not.toBe(created.id);
+      await sql`UPDATE ai.conversations SET archived_at = '2026-10-21T20:00:00Z' WHERE short_id = ${created.id}`;
+      expect((await post(body)).status).toBe(404);
+      await sql`DELETE FROM ai.conversations WHERE short_id = ${created.id}`;
+      expect((await post(body)).status).toBe(404);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${userId}::uuid, ${otherId}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherId}::uuid)`;
+    }
+  });
+
   test("archive and restore routes pause and resume the chat's routines", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

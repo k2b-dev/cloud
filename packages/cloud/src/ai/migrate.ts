@@ -47,6 +47,17 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
+  // Keep the request identity after deletion: retrying a lost response must not resurrect a chat.
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.conversation_creations (
+      owner_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      request_id UUID NOT NULL,
+      input_hash TEXT NOT NULL,
+      conversation_id UUID REFERENCES ai.conversations(id) ON DELETE SET NULL,
+      PRIMARY KEY (owner_user_id, request_id)
+    )
+  `.simple();
+
   // AI chat ownership was unreleased and only backed local test data. Make the
   // product-model cut once, then keep only the global conversation contract.
   await sql`

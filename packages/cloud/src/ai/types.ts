@@ -737,6 +737,8 @@ export type AiTurnSweepResult = {
 
 export type AiConversationService = {
   createConversation(input: {
+    /** Stable identity for one logical creation; replay never creates a replacement. */
+    requestId?: string;
     ownerUserId: string;
     title?: string;
     description?: string;

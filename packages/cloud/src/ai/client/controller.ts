@@ -688,6 +688,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   const createConversation = async (
     input: {
+      requestId?: string;
       title?: string;
       projectId?: string;
       draft?: { content: AiDraftContentPart[] };
