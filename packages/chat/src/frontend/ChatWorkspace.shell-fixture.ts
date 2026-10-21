@@ -2,29 +2,48 @@ import { spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import type { User } from "@k2b/cloud/contracts";
+import type { RuntimeContext } from "@k2b/cloud/ssr";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import type { User } from "../../../cloud/src/contracts/shared";
-import type { RuntimeContext } from "../../../cloud/src/ssr/runtime";
+import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
+
+/** Invented shell account, matching the Chat fixture viewer without importing Cloud's own test harness. */
+const person = {
+  id: "11111111-1111-4111-8111-111111111111",
+  uid: "reader",
+  roles: ["user", "local", "local/user"],
+  provider: "local",
+  profile: "user",
+  givenname: "Robin",
+  sn: "Example",
+  displayName: "Robin Example",
+  mail: "robin@example.test",
+  avatarHash: null,
+  accountExpires: null,
+  lastLoginLocal: null,
+  memberofGroup: [],
+  memberofGroupIds: [],
+  manages: [],
+  managesGroupIds: [],
+  ipa: null,
+} satisfies User;
 
 /** Real SSR Cloud Layout around the existing Chat REST/live fixture; no copied shell markup or CSS. */
 export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspaceProps) => {
   const root = mkdtempSync(resolve(tmpdir(), "chat-shell-browser-"));
   const { plugin } = createConfig({ dev: true, rootDir: root });
   Bun.plugin(plugin());
-  const { defineApp } = await import("../../../cloud/src/_internal/define-app");
-  const { person } = await import("../../../cloud/src/_internal/define-app.test-fixture");
-  const rail = await import("../../../cloud/src/services/rail-snapshot");
-  const settings = await import("../../../cloud/src/server/middleware/settings");
-  const help = await import("../../../cloud/src/ssr/help");
-  const { defaultRailPreferences } = await import("../../../cloud/src/contracts/rail-preferences");
-  const { default: Layout } = await import("../../../cloud/src/ssr/Layout");
+  const { defineApp } = await import("@k2b/cloud");
+  const settings = await import("@k2b/cloud/server/middleware/settings");
+  const help = await import("@k2b/cloud/ssr/help");
+  const { Layout } = await import("@k2b/cloud/ssr");
   const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
   const spies = [
-    spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    stubRailSnapshot(),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
     spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
   ];
