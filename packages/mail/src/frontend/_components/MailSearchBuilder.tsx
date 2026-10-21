@@ -382,7 +382,7 @@ function SearchConditionValue(props: {
         <Select
           label={messages().assignee}
           value={() => assigneeTerm().userId ?? UNASSIGNED_VALUE}
-          selectedLabel={() => (assigneeTerm().userId ? undefined : messages().unassigned)}
+          selectedLabel={() => (assigneeTerm().userId ? messages().assignedToSpecificPerson : messages().unassigned)}
           onValueChange={(value) => props.replace({ ...assigneeTerm(), userId: value === UNASSIGNED_VALUE ? null : value })}
           fetchData={props.fetchAssignableUsers}
         />

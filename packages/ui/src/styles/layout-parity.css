@@ -1063,30 +1063,39 @@ html {
   transform: translateY(50%);
 }
 
-.k2b-ui .k2b-app-workspace__resize::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  content: "";
-  opacity: 0;
-  background: var(--k2b-border-strong);
-  transform: translateX(-50%);
-  transition: opacity 120ms ease-out;
+/* One drag cue for every resize handle: the sidebar, the panes, the Detail,
+   and the drawer of a workspace, and a standalone `ResizeSeparator` such as
+   Cloud's panel. On hover, on keyboard focus, and while it drags, a handle
+   shows a short grip and a soft shadow on the side of the region that it
+   resizes. Both are paint only, so nothing moves. Space, not a line,
+   separates columns; only the drawer, a row with its own top border, also
+   draws its edge. */
+.k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) {
+  --k2b-resize-shadow-edge: rgb(24 24 27 / 0.035);
+  --k2b-resize-shadow-mid: rgb(24 24 27 / 0.014);
+}
+
+.k2b-ui[data-theme="dark"] :is(.k2b-app-workspace__resize, .k2b-resize-separator),
+.k2b-ui.k2b-dark :is(.k2b-app-workspace__resize, .k2b-resize-separator),
+.dark .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) {
+  --k2b-resize-shadow-edge: rgb(0 0 0 / 0.09);
+  --k2b-resize-shadow-mid: rgb(0 0 0 / 0.036);
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"]::before {
+  position: absolute;
   top: 50%;
   right: 0;
-  bottom: auto;
   left: 0;
-  width: auto;
   height: 1px;
+  content: "";
+  opacity: 0;
+  background: var(--k2b-border-strong);
   transform: translateY(-50%);
+  transition: opacity 120ms ease-out;
 }
 
-.k2b-ui .k2b-app-workspace__resize[data-workspace-resize-shadow="true"]::after {
+.k2b-ui :is(.k2b-app-workspace__resize[data-workspace-resize-shadow="true"], .k2b-resize-separator)::after {
   position: absolute;
   top: 0;
   right: 50%;
@@ -1095,27 +1104,60 @@ html {
   content: "";
   opacity: 0;
   pointer-events: none;
-  background: linear-gradient(to left, rgb(24 24 27 / 0.035), rgb(24 24 27 / 0.014) 45%, transparent);
+  background: linear-gradient(to left, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
   transition: opacity 150ms ease-out;
 }
 
-.k2b-ui .k2b-app-workspace__resize[data-workspace-resize-shadow="true"][data-workspace-resize-edge="start"]::after {
+.k2b-ui
+  :is(
+    .k2b-app-workspace__resize[data-workspace-resize-shadow="true"][data-workspace-resize-edge="start"],
+    .k2b-resize-separator[data-resize-edge="start"]
+  )::after {
   right: auto;
   left: 50%;
-  background: linear-gradient(to right, rgb(24 24 27 / 0.035), rgb(24 24 27 / 0.014) 45%, transparent);
+  background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
 }
 
-.k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"]::after {
+/* Standalone separators grow in logical inline directions. */
+.k2b-ui .k2b-resize-separator[data-orientation="vertical"][data-resize-edge="start"]:dir(rtl):not([data-resize-physical-edge])::after,
+.k2b-ui .k2b-resize-separator[data-orientation="vertical"][data-resize-physical-edge="end"]::after {
+  right: 50%;
+  left: auto;
+  background: linear-gradient(to left, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
+}
+
+.k2b-ui .k2b-resize-separator[data-orientation="vertical"][data-resize-edge="end"]:dir(rtl):not([data-resize-physical-edge])::after,
+.k2b-ui .k2b-resize-separator[data-orientation="vertical"][data-resize-physical-edge="start"]::after {
+  right: auto;
+  left: 50%;
+  background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
+}
+
+.k2b-ui
+  :is(
+    .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"],
+    .k2b-resize-separator[data-orientation="horizontal"][data-resize-edge="start"]
+  )::after {
   top: 50%;
   right: 0;
   bottom: auto;
   left: 0;
   width: auto;
   height: 0.875rem;
-  background: linear-gradient(to bottom, rgb(24 24 27 / 0.035), rgb(24 24 27 / 0.014) 45%, transparent);
+  background: linear-gradient(to bottom, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
 }
 
-.k2b-ui .k2b-app-workspace__resize > span {
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"][data-resize-edge="end"]::after {
+  top: auto;
+  right: 0;
+  bottom: 50%;
+  left: 0;
+  width: auto;
+  height: 0.875rem;
+  background: linear-gradient(to top, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
+}
+
+.k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) > span {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1128,15 +1170,11 @@ html {
   transition: opacity 120ms ease-out;
 }
 
-.k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] > span {
+.k2b-ui
+  :is(.k2b-app-workspace__resize[data-app-workspace-resize="drawer"], .k2b-resize-separator[data-orientation="horizontal"])
+  > span {
   width: 2rem;
   height: 3px;
-}
-
-/* Space, not a line, separates the sidebar and the panes in `Main`, so
-   their handles show only the grip, on hover, focus, or while they drag. */
-.k2b-ui .k2b-app-workspace__resize:is([data-app-workspace-resize="sidebar"], [data-app-workspace-resize="pane"])::before {
-  display: none;
 }
 
 .k2b-ui .k2b-app-workspace__resize:is(:hover, :focus-visible),
@@ -1145,13 +1183,23 @@ html {
   background: transparent;
 }
 
-.k2b-ui .k2b-app-workspace__resize:is(:hover, :focus-visible)::before,
-.k2b-ui .k2b-app-workspace__resize[data-workspace-resize-active="true"]::before,
-.k2b-ui .k2b-app-workspace__resize[data-workspace-resize-shadow="true"]:is(:hover, :focus-visible)::after,
-.k2b-ui .k2b-app-workspace__resize[data-workspace-resize-shadow="true"][data-workspace-resize-active="true"]::after,
-.k2b-ui .k2b-app-workspace__resize:is(:hover, :focus-visible) > span,
-.k2b-ui .k2b-app-workspace__resize[data-workspace-resize-active="true"] > span {
+.k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator):is(:hover, :focus-visible, [data-workspace-resize-active="true"], [data-active="true"])::before,
+.k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator):is(:hover, :focus-visible, [data-workspace-resize-active="true"], [data-active="true"])::after,
+.k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator):is(:hover, :focus-visible, [data-workspace-resize-active="true"], [data-active="true"]) > span {
   opacity: 1;
+}
+
+/* Keyboard focus also colors the grip, so a focused handle stands out from a hovered one. */
+.k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator):focus-visible > span {
+  background: var(--k2b-focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator)::before,
+  .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator)::after,
+  .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) > span {
+    transition: none;
+  }
 }
 
 /* ------------------------------------------------------ detail and panel */
@@ -1495,24 +1543,15 @@ html {
     display: none;
   }
 
-  /* The handle sits on the panel's leading edge and shows only its grip, on
-     hover, focus, or while it drags. */
+  /* The handle sits on the column's leading edge and spans its height, like
+     the handles between panes. */
   .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"] {
-    top: 1.5rem;
+    top: var(--k2b-workspace-detail-inset);
     right: calc(max(var(--k2b-workspace-panel-min), 100% - var(--k2b-workspace-detail-inset)) + var(--k2b-workspace-detail-inset));
-    bottom: 1.5rem;
+    bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
     z-index: 21;
     grid-area: detail;
     transform: translateX(50%);
-  }
-
-  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]::before {
-    display: none;
-  }
-
-  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"] > span {
-    width: 4px;
-    height: 2.75rem;
   }
 }
 
@@ -4466,9 +4505,8 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   .k2b-ui .k2b-toc__link { min-height: 2.75rem; }
 }
 
-/* A standalone separator draws like the workspace's own resize handles: an
-   invisible hit area, and on hover, focus, or drag a 1 px line with a short
-   grip in its middle. Nothing moves or changes size. */
+/* A standalone separator is an invisible hit area. It shows the drag cue of
+   the workspace's resize handles, defined with them. */
 .k2b-ui .k2b-resize-separator {
   position: relative;
   flex: none;
@@ -4486,42 +4524,6 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   height: 12px;
   cursor: row-resize;
 }
-.k2b-ui .k2b-resize-separator::before,
-.k2b-ui .k2b-resize-separator > span {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  opacity: 0;
-  background: var(--k2b-border-strong);
-  transform: translate(-50%, -50%);
-  transition: opacity 120ms ease-out;
-}
-.k2b-ui .k2b-resize-separator::before {
-  width: 1px;
-  height: 100%;
-  content: "";
-}
-.k2b-ui .k2b-resize-separator > span {
-  width: 3px;
-  height: 2rem;
-  border-radius: 999px;
-}
-.k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::before {
-  width: 100%;
-  height: 1px;
-}
-.k2b-ui .k2b-resize-separator[data-orientation="horizontal"] > span {
-  width: 2rem;
-  height: 3px;
-}
-.k2b-ui .k2b-resize-separator:is(:hover, :focus-visible, [data-active="true"])::before,
-.k2b-ui .k2b-resize-separator:is(:hover, :focus-visible, [data-active="true"]) > span {
-  opacity: 1;
-}
-.k2b-ui .k2b-resize-separator:is(:focus-visible, [data-active="true"]) > span {
-  background: var(--k2b-focus-ring);
-}
-
 /* An app with separate visibility keeps one shared way to reopen its current
    object, including a closed column and a phone sheet. Selection-only panels
    keep their existing waiting-only control. */

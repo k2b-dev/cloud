@@ -40,6 +40,12 @@ with the subject, followed by recipients and a preview, with the edit time and
 person who started the draft. Members with write access can open a draft to
 continue it; readers can view the list.
 
+Assignee filters in search and saved-view summaries read **Assigned to a
+specific person**. Open the search editor to change the selected
+person; summaries do not show account IDs.
+Saved automation assignments use the same label when the person is no longer
+available in the choices.
+
 On wide screens the conversation list grows with the window from 320 to
 440 px. The fixed reader toolbar combines the subject, message-count chip,
 list toggle, and conversation actions above the centered 760 px reading

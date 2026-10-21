@@ -236,7 +236,38 @@ test("pointer and keyboard resize commit width and ARIA in rem", async () => {
     }
     const point = await startDrag(page);
     await page.mouse.move(point.x - 32, point.y);
+    await page.waitForFunction(
+      () => {
+        const handle = document.querySelector(".cloud-panel__resize")!;
+        return handle.getAttribute("data-active") === "true" && getComputedStyle(handle, "::after").opacity === "1";
+      },
+      undefined,
+      { timeout: 3000 },
+    );
+    const cue = await page.locator(separator).evaluate((handle) => {
+      const shadow = getComputedStyle(handle, "::after");
+      const line = getComputedStyle(handle, "::before");
+      return {
+        edge: handle.getAttribute("data-resize-edge"),
+        content: shadow.content,
+        opacity: shadow.opacity,
+        left: Number.parseFloat(shadow.left),
+        width: Number.parseFloat(shadow.width),
+        handleWidth: handle.getBoundingClientRect().width,
+        line: line.content !== "none" && line.content !== "normal" && line.display !== "none",
+      };
+    });
+    expect(cue.edge).toBe("start");
+    expect(cue.content).not.toBe("none");
+    expect(cue.content).not.toBe("normal");
+    expect(cue.opacity).toBe("1");
+    expect(cue.left).toBeCloseTo(cue.handleWidth / 2, 1);
+    expect(cue.width).toBeGreaterThan(0);
+    expect(cue.line).toBe(false);
     await page.mouse.up();
+    await page.waitForFunction(() => document.querySelector(".cloud-panel__resize")?.getAttribute("aria-valuenow") === "28", undefined, {
+      timeout: 3000,
+    });
     expect(await page.locator(separator).getAttribute("aria-valuenow")).toBe("28");
     expect((await page.locator(slot).boundingBox())?.width).toBe(448);
     expect(await panelCookie(page)).toBe("1:fixture:28");
@@ -249,6 +280,19 @@ test("pointer and keyboard resize commit width and ARIA in rem", async () => {
     expect(await panelCookie(page)).toBe("1:fixture:20");
     await page.keyboard.press("End");
     expect(await panelCookie(page)).toBe("1:fixture:36");
+    await page.locator(separator).dblclick();
+    await page.waitForFunction(
+      () => {
+        const handle = document.querySelector(".cloud-panel__resize");
+        return (
+          handle?.getAttribute("aria-valuenow") === "26" && document.getElementById("cloud-panel")?.getBoundingClientRect().width === 416
+        );
+      },
+      undefined,
+      { timeout: 3000 },
+    );
+    expect(await panelCookie(page)).toBe("1:fixture:");
+    expect(await page.locator(".cloud-app-canvas").evaluate((canvas) => canvas.style.getPropertyValue("--cloud-panel-width-set"))).toBe("");
   } finally {
     await context.close();
   }

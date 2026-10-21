@@ -40,7 +40,10 @@ export const parseAppBadge = (body: unknown): number => {
 const readBadge = async (endpoint: string, signal: AbortSignal): Promise<number> => {
   try {
     const response = await fetch(endpoint, { credentials: "same-origin", headers: { accept: "application/json" }, signal });
-    return response.status === 200 ? parseAppBadge(await response.json()) : 0;
+    if (response.status === 200) return parseAppBadge(await response.json());
+    // Release the response without buffering an unused, potentially unbounded error body.
+    await response.body?.cancel();
+    return 0;
   } catch {
     // An unreachable or failing app shows no badge rather than a stale one.
     return 0;
@@ -67,6 +70,8 @@ const readApprovalCounts = async (signal: AbortSignal): Promise<ApprovalCounts> 
     if (response.status === 200) {
       const parsed = parseApprovalCounts(await response.json());
       if (parsed) return parsed;
+    } else {
+      await response.body?.cancel();
     }
   } catch {
     // A failing read clears approval counts just like an app badge.
