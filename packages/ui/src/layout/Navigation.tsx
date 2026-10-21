@@ -74,7 +74,11 @@ export default function Navigation(props: NavigationProps) {
               when={item().section}
               fallback={
                 <li>
-                  <div class="k2b-navigation__row" data-active={item().active || undefined}>
+                  <div
+                    class="k2b-navigation__row"
+                    data-active={item().active || undefined}
+                    data-context={item().context === undefined ? undefined : String(item().context)}
+                  >
                     <Show
                       when={item().href}
                       fallback={

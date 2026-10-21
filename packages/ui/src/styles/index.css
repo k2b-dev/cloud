@@ -14245,6 +14245,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: .65rem .75rem; text-align: start; color: var(--k2b-text); background: transparent;
   border: 0; border-radius: var(--k2b-radius-control); text-decoration: none; cursor: pointer;
 }
+/* Container context belongs only to this row; nested destinations and status keep their own ink. */
+.k2b-ui .k2b-navigation__row[data-context="false"]:not([data-active]) > .k2b-navigation__control > i,
+.k2b-ui .k2b-navigation__row[data-context="false"]:not([data-active]) > .k2b-navigation__control > .k2b-navigation__copy > span {
+  color: var(--k2b-text-muted);
+}
+.k2b-ui .k2b-navigation__row[data-context="true"] > .k2b-navigation__control > .k2b-navigation__copy > span {
+  font-weight: 600;
+}
 .k2b-ui .k2b-navigation__row[data-active] > .k2b-navigation__control {
   color: var(--k2b-app-workspace-active); font-weight: 600; background: var(--k2b-app-workspace-selected);
 }

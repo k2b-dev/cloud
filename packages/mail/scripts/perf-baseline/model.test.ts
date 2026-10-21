@@ -142,3 +142,21 @@ test("summary retains metrics and reports optional plan capture errors and skipp
   const parsed = parsePrevious({ ...result, scenarios: [oldScenario] });
   expect(parsed.scenarios[0]).toMatchObject({ planError: null, unparsedPlans: 0 });
 });
+
+test("mailbox B metadata is optional for comparison and reports its own seed duration", () => {
+  const old = exampleResult();
+  expect(parsePrevious(old).metadata.mailboxB).toBeUndefined();
+  const result = resultSchema.parse({
+    ...old,
+    metadata: {
+      ...old.metadata,
+      mailboxB: {
+        fixture: { ...old.metadata.fixture, seed: old.metadata.fixture.seed + 1 },
+        fixtureDigest: "mailbox-b-digest",
+        seedDurationMs: 123,
+      },
+    },
+  });
+  expect(renderSummary(result, old)).toContain("digest mailbox-b-digest; seed duration 123.0 ms");
+  expect(result.metadata.seedDurationMs).toBe(old.metadata.seedDurationMs);
+});
