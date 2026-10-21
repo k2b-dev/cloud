@@ -100,7 +100,9 @@ test("invoice content checks source, actual ref, scopes, resource binding and do
   let visible = false;
   const mayRead = mock(async (_subject: import("@k2b/cloud/contracts").AccessSubject, id: string) => visible && id === "42");
   const read = createInvoiceMailReader(mayRead);
-  const hidden = { ok: false, error: { code: "message_unknown", message: "Mail unavailable.", status: 404 } };
+  const hidden = { ok: false, error: { code: "message_unknown", message: "Mail unavailable.", status: 404 } } satisfies Awaited<
+    ReturnType<typeof read>
+  >;
   try {
     expect(await read(record.id, authority, "request")).toEqual(hidden);
     visible = true;
