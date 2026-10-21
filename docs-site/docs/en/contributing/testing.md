@@ -1224,6 +1224,13 @@ the other's result. The smokes accept pending legal documents using the version
 rendered in the consent page's `data-legal-version` attribute; they must not read
 island props, whose encoding is internal.
 
+Grids and Chat also receive `--app-url` for the public origin. When the browser
+reaches the stack over loopback, their smokes relay the application's session
+live socket with that public origin and the fixture's session cookie. The
+application's origin checks still apply. Grids reports only known refusal
+codes and close metadata; it does not print cookies, frame bodies, or arbitrary
+close reasons.
+
 ### Read slow statements from a CI run
 
 The test PostgreSQL in the `integration`, `grids`, and `packed` jobs logs every

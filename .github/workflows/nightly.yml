@@ -280,9 +280,12 @@ jobs:
           for app in grids mail chat; do
             echo "::group::$app"
             extra=()
+            if [[ "$app" == grids || "$app" == chat ]]; then
+              extra+=(--app-url "$APP_URL")
+            fi
             if [[ "$app" == chat ]]; then
               timeout 120s bash -c 'until docker logs playwright 2>&1 | grep -q "Listening on"; do sleep 1; done'
-              extra=(--app-url "$APP_URL" --webkit-endpoint ws://127.0.0.1:3333/)
+              extra+=(--webkit-endpoint ws://127.0.0.1:3333/)
             fi
             bun "packages/$app/scripts/browser-smoke.ts" --base-url http://127.0.0.1:3000 --admin-token-file "$RUNNER_TEMP/admin-token" "${extra[@]}" || failed+=("$app")
             echo "::endgroup::"
