@@ -3203,12 +3203,15 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     };
     // Polls the durable call record until it settles; the bound is wall-clock,
     // not an iteration count, so slow polls do not shorten it (#37).
-    const wait = async (input: Parameters<typeof agentHost.call>[0]) => {
+    const wait = async (
+      input: Parameters<typeof agentHost.call>[0],
+      ready?: (state: Awaited<ReturnType<typeof agentHost.call>>) => boolean,
+    ) => {
       const deadline = Date.now() + 10_000;
       let last: Awaited<ReturnType<typeof agentHost.call>> | undefined;
       while (Date.now() < deadline) {
         last = await agentHost.call(input, { ...context, signal: new AbortController().signal });
-        if (last.status !== "running" && last.status !== "busy") return last;
+        if (ready?.(last) || (last.status !== "running" && last.status !== "busy")) return last;
         await Bun.sleep(25);
       }
       throw new Error(`Managed host call ${input.callId} did not settle: ${JSON.stringify(last)}`);
@@ -3626,8 +3629,18 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         http.mockRestore();
       }
       await agentHost.sweep(); // Includes a browser event-loop heartbeat.
-      const cancelled = { ...call, callId: "cancelled-run", args: { code: "export default async () => { await new Promise(() => {}); }" } };
-      await agentHost.call(cancelled, context);
+      const cancelled = {
+        ...call,
+        callId: "cancelled-run",
+        args: {
+          code: 'export default async () => { void cloud.http.fetch("https://example.net/cancel-ready").catch(() => {}); await new Promise(() => {}); }',
+        },
+      };
+      // A running call record alone does not prove the browser has compiled and started the code.
+      // Its pending approval proves execution started; never approve or send this marker request.
+      // Catch its eventual denial separately so the main execution remains pending until the host closes.
+      const pending = await wait(cancelled, (state) => state.approvals.some((approval) => approval.decision === null));
+      expect(pending).toMatchObject({ status: "running", phase: "waiting_for_user" });
       const active = await aiConversations.getActiveTurn({ conversationId });
       if (!active) throw new Error("Missing test turn");
       turn.mockResolvedValue({ ...active, turn: { ...active.turn, cancelRequestedAt: new Date().toISOString() } });
