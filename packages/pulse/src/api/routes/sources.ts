@@ -117,8 +117,15 @@ const routes = new Hono<AuthContext>()
       return respond(
         c,
         localizedScrapeResult(
-          projectResult(pulseService.source.create({ baseId: baseId.value, user: requestAccessScope(c), ...c.req.valid("json") }), (item) =>
-            projectSources([item]).then(([value]) => value!),
+          projectResult(
+            pulseService.source.create({
+              baseId: baseId.value,
+              user: requestAccessScope(c),
+              actor: c.get("actor"),
+              requestId: c.req.header("x-request-id"),
+              ...c.req.valid("json"),
+            }),
+            (item) => projectSources([item]).then(([value]) => value!),
           ),
           getLocale(c),
         ),
@@ -260,6 +267,8 @@ const routes = new Hono<AuthContext>()
               baseId: baseId.value,
               sourceId: sourceId.value,
               user: requestAccessScope(c),
+              actor: c.get("actor"),
+              requestId: c.req.header("x-request-id"),
               ...c.req.valid("json"),
             }),
             (item) => projectSources([item]).then(([value]) => value!),
@@ -274,7 +283,16 @@ const routes = new Hono<AuthContext>()
     if (!baseId.ok) return respond(c, baseId.result);
     const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
     if (!sourceId.ok) return respond(c, sourceId.result);
-    return respond(c, pulseService.source.remove({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }));
+    return respond(
+      c,
+      pulseService.source.remove({
+        baseId: baseId.value,
+        sourceId: sourceId.value,
+        user: requestAccessScope(c),
+        actor: c.get("actor"),
+        requestId: c.req.header("x-request-id"),
+      }),
+    );
   });
 
 export default routes;

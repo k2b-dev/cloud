@@ -168,6 +168,12 @@ export const CreateSourceSchema = z.strictObject({
   bearerToken: z.string().trim().min(1).nullable().optional(),
   scrapeIntervalSeconds: z.number().int().min(60).max(86_400).multipleOf(60).nullable().optional(),
   metricFilters: MetricFiltersSchema.optional(),
+  expectEverySeconds: z.number().int().positive().max(2_147_483_647).nullable().optional(),
+  expectDailyBy: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .nullable()
+    .optional(),
 });
 
 export const CreateSourceApiKeySchema = z.object({
@@ -177,12 +183,19 @@ export const CreateSourceApiKeySchema = z.object({
 });
 
 export const UpdateSourceSchema = z.strictObject({
+  expectedRevision: z.number().int().positive().optional(),
   name: z.string().trim().min(1).max(120).optional(),
   enabled: z.boolean().optional(),
   endpointUrl: z.string().trim().min(1).max(2_000).nullable().optional(),
   bearerToken: z.string().trim().min(1).nullable().optional(),
   scrapeIntervalSeconds: z.number().int().min(60).max(86_400).multipleOf(60).nullable().optional(),
   metricFilters: MetricFiltersSchema.optional(),
+  expectEverySeconds: z.number().int().positive().max(2_147_483_647).nullable().optional(),
+  expectDailyBy: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .nullable()
+    .optional(),
 });
 
 export const MessageSchema = z.object({ message: z.string() });
@@ -223,6 +236,10 @@ export const SourceSchema = z.object({
   bearerTokenConfigured: z.boolean(),
   scrapeIntervalSeconds: z.number().nullable(),
   metricFilters: MetricFiltersSchema,
+  revision: z.number().int().positive(),
+  expectEverySeconds: z.number().int().nullable(),
+  expectDailyBy: z.string().nullable(),
+  staleSince: z.string().nullable(),
   status: SourceStatusSchema,
   lastSeenAt: z.string().nullable(),
   lastError: z.string().nullable(),

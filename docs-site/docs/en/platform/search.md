@@ -24,6 +24,44 @@ unauthorized search.
 Read [App capabilities](/en/docs/platform/capabilities) first for the shared
 Type, Query, schema, result, registry, and authorization rules.
 
+## Open applications
+
+Global search also opens applications from the navigation catalog visible to
+the current user. Type the localized app name, then press Enter or click the
+result marked **App**. Administration appears only for administrators. Hidden,
+unavailable and internal applications are not added. An empty global search
+keeps its existing start state.
+
+An application's `nav.href` supplies its destination. To add alternate names,
+declare a `searchLinks` entry at that exact href and put the aliases in
+`keywords`:
+
+```ts
+nav: { href: "/tools", section: "more" },
+searchLinks: [
+  { label: "Tools", href: "/tools", keywords: ["utilities", "werkzeuge"] },
+],
+```
+
+Cloud merges that entry into the app result, so the destination appears once.
+The localized app name supplies the displayed title and the application icon
+supplies its icon. Keywords can include terms in multiple languages. Localize
+the entry's label through the existing search-link presentation catalog.
+
+Exact app names and aliases rank before word starts, substrings and conservative
+whole-name typo matches. Ranking takes the best matching name or alias; adding
+more keywords does not add scores. Global typo matching requires at least four
+characters, at least 80% similarity and no more than one edit (two from eight
+characters). Descriptions do not participate in app matching. Distant or short
+fuzzy matches are omitted so unrelated app entries do not crowd out content.
+Matching app and page links appear immediately before streamed resources;
+arriving resources preserve their position and keyboard selection.
+
+App launchers belong only to global navigation. Application, resource and tag
+contexts retain their existing behavior. Launchers are not resources, never
+appear in resource pickers or `/api/search`, and grant no access to their
+destination routes.
+
 ## Add static page links
 
 For utility pages such as a QR generator, add `searchLinks` to `defineApp()`:
@@ -43,7 +81,7 @@ searchLinks: [
 These links appear only in the global search dialog, above the resource
 results: they are matched in the browser and show at once, so application
 results that arrive later never push them down. Cloud includes them when the app is visible in the user's navigation
-catalog. The browser matches every search word against the label, description, and keywords,
+catalog. For static pages, the browser matches every search word against the label, description, and keywords,
 ignoring case, after at least two characters. An explicit application context also shows
 its static links for an empty query and uses fuzzy matching. Resource contexts
 and tag searches omit static links.

@@ -1,4 +1,5 @@
 export type SqlErrorCode =
+  | "OVERDUE"
   | "SQL_ERROR"
   | "TIME_LIMIT"
   | "MEMORY_LIMIT"
@@ -24,7 +25,7 @@ export class SqlError extends Error {
         ? 403
         : code === "QUOTA"
           ? 429
-          : ["BUSY", "QUEUE_FULL", "STORE_UNAVAILABLE"].includes(code)
+          : ["BUSY", "QUEUE_FULL", "STORE_UNAVAILABLE", "OVERDUE"].includes(code)
             ? 503
             : ["TIME_LIMIT", "MEMORY_LIMIT", "RESULT_TOO_LARGE"].includes(code)
               ? 422

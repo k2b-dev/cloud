@@ -6,7 +6,7 @@ import { jsonFetch } from "../http";
 // Type-only imports keep database, admission and store implementations out of browser bundles.
 export type { SavedQueriesPage, SavedQuery, SqlErrorCode, SqlLimits, SqlResult };
 export type SqlParams = Record<string, string>;
-export type SaveSqlQuery = { name: string; sql: string; params?: SqlParams };
+export type SaveSqlQuery = { name: string; sql: string; params?: SqlParams; pinned?: boolean };
 export type SqlClientErrorCode = SqlErrorCode | "CONFLICT" | "NOT_FOUND" | "FORBIDDEN" | "REQUEST_FAILED";
 export type SqlErrorDetails = { line?: number; column?: number; retryAfter?: number; resetAt?: string; parameterName?: string };
 
