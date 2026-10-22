@@ -35,7 +35,13 @@ export function decodeNotebookPrintImages(host: HTMLElement, signal: AbortSignal
     const abort = () => finish(signal.reason);
     const timer = setTimeout(() => finish(new Error("Print image preparation timed out")), 30_000);
     signal.addEventListener("abort", abort, { once: true });
-    Promise.all([...host.querySelectorAll<HTMLImageElement>("img")].map((image) => image.decode())).then(() => finish(), finish);
+    Promise.all(
+      [...host.querySelectorAll<HTMLImageElement>("img")].map((image) => {
+        // The print document is hidden until window.print(); lazy images must load before that call.
+        image.loading = "eager";
+        return image.decode();
+      }),
+    ).then(() => finish(), finish);
   });
 }
 
