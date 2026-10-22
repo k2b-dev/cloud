@@ -144,8 +144,13 @@ async function open(width: number, theme: "light" | "dark", search = "", lang = 
   await tab.goto(
     `http://files-history.test${inspector ? historyInspectorSource : `/app/filesv2?view=activity${search ? `&q=${encodeURIComponent(search)}` : ""}`}`,
   );
-  await tab.locator(inspector ? ".filesv2-inspector-info" : ".filesv2-history").waitFor();
+  await tab.locator(inspector ? ".filesv2-inspector-info" : ".filesv2-history").waitFor({ state: inspector ? "attached" : "visible" });
   if (mountInitially) await tab.waitForFunction(() => document.body.dataset.ready === "true");
+  if (inspector && !(await tab.locator(".filesv2-inspector-info").isVisible())) {
+    // A narrow desktop host parks the shared detail behind its real Details control.
+    await tab.locator("[data-app-workspace-detail-toggle]").click();
+    await tab.locator(".filesv2-inspector-info").waitFor();
+  }
   await tab.evaluate(() => document.fonts.ready);
   return {
     context,
@@ -235,6 +240,7 @@ for (const width of [1440, 768, 390])
         const search = tab.getByPlaceholder("Name oder alter Pfad suchen");
         await search.fill("Angebote 2025");
         await search.press("Enter");
+        await tab.waitForURL((url) => url.searchParams.get("q") === "Angebote 2025");
         await tab.locator(".filesv2-history-hit").first().waitFor();
         expect(new URL(tab.url()).searchParams.get("q")).toBe("Angebote 2025");
         expect((await metrics(tab)).overflow).toBe(0);
@@ -254,6 +260,7 @@ test("a failed search keeps its address and retries in place", async () => {
     const search = tab.getByPlaceholder("Search name or old path");
     await search.fill("Angebote 2025");
     await search.press("Enter");
+    await tab.waitForURL((url) => url.searchParams.get("q") === "Angebote 2025");
     await tab.getByRole("button", { name: "Try again", exact: true }).waitFor();
     expect(new URL(tab.url()).searchParams.get("q")).toBe("Angebote 2025");
     fail(false);
@@ -276,10 +283,13 @@ for (const width of [1440, 390])
   test(`history preserves the server result through the client mount at ${width}px`, async () => {
     const { context, tab, errors, mount, releaseContacts } = await open(width, "light", "Angebote 2025", "de", false);
     try {
-      const serverText = await tab.locator(".filesv2-history-hit").first().innerText();
+      // WebKit adds line breaks for empty live DOM boxes differently from parsed SSR. Compare the same
+      // words and their measured geometry, independently of that engine-specific whitespace serialization.
+      const text = async () => (await tab.locator(".filesv2-history-hit").first().textContent())?.replace(/\s+/g, " ").trim();
+      const serverText = await text();
       const before = await metrics(tab);
       await mount();
-      expect(await tab.locator(".filesv2-history-hit").first().innerText()).toBe(serverText);
+      expect(await text()).toBe(serverText);
       const after = await metrics(tab);
       expect(after.overflow).toBe(0);
       expect(Math.abs(after.result.width - before.result.width)).toBeLessThanOrEqual(1);
