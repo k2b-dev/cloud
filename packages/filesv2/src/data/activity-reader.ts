@@ -196,6 +196,7 @@ export const activityReaderData = {
     type Period = Counters & {
       date: string;
       granularity: ShareAccessPeriod["granularity"];
+      page_networks: string | null;
       known_networks: string | null;
       overflow: boolean;
     };
@@ -241,10 +242,12 @@ export const activityReaderData = {
       ), periods AS (
         SELECT day::timestamp AT TIME ZONE 'UTC' AS date,'day' AS granularity,
           sum(pages)::text AS pages,sum(downloads)::text AS downloads,sum(password_failed)::text AS password_failed,
-          NULL::text AS known_networks,false AS overflow
+          NULL::text AS page_networks,NULL::text AS known_networks,false AS overflow
         FROM day_counts GROUP BY day
         UNION ALL
         SELECT hour AS date,'hour' AS granularity,sum(pages)::text,sum(downloads)::text,sum(password_failed)::text,
+          CASE WHEN bool_or(pages>0 AND network IN ('*','unknown')) THEN NULL::text
+            ELSE count(DISTINCT network) FILTER (WHERE pages>0)::text END,
           CASE WHEN bool_or(network='unknown') THEN NULL::text ELSE count(DISTINCT network) FILTER (WHERE network NOT IN ('*','unknown'))::text END,bool_or(network='*')
         FROM recent WHERE (hour AT TIME ZONE 'UTC')::date NOT IN (SELECT day FROM day_keys) GROUP BY hour
       ), timeline_page AS (
@@ -294,6 +297,7 @@ export const activityReaderData = {
       date: new Date(period.date).toISOString(),
       granularity: period.granularity,
       ...counters(period),
+      pageNetworks: period.page_networks === null ? null : count(period.page_networks),
       knownNetworks: period.known_networks === null ? null : count(period.known_networks),
       overflow: period.overflow,
     }));

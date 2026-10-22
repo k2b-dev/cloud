@@ -608,6 +608,7 @@ suite("history reader SQL and permission projection in a private database", () =
           pages: 4,
           downloads: 1,
           passwordFailed: 2,
+          pageNetworks: 1,
           knownNetworks: 1,
           overflow: false,
         },
@@ -617,6 +618,7 @@ suite("history reader SQL and permission projection in a private database", () =
           pages: 13,
           downloads: 1,
           passwordFailed: 1,
+          pageNetworks: null,
           knownNetworks: null,
           overflow: true,
         },
@@ -626,6 +628,7 @@ suite("history reader SQL and permission projection in a private database", () =
           pages: 5,
           downloads: 3,
           passwordFailed: 1,
+          pageNetworks: 1,
           knownNetworks: 1,
           overflow: false,
         },
@@ -635,6 +638,7 @@ suite("history reader SQL and permission projection in a private database", () =
           pages: 13,
           downloads: 2,
           passwordFailed: 0,
+          pageNetworks: null,
           knownNetworks: null,
           overflow: false,
         },
@@ -644,6 +648,7 @@ suite("history reader SQL and permission projection in a private database", () =
           pages: 9,
           downloads: 3,
           passwordFailed: 1,
+          pageNetworks: null,
           knownNetworks: null,
           overflow: false,
         },
@@ -702,6 +707,7 @@ suite("history reader SQL and permission projection in a private database", () =
       pages: 6,
       downloads: 3,
       passwordFailed: 1,
+      pageNetworks: 2,
       knownNetworks: 2,
       overflow: false,
     });
@@ -717,6 +723,7 @@ suite("history reader SQL and permission projection in a private database", () =
       pages: 4,
       downloads: 2,
       passwordFailed: 1,
+      pageNetworks: null,
       knownNetworks: null,
       overflow: false,
     });
@@ -734,7 +741,11 @@ suite("history reader SQL and permission projection in a private database", () =
       passwordFailed: first.passwordFailed,
       networks: { known: 0, items: [], next: null, rolledUp: true },
     });
-    expect(rolled.timeline.items.every((period) => period.granularity === "day" && period.knownNetworks === null)).toBe(true);
+    expect(
+      rolled.timeline.items.every(
+        (period) => period.granularity === "day" && period.knownNetworks === null && period.pageNetworks === null,
+      ),
+    ).toBe(true);
     expect(rolled.timeline.items.reduce((total, period) => total + period.pages, 0)).toBe(first.pages);
     await expect(activityReaderData.shareAccess({ ...input, networkAfter: "192.0.2.0/24" }, { now })).rejects.toMatchObject({
       code: "share_access_cursor_expired",
@@ -743,26 +754,57 @@ suite("history reader SQL and permission projection in a private database", () =
     expect(JSON.stringify(rolled)).not.toMatch(/192\.0|198\.51|203\.0|chrome|firefox|client/);
   });
 
-  test("page summary counts networks with page views, excluding download-only and password-only networks", async () => {
+  test("page summaries and hourly periods count only page-view networks, with null for unknown or overflow page evidence", async () => {
     await sql`INSERT INTO filesv2.share_access VALUES
-      (${shareId}::uuid,${now},'192.0.2.0/24','chrome',96,1,0),
-      (${shareId}::uuid,${now},'198.51.100.0/24','chrome',0,20,0),
-      (${shareId}::uuid,${now},'203.0.113.0/24','chrome',0,0,9),
-      (${shareId}::uuid,${now},'unknown','unknown',0,0,1)`;
-    const input = { shareId, from: "2030-05-15", to: "2030-05-15" };
-    expect(await activityReaderData.shareAccess(input, { now })).toMatchObject({
-      pages: 96,
-      pageNetworks: 1,
-      networks: { known: 3, incomplete: true },
-    });
-    await sql`UPDATE filesv2.share_access SET pages=1 WHERE network='unknown'`;
-    expect((await activityReaderData.shareAccess(input, { now })).pageNetworks).toBeNull();
+      (${shareId}::uuid,${now},'192.0.2.0/24','chrome',1,0,0),
+      (${shareId}::uuid,${now},'198.51.100.0/24','chrome',0,1,0),
+      (${shareId}::uuid,${now},'203.0.113.0/24','chrome',0,0,1)`;
+    const input = { shareId, from: "2030-05-15", to: "2030-05-15", networkLimit: 1 };
+    const first = await activityReaderData.shareAccess(input, { now });
+    expect(first).toMatchObject({ pages: 1, pageNetworks: 1, networks: { known: 3, incomplete: false } });
+    expect(first.timeline.items).toEqual([
+      {
+        date: now.toISOString(),
+        granularity: "hour",
+        pages: 1,
+        pageNetworks: 1,
+        downloads: 1,
+        passwordFailed: 1,
+        knownNetworks: 3,
+        overflow: false,
+      },
+    ]);
+    const second = await activityReaderData.shareAccess({ ...input, networkAfter: first.networks.next! }, { now });
+    expect(second.timeline).toEqual(first.timeline);
+    // Multiple clients and another hour for the same network remain distinct only within their bucket.
+    await sql`INSERT INTO filesv2.share_access VALUES
+      (${shareId}::uuid,${now},'192.0.2.0/24','firefox',1,0,0),
+      (${shareId}::uuid,'2030-05-15T11:00:00Z','192.0.2.0/24','chrome',1,0,0)`;
+    const repeated = await activityReaderData.shareAccess(input, { now });
+    expect(repeated.pageNetworks).toBe(1);
+    expect(repeated.timeline.items.map((period) => period.pageNetworks)).toEqual([1, 1]);
+    // Unclassified non-page activity affects knownNetworks without invalidating page evidence.
+    await sql`INSERT INTO filesv2.share_access VALUES
+      (${shareId}::uuid,${now},'unknown','unknown',0,0,1),
+      (${shareId}::uuid,${now},'*','other',0,1,0)`;
+    const nonPageUnknown = await activityReaderData.shareAccess(input, { now });
+    expect(nonPageUnknown.pageNetworks).toBe(1);
+    expect(nonPageUnknown.timeline.items[0]).toMatchObject({ pageNetworks: 1, knownNetworks: null, overflow: true });
+    for (const network of ["unknown", "*"]) {
+      await sql`UPDATE filesv2.share_access SET pages=1 WHERE network=${network}`;
+      const unknownPage = await activityReaderData.shareAccess(input, { now });
+      expect(unknownPage.pageNetworks).toBeNull();
+      expect(unknownPage.timeline.items[0]?.pageNetworks).toBeNull();
+      expect(unknownPage.timeline.items[1]?.pageNetworks).toBe(1);
+      await sql`UPDATE filesv2.share_access SET pages=0 WHERE network=${network}`;
+    }
     await sql`DELETE FROM filesv2.share_access WHERE network='unknown'`;
-    expect(await activityReaderData.shareAccess(input, { now })).toMatchObject({
-      pages: 96,
-      pageNetworks: 1,
-      networks: { known: 3, incomplete: false },
-    });
+    const overflowNonPage = await activityReaderData.shareAccess(input, { now });
+    expect(overflowNonPage.timeline.items[0]).toMatchObject({ pageNetworks: 1, knownNetworks: 3, overflow: true });
+    await sql`UPDATE filesv2.share_access SET pages=0`;
+    const noPages = await activityReaderData.shareAccess(input, { now });
+    expect(noPages.pageNetworks).toBe(0);
+    expect(noPages.timeline.items.map((period) => period.pageNetworks)).toEqual([0, 0]);
     const empty = await activityReaderData.shareAccess({ ...input, from: "2030-05-14", to: "2030-05-14" }, { now });
     expect(empty).toMatchObject({ pageNetworks: 0, pages: 0, timeline: { items: [], next: null } });
   });

@@ -94,7 +94,7 @@ export const activityQueries = {
   "share.access": {
     title: "Read public-link access counts",
     description:
-      "Read page, download and failed-password counts for one public share and an inclusive UTC date range. Only its creator or a current administrator may read these counts. Returns up to 50 shortened networks ordered by page plus download usage and up to 50 latest UTC hour/day aggregates; timelineAfter continues older aggregates. Hourly network identities cover only the last 30 days; rolled-up totals have no network identities. pageNetworks is the exact network count for page views, or null when unavailable; networks.known includes other access kinds. A download count does not prove a completed transfer.",
+      "Read page, download and failed-password counts for one public share and an inclusive UTC date range. Only its creator or a current administrator may read these counts. Returns up to 50 shortened networks ordered by page plus download usage and up to 50 latest UTC hour/day aggregates; timelineAfter continues older aggregates. Hourly network identities cover only the last 30 days; rolled-up totals have no network identities. Top-level and per-bucket pageNetworks count only networks with page views, or null when unavailable; daily buckets always return null. networks.known and each bucket's knownNetworks include other access kinds. A download count does not prove a completed transfer.",
     input: AccessInput,
     data: ShareAccessCountsSchema,
     openWorld: false,

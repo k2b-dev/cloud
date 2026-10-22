@@ -40,7 +40,31 @@ const accessCounts: ShareAccessCounts = {
   pageNetworks: null,
   from: "2026-10-01",
   to: "2026-10-20",
-  timeline: { items: [], next: null },
+  timeline: {
+    items: [
+      {
+        date: row.time,
+        granularity: "hour",
+        pages: 3,
+        pageNetworks: 1,
+        downloads: 2,
+        passwordFailed: 1,
+        knownNetworks: 3,
+        overflow: false,
+      },
+      {
+        date: "2026-10-19T00:00:00.000Z",
+        granularity: "day",
+        pages: 0,
+        pageNetworks: null,
+        downloads: 0,
+        passwordFailed: 0,
+        knownNetworks: null,
+        overflow: false,
+      },
+    ],
+    next: null,
+  },
   pages: 3,
   downloads: 2,
   passwordFailed: 1,
@@ -272,7 +296,7 @@ test("Assistant history queries use the current user with the original authoriza
   expect(list.data.safeParse(page).success).toBe(true);
   expect(await filesCapabilities.queries["activity.chain"].run({ activityId: id }, context)).toEqual({ ok: true, data: { data: chain } });
   expect(await filesCapabilities.queries["share.access"].run({ shareId: id, from: "2026-10-01", to: "2026-10-20" }, context)).toMatchObject(
-    { ok: true, data: { data: { pages: 3 } } },
+    { ok: true, data: { data: accessCounts } },
   );
 });
 test("positive schemas reject secret fields and over-disclosure on hidden and disappearance sides", () => {
@@ -529,9 +553,24 @@ test("timeline cursor reaches API, CLI and capability and rejects fabricated vis
   calls.length = 0;
   await filesCapabilities.queries["share.access"].run({ shareId: id, ...query }, context);
   expect(calls[0]?.input).toMatchObject({ shareId: id, ...query });
-  const period = { date: row.time, granularity: "hour", pages: 3, downloads: 2, passwordFailed: 1, knownNetworks: 2, overflow: true };
+  const period = {
+    date: row.time,
+    granularity: "hour",
+    pages: 3,
+    pageNetworks: 1,
+    downloads: 2,
+    passwordFailed: 1,
+    knownNetworks: 2,
+    overflow: true,
+  };
   const schema = filesCapabilities.queries["share.access"].data;
   expect(schema.safeParse({ ...accessCounts, timeline: { items: [period], next: row.time } }).success).toBe(true);
+  expect(schema.safeParse({ ...accessCounts, timeline: { items: [{ ...period, pageNetworks: null }], next: null } }).success).toBe(true);
+  expect(schema.safeParse({ ...accessCounts, timeline: { items: [{ ...period, pageNetworks: 0 }], next: null } }).success).toBe(true);
+  const { pageNetworks: _pageNetworks, ...missingPageNetworks } = period;
+  expect(schema.safeParse({ ...accessCounts, timeline: { items: [missingPageNetworks], next: null } }).success).toBe(false);
+  for (const pageNetworks of [undefined, -1, 0.5, "1"])
+    expect(schema.safeParse({ ...accessCounts, timeline: { items: [{ ...period, pageNetworks }], next: null } }).success).toBe(false);
   for (const extra of [{ visitorId: id }, { address: "192.0.2.1" }, { timestamp: row.time }])
     expect(schema.safeParse({ ...accessCounts, timeline: { items: [{ ...period, ...extra }], next: null } }).success).toBe(false);
   expect(schema.safeParse({ ...accessCounts, timeline: { items: Array(51).fill(period), next: null } }).success).toBe(false);
