@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
+import { afterAll, beforeAll, test as bunTest, expect, setDefaultTimeout, setSystemTime } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
@@ -20,6 +20,18 @@ import { SpaceItemDetailSchema, SpacesViewSnapshotSchema } from "../workspace/wo
 import type { TimeBlocksFixtureProps } from "./time-blocks.browser-fixture";
 
 const suite = databaseSuite();
+let failedCase: string | undefined;
+/** Stop expensive follow-on cases after a failure while allowing Bun's fixture afterAll hooks to finish. */
+const regression = (name: string, check: () => Promise<void>) =>
+  bunTest(name, async () => {
+    if (failedCase) throw new Error(`Not run after failed regression: ${failedCase}`);
+    try {
+      await check();
+    } catch (cause) {
+      failedCase = name;
+      throw cause;
+    }
+  });
 setDefaultTimeout(45_000);
 const NOW = new Date("2030-03-14T08:00:00.000Z");
 const TODAY = "2030-03-14";
@@ -346,7 +358,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
   });
 
   for (const width of [1440, 390])
-    test(`#1701: assigned estimated and claimed task drop + unchanged checklist + Undo at ${width}px`, async () => {
+    regression(`#1701: assigned estimated and claimed task drop + unchanged checklist + Undo at ${width}px`, async () => {
       const f = await scene(),
         before = await taskState(f),
         page = await open(f, false, width);
@@ -370,7 +382,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       }
     });
 
-  test("a lost drop response retries the same saved block and Undo still removes only that block", async () => {
+  regression("a lost drop response retries the same saved block and Undo still removes only that block", async () => {
     const f = await scene();
     f.fault = "lost-response";
     const before = await taskState(f),
@@ -393,7 +405,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
     }
   });
 
-  test("non-assignee drop opens the task first without creating a block or changing assignment", async () => {
+  regression("non-assignee drop opens the task first without creating a block or changing assignment", async () => {
     const f = await scene(false),
       before = await taskState(f),
       page = await open(f);
@@ -418,7 +430,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
   });
 
   for (const width of [1440, 390])
-    test(`dialog validates input, locks saving, retains inputs and reconciles a lost response at ${width}px`, async () => {
+    regression(`dialog validates input, locks saving, retains inputs and reconciles a lost response at ${width}px`, async () => {
       const f = await scene(),
         page = await open(f, true, width);
       try {
@@ -478,7 +490,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       }
     });
 
-  test("only the assigned owner can move or resize an existing block; task fields and checklist stay unchanged", async () => {
+  regression("only the assigned owner can move or resize an existing block; task fields and checklist stay unchanged", async () => {
     const f = await scene();
     const input = { id: uuid(9101), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
     await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
@@ -523,6 +535,26 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       expect(Date.parse(resized.endsAt)).toBeGreaterThan(Date.parse(moved.endsAt));
       expect(await taskState(f)).toEqual(beforeTask);
       expect(f.moves).toEqual([{ status: 200 }, { status: 200 }]);
+      const keyboardRefresh = page.waitForResponse(async (response) => {
+        if (new URL(response.url()).pathname !== "/api/spaces/workspace/view" || response.status() !== 200) return false;
+        const snapshot = SpacesViewSnapshotSchema.parse(await response.json());
+        return (
+          snapshot.kind === "calendar" &&
+          Boolean(snapshot.timeBlocks?.some((block) => block.id === input.id && block.startsAt !== resized.startsAt))
+        );
+      });
+      await band().locator("[data-calendar-event]").focus();
+      await Promise.all([keyboardRefresh, page.keyboard.press("Alt+ArrowDown")]);
+      await waitFor(async () => f.moves.length === 3 && (await blocks(f))[0]!.startsAt !== resized.startsAt);
+      const keyboardMoved = (await blocks(f))[0]!;
+      expect(Date.parse(keyboardMoved.endsAt) - Date.parse(keyboardMoved.startsAt)).toBe(
+        Date.parse(resized.endsAt) - Date.parse(resized.startsAt),
+      );
+      await settled(page);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("data-calendar-event-id"))).toBe(input.id);
+      expect(new URL(page.url()).pathname).toBe(`/app/spaces/${f.spaceId}`);
+      expect(await taskState(f)).toEqual(beforeTask);
+      expect(f.moves).toEqual([{ status: 200 }, { status: 200 }, { status: 200 }]);
       await page.context().close();
       await viewAsColleague(f);
       page = await open(f);
@@ -530,15 +562,15 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       expect(await band().locator("[data-calendar-event]").getAttribute("data-editable")).toBe("false");
       expect(await band().locator(".k2b-calendar-band__grip").count()).toBe(0);
       await drag(true);
-      expect((await blocks(f))[0]).toMatchObject({ startsAt: resized.startsAt, endsAt: resized.endsAt, canWrite: false });
-      expect(f.moves).toHaveLength(2);
+      expect((await blocks(f))[0]).toMatchObject({ startsAt: keyboardMoved.startsAt, endsAt: keyboardMoved.endsAt, canWrite: false });
+      expect(f.moves).toHaveLength(3);
       expect(await taskState(f)).toEqual(beforeTask);
     } finally {
       await page.context().close();
     }
   });
 
-  test("clicking a calendar block selects it in the real detail, and reload/Back preserve task and block selection", async () => {
+  regression("clicking a calendar block selects it in the real detail, and reload/Back preserve task and block selection", async () => {
     const f = await scene();
     const input = { id: uuid(9201), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
     await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
@@ -563,7 +595,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
   });
 
   for (const width of [1440, 390])
-    test(`60-minute suggestion and assignment-first detail at ${width}px`, async () => {
+    regression(`60-minute suggestion and assignment-first detail at ${width}px`, async () => {
       const f = await scene();
       await sql`UPDATE spaces.items SET estimated_duration_minutes = NULL WHERE id = ${f.taskUuid}::uuid`;
       let page = await open(f, true, width);
@@ -587,7 +619,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
     });
 
   for (const width of [1440, 390])
-    test(`done/reopened/deleted tasks preserve a readable, deletable calendar block at ${width}px`, async () => {
+    regression(`done/reopened/deleted tasks preserve a readable, deletable calendar block at ${width}px`, async () => {
       const f = await scene();
       const input = { id: uuid(9000 + Number(f.key.slice(4))), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
       await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
@@ -638,7 +670,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
     });
 
   for (const width of [1440, 390])
-    test(`real task detail, multiple blocks and dialog screenshots at ${width}px`, async () => {
+    regression(`real task detail, multiple blocks and dialog screenshots at ${width}px`, async () => {
       const f = await scene();
       let page = await open(f, true, width);
       try {
@@ -681,7 +713,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       }
     });
 
-  test("tablet dark tokens, overflow and keyboard editing use the real dialog and API", async () => {
+  regression("tablet dark tokens, overflow and keyboard editing use the real dialog and API", async () => {
     const f = await scene();
     const input = { id: uuid(9301), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
     await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));

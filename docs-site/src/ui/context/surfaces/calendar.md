@@ -620,8 +620,9 @@ every entry and every gap of an hour or more in the tab order, in time order;
 Tab into it starts at the first stop on screen, and Space on an entry with a
 checkbox checks it off.
 
-Editable entries support mouse dragging and touch dragging after a 420 ms
-hold. Before the hold, swiping keeps native scrolling; moving more than
+Where a view supports dragging, editable entries support mouse dragging and
+touch dragging after a 420 ms hold. The held entry or grip highlights before
+dragging. Before the hold, swiping keeps native scrolling; moving more than
 10 px or releasing cancels the hold. Hold a resize grip to change the start
 or end where that view supplies grips. Release commits; Escape, pointer
 cancellation, the window losing focus, or removing the view cancels. A completed

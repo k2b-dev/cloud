@@ -209,6 +209,19 @@ for (const options of [{ view: "day" }, { view: "week" }, { view: "day", legacy:
   }, 30_000);
 }
 
+test("all-day keyboard moves preserve both civil-date endpoints across DST", async () => {
+  const { page, chip } = await open({ view: "week", allDay: true, update: true });
+  try {
+    await chip.focus();
+    await page.keyboard.press("Alt+ArrowRight");
+    expect((await changes(page))[0]).toEqual(["move", "owned", "2026-10-24T22:00:00.000Z", "2026-10-25T23:00:00.000Z", true]);
+    await page.keyboard.press("Alt+ArrowLeft");
+    expect((await changes(page))[1]).toEqual(["move", "owned", "2026-10-23T22:00:00.000Z", "2026-10-24T22:00:00.000Z", true]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("month and all-day keyboard durations use calendar days, with localized resize-only instructions", async () => {
   for (const options of [{ view: "month" }, { view: "week", allDay: true, resizeOnly: true, locale: "de" }] as Options[]) {
     const { page, chip } = await open(options);

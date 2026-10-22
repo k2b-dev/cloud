@@ -278,6 +278,8 @@ export const EventChip = (props: {
     [
       canMove() ? (timedEditing() ? messages().calendarMoveTimeKeys : messages().calendarMoveDayKeys) : undefined,
       canResize() ? (timedEditing() ? messages().calendarResizeTimeKeys : messages().calendarResizeDayKeys) : undefined,
+      canMove() && props.onMovePointerDown ? messages().calendarTouchMove : undefined,
+      canResize() && props.fill && !props.event.allDay ? messages().calendarTouchResize : undefined,
     ]
       .filter(Boolean)
       .join(" ") || undefined;
@@ -289,7 +291,18 @@ export const EventChip = (props: {
     event.preventDefault();
     event.stopPropagation();
     const source = props.event;
-    const shift = (date: Date) => (days ? calendar.addDays(date, days, dateConfig()) : new Date(date.getTime() + minutes * 60_000));
+    const shift = (date: Date) => {
+      if (!days) return new Date(date.getTime() + minutes * 60_000);
+      const timeZone = dateConfig().timeZone;
+      if (timeZone) {
+        // addDays is date-only. Keep the event's wall clock across DST, including sub-minute precision.
+        const next = calendar.addZonedInstant(date, { timeZone, days, disambiguation: "compatible" });
+        return new Date(new Date(next).getTime() + date.getUTCSeconds() * 1000 + date.getUTCMilliseconds());
+      }
+      const next = new Date(date);
+      next.setDate(next.getDate() + days);
+      return next;
+    };
     const start = event.shiftKey ? source.sourceStartDate : shift(source.sourceStartDate);
     const end =
       event.shiftKey || source.allDay

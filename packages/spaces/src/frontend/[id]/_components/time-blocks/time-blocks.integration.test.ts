@@ -8,7 +8,8 @@ if (process.env.SPACES_TIME_BLOCK_BROWSER_CHILD === "1") {
 } else {
   databaseSuite()("Time block browser regression against the real Spaces API (#1701)", () => {
     test("runs the SSR islands with real authorization and persistence", async () => {
-      const child = Bun.spawn([process.execPath, "test", "--bail=1", import.meta.path], {
+      // Bun --bail exits before suite teardown; the child stops later cases itself so all fixture hooks run.
+      const child = Bun.spawn([process.execPath, "test", import.meta.path], {
         env: { ...process.env, SPACES_TIME_BLOCK_BROWSER_CHILD: "1" },
         stdout: "pipe",
         stderr: "pipe",
