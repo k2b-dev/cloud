@@ -373,6 +373,7 @@ for (const width of [390, 1440]) {
       sameBox(await box(page, selector), before);
     } finally {
       release();
+      await page.unrouteAll({ behavior: "wait" });
       await page.close();
     }
   }, 30_000);

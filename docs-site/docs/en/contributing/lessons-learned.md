@@ -896,6 +896,13 @@ convention still needs a check or a test.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
 
+### The notebook AI action stretched beside View
+
+- **What happened:** “Edit with AI” filled the remaining row and stood taller than “View”.
+- **Root cause:** App CSS overrode shared `sm` sizing with a minimum height and flex growth, including the offline button wrapper.
+- **Error class:** App CSS overrides shared control sizing.
+- **Guard:** Notebooks `detail-panel.browser.test.ts` measures the rendered controls across themes, widths, and interaction states. Both controls keep their shared size props; the row wraps whole controls.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
@@ -905,10 +912,3 @@ with "Suspected:"; the fix pull request replaces it with the confirmed cause.
 When the guard does not exist yet, write "Pending in #n" with the issue that
 tracks it, or "None, because …". A pull request that adds a guard for a class
 updates that class's row in the table.
-
-### The notebook AI action stretched beside View
-
-- **What happened:** “Edit with AI” filled the remaining row and stood taller than “View”.
-- **Root cause:** App CSS overrode shared `sm` sizing with a minimum height and flex growth, including the offline button wrapper.
-- **Error class:** App CSS overrides shared control sizing.
-- **Guard:** Notebooks `detail-panel.browser.test.ts` measures the rendered controls across themes, widths, and interaction states. Both controls keep their shared size props; the row wraps whole controls.

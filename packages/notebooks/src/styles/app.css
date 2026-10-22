@@ -900,6 +900,10 @@
   flex: 0 0 auto;
 }
 
+.k2b-ui .notebook-view-menu:only-child {
+  margin-inline-start: auto;
+}
+
 .k2b-ui .notebook-view-menu__chevron {
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
