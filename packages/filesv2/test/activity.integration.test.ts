@@ -5,7 +5,7 @@ import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
-import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
+import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { filesCapabilities } from "../src/capabilities";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
@@ -18,10 +18,11 @@ import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActiv
 import { signEditorToken } from "../src/service/collabora";
 import { FilesError } from "../src/service/errors";
 import { connectFilegate, type FilesFilegate } from "../src/service/filegate-facade";
+import { activityFilegate } from "./activity-filegate";
 import { testActor, testCall } from "./files-call";
-import { assertPrivateDatabase, localFilegateToken } from "./private-database";
+import { assertPrivateDatabase } from "./private-database";
 
-const suite = suiteFor("database", "filegate", "nats");
+const suite = suiteFor("database", "nats");
 const now = new Date("2030-05-15T12:00:00Z");
 const day = 86_400_000;
 type State = "pending" | "done" | "failed" | "not_done" | "unclear";
@@ -45,6 +46,7 @@ type Row = {
 suite("Files activity with real storage", () => {
   const prefix = `filesv2-activity-${Bun.randomUUIDv7()}`;
   let processSync: ProcessSync | undefined;
+  let storage: Awaited<ReturnType<typeof activityFilegate>> | undefined;
   let client: Filegate;
   let facade: FilesFilegate;
   let config: Configuration & { token: string; tokenConfigured: boolean; unreadable: boolean };
@@ -77,10 +79,11 @@ suite("Files activity with real storage", () => {
   beforeAll(async () => {
     await assertPrivateDatabase();
     processSync = await startProcessSync({ application: "filesv2" });
-    const token = await localFilegateToken();
+    storage = await activityFilegate();
+    const { token, url } = storage;
     config = {
       activityRetentionDays: 365,
-      url: testInfra.filegate!,
+      url,
       token,
       tokenConfigured: true,
       unreadable: false,
@@ -197,7 +200,11 @@ suite("Files activity with real storage", () => {
             .catch(() => undefined);
       }
     } finally {
-      await processSync?.stop();
+      try {
+        await processSync?.stop();
+      } finally {
+        await storage?.stop();
+      }
     }
   });
 
@@ -337,7 +344,7 @@ suite("Files activity with real storage", () => {
     expect((await uploadRows(opened.id))[0]?.state).toBe("done");
     const templateId = Bun.randomUUIDv7();
     await service.createFromBytes(testCall(actor), { baseId: baseId(), path: "template-output.txt", templateId }, new Uint8Array([65, 66]));
-    const [created] = await sql`SELECT * FROM filesv2.activity WHERE action='file.create'`;
+    const [created] = await sql`SELECT *,size::float8 FROM filesv2.activity WHERE action='file.create'`;
     expect(created).toMatchObject({ state: "done", path_after: `${home}/template-output.txt`, size: 2, detail: { template: templateId } });
   });
   test("upload scopes reject a different session, target, size, key, options and extra write before transport", async () => {
@@ -542,8 +549,8 @@ suite("Files activity with real storage", () => {
     const opened = [];
     for (const [index, key] of keys.entries())
       opened.push(await service.upload(testCall(actor), { ...uploadInput(`case-key-${index}.txt`), idempotencyKey: key }));
-    expect(await sql`SELECT id FROM filesv2.activity WHERE upload_id=ANY(${keys}::text[])`).toHaveLength(2);
-    await sql`UPDATE filesv2.activity SET state='unclear',started_at=${new Date(now.getTime() - 400 * day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${new Date(now.getTime() - 1)} WHERE upload_id=ANY(${keys}::text[])`;
+    expect(await sql`SELECT id FROM filesv2.activity WHERE upload_id IN (${keys[0]},${keys[1]})`).toHaveLength(2);
+    await sql`UPDATE filesv2.activity SET state='unclear',started_at=${new Date(now.getTime() - 400 * day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${new Date(now.getTime() - 1)} WHERE upload_id IN (${keys[0]},${keys[1]})`;
     await purgeActivity({ now, retentionDays: 365 });
     for (const upload of opened) {
       expect(await uploadRows(upload.id)).toHaveLength(1);
