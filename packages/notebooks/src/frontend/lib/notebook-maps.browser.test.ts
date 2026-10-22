@@ -241,8 +241,10 @@ test("place pins can link to an authorized note heading through the existing Not
     await first(page).getByRole("combobox", { name: "Verknüpfen mit", exact: true }).click();
     await page.getByRole("option", { name: "Überschrift", exact: true }).click();
     await first(page).getByRole("button", { name: "Notiz wählen", exact: true }).click();
-    await page.getByPlaceholder("Notiz zum Verlinken suchen…", { exact: true }).fill("Picknick");
-    await page.getByRole("option", { name: /Picknick Samstag/ }).click();
+    const picker = page.getByRole("dialog", { name: "Link zu einer Notiz einfügen", exact: true });
+    await picker.getByPlaceholder("Notiz zum Verlinken suchen…", { exact: true }).fill("Picknick");
+    await picker.getByRole("option", { name: /Picknick Samstag/ }).click();
+    await picker.waitFor({ state: "hidden" });
     await first(page).getByRole("combobox", { name: "Überschrift", exact: true }).click();
     await page.getByRole("option", { name: "picknick", exact: true }).click();
     await first(page).getByRole("button", { name: "Pin hinzufügen", exact: true }).click();
