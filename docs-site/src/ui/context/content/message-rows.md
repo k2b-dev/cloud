@@ -295,8 +295,8 @@ const stream = (id: string, token: string) =>
 `actions` are the message's menu. A quiet "…" without a frame or shadow sits
 beside the bubble's inner side, right of other people's messages and left of
 the reader's own, while a mouse or pen rests on the row or focus is inside it,
-so it never moves anything. Right-click, the Context Menu key, Shift+F10, and
-a long press open the same entries: beside the pointer on a desktop and as a
+so it never moves anything. Right-click and a long press open the same
+entries: beside the pointer on a desktop and as a
 bottom sheet below 48 rem. The row puts itself into a
 [`GestureMenu`](/en/ui/actions/gestures) for this; do not wrap it in another.
 
@@ -327,9 +327,9 @@ with `data-gesture-ignore`, so gestures never start there and a code block
 keeps scrolling sideways.
 
 A tap leaves "…" hidden: the long press opens the whole menu, and the tap
-stays free for a double tap. Keyboard focus on the article or on the row still
-shows it. The row stays in the tab order, so Tab moves from the article to it,
-where the Context Menu key or Shift+F10 opens the menu, and then to "…".
+stays free for a double tap. Keyboard focus on the article still shows it. The
+menu adds no tab stop of its own: Tab moves from the article to "…", and Enter
+or Space opens the menu there.
 
 ### Touch screens
 

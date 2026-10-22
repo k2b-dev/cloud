@@ -9547,8 +9547,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: relative;
 }
 
-/* Where a pointer hovers, others' bubbles leave room for "…" beside them, so a long message never clips it. */
-@media (hover: hover) {
+/* Where a pointer hovers and the column is wide, others' bubbles leave room for "…" beside them, so a long message
+   never clips it. A phone keeps the full width: there the long press opens the menu. */
+@media (hover: hover) and (min-width: 48rem) {
   .k2b-ui .k2b-message-row:not([data-own]) .k2b-message-row__body {
     max-width: min(40rem, 100% - 4.5rem);
   }

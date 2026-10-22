@@ -437,7 +437,7 @@ describe(`GestureMenu in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test('in a conversation the keyboard shows "…", and Tab then Shift+F10 open the message\'s menu', async () => {
+  test('in a conversation the keyboard shows "…", and Tab then Enter open the message\'s menu', async () => {
     const { page, context } = await open({ viewport: { width: 1024, height: 768 } }, { conversation: true });
     try {
       await page.mouse.move(1023, 767);
@@ -447,23 +447,23 @@ describe(`GestureMenu in ${browserName}`, () => {
       expect(await menuOpacity(page, "m7")).toBe("1");
       expect(await menuOpacity(page, "m6")).toBe("0");
 
+      // The message adds no tab stop of its own: Tab goes straight to "…".
       await page.keyboard.press("Tab");
-      const group = await page.evaluate(() => ({
-        role: document.activeElement?.getAttribute("role"),
+      const trigger = await page.evaluate(() => ({
+        name: document.activeElement?.getAttribute("aria-label"),
         popup: document.activeElement?.getAttribute("aria-haspopup"),
         row: (document.activeElement?.closest("[data-key]") as HTMLElement | null)?.dataset.key,
       }));
-      expect(group).toEqual({ role: "group", popup: "menu", row: "m7" });
+      expect(trigger).toEqual({ name: "Message actions", popup: "menu", row: "m7" });
       expect(await menuOpacity(page, "m7")).toBe("1");
 
-      await page.keyboard.press("Shift+F10");
-      const menu = page.locator(".k2b-context-menu[role='menu']");
+      await page.keyboard.press("Enter");
+      const menu = page.locator("[role='menu']:popover-open");
       await menu.waitFor();
       expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual(["Reply", "React with thumbs up", "Copy text"]);
-      await until(page, `document.activeElement?.textContent === "Reply"`);
       await page.keyboard.press("Escape");
       expect(await menu.count()).toBe(0);
-      expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("group");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Message actions");
     } finally {
       await context.close();
     }
