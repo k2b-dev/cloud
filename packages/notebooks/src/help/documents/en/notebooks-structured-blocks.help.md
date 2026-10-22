@@ -195,3 +195,15 @@ Book renders the same blocks on the server, without an editor. When JavaScript i
 Ordinary tables, lists, checkboxes, and named sections stay Markdown. Use table formulas for calculations in a table. Queries index only named `:::data` properties and the system fields above.
 
 Book evaluates the same table formulas as the editor, including computed columns, totals, and progress bars. A formula error stays visible in its cell. Table headers and ordinary cells also support inline formatting, links, images, and LaTeX. Formula results stay plain values.
+
+## Link places on a map {icon="map-2"}
+
+Type `/map` in a writable note to insert a map block. Search for a place above the map, choose a result, then link the pin to a note, a heading or a website. **Cancel** closes the link editor without adding the pin. A map holds up to 20 pins.
+
+Select a pin in the list or on the map. In the list, use the arrow keys or Home and End to change the selection. In **Map actions**, **Edit link** changes its destination; **Remove pin** removes it from this map. Read-only and locked notes show the saved map without editing controls.
+
+With two or more pins, open **Map actions**, choose **Save route through pins**, then choose the travel mode and confirm. The route follows the list order and stays saved with its distance, estimated time and calculation date. Reading the note does not recalculate the route. A saved route may also arrive from the Assistant.
+
+If maps are not configured or a budget is exhausted, saved pins and routes remain readable as lists with their sources. Budget notices show when requests become available again. A failed map load keeps your pins and offers **Retry**. **Show as list** lets you read links without a map.
+
+PDF export currently includes linked pin and route lists with Geoapify and OpenStreetMap sources and reports that the map image was omitted.

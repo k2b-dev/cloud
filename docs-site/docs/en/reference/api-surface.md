@@ -307,6 +307,7 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `@k2b/cloud/geo/document` | Supported, browser and server | Validate and serialize saved maps, linked pins and complete routes | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
 | `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/solid` | Supported, browser | AI chat controller over the conversation SSE stream | [Chat interface](/en/docs/ai/chat-interface) |

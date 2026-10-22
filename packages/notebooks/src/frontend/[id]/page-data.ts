@@ -1,3 +1,4 @@
+import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { hasRole } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
@@ -88,6 +89,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     notebookId,
     notebookShortId: notebook.shortId,
     selectedNoteId,
+    geoCaller: { cookie: c.req.header("Cookie"), authorization: c.req.header("Authorization"), locale, signal: c.req.raw.signal },
     isVersionsMode,
     canWrite,
     userId: user.id,
@@ -250,6 +252,7 @@ async function resolveSelectedNoteId(params: {
 }
 
 async function loadSelectedNote(params: {
+  geoCaller?: CapabilityCaller;
   notebookId: string;
   notebookShortId: string;
   selectedNoteId: string | null;
@@ -284,6 +287,7 @@ async function loadSelectedNote(params: {
       notebookId: params.notebookId,
       notebookShortId: params.notebookShortId,
       noteShortId: params.selectedNoteId,
+      geoCaller: params.geoCaller,
       userId: params.userId,
       locale: params.locale,
       bypassAccess: params.bypassAccess,

@@ -1,7 +1,9 @@
 import { beforeAll, expect, test } from "bun:test";
+import { serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { type GotenbergConfig, renderHtmlToPdfWithConfig } from "@k2b/cloud/services/pdf";
 import { pdfFonts, pdfLigatures, pdfText, pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { fictionalMap, fictionalRouteMap } from "../lib/map.test-fixture";
 import { buildNotePdfHtml } from "./note-pdf";
 
 const NOTICES = ["note", "info", "success", "warning", "danger"] as const;
@@ -12,6 +14,34 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
   beforeAll(() => {
     config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
   });
+
+  test("unavailable map images export linked pin and route lists with visible sources", async () => {
+    const { html, omissions } = buildNotePdfHtml({
+      markdown: `${serializeGeoDocument(fictionalMap())}\n\n${serializeGeoDocument(fictionalRouteMap())}`,
+      notebookShortId: "Book01",
+      locale: "en",
+      publicOrigin: "https://cloud.example.test",
+    });
+    expect(omissions.filter((omission) => omission.kind === "map")).toHaveLength(2);
+    const { pdf } = await renderHtmlToPdfWithConfig({ html, title: "Fictional map plan" }, config);
+    const text = await pdfText(pdf);
+    for (const content of [
+      "Münster",
+      "Fischerviertel",
+      "Museum Ulm",
+      "Glacis-Park",
+      "Geoapify",
+      "OpenStreetMap",
+      "Ulm Hbf",
+      "Stuttgart Hbf",
+      "95 km",
+    ])
+      expect(text).toContain(content);
+    expect(text).not.toContain(":::map");
+    const raw = Buffer.from(pdf).toString("latin1");
+    expect(raw).toContain("https://example.org/museum");
+    expect(raw).toContain("https://cloud.example.test/app/notebooks/Book01/notes/Note01?mode=book");
+  }, 60_000);
 
   test("PDF links use the public Cloud origin while own headings stay PDF destinations", async () => {
     const markdown = [

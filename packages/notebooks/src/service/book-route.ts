@@ -1,3 +1,4 @@
+import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { Placeholder } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
 import BookTagContent from "../frontend/[id]/_components/book/BookTagContent";
@@ -19,6 +20,7 @@ export const loadBookRoute = async (params: {
   origin: string;
   href: string;
   bypassAccess?: boolean;
+  geoCaller?: CapabilityCaller;
 }) => {
   const permission = params.bypassAccess
     ? "admin"

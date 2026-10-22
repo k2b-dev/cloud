@@ -26,9 +26,6 @@ const markdown = serializeGeoDocument({
     label: place.name.slice(0, 300),
     point: place.point,
     provenance: place.provenance,
-    ...(place.website && /^https?:\/\//.test(place.website) ? {
-      link: { type: "url", url: place.website, label: "Website" },
-    } : {}),
   })),
 });
 ```
@@ -42,12 +39,13 @@ and routes through the [Geo Queries](/en/docs/platform/places-and-maps).
 A document is a strict object with `version: 1`, a nonempty `title` of at most
 300 characters, `pins`, and an optional complete `route` from `route.calculate`
 or `route.update`. Set the optional ISO `savedAt` timestamp when saving; without
-it, the route summary labels the provenance date as its calculation date. Keep all route fields, including stops, legs, options,
+it, the route summary labels the provenance date as its calculation date.
+Keep all route fields, including stops, legs, options,
 geometry, input hash and provenance. Reading or saving a document does not
 recalculate the route. A route-only document has an empty `pins` array.
 
 A map holds up to 20 pins, matching one place-search result. Each pin carries a
-unique `id` of at most 100 characters, a nonempty `label` of at most 300
+unique `id` of at most 2048 characters, matching a Geo place ID, a nonempty `label` of at most 300
 characters, `point`, `provenance` and an optional `link`.
 
 | Link type | Required fields |

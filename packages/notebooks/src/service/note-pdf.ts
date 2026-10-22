@@ -36,6 +36,14 @@ const SYMBOL_LIGATURE_CSS = `:where(${LIGATURES.filter(({ symbol }) => /[←-⋿
  * Notices are Markdown info blocks; the shared PDF presets style them.
  */
 const NOTE_PRINT_CSS = `
+.notebook-map { margin: 0 0 1em; break-inside: avoid; }
+.notebook-map__header { display: flex; align-items: baseline; flex-wrap: wrap; gap: .75em; font-weight: 600; }
+.notebook-map__pins { margin: .4em 0; padding-left: 1.5em; }
+.notebook-map__pin { margin: .3em 0; }
+.notebook-map__number { display: none; }
+.notebook-map__name { margin-right: .5em; }
+.notebook-map__source, .notebook-map__summary { font-size: .85em; color: #475569; }
+
 .md-block-handle { display: inline-block; margin: .5em 0 .25em; padding: .05em .4em; border-radius: 3px; background: #eff6ff; color: #1d4ed8; font: 600 .75em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .md-data-block { margin: 0 0 1em; break-inside: avoid; }
 .md-data-grid { display: grid; grid-template-columns: minmax(7em, max-content) minmax(0, 1fr); margin: 0; border: 1px solid #cbd5e1; border-radius: 4px; }

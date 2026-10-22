@@ -1431,6 +1431,12 @@ const app = new Hono<AuthContext>()
         locale: getLocale(c),
         origin: new URL(c.req.url).origin,
         href: c.req.valid("query").href,
+        geoCaller: {
+          cookie: c.req.header("Cookie"),
+          authorization: c.req.header("Authorization"),
+          locale: getLocale(c),
+          signal: c.req.raw.signal,
+        },
       });
       c.header("Cache-Control", "private, no-store");
       if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));
@@ -1470,6 +1476,12 @@ const app = new Hono<AuthContext>()
         bypassAccess: hasRole(actor.data, "admin"),
         locale: getLocale(c),
         ...(markdown === undefined ? {} : { markdown }),
+        geoCaller: {
+          cookie: c.req.header("Cookie"),
+          authorization: c.req.header("Authorization"),
+          locale: getLocale(c),
+          signal: c.req.raw.signal,
+        },
       });
       c.header("Cache-Control", "private, no-store");
       if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));

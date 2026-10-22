@@ -17,6 +17,8 @@ import { bookRendererMessages, notebookBlockDiagnosticMessage } from "./book-ren
 import { parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
 import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
 import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
+import { type NotebookMapState, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
+import { notebookMapMessages } from "./map-messages";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
 import { parseSizedMarkdownImage } from "./markdown-image";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
@@ -72,6 +74,7 @@ export type NotebookBookInput = {
   /** Show each query as its definition, as a version preview does: today's results would not be that version's. */
   querySource?: boolean;
   references?: BookReferences;
+  mapState?: NotebookMapState;
 };
 
 const escape = highlight.escape;
@@ -122,6 +125,8 @@ export const renderNotebookBook = (
   const chartResult = parseNotebookChartBlocks(markdown);
   const charts = new Map(chartResult.blocks.map((block) => [block.line, block.input]));
   const chartSlots: string[] = [];
+  const mapResult = parseNotebookMapBlocks(markdown);
+  const maps = new Map(mapResult.blocks.map((block) => [block.line, block.document]));
   const namedBlocks = extractNamedBlocks(markdown);
   const handles = new Map(namedBlocks.map((block) => [block.line, block]));
   const dataNames = new Map(namedBlocks.filter((block) => block.type === "data").map((block) => [block.startLine, block.name]));
@@ -505,7 +510,7 @@ export const renderNotebookBook = (
       continue;
     }
     const notice = /^ {0,3}:::/.test(line) ? scanMarkdownInfoBlock(markdown.slice(lineOffsets[index])) : null;
-    const opener = notice ? null : /^ {0,3}:::(query|toc|data|chart)[ \t]*$/.exec(line);
+    const opener = notice ? null : /^ {0,3}:::(query|toc|data|chart|map)[ \t]*$/.exec(line);
     if (!notice && !opener) {
       // Source positions are optional for nested Markdown, but never guessed.
       // Canonical heading IDs still cover every heading in the rendered TOC.
@@ -533,9 +538,32 @@ export const renderNotebookBook = (
       "",
       slot(() => {
         const preview = (html: string) => {
-          if (kind === "query" || kind === "toc" || kind === "chart") blockHtml.set(start + 1, html);
+          if (kind === "query" || kind === "toc" || kind === "chart" || kind === "map") blockHtml.set(start + 1, html);
           return html;
         };
+        if (kind === "map") {
+          const document = maps.get(start + 1);
+          const figure = document
+            ? renderNotebookMapFigure(document, {
+                locale,
+                notebookId: input.notebookId,
+                mode: linkMode,
+                state: input.mapState,
+                print: input.print,
+                publicOrigin: input.publicOrigin,
+                noteId: input.noteId,
+              })
+            : null;
+          if (figure)
+            return preview(
+              (input.print ? omission("not_rendered", "map", document!.title) : "") + `${prefix}CHART${chartSlots.push(figure) - 1}END`,
+            );
+          return preview(
+            omission("invalid_block", "map", blockLabel(start + 1)) +
+              `<p class="notebook-book-diagnostic" role="status">${escape(notebookMapMessages.resolve([locale]).t.invalid)}</p>` +
+              source(blockLines.join("\n")),
+          );
+        }
         if (kind === "chart") {
           const chart = charts.get(start + 1);
           const figure = chart ? renderNotebookChartFigure(chart, locale, { print: input.print }) : null;
@@ -646,13 +674,28 @@ export const renderNotebookBook = (
   };
   html = sanitizeNotebookBookHtml(html, resolveLink);
   html = html.replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathSlots[Number(index)] ?? "");
-  const restoreCharts = (html: string) =>
-    html.replace(new RegExp(`${prefix}CHART(\\d+)END`, "g"), (_raw, index: string) => chartSlots[Number(index)] ?? "");
+  const restoreCharts = (html: string) => {
+    const restored = html.replace(new RegExp(`${prefix}CHART(\\d+)END`, "g"), (_raw, index: string) => chartSlots[Number(index)] ?? "");
+    if (!input.print) return restored;
+    // Trusted map links are restored after sanitization, once all document headings are known.
+    return restored.replace(/href="#([^" ]+)"/g, (raw, hash: string) => {
+      try {
+        return hash === "top" || headingIds.has(decodeURIComponent(hash)) ? raw : 'href="#top"';
+      } catch {
+        return 'href="#top"';
+      }
+    });
+  };
   return {
     html: restoreCharts(html),
     omissions,
     images,
-    diagnostics: [...queryResult.diagnostics, ...tocResult.diagnostics, ...chartResult.diagnostics],
+    diagnostics: [
+      ...queryResult.diagnostics,
+      ...tocResult.diagnostics,
+      ...chartResult.diagnostics,
+      ...mapResult.invalid.map((line) => ({ code: "invalid-type" as const, line, path: "map" })),
+    ],
     headings,
     blocks: [...blockHtml].map(([line, html]) => ({ line, html: restoreCharts(sanitizeNotebookBookHtml(html, resolveLink)) })),
   };

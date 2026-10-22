@@ -81,7 +81,7 @@ export type TocBlock = {
 };
 
 type Directive = {
-  type: "query" | "toc" | "chart";
+  type: "query" | "toc" | "chart" | "map";
   body: string[];
   line: number;
   closed: boolean;
@@ -119,7 +119,7 @@ const diagnostic = (code: NotebookBlockDiagnosticCode, line: number, path: strin
 });
 
 export const directives = (md: string): Directive[] => {
-  if (!/:::(?:query|toc|chart)\b/.test(md)) return [];
+  if (!/:::(?:query|toc|chart|map)\b/.test(md)) return [];
   const lines = md.split("\n");
   const literalLines = literalMarkdownLines(md);
   const offsets: number[] = [];
@@ -132,7 +132,7 @@ export const directives = (md: string): Directive[] => {
   for (let i = 0; i < lines.length; i++) {
     if (literalLines.has(i)) continue;
     const text = lines[i]!;
-    const opener = text.match(/^ {0,3}:::(query|toc|chart)[ \t]*\r?$/);
+    const opener = text.match(/^ {0,3}:::(query|toc|chart|map)[ \t]*\r?$/);
     if (!opener?.[1]) continue;
     const line = i + 1;
     const body: string[] = [];
