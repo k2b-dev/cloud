@@ -29,7 +29,7 @@ export const historyCatalog = i18n.define({
       pageViewsSentence: "The page was viewed {pages} times.",
       periodHour: "{date}, {from} to {to}",
       periodDay: "{date}, whole day",
-      accessPagesNetworks: (pages: number, networks: number) =>
+      accessPagesNetworks: ({ pages, networks }: { pages: number; networks: number }) =>
         `The link page was viewed ${pages === 1 ? "once" : `${pages} times`} from ${networks === 1 ? "1 network" : `${networks} networks`}`,
       accessPages: (pages: number) => `The link page was viewed ${pages === 1 ? "once" : `${pages} times`}`,
       accessDownloads: "{count} downloads were released through the link",
@@ -327,7 +327,7 @@ export const historyCatalog = i18n.define({
       pageViewsSentence: "Die Seite wurde {pages}-mal aufgerufen.",
       periodHour: "{date}, {from} bis {to}",
       periodDay: "{date}, ganzer Tag",
-      accessPagesNetworks: (pages: number, networks: number) =>
+      accessPagesNetworks: ({ pages, networks }: { pages: number; networks: number }) =>
         `Die Seite des Links wurde ${pages}-mal aus ${networks === 1 ? "einem Netz" : `${networks} Netzen`} aufgerufen`,
       accessPages: (pages: number) => `Die Seite des Links wurde ${pages}-mal aufgerufen`,
       accessDownloads: "Über den Link wurden {count} Downloads freigegeben",
