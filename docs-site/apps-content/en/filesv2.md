@@ -937,3 +937,21 @@ not a way around the stream budget. `cld filesv2 get <file>` obtains
 a lease and saves the file without printing the private URL; the explicit
 `cld capabilities query filesv2 content.download` command returns the lease.
 See [App capabilities](/en/docs/platform/capabilities) for discovery and consent.
+
+## Understand changes without a Cloud entry
+
+When Files notices that an item differs from its last confirmed Cloud change,
+the history shows what it found and when it noticed it. This can happen when
+you open an item, save a document, or when maintenance checks it. The cause,
+person and actual time of the change remain unknown.
+
+Files can recognize a move when storage provides a stable item ID. Otherwise,
+a move outside Cloud appears as a missing item at its last known path. It
+cannot compare an item without retained Cloud history, and same-size changes
+can go unnoticed on storage without revisions. An unfinished Cloud operation
+is resolved before Files records a separate observation.
+
+Administrators can export history as CSV or JSON Lines. Each export is limited
+to one calendar year and 100,000 entries, and is recorded in the security audit.
+For filters, cancellation and privacy considerations, see
+[Files history operations](/en/docs/operations/files-history#export-history-for-administration).

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createCollectionSelection, LocaleProvider } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
 import type { InventoryEntry } from "../src/contracts";
+import AdminHistory from "../src/frontend/AdminHistory";
 import AdminIssue from "../src/frontend/AdminIssue";
 import { parseAdminLocation } from "../src/frontend/admin-location";
 import FileList, { type FileRow } from "../src/frontend/FileList";
@@ -162,6 +163,88 @@ describe("Filesv2 server-rendered feedback", () => {
     expect(row(tree, "Projects")).toContain("ti-folder-open");
     expect(row(tree, "Projects/Drafts")).not.toContain("ti-folder-open");
   });
+});
+
+test("the administration history renders its authorized first page as table and list on the server", () => {
+  const binding = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const filters = { when: "30" as const };
+  const html = renderToString(() => (
+    <LocaleProvider locale="de">
+      <AdminHistory
+        env={{ now: "2026-10-20T12:30:00.000Z", timeZone: "Europe/Berlin" }}
+        filters={filters}
+        onFiltersChange={() => {}}
+        bases={{ items: [], next: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }}
+        baseLabels={[
+          {
+            id: "cloud:groups:11111111-1111-4111-8111-111111111111",
+            bindingId: binding,
+            area: "cloud",
+            kind: "groups",
+            name: "vertrieb",
+            displayName: "Team Vertrieb",
+            root: "cloud",
+            path: "groups/vertrieb",
+          },
+        ]}
+        loadBases={async () => {
+          throw new Error("SSR must use its authorized metadata snapshot");
+        }}
+        initial={{
+          filters,
+          page: {
+            items: [
+              {
+                id: "00000000-0000-4000-8000-000000000001",
+                action: "file.overwrite",
+                state: "done",
+                time: "2026-10-20T06:52:00.000Z",
+                startedAt: "2026-10-20T06:52:00.000Z",
+                finishedAt: "2026-10-20T06:52:00.000Z",
+                actor: { kind: "user", userId: "33333333-3333-4333-8333-333333333333", name: "Mia Schulz" },
+                via: "office",
+                before: { visibility: "hidden" },
+                after: {
+                  visibility: "full",
+                  source: "snapshot",
+                  name: "Proof_Visitenkarten.pdf",
+                  path: "groups/vertrieb/Proof_Visitenkarten.pdf",
+                  root: "cloud",
+                  baseId: binding,
+                  publicBaseId: null,
+                  itemId: null,
+                  directory: false,
+                  size: 3_400_000,
+                  revision: null,
+                },
+                batchId: null,
+              },
+            ],
+            next: null,
+            visibleCount: 1,
+            batches: [],
+            exhausted: true,
+            scanLimitReached: false,
+            searchLimitReached: false,
+          },
+        }}
+        load={() => new Promise(() => {})}
+      />
+    </LocaleProvider>
+  ));
+  for (const text of [
+    "Zeit",
+    "Ablage",
+    "Weg",
+    "20.10. 08:52",
+    "Überschrieben",
+    "Proof_Visitenkarten.pdf",
+    "Team Vertrieb",
+    "Office-Editor",
+  ])
+    expect(html).toContain(text);
+  expect(html).toContain("filesv2-history-row");
+  expect(html).not.toContain("Aktivität wird geladen");
 });
 
 test("thumbnail fallbacks use file-type tiles at row, grid and hero sizes", () => {

@@ -17,6 +17,7 @@ import type {
 import type { bindings, NewBinding } from "../data/bases";
 import { type Operation, operations, withRootLock } from "../data/operations";
 import { filegateException, pendingMigration, type UserFilesCall } from "./activity";
+import { createActivityObservations } from "./activity-observations";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import type { FilesFilegate, FilesRoot } from "./filegate-facade";
@@ -814,6 +815,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const state = await admin(actor, area);
       if (!(await state.root.info()).index.enabled) throw new FilesError("index_disabled", 409);
       await state.root.rebuild(AbortSignal.timeout(10 * 60 * 1000));
+      // Reuse the due-evidence queue and root locks. At most 50 comparisons; the cadence drains the rest.
+      await createActivityObservations(deps).maintain({ root: { serverUrl: state.config.url, root: state.root.name } });
       await audit.recordResultAfterSideEffect({
         action: "filesv2.rebuild_index",
         actor: { userId: state.actorId, uid: state.actorName },

@@ -1,4 +1,13 @@
 const messages: Record<string, [string, string]> = {
+  activity_export_range: ["Choose a date range of at most one year.", "Wähle einen Zeitraum von höchstens einem Jahr."],
+  activity_export_limit: [
+    "This export contains more than 100,000 entries. Narrow the date range or filters.",
+    "Der Export enthält mehr als 100.000 Einträge. Grenze den Zeitraum oder die Filter ein.",
+  ],
+  activity_export_failed: [
+    "The export could not be completed. Try again.",
+    "Der Export konnte nicht abgeschlossen werden. Versuche es erneut.",
+  ],
   configuration_unreadable: [
     "Files cannot read its saved configuration. Enter the Filegate token again to replace it, or reset the configuration.",
     "Dateien kann die gespeicherte Konfiguration nicht lesen. Gib den Filegate-Token erneut ein, um sie zu ersetzen, oder setze die Konfiguration zurück.",

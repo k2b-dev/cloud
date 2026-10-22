@@ -96,3 +96,47 @@ metadata and need no user-data history entry.
 The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
 keys that have not been reviewed.
+
+## Interpret changes discovered on contact
+
+Files compares the current item with the last confirmed Cloud change when the
+item is opened, before a document save, and during maintenance. It records a
+changed revision or size, a missing item, or a stable ID found at another path.
+The entry gives the time Files noticed the difference. It does not identify who
+changed the item, when the change happened, or what caused it.
+
+This comparison needs a retained, confirmed Cloud entry. It creates no baseline
+from a first read and makes no claim while a related Cloud operation is pending
+or uncertain. Repeated contact with the same difference produces one entry.
+Without stable IDs, an external move can only appear as a missing item. Without
+a revision, a same-size content change can go unnoticed. Files cannot reconstruct changes that it never saw.
+
+## Export history for administration
+
+Administrators can download CSV or JSON Lines through
+`GET /api/filesv2/admin/activity/export`. Pass `format=csv` or `format=jsonl`, and
+inclusive UTC dates as `from=YYYY-MM-DD&to=YYYY-MM-DD`. Optional `baseId`,
+`actor`, `action` and literal name/old-path search `q` filters narrow the export. Current administration rights
+are checked before reading and again before authorizing the download.
+
+The same parameters on `GET /api/filesv2/admin/activity/export/preview`
+return a row count for the export dialog without starting a download. The
+download recounts its own snapshot; concurrent changes can alter the estimate.
+
+An export covers at most one calendar year and 100,000 entries. A wider range
+or larger result returns `413` before any file bytes; narrow the dates or add a
+filter. Counting and streaming use the same database snapshot, so changes made
+during the download cannot shift its pages. CSV cells are quoted and protected
+against spreadsheet formulas.
+
+Each authorized export is recorded in the security audit before streaming
+starts. The audit records the filters and selected row count, not a claim that
+the download completed. Canceling a download stops the export and releases its
+database snapshot; its audit evidence remains. A failed or interrupted stream
+is incomplete and should be discarded before requesting a fresh export.
+
+Exports contain file names, paths and the names of accounts that still exist.
+Protect the downloaded file separately: Files retention cannot delete copies
+an administrator has downloaded. Operators should agree access and retention
+with the responsible privacy representatives, including a works council where
+applicable, before using history in a workplace.

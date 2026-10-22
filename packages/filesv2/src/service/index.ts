@@ -52,6 +52,8 @@ import { type DocumentKind, documentExtension, editableExtension } from "../docu
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
 import { fileAction, pendingMigration, purgeActivity, recoverActivity, type UserFilesCall } from "./activity";
+import { createActivityExportService } from "./activity-export";
+import { createActivityObservations } from "./activity-observations";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -143,6 +145,25 @@ export function createFilesService(
   },
 ) {
   const { provisionCandidate, ...lifecycle } = createDirectoryLifecycle(deps);
+  const observations = createActivityObservations(deps);
+  async function observeContact(
+    current: { state: { config: Config }; inspection: Inspection; root: FilesRoot },
+    path: string,
+    options: { underRootLock?: boolean; signal?: AbortSignal; stableId?: string } = {},
+  ) {
+    const binding = current.inspection.binding;
+    if (!binding) return;
+    try {
+      await observations.check(
+        { serverUrl: current.state.config.url, root: current.root.name, baseId: binding.id, path, stableId: options.stableId },
+        options,
+      );
+    } catch (error) {
+      maintenanceLog.error("History contact observation failed", { baseId: binding.id, error });
+      options.signal?.throwIfAborted();
+      throw new FilesError("activity_cannot_record", 503, { cause: error });
+    }
+  }
   async function allGroups(actor: RequestActor): Promise<Group[]> {
     const result: Group[] = [];
     const deadline = Date.now() + 10_000;
@@ -473,6 +494,7 @@ export function createFilesService(
     body: Blob,
     onConflict: "error" | "overwrite",
   ): Promise<Node> {
+    if (onConflict === "overwrite") await observeContact(current, current.target, { underRootLock: true });
     if (current.info.managed && onConflict === "overwrite" && !current.node.revision) throw new FilesError("write_conflict", 409);
     if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
     return pendingMigration("files.write_bytes", () =>
@@ -490,7 +512,12 @@ export function createFilesService(
         },
         AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
       ),
-    );
+    ).catch(async (error: unknown) => {
+      // The write owner has finished its definite refusal before this comparison. Open upload journals still suppress observations.
+      if (error instanceof FilegateError && error.status === 412)
+        await observeContact(current, current.target, { underRootLock: true, stableId: current.info.stableIds ? current.node.id : undefined });
+      throw error;
+    });
   }
 
   async function createFolder(call: UserFilesCall, current: Awaited<ReturnType<typeof writableParent>>, batchId?: string) {
@@ -577,9 +604,23 @@ export function createFilesService(
   };
   async function entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
     if (!input.path) throw new FilesError("invalid_path");
-    return entryResult(await authorized(actor, input.baseId, input.path));
+    const base = await authorizedBase(actor, input.baseId);
+    let current: Awaited<ReturnType<typeof authorizedPath>>;
+    try {
+      current = await authorizedPath(base, input.path);
+    } catch (error) {
+      if (error instanceof FilegateError && error.status === 404 && error.code === "not_found") {
+        // Preserve the authorized storage result. A successful detail read must still surface observer failure.
+        await observeContact(base, joinPath(base.item.path, userPath(input.path))).catch((failure: unknown) =>
+          maintenanceLog.error("Missing entry observation unavailable", { error: failure }),
+        );
+      }
+      throw error;
+    }
+    return entryResult(current);
   }
   async function entryResult(current: Awaited<ReturnType<typeof authorized>>): Promise<EntryResult> {
+    await observeContact(current, current.target, { stableId: current.info.stableIds ? current.node.id : undefined });
     const favorite = await favorites.has(current.state.self.user.id, current.inspection.binding!.id, current.relative);
     const result = fileEntry(current.inspection.summary, current.relative, current.node);
     return {
@@ -884,8 +925,13 @@ export function createFilesService(
           },
         )
       : 0;
+    await observations.maintain(input).catch((error: unknown) => {
+      input.signal?.throwIfAborted();
+      maintenanceLog.error("History observation maintenance failed", { error });
+    });
     return { activityChecked, activityPurged };
   }
+  const activityExport = createActivityExportService({ requireAdmin, displayNames: deps.displayNames });
   const sharing = createSharingService<Awaited<ReturnType<typeof authorized>>>({
     authorized,
     writableParent,
@@ -945,6 +991,14 @@ export function createFilesService(
   });
   return {
     ...lifecycle,
+    /** Private history-reader hook: authorize the current item before comparing any stored endpoint. */
+    async observeActivityContact(call: UserFilesCall, id: string, signal?: AbortSignal): Promise<void> {
+      signal?.throwIfAborted();
+      const current = await located(call.actor, id);
+      await observeContact(current, current.target, { stableId: current.info.stableIds ? current.node.id : undefined, signal });
+    },
+    exportActivity: activityExport.export,
+    previewActivityExport: activityExport.preview,
     ...sharing,
     ...trashLifecycle,
     async maintain(input: Parameters<typeof lifecycle.maintain>[0] & { now?: Date } = {}): Promise<MaintenanceResult> {
@@ -1215,6 +1269,7 @@ export function createFilesService(
       if (!z.string().uuid().safeParse(input.idempotencyKey).success) throw new FilesError("upload_changed", 409);
       const current = await writableParent(actor, input.baseId, input.path);
       const target = joinPath(current.target, current.name);
+      await observeContact(current, target);
       const previous = await uploads.get(input.idempotencyKey, current.state.self.user.id);
       if (previous) {
         // A managed absent target is always create-only. Both conflict choices have the same effective intent.
@@ -1622,6 +1677,7 @@ export function createFilesService(
     ): Promise<{ modified: string } | { conflict: true }> {
       const current = await wopiFile(token, id, requestId);
       if (!current.canWrite) throw new FilesError("forbidden", 403);
+      await observeContact(current, current.target);
       // Collabora deliberately omits the timestamp when the user confirms
       // "Overwrite". A present timestamp must retain its microsecond precision.
       const timestamp = wopiTimestamp(current.node.modified);

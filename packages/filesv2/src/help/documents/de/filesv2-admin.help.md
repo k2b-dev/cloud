@@ -6,7 +6,7 @@ description: Filegate verbinden, Verzeichnisse prüfen und Archiv sowie Lebenszy
 order: 200
 ---
 
-Öffne **Dateien-Administration**, um die Dateien-App zu verwalten. Die Ansichten trennen Speicherinformationen, aktuelle Verzeichnisse, archivierte Verzeichnisse, öffentliche Freigaben und Einstellungen. Filter, Ordner und Seiten bleiben in der Adresse erhalten, auch beim Vor- und Zurücknavigieren.
+Öffne **Dateien-Administration**, um die Dateien-App zu verwalten. Die Ansichten trennen Speicherinformationen, aktuelle Verzeichnisse, archivierte Verzeichnisse, öffentliche Freigaben, Dateiaktivität und Einstellungen. Filter, Ordner und Seiten bleiben in der Adresse erhalten, auch beim Vor- und Zurücknavigieren.
 
 ## Ablagen unter Einstellungen verbinden {icon="plug"}
 
@@ -58,6 +58,16 @@ Das Archiv zeigt ursprüngliche Pfade und Archivierungszeitpunkte. Öffne ein ar
 **Freigaben** zeigt alle öffentlichen Links; normale Nutzer sehen nur ihre eigenen. Als Administrator kannst du einen Link unabhängig vom verbliebenen Zugriff seines Erstellers sperren. Links werden nur beim Erstellen ausgegeben. Bereits bestehende URLs bleiben nach der Umstellung der Token-Speicherung gültig, lassen sich aber auch von der Administration nicht mehr aus der Übersicht zurückholen. Interne Notizen bleiben privat; nur der separate öffentliche Hinweis erscheint für Besucher.
 
 Für Eingänge gelten standardmäßig 100 MiB pro Datei und 1 GiB kumulativ insgesamt, auch für Links, die schon vor diesem Upgrade existierten. Bestätigte Uploads und offene Reservierungen zählen gemeinsam. Das Löschen empfangener Dateien gibt das Budget nicht frei. Der Abgleich läuft auch nach Ablauf oder Sperrung des Links weiter. Bei ungeklärten Übertragungen bleibt die Reservierung bestehen, bis ein verlässliches Ergebnis vorliegt. Prüfe den angezeigten Pfad, Fehler und die Sitzung. Ein fehlender Beleg bedeutet nicht, dass keine Datei geschrieben wurde.
+
+## Aktivität prüfen und exportieren {icon="activity"}
+
+**Aktivität** listet aufgezeichnete Änderungen an Dateien und Ordnern in allen Ablagen, die neuesten zuerst, mit Zeit, Person, Änderung, Element, Ablage und Weg. Auf schmalen Bildschirmen zeigt sie dieselben Einträge als Liste wie in Dateien. Sie öffnet mit den letzten 30 Tagen. Filtere nach **Ablage**, **Wer**, **Was** und **Wann**, oder suche nach einem Namen oder einem alten Pfad. Filter und Suche bleiben in der Adresse erhalten.
+
+- **Läuft:** Die Änderung hat begonnen und ist noch nicht bestätigt.
+- **Ausgang unklar:** Dateien konnte das Ergebnis nicht bestätigen. Es sucht weiter nach einem Beleg in der Ablage.
+- **Ohne Eintrag in Cloud:** Dateien hat eine Änderung außerhalb von Cloud bemerkt, etwa über ein Netzlaufwerk. Solche Einträge nennen keine Person und keine Ursache.
+
+**Exportieren** lädt die Einträge, die zu den Filtern passen, als CSV oder JSON Lines herunter. Wähle einen Zeitraum von höchstens einem Jahr und auf Wunsch eine Ablage; die Filter für Person, Änderung und Suche aus der Liste bleiben erhalten. Die Schaltfläche zeigt, wie viele Zeilen der Export enthält. Ein Export enthält höchstens 100.000 Zeilen; für mehr grenze Zeitraum, Ablage oder Filter ein. In CSV bekommt eine Zelle, die wie eine Tabellenformel beginnt, ein vorangestelltes Apostroph. Jeder Export steht im Audit-Log, auch wenn du den Download abbrichst. Ein fehlgeschlagener Download speichert nichts; starte ihn erneut. Unter Einstellungen legst du fest, wie lange der Verlauf aufbewahrt wird, von 30 bis 3.650 Tagen.
 
 ## Papierkorb und Versionen prüfen {icon="history"}
 

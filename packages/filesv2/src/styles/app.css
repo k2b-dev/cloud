@@ -1118,3 +1118,8 @@
     transition: none;
   }
 }
+
+/* This native dialog contains only the app-owned export form; other prompts keep their shared size. */
+dialog[open]:has(.filesv2-export-dialog) {
+  width: min(460px, calc(100vw - 2rem));
+}

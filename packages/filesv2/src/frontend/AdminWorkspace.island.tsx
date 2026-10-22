@@ -19,25 +19,39 @@ import {
   Tabs,
   TextInput,
 } from "@k2b/ui";
-import { createEffect, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { ActivityBasesPageSchema } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import { ErrorSchema, InventoryStateSchema } from "../contracts";
 import AdminBrowser from "./AdminBrowser";
+import AdminHistory from "./AdminHistory";
 import AdminIssue from "./AdminIssue";
 import AdminShares from "./AdminShares";
 import ArchiveTable from "./ArchiveTable";
 import { createAdminActions } from "./admin-actions";
+import {
+  ADMIN_ACTIVITY_DEFAULT,
+  type AdminActivityFilters,
+  type AdminBasesLoader,
+  adminActivityHref,
+  parseAdminActivityFilters,
+} from "./admin-history";
+import { useAdminHistoryMessages } from "./admin-history-messages";
 import { type AdminLocation, type AdminSnapshot, type AdminView, adminHref, parseAdminLocation } from "./admin-location";
 import { useAdminMessages } from "./admin-messages";
 import { useAssetMessages } from "./asset-messages";
+import { loadActivity } from "./history-api";
+import { useHistoryMessages } from "./history-messages";
 import Inventory from "./Inventory";
 import { useFilesMessages } from "./messages";
 import Settings from "./Settings";
 import { TemplateList } from "./Templates";
 import { createWorkspaceState } from "./workspace-state";
 
-export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
+export default function AdminWorkspace(props: { initial: AdminSnapshot; timeZone?: string }) {
   const a = useAdminMessages();
+  const ah = useAdminHistoryMessages();
+  const h = useHistoryMessages();
   const assets = useAssetMessages();
   const t = useFilesMessages();
   const [dirty, setDirty] = createSignal(false);
@@ -48,6 +62,8 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
     const parsed = ErrorSchema.safeParse(await response.json());
     throw new Error(parsed.success && parsed.data.code !== "unavailable" ? parsed.data.message : a().connectionHint);
   };
+  const loadBases: AdminBasesLoader = async (input, signal) =>
+    ActivityBasesPageSchema.parse(await read(await apiClient.admin.activity.bases.$get({ query: input }, { init: { signal } })));
   const workspace = createWorkspaceState({
     initial: props.initial,
     load: async (source, signal) => {
@@ -95,6 +111,11 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
         snapshot.shares = await read(await apiClient.admin.shares.$get({ query: {} }, { init: { signal } }));
         snapshot.uploads = await read(await apiClient.admin.uploads.$get({ query: {} }, { init: { signal } }));
       }
+      if (location.view === "activity") {
+        // The history view loads and pages its own entries, so its filters can change without leaving it.
+        snapshot.now = new Date().toISOString();
+        snapshot.activityBases = await loadBases({}, signal).catch(() => null);
+      }
       return snapshot;
     },
   });
@@ -103,6 +124,23 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
   const result = () => snapshot().result;
   const refresh = () => workspace.navigate(snapshot().source);
   const actions = createAdminActions({ snapshot, location, refresh });
+  /*
+   * History filters live in the address. A filter change pushes the address at once and the view reloads its own
+   * list, so a failed load keeps the filters beside "Try again". Back and forward load a snapshot, which resets them.
+   */
+  const [activitySource, setActivitySource] = createSignal(props.initial.source);
+  createEffect(on(snapshot, (loaded) => setActivitySource(loaded.source), { defer: true }));
+  const activityFilters = createMemo(
+    () => parseAdminActivityFilters(new URL(activitySource(), "https://files.invalid").searchParams) ?? {},
+    undefined,
+    { equals: (previous, next) => JSON.stringify(previous) === JSON.stringify(next) },
+  );
+  const changeActivityFilters = (filters: AdminActivityFilters) => {
+    const target = adminActivityHref(filters);
+    setActivitySource(target);
+    workspace.rememberSource(target);
+    commitHistory(target, { scroll: "manual", viewTransition: false });
+  };
   const navigate = async (source: string, commit: () => void, pop = false) => {
     if (saving() || actions.busy() || confirming()) {
       if (pop) commitHistory(workspace.committedSource(), { replace: true, scroll: "manual", viewTransition: false });
@@ -154,12 +192,13 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
     { value: "directories" as const, label: a().directories, icon: "ti ti-folders" },
     { value: "archive" as const, label: a().archives, icon: "ti ti-archive" },
     { value: "shares" as const, label: a().shares, icon: "ti ti-world-share" },
+    { value: "activity" as const, label: ah().tab, icon: "ti ti-history" },
     { value: "templates" as const, label: assets().templates, icon: "ti ti-file-description" },
     { value: "settings" as const, label: a().settings, icon: "ti ti-settings" },
   ];
   const title = () => {
     const view = location().view;
-    return view === "templates" ? assets().templates : view === "archive" ? a().archives : a()[view];
+    return view === "templates" ? assets().templates : view === "archive" ? a().archives : view === "activity" ? ah().tab : a()[view];
   };
   const description = () =>
     location().view === "shares"
@@ -211,7 +250,12 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
       <div class="shrink-0 px-[var(--ui-space-shell)] pt-3">
         <Tabs<AdminView>
           value={() => location().view}
-          onValueChange={(view) => void change({ ...clearDetail, view, q: undefined, status: undefined })}
+          onValueChange={(view) => {
+            if (view !== "activity") return void change({ ...clearDetail, view, q: undefined, status: undefined });
+            // The history opens on the approved default range; its filters are not the inventory's.
+            const href = adminActivityHref(ADMIN_ACTIVITY_DEFAULT);
+            void navigate(href, () => commitHistory(href, { scroll: "manual", viewTransition: false }));
+          }}
           ariaLabel={t().admin}
           options={tabs()}
         />
@@ -248,10 +292,9 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
           }
         >
           <Show
-            when={location().view !== "settings" && location().view !== "templates"}
+            when={location().view !== "settings" && location().view !== "templates" && location().view !== "activity"}
             fallback={
-              <Show
-                when={location().view === "templates"}
+              <Switch
                 fallback={
                   <Settings
                     configuration={result().configuration}
@@ -264,10 +307,26 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                   />
                 }
               >
-                <SettingsPage title={assets().templates} icon="ti ti-file-description">
-                  <TemplateList admin />
-                </SettingsPage>
-              </Show>
+                <Match when={location().view === "activity"}>
+                  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <AdminHistory
+                      env={{ now: snapshot().now ?? new Date().toISOString(), timeZone: props.timeZone ?? "UTC" }}
+                      filters={activityFilters()}
+                      onFiltersChange={changeActivityFilters}
+                      bases={snapshot().activityBases ?? null}
+                      baseLabels={snapshot().activityBaseLabels}
+                      loadBases={loadBases}
+                      initial={snapshot().activity}
+                      load={(request, signal) => loadActivity(request, signal, h().errorTitle)}
+                    />
+                  </div>
+                </Match>
+                <Match when={location().view === "templates"}>
+                  <SettingsPage title={assets().templates} icon="ti ti-file-description">
+                    <TemplateList admin />
+                  </SettingsPage>
+                </Match>
+              </Switch>
             }
           >
             <SettingsPage
