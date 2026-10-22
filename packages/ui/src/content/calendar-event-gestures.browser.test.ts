@@ -283,7 +283,7 @@ for (const options of [{ view: "day" }, { view: "week" }, { view: "month" }, { v
       expect(edit.slice(0, 2)).toEqual(["move", "owned"]);
       expect(edit[2]).not.toBe("2026-10-24T07:30:00.000Z");
       expect(new Date(edit[3]).getTime() - new Date(edit[2]).getTime()).toBe(3_600_000);
-      await chip.dispatchEvent("click");
+      await chip.dispatchEvent("click", { detail: 1 });
       expect(await page.evaluate(() => (window as unknown as Fixture).opens)).toEqual([]);
       expect(await touchBlocked(page)).toBe(false);
       expect(await chip.getAttribute("data-touch-held")).toBeNull();
@@ -295,6 +295,22 @@ for (const options of [{ view: "day" }, { view: "week" }, { view: "month" }, { v
     }
   }, 30_000);
 }
+
+test("touch click guard preserves Enter on calendar links", async () => {
+  const { page, chip } = await open({ link: true }, true);
+  try {
+    await chip.focus();
+    await pointer(page, chip, "pointerdown");
+    await held(page);
+    await pointer(page, chip, "pointerup");
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => (window as unknown as Fixture).opens)).toEqual(["owned"]);
+    await chip.dispatchEvent("click", { detail: 1 });
+    expect(await page.evaluate(() => (window as unknown as Fixture).opens)).toEqual(["owned"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
 
 for (const legacy of [false, true]) {
   test(`touch resize reaches grips and commits through the existing session (legacy=${legacy})`, async () => {

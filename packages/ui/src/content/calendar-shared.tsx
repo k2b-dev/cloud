@@ -83,6 +83,8 @@ export const startCalendarEventGesture = (event: PointerEvent, begin: () => void
     if (held) next.preventDefault();
   };
   const stopClick = (next: Event) => {
+    // Enter and assistive activation are not the trailing pointer click.
+    if (next instanceof MouseEvent && next.detail === 0) return;
     next.preventDefault();
     next.stopPropagation();
     removeClick();
