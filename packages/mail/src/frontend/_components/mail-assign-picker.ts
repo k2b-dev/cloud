@@ -31,7 +31,7 @@ export const chooseMailAssignee = (params: { mailboxId: string; currentUserId: s
   const userItem = (user: MailAssignableUser): PromptSearchItem<MailAssigneeChoice> => ({
     label: user.displayName,
     desc: user.uid,
-    icon: "ti ti-user",
+    icon: user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
     previewUrl: avatarUrl(user),
     value: { mode: "add", userId: user.id, name: user.displayName },
   });

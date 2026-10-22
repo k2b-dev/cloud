@@ -178,7 +178,7 @@ Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zw
 | `trashMessage` | `message` | Verschiebt die Nachricht in den Papierkorbordner des Postfachs |
 | `junkMessage` | `message` | Verschiebt die Nachricht in den Spamordner des Postfachs |
 | `addFlag` / `removeFlag` | `message`, `flag` | Ändert `seen`, `answered`, `flagged` oder `draft` über das Befehlsjournal des Anbieters |
-| `assignConversation` | `conversation`, `user` | Ersetzt die zugewiesenen Personen durch eine Person, die zugewiesen werden kann, anhand ihres Namens oder ihrer ID; `null` entfernt alle Zuweisungen |
+| `assignConversation` | `conversation`, `user` | Ersetzt die Zuständigen durch eine berechtigte Person, einen Agenten oder ein eigenständiges Dienstkonto, anhand des exakten Namens oder der UUID; `null` entfernt alle Zuweisungen |
 | `setConversationStatus` | `conversation`, `status` | Setzt `needs_action`, `waiting` oder `done` |
 | `setConversationSummary` | `conversation`, `summary` | Ersetzt die bearbeitbare Zusammenfassung der Unterhaltung |
 | `ensureConversationReference` | `conversation`; optional `saveAs` | Vergibt die permanente Postfachreferenz oder verwendet sie erneut und speichert optional das Ergebnis |

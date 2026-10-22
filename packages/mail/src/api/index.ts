@@ -256,6 +256,10 @@ const mailFocusQuerySchema = cursorQuerySchema.extend({
     .describe("Comma-separated mailbox IDs whose conversations leave the list and view counts, such as mailboxes hidden in the overview"),
 });
 const collaboratorQuerySchema = z.object({
+  self: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
   search: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });

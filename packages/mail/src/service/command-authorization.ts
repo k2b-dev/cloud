@@ -73,7 +73,7 @@ export const commandVisibleTo = (access: MailboxAccess, mailboxId: string) =>
   access.scope === "mailbox"
     ? sql`true`
     : sql`(
-  c.access_subject_kind = 'user' AND c.access_subject_id = ${access.userId}::uuid
+  c.access_subject_kind = ${access.serviceAccountId ? "service_account" : "user"} AND c.access_subject_id = ${access.userId ?? access.serviceAccountId}::uuid
   AND c.actor_kind IN ('user', 'service_account')
   AND ${commandTargetVisibleTo(access, sql`c.kind`, sql`c.target`, mailboxId, sql`c.id`)}
 )`;
@@ -219,14 +219,16 @@ const commandPrincipalAuthorization = async (
   if (mailboxRank > 0) return mailboxRank >= requiredRank(permission);
   if (
     permission !== "write" ||
-    command.access_subject_kind !== "user" ||
     !command.access_subject_id ||
     !command.kind ||
     !conversationCommandKinds.has(command.kind) ||
     (command.actor_kind !== "user" && command.actor_kind !== "service_account")
   )
     return false;
-  const subject: AccessSubject = { type: "user", userId: command.access_subject_id };
+  const subject: AccessSubject =
+    command.access_subject_kind === "service_account"
+      ? { type: "service_account", serviceAccountId: command.access_subject_id }
+      : { type: "user", userId: command.access_subject_id };
   const [grant] = await db<{ authorized: boolean }[]>`
     SELECT EXISTS (
       SELECT 1 FROM mail.mailbox_assigned_access assigned
@@ -237,7 +239,10 @@ const commandPrincipalAuthorization = async (
         AND ${mailboxAccessPrincipalCondition(subject)}
     ) AS authorized
   `;
-  return grant?.authorized === true ? { scope: "assigned", permission: "write", userId: command.access_subject_id } : false;
+  if (grant?.authorized !== true) return false;
+  return subject.type === "service_account"
+    ? { scope: "assigned", permission: "write", serviceAccountId: subject.serviceAccountId }
+    : { scope: "assigned", permission: "write", userId: command.access_subject_id };
 };
 
 /** Principal checks run once per principal; assigned target checks run once per principal group. */

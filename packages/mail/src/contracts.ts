@@ -865,7 +865,7 @@ export const mailSearchWorkStatusSchema = z
 export const mailSearchAssigneeSchema = z
   .object({
     type: z.literal("assignee").describe("Assignee search expression."),
-    userId: z.string().uuid().nullable().describe("Assigned user UUID, or null for unassigned conversations."),
+    userId: z.string().uuid().nullable().describe("Assigned user or service-account UUID, or null for unassigned conversations."),
   })
   .strict();
 export const mailSearchSnoozedSchema = z
@@ -910,7 +910,7 @@ export const mailSearchUnreadSchema = publicMailSearchReferences.unread;
 export const mailSearchFlaggedSchema = publicMailSearchReferences.flagged;
 export const mailSearchLocalTagIdSchema = publicMailSearchReferences.tag;
 export const mailSearchAssignedToMeSchema = z
-  .object({ type: z.literal("assigned_to_me").describe("Match conversations assigned to the current user.") })
+  .object({ type: z.literal("assigned_to_me").describe("Match conversations assigned to the current principal.") })
   .strict();
 
 const MAX_BOOLEAN_TREE_DEPTH = 8;
@@ -2026,7 +2026,7 @@ export const updateConversationCollaborationSchema = z
       .array(z.uuid())
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
       .optional()
-      .describe("Replace the complete assignee set; an empty array clears it."),
+      .describe("User or service-account UUIDs. Replace the complete assignee set; an empty array clears it."),
     completion: z.enum(["done", "open"]).optional(),
     snoozedUntil: z.string().datetime().nullable().optional(),
   })
@@ -2050,11 +2050,11 @@ export const assignConversationsSchema = z
     assigneeUserIds: z
       .array(z.uuid())
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
-      .describe("Users to add, remove, or replace; replace with an empty array clears all assignees."),
+      .describe("User or service-account UUIDs to add, remove, or replace; replace with an empty array clears all assignees."),
     mode: z.enum(["add", "remove", "replace"]).describe("Add to, remove from, or replace each conversation’s assignee set."),
   })
   .strict()
-  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one user");
+  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one principal");
 export type AssignConversations = z.infer<typeof assignConversationsSchema>;
 
 export const completeConversationsSchema = z
@@ -2375,7 +2375,7 @@ export const mailAutomationActionSchema = z.discriminatedUnion("kind", [
   // addLocalTag actions; they are stored as the public ID.
   z.object({ kind: z.literal("move_to_folder"), folderId: z.string().trim().min(1).max(500) }).strict(),
   z.object({ kind: z.literal("add_local_tag"), tagId: z.string().trim().min(1).max(500) }).strict(),
-  z.object({ kind: z.literal("assign_user"), userId: z.string().uuid() }).strict(),
+  z.object({ kind: z.literal("assign_user"), userId: z.string().uuid().describe("Eligible user or service-account UUID.") }).strict(),
   z.object({ kind: z.literal("set_status"), status: conversationWorkStatusSchema }).strict(),
 ]);
 export type MailAutomationAction = z.infer<typeof mailAutomationActionSchema>;

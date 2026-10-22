@@ -1229,16 +1229,36 @@ const collaborationPath = (mailboxId: string, conversationId: string): string =>
   `/mailboxes/${mailboxId}/conversations/${requireMailResourceId(conversationId, "Conversation id")}/collaboration`;
 
 const resolveAssigneeUserId = async (ctx: CloudCliContext, mailboxId: string, target: string): Promise<string> => {
-  if (target === "me") return (await ctx.readJson<{ id: string }>(await ctx.fetch("/api/me"))).id;
+  if (target === "me") {
+    const [self] = await readApi<MailAssignableUser[]>(ctx, `/mailboxes/${mailboxId}/assignable-users?self=true&limit=1`);
+    if (!self)
+      throw new Error(
+        localizeCloudCliText(ctx.options.locale, {
+          en: "Your principal is not eligible for assignment in this mailbox.",
+          de: "Dein Konto kann in diesem Postfach nicht zugewiesen werden.",
+        }),
+      );
+    return self.id;
+  }
   if (LEGACY_UUID_PATTERN.test(target)) return target;
   const query = new URLSearchParams({ search: target, limit: "200" });
   const users = await readApi<MailAssignableUser[]>(ctx, `/mailboxes/${mailboxId}/assignable-users?${query}`);
-  const match = users.find((user) => user.uid.toLowerCase() === target.toLowerCase());
+  const matches = users.filter(
+    (user) => user.uid.toLowerCase() === target.toLowerCase() || user.displayName.toLowerCase() === target.toLowerCase(),
+  );
+  if (matches.length > 1)
+    throw new Error(
+      localizeCloudCliText(ctx.options.locale, {
+        en: `Ambiguous assignee "${target}". Use a UUID: ${matches.map((user) => `${user.displayName} (${user.id})`).join(", ")}`,
+        de: `Mehrere Zuständige heißen "${target}". Verwende eine UUID: ${matches.map((user) => `${user.displayName} (${user.id})`).join(", ")}`,
+      }),
+    );
+  const match = matches[0];
   if (!match)
     throw new Error(
       localizeCloudCliText(ctx.options.locale, {
-        en: `No person with username "${target}" can be assigned in this mailbox. List them with \`cld mail conversation users\`.`,
-        de: `Niemand mit dem Benutzernamen "${target}" kann diesem Postfach zugewiesen werden. \`cld mail conversation users\` listet berechtigte Benutzer auf.`,
+        en: `No eligible principal named "${target}" can be assigned in this mailbox. List them with \`cld mail conversation users\`.`,
+        de: `Kein berechtigtes Konto mit dem Namen "${target}" kann diesem Postfach zugewiesen werden. \`cld mail conversation users\` listet berechtigte Benutzer auf.`,
       }),
     );
   return match.id;
@@ -1279,7 +1299,7 @@ const printCollaborators = (ctx: CloudCliContext, users: MailAssignableUser[]): 
       { key: "scope", label: localizeCloudCliText(ctx.options.locale, { en: "SCOPE", de: "BEREICH" }) },
       { key: "permission", label: "PERMISSION" },
       { key: "access", label: "ACCESS" },
-      { key: "id", label: "USER ID" },
+      { key: "id", label: "ACCOUNT ID" },
     ],
   );
 
@@ -2039,8 +2059,8 @@ const everydayCommands = (t: Translate) => {
         }),
         assignee: flag.stringList({
           description: t({
-            en: "Eligible user ID, username, or me; repeatable or comma-separated; replaces all assignees",
-            de: "Berechtigte Benutzer-ID, Benutzername oder me; wiederholbar oder kommagetrennt; ersetzt alle Zuständigen",
+            en: "Eligible user or service-account UUID, exact name, or me; repeatable or comma-separated; replaces all assignees",
+            de: "Berechtigte Benutzer- oder Dienstkonto-UUID, exakter Name oder me; wiederholbar oder kommagetrennt; ersetzt alle Zuständigen",
           }),
         }),
         unassign: flag.boolean({ description: t({ en: "Clear all assignees", de: "Alle Zuweisungen aufheben" }) }),
@@ -2116,16 +2136,16 @@ const everydayCommands = (t: Translate) => {
         to: flag.string({
           valueLabel: "user",
           description: t({
-            en: "Comma-separated user IDs, exact usernames, me, or none",
-            de: "Kommagetrennte Benutzer-IDs, exakte Benutzernamen, me oder none",
+            en: "Comma-separated user or service-account UUIDs, exact names, me, or none",
+            de: "Kommagetrennte Benutzer- oder Dienstkonto-UUIDs, exakte Namen, me oder none",
           }),
         }),
         replace: flag.boolean({ description: t({ en: "Replace all assignees with --to", de: "Alle Zuständigen durch --to ersetzen" }) }),
         remove: flag.string({
           valueLabel: "users",
           description: t({
-            en: "Remove comma-separated user IDs, usernames, or me",
-            de: "Kommagetrennte Benutzer-IDs, Benutzernamen oder me entfernen",
+            en: "Remove comma-separated user or service-account UUIDs, exact names, or me",
+            de: "Kommagetrennte Benutzer- oder Dienstkonto-UUIDs, exakte Namen oder me entfernen",
           }),
         }),
       },

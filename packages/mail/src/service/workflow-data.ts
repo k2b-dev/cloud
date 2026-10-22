@@ -185,7 +185,7 @@ const snapshotColumns = sql`
   pg_current_snapshot()::text AS link_snapshot,
   pg_current_xact_id_if_assigned()::text AS link_xid,
   COALESCE(pg_sequence_last_value('mail.conversation_link_seq'), 0)::text AS link_seq,
-  COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
+  COALESCE((SELECT array_agg(a.principal_id::text ORDER BY a.assigned_at, a.principal_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
   conversation.work_status,
   conversation.latest_message_at
 `;

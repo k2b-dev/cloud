@@ -7,9 +7,16 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
 import { MailboxListInputSchema } from "../capability-contracts";
+import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import { getMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import { loadAssignmentReviewChange } from "../service/capability-review-readers";
+import { listLapsedAssignees } from "../service/collaborators";
+import { commandStillAuthorized, type StoredCommandAuthorization } from "../service/command-authorization";
+import { mailboxLiveKeys } from "../service/live-channels";
 import { createMailbox } from "../service/mailboxes";
+import { loadMailWorkflowCatalog } from "../service/workflow-catalog-service";
 import app from ".";
 
 // The production API stack includes the Valkey-backed rate limit, so these requests need all three services.
@@ -45,11 +52,11 @@ suite("Mail REST access for service-account credentials", () => {
   let owner: User;
   let verifyAccessToken: { mockRestore: () => void } | undefined;
 
-  const insertAccount = async (name: string, boundMailboxId?: string) => {
+  const insertAccount = async (name: string, boundMailboxId?: string, kind: "agent" | "standalone" = "agent") => {
     const [row] = boundMailboxId
       ? await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
           VALUES (${name}, 'resource_bound', 'mail', 'mailbox', ${boundMailboxId}) RETURNING id`
-      : await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind) VALUES (${name}, 'agent') RETURNING id`;
+      : await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind) VALUES (${name}, ${kind}) RETURNING id`;
     if (!row) throw new Error("Service account was not created");
     accountIds.push(row.id);
     return row.id;
@@ -254,5 +261,308 @@ suite("Mail REST access for service-account credentials", () => {
     expect(personal.data.credential.scopes).toEqual([]);
     expect(await listedPermission(personal.data.token)).toBe("admin");
     expect((await createTag(personal.data.token)).status).toBe(200);
+  });
+  // Real message placements make list, search, focus, and worker authorization exercise their SQL boundaries.
+  const conversationFixture = async (label: string) => {
+    const stamp = new Date("2026-10-01T12:00:00.000Z");
+    const [resource] = await sql<{ id: string }[]>`INSERT INTO mail.remote_resources
+      (mailbox_id, remote_locator, server_identity, scope_fingerprint, status)
+      VALUES (${mailboxId}::uuid, '{}'::jsonb, '{}'::jsonb, ${"a".repeat(64)}, 'active')
+      ON CONFLICT (mailbox_id) DO UPDATE SET mailbox_id = EXCLUDED.mailbox_id RETURNING id`;
+    const [folder] = await sql<{ id: string }[]>`INSERT INTO mail.folders
+      (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES (${newShortId()}, ${resource!.id}::uuid, ${label}, 'Inbox', 'inbox', 'current') RETURNING id`;
+    const [conversation] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.conversations
+      (short_id, mailbox_id, subject, participant_summary, latest_inbound_at, latest_message_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${label}, 'customer@example.test', ${stamp}, ${stamp}) RETURNING id, short_id`;
+    const [message] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.message_contents
+      (short_id, mailbox_id, message_id, subject, normalized_subject, internal_date, size_bytes, content_hash, hydration_status, plain_text)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<${label}-${suffix}@example.test>`}, ${label}, ${label.toLowerCase()},
+        ${stamp}, 1, ${new Bun.CryptoHasher("sha256").update(label).digest("hex")}, 'complete', ${label}) RETURNING id, short_id`;
+    await sql`INSERT INTO mail.message_addresses (message_id, role, position, email, normalized_email)
+      VALUES (${message!.id}::uuid, 'from', 0, 'customer@example.test', 'customer@example.test')`;
+    await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
+      VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 0)`;
+    const [ref] = await sql<{ id: string }[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${folder!.id}::uuid, ${message!.id}::uuid, 1, 1) RETURNING id`;
+    await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
+      VALUES (${ref!.id}::uuid, ${folder!.id}::uuid, ${message!.id}::uuid, ARRAY[]::text[])`;
+    return { id: conversation!.id, shortId: conversation!.short_id, messageId: message!.short_id, refId: ref!.id };
+  };
+
+  for (const kind of ["agent", "standalone"] as const) {
+    test(`${kind}: a person grants and assigns the named account; its token accesses only assigned conversations, within scopes and until revoked`, async () => {
+      const name = `Mail ${kind} assignee ${suffix}`;
+      const accountId = await insertAccount(name, undefined, kind);
+      const token = await tokenFor(accountId, ["mail:write"]);
+      const reader = await tokenFor(accountId, ["mail:read"]);
+      const assigned = await conversationFixture(`${kind} assigned`);
+      const elsewhere = await conversationFixture(`${kind} elsewhere`);
+      const base = `/mailboxes/${mailboxShortId}`;
+      const path = (id: string) => `${base}/conversations/${id}/collaboration`;
+      expect(
+        (
+          await call("owner-session", `${base}/access`, {
+            method: "POST",
+            body: {
+              principal: { type: "service_account", serviceAccountId: accountId },
+              permission: "admin",
+              scope: "assigned",
+            },
+          })
+        ).status,
+      ).toBe(400);
+      const grantResponse = await call("owner-session", `${base}/access`, {
+        method: "POST",
+        body: {
+          principal: { type: "service_account", serviceAccountId: accountId },
+          permission: "write",
+          scope: "assigned",
+        },
+      });
+      expect(grantResponse.status).toBe(200);
+      const entry = (await grantResponse.json()) as { id: string; scope: string };
+      expect(entry.scope).toBe("assigned");
+      const listedAccess = await call("owner-session", `${base}/access`);
+      expect(await listedAccess.json()).toContainEqual(
+        expect.objectContaining({
+          id: entry.id,
+          displayName: name,
+          serviceAccountKind: kind,
+        }),
+      );
+      // The grant alone confers no conversation access.
+      expect((await call(token, path(assigned.shortId))).status).toBe(404);
+      const eligible = await call("owner-session", `${base}/assignable-users?search=${encodeURIComponent(name)}`);
+      const principal = {
+        id: accountId,
+        uid: name,
+        displayName: name,
+        avatarHash: null,
+        type: "service_account" as const,
+        serviceAccountKind: kind,
+      };
+      expect(await eligible.json()).toEqual([expect.objectContaining({ ...principal, scope: "assigned" })]);
+      const catalog = await loadMailWorkflowCatalog({
+        context: {
+          actor: { kind: "user", user: owner },
+          accessSubject: { type: "user", userId: owner.id },
+        },
+        mailboxId,
+      });
+      expect(catalog.assignableUsers.refs.get(name)).toEqual({ id: accountId, name, type: "service_account", serviceAccountKind: kind });
+      expect(catalog.notificationUsers.refs.has(name)).toBe(false);
+      const change = await loadAssignmentReviewChange({
+        mailboxId,
+        conversationIds: [assigned.shortId],
+        assigneeUserIds: [accountId],
+        mode: "add",
+        actorUserId: owner.id,
+      });
+      expect(change.requested).toEqual([{ name }]);
+      expect(change.granted).toEqual([{ name }]);
+      expect(change.addedTotal).toBe(0); // Accounts have no user notification inbox.
+      const assign = (mode: "add" | "remove") =>
+        call("owner-session", `${base}/conversations/assign`, {
+          method: "POST",
+          body: {
+            conversationIds: [assigned.shortId],
+            assigneeUserIds: [accountId],
+            mode,
+          },
+        });
+      const assignedResponse = await assign("add");
+      expect(assignedResponse.status).toBe(200);
+      expect(await assignedResponse.json()).toMatchObject({
+        assignees: [principal],
+        results: [{ conversationId: assigned.shortId, status: "ok" }],
+      });
+      const [stored] = await sql<{ user_id: string | null; service_account_id: string }[]>`
+        SELECT user_id, service_account_id FROM mail.conversation_assignees WHERE conversation_id = ${assigned.id}::uuid`;
+      expect(stored).toEqual({ user_id: null, service_account_id: accountId });
+      const stateResponse = await call(token, path(assigned.shortId));
+      expect(stateResponse.status).toBe(200);
+      const state = (await stateResponse.json()) as { revision: number; assignees: unknown[] };
+      expect(state.assignees).toEqual([principal]);
+      const preview = await call(token, `${base}/conversations/${assigned.shortId}/preview`);
+      expect(preview.status).toBe(200);
+      expect(await preview.json()).toMatchObject({ assigneeName: name });
+      expect((await call(token, path(elsewhere.shortId))).status).toBe(404);
+      expect((await call(token, `${base}/messages/${assigned.messageId}`)).status).toBe(200);
+      expect((await call(token, `${base}/messages/${elsewhere.messageId}`)).status).toBe(404);
+      for (const expression of [{ type: "assigned_to_me" }, { type: "assignee", userId: accountId }] as const) {
+        const search = await call(token, `${base}/search`, { method: "POST", body: { expression, sort: "newest", limit: 20 } });
+        expect(search.status).toBe(200);
+        expect(await search.json()).toMatchObject({
+          items: [expect.objectContaining({ conversationId: assigned.shortId, assigneeUserIds: [accountId] })],
+        });
+      }
+      const focus = await call(token, "/overview/conversations?view=mine&limit=20");
+      expect(focus.status).toBe(200);
+      expect(await focus.json()).toMatchObject({ items: [expect.objectContaining({ id: assigned.shortId })] });
+      expect((await call(token, `${base}/conversations?view=mine`)).status).toBe(200);
+      const authenticated = await serviceAccountCredentials.authenticateApiToken(token);
+      if (!authenticated) throw new Error("Assignment token did not authenticate");
+      const context: CapabilityExecutionContext = {
+        actor: {
+          kind: "service_account",
+          serviceAccount: authenticated.serviceAccount,
+          delegatedUser: null,
+          scopes: authenticated.credential.scopes,
+          credentialId: authenticated.credential.id,
+          credentialExpiresAt: authenticated.credential.expiresAt,
+        },
+        accessSubject: { type: "service_account", serviceAccountId: accountId },
+        user: null,
+        locale: "en",
+        requestId: `mail-assignee-${kind}`,
+        origin: "assistant",
+        signal: new AbortController().signal,
+      };
+      const read = mailCapabilities.queries["conversation.read"];
+      const readResult = await read.run({ id: assigned.shortId }, context);
+      expect(readResult.ok).toBe(true);
+      if (readResult.ok) expect(readResult.data.data.collaboration.assignees).toEqual([principal]);
+      expect((await read.run({ id: elsewhere.shortId }, context)).ok).toBe(false);
+      const access = await getMailboxAccess(context, mailboxId);
+      expect(access).toEqual({ scope: "assigned", permission: "write", serviceAccountId: accountId });
+      expect(mailboxLiveKeys(mailboxId, access!)).toEqual([`${mailboxId}:${accountId}`, `${mailboxId}:assigned`]);
+      const command: StoredCommandAuthorization = {
+        id: crypto.randomUUID(),
+        kind: "set_flags",
+        target: { remoteMessageRefId: assigned.refId },
+        mailbox_id: mailboxId,
+        actor_kind: "service_account",
+        actor_id: accountId,
+        initiator_actor_kind: null,
+        initiator_actor_id: null,
+        access_subject_kind: "service_account",
+        access_subject_id: accountId,
+        credential_scopes: authenticated.credential.scopes,
+        credential_id: authenticated.credential.id,
+        credential_expires_at: authenticated.credential.expiresAt,
+      };
+      expect(await commandStillAuthorized(command, "write")).toBe(true);
+      expect(await commandStillAuthorized({ ...command, target: { remoteMessageRefId: elsewhere.refId } }, "write")).toBe(false);
+      const patch = { expectedRevision: state.revision, snoozedUntil: "2099-01-01T12:00:00.000Z" };
+      expect((await call(reader, path(assigned.shortId), { method: "PATCH", body: patch })).status).toBe(403);
+      expect((await call(token, path(assigned.shortId), { method: "PATCH", body: patch })).status).toBe(200);
+      expect((await call(token, path(elsewhere.shortId), { method: "PATCH", body: { ...patch, expectedRevision: 1 } })).status).toBe(404);
+      expect(
+        (
+          await call(token, path(assigned.shortId), {
+            method: "PATCH",
+            body: { expectedRevision: state.revision + 1, assigneeUserIds: [accountId] },
+          })
+        ).status,
+      ).toBe(403);
+      expect((await createTag(token)).status).toBe(403); // Assigned write is never mailbox-wide write.
+      expect((await call(await tokenFor(accountId, ["openid"]), path(assigned.shortId))).status).toBe(403);
+      expect((await call("owner-session", `${base}/access/${entry.id}`, { method: "PATCH", body: { permission: "read" } })).status).toBe(
+        200,
+      );
+      expect((await call(token, path(assigned.shortId))).status).toBe(200);
+      expect(
+        (await call(token, path(assigned.shortId), { method: "PATCH", body: { expectedRevision: state.revision + 1, snoozedUntil: null } }))
+          .status,
+      ).toBe(403);
+      expect((await call("owner-session", `${base}/access/${entry.id}`, { method: "PATCH", body: { permission: "write" } })).status).toBe(
+        200,
+      );
+      await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${accountId}::uuid`;
+      expect((await call(token, path(assigned.shortId))).status).not.toBe(200);
+      expect(await listLapsedAssignees({ mailboxIds: [mailboxId] })).toContainEqual({ mailbox_id: mailboxId, user_id: accountId });
+      expect(await commandStillAuthorized(command, "write")).toBe(false);
+      await sql`UPDATE auth.service_accounts SET status = 'active' WHERE id = ${accountId}::uuid`;
+      expect((await assign("remove")).status).toBe(200);
+      expect((await call(token, path(assigned.shortId))).status).toBe(404);
+      expect(await commandStillAuthorized(command, "write")).toBe(false);
+      const beforeRestore = (await (await call("owner-session", path(assigned.shortId))).json()) as { revision: number };
+      const restored = await call("owner-session", path(assigned.shortId), {
+        method: "PATCH",
+        body: {
+          expectedRevision: beforeRestore.revision,
+          assigneeUserIds: [accountId],
+        },
+      });
+      expect(restored.status).toBe(200);
+      expect(await restored.json()).toMatchObject({ assignees: [principal] });
+      expect((await call("owner-session", `${base}/access/${entry.id}`, { method: "DELETE" })).status).toBe(200);
+      expect((await call(token, path(assigned.shortId))).status).toBe(403);
+      expect((await call(token, path(assigned.shortId), { method: "PATCH", body: patch })).status).toBe(403);
+      expect(await commandStillAuthorized(command, "write")).toBe(false);
+      const noLongerEligible = await call("owner-session", `${base}/assignable-users?search=${encodeURIComponent(name)}`);
+      expect(await noLongerEligible.json()).toEqual([]);
+      expect(
+        (
+          await call("owner-session", `${base}/conversations/assign`, {
+            method: "POST",
+            body: {
+              conversationIds: [elsewhere.shortId],
+              assigneeUserIds: [accountId],
+              mode: "add",
+            },
+          })
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await call("owner-session", `${base}/access`, {
+            method: "POST",
+            body: {
+              principal: { type: "service_account", serviceAccountId: accountId },
+              permission: "write",
+              scope: "assigned",
+            },
+          })
+        ).status,
+      ).toBe(200);
+      expect((await call(reader, path(assigned.shortId))).status).toBe(200);
+      await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now()
+        WHERE id = ${authenticated.credential.id}::uuid`;
+      expect((await call(token, path(assigned.shortId))).status).not.toBe(200);
+      expect((await call(reader, path(assigned.shortId))).status).toBe(200);
+      expect(await commandStillAuthorized(command, "write")).toBe(false);
+      const [currentGrant] = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_assigned_access
+        WHERE mailbox_id = ${mailboxId}::uuid AND access_id IN (SELECT id FROM auth.access WHERE service_account_id = ${accountId}::uuid)`;
+      expect(
+        (
+          await call("owner-session", `${base}/access/${currentGrant!.access_id}`, {
+            method: "PATCH",
+            body: { permission: "write", scope: "mailbox" },
+          })
+        ).status,
+      ).toBe(200);
+      const self = await call(reader, `${base}/assignable-users?self=true&limit=1`);
+      expect(self.status).toBe(200);
+      expect(await self.json()).toEqual([expect.objectContaining(principal)]);
+    });
+  }
+
+  test("assignee eligibility keeps resource bindings and excludes personal API-key identities", async () => {
+    const matching = await insertAccount(`Matching bound ${suffix}`, mailboxId);
+    const foreign = await insertAccount(`Other bound ${suffix}`, crypto.randomUUID());
+    const personal = await serviceAccountCredentials.createUserApiToken({
+      user: owner,
+      browserSignIn: await createTestBrowserSignIn(owner.id),
+      name: `Personal assignee ${suffix}`,
+    });
+    if (!personal.ok) throw new Error(personal.error.message);
+    const personalId = personal.data.credential.serviceAccountId;
+    for (const id of [matching, foreign, personalId]) await grant(id, "write");
+    const response = await call("owner-session", `/mailboxes/${mailboxShortId}/assignable-users?limit=200`);
+    const eligible = (await response.json()) as Array<{ id: string; serviceAccountKind?: string }>;
+    expect(eligible).toContainEqual(expect.objectContaining({ id: matching, serviceAccountKind: "resource_bound" }));
+    expect(eligible.some((principal) => principal.id === foreign || principal.id === personalId)).toBe(false);
+    const conversation = await conversationFixture("bound eligibility");
+    for (const id of [foreign, personalId])
+      expect(
+        (
+          await call("owner-session", `/mailboxes/${mailboxShortId}/conversations/assign`, {
+            method: "POST",
+            body: { conversationIds: [conversation.shortId], assigneeUserIds: [id], mode: "replace" },
+          })
+        ).status,
+      ).toBe(400);
   });
 });

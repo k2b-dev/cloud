@@ -2353,8 +2353,13 @@ const requireCommentForReview = async (
 const draftSlot = (id: string | undefined, subject: string, locale?: string) =>
   reviewObject(subject || mailCapabilityMessages(locale).noSubject, id ? draftRef(id) : undefined);
 const conversationSlot = (id: string, subject: string) => reviewObject(subject, conversationRef(id));
-const assignmentPeople = (ids: string[], known: { id: string; displayName: string }[]) =>
-  reviewPeople(ids.map((userId) => ({ userId, name: reviewLine(known.find((p) => p.id === userId)?.displayName ?? userId) })));
+const assignmentPeople = (ids: string[], known: { id: string; displayName: string; type?: "user" | "service_account" }[]) =>
+  reviewPeople(
+    ids.map((id) => {
+      const principal = known.find((p) => p.id === id);
+      return { ...(principal?.type === "service_account" ? {} : { userId: id }), name: reviewLine(principal?.displayName ?? id) };
+    }),
+  );
 const tagSlot = (id: string | undefined, name: string) =>
   reviewObject(tagLabel(name), id ? { type: "mail.tag", id } : undefined, "ti ti-tag");
 const fileSlot = (name: string) => reviewObject(name, undefined, "ti ti-paperclip");
@@ -2380,7 +2385,11 @@ const draftAudienceOptions = async (
 const assignmentOptions = (change: reviewReaders.AssignmentReviewChange, locale?: string): MailReviewOptions => {
   const copy = mailReviewCopy(locale);
   return {
-    ...(change.addedTotal ? { ask: "involves_people" as const } : change.removedTotal ? { ask: "changes_access" as const } : {}),
+    ...(change.addedTotal
+      ? { ask: "involves_people" as const }
+      : change.removedTotal || change.grantedTotal
+        ? { ask: "changes_access" as const }
+        : {}),
     consequences: [
       ...(change.addedTotal
         ? [
@@ -2394,6 +2403,9 @@ const assignmentOptions = (change: reviewReaders.AssignmentReviewChange, locale?
               },
             },
           ]
+        : []),
+      ...(change.grantedTotal
+        ? [{ text: copy.grantedAccess, slots: { people: { ...reviewPeople(change.granted), total: change.grantedTotal } } }]
         : []),
       ...(change.removedTotal
         ? [

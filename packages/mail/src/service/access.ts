@@ -53,7 +53,7 @@ type DbAccess = {
 
 /**
  * Where a mailbox grant applies: `mailbox` covers every conversation, `assigned` only the
- * conversations assigned to the person. Assigned grants live in `mail.mailbox_assigned_access`
+ * conversations assigned to the principal. Assigned grants live in `mail.mailbox_assigned_access`
  * and allow read or write; they never manage the mailbox.
  */
 export type MailboxAccessScope = "mailbox" | "assigned";
@@ -82,13 +82,10 @@ const assertShareablePrincipal = (principal: Principal): Result<void> => {
   return fail(err.badInput("Mailboxes can be shared only with users, groups, or service accounts"));
 };
 
-/** Assigned-only access follows conversations assigned to people, so only people and groups can hold it. */
+/** Assigned-only grants cover a principal's assignments; they never confer mailbox administration. */
 const assertGrantShape = (principal: Principal, permission: Exclude<PermissionLevel, "none">, scope: MailboxAccessScope): Result<void> => {
   const shareable = assertShareablePrincipal(principal);
   if (!shareable.ok || scope === "mailbox") return shareable;
-  if (principal.type !== "user" && principal.type !== "group") {
-    return fail(err.badInput("Access to assigned conversations can be given only to people and groups"));
-  }
   if (permission === "admin") return fail(err.badInput("Access to assigned conversations allows read or write, not administration"));
   return ok();
 };
@@ -246,24 +243,24 @@ const assignedPermission = (permission: PermissionLevel): PermissionLevel => (pe
 
 /**
  * What a request may see in one mailbox: every conversation (`mailbox`), or only the conversations
- * assigned to its person (`assigned`). A mailbox-wide grant wins over an assigned-only one.
+ * assigned to its principal (`assigned`). A mailbox-wide grant wins over an assigned-only one.
  */
 export type MailboxAccess =
   | { scope: "mailbox"; permission: Exclude<PermissionLevel, "none"> }
-  | { scope: "assigned"; permission: "read" | "write"; userId: string };
-
-/** The person whose assignments an assigned-only grant follows: the request's user, also behind a personal API key. */
-const assignedAccessUserId = (context: Pick<MailRequestContext, "accessSubject">): string | null =>
-  context.accessSubject.type === "user" ? context.accessSubject.userId : null;
+  | ({ scope: "assigned"; permission: "read" | "write" } & (
+      | { userId: string; serviceAccountId?: never }
+      | { serviceAccountId: string; userId?: never }
+    ));
 
 const accessFromGrants = (
   context: Pick<MailRequestContext, "accessSubject">,
   grants: { mailbox: PermissionLevel; assigned: PermissionLevel },
 ): MailboxAccess | null => {
   if (grants.mailbox !== "none") return { scope: "mailbox", permission: grants.mailbox };
-  const userId = assignedAccessUserId(context);
-  if (!userId || (grants.assigned !== "read" && grants.assigned !== "write")) return null;
-  return { scope: "assigned", permission: grants.assigned, userId };
+  if (grants.assigned !== "read" && grants.assigned !== "write") return null;
+  return context.accessSubject.type === "service_account"
+    ? { scope: "assigned", permission: grants.assigned, serviceAccountId: context.accessSubject.serviceAccountId }
+    : { scope: "assigned", permission: grants.assigned, userId: context.accessSubject.userId };
 };
 
 export const getMailboxAccess = async (
@@ -296,7 +293,6 @@ export const readableMailboxGrants = (context: MailRequestContext) => sql`
     SELECT mailbox_id, access_id, 'mailbox'::text AS scope FROM mail.mailbox_access
     UNION ALL
     SELECT mailbox_id, access_id, 'assigned'::text AS scope FROM mail.mailbox_assigned_access
-    WHERE ${context.accessSubject.type === "user"}
   ) grants
   JOIN auth.access a ON a.id = grants.access_id
   JOIN mail.mailboxes mailbox ON mailbox.id = grants.mailbox_id AND mailbox.deleted_at IS NULL
@@ -316,7 +312,7 @@ export const conversationVisibleTo = (access: MailboxAccess, conversationId: Bun
     : sql`(${conversationId}) IN (
         SELECT visible_assignee.conversation_id
         FROM mail.conversation_assignees visible_assignee
-        WHERE visible_assignee.user_id = ${access.userId}::uuid
+        WHERE visible_assignee.principal_id = ${access.userId ?? access.serviceAccountId}::uuid
       )`;
 
 /** Whether message `messageId` (a SQL expression) belongs to a conversation visible with `access`; scoped like `conversationVisibleTo`. */
@@ -327,7 +323,7 @@ export const messageVisibleTo = (access: MailboxAccess, messageId: Bun.SQL.Query
         SELECT visible_link.message_id
         FROM mail.conversation_messages visible_link
         JOIN mail.conversation_assignees visible_assignee ON visible_assignee.conversation_id = visible_link.conversation_id
-        WHERE visible_assignee.user_id = ${access.userId}::uuid
+        WHERE visible_assignee.principal_id = ${access.userId ?? access.serviceAccountId}::uuid
       )`;
 
 /**
@@ -413,13 +409,15 @@ export const getMailboxAccesses = async (
       getEffectivePermissions({ accessIds: rows.filter((row) => row.scope === scope).map((row) => row.access_id), subjects }),
     ),
   );
-  return readers.map((reader, position) =>
-    isResourceBoundToMailbox(reader, mailboxId)
-      ? accessFromGrants(reader, {
-          mailbox: capByCredentialScopes(reader, mailboxGranted?.[position] ?? "none"),
-          assigned: capByCredentialScopes(reader, assignedPermission(assignedGranted?.[position] ?? "none")),
-        })
-      : null,
+  return Promise.all(
+    readers.map(async (reader, position) =>
+      (await isCurrentActorActive(reader)) && isResourceBoundToMailbox(reader, mailboxId)
+        ? accessFromGrants(reader, {
+            mailbox: capByCredentialScopes(reader, mailboxGranted?.[position] ?? "none"),
+            assigned: capByCredentialScopes(reader, assignedPermission(assignedGranted?.[position] ?? "none")),
+          })
+        : null,
+    ),
   );
 };
 

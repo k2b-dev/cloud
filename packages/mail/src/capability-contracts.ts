@@ -590,7 +590,18 @@ export const ConversationGetDataSchema = z
     collaboration: z
       .object({
         assignees: z
-          .array(z.object({ id: UuidSchema, uid: z.string(), displayName: z.string(), avatarHash: NullableTextSchema }).strict())
+          .array(
+            z
+              .object({
+                id: UuidSchema,
+                uid: z.string(),
+                displayName: z.string(),
+                avatarHash: NullableTextSchema,
+                type: z.enum(["user", "service_account"]).optional(),
+                serviceAccountKind: z.enum(["standalone", "agent", "resource_bound"]).optional(),
+              })
+              .strict(),
+          )
           .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT),
         workStatus: z.enum(["needs_action", "waiting", "done"]),
         snoozedUntil: NullableTimestampSchema,
@@ -982,7 +993,14 @@ export const TagDeleteInputSchema = z
 export const DeletedDataSchema = z.object({ deleted: z.literal(true) }).strict();
 
 const CollaboratorDataSchema = z
-  .object({ id: UuidSchema, uid: z.string(), displayName: z.string(), avatarHash: NullableTextSchema })
+  .object({
+    id: UuidSchema,
+    uid: z.string(),
+    displayName: z.string(),
+    avatarHash: NullableTextSchema,
+    type: z.enum(["user", "service_account"]).optional(),
+    serviceAccountKind: z.enum(["standalone", "agent", "resource_bound"]).optional(),
+  })
   .strict();
 export const CollaborationDataSchema = z
   .object({
@@ -1005,11 +1023,11 @@ export const ConversationAssignInputSchema = z
     assigneeUserIds: z
       .array(UuidSchema)
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
-      .describe("User UUIDs to add, remove, or replace; empty with replace clears all assignees."),
-    mode: z.enum(["add", "remove", "replace"]).describe("Add users, remove users, or replace the entire assignee set."),
+      .describe("User or service-account UUIDs to add, remove, or replace; empty with replace clears all assignees."),
+    mode: z.enum(["add", "remove", "replace"]).describe("Add principals, remove principals, or replace the entire assignee set."),
   })
   .strict()
-  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one user");
+  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one principal");
 export const ConversationAssignBatchInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,
@@ -1022,11 +1040,11 @@ export const ConversationAssignBatchInputSchema = z
     assigneeUserIds: z
       .array(UuidSchema)
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
-      .describe("User UUIDs to add, remove, or replace; empty with replace clears all assignees."),
-    mode: z.enum(["add", "remove", "replace"]).describe("Add users, remove users, or replace the entire assignee set."),
+      .describe("User or service-account UUIDs to add, remove, or replace; empty with replace clears all assignees."),
+    mode: z.enum(["add", "remove", "replace"]).describe("Add principals, remove principals, or replace the entire assignee set."),
   })
   .strict()
-  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one user");
+  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one principal");
 export const ConversationAssignBatchDataSchema = z
   .object({
     assignees: z.array(CollaboratorDataSchema).max(MAIL_CONVERSATION_ASSIGNEE_LIMIT),

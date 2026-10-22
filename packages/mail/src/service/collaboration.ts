@@ -21,7 +21,7 @@ import {
   requireVisibleMessages,
 } from "./access";
 import { projectActivityItems } from "./activity-public";
-import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
 import { resolveMailExecution } from "./execution";
@@ -37,6 +37,8 @@ export type MailCollaborator = {
   uid: string;
   displayName: string;
   avatarHash: string | null;
+  type?: "user" | "service_account";
+  serviceAccountKind?: "standalone" | "agent" | "resource_bound";
 };
 
 export type MailAssignableUser = MailCollaborator & {
@@ -221,11 +223,12 @@ const activityActorIdentity = (
   return { kind: actor.kind, id: null };
 };
 
-const collaboratorFromAccessUser = (user: AccessUser): MailCollaborator => ({
+const collaboratorFromAccessUser = (user: MailCollaborator): MailCollaborator => ({
   id: user.id,
   uid: user.uid,
   displayName: user.displayName,
   avatarHash: user.avatarHash,
+  ...(user.type ? { type: user.type, serviceAccountKind: user.serviceAccountKind } : {}),
 });
 
 const accessUserDescription = (user: AccessUser): string =>
@@ -270,23 +273,27 @@ const validateAssignees = async (mailboxId: string, userIds: readonly string[], 
   const found = new Set(users.map((user) => user.id));
   return ids.every((id) => found.has(id))
     ? ok()
-    : fail(err.badInput("Assignees must be active users with mailbox write access or assigned access"));
+    : fail(err.badInput("Assignees must be active principals with mailbox write access or assigned access"));
 };
 
 export const listAssigneeCollaborators = async (userIds: readonly string[], db: SqlClient = sql): Promise<MailCollaborator[]> => {
   const ids = [...new Set(userIds)];
   if (ids.length === 0) return [];
   const users = await db<MailCollaborator[]>`
-    SELECT id, uid, COALESCE(NULLIF(display_name, ''), uid) AS "displayName", avatar_hash AS "avatarHash"
+    SELECT id, uid, COALESCE(NULLIF(display_name, ''), uid) AS "displayName", avatar_hash AS "avatarHash", NULL::text AS type, NULL::text AS "serviceAccountKind"
     FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${ids}::jsonb))
+    UNION ALL
+    SELECT id, name AS uid, name AS "displayName", NULL::text AS "avatarHash", 'service_account' AS type, kind AS "serviceAccountKind"
+    FROM auth.service_accounts WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${ids}::jsonb))
+      AND kind IN ('standalone', 'agent', 'resource_bound')
   `;
-  return ids.flatMap((id) => users.filter((user) => user.id === id));
+  return ids.flatMap((id) => users.filter((user) => user.id === id).map(collaboratorFromAccessUser));
 };
 
 export const loadConversationAssigneeIds = async (db: SqlClient, conversationId: string): Promise<string[]> => {
   const rows = await db<{ user_id: string }[]>`
-    SELECT user_id FROM mail.conversation_assignees
-    WHERE conversation_id = ${conversationId}::uuid ORDER BY assigned_at, user_id
+    SELECT principal_id AS user_id FROM mail.conversation_assignees
+    WHERE conversation_id = ${conversationId}::uuid ORDER BY assigned_at, principal_id
   `;
   return rows.map((row) => row.user_id);
 };
@@ -306,25 +313,27 @@ export const writeConversationAssignees = async (
   const removed = await tx<{ user_id: string }[]>`
     DELETE FROM mail.conversation_assignees
     WHERE conversation_id = ${params.conversationId}::uuid
-      AND user_id NOT IN (SELECT value::uuid FROM jsonb_array_elements_text(${ids}::jsonb))
-    RETURNING user_id
+      AND principal_id NOT IN (SELECT value::uuid FROM jsonb_array_elements_text(${ids}::jsonb))
+    RETURNING principal_id AS user_id
   `;
   // Ordinality preserves request order even when several additions share one transaction timestamp.
   const additions = ids.map((userId, index) => ({ user_id: userId, assigned_at: params.assignedAt?.get(userId) ?? null, ordinal: index }));
   await tx`
-    INSERT INTO mail.conversation_assignees (conversation_id, user_id, assigned_at)
-    SELECT ${params.conversationId}::uuid, user_id, COALESCE(assigned_at, now() + ordinal * interval '1 microsecond')
+    INSERT INTO mail.conversation_assignees (conversation_id, user_id, service_account_id, assigned_at)
+    SELECT ${params.conversationId}::uuid, u.id, account.id, COALESCE(a.assigned_at, now() + ordinal * interval '1 microsecond')
     FROM jsonb_to_recordset(${additions}::jsonb) AS a(user_id uuid, assigned_at timestamptz, ordinal int)
+    LEFT JOIN auth.users u ON u.id = a.user_id
+    LEFT JOIN auth.service_accounts account ON account.id = a.user_id AND u.id IS NULL
     ORDER BY ordinal
-    ON CONFLICT (conversation_id, user_id) DO UPDATE
+    ON CONFLICT (conversation_id, principal_id) DO UPDATE
       SET assigned_at = CASE WHEN ${params.assignedAt !== undefined}
         THEN LEAST(mail.conversation_assignees.assigned_at, EXCLUDED.assigned_at) ELSE mail.conversation_assignees.assigned_at END
   `;
-  // Only this writer mirrors the earliest assignee for older Mail images; all reads use the join table.
+  // Only this writer mirrors the earliest human assignee for older Mail images; all reads use the join table.
   await tx`
     UPDATE mail.conversations SET assignee_user_id = (
-      SELECT user_id FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid
-      ORDER BY assigned_at, user_id LIMIT 1
+      SELECT user_id FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid AND user_id IS NOT NULL
+      ORDER BY assigned_at, principal_id LIMIT 1
     ) WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
   `;
   if (removed.length > 0) {
@@ -364,9 +373,13 @@ const loadCollaboration = async (
     SELECT
       c.id,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
-        'id', u.id, 'uid', u.uid, 'displayName', COALESCE(NULLIF(u.display_name, ''), u.uid), 'avatarHash', u.avatar_hash
-      ) ORDER BY a.assigned_at, a.user_id)
-      FROM mail.conversation_assignees a JOIN auth.users u ON u.id = a.user_id
+        'id', a.principal_id, 'uid', COALESCE(u.uid, account.name),
+        'displayName', COALESCE(NULLIF(u.display_name, ''), u.uid, account.name), 'avatarHash', u.avatar_hash
+      ) || CASE WHEN account.id IS NULL THEN '{}'::jsonb
+        ELSE jsonb_build_object('type', 'service_account', 'serviceAccountKind', account.kind) END
+      ORDER BY a.assigned_at, a.principal_id)
+      FROM mail.conversation_assignees a LEFT JOIN auth.users u ON u.id = a.user_id
+      LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
       WHERE a.conversation_id = c.id), '[]'::jsonb) AS assignees,
       c.work_status,
       c.snoozed_until,
@@ -426,6 +439,7 @@ export const listAssignableUsers = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   search?: string;
+  self?: boolean;
   limit?: number;
 }): Promise<Result<MailAssignableUser[]>> => {
   const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
@@ -433,6 +447,7 @@ export const listAssignableUsers = async (params: {
   const users = await listEligibleAssignees({
     mailboxId: params.mailboxId,
     search: params.search,
+    userIds: params.self ? [personalPrincipal(params.context).id] : undefined,
     limit: Math.min(Math.max(params.limit ?? 50, 1), 200),
   });
   return ok(
@@ -924,7 +939,7 @@ export const applyConversationAssignments = async (params: {
         next.set(row.id, ids);
         for (const id of ids) if (!current.includes(id)) addedIds.add(id);
       }
-      // Like a single update, only people being added must be eligible.
+      // Like a single update, only principals being added must be eligible.
       const valid = await validateAssignees(params.mailboxId, [...addedIds], tx);
       if (!valid.ok) return valid;
       const events: ChangeEvent[] = [];

@@ -13,8 +13,8 @@ The conversation reader quietly places meaningful collaboration and workflow cha
 
 ## Use ownership and follow-up consistently {icon="route"}
 
-- **Assignees** shows the people who are responsible for the conversation. A conversation can have up to 20 assignees. Add or remove them in **Conversation details**. When someone else assigns a conversation to you, you get a Cloud notification that opens it.
-- To add one person to several conversations, select the conversations in the list and choose **Assign**. Then choose the person. The other assignees stay assigned. The person gets one notification for the whole selection.
+- **Assignees** shows the people, agents, or standalone service accounts who are responsible for the conversation. A conversation can have up to 20 assignees. Add or remove them in **Conversation details**. When someone else assigns a conversation to you, you get a Cloud notification that opens it.
+- To add one person or account to several conversations, select the conversations in the list and choose **Assign**. Then choose the person or account. The other assignees stay assigned. People get one notification for the whole selection; agents and service accounts receive no user notification.
 - The same menu offers **Assign to me**, **Remove me**, and **Remove all assignees**. Assigning yourself or removing someone sends no notification.
 - **Assigned to me** lists every conversation that you are assigned to. **Unassigned** lists the conversations that have no assignee who can still work on them.
 - Mail sets the next step. **Needs action** means that the team must review or act. **Waiting for reply** means that a confirmed human reply was sent and the next step belongs to someone else.
@@ -53,14 +53,16 @@ You give access with the standard Cloud access editor to the supported people, g
 
 ## Give access to assigned conversations only {icon="user-check"}
 
-Choose **View assigned only** or **Edit assigned only** for a person or group in **… → Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
+Choose **View assigned only** or **Edit assigned only** for a person, group, agent, or standalone service account in **… → Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
 
 - They see no mail until someone with **Edit** or **Manage** access assigns a conversation to them. Then they see that conversation with all its messages, including replies that arrive later. They also see its attachments, comments, and activity.
 - The folder list shows only the folders that contain one of their conversations. Every count includes only their conversations. Search, **Assigned to me**, the Mail overview, Cloud search, Assistant, and `cld` work the same way.
 - With **Edit assigned only**, they can reply, forward, mark as read or done, move, comment, and add existing tags in their conversations. They cannot write new messages, assign anyone, create tags or folders, merge or split conversations, or change mailbox settings.
 - When an assignment ends, the conversation disappears for them immediately: from lists, open views, search, downloads, and notifications. Mail no longer carries out the replies and actions that they queued for it, including scheduled sends.
 
-A person who also has **View**, **Edit**, or **Manage** access to the whole mailbox keeps it. The access to assigned conversations only then changes nothing for them.
+A person or account that also has **View**, **Edit**, or **Manage** access to the whole mailbox keeps it. The access to assigned conversations only then changes nothing for them.
+
+Only active accounts with a current eligible mailbox access appear as assignees. Removing that access or disabling the account ends its access even while the assignment stays recorded. Account credentials remain limited by their scopes. A personal API key continues to act as its person.
 
 ## Use Contacts context {icon="address-book"}
 

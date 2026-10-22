@@ -47,6 +47,7 @@ const contextFor = (user: { id: string; uid: string }): MailRequestContext => ({
 suite("mail manual conversation threading", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
+  const accountIds: string[] = [];
   const accessIds: string[] = [];
   const mailboxIds: string[] = [];
   const blobIds: string[] = [];
@@ -255,6 +256,7 @@ suite("mail manual conversation threading", () => {
     if (uniqueAccessIds.length > 0) {
       await sql`DELETE FROM auth.access WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${uniqueAccessIds}::jsonb))`;
     }
+    for (const id of accountIds) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
     if (userIds.length > 0) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
     }
@@ -580,23 +582,33 @@ suite("mail manual conversation threading", () => {
       )
     `;
 
+    for (const kind of ["agent", "standalone"] as const) {
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+        VALUES (${`Thread ${kind} ${suffix}`}, ${kind}) RETURNING id`;
+      if (!account) throw new Error("Thread assignee account missing");
+      accountIds.push(account.id);
+      const grant = await grantMailboxAccess({
+        context: ownerContext,
+        mailboxId,
+        principal: { type: "service_account", serviceAccountId: account.id },
+        permission: "write",
+      });
+      expect(grant.ok).toBe(true);
+    }
     const early = "2026-01-01T00:00:00Z";
     const later = "2026-02-01T00:00:00Z";
     await sql.begin(async (tx) => {
       await writeConversationAssignees(tx, {
         mailboxId,
         conversationId: targetConversationId,
-        userIds: [writer.id],
-        assignedAt: new Map([[writer.id, later]]),
+        userIds: [writer.id, ...accountIds],
+        assignedAt: new Map([writer.id, ...accountIds].map((id) => [id, later])),
       });
       await writeConversationAssignees(tx, {
         mailboxId,
         conversationId: sourceConversationId,
-        userIds: [owner.id, writer.id],
-        assignedAt: new Map([
-          [owner.id, early],
-          [writer.id, early],
-        ]),
+        userIds: [owner.id, writer.id, ...accountIds],
+        assignedAt: new Map([owner.id, writer.id, ...accountIds].map((id) => [id, early])),
       });
     });
     const merged = await mergeConversations({
@@ -613,11 +625,12 @@ suite("mail manual conversation threading", () => {
     });
     expect(merged.ok).toBe(true);
     if (!merged.ok) return;
-    expect((await loadConversationAssigneeIds(sql, targetConversationId)).sort()).toEqual([owner.id, writer.id].sort());
-    const [earliest] = await sql<
-      { assigned_at: Date }[]
-    >`SELECT assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${targetConversationId}::uuid AND user_id = ${writer.id}::uuid`;
-    expect(earliest?.assigned_at.toISOString()).toBe(new Date(early).toISOString());
+    expect((await loadConversationAssigneeIds(sql, targetConversationId)).sort()).toEqual([owner.id, writer.id, ...accountIds].sort());
+    const earliest = await sql<{ assigned_at: Date }[]>`SELECT assigned_at FROM mail.conversation_assignees
+      WHERE conversation_id = ${targetConversationId}::uuid
+        AND principal_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${[writer.id, ...accountIds]}::jsonb))`;
+    expect(earliest).toHaveLength(3);
+    expect(earliest.every((row) => row.assigned_at.toISOString() === new Date(early).toISOString())).toBeTrue();
 
     expect(merged.data).toMatchObject({
       removedConversationId: sourceConversationId,
@@ -798,10 +811,10 @@ suite("mail manual conversation threading", () => {
     );
     const copiedTimes = await sql<{ same: boolean }[]>`
       SELECT target.assigned_at = copied.assigned_at AS same FROM mail.conversation_assignees target
-      JOIN mail.conversation_assignees copied ON copied.user_id = target.user_id
+      JOIN mail.conversation_assignees copied ON copied.principal_id = target.principal_id
       WHERE target.conversation_id = ${targetConversationId}::uuid AND copied.conversation_id = ${split.data.created.id}::uuid
     `;
-    expect(copiedTimes).toHaveLength(2);
+    expect(copiedTimes).toHaveLength(4);
     expect(copiedTimes.every((row) => row.same)).toBeTrue();
 
     expect(split.data).toMatchObject({

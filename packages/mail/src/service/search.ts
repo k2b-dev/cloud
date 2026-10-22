@@ -8,7 +8,7 @@ import { mailFolderPaths } from "../folder-tree";
 import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
 import { conversationVisibleTo, type MailboxAccess, messageVisibleTo } from "./access";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
-import { type MailRequestContext, userBackedActor } from "./auth";
+import { type MailRequestContext, personalPrincipal } from "./auth";
 import { sha256Json } from "./canonical";
 import { isUnassignedConversation, type LapsedAssignee, listLapsedAssignees } from "./collaborators";
 import { isKeptConversation } from "./conversation-keep-rules";
@@ -469,7 +469,7 @@ export const compileSearchExpression = (
     return sql`${currentUserId}::uuid IS NOT NULL AND EXISTS (
       SELECT 1
       FROM mail.conversations state
-      WHERE state.id = ${conversationId} AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = state.id AND a.user_id = ${currentUserId}::uuid)
+      WHERE state.id = ${conversationId} AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = state.id AND a.principal_id = ${currentUserId}::uuid)
     )`;
   }
   if (expression.type === "kept") return isKeptConversation(conversationId);
@@ -507,7 +507,7 @@ export const compileSearchExpression = (
     return expression.userId
       ? sql`EXISTS (
           SELECT 1 FROM mail.conversations state
-          WHERE state.id = ${conversationId} AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = state.id AND a.user_id = ${expression.userId}::uuid)
+          WHERE state.id = ${conversationId} AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = state.id AND a.principal_id = ${expression.userId}::uuid)
         )`
       : sql`EXISTS (
           SELECT 1 FROM mail.conversations state
@@ -1402,7 +1402,7 @@ const runSearch = async (params: {
           )
         END AS message_count,
         conversation.work_status,
-        COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
+        COALESCE((SELECT array_agg(a.principal_id::text ORDER BY a.assigned_at, a.principal_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
         conversation.snoozed_until,
         COALESCE(conversation.revision, 1) AS revision,
         COALESCE(conversation.updated_at, deduplicated.internal_date) AS updated_at,
@@ -1705,7 +1705,7 @@ export const searchMessages = async (params: {
   if (!access.ok) return access;
   if (!access.data.access) return fail(err.forbidden("Access denied"));
   const sort = params.request.sort ?? "relevance";
-  const currentUserId = userBackedActor(params.context)?.id ?? null;
+  const currentUserId = personalPrincipal(params.context).id;
   const groupByConversation = params.groupByConversation !== false;
   const excludedFolderIds = [...new Set(params.excludedFolderIds ?? [])].sort();
   const sendProblems = params.sendProblems === true;
