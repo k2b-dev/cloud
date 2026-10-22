@@ -180,7 +180,7 @@ export default function DashboardPanelView(props: {
           </Show>
           <Show when={line()}>
             {(options) => (
-              <div class="pulse-dashboard__plot">
+              <div class="pulse-dashboard__plot" data-single-series={options().series.length === 1}>
                 <Chart {...options()} cursor={props.cursor} labels={{ interactiveLine: props.panel.title }} />
               </div>
             )}
