@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
@@ -12,7 +11,8 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { databaseSuite } from "../../../../../../../scripts/fixtures/test-infra";
 import "../../../../../../../scripts/fixtures/authorization-preload";
-import { browserName, launchBrowser, pageErrors } from "../../../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../../../ui/test/browser";
+import { timeBlockScreenshotDirectory } from "../../../../../test/time-blocks-browser-fixture";
 import api from "../../../../api";
 import { SpaceDetailSchema } from "../../../../contracts";
 import { SpaceTimeBlockSchema } from "../../../../time-block-contracts";
@@ -36,7 +36,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Fixture } = await import("./time-blocks.browser-fixture");
 const ui = resolve(import.meta.dir, "../../../../../../ui/dist");
-const shots = process.env.SPACES_TIME_BLOCK_SCREENSHOTS ?? join(tmpdir(), "spaces-time-blocks", browserName);
+const shots = timeBlockScreenshotDirectory;
 const cases = new Map<string, Scene>();
 const runtimeErrors: string[][] = [];
 const additionalAccounts: string[] = [];
@@ -180,9 +180,9 @@ const render = async (f: Scene, detail = false, route = href(f)) => {
     detail: itemDetail,
   };
   const body = renderToString(() => createComponent(Fixture, props));
-  f.html = `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-island,solid-client{display:contents}</style></head><body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${body}</main><script type="module">document.querySelectorAll('solid-island').forEach(e=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
+  f.html = `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-island,solid-client{display:contents}</style></head><body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${body}</main><script type="module">await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));document.documentElement.dataset.timeBlocksFixtureReady='true'</script></body></html>`;
 };
-const open = async (f: Scene, detail = false, width = 1440): Promise<Page> => {
+const open = async (f: Scene, detail = false, width = 1440, view: "day" | "week" = "day"): Promise<Page> => {
   const context = await browser.newContext({
     viewport: { width, height: width === 390 ? 844 : 760 },
     locale: "de-DE",
@@ -191,7 +191,21 @@ const open = async (f: Scene, detail = false, width = 1440): Promise<Page> => {
     reducedMotion: "reduce",
     extraHTTPHeaders: { "x-case": f.key },
   });
-  await context.clock.setFixedTime(NOW);
+  // Pin Date only; real timers, animation frames and performance remain available.
+  await context.addInitScript((at) => {
+    const RealDate = Date;
+    const offset = at - RealDate.now();
+    class PinnedDate extends RealDate {
+      constructor(...args: ConstructorParameters<DateConstructor> | []) {
+        if (args.length === 0) super(RealDate.now() + offset);
+        else super(...(args as ConstructorParameters<DateConstructor>));
+      }
+      static override now() {
+        return RealDate.now() + offset;
+      }
+    }
+    globalThis.Date = PinnedDate as DateConstructor;
+  }, NOW.getTime());
   // Stable UUIDs for client mutation intents; real auth/session randomness stays untouched.
   await context.addInitScript((seed) => {
     let n = seed;
@@ -199,9 +213,9 @@ const open = async (f: Scene, detail = false, width = 1440): Promise<Page> => {
   }, ++clientSequence * 1000);
   const page = await context.newPage();
   runtimeErrors.push(pageErrors(page));
-  await page.goto(`${server.url.origin}${href(f)}${detail ? `&item=${f.taskId}` : ""}`);
+  await page.goto(`${server.url.origin}${href(f).replace("cv=day", `cv=${view}`)}${detail ? `&item=${f.taskId}` : ""}`);
   await page.evaluate(() => document.fonts.ready);
-  await page.waitForFunction(() => [...document.querySelectorAll("button,a")].some((el) => Boolean(Reflect.get(el, "$$click"))));
+  await page.waitForFunction(() => document.documentElement.dataset.timeBlocksFixtureReady === "true");
   return page;
 };
 const waitFor = async (condition: () => Promise<boolean>) => {
@@ -212,13 +226,28 @@ const waitFor = async (condition: () => Promise<boolean>) => {
   throw new Error("Time block condition did not settle");
 };
 const shot = async (page: Page, motif: string) => {
+  await settled(page);
   mkdirSync(shots, { recursive: true });
   await page.screenshot({ path: join(shots, `${motif}-light-${page.viewportSize()!.width}.png`), animations: "disabled" });
 };
 const drop = async (page: Page, f: Scene) => {
   const source = page.locator(`[data-spaces-tray-item="${f.taskId}"] a`);
   const target = page.locator(`[data-calendar-body="${TODAY}"]`);
-  await target.scrollIntoViewIfNeeded();
+  try {
+    await target.scrollIntoViewIfNeeded();
+  } catch (cause) {
+    await shot(page, "diagnostic-drop-target");
+    throw new Error(
+      JSON.stringify(
+        await page.evaluate(() => ({
+          text: document.body.innerText,
+          days: [...document.querySelectorAll("[data-calendar-body]")].map((el) => el.getAttribute("data-calendar-body")),
+          islands: [...document.querySelectorAll("solid-island")].map((el) => el.outerHTML.slice(0, 200)),
+        })),
+      ),
+      { cause },
+    );
+  }
   const from = await source.boundingBox(),
     to = await target.boundingBox(),
     scroll = await page.locator(".k2b-calendar-days__scroll").boundingBox();
@@ -316,23 +345,49 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
     expect(runtimeErrors.flat()).toEqual([]);
   });
 
-  test("#1701: dropping an assigned estimated and claimed task creates one block, keeps task/checklist/claim, and Undo deletes only the block", async () => {
-    const f = await scene(),
-      before = await taskState(f),
+  for (const width of [1440, 390])
+    test(`#1701: assigned estimated and claimed task drop + unchanged checklist + Undo at ${width}px`, async () => {
+      const f = await scene(),
+        before = await taskState(f),
+        page = await open(f, false, width);
+      const errors = pageErrors(page);
+      try {
+        await drop(page, f);
+        await waitFor(async () => (await blocks(f)).length === 1);
+        const saved = (await blocks(f))[0]!;
+        expect(f.posts).toEqual([{ id: saved.id, status: 200 }]);
+        expect(Date.parse(saved.endsAt) - Date.parse(saved.startsAt)).toBe(45 * 60_000);
+        expect(await taskState(f)).toEqual(before);
+        expect(await page.locator(".spaces-time-block-dialog").count()).toBe(0);
+        await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
+        await shot(page, "10-calendar-drop-undo");
+        await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+        await waitFor(async () => (await blocks(f)).length === 0);
+        expect(await taskState(f)).toEqual(before);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+  test("a lost drop response retries the same saved block and Undo still removes only that block", async () => {
+    const f = await scene();
+    f.fault = "lost-response";
+    const before = await taskState(f),
       page = await open(f);
-    const errors = pageErrors(page);
     try {
       await drop(page, f);
-      await waitFor(async () => (await blocks(f)).length === 1);
-      const saved = (await blocks(f))[0]!;
-      expect(f.posts).toEqual([{ id: saved.id, status: 200 }]);
-      expect(Date.parse(saved.endsAt) - Date.parse(saved.startsAt)).toBe(45 * 60_000);
+      await page.getByRole("button", { name: "Erneut versuchen", exact: true }).waitFor();
+      expect(await blocks(f)).toHaveLength(1);
+      expect(f.posts).toHaveLength(1);
+      await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+      await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
+      expect(await blocks(f)).toHaveLength(1);
+      expect(f.posts).toHaveLength(1);
       expect(await taskState(f)).toEqual(before);
-      expect(await page.locator(".spaces-time-block-dialog").count()).toBe(0);
       await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
       await waitFor(async () => (await blocks(f)).length === 0);
       expect(await taskState(f)).toEqual(before);
-      expect(errors).toEqual([]);
     } finally {
       await page.context().close();
     }
@@ -377,7 +432,9 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         expect(await dialog.textContent()).toContain("Wähle einen Beginn");
         expect(await dialog.getByLabel("Beginn", { exact: true }).evaluate((el) => el === document.activeElement)).toBe(true);
         expect(f.posts).toEqual([]);
+        await shot(page, "11-dialog-validation");
         await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
+        await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
         await dialog.getByLabel("Dauer", { exact: true }).fill("0");
         await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         expect(await dialog.textContent()).toContain("Gib eine Dauer größer als 0 Minuten ein");
@@ -391,6 +448,8 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         await dialog.waitFor();
         await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
         await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
+        await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
+        await settled(page);
         const beforeHeight = (await dialog.boundingBox())!.height;
         f.fault = "delay";
         await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
@@ -400,6 +459,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         expect(await dialog.getByRole("button", { name: "Abbrechen", exact: true }).isDisabled()).toBe(true);
         await page.keyboard.press("Escape");
         expect(await dialog.count()).toBe(1);
+        await settled(page);
         expect(Math.abs((await dialog.boundingBox())!.height - beforeHeight)).toBeLessThanOrEqual(1);
         await shot(page, "03-dialog-saving");
         f.fault = "lost-response";
@@ -502,84 +562,91 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
     }
   });
 
-  test("unestimated tasks suggest 60 minutes and non-assignees see assignment before blocking", async () => {
-    const f = await scene();
-    await sql`UPDATE spaces.items SET estimated_duration_minutes = NULL WHERE id = ${f.taskUuid}::uuid`;
-    let page = await open(f, true, 390);
-    try {
-      await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
-      const dialog = page.locator(".spaces-time-block-dialog");
-      await dialog.waitFor();
-      expect(await dialog.getByLabel("Dauer", { exact: true }).inputValue()).toBe("60");
-      expect(await dialog.textContent()).toContain("Vorschlag");
-      await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
-      expect(await blocks(f)).toEqual([]);
-      await page.context().close();
-      const unassigned = await scene(false);
-      page = await open(unassigned, true, 390);
-      expect(await page.getByRole("button", { name: "Mir zuweisen", exact: true }).count()).toBe(1);
-      expect(await page.getByRole("button", { name: "Zeit blocken", exact: true }).count()).toBe(0);
-      await shot(page, "07-task-assignment-first");
-    } finally {
-      await page.context().close();
-    }
-  });
+  for (const width of [1440, 390])
+    test(`60-minute suggestion and assignment-first detail at ${width}px`, async () => {
+      const f = await scene();
+      await sql`UPDATE spaces.items SET estimated_duration_minutes = NULL WHERE id = ${f.taskUuid}::uuid`;
+      let page = await open(f, true, width);
+      try {
+        await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        const dialog = page.locator(".spaces-time-block-dialog");
+        await dialog.waitFor();
+        expect(await dialog.getByLabel("Dauer", { exact: true }).inputValue()).toBe("60");
+        expect(await dialog.textContent()).toContain("Vorschlag");
+        await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+        expect(await blocks(f)).toEqual([]);
+        await page.context().close();
+        const unassigned = await scene(false);
+        page = await open(unassigned, true, width);
+        expect(await page.getByRole("button", { name: "Mir zuweisen", exact: true }).count()).toBe(1);
+        expect(await page.getByRole("button", { name: "Zeit blocken", exact: true }).count()).toBe(0);
+        await shot(page, "07-task-assignment-first");
+      } finally {
+        await page.context().close();
+      }
+    });
 
-  test("done/reopened tasks keep their block; deleting the task leaves a readable, deletable orphan in the calendar", async () => {
-    const f = await scene();
-    const input = { id: uuid(9001), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
-    await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
-    await json(
-      await request(f, `/${f.spaceId}/items/${f.taskId}/completed`, {
-        method: "POST",
-        body: JSON.stringify({ completed: true, claimId: uuid(Number(f.key.slice(4)) * 10 + 6) }),
-      }),
-    );
-    expect((await blocks(f))[0]?.taskState).toBe("done");
-    let page = await open(f);
-    try {
-      const event = () =>
-        page.locator(`[data-calendar-body="${TODAY}"] [data-calendar-event]`, { hasText: "Angebot für Stadtwerke prüfen" });
-      await event().waitFor();
-      expect(await event().locator(".ti-circle-check").count()).toBeGreaterThan(0);
-      await shot(page, "08-calendar-task-done");
+  for (const width of [1440, 390])
+    test(`done/reopened/deleted tasks preserve a readable, deletable calendar block at ${width}px`, async () => {
+      const f = await scene();
+      const input = { id: uuid(9000 + Number(f.key.slice(4))), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
+      await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
       await json(
-        await request(f, `/${f.spaceId}/items/${f.taskId}/completed`, { method: "POST", body: JSON.stringify({ completed: false }) }),
+        await request(f, `/${f.spaceId}/items/${f.taskId}/completed`, {
+          method: "POST",
+          body: JSON.stringify({ completed: true, claimId: uuid(Number(f.key.slice(4)) * 10 + 6) }),
+        }),
       );
-      expect((await blocks(f))[0]?.taskState).toBe("open");
-      await json(await request(f, `/${f.spaceId}/items/${f.taskId}`, { method: "DELETE" }));
-      const orphan = SpaceTimeBlockSchema.parse(await json(await request(f, `/blocks/${input.id}`)));
-      expect(orphan).toMatchObject({
-        title: "Angebot für Stadtwerke prüfen",
-        startsAt: input.startsAt,
-        endsAt: input.endsAt,
-        taskState: "deleted",
-        itemId: null,
-        canWrite: false,
-        canDelete: true,
-      });
-      await page.context().close();
-      page = await open(f);
-      await event().waitFor();
-      expect(await event().textContent()).toContain("Aufgabe gelöscht");
-      expect(await event().getAttribute("data-editable")).toBe("false");
-      expect(await page.locator(`[data-calendar-entry="${input.id}"] .k2b-calendar-band__grip`).count()).toBe(0);
-      await event().click();
-      await page.getByRole("button", { name: "Termin löschen", exact: true }).waitFor();
-      expect(await page.getByText("Die Aufgabe wurde gelöscht.", { exact: false }).count()).toBeGreaterThan(0);
-      await shot(page, "09-calendar-task-deleted");
-      await page.getByRole("button", { name: "Termin löschen", exact: true }).click();
-      await waitFor(async () => (await request(f, `/blocks/${input.id}`)).status === 404);
-    } finally {
-      await page.context().close();
-    }
-  });
+      expect((await blocks(f))[0]?.taskState).toBe("done");
+      let page = await open(f, false, width);
+      try {
+        const event = () =>
+          page.locator(`[data-calendar-body="${TODAY}"] [data-calendar-event]`, { hasText: "Angebot für Stadtwerke prüfen" });
+        await event().waitFor();
+        expect(await event().locator(".ti-circle-check").count()).toBeGreaterThan(0);
+        await shot(page, "08-calendar-task-done");
+        await json(
+          await request(f, `/${f.spaceId}/items/${f.taskId}/completed`, { method: "POST", body: JSON.stringify({ completed: false }) }),
+        );
+        expect((await blocks(f))[0]?.taskState).toBe("open");
+        await json(await request(f, `/${f.spaceId}/items/${f.taskId}`, { method: "DELETE" }));
+        const orphan = SpaceTimeBlockSchema.parse(await json(await request(f, `/blocks/${input.id}`)));
+        expect(orphan).toMatchObject({
+          title: "Angebot für Stadtwerke prüfen",
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          taskState: "deleted",
+          itemId: null,
+          canWrite: false,
+          canDelete: true,
+        });
+        await page.context().close();
+        page = await open(f, false, width);
+        await event().waitFor();
+        expect(await event().textContent()).toContain("Aufgabe gelöscht");
+        expect(await event().getAttribute("data-editable")).toBe("false");
+        expect(await page.locator(`[data-calendar-entry="${input.id}"] .k2b-calendar-band__grip`).count()).toBe(0);
+        await event().click();
+        await page.getByRole("button", { name: "Termin löschen", exact: true }).waitFor();
+        expect(await page.getByText("Die Aufgabe wurde gelöscht.", { exact: false }).count()).toBeGreaterThan(0);
+        await shot(page, "09-calendar-task-deleted");
+        await page.getByRole("button", { name: "Termin löschen", exact: true }).click();
+        await waitFor(async () => (await request(f, `/blocks/${input.id}`)).status === 404);
+      } finally {
+        await page.context().close();
+      }
+    });
 
   for (const width of [1440, 390])
     test(`real task detail, multiple blocks and dialog screenshots at ${width}px`, async () => {
       const f = await scene();
       let page = await open(f, true, width);
       try {
+        await settled(page);
+        if (width === 1440) {
+          const detail = await page.locator(".k2b-app-workspace__detail").boundingBox();
+          expect(Math.round(detail!.width)).toBe(400);
+        }
         await shot(page, "01-task-unplanned");
         await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         const dialog = page.locator(".spaces-time-block-dialog");
@@ -590,6 +657,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         await shot(page, "02-dialog-open");
         await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
+        await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
         await shot(page, "02-dialog-after-deadline");
         await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         await dialog.waitFor({ state: "detached" });
@@ -606,10 +674,46 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         expect(await page.locator(".spaces-time-block-row").count()).toBe(2);
         await shot(page, "05-task-multiple-blocks");
         await page.context().close();
-        page = await open(f, false, width);
+        page = await open(f, false, width, "week");
         await shot(page, "06-calendar-blocks");
       } finally {
         await page.context().close();
       }
     });
+
+  test("tablet dark tokens, overflow and keyboard editing use the real dialog and API", async () => {
+    const f = await scene();
+    const input = { id: uuid(9301), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
+    await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
+    const page = await open(f, true, 820);
+    try {
+      const lightSurface = await page.locator("body").evaluate((el) => getComputedStyle(el).getPropertyValue("--k2b-surface"));
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.evaluate(() => document.body.setAttribute("data-theme", "dark"));
+      const edit = page.getByRole("button", { name: "Ändern", exact: true });
+      await edit.focus();
+      await page.keyboard.press("Enter");
+      const dialog = page.locator(".spaces-time-block-dialog");
+      await dialog.waitFor();
+      await settled(page);
+      expect(await page.locator("body").evaluate((el) => getComputedStyle(el).getPropertyValue("--k2b-surface"))).not.toBe(lightSurface);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(820);
+      const start = dialog.getByLabel("Beginn", { exact: true });
+      await start.focus();
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.keyboard.type("11:15");
+      await page.keyboard.press("Tab");
+      const save = dialog.getByRole("button", { name: "Speichern", exact: true });
+      await save.focus();
+      await page.keyboard.press("Enter");
+      await dialog.waitFor({ state: "detached" });
+      const saved = await blocks(f);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]!.startsAt).toBe("2030-03-14T11:15:00.000Z");
+      expect(f.moves).toEqual([{ status: 200 }]);
+    } finally {
+      await page.context().close();
+    }
+  });
 });

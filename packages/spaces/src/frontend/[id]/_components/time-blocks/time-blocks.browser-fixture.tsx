@@ -15,7 +15,17 @@ export default function TimeBlocksFixture(props: TimeBlocksFixtureProps) {
       <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
         <AppWorkspace.Content>
           <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
-            <SpacesCalendarRoute {...props} />
+            <SpacesCalendarRoute
+              spaceId={props.spaceId}
+              baseUrl={props.baseUrl}
+              columns={props.columns}
+              tags={props.tags}
+              initialState={props.initialState}
+              selectedItemId={props.selectedItemId}
+              dateConfig={props.dateConfig}
+              canWrite={props.canWrite}
+              currentUserId={props.currentUserId}
+            />
           </AppWorkspace.Main>
           <ItemDetailRoute
             spaceId={props.spaceId}
