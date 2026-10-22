@@ -694,8 +694,8 @@ test("unknown create remains blocked beyond claim retention and exposes Notebook
   }
 });
 
-test("owner, conversation and revision isolate retained checkpoints", async () => {
-  const scenario = "places-owner-isolation";
+test.each(["owner", "conversation", "revision"] as const)("%s isolates retained checkpoints", async (dimension) => {
+  const scenario = `places-isolation-${dimension}`;
   const { page, context } = await open(scenario);
   let ownerUserId = "owner-one";
   let creates = 0;
@@ -707,25 +707,24 @@ test("owner, conversation and revision isolate retained checkpoints", async () =
     creates++;
     await route.continue();
   });
+  const savedKeys = () => page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("cloud.ai.map-save:v1:")));
   try {
     await beginSave(page);
     await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    ownerUserId = "owner-two";
-    await page.reload();
+    const initialKeys = await savedKeys();
+    expect(initialKeys).toHaveLength(1);
+    if (dimension === "owner") ownerUserId = "owner-two";
+    if (dimension === "revision") fixture.get(scenario).map.revision++;
+    if (dimension === "conversation") await page.goto(`${fixture.server.url}?scenario=places-other-conversation-isolation`);
+    else await page.reload();
     await beginSave(page);
     await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    fixture.get(scenario).map.revision++;
-    await page.reload();
-    await beginSave(page);
-    await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    await page.goto(`${fixture.server.url}?scenario=places-other-conversation`);
-    await beginSave(page);
-    await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    const keys = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("cloud.ai.map-save:v1:")));
-    expect(keys).toHaveLength(4);
-    expect(keys.some((key) => key.includes("owner-one"))).toBe(true);
-    expect(keys.filter((key) => key.includes("owner-two"))).toHaveLength(3);
-    expect(creates).toBe(4);
+    const keys = await savedKeys();
+    expect(keys).toHaveLength(2);
+    expect(keys).toContain(initialKeys[0]!);
+    expect(keys.filter((key) => key.includes("owner-one"))).toHaveLength(dimension === "owner" ? 1 : 2);
+    expect(keys.filter((key) => key.includes("owner-two"))).toHaveLength(dimension === "owner" ? 1 : 0);
+    expect(creates).toBe(2);
   } finally {
     await context.close();
   }
