@@ -56,7 +56,7 @@ import {
 } from "../server/middleware";
 import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
-import { appAccessAuthority } from "../services/app-access";
+import { appAccessAuthority, canUseApp } from "../services/app-access";
 import { discoverableApps } from "../services/app-discovery";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
@@ -896,6 +896,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         responses: {
           200: jsonResponse(CommandLinkSchema, "Command entry URL"),
           400: jsonResponse(CapabilityErrorSchema, "Invalid command input"),
+          403: jsonResponse(CapabilityErrorSchema, "Application access denied"),
           404: jsonResponse(CapabilityErrorSchema, "Command unavailable"),
           503: jsonResponse(CapabilityErrorSchema, "Route owner unavailable"),
         },
@@ -906,6 +907,9 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         const request = body.ok ? CommandRequestSchema.safeParse(body.data) : null;
         if (!request?.success) return c.json({ code: "VALIDATION_FAILED", message: capabilityMessages(getLocale(c)).requestBodyJson }, 400);
         const appId = c.req.param("appId");
+        const apps = await (dependencies.listApps ?? listApps)();
+        const target = apps.find((app) => app.id === appId);
+        if (target && !(await canUseApp(appAccessAuthority(c), target))) return c.json(appAccessDeniedBody(target), 403);
         const entry = await (dependencies.getCapability ?? getCapability)(appId);
         const command = entry?.manifest.commands.find((command) => command.localId === c.req.param("capabilityId"));
         if (!command)
@@ -916,7 +920,6 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
             },
             404,
           );
-        const apps = await (dependencies.listApps ?? listApps)();
         const pathname = new URL(command.path, "https://cloud.invalid").pathname;
         const owner = apps
           .flatMap((app) => app.routes.map((prefix) => ({ app, prefix })))

@@ -948,6 +948,29 @@ test("Command resolution uses APP_URL and the live owning route without invoking
   expect(invalid.status).toBe(400);
 });
 
+test("Command links enforce the current target rule before loading its manifest", async () => {
+  const capability = entry();
+  let manifestReads = 0;
+  const target: AppRegistryEntry = { ...summary(capability), routes: ["/app/demo"], access: { kind: "signedIn" } };
+  const app = buildCapabilityRoutes({
+    authenticate,
+    listApps: async () => [target],
+    getCapability: async () => {
+      manifestReads++;
+      return capability;
+    },
+    appUrl: async () => "https://public.example.test",
+  });
+  // This resolved resource credential belongs to Core, not demo.
+  const denied = await app.request("/capabilities/v1/commands/demo/compose", {
+    method: "POST",
+    body: JSON.stringify({ input: {} }),
+  });
+  expect(denied.status).toBe(403);
+  expect(await denied.json()).toMatchObject({ code: "app_access_denied", app: "demo" });
+  expect(manifestReads).toBe(0);
+});
+
 test("a Command cannot direct the user into another app's owned route", async () => {
   const capability = entry();
   const app = buildCapabilityRoutes({

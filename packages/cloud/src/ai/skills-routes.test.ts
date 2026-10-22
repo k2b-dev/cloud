@@ -1,6 +1,12 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { MiddlewareHandler } from "hono";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { Hono, type MiddlewareHandler } from "hono";
+import * as registry from "../_internal/registry";
+import type { AppRegistryEntry } from "../contracts/registry";
 import type { AuthContext, RequestAuthority } from "../server";
+import { requireAppAccess } from "../server/middleware/app-access";
+import { evaluateAppAccess } from "../services/app-access";
+import * as appAccessMetrics from "../services/app-access-metrics";
+import { session } from "../services/session";
 import { aiProjects } from "./projects";
 import type { AiSkill } from "./skills";
 import { AiSkillAppForbiddenError, AiSkillRevisionConflictError, aiSkills } from "./skills";
@@ -14,6 +20,7 @@ const subject = { type: "user" as const, userId };
 const user = { id: userId, roles: ["user"] } as AuthContext["Variables"]["user"];
 const authority: RequestAuthority = { actor: { kind: "user", user }, accessSubject: subject, credentialKind: "session", scopes: [] };
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
+  spyOn(session, "getToken").mockReturnValue("skill-user-session");
   c.set("actor", { kind: "user", user });
   c.set("accessSubject", subject);
   c.set("user", user);
@@ -22,6 +29,55 @@ const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
   await next();
 };
 const pass: MiddlewareHandler<AuthContext> = async (_c, next) => next();
+const core: AppRegistryEntry = {
+  id: "core",
+  name: "Core",
+  description: "Platform services",
+  icon: "ti ti-cloud",
+  routes: ["/api/ai/skills"],
+  baseUrl: "http://core.invalid",
+  access: { kind: "signedIn", publicRoutes: ["/api/ai/skills", "/api/ai/skills/*"] },
+};
+const apiAuthority = (kind: "resource_bound" | "standalone", scopes: string[]): RequestAuthority => ({
+  actor: {
+    kind: "service_account",
+    serviceAccount: {
+      id: "44444444-4444-4444-8444-444444444444",
+      name: "Notebook reader",
+      kind,
+      status: "active",
+      delegatedUserId: null,
+      appId: kind === "resource_bound" ? "notebooks" : null,
+      resourceType: kind === "resource_bound" ? "notebook" : null,
+      resourceId: kind === "resource_bound" ? "55555555-5555-4555-8555-555555555555" : null,
+      createdBy: null,
+      createdAt: "2026-10-01T00:00:00Z",
+    },
+    delegatedUser: null,
+    scopes,
+  },
+  accessSubject: { type: "service_account", serviceAccountId: "44444444-4444-4444-8444-444444444444" },
+  credentialKind: "api_key",
+  scopes,
+});
+const authenticateAuthority =
+  (resolved: RequestAuthority): MiddlewareHandler<AuthContext> =>
+  async (c, next) => {
+    spyOn(session, "getToken").mockReturnValue(resolved.actor.kind === "user" ? "skill-user-session" : null);
+    c.set("actor", resolved.actor);
+    c.set("accessSubject", resolved.accessSubject);
+    c.set("credentialKind", resolved.credentialKind);
+    c.set("credentialScopes", resolved.scopes);
+    await next();
+  };
+const broker = (resolved: RequestAuthority) =>
+  new Hono<AuthContext>()
+    .use("*", authenticateAuthority(resolved))
+    .use(
+      "*",
+      requireAppAccess(core, async (c) => c.text("Core denied", 403)),
+    )
+    .route("/api/ai/skills", __buildAiSkillsRoutesForTest({ limit: pass, authenticate: pass }));
 
 const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
   source: null,
@@ -41,9 +97,161 @@ const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
   updatedAt: "2026-08-20T11:00:00.000Z",
 });
 
-afterEach(() => mock.restore());
+beforeEach(() => {
+  setSystemTime(new Date("2026-10-22T12:00:00Z"));
+  spyOn(session, "getToken").mockReturnValue(null);
+  spyOn(session, "appSessionFallback").mockReturnValue(null);
+  spyOn(session, "authenticateRequest").mockResolvedValue({
+    user,
+    data: { userId, sid: "skill-user-session", authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z", kind: "web" },
+  });
+  spyOn(registry, "getApp").mockResolvedValue(core);
+  spyOn(appAccessMetrics, "recordAppAccessDenied").mockImplementation(() => {});
+});
+afterEach(() => {
+  mock.restore();
+  setSystemTime();
+});
 
 describe("AI Skill routes", () => {
+  test("Core's public-path exception admits broker reads with the original app-scoped authority", async () => {
+    const appSkill = { ...skill("read"), source: { appId: "notebooks", appName: "Notebooks" } };
+    const list = spyOn(aiSkills, "list").mockResolvedValue([appSkill]);
+    const search = spyOn(aiSkills, "search").mockResolvedValue({ skills: [appSkill], more: false });
+    const get = spyOn(aiSkills, "getByShortId").mockResolvedValue(appSkill);
+    for (const resolved of [
+      apiAuthority("resource_bound", ["read"]),
+      apiAuthority("standalone", ["notebooks:read"]),
+      { ...authority, credentialKind: "oauth" as const, scopes: ["notebooks:read"] },
+    ]) {
+      expect(evaluateAppAccess(resolved, core)).toBe(false);
+      const routes = broker(resolved);
+      for (const suffix of ["", "?name=weekly-status", "?q=weekly", `/${skillShortId}`]) {
+        const response = await routes.request(`/api/ai/skills${suffix}`);
+        expect(response.status).toBe(200);
+      }
+      expect(list).toHaveBeenCalledWith(resolved.accessSubject, { authority: resolved });
+      expect(list).toHaveBeenCalledWith(resolved.accessSubject, { name: "weekly-status", authority: resolved });
+      expect(search).toHaveBeenCalledWith(resolved.accessSubject, "weekly", 30, { authority: resolved });
+      expect(get).toHaveBeenCalledWith(skillShortId, resolved.accessSubject, "read", resolved);
+    }
+    // Broker reads rely on the owning-app/resource decision, not Core's registry entry.
+    expect(registry.getApp).not.toHaveBeenCalled();
+  });
+
+  test("broker reads preserve a denied Skill result", async () => {
+    const list = spyOn(aiSkills, "list").mockResolvedValue([]);
+    const get = spyOn(aiSkills, "getByShortId").mockResolvedValue(null);
+    const resolved = apiAuthority("resource_bound", ["read"]);
+    const routes = broker(resolved);
+    expect(await (await routes.request("/api/ai/skills")).json()).toEqual({ skills: [] });
+    expect((await routes.request(`/api/ai/skills/${skillShortId}`)).status).toBe(404);
+    expect(list).toHaveBeenCalledWith(resolved.accessSubject, { authority: resolved });
+    expect(get).toHaveBeenCalledWith(skillShortId, resolved.accessSubject, "read", resolved);
+  });
+
+  test("every management route retains Core entry even when its path is exempt at the outer gate", async () => {
+    const get = spyOn(aiSkills, "getByShortId").mockResolvedValue(skill());
+    const effects = [
+      spyOn(aiSkills, "create"),
+      spyOn(aiSkills, "update"),
+      spyOn(aiSkills, "delete"),
+      spyOn(aiSkills, "setEnabled"),
+      spyOn(aiSkills, "grantAccess"),
+      spyOn(aiSkills, "updateAccess"),
+      spyOn(aiSkills, "revokeAccess"),
+      spyOn(aiSkills, "linkProject"),
+      spyOn(aiSkills, "projectSkills"),
+      spyOn(aiSkills, "linkedProjects"),
+      spyOn(aiSkills, "listAccess"),
+      spyOn(aiProjects, "getByShortId"),
+    ];
+    const content = { name: "weekly-status", description: "Weekly status.", instructions: "List wins." };
+    const requests = [
+      { path: "", method: "POST", body: content },
+      { path: `/${skillShortId}`, method: "PUT", body: { ...content, expectedRevision: 3 } },
+      { path: `/${skillShortId}`, method: "DELETE" },
+      { path: `/${skillShortId}/enabled`, method: "PUT", body: { enabled: false } },
+      { path: `/${skillShortId}/projects/proj12`, method: "PUT", body: { linked: true } },
+      { path: `/${skillShortId}/access`, method: "POST", body: { principal: { type: "authenticated" }, permission: "read" } },
+      { path: `/${skillShortId}/access/aCc234`, method: "PATCH", body: { permission: "write" } },
+      { path: `/${skillShortId}/access/aCc234`, method: "DELETE" },
+      { path: "/project-links/proj12", method: "GET" },
+      { path: `/${skillShortId}/projects`, method: "GET" },
+      { path: `/${skillShortId}/access`, method: "GET" },
+    ];
+    for (const resolved of [
+      apiAuthority("resource_bound", ["admin", "core:admin"]),
+      apiAuthority("standalone", ["notebooks:admin"]),
+      { ...authority, credentialKind: "oauth" as const, scopes: ["notebooks:admin"] },
+    ]) {
+      const routes = broker(resolved);
+      for (const { path, method, body } of requests) {
+        const response = await routes.request(`/api/ai/skills${path}`, {
+          method,
+          headers: { "content-type": "application/json" },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ code: "app_access_denied", app: "core" });
+        expect(response.headers.get("cache-control")).toContain("private, no-store");
+      }
+    }
+    expect(get).not.toHaveBeenCalled();
+    for (const effect of effects) expect(effect).not.toHaveBeenCalled();
+  });
+
+  test("Core registry loss denies management before effects", async () => {
+    const create = spyOn(aiSkills, "create");
+    const registered = spyOn(registry, "getApp");
+    const request = () =>
+      broker(authority).request("/api/ai/skills", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "test", description: "Test.", instructions: "Test." }),
+      });
+    registered.mockResolvedValue(null);
+    expect((await request()).status).toBe(403);
+    registered.mockRejectedValue(new Error("Registry unavailable"));
+    expect((await request()).status).toBe(403);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  test("an undeclared Core retains step-one legacy management until its declaration is deployed", async () => {
+    spyOn(registry, "getApp").mockResolvedValue({ ...core, access: undefined });
+    const create = spyOn(aiSkills, "create").mockResolvedValue(skill());
+    const response = await broker(authority).request("/api/ai/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "test", description: "Test.", instructions: "Test." }),
+    });
+    expect(response.status).toBe(201);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  test("general standalone management remains user-backed even when Core entry allows it", async () => {
+    const resolved = apiAuthority("standalone", ["read", "write"]);
+    expect(evaluateAppAccess(resolved, core)).toBe(true);
+    const create = spyOn(aiSkills, "create");
+    const get = spyOn(aiSkills, "getByShortId");
+    const remove = spyOn(aiSkills, "delete");
+    for (const access of [undefined, core.access]) {
+      spyOn(registry, "getApp").mockResolvedValue({ ...core, access });
+      const routes = broker(resolved);
+      const response = await routes.request("/api/ai/skills", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "weekly-status", description: "Weekly status.", instructions: "List wins." }),
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("user-backed") });
+      expect((await routes.request(`/api/ai/skills/${skillShortId}`, { method: "DELETE" })).status).toBe(403);
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   test("project links check both managers and return public IDs from paginated search", async () => {
     const projectId = "33333333-3333-4333-8333-333333333333";
     const project = spyOn(aiProjects, "getByShortId").mockResolvedValue({

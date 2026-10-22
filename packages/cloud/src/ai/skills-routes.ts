@@ -1,10 +1,13 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import { getApp } from "../_internal/registry";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "../server";
+import { appAccessDeniedBody } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
-import { appAccessAuthority } from "../services/app-access";
+import { appAccessAuthority, canUseApp } from "../services/app-access";
+import { recordAppAccessDenied } from "../services/app-access-metrics";
 import { localizedAppName } from "../ssr/runtime";
 import { aiProjects } from "./projects";
 import {
@@ -63,6 +66,20 @@ type AiSkillsRouteDependencies = {
   authenticate?: MiddlewareHandler<AuthContext>;
 };
 
+// Core exempts this mixed router from its method-independent public-path gate.
+// Only list/get are brokers; management retains Core entry and its user-backed policy.
+const requireCoreAccess: MiddlewareHandler<AuthContext> = async (c, next) => {
+  const core = await getApp("core").catch(() => null);
+  const allowed = core && (await canUseApp(appAccessAuthority(c), core).catch(() => false));
+  if (!allowed) {
+    if (core) recordAppAccessDenied(core.id);
+    c.header("Cache-Control", "private, no-store");
+    c.header("X-Cloud-App-Access-Denied", "core");
+    return c.json(appAccessDeniedBody(core ?? { id: "core", name: "Core" }), 403);
+  }
+  await next();
+};
+
 const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
   new Hono<AuthContext>()
     // The list combines skills from separate grants; the writer of one can rename it next to another skill's text.
@@ -94,6 +111,12 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
         return respond(c, ok({ skills: skills.map(publicSummary(c)) }));
       },
     )
+    .get("/:skillId", async (c) => {
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "read", appAccessAuthority(c));
+      return skill ? respond(c, ok({ skill: publicSkill(c, skill) })) : respond(c, fail(err.notFound("Skill")));
+    })
+    .use("*", requireCoreAccess)
+    .use("*", auth.requireUser())
     .get(
       "/project-links/:projectId",
       v(
@@ -154,10 +177,6 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
         if (error instanceof AiSkillInputError) return respond(c, fail(err.badInput(error.message)));
         throw error;
       }
-    })
-    .get("/:skillId", async (c) => {
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "read", appAccessAuthority(c));
-      return skill ? respond(c, ok({ skill: publicSkill(c, skill) })) : respond(c, fail(err.notFound("Skill")));
     })
     .put("/:skillId", v("json", UpdateSkillSchema), async (c) => {
       const existing = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "write", appAccessAuthority(c));
