@@ -2,7 +2,7 @@
 title: Save maps in Notebooks
 navTitle: Saved maps
 section: Platform services
-order: 560
+order: 561
 description: Save Geo results and routes as portable, permission-aware Notebook map blocks.
 tags: [geo, maps, notebooks, routes]
 updated: 2026-10-22
