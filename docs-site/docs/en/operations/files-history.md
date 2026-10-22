@@ -269,6 +269,13 @@ commits history with a `filesv2.version.delete` audit event. An audit failure le
 the operation unresolved. A missing target after a lost delete response is not
 proof of completion and never triggers another deletion.
 
+After confirmed permanent deletion, an affected pending trash or restore journal
+closes only when fresh storage reads confirm that both endpoints are absent.
+A surviving endpoint or unavailable read keeps it open. Its unresolved history
+becomes final `unclear` and becomes eligible for ordinary retention; earlier
+terminal outcomes stay unchanged. Archived storage uses the linked archive's
+location for these checks.
+
 Retention preserves entries attached to an open trash or deletion journal. Older
 journals adopt their stored actor with an unknown channel when first contacted.
 Durable markers prevent terminal history from reappearing after its retention
