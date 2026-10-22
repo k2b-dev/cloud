@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { DownstreamBusyError, downstreamBudget } from "../../../cloud/src/services/downstream-budget";
+import { mockPdfAdmission, pdfAdmissionBusy } from "../../../../scripts/fixtures/pdf-admission";
 import { validateDocumentQueryOutput } from "./document-query-output";
 import { renderDocumentHtmlPdf, renderDocumentPdfPreview } from "./document-rendering";
 
-let admission: ReturnType<typeof spyOn<typeof downstreamBudget, "acquire">>;
+let admission: ReturnType<typeof mockPdfAdmission>;
 beforeEach(() => {
-  admission = spyOn(downstreamBudget, "acquire").mockResolvedValue(() => {});
+  admission = mockPdfAdmission();
 });
 afterEach(() => admission.mockRestore());
 
@@ -142,7 +142,7 @@ for (const [locale, message] of [
 ] as const) {
   test(`document rendering and PDF previews preserve retryable saturation in ${locale}`, async () => {
     using warn = spyOn(console, "warn").mockImplementation(() => {});
-    admission.mockRejectedValue(new DownstreamBusyError("gotenberg"));
+    admission.mockRejectedValue(pdfAdmissionBusy());
     const config = { url: "http://renderer.invalid", timeoutMs: 1000, maxHtmlBytes: 10_000, maxPdfBytes: 10_000 };
     const fetch = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Busy renders must not reach HTTP"));
     try {
