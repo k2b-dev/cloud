@@ -145,6 +145,7 @@ export const ShareAccessCountsSchema = z
                 date: z.iso.datetime(),
                 granularity: z.enum(["hour", "day"]),
                 pages: z.number().int().nonnegative(),
+                pageNetworks: z.number().int().nonnegative().nullable(),
                 downloads: z.number().int().nonnegative(),
                 passwordFailed: z.number().int().nonnegative(),
                 knownNetworks: z.number().int().nonnegative().nullable(),
