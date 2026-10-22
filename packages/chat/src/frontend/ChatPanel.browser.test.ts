@@ -1807,10 +1807,13 @@ test("Chat can close during a read-only conversation load and restores the saved
   try {
     await page.goto(fixture.url + "app/fixture");
     await page.locator('html[data-fixture-ready="true"]').waitFor();
-    await page.evaluate(({ id, viewerId }) => sessionStorage.setItem(`cloud.chat.draft:${viewerId}:${id}`, "Saved before loading"), {
-      id,
-      viewerId: viewer.id,
-    });
+    await page.evaluate(
+      ({ id, viewerId }) => {
+        sessionStorage.setItem(`cloud.chat.draft:${viewerId}:${id}`, "Saved before loading");
+        sessionStorage.setItem(`cloud.chat.panel:${viewerId}`, id);
+      },
+      { id, viewerId: viewer.id },
+    );
     await page.locator("#open-chat").click();
     const panel = page.frameLocator("[data-cloud-panel-frame]");
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
