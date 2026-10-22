@@ -148,6 +148,46 @@ suite("chat conversations, people, and directory groups", () => {
     }
   });
 
+  test("person preselection reads current guest membership and expiration without creating a chat", async () => {
+    const owner = await user();
+    const guest = await user("guest");
+    const stranger = await user();
+    const expired = await user("user", true);
+    const shared = await fixture(owner, [{ id: guest, permission: "write" }]);
+    const guestHeaders = await cookie(guest);
+    const ownerHeaders = await cookie(owner);
+    const resolve = (headers: Headers, userId: string) =>
+      server.request(`https://cloud.example.test/api/chat/people/${userId}`, {
+        headers: { "x-forwarded-for": uniqueCallerAddress(), ...headers },
+      });
+    const counts = () => sql<{ chats: number; messages: number; grants: number; audits: number; outbox: number }[]>`SELECT
+      (SELECT count(*)::int FROM chat.conversations WHERE created_by_id = ${guest}::uuid) AS chats,
+      (SELECT count(*)::int FROM chat.messages WHERE conversation_id = ${shared.id}::uuid) AS messages,
+      (SELECT count(*)::int FROM auth.access WHERE user_id = ${guest}::uuid) AS grants,
+      (SELECT count(*)::int FROM audit.events WHERE actor_user_id = ${guest}::uuid) AS audits,
+      (SELECT count(*)::int FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ${"p:" + guest}) AS outbox`;
+    const before = await counts();
+    const allowed = await resolve(guestHeaders, owner.toUpperCase());
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toEqual({ id: owner, displayName: "Lea Example" });
+    const unknown = await resolve(guestHeaders, "00000000-0000-4000-8000-000000000000");
+    const denied = await resolve(guestHeaders, stranger);
+    expect(unknown.status).toBe(400);
+    expect(denied.status).toBe(400);
+    expect(await denied.json()).toEqual(await unknown.json());
+    expect((await resolve(ownerHeaders, stranger)).status).toBe(200);
+    expect((await resolve(ownerHeaders, expired)).status).toBe(400);
+    await sql`UPDATE auth.users SET profile = 'guest' WHERE id = ${owner}::uuid`;
+    expect((await resolve(ownerHeaders, stranger)).status).toBe(400);
+    expect((await resolve(guestHeaders, "not-a-uuid")).status).toBe(400);
+    expect(await counts()).toEqual(before);
+    await sql`UPDATE auth.access SET permission = 'none' WHERE id = ${shared.entries.get(guest)!}::uuid`;
+    expect((await resolve(guestHeaders, owner)).status).toBe(400);
+    // A person resolved moments ago is still rechecked by the normal submit path.
+    expect((await request(guestHeaders, "", "POST", { members: [{ type: "user", userId: owner }] })).status).toBe(400);
+    expect(await counts()).toEqual(before);
+  });
+
   const operations = ["create", "list", "detail", "update", "members", "add", "permission", "remove", "leave"] as const;
   for (const identity of ["session", "delegated", "group", "nested", "guest"] as const)
     for (const permission of ["none", "read", "write", "admin"] as const)

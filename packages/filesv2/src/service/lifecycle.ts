@@ -14,9 +14,18 @@ import type {
   OperationResult,
   RootSummary,
 } from "../contracts";
+import { finishActivity, insertActivity } from "../data/activity";
 import type { bindings, NewBinding } from "../data/bases";
-import { type Operation, operations, withRootLock } from "../data/operations";
-import { filegateException, pendingMigration, type UserFilesCall } from "./activity";
+import { type NewOperation, type Operation, operations, withRootLock } from "../data/operations";
+import {
+  type FilesCall,
+  fileAction,
+  filegateException,
+  journalAction,
+  type LifecycleMkdir,
+  systemCall,
+  type UserFilesCall,
+} from "./activity";
 import { createActivityObservations } from "./activity-observations";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
@@ -188,7 +197,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       return false;
     }
   }
-  function operationContained(config: Config, op: Operation) {
+  function operationContained(config: Config, op: NewOperation) {
     const active = basePath(config, { area: op.area, kind: op.kind, name: op.name });
     if (op.root !== config[op.area].root || op.server_url !== config.url) throw new FilesError("configuration_changed", 409);
     if (op.action === "create" && op.source !== active) throw new FilesError("configuration_changed", 409);
@@ -198,11 +207,64 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       throw new FilesError("configuration_changed", 409);
     if (op.action === "delete" && !within(op.source, active) && !op.archive_id) throw new FilesError("configuration_changed", 409);
   }
-  // Directory lifecycle writes join the history in a later step; until then they pass by their named key.
-  function perform(config: Config, root: FilesRoot, operation: Operation, allowCreate = true): Promise<OperationResult> {
-    return pendingMigration("lifecycle.operation", () => performOperation(config, root, operation, allowCreate));
+  async function creationBinding(operation: NewOperation): Promise<NewBinding> {
+    const [row] = await sql<{ uid_number: number | null; gid_number: number | null }[]>`
+      SELECT uid_number::float8 AS uid_number,gid_number::float8 AS gid_number
+      FROM filesv2.bases WHERE id=${operation.base_id}::uuid`;
+    if (!row) throw new FilesError("binding_conflict", 409);
+    return {
+      area: operation.area,
+      kind: operation.kind,
+      identity_id: "",
+      identity_name: operation.name,
+      root: operation.root,
+      path: operation.source,
+      ...row,
+    };
   }
-  async function performOperation(config: Config, root: FilesRoot, operation: Operation, allowCreate: boolean): Promise<OperationResult> {
+  async function nearestParent(root: FilesRoot, path: string): Promise<string> {
+    let parent = path.split("/").slice(0, -1).join("/") || ".";
+    for (;;) {
+      const node = await stat(root, parent);
+      if (node) {
+        if (!node.directory) throw new FilesError("not_directory", 409);
+        return parent;
+      }
+      if (parent === ".") throw new FilesError("not_found", 404);
+      parent = parent.split("/").slice(0, -1).join("/") || ".";
+    }
+  }
+  async function resetRefusedPublication(operation: Operation, error: unknown) {
+    // mkdir publishes only after preparing permissions; same-root move is an atomic rename.
+    // Parents may already exist from this attempt, so retain the pending history and original scope.
+    if (
+      (error instanceof FilesError && ["activity_scope_missing", "activity_scope_mismatch"].includes(error.code)) ||
+      (error instanceof FilegateError &&
+        ([400, 403, 404, 412].includes(error.status) ||
+          (error.status === 409 && error.code === "path_conflict") ||
+          (error.status === 501 && ["acl_not_supported", "unsupported_storage_layout"].includes(error.code))))
+    )
+      await operations.refusedEffect(operation.id);
+  }
+  async function plannedMkdirs(root: FilesRoot, operation: NewOperation): Promise<LifecycleMkdir[]> {
+    if (operation.action === "delete") return [];
+    const path = operation.action === "create" ? operation.source : operation.target!;
+    const mode = operation.action === "archive" || operation.area === "cloud" ? "0700" : "0755";
+    const parts = path.split("/");
+    const mkdirs: LifecycleMkdir[] = parts.slice(0, -1).map((_, index) => ({
+      path: parts.slice(0, index + 1).join("/"),
+      options: { ownership: { dirMode: mode } },
+    }));
+    if (operation.action === "create") {
+      const base = await creationBinding(operation);
+      // The existing named probe exception is not user data. Probe an existing
+      // ancestor so every parent and target write can be bound before it begins.
+      const uid = base.area === "freeipa" && base.kind === "groups" ? await serviceUid(root, await nearestParent(root, path)) : undefined;
+      mkdirs.push({ path, options: creationOptions(base, uid) });
+    }
+    return mkdirs;
+  }
+  async function perform(config: Config, root: FilesRoot, operation: Operation, allowCreate = true): Promise<OperationResult> {
     operationContained(config, operation);
     if (operation.archive_id) {
       const archived = await operations.get(operation.archive_id);
@@ -210,112 +272,128 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       operationContained(config, archived);
       if (operation.action === "delete" && !within(operation.source, archived.target!)) throw new FilesError("configuration_changed", 409);
     }
+    const activity = await operations.history(
+      operation.id,
+      operation.activity_recorded || operation.state !== "pending" ? undefined : await plannedMkdirs(root, operation),
+    );
     if (operation.state !== "pending") return result(operation);
-    // These callers only issue native same-root moves. An unexpected pending
-    // receipt cannot be completed from filesystem appearance on the next run.
+    if (!activity) throw new FilesError("activity_scope_missing", 500);
+    return journalAction(activity.id, () => performOperation(config, root, operation, allowCreate, activity.mkdirs ?? []), {
+      heartbeat: allowCreate,
+    });
+  }
+  async function performOperation(
+    config: Config,
+    root: FilesRoot,
+    operation: Operation,
+    allowCreate: boolean,
+    mkdirs: LifecycleMkdir[],
+  ): Promise<OperationResult> {
     if (operation.error_code === "transfer_pending") throw new FilesError("transfer_pending", 409);
     try {
+      let receipt = operation.receipt;
       if (operation.action === "create") {
-        const rows = await sql<
-          { uid_number: number | null; gid_number: number | null }[]
-        >`SELECT uid_number::float8 AS uid_number,gid_number::float8 AS gid_number FROM filesv2.bases WHERE id=${operation.base_id}::uuid`;
-        if (!rows[0]) throw new FilesError("binding_conflict", 409);
-        const base: NewBinding = {
-          area: operation.area,
-          kind: operation.kind,
-          identity_id: "",
-          identity_name: operation.name,
-          root: operation.root,
-          path: operation.source,
-          ...rows[0],
-        };
-        let node = await stat(root, operation.source);
-        if (!node && !allowCreate) return result(operation);
-        await ensureParents(root, operation.source.split("/").slice(0, -1).join("/"), operation.area === "cloud" ? "0700" : "0755");
-        const daemonUid =
-          operation.area === "freeipa" && operation.kind === "groups"
-            ? await serviceUid(root, operation.source.split("/").slice(0, -1).join("/"))
-            : undefined;
-        if (!node) {
+        const base = await creationBinding(operation);
+        const path = operation.source;
+        const uid = mkdirs.find((entry) => entry.path === path)?.options.ownership?.uid;
+        if (base.area === "freeipa" && base.kind === "groups" && uid === undefined) throw new FilesError("activity_scope_missing", 500);
+        const existing = await stat(root, path);
+        // An ordinary target has no operation identity. Even an identical
+        // directory is only an observation after a lost mkdir response.
+        if (!receipt) {
+          if (existing || operation.effect_started) throw new FilesError("operation_unresolved", 409);
           if (!allowCreate) return result(operation);
+          await ensureParents(root, path.split("/").slice(0, -1).join("/"), operation.area === "cloud" ? "0700" : "0755");
+          await operations.beginEffect(operation.id);
           try {
-            node = await root.mkdir(operation.source, creationOptions(base, daemonUid));
+            receipt = await root.mkdir(path, creationOptions(base, uid));
           } catch (error) {
-            node = await stat(root, operation.source);
-            if (!node) throw error;
+            await resetRefusedPublication(operation, error);
+            throw error;
           }
+          if (receipt.root !== operation.root || receipt.path !== path) throw new FilesError("operation_unresolved", 409);
+          await operations.recordReceipt(operation.id, receipt);
         }
-        await verifyCreation(root, node, base, daemonUid);
+        if ("deleted" in receipt) throw new FilesError("operation_unresolved", 409);
+        const node = existing ?? (await root.stat(path));
+        if (!unchanged(receipt, node)) throw new FilesError("source_changed", 409);
+        await verifyCreation(root, node, base, uid);
       } else if (operation.action === "archive" || operation.action === "restore") {
-        let movedPath = operation.target!;
         const source = await stat(root, operation.source);
         const target = await stat(root, operation.target!);
         if (source && target) throw new FilesError("path_conflict", 409);
         if (!source && !target) throw new FilesError("not_found", 409);
-        if (source) {
-          if (!allowCreate) return result(operation);
-          if (!unchanged(operation.snapshot, source)) throw new FilesError("source_changed", 409);
-          if (operation.action === "archive") {
-            const wrapper = operation.target!.split("/").slice(0, -1).join("/");
-            await ensureParents(root, wrapper, "0700");
-            await privateDirectory(root, wrapper);
-          } else
-            await ensureParents(root, operation.target!.split("/").slice(0, -1).join("/"), operation.area === "cloud" ? "0700" : "0755");
-          let receipt: TransferResult | undefined;
-          let answered = false;
-          try {
-            receipt = await root.transfer(operation.source, operation.root, operation.target!, { move: true, onConflict: "error" });
-            answered = true;
-          } catch (error) {
-            if ((await stat(root, operation.source)) || !(await stat(root, operation.target!))) throw error;
-          }
-          if (answered) {
-            if (receipt?.state !== "completed") throw new FilesError("transfer_pending", 409);
-            if (!receipt.node || receipt.node.root !== operation.root || receipt.node.path !== operation.target)
+        if (!receipt) {
+          if (!source) {
+            // Only the UUID archive namespace is operation-bound evidence.
+            // A restored directory uses an ordinary path and proves nothing.
+            if (operation.action !== "archive" || !operation.target?.endsWith(`/${operation.id}/contents`))
               throw new FilesError("operation_unresolved", 409);
-            movedPath = receipt.node.path;
+            if (!target || !unchanged(operation.snapshot, target)) throw new FilesError("source_changed", 409);
+            await privateDirectory(root, operation.target.split("/").slice(0, -1).join("/"));
+            receipt = target;
+            await operations.recordReceipt(operation.id, receipt);
+          } else {
+            if (!unchanged(operation.snapshot, source)) throw new FilesError("source_changed", 409);
+            if (operation.effect_started) throw new FilesError("operation_unresolved", 409);
+            if (!allowCreate) return result(operation);
+            const parent = operation.target!.split("/").slice(0, -1).join("/");
+            await ensureParents(root, parent, operation.action === "archive" || operation.area === "cloud" ? "0700" : "0755");
+            if (operation.action === "archive") await privateDirectory(root, parent);
+            await operations.beginEffect(operation.id);
+            let moved: TransferResult | undefined;
+            try {
+              moved = await root.transfer(operation.source, operation.root, operation.target!, { move: true, onConflict: "error" });
+            } catch (error) {
+              await resetRefusedPublication(operation, error);
+              if (operation.action !== "archive" || !operation.target?.endsWith(`/${operation.id}/contents`)) throw error;
+              const target = await stat(root, operation.target);
+              if ((await stat(root, operation.source)) || !target || !unchanged(operation.snapshot, target)) throw error;
+              await privateDirectory(root, parent);
+              receipt = target;
+            }
+            if (moved) {
+              if (moved.state !== "completed") throw new FilesError("transfer_pending", 409);
+              if (!moved.node || moved.node.root !== operation.root || moved.node.path !== operation.target)
+                throw new FilesError("operation_unresolved", 409);
+              receipt = moved.node;
+            }
+            if (!receipt) throw new FilesError("operation_unresolved", 409);
+            await operations.recordReceipt(operation.id, receipt);
           }
         }
-        const moved = await root.stat(movedPath);
-        if (!unchanged(operation.snapshot, moved)) throw new FilesError("source_changed", 409);
+        if ("deleted" in receipt) throw new FilesError("operation_unresolved", 409);
+        const moved = await root.stat(operation.target!);
+        if (!unchanged(operation.snapshot, moved) || !unchanged(receipt, moved)) throw new FilesError("source_changed", 409);
         if (operation.action === "archive") await privateDirectory(root, operation.target!.split("/").slice(0, -1).join("/"));
-      } else {
+      } else if (!receipt) {
         const node = await stat(root, operation.source);
-        if (node) {
-          if (!allowCreate) return result(operation);
-          if (!unchanged(operation.snapshot, node)) throw new FilesError("source_changed", 409);
-          try {
-            await root.remove(operation.source, true);
-          } catch (error) {
-            if (await stat(root, operation.source)) throw error;
-          }
-        }
+        // Missing source never proves deletion; never remove a replacement.
+        if (!node) throw new FilesError("operation_unresolved", 409);
+        if (!unchanged(operation.snapshot, node)) throw new FilesError("source_changed", 409);
+        if (operation.effect_started) throw new FilesError("operation_unresolved", 409);
+        if (!allowCreate) return result(operation);
+        await operations.beginEffect(operation.id);
+        await root.remove(operation.source, true);
+        receipt = { deleted: true };
+        await operations.recordReceipt(operation.id, receipt);
       }
       await operations.finish(operation);
-      await audit.recordResultAfterSideEffect({
-        action: `filesv2.${operation.action}`,
-        actor: { userId: operation.actor_id, uid: operation.actor_name },
-        target: { type: "filesv2.directory", id: operation.id, label: operation.source },
-        metadata: { area: operation.area, root: operation.root, target: operation.target },
-        result: { ok: true, data: { operationId: operation.id } },
-      });
       return result({ ...operation, state: "complete" });
     } catch (error) {
-      await sql`UPDATE filesv2.operations SET error_code=${error instanceof FilesError ? error.code : "unavailable"},updated_at=now() WHERE id=${operation.id}::uuid`;
+      await sql`UPDATE filesv2.operations SET error_code=${error instanceof FilesError ? error.code : "unavailable"},updated_at=now() WHERE id=${operation.id}::uuid AND state='pending'`;
       throw error;
     }
   }
-  async function newOperation(
-    config: Config,
-    root: FilesRoot,
-    input: Omit<Operation, "id" | "state" | "error_code" | "created_at" | "updated_at">,
-  ): Promise<OperationResult> {
+  async function newOperation(config: Config, root: FilesRoot, input: Omit<NewOperation, "id">, call: FilesCall): Promise<OperationResult> {
     const pending = await operations.pending(input.root, input.source);
     if (pending) {
       if (pending.action !== input.action || pending.target !== input.target) throw new FilesError("operation_pending", 409);
       return perform(config, root, pending);
     }
-    const operation = await operations.insert({ id: crypto.randomUUID(), ...input });
+    const value = { id: crypto.randomUUID(), ...input };
+    operationContained(config, value);
+    const operation = await operations.insert(value, call, await plannedMkdirs(root, value));
     return perform(config, root, operation);
   }
   async function provisionCandidate(
@@ -323,6 +401,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     base: NewBinding,
     actorId: string | null,
     actorName: string | null,
+    call: FilesCall = systemCall("automatic-provision", actorId ? { userId: actorId, uid: actorName } : undefined),
   ): Promise<OperationResult> {
     return locked(base.root, async () => {
       const root = deps.connect(config).root(base.root);
@@ -365,24 +444,30 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const binding = claimed.find((row) => row.identity_id === base.identity_id && row.path === base.path);
       if (!binding) throw new FilesError("binding_conflict", 409);
       await sql`UPDATE filesv2.bases SET lifecycle='provisioning' WHERE id=${binding.id}::uuid`;
-      return newOperation(config, root, {
-        area: base.area,
-        kind: base.kind,
-        root: base.root,
-        server_url: config.url,
-        name: base.identity_name,
-        action: "create",
-        source: base.path,
-        target: null,
-        base_id: binding.id,
-        archive_id: null,
-        actor_id: actorId,
-        actor_name: actorName,
-        snapshot: null,
-      });
+      return newOperation(
+        config,
+        root,
+        {
+          area: base.area,
+          kind: base.kind,
+          root: base.root,
+          server_url: config.url,
+          name: base.identity_name,
+          action: "create",
+          source: base.path,
+          target: null,
+          base_id: binding.id,
+          archive_id: null,
+          actor_id: actorId,
+          actor_name: actorName,
+          snapshot: null,
+        },
+        call,
+      );
     });
   }
-  async function bindKnown(actor: RequestActor, config: Config, input: DirectoryTarget, node: Node) {
+  async function bindKnown(call: UserFilesCall, config: Config, input: DirectoryTarget, node: Node) {
+    const actor = call.actor;
     const proof = await deps.identities.reconcile(actor, {
       kind: input.kind,
       provider: provider(input.area),
@@ -412,12 +497,13 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       uid_number: input.area === "freeipa" ? proof.identity.uidNumber : null,
       gid_number: input.area === "freeipa" || input.kind === "groups" ? proof.identity.gidNumber : null,
     };
-    const rows = await deps.bindings.claim(candidate);
+    const rows = await deps.bindings.claim(candidate, call);
     if (rows.length !== 1 || rows[0]!.identity_id !== identity.id || rows[0]!.path !== candidate.path)
       throw new FilesError("binding_conflict", 409);
     return rows[0]!;
   }
-  async function archiveDirectory(actor: RequestActor, input: DirectoryTarget & { archivePath?: string }) {
+  async function archiveDirectory(call: UserFilesCall, input: DirectoryTarget & { archivePath?: string }) {
+    const actor = call.actor;
     const state = await admin(actor, input.area);
     archiveParent(state.config, input.area, input.archivePath ?? state.config[input.area].archive);
     return locked(state.root.name, async () => {
@@ -452,9 +538,9 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       }
       if (!binding) {
         const node = await stat(state.root, source);
-        if (node) binding = await bindKnown(actor, state.config, input, node);
+        if (node) binding = await bindKnown(call, state.config, input, node);
       }
-      return archiveBound(state.config, state.root, input, binding?.id ?? null, state.actorId, state.actorName);
+      return archiveBound(state.config, state.root, input, binding?.id ?? null, state.actorId, state.actorName, call);
     });
   }
   async function archiveBound(
@@ -464,13 +550,14 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     baseId: string | null,
     actorId: string | null,
     actorName: string | null,
+    call: FilesCall,
   ) {
     const source = basePath(config, input);
     const node = await stat(root, source);
     if (!node?.directory) throw new FilesError("not_directory", 409);
     const id = crypto.randomUUID();
     const target = joinPath(archiveParent(config, input.area, input.archivePath ?? config[input.area].archive), id, "contents");
-    const operation = await operations.insert({
+    const value: NewOperation = {
       id,
       area: input.area,
       kind: input.kind,
@@ -485,7 +572,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       actor_id: actorId,
       actor_name: actorName,
       snapshot: node,
-    });
+    };
+    const operation = await operations.insert(value, call, await plannedMkdirs(root, value));
     return perform(config, root, operation);
   }
   async function archiveById(actor: RequestActor, id: string) {
@@ -518,6 +606,47 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     }
     return { ...state, base, target: joinPath(base, relative), relative, name, kind, archiveId };
   }
+  async function recordAdminRead(
+    call: UserFilesCall,
+    loc: Awaited<ReturnType<typeof location>>,
+    node: Node,
+    operation: "list" | "download" | "versions",
+  ) {
+    const binding = await deps.bindings.path(loc.root.name, loc.base);
+    const archive = loc.archiveId ? await operations.get(loc.archiveId) : null;
+    await sql.begin(async (tx) => {
+      const id = await insertActivity(
+        call,
+        {
+          action: "admin.read",
+          serverUrl: loc.config.url,
+          root: loc.root.name,
+          baseId: archive?.base_id ?? binding?.id ?? null,
+          directory: node.directory,
+          name: node.path.split("/").at(-1)!,
+          pathBefore: loc.target,
+          itemId: node.id,
+          size: node.size,
+          revisionBefore: node.revision,
+          detail: { operation },
+        },
+        tx,
+      );
+      await finishActivity(tx, id, "done", async () => {
+        await audit.record(
+          {
+            action: "filesv2.admin.read",
+            outcome: "allowed",
+            actor: { userId: loc.actorId, uid: loc.actorName },
+            target: { type: "filesv2.item", id: node.id ?? loc.target, label: loc.target },
+            requestId: call.requestId,
+            metadata: { operation, historyId: id },
+          },
+          tx,
+        );
+      });
+    });
+  }
   return {
     provisionCandidate,
     async provision(call: UserFilesCall, input: { area: Area; kind: BaseKind; identityId: string }) {
@@ -547,9 +676,9 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         uid_number: input.area === "freeipa" ? current.identity.uidNumber : null,
         gid_number: input.area === "freeipa" || input.kind === "groups" ? current.identity.gidNumber : null,
       };
-      return provisionCandidate(state.config, base, state.actorId, state.actorName);
+      return provisionCandidate(state.config, base, state.actorId, state.actorName, call);
     },
-    archive: (call: UserFilesCall, input: DirectoryTarget & { archivePath?: string }) => archiveDirectory(call.actor, input),
+    archive: (call: UserFilesCall, input: DirectoryTarget & { archivePath?: string }) => archiveDirectory(call, input),
     async retire(call: UserFilesCall, input: DirectoryTarget): Promise<OperationResult> {
       const actor = call.actor;
       const state = await admin(actor, input.area);
@@ -558,12 +687,36 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         const binding = await deps.bindings.path(state.root.name, path);
         if (!binding) throw new FilesError("unassigned", 409);
         if (await operations.pending(state.root.name, path)) throw new FilesError("operation_pending", 409);
-        await sql`UPDATE filesv2.bases SET lifecycle='retired' WHERE id=${binding.id}::uuid AND lifecycle='active'`;
-        await audit.recordResultAfterSideEffect({
-          action: "filesv2.retire",
-          actor: { userId: state.actorId, uid: state.actorName },
-          target: { type: "filesv2.directory", id: binding.id, label: path },
-          result: { ok: true, data: { path } },
+        await sql.begin(async (tx) => {
+          const changed =
+            await tx`UPDATE filesv2.bases SET lifecycle='retired' WHERE id=${binding.id}::uuid AND lifecycle='active' RETURNING id`;
+          if (!changed.length) return;
+          const id = await insertActivity(
+            call,
+            {
+              action: "place.retire",
+              serverUrl: state.config.url,
+              root: state.root.name,
+              baseId: binding.id,
+              directory: true,
+              name: binding.identity_name,
+              pathBefore: path,
+            },
+            tx,
+          );
+          await finishActivity(tx, id, "done", async () => {
+            await audit.record(
+              {
+                action: "filesv2.retire",
+                outcome: "allowed",
+                actor: { userId: state.actorId, uid: state.actorName },
+                target: { type: "filesv2.directory", id: binding.id, label: path },
+                requestId: call.requestId,
+                metadata: { historyId: id },
+              },
+              tx,
+            );
+          });
         });
         return { id: binding.id, path, state: "complete" };
       });
@@ -635,21 +788,26 @@ export function createDirectoryLifecycle(deps: Dependencies) {
           return perform(state.config, state.root, pending);
         }
         if (await stat(state.root, archive.source)) throw new FilesError("path_conflict", 409);
-        return newOperation(state.config, state.root, {
-          area: archive.area,
-          kind: archive.kind,
-          root: archive.root,
-          server_url: state.config.url,
-          name: archive.name,
-          action: "restore",
-          source: archive.target!,
-          target: archive.source,
-          base_id: archive.base_id,
-          archive_id: archive.id,
-          actor_id: state.actorId,
-          actor_name: state.actorName,
-          snapshot: await stat(state.root, archive.target!),
-        });
+        return newOperation(
+          state.config,
+          state.root,
+          {
+            area: archive.area,
+            kind: archive.kind,
+            root: archive.root,
+            server_url: state.config.url,
+            name: archive.name,
+            action: "restore",
+            source: archive.target!,
+            target: archive.source,
+            base_id: archive.base_id,
+            archive_id: archive.id,
+            actor_id: state.actorId,
+            actor_name: state.actorName,
+            snapshot: await stat(state.root, archive.target!),
+          },
+          call,
+        );
       });
     },
     async adminList(call: UserFilesCall, input: AdminLocator & { after?: string }): Promise<AdminBrowseResult> {
@@ -660,8 +818,10 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const page = await loc.root.list(loc.target, { limit: PAGE_SIZE, after: input.after });
       if (page.items.some((node) => !node.path.startsWith(`${loc.target}/`) || node.path.slice(loc.target.length + 1).includes("/")))
         throw new FilesError("unavailable", 503);
+      const versioningEnabled = (await loc.root.info()).versioning.enabled;
+      await recordAdminRead(call, loc, node, "list");
       return {
-        versioningEnabled: (await loc.root.info()).versioning.enabled,
+        versioningEnabled,
         area: input.area,
         kind: loc.kind,
         name: loc.name,
@@ -684,14 +844,17 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const node = await loc.root.stat(loc.target);
       if (node.directory) throw new FilesError("not_file");
       const lease = await loc.root.directDownload(loc.target, { expiresIn: 60 });
+      await recordAdminRead(call, loc, node, "download");
       return { url: lease.url, method: "GET" as const, expires: lease.expires };
     },
     async adminVersions(call: UserFilesCall, input: AdminLocator) {
       const actor = call.actor;
       const loc = await location(actor, input);
-      if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
-      if (!(await loc.root.info()).versioning.enabled) return [];
-      return (await loc.root.versions(loc.target)).map((version) => ({
+      const node = await loc.root.stat(loc.target);
+      if (node.directory) throw new FilesError("not_file");
+      const versions = (await loc.root.info()).versioning.enabled ? await loc.root.versions(loc.target) : [];
+      await recordAdminRead(call, loc, node, "versions");
+      return versions.map((version) => ({
         id: version.id,
         created: version.created,
         size: version.size,
@@ -704,9 +867,42 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const actor = call.actor;
       const loc = await location(actor, input);
       if (input.confirmPath !== loc.target) throw new FilesError("confirmation_mismatch");
-      if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
-      if (!(await loc.root.info()).versioning.enabled) throw new FilesError("versioning_disabled");
-      await pendingMigration("lifecycle.admin_delete_version", () => loc.root.deleteVersion(loc.target, input.id));
+      const node = await loc.root.stat(loc.target);
+      if (node.directory) throw new FilesError("not_file");
+      const info = await loc.root.info();
+      if (!info.versioning.enabled) throw new FilesError("versioning_disabled");
+      const binding = await deps.bindings.path(loc.root.name, loc.base);
+      await fileAction(
+        call,
+        {
+          action: "version.delete",
+          serverUrl: loc.config.url,
+          root: loc.root.name,
+          baseId: binding?.id ?? null,
+          itemId: info.stableIds ? node.id : null,
+          directory: false,
+          name: loc.target.split("/").at(-1)!,
+          pathBefore: loc.target,
+          pathAfter: loc.target,
+          size: node.size,
+          revisionBefore: node.revision,
+          versionId: input.id,
+        },
+        () => loc.root.deleteVersion(loc.target, input.id),
+        async (tx) => {
+          await audit.record(
+            {
+              action: "filesv2.version.delete",
+              outcome: "allowed",
+              actor: { userId: loc.actorId },
+              target: { type: "filesv2.version", id: input.id, label: loc.target },
+              requestId: call.requestId,
+              metadata: { root: loc.root.name },
+            },
+            tx,
+          );
+        },
+      );
       return { deleted: true };
     },
     async adminDelete(call: UserFilesCall, input: AdminLocator & { confirmPath: string }): Promise<OperationResult> {
@@ -723,27 +919,32 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         const node = await stat(loc.root, loc.target);
         if (!node) throw new FilesError("not_found", 404);
         if (!binding && !loc.archiveId && loc.target === loc.base && node.directory)
-          binding = await bindKnown(actor, loc.config, { area: input.area, kind: loc.kind, name: loc.name }, node);
+          binding = await bindKnown(call, loc.config, { area: input.area, kind: loc.kind, name: loc.name }, node);
         let baseId = binding?.id ?? null;
         if (loc.archiveId) {
           const archived = await operations.get(loc.archiveId);
           baseId = archived?.base_id ?? null;
         }
-        return newOperation(loc.config, loc.root, {
-          area: input.area,
-          kind: loc.kind,
-          root: loc.root.name,
-          server_url: loc.config.url,
-          name: loc.name,
-          action: "delete",
-          source: loc.target,
-          target: null,
-          base_id: baseId,
-          archive_id: loc.archiveId,
-          actor_id: loc.actorId,
-          actor_name: loc.actorName,
-          snapshot: node,
-        });
+        return newOperation(
+          loc.config,
+          loc.root,
+          {
+            area: input.area,
+            kind: loc.kind,
+            root: loc.root.name,
+            server_url: loc.config.url,
+            name: loc.name,
+            action: "delete",
+            source: loc.target,
+            target: null,
+            base_id: baseId,
+            archive_id: loc.archiveId,
+            actor_id: loc.actorId,
+            actor_name: loc.actorName,
+            snapshot: node,
+          },
+          call,
+        );
       });
     },
     async deleteDirectory(call: UserFilesCall, input: DirectoryTarget & { confirmPath: string }) {
@@ -763,7 +964,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         const current = await operations.get(id);
         if (!current) throw new FilesError("not_found", 404);
         operationContained(state.config, current);
-        if (current.state !== "pending") return result(current);
+        if (current.state !== "pending") return perform(state.config, state.root, current);
         const binding = await deps.bindings.path(
           current.root,
           basePath(state.config, { area: current.area, kind: current.kind, name: current.name }),
@@ -871,7 +1072,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
               base.path !== basePath(config, { area: "cloud", kind: base.kind, name: base.identity_name })
             )
               continue;
-            await locked(base.root, async () => {
+            const archived = await locked(base.root, async () => {
               const fresh = await deps.identities.localLifecycle({
                 kind: base.kind,
                 identityId: base.identity_id,
@@ -891,7 +1092,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
               const pending = await operations.pending(base.root, base.path);
               if (pending) {
                 if (pending.action !== "archive" || pending.actor_id !== null) throw new FilesError("operation_pending", 409);
-                return perform(config, deps.connect(config).root(base.root), pending);
+                return perform(config, deps.connect(config).root(base.root), pending, false);
               }
               return archiveBound(
                 config,
@@ -899,10 +1100,12 @@ export function createDirectoryLifecycle(deps: Dependencies) {
                 { area: "cloud", kind: base.kind, name: base.identity_name },
                 base.id,
                 null,
-                "automatic-policy",
+                null,
+                systemCall("automatic-archive"),
               );
             });
-            totals.archived++;
+            if (archived.state === "complete") totals.archived++;
+            else totals.pending++;
           }
         } catch {
           totals.pending++;

@@ -8,6 +8,14 @@ const messages: Record<string, [string, string]> = {
     "The export could not be completed. Try again.",
     "Der Export konnte nicht abgeschlossen werden. Versuche es erneut.",
   ],
+  share_access_cursor_expired: [
+    "The network page expired or the date range changed. Refresh the first page of link access counts.",
+    "Die Netzseite ist abgelaufen oder der Zeitraum wurde geändert. Lade die erste Seite der Linkzugriffe neu.",
+  ],
+  invalid_activity_filter: [
+    "Check the history filters and date range. Paths require a storage base; the start must not follow the end.",
+    "Prüfe Verlaufsfilter und Zeitraum. Pfade brauchen eine Ablage; der Anfang darf nicht nach dem Ende liegen.",
+  ],
   configuration_unreadable: [
     "Files cannot read its saved configuration. Enter the Filegate token again to replace it, or reset the configuration.",
     "Dateien kann die gespeicherte Konfiguration nicht lesen. Gib den Filegate-Token erneut ein, um sie zu ersetzen, oder setze die Konfiguration zurück.",
@@ -40,6 +48,10 @@ const messages: Record<string, [string, string]> = {
   transfer_pending: [
     "Filegate has not confirmed this transfer. Review the operation before retrying.",
     "Filegate hat diese Übertragung nicht bestätigt. Prüfe den Vorgang vor einem neuen Versuch.",
+  ],
+  version_restore_changed: [
+    "The file changed since this view opened. Reload its current version before restoring.",
+    "Die Datei wurde seit dem Öffnen dieser Ansicht geändert. Lade den aktuellen Stand vor dem Wiederherstellen neu.",
   ],
   write_conflict: [
     "The file changed while it was being saved. Reload its current version before saving again.",

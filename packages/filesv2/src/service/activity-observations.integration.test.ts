@@ -39,7 +39,7 @@ suite("contact observations with real Filegate and private history", () => {
   if (testActor.kind !== "user") throw new Error("Expected user fixture");
   const call = testCall({ ...testActor, user: { ...testActor.user, id: userId } });
   const baseId = `cloud:users:${userId}`;
-  function files(connect = connectFilegate) {
+  function files(connect = (configuration: Config, signal?: AbortSignal) => connectFilegate(configuration, undefined, signal)) {
     return createFilesService({
       identities: {
         ...accountIdentities,

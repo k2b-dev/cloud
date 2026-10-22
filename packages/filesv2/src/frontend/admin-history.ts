@@ -130,7 +130,7 @@ export function adminPlaceDescriber(
   locale: string,
 ): NonNullable<HistoryEnvironment["describePlace"]> {
   return (place: HistoryPlace) => {
-    if (place.kind !== "side") return undefined;
+    if (place.kind !== "side" || place.side.visibility !== "full") return undefined;
     const base = sideBase(place.side, bases);
     if (!base || base.root !== place.side.root) return undefined;
     const relative = relativeTo(place.side.path, base.path);

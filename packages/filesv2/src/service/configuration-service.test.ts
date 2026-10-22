@@ -85,7 +85,7 @@ test("saving unreadable configuration without a token fails before connection te
 test("a new token allows the explicit full replacement", async () => {
   const { service, input, write } = fixture();
   await service.saveConfiguration(testCall(actor), { ...input, token: "new-token" });
-  expect(write).toHaveBeenCalledWith({ ...input, token: "new-token" });
+  expect(write).toHaveBeenCalledWith({ ...input, token: "new-token" }, testCall(actor));
 });
 test("administration reports unreadable before area disabled and does not connect", async () => {
   const { service, connect } = fixture();

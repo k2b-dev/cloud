@@ -1,16 +1,23 @@
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { clipboard, query } from "@k2b/stdlib/solid";
 import { Button, DescriptionList, DetailPanel, Format, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
-import type { BaseSummary, EntryResult, FileEntry, FileVersion } from "../contracts";
+import type { BaseSummary, EntryResult, FileEntry, FileVersion, SharePage, ShareView } from "../contracts";
 import { ENTRY_TYPE, entryRefId } from "../resource-ref";
+import type { InspectorHistory } from "./Browser";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, fileIcon, inlinePdfHref, previewKind } from "./file-preview";
+import { loadItemHistory, loadItemShares, loadShareAccess, restoreVersion, revokeShare } from "./history-api";
+import { useHistoryMessages } from "./history-messages";
+import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-requests";
+import ItemHistory from "./ItemHistory";
 import { useFilesMessages } from "./messages";
+import ShareHistory from "./ShareHistory";
 import { referenceHref } from "./urls";
 
 /** Identity, quick preview, facts, actions and versions of one entry; a summary for several. */
@@ -38,6 +45,7 @@ export default function FileInspector(props: {
   onShare?: (entry: FileEntry) => void;
   onShareInbox?: (entry: FileEntry) => void;
   onChanged: (selectPath?: string | null) => void;
+  history?: InspectorHistory;
 }) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
@@ -337,9 +345,15 @@ export default function FileInspector(props: {
                       </div>
                     </DetailPanel.Section>
                   </DetailPanel.Group>
-                  <Show when={!item().directory}>
-                    <VersionsSection base={props.base} entry={item()} busy={props.busy} onChanged={props.onChanged} locale={locale()} />
-                  </Show>
+                  <EntryHistory
+                    base={props.base}
+                    entry={item()}
+                    resourceId={details.data()?.result.resourceId}
+                    busy={props.busy}
+                    onChanged={props.onChanged}
+                    locale={locale()}
+                    history={props.history}
+                  />
                 </DetailPanel.Body>
               </>
             )}
@@ -376,13 +390,166 @@ export default function FileInspector(props: {
   );
 }
 
+/**
+ * Order of the detail as approved: public links, versions of a file, then the item's history. Versions and history
+ * share one version list, so history rows can name "Version 2" with the number the list shows.
+ */
+function EntryHistory(props: {
+  base: BaseSummary;
+  entry: FileEntry;
+  resourceId?: string;
+  busy?: boolean;
+  onChanged: (selectPath?: string | null) => void;
+  locale: string;
+  history?: InspectorHistory;
+}) {
+  const h = useHistoryMessages();
+  const t = useBrowserMessages();
+  const [versions, setVersions] = createSignal<readonly FileVersion[]>([]);
+  // Numbers count the versions the list holds, oldest first; the current content comes after them.
+  const ordered = createMemo(() => [...versions()].sort((a, b) => a.created.localeCompare(b.created)));
+  const versionNumbers = createMemo(() => new Map(ordered().map((version, index) => [version.id, index + 1])));
+  /**
+   * An entry names a version only by an exact version ID, or as the current content when its new revision is the
+   * file's revision now. Then the newest retained version is what that change replaced and may be restored.
+   * A revision is never taken for a version ID.
+   */
+  const producesCurrent = (entry: ActivityEntry) =>
+    (entry.action === "file.overwrite" || entry.action === "file.edit") &&
+    entry.state === "done" &&
+    entry.after.visibility === "full" &&
+    !!entry.after.revision &&
+    entry.after.revision === props.entry.revision;
+  const versionOf = (entry: ActivityEntry) => {
+    const side = entry.after.visibility === "full" ? entry.after : entry.before.visibility === "full" ? entry.before : null;
+    const number = side?.versionId ? versionNumbers().get(side.versionId) : undefined;
+    if (number) return { current: number, restorable: null };
+    if (!producesCurrent(entry)) return null;
+    const previous = ordered().length;
+    return { current: previous + 1, restorable: previous > 0 && props.entry.actions?.write !== false ? previous : null };
+  };
+  const restorePrevious = async (entry: ActivityEntry) => {
+    const previous = ordered().at(-1);
+    if (!previous || !producesCurrent(entry)) throw new Error(h().actionFailed);
+    await restoreVersion(props.base.id, props.entry, previous.id, h().actionFailed);
+    toast.success(t().versionRestored);
+    props.onChanged(props.entry.path);
+  };
+  const request = () => itemHistoryRequest(props.base, { path: props.entry.path, resourceId: props.entry.resourceId ?? props.resourceId });
+  const source = () => JSON.stringify([props.base.locationKey ?? null, itemHistorySource(request())]);
+  const now = () => props.history?.env.now ?? new Date().toISOString();
+  const period = createMemo(() => sharePeriod(now()));
+  const shareSource = () =>
+    JSON.stringify([props.base.id, props.base.locationKey ?? null, props.entry.path, props.entry.resourceId ?? props.resourceId ?? null]);
+  // Server-side item matching precedes pagination. Never filter a user's global first page in the browser.
+  const shares = query.createInfinite({
+    source: shareSource,
+    enabled: () => !!props.history,
+    loadPage: (_key, { cursor, abortSignal }) =>
+      loadItemShares({ baseId: props.base.id, path: props.entry.path }, cursor ?? null, abortSignal, h().accessFailed),
+    getNextCursor: (page: SharePage) => page.next,
+  });
+  const [revoked, setRevoked] = createSignal<{ source: string; items: Map<string, ShareView> } | null>(null);
+  const itemShares = createMemo(() => {
+    const unique = new Map(
+      shares
+        .pages()
+        .flatMap((page) => page.items)
+        .map((share) => [share.id, share]),
+    );
+    const overrides = revoked()?.source === shareSource() ? revoked()?.items : null;
+    return [...unique.values()].map((original) => {
+      const share = overrides?.get(original.id) ?? original;
+      return { share, creatorName: share.createdBy || null };
+    });
+  });
+  const revoke = async (share: ShareView) => {
+    const source = shareSource();
+    const result = await revokeShare(share, t().revokeFailed);
+    if (source !== shareSource()) return;
+    // The fresh server result updates this row; a revoke never refetches every previously loaded page.
+    const items = new Map(revoked()?.source === source ? revoked()?.items : []);
+    items.set(share.id, { ...share, state: result.state });
+    setRevoked({ source, items });
+  };
+  return (
+    <>
+      <Show when={props.history}>
+        {(history) => (
+          <>
+            <ShareHistory
+              env={history().env}
+              shares={itemShares()}
+              period={period()}
+              load={(request, signal) => loadShareAccess(request, period(), signal, h().accessFailed)}
+              onRevoke={revoke}
+            />
+            <Show when={shares.loading() || shares.error() || shares.hasMore()}>
+              <div role="group" aria-label={h().publicLink}>
+                <Show when={shares.loading() && itemShares().length === 0}>
+                  <p role="status">{t().loadingDetails}</p>
+                </Show>
+                <Show when={shares.error()}>
+                  <p class="filesv2-item-history__line" role="alert">
+                    {h().accessFailed}
+                  </p>
+                </Show>
+                <Show when={shares.hasMore() || shares.error()}>
+                  <Button
+                    size="xs"
+                    variant="text"
+                    loading={shares.loadingMore() || shares.loading()}
+                    onClick={() => void (shares.hasMore() ? shares.loadMore() : shares.refresh())}
+                  >
+                    {shares.error() ? h().retry : t().moreShares}
+                  </Button>
+                </Show>
+              </div>
+            </Show>
+          </>
+        )}
+      </Show>
+      <Show when={!props.entry.directory}>
+        <VersionsSection
+          base={props.base}
+          entry={props.entry}
+          busy={props.busy}
+          onChanged={props.onChanged}
+          locale={props.locale}
+          onVersions={setVersions}
+          number={(version) => versionNumbers().get(version.id)}
+        />
+      </Show>
+      <Show when={props.history}>
+        {(history) => (
+          <ItemHistory
+            env={history().env}
+            actions={{ ...history().actions, version: versionOf, onRestoreVersion: restorePrevious }}
+            directory={props.entry.directory}
+            source={source()}
+            initial={
+              history().initial?.source === itemHistorySource(request()) ? { source: source(), page: history().initial!.page } : null
+            }
+            load={(cursor, signal) => loadItemHistory(request(), cursor, signal, h().historyFailed)}
+            activityHref={history().activityHref(props.base.id, props.entry.path)}
+            onChanged={() => props.onChanged(props.entry.path)}
+          />
+        )}
+      </Show>
+    </>
+  );
+}
+
 function VersionsSection(props: {
   base: BaseSummary;
   entry: FileEntry;
   busy?: boolean;
   onChanged: (selectPath?: string | null) => void;
   locale: string;
+  onVersions?: (versions: readonly FileVersion[]) => void;
+  number?: (version: FileVersion) => number | undefined;
 }) {
+  const h = useHistoryMessages();
   const t = useBrowserMessages();
   const f = useFilesMessages();
   const [busy, setBusy] = createSignal(false);
@@ -403,6 +570,7 @@ function VersionsSection(props: {
       ? (versions.data()?.items ?? [])
       : [],
   );
+  createEffect(() => props.onVersions?.(items()));
   const run = async (work: () => Promise<void>) => {
     if (busy() || props.busy) return;
     setBusy(true);
@@ -436,7 +604,10 @@ function VersionsSection(props: {
   };
   const restore = (version: FileVersion) =>
     run(async () => {
-      const response = await apiClient.bases[":baseId"].versions.restore.$post({ param: param(), json: { path: path(), id: version.id } });
+      const response = await apiClient.bases[":baseId"].versions.restore.$post({
+        param: param(),
+        json: { path: path(), id: version.id, expectedRevision: props.entry.revision },
+      });
       if (!response.ok) await apiFailure(response, f().unavailable);
       toast.success(t().versionRestored);
       props.onChanged(path());
@@ -480,7 +651,7 @@ function VersionsSection(props: {
     <DetailPanel.Group label={t().versions}>
       <DetailPanel.Section
         title={t().versions}
-        icon="ti ti-history"
+        icon="ti ti-versions"
         tone="neutral"
         count={props.base.versioningEnabled ? items().length : undefined}
       >
@@ -495,7 +666,11 @@ function VersionsSection(props: {
                   {(version) => (
                     <DetailPanel.Action
                       type="button"
-                      title={t().versionLabel(when(version.created))}
+                      title={
+                        props.number?.(version)
+                          ? `${h().versionN.replace("{n}", String(props.number(version)))} · ${when(version.created)}`
+                          : t().versionLabel(when(version.created))
+                      }
                       description={version.comment ? `${version.comment}${version.author ? ` · ${version.author}` : ""}` : undefined}
                       leading={<i class="ti ti-history" aria-hidden="true" />}
                       trailing={<Format.Bytes value={version.size} />}

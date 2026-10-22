@@ -183,6 +183,63 @@ describe("chat dialogs and info", () => {
 
   for (const locale of ["en", "de"]) {
     const t = chatMessages.resolve([locale]).t;
+    test(`preselected person waits for submission and preserves the multiple-chat chooser in ${locale}`, async () => {
+      const create = mock<ChatDialogStore["create"]>(async () => ({
+        outcome: "existing",
+        matches: [
+          { id: "Chat01", name: "Planning", title: "Planning", archived: false, lastActivityAt: now },
+          { id: "Chat02", name: "Another chat", title: "Another chat", archived: false, lastActivityAt: now },
+        ],
+      }));
+      const close = mock<(id?: string) => void>();
+      await mount(locale, () =>
+        createComponent(modules!.NewChatDialog, {
+          store: store({ create }),
+          guest: true,
+          viewerId,
+          locale,
+          dateConfig: { timeZone: "UTC" },
+          initialPerson: { principal: { type: "user", userId: personId }, displayName: "Nora" },
+          close,
+          setDismissHandler: () => {},
+        }),
+      );
+      expect(dom.root.textContent).toContain("Nora");
+      expect(create).not.toHaveBeenCalled();
+      dom.root.querySelector("form")!.requestSubmit();
+      await settle();
+      expect(create.mock.calls).toEqual([[{ members: [{ type: "user", userId: personId }] }]]);
+      expect(dom.root.textContent).toContain("Planning");
+      expect(dom.root.textContent).toContain("Another chat");
+      expect(close).not.toHaveBeenCalled();
+      button(t.back).click();
+      await settle();
+      expect(dom.root.textContent).toContain("Nora");
+      button(t.cancel).click();
+      expect(close.mock.calls).toEqual([[]]);
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    test(`a preselected viewer keeps the existing self-chat flow in ${locale}`, async () => {
+      const create = mock<ChatDialogStore["create"]>();
+      const close = mock<(id?: string) => void>();
+      await mount(locale, () =>
+        createComponent(modules!.NewChatDialog, {
+          store: store({ create }),
+          guest: true,
+          viewerId,
+          locale,
+          dateConfig: { timeZone: "UTC" },
+          initialPerson: { principal: { type: "user", userId: viewerId }, displayName: "Viewer" },
+          close,
+          setDismissHandler: () => {},
+        }),
+      );
+      expect(dom.root.textContent).toContain(t.selfChatHint);
+      expect(dom.root.querySelector(".chat-member-row")).toBeNull();
+      button(t.cancel).click();
+      expect(create).not.toHaveBeenCalled();
+    });
     for (const kind of ["new", "add", "details", "leave"] as const) {
       test(`${kind} dialog ignores dismissal while writing and allows it when idle in ${locale}`, async () => {
         const pending = Promise.withResolvers<never>();

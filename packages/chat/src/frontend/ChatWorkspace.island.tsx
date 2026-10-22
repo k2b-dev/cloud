@@ -32,9 +32,11 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
+import { createChatCommands } from "./chat-commands";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
+import type { ChosenMember } from "./MemberPicker";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { panelHref, parseRoute, type Route } from "./route";
@@ -420,12 +422,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
       navigate(panelHref(id, null), { scroll: "preserve", state: { chatFromList: fromList } });
   };
-  const newChat = async () => {
+  const newChat = async (initialPerson?: ChosenMember, active = () => true) => {
     if (!store) return;
-    await openChosen(
-      await openNewChatDialog({ store, guest: props.guest, viewerId: props.viewerId, dateConfig: props.dateConfig, locale: locale() }),
-    );
+    const id = await openNewChatDialog({
+      store,
+      guest: props.guest,
+      viewerId: props.viewerId,
+      dateConfig: props.dateConfig,
+      locale: locale(),
+      initialPerson,
+    });
+    if (active()) await openChosen(id);
   };
+  createChatCommands(newChat, () => t().contactUnavailable);
   // The dialogs only offer what the viewer may do; the server decides every request again.
   const addPeople = async () => {
     const current = conversation();

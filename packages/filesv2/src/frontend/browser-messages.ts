@@ -8,6 +8,7 @@ export const browserMessages = i18n.define({
     en: {
       personal: "Personal",
       allStorage: "All storage",
+      activity: "Activity",
       allStorageUp: "Up to all storage",
       onlyYou: "Only you",
       createInStorage: "To create folders or upload files, open a storage location.",
@@ -337,6 +338,7 @@ export const browserMessages = i18n.define({
     de: {
       personal: "Persönlich",
       allStorage: "Alle Ablagen",
+      activity: "Aktivität",
       allStorageUp: "Zu allen Ablagen",
       onlyYou: "Nur du",
       createInStorage: "Neue Ordner und Dateien legst du in einer Ablage an.",

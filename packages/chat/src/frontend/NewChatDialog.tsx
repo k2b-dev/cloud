@@ -9,7 +9,15 @@ import { listTime } from "./chat-format";
 import MemberPicker, { type ChosenMember } from "./MemberPicker";
 
 type Match = z.infer<typeof ExistingMatchSchema>;
-type NewChatProps = { store: ChatDialogStore; guest: boolean; viewerId: string; dateConfig: DateContext; locale: string };
+type NewChatProps = {
+  store: ChatDialogStore;
+  guest: boolean;
+  viewerId: string;
+  dateConfig: DateContext;
+  locale: string;
+  /** Resolved by Chat with current permissions before opening the form. */
+  initialPerson?: ChosenMember;
+};
 
 /** Asks for the people and an optional name; resolves with the chat to open, a new one or one that already existed. */
 export const openNewChatDialog = (props: NewChatProps): Promise<string | undefined> =>
@@ -36,7 +44,11 @@ export function NewChatDialog(
 ): JSX.Element {
   const t = useChatMessages();
   const locale = useLocale();
-  const [chosen, setChosen] = createSignal<ChosenMember[]>([]);
+  const [chosen, setChosen] = createSignal<ChosenMember[]>(
+    props.initialPerson && !(props.initialPerson.principal.type === "user" && props.initialPerson.principal.userId === props.viewerId)
+      ? [props.initialPerson]
+      : [],
+  );
   const [name, setName] = createSignal("");
   const [matches, setMatches] = createSignal<readonly Match[] | null>(null);
   const [busy, setBusy] = createSignal(false);

@@ -247,8 +247,10 @@ pass siblings as separate arguments or use shell expansion.
 
 ## History
 
-Files records folder creation, renames, moves, and copies through the web,
-mobile app, API and CLI, other apps, and agents. Each selected item has its
+Files records folder creation, renames, moves, copies, uploads, document creation,
+template use, Office saves, trash and restores, version changes, and permanent
+deletion through the web, mobile app, API and CLI, other apps, and agents. Each
+selected item has its
 own entry; items changed in one batch share a batch ID. Moving a folder
 records one entry for the whole tree. Planning folder creation or finding an
 existing folder creates no entry.
@@ -264,19 +266,112 @@ keep the item identity, while a new copy has its own identity.
 | `done` | Files has evidence that the operation completed. |
 | `failed` | Files has a certain refusal that made no change. |
 | `unclear` | The response is missing; the current contents cannot prove the outcome. |
-| `not_done` | Reserved for checks that can prove no change; unused for folder creation, renames, moves, and copies. |
+| `not_done` | Confirmed upload abort or expiry; no file was published. |
 
 Files marks an operation done only with evidence. A folder that looks right
 could have been created by someone else. A missing source and an existing
 destination do not prove a move completed. A lost transfer response stays
 unclear, with separate observations of the old and intended new locations.
-Later steps extend history to other changes.
 
 History is kept for 365 days by default. Administrators change this under
 **Settings → History → Keep history for**, from 30 to 3,650 days; the CLI and
 API use the `activityRetentionDays` configuration key. Pending entries are
 kept until their outcome is known. See
 [Files history](/en/docs/operations/files-history) for operators.
+
+A trash action records one entry per selected item and keeps the old location.
+Restoring it records a separate entry with the destination. The trash journal and
+history finish together. Files can recover a lost trash response from its unique
+trash location and matching item. An ordinary restore destination is not proof:
+if the response is lost, the restoration stays unresolved and a retry does not
+move or overwrite another file.
+
+Version comments, restores, copies, and deletions each have their own entry.
+Comment updates carry a history reference in the saved version, so maintenance
+can confirm that specific update later. A lost restore, copy, or delete response
+stays uncertain. Permanent deletions and version deletions also write the
+security audit in the same transaction as history completion.
+An upload reservation and its pending history entry are saved together. Retries,
+lease renewal, status checks, commits, aborts, and public inbox maintenance finish
+that same entry from Filegate's retained result. A visitor stays a visitor even
+when maintenance finds the result later. The original person, channel, request,
+and delegated execution remain unchanged when another request resumes the upload.
+
+An open session or a failed publication condition does not mean the upload failed.
+A committed receipt records completion; a confirmed abort or expiry records
+`not_done`. A missing receipt stays uncertain. The reservation and history finish
+in the same transaction. An unresolved reservation keeps its history beyond the
+normal retention period. Journals created before this feature are adopted with
+their stored person or link and an unknown channel.
+
+Each new document, file created from bytes or a template, and Office save gets its
+own entry. Direct-write responses confirm completion; a lost response remains
+uncertain. Template-created files retain the template reference.
+
+### Find changes in Activity
+
+**Activity** in the sidebar lists visible history across storage, newest
+first by day. Its filters live in the address
+(`/app/filesv2?view=activity&base=…&who=…&what=…&when=…&q=…`), so reload,
+back, and links keep them; an invalid value answers `400` instead of showing
+another filter. From a storage location, Activity opens filtered to it. The
+server renders the first page with the same request the browser uses for
+later pages. An empty page with a next cursor offers older entries and claims
+no absence. A failed load keeps the filters beside **Try again**.
+
+A search in Activity matches names and old paths. Its top result shows where
+the item is now, from the movement chain: confirmed by stable identity, or
+marked probable with path evidence only. **Go there** resolves the item again
+through `/api/filesv2/entries/:id` or the entry endpoint, so a stale entry
+never opens a place the person can no longer read. An empty ordinary search
+offers **Search in history** with the same words. An old folder address can
+show **This folder has moved** when visible history records its move or a move
+of an ancestor folder. A location inferred from an ancestor move is marked
+probable and checked at the opened folder’s current address. The old address
+stays open until you choose **Go there**.
+
+Recovery actions of a vanished item come from
+`GET /api/filesv2/activity/:activityId/recovery`, loaded beside the chain:
+**Restore** (`POST …/restore`, with an optional new name after a
+`path_conflict`), **Move back** (`POST …/move-back`, only for a verified stable
+endpoint in the same storage), **Show in trash**, **Open old place**, and
+**Check now** (`POST …/recheck`) for unclear entries. A recorded snapshot never
+grants an action; every request checks rights, identity, and journals again,
+and a `403` or `409` stays visible beside the action.
+
+**Message …** opens Chat's **New chat** form with the recorded person selected,
+after Chat checks their current availability and your guest restrictions. You
+decide whether to start a chat or choose an existing one; opening the form
+creates no chat and sends no message. If Chat cannot open, Files shows an error;
+try the action again when Chat is available. Cancel stays in Chat; browser Back
+returns to the Files view and its history filters.
+
+The details panel lists the four newest entries of the selected item below
+its versions, then older entries and **All in Activity**, filtered to that
+item. Rows name version numbers for entries that carry a version ID, counted
+over the versions the list holds; the current content is the next number. An
+overwrite or editor save whose new revision is the file's current revision
+offers **Restore version N** for the newest retained version, through the
+existing version restore. A revision is never treated as a version ID. For public links the person created, the
+panel shows page views, released downloads, the period's page networks when
+exact, networks by use, and access over time with older periods on request,
+for the last 30 days, next to **Revoke link**.
+
+### Read an execution record
+
+**View run** opens **Execution in Files** for that history entry. It shows
+the recorded action, its Files result, who acted and on whose behalf, the
+channel, time, and the before and after paths you may read. **Source context
+and references** holds the available request and invocation references.
+
+This page covers one recorded Files effect. It does not establish the outcome
+of the whole originating run, and the source conversation is not available
+through this record, including when someone else performed the action.
+Files checks your current history access whenever the page loads. Missing or
+inaccessible records disclose no details; a loading failure offers **Try again**.
+Reload opens the same record, and browser Back returns to the preceding Files
+view with its URL filters. Opening the record starts no writes or rechecks.
+
 
 ## Public shares
 
@@ -955,3 +1050,4 @@ Administrators can export history as CSV or JSON Lines. Each export is limited
 to one calendar year and 100,000 entries, and is recorded in the security audit.
 For filters, cancellation and privacy considerations, see
 [Files history operations](/en/docs/operations/files-history#export-history-for-administration).
+Restoring from the trash checks the recorded item again before starting a new restore. If another item has replaced it, Files leaves the trash untouched and asks you to refresh. A restore cancelled while waiting for the storage lock does not move the item.

@@ -34,7 +34,7 @@ Files you open or download appear under **Recent** in the sidebar; **Favorites**
 
 ## Search {icon="search"}
 
-The search field at the top searches names everywhere below the current folder; results show each hit with its path relative to the folder. Press Enter to search and clear the field to return to the listing. FreeIPA searches always read the current filesystem, even with an index. An unreadable subfolder stops the search; narrow the search to an accessible folder. If access changes or a result disappears while paging, start the search again. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search in a smaller folder. **Search** at the bottom of the sidebar, above Recent, opens the global Cloud search restricted to files across all your storage locations; opening a result jumps to its folder with the file selected.
+The search field at the top searches names everywhere below the current folder; results show each hit with its path relative to the folder. Press Enter to search and clear the field to return to the listing. FreeIPA searches always read the current filesystem, even with an index. An unreadable subfolder stops the search; narrow the search to an accessible folder. If access changes or a result disappears while paging, start the search again. When a search finds nothing, **Search in history** looks for the same words in old names and places. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search in a smaller folder. **Search** at the bottom of the sidebar opens the global Cloud search restricted to files across all your storage locations; opening a result jumps to its folder with the file selected.
 
 ## Select and act {icon="checkbox"}
 
@@ -69,6 +69,14 @@ Deleting never removes anything permanently: entries move into the trash of thei
 ## Versions {icon="history"}
 
 Where the storage keeps versions, the details panel lists earlier versions of a file at the bottom. For each version you can add a comment, download it, restore it in place, or restore it as a new file next to the current one. Restoring as a new file leaves the original file and its history unchanged. Only administrators can permanently delete versions. Restoring in place keeps the current state as a new version.
+
+## History and activity {icon="activity"}
+
+**Activity** sits in the sidebar with Recent, Favorites, and Shares. It lists changes to files and folders you can read now, newest first and grouped by day. From a storage location, Activity opens filtered to it. Filter by **Storage**, **Who**, **What**, and **When**, or choose **Reset**. **Who** offers the people in the entries you have loaded. The filters stay in the address, so reload, back, and bookmarks keep them. **Load older entries** continues the list. A page can show nothing and still have older entries; Files says so instead of reporting no history. **Running** means a change is still in progress. **Outcome unclear** means Files has no proof yet that a change finished.
+
+The search field in Activity finds names and old paths. The top result says where the item is now, how it got there, and what you can do. **Now in** is confirmed with the item's stable ID; **Probably now in** has only path evidence. **Go there** opens the item after Files checks your current access. Without access to the new place, Files says that the item moved to a place you cannot see. Files checks what you may do before it shows an action: **Restore** brings a trashed item back to its old folder and asks for a new name if that name is taken; **Show in trash** opens the trash of that storage; **Move back** returns a moved item when its identity is confirmed; **Open old place** opens the folder it left; **Check now** asks Files to look for proof of an unclear change. Each action checks your rights again, and a refusal stays visible next to it. A link to an old folder address shows **This folder has moved** with **Go there** instead of "Not found".
+
+The details panel lists the four newest history entries under the versions, then **Show older** and **All in Activity**. Each row names who changed what, when, and how. When a change produced the file's current content, its row offers **Restore version N** for the version it replaced. For public links you created, the panel shows page views, released downloads, the most used shortened networks, and access over time for the last 30 days, and **Revoke link**. A network is not a person, and a released download does not prove a completed transfer.
 
 ## Share publicly {icon="share"}
 

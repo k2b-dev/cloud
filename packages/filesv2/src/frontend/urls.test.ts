@@ -72,3 +72,26 @@ test("the plain Files address shows all storage only with multiple roots", () =>
     showsOverview(new URLSearchParams({ after: "cursor", sort: "modified", order: "desc", type: "files", groupFolders: "false" }), 2),
   ).toBe(true);
 });
+
+test("Activity filters survive the address unchanged and invalid values are refused, not replaced", async () => {
+  const { activityUrl, parseActivityFilters } = await import("./urls");
+  const filters = {
+    baseId: "cloud:groups:vertrieb",
+    path: "Kunden/Angebote 2025",
+    actor: "0b4c9a52-5f7e-4c47-9d2e-6c1f1f0a7b11",
+    action: "item.move" as const,
+    when: "7" as const,
+    q: "Angebote #1/über",
+  };
+  const url = new URL(activityUrl(filters), "https://cloud.test");
+  expect(url.pathname).toBe("/app/filesv2");
+  expect(url.searchParams.get("view")).toBe("activity");
+  expect(parseActivityFilters(url.searchParams)).toEqual(filters);
+  expect(activityUrl()).toBe("/app/filesv2?view=activity");
+  // A path without its storage has no meaning, so it is not written.
+  expect(new URL(activityUrl({ path: "Kunden" }), "https://cloud.test").searchParams.has("path")).toBe(false);
+  for (const bad of ["what=item.explode", "when=8", "who=lukas", "path=Kunden", "base=b&path=../x", "base=b&path=/x"])
+    expect(parseActivityFilters(new URLSearchParams(bad))).toBeNull();
+  expect(parseActivityFilters(new URLSearchParams("q=%20%20"))).toEqual({});
+  expect(showsOverview(new URLSearchParams("view=activity"), 3)).toBe(false);
+});

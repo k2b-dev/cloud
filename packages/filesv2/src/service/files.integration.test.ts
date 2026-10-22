@@ -7,6 +7,7 @@ import { type ExecutionIdentity, Filegate, FilegateError, type Node, type WriteO
 import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import { bindings } from "../data/bases";
@@ -280,6 +281,7 @@ suite("Files service and durable bindings", () => {
             onConflict: z.enum(["error", "overwrite", "rename"]).optional(),
             ownership: z.object({ uid: z.number().optional(), gid: z.number().optional(), mode: z.string().optional() }).optional(),
             precondition: z.object({ ifMatch: z.string().optional(), ifNoneMatch: z.literal(true).optional() }).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
             idempotencyKey: z.string().optional(),
           })
           .parse(init?.body ? JSON.parse(String(init.body)) : {});
@@ -332,7 +334,12 @@ suite("Files service and durable bindings", () => {
           const execution = executionHeader
             ? z.object({ uid: z.number(), gid: z.number(), groups: z.array(z.number()).optional() }).parse(JSON.parse(executionHeader))
             : undefined;
-          const options = { onConflict: input.onConflict, ownership: input.ownership, precondition: input.precondition };
+          const options = {
+            onConflict: input.onConflict,
+            ownership: input.ownership,
+            precondition: input.precondition,
+            metadata: input.metadata,
+          };
           sessions.set(id, {
             id,
             root,
@@ -730,8 +737,7 @@ suite("Files service and durable bindings", () => {
     await migrate();
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`CREATE SCHEMA IF NOT EXISTS settings`.simple();
-    await sql`CREATE SCHEMA IF NOT EXISTS audit`.simple();
-    await sql`CREATE TABLE IF NOT EXISTS audit.events(id bigserial primary key,action text,outcome text,actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`.simple();
+    await migrateAudit();
     await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid,home_directory text,login_shell text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
@@ -1868,6 +1874,11 @@ suite("Files service and durable bindings", () => {
     ).rejects.toMatchObject({
       code: "invalid_path",
     });
+    await expect(
+      service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id, expectedRevision: "stale-view" }),
+    ).rejects.toMatchObject({ code: "version_restore_changed", status: 409 });
+    expect(nodes.get("cloud:users/admin/report.txt")).toEqual(originalNode);
+    expect(contents.get("cloud:users/admin/report.txt")).toBe(originalContent);
     const restored = await service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id });
     expect(restored.entry.modified).toBe(`restored:${v1.id}`);
     expect((await service.versionDownload(testCall(admin), { baseId, path: "report.txt", id: v1.id })).url).toContain(v1.id);
@@ -2268,6 +2279,52 @@ suite("Files service and durable bindings", () => {
     expect(leases).toBe(before);
     directory("freeipa", ".", 0, 0, "0700");
     expect((await service.bases(testCall(actor))).items[0]).toMatchObject({ status: "conflict", reason: "forbidden" });
+  });
+  test("explicit and automatic adoption record the original actor atomically and only once", async () => {
+    const admin = await user("admin", "local", true);
+    directory("cloud", "users/admin", 99, 99);
+    const call = { ...testCall(admin), via: "agent" as const, requestId: "adoption-request" };
+    await service.adopt(call, { area: "cloud", kind: "users", identityId: id(admin) });
+    await service.adopt(call, { area: "cloud", kind: "users", identityId: id(admin) });
+    const [binding] = await sql<
+      { id: string; xmin: string }[]
+    >`SELECT id,xmin::text FROM filesv2.bases WHERE identity_id=${id(admin)}::uuid`;
+    const [event] = await sql<{ actor_user_id: string; target_id: string; request_id: string; metadata: { via: string }; xmin: string }[]>`
+      SELECT actor_user_id,target_id,request_id,metadata,xmin::text FROM audit.events WHERE action='filesv2.adopt'`;
+    expect(event).toMatchObject({
+      actor_user_id: id(admin),
+      target_id: binding!.id,
+      request_id: "adoption-request",
+      metadata: { via: "agent" },
+      xmin: binding!.xmin,
+    });
+    expect(await sql`SELECT 1 FROM audit.events WHERE action='filesv2.adopt'`).toHaveLength(1);
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    await service.bases(testCall(actor));
+    await service.bases(testCall(actor));
+    const automatic = await sql<
+      { actor_user_id: string }[]
+    >`SELECT actor_user_id FROM audit.events WHERE action='filesv2.adopt' AND actor_user_id=${id(actor)}::uuid`;
+    expect(automatic).toEqual([{ actor_user_id: id(actor) }]);
+  });
+  test("failed adoption audit rolls the new binding back and leaves a safe retry", async () => {
+    const admin = await user("admin", "local", true);
+    directory("cloud", "users/admin", 99, 99);
+    await sql`CREATE FUNCTION audit.reject_adoption() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF NEW.action='filesv2.adopt' THEN RAISE EXCEPTION 'adoption audit unavailable'; END IF; RETURN NEW;
+    END $$`.simple();
+    await sql`CREATE TRIGGER reject_adoption BEFORE INSERT ON audit.events FOR EACH ROW EXECUTE FUNCTION audit.reject_adoption()`.simple();
+    try {
+      await expect(service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) })).rejects.toThrow();
+      expect(await sql`SELECT 1 FROM filesv2.bases`).toHaveLength(0);
+      expect(await sql`SELECT 1 FROM audit.events`).toHaveLength(0);
+    } finally {
+      await sql`DROP TRIGGER reject_adoption ON audit.events`.simple();
+      await sql`DROP FUNCTION audit.reject_adoption()`.simple();
+    }
+    await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
+    expect(await sql`SELECT 1 FROM audit.events WHERE action='filesv2.adopt'`).toHaveLength(1);
   });
   test("Cloud adoption remains stable after POSIX allocation, provider off/on, and hides top-level trash", async () => {
     const admin = await user("admin", "local", true);
@@ -3067,6 +3124,14 @@ suite("Files service and durable bindings", () => {
     contents.delete("freeipa:users/catalog-admin/protocol.md");
     await templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" });
     expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
+    expect(
+      (await sql`SELECT action,state,actor_user_id,detail FROM filesv2.activity WHERE path_after='users/catalog-reader/copy.md'`)[0],
+    ).toMatchObject({
+      action: "file.create",
+      state: "done",
+      actor_user_id: id(reader),
+      detail: { template: template.id },
+    });
     await expect(templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
       status: 409,
     });

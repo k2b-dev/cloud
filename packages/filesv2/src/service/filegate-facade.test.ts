@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import * as activity from "./activity";
-import { currentActivityId, filegateException, type Intent, pendingMigration } from "./activity";
+import { currentActivityId, filegateException, type Intent } from "./activity";
 import { connectFilegate, FilesFilegate, FilesRoot } from "./filegate-facade";
 
 const intent: Intent = {
@@ -45,8 +45,10 @@ test("the activity API does not expose its mutable authorization scope", () => {
 });
 test("pending migration permissions cannot be changed through the exported table", () => {
   const methods = activity.PENDING_MIGRATION_METHODS;
-  expect(Reflect.set(methods, "files.version_comment", ["remove"])).toBe(false);
-  expect(Reflect.set(methods["files.version_comment"], "0", "remove")).toBe(false);
+  expect(Reflect.set(methods, "lifecycle.operation", ["remove"])).toBe(false);
+  expect(activity.PENDING_MIGRATION).toEqual([]);
+  expect(methods).toEqual({});
+  expect(Reflect.set(activity.PENDING_MIGRATION, "0", "lifecycle.operation")).toBe(false);
 });
 test.each(Object.entries(mutations))("%s fails closed, including derived clients and roots", async (_name, mutate) => {
   const f = fixture();
@@ -75,21 +77,6 @@ test("no SDK escape hatch exists on instances or prototypes", () => {
     ),
   ).toEqual(["put"]);
 });
-test("named pending migration allows the existing write", async () => {
-  const f = fixture();
-  await pendingMigration("files.ensure_trash", () => f.client.root("cloud").mkdir("home/alice/trash"));
-  expect(f.requests()).toBe(1);
-});
-test("pending version comments allow updateVersion but refuse remove before transport", async () => {
-  const f = fixture();
-  const root = f.client.root("cloud");
-  await pendingMigration("files.version_comment", async () => {
-    await expect(root.remove("home/alice/new")).rejects.toMatchObject({ code: "activity_scope_mismatch", status: 500 });
-    expect(f.requests()).toBe(0);
-    await root.updateVersion("home/alice/new", "version", { pinned: false });
-  });
-  expect(f.requests()).toBe(1);
-});
 test("probe exception only permits probe mkdir/remove", async () => {
   const f = fixture();
   const root = f.client.root("cloud");
@@ -104,9 +91,9 @@ test("probe exception only permits probe mkdir/remove", async () => {
   });
   expect(f.requests()).toBe(2);
 });
-test("pending migrations expose no activity identity", async () => {
+test("probe exceptions expose no activity identity", async () => {
   expect(currentActivityId()).toBeNull();
-  await pendingMigration("files.version_comment", async () => {
+  await filegateException("lifecycle.probe", async () => {
     expect(currentActivityId()).toBeNull();
   });
 });

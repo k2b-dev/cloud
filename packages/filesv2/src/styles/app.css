@@ -1,5 +1,6 @@
 /* App-owned utilities; shared components and theme come from global.css. */
 @import "tailwindcss/utilities.css" layer(utilities);
+@import "./history.css";
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 

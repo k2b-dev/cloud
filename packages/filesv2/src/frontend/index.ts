@@ -6,6 +6,7 @@ import { ssr } from "../config";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
 import adminPage from "./admin";
+import executionPage from "./execution-page";
 import filesPage from "./page";
 import { pdfPage } from "./pdf-page";
 import { publicInboxPage, publicSharePage } from "./public-pages";
@@ -23,6 +24,8 @@ export default new Hono<AuthContext>()
     return next();
   })
   .get("/app/filesv2", auth.requireRole("user", ssr.access), ...filesPage)
+  // Historical writers choose names and context strings beside another actor's authorized record.
+  .get("/app/filesv2/execution/:activityId", auth.requireRole("user", ssr.access), middleware.noTransform(), ...executionPage)
   .get("/app/filesv2/ref/:id", auth.requireRole("user", ssr.access), async (c) => {
     try {
       // A stable ref opens wherever the file is now; a path ref where it was named.

@@ -143,6 +143,7 @@ export type OfficeEditorLaunch = {
 export type MarkdownLaunch = { kind: "markdown"; managed: boolean; base: BaseSummary; entry: FileEntry; canWrite: boolean; url: string };
 export type EditorLaunch = OfficeEditorLaunch | MarkdownLaunch;
 export const VersionRefSchema = z.object({ path: PathSchema, id: z.string().min(1).max(128) });
+export const VersionRestoreSchema = VersionRefSchema.extend({ expectedRevision: z.string().min(1).max(4096).optional() });
 export const VersionCommentSchema = VersionRefSchema.extend({ comment: z.string().trim().max(2000) });
 export const VersionRestoreAsSchema = VersionRefSchema.extend({ name: z.string().min(1).max(255) });
 export type FileVersion = { id: string; created: string; size: number; pinned: boolean; comment: string | null; author: string | null };
@@ -177,6 +178,8 @@ export const CreateShareInputSchema = z.object({
 });
 export const ShareIdSchema = z.object({ id: z.string().uuid() });
 export type ShareView = {
+  /** Present on an authorized item management page; never inferred from browser roles. */
+  managementMode?: "creator" | "admin";
   passwordProtected: boolean;
   id: string;
   kind: "download" | "inbox";
@@ -200,7 +203,13 @@ export type ShareView = {
   showUploadNames: boolean;
 };
 export type SharePage = { items: ShareView[]; next: string | null };
-export const SharePageQuerySchema = z.object({ after: z.string().uuid().optional() });
+export const SharePageQuerySchema = z
+  .object({
+    after: z.string().uuid().optional(),
+    baseId: z.string().max(256).optional(),
+    path: z.string().max(4096).optional(),
+  })
+  .refine((input) => (input.baseId === undefined) === (input.path === undefined), "Expected both baseId and path");
 export const PublicBrowseQuerySchema = z.object({ path: z.string().max(4096).default(""), after: z.string().max(8192).optional() });
 export const PublicUploadInputSchema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -347,4 +356,9 @@ export type ArchiveEntry = {
 };
 export type ArchivePage = { items: ArchiveEntry[]; next: string | null };
 export type DirectoryMaintenanceResult = { processed: number; archived: number; pending: number };
-export type MaintenanceResult = DirectoryMaintenanceResult & { activityChecked: number; activityPurged: number };
+export type MaintenanceResult = DirectoryMaintenanceResult & {
+  activityChecked: number;
+  activityPurged: number;
+  shareAccessRolledUp: number;
+  shareAccessPurged: number;
+};
