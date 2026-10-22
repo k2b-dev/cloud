@@ -1,5 +1,6 @@
 import type { ActivityChain, ActivityEntry, ActivityPage, ActivitySide } from "../activity-contracts";
-import type { BaseSummary } from "../contracts";
+import type { BaseSummary, DirectoryResult, FileEntry, FileVersion } from "../contracts";
+import { filesUrl } from "./urls";
 import type { WorkspaceSnapshot } from "./workspace-state";
 
 // Fictional data only. The clock and identities are fixed for both browser engines.
@@ -15,6 +16,19 @@ export const historyBase: BaseSummary = {
   versioningEnabled: true,
   stableIds: true,
 };
+export const historyFile: FileEntry = {
+  name: "Notes.txt",
+  path: "Notes.txt",
+  directory: false,
+  size: 24,
+  modified: historyNow,
+  revision: "notes-current",
+};
+export const historyVersions: FileVersion[] = [
+  { id: "notes-original", created: "2026-10-19T09:00:00.000Z", size: 12, pinned: false, comment: "Initial draft", author: "Mia Weber" },
+];
+export const historyDirectory: DirectoryResult = { base: historyBase, path: "", items: [historyFile], next: null };
+export const historyInspectorSource = filesUrl(historyBase.id, "", null, historyFile.path);
 const side = (path: string): ActivitySide => ({
   visibility: "full",
   source: "current",
@@ -108,7 +122,18 @@ export const historyActivity = historyPage([
   historyMove,
 ]);
 export function historySnapshot(source: string): WorkspaceSnapshot {
-  const query = new URL(source, "https://files-history.test").searchParams.get("q");
+  const params = new URL(source, "https://files-history.test").searchParams;
+  const query = params.get("q");
+  if (params.get("file") === historyFile.path)
+    return {
+      source,
+      bases: { items: [historyBase], issues: [], editor: null },
+      selectedId: historyBase.id,
+      directory: historyDirectory,
+      detail: { base: historyBase, entry: historyFile },
+      errorCode: null,
+      now: historyNow,
+    };
   return {
     source,
     bases: { items: [historyBase], issues: [], editor: null },
