@@ -2,7 +2,9 @@ import { expect, mock, test } from "bun:test";
 import { applySharedTextEvent, isValidSharedTextUpdate, type SharedTextSyncEvent, toBase64 } from "@k2b/cloud/shared-text";
 import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
+import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { createYjsProvider } from "./frontend/lib/yjs/provider";
 
 // Module mocks belong to a subprocess, never to another suite's module graph.
 if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
@@ -23,6 +25,32 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
   let permission = "write";
   let restoreAfterRead: (() => void) | null = null;
   let streamStarts = 0;
+  type Entry = { cursor: string; data: SharedTextSyncEvent };
+  let replayEntries: Entry[] = [];
+  let liveEntries: Entry[] = [];
+  let echoPublications = false;
+  let beforeDelivery: (() => Promise<void>) | null = null;
+  const liveWaiters = new Set<() => void>();
+  const appendLive = (entry: Entry) => {
+    liveEntries.push(entry);
+    for (const wake of liveWaiters) wake();
+  };
+  const liveStream = async function* (config: { signal?: AbortSignal }) {
+    let index = 0;
+    while (!config.signal?.aborted) {
+      if (index < liveEntries.length) yield liveEntries[index++]!;
+      else
+        await new Promise<void>((resolve) => {
+          const wake = () => {
+            liveWaiters.delete(wake);
+            config.signal?.removeEventListener("abort", wake);
+            resolve();
+          };
+          liveWaiters.add(wake);
+          config.signal?.addEventListener("abort", wake, { once: true });
+        });
+    }
+  };
   const published: Array<{ tenantId: string; data: SharedTextSyncEvent }> = [];
   const snapshots: unknown[] = [];
   const waitUntilAborted = async function* (config: { signal?: AbortSignal }) {
@@ -61,6 +89,13 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
         getByShortId: async () => note,
         get: async () => note,
         getAnchoredYjsState: async () => stored(),
+        deliverAtRestoreRevision: async (input: { restoreRevision: string; deliver: () => undefined }) => {
+          await beforeDelivery?.();
+          if (!exists) return "notFound";
+          if (input.restoreRevision !== revision) return "stale";
+          input.deliver();
+          return "delivered";
+        },
         getYjsStateWithCursor: async () => {
           const result = exists ? stored() : null;
           restoreAfterRead?.();
@@ -88,12 +123,16 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     createYjsTopic: () => ({
       latestCursor: async () => {
         streamStarts++;
-        return null;
+        return replayEntries.at(-1)?.cursor ?? null;
+      },
+      replay: async function* () {
+        yield* replayEntries;
       },
       cursorAt: () => "s6t.fixture.0",
-      hub: () => ({ subscribe: waitUntilAborted }),
+      hub: () => ({ subscribe: liveStream }),
       publish: async (input: { tenantId: string; data: SharedTextSyncEvent }) => {
         published.push(input);
+        if (echoPublications) appendLive({ cursor: "s6t.fixture.10", data: input.data });
         return { cursor: "s6t.fixture.10" };
       },
     }),
@@ -104,19 +143,30 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
   }));
 
   const { default: app } = await import("./ws");
-  type WireMessage = { type: string; payload: { code?: string; reopen?: boolean; restoreRevision?: string } };
+  type WireMessage = {
+    type: string;
+    payload: {
+      code?: string;
+      reopen?: boolean;
+      restoreRevision?: string;
+      updates?: Array<{ cursor: string; payload: string; actionId?: string }>;
+    };
+  };
   const waitFor = async (predicate: () => boolean) => {
     const deadline = Date.now() + 5_000;
     while (!predicate() && Date.now() < deadline) await Bun.sleep(1);
     expect(predicate()).toBe(true);
   };
-  const openSocket = async () => {
+  const openSocket = async (onWire?: (data: string) => void) => {
     await app.request("/");
     const handlers = events!;
     const sent: WireMessage[] = [];
     const closed: number[] = [];
     const raw = {
-      send: (data: string) => sent.push(JSON.parse(data)),
+      send: (data: string) => {
+        sent.push(JSON.parse(data));
+        onWire?.(data);
+      },
       close: (code: number) => {
         closed.push(code);
         void handlers.onClose?.(new CloseEvent("close"), socket);
@@ -146,6 +196,10 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     permission = "write";
     restoreAfterRead = null;
     streamStarts = 0;
+    replayEntries = [];
+    liveEntries = [];
+    echoPublications = false;
+    beforeDelivery = null;
     published.length = 0;
     snapshots.length = 0;
   };
@@ -241,6 +295,184 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
       await socket.close();
       original.destroy();
       replacement.destroy();
+    }
+  });
+
+  test("store check -> restore -> publish -> live delivery preserves TOKEN and the provider's unsent AFTER", async () => {
+    reset();
+    const originalWebSocket = globalThis.WebSocket;
+    class BrowserSocket {
+      static OPEN = 1;
+      static latest: BrowserSocket;
+      readyState = 1;
+      sent: string[] = [];
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onclose: ((event: { code: number; reason: string }) => void) | null = null;
+      constructor(_url: string) {
+        BrowserSocket.latest = this;
+      }
+      send(data: string) {
+        this.sent.push(data);
+      }
+      close() {
+        this.readyState = 3;
+      }
+    }
+    Object.assign(globalThis, { WebSocket: BrowserSocket });
+    const doc = new Y.Doc();
+    const replacement = new Y.Doc();
+    doc.clientID = 101;
+    doc.getText("codemirror").insert(0, "TOKEN");
+    const historical = Y.encodeStateAsUpdate(doc);
+    doc.getText("codemirror").delete(0, 5);
+    state = Y.encodeStateAsUpdate(doc);
+    const awareness = new Awareness(doc);
+    const fatals: string[] = [];
+    const provider = createYjsProvider({
+      doc,
+      awareness,
+      noteId: "abcdef",
+      appUrl: "http://localhost",
+      initialCursor: "s6t.fixture.9",
+      initialRestoreRevision: "0",
+      onFatal: (error) => fatals.push(error.code),
+    });
+    const socket = await openSocket((data) => BrowserSocket.latest.onmessage?.({ data }));
+    try {
+      provider.connect();
+      BrowserSocket.latest.onopen?.();
+      socket.replay("0", "s6t.fixture.9");
+      await socket.ready();
+      doc.getText("codemirror").insert(0, "AFTER");
+      expect(provider.hasUnsentChanges()).toBe(true);
+      const publication = BrowserSocket.latest.sent.map((raw) => JSON.parse(raw)).find((msg) => msg.type === "notes.yjs.sync.publish");
+      restoreAfterRead = () => {
+        revision = "1";
+        state = historical;
+      };
+      echoPublications = true;
+      socket.message(publication.type, publication.payload);
+      await expectReopen(socket);
+      expect(published).toHaveLength(1);
+      const data = published[0]!.data;
+      expect(data.restoreRevision).toBe("0");
+      Y.applyUpdate(replacement, state);
+      expect(applySharedTextEvent(replacement, { cursor: "s6t.fixture.10", data }, "test-note", "1")).toBe(false);
+      expect(replacement.getText("codemirror").toString()).toBe("TOKEN");
+      expect(doc.getText("codemirror").toString()).toBe("AFTER");
+      expect(provider.hasUnsentChanges()).toBe(true);
+      expect(fatals).toEqual(["RESYNC_REQUIRED"]);
+      expect(socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push")).toEqual([]);
+      expect(socket.sent.filter((msg) => msg.type === "notes.yjs.replay.ready")).toHaveLength(1);
+      provider.resume();
+      expect(provider.hasUnsentChanges()).toBe(true);
+    } finally {
+      await socket.close();
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+      replacement.destroy();
+      Object.assign(globalThis, { WebSocket: originalWebSocket });
+    }
+  });
+
+  const entry = (seq: number): Entry => ({
+    cursor: `s6t.fixture.${seq}`,
+    data: { kind: "sync", payload: "AAA=", restoreRevision: "0", actionId: `action-${seq}`, originNodeId: "peer", originPeerId: "peer" },
+  });
+
+  test("a restore while a replay batch waits suppresses stale batches and readiness, including finally", async () => {
+    reset();
+    replayEntries = [entry(10), entry(11)];
+    const socket = await openSocket();
+    try {
+      // Cursor reconnect skips the initial snapshot; race the first replay send.
+      beforeDelivery = async () => {
+        revision = "1";
+      };
+      socket.replay("0", "s6t.fixture.9");
+      await expectReopen(socket);
+      expect(socket.sent.some((msg) => msg.type === "notes.yjs.sync.push" || msg.type === "notes.yjs.replay.ready")).toBe(false);
+    } finally {
+      await socket.close();
+    }
+  });
+
+  test("a mismatch drops queued timer and size batches without a finally echo", async () => {
+    reset();
+    const socket = await openSocket();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    try {
+      socket.replay("0", "s6t.fixture.9");
+      await socket.ready();
+      beforeDelivery = async () => {
+        entered.resolve();
+        await release.promise;
+      };
+      appendLive(entry(10));
+      await entered.promise;
+      for (let i = 11; i <= 110; i++) appendLive(entry(i));
+      revision = "1";
+      release.resolve();
+      await expectReopen(socket);
+      expect(socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push")).toEqual([]);
+      expect(socket.sent.filter((msg) => msg.type === "notes.yjs.replay.ready")).toHaveLength(1);
+    } finally {
+      release.resolve();
+      await socket.close();
+    }
+  });
+
+  test("timer and size flushes serialize peer receipts before replay readiness without duplicate batches", async () => {
+    reset();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let deliveries = 0;
+    beforeDelivery = async () => {
+      deliveries++;
+      if (deliveries === 1) {
+        entered.resolve();
+        await release.promise;
+      }
+    };
+    replayEntries = Array.from({ length: 205 }, (_, i) => entry(i + 10));
+    const socket = await openSocket();
+    try {
+      socket.replay("0", "s6t.fixture.9");
+      await entered.promise;
+      expect(socket.sent.some((msg) => msg.type === "notes.yjs.replay.ready")).toBe(false);
+      release.resolve();
+      await socket.ready();
+      const pushes = socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push");
+      expect(pushes.map((msg) => msg.payload.updates?.length)).toEqual([100, 100, 5]);
+      expect(pushes.flatMap((msg) => msg.payload.updates?.map((update) => update.actionId))).toEqual(
+        replayEntries.map((e) => e.data.actionId),
+      );
+      expect(socket.sent.at(-1)?.type).toBe("notes.yjs.replay.ready");
+      // Force a timer flush to wait, then fill the next size-triggered batch.
+      const timerEntered = Promise.withResolvers<void>();
+      const timerRelease = Promise.withResolvers<void>();
+      const prior = deliveries;
+      beforeDelivery = async () => {
+        deliveries++;
+        if (deliveries === prior + 1) {
+          timerEntered.resolve();
+          await timerRelease.promise;
+        }
+      };
+      appendLive(entry(215));
+      await timerEntered.promise;
+      for (let i = 216; i < 316; i++) appendLive(entry(i));
+      expect(deliveries).toBe(prior + 1);
+      timerRelease.resolve();
+      await waitFor(() => socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push").length === 5);
+      const all = socket.sent.filter((msg) => msg.type === "notes.yjs.sync.push").flatMap((msg) => msg.payload.updates ?? []);
+      expect(all.map((update) => update.cursor)).toEqual(Array.from({ length: 306 }, (_, i) => `s6t.fixture.${i + 10}`));
+    } finally {
+      release.resolve();
+      await socket.close();
     }
   });
 

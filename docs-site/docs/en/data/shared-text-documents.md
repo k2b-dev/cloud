@@ -240,6 +240,14 @@ snapshot into the old Y.Doc. Upgrade all log readers and browser transports
 before enabling these server actions or automatic repair; older readers do not
 understand this revision fence.
 
+An authoritative socket receipt or replay-ready message must also be ordered
+against store-only replacement. Notebooks validates and sends it synchronously
+under a shared lock on the note row. Replacement takes the exclusive lock and
+checks accepted live content through the captured log head before replacing an
+empty target. Snapshot text alone cannot establish that the target is empty.
+Transports and replacement writers must both follow this ordering before it
+can be relied on during a rollout.
+
 ## Snapshots
 
 Use `sharedText.snapshots({ log, job, store, input?, logger?, repair? })` to persist

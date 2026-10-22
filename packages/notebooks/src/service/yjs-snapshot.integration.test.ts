@@ -73,6 +73,16 @@ if (!databaseName) {
           doc.destroy();
         }
       };
+      const deleted = (content: string) => {
+        const doc = new Y.Doc();
+        doc.getText("codemirror").insert(0, content);
+        doc.getText("codemirror").delete(0, content.length);
+        try {
+          return Y.encodeStateAsUpdate(doc);
+        } finally {
+          doc.destroy();
+        }
+      };
       const notebookId = crypto.randomUUID();
       const noteId = crypto.randomUUID();
       const restoreId = crypto.randomUUID();
@@ -107,7 +117,7 @@ if (!databaseName) {
       const restoreTopic = createYjsTopic();
       const pending = await restoreTopic.publish({
         tenantId: restoreId,
-        data: { kind: "sync", payload: Buffer.from(encode("PRE-RESTORE")).toString("base64"), originNodeId: "test", originPeerId: null },
+        data: { kind: "sync", payload: Buffer.from(deleted("PRE-RESTORE")).toString("base64"), originNodeId: "test", originPeerId: null },
       });
       // A genuine restore changes the Yjs base and must defeat an older worker.
       expect(
@@ -132,6 +142,190 @@ if (!databaseName) {
       const [restored] = await sql<{ content_md: string; yjs_stream_cursor: string | null }[]>`
         SELECT content_md, yjs_stream_cursor FROM notebooks.notes WHERE id = ${restoreId}::uuid`;
       expect(restored).toEqual({ content_md: "restored", yjs_stream_cursor: pending.cursor });
+      // An old connected browser can finish publication after a store-only restore.
+      // Its originating revision must travel through the real NATS log and SQL read.
+      const lineageId = crypto.randomUUID();
+      const oldBrowser = new Y.Doc();
+      oldBrowser.clientID = 101;
+      try {
+        oldBrowser.getText("codemirror").insert(0, "TOKEN");
+        const historical = Y.encodeStateAsUpdate(oldBrowser);
+        oldBrowser.getText("codemirror").delete(0, 5);
+        await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, content_md, yjs_snapshot)
+          VALUES (${lineageId}::uuid, 'vers01', ${notebookId}::uuid, '', '', ${Buffer.from(Y.encodeStateAsUpdate(oldBrowser))})`;
+        const beforeRestore = await notes.getAnchoredYjsState({ noteId: lineageId });
+        expect(beforeRestore?.restoreRevision).toBe("0");
+        // The browser types after its publication-side store check. Publish
+        // only after the store-only restore commits, then attempt real delivery.
+        oldBrowser.getText("codemirror").insert(0, "AFTER");
+        const restoredResult = await notes.restoreFromSnapshot({
+          noteId: lineageId,
+          yjsSnapshot: Buffer.from(historical).toString("base64"),
+          createdBy: null,
+        });
+        expect(restoredResult.ok).toBe(true);
+        const stalePublication = await restoreTopic.publish({
+          tenantId: lineageId,
+          data: {
+            kind: "sync",
+            payload: Buffer.from(Y.encodeStateAsUpdate(oldBrowser)).toString("base64"),
+            restoreRevision: beforeRestore!.restoreRevision,
+            originNodeId: "old-browser",
+            originPeerId: "old-browser",
+          },
+        });
+        let receipts = 0;
+        expect(
+          await notes.deliverAtRestoreRevision({
+            noteId: lineageId,
+            restoreRevision: "0",
+            deliver: () => {
+              receipts++;
+            },
+          }),
+        ).toBe("stale");
+        expect(receipts).toBe(0);
+        expect(oldBrowser.getText("codemirror").toString()).toBe("AFTER");
+        expect(stalePublication.cursor).toBeTruthy();
+        const current = await notes.getCurrentWithContent({ id: lineageId });
+        expect(current?.contentMd).toBe("TOKEN");
+        expect(current?.yjsRestoreRevision).toBe("1");
+        const sameSnapshot = await notes.getWithContentByShortId({ shortId: "vers01" });
+        expect(sameSnapshot?.yjsRestoreRevision).toBe("1");
+        const replica = new Y.Doc();
+        try {
+          Y.applyUpdate(replica, Buffer.from(current!.yjsSnapshot!, "base64"));
+          expect(replica.getText("codemirror").toString()).toBe("TOKEN");
+          expect(replica.store.pendingDs).toBeNull();
+          expect(replica.store.pendingStructs).toBeNull();
+        } finally {
+          replica.destroy();
+        }
+      } finally {
+        oldBrowser.destroy();
+      }
+
+      // Reverse ordering: a real receipt precedes restore, while Markdown is
+      // still empty. Restore must reconstruct and refuse the acknowledged text,
+      // including just-whitespace input, without writing history or a revision.
+      for (const [content, shortId] of [
+        ["ACKNOWLEDGED", "ack001"],
+        [" \n", "ack002"],
+      ] as const) {
+        const id = crypto.randomUUID();
+        await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, content_md)
+          VALUES (${id}::uuid, ${shortId}, ${notebookId}::uuid, '', '')`;
+        await notes.getAnchoredYjsState({ noteId: id });
+        await restoreTopic.publish({
+          tenantId: id,
+          data: {
+            kind: "sync",
+            payload: Buffer.from(encode(content)).toString("base64"),
+            restoreRevision: "0",
+            originNodeId: "test",
+            originPeerId: "peer",
+          },
+        });
+        let receipts = 0;
+        expect(
+          await notes.deliverAtRestoreRevision({
+            noteId: id,
+            restoreRevision: "0",
+            deliver: () => {
+              receipts++;
+            },
+          }),
+        ).toBe("delivered");
+        expect(receipts).toBe(1);
+        expect((await notes.getWithContent({ id }))?.contentMd).toBe("");
+        expect(
+          await notes.restoreFromSnapshot({ noteId: id, yjsSnapshot: Buffer.from(encode("TOKEN")).toString("base64"), createdBy: null }),
+        ).toMatchObject({ ok: false, status: 400 });
+        expect((await notes.getCurrentWithContent({ id }))?.contentMd).toBe(content);
+        expect((await notes.getYjsStateWithCursor({ noteId: id }))?.restoreRevision).toBe("0");
+        const [versions] = await sql<
+          { count: number }[]
+        >`SELECT COUNT(*)::int AS count FROM notebooks.note_versions WHERE note_id = ${id}::uuid`;
+        expect(versions?.count).toBe(0);
+      }
+
+      // Pause after capture of the final boundary under the actual exclusive
+      // lock. An update appended now cannot get a receipt before replacement;
+      // the waiting SHARE lock must wake to revision 1 and reject its echo.
+      const lockedId = crypto.randomUUID();
+      await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, content_md)
+        VALUES (${lockedId}::uuid, 'ack003', ${notebookId}::uuid, '', '')`;
+      await notes.getAnchoredYjsState({ noteId: lockedId });
+      const { notebooksTextLog } = await import("./yjs-sync");
+      const rowLocked = Promise.withResolvers<void>();
+      const releaseRestore = Promise.withResolvers<void>();
+      const originalTopic = notebooksTextLog.topic;
+      const pausedTopic = spyOn(notebooksTextLog, "topic").mockImplementation(() => {
+        const topic = originalTopic();
+        const latest = topic.latestCursor.bind(topic);
+        topic.latestCursor = async (options) => {
+          const captured = await latest(options);
+          rowLocked.resolve();
+          await releaseRestore.promise;
+          return captured;
+        };
+        return topic;
+      });
+      let receiptFinished = false;
+      let receiptsWhileLocked = 0;
+      const restoring = notes.restoreFromSnapshot({
+        noteId: lockedId,
+        yjsSnapshot: Buffer.from(encode("TOKEN")).toString("base64"),
+        createdBy: null,
+      });
+      try {
+        await rowLocked.promise;
+        await restoreTopic.publish({
+          tenantId: lockedId,
+          data: {
+            kind: "sync",
+            payload: Buffer.from(encode("AFTER")).toString("base64"),
+            restoreRevision: "0",
+            originNodeId: "old-browser",
+            originPeerId: "old-browser",
+          },
+        });
+        const pendingReceipt = notes
+          .deliverAtRestoreRevision({
+            noteId: lockedId,
+            restoreRevision: "0",
+            deliver: () => {
+              receiptsWhileLocked++;
+            },
+          })
+          .then((result) => {
+            receiptFinished = true;
+            return result;
+          });
+        // Observe PostgreSQL's blocked lock request instead of guessing with a sleep.
+        const deadline = Date.now() + 5_000;
+        let waiting = false;
+        while (!waiting && Date.now() < deadline) {
+          const [row] = await sql<{ waiting: boolean }[]>`
+            SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+              AND wait_event_type = 'Lock' AND query LIKE '%FOR SHARE%') AS waiting`;
+          waiting = row?.waiting ?? false;
+          if (!waiting) await Bun.sleep(5);
+        }
+        expect(waiting).toBe(true);
+        expect(receiptFinished).toBe(false);
+        expect(receiptsWhileLocked).toBe(0);
+        releaseRestore.resolve();
+        expect((await restoring).ok).toBe(true);
+        expect(await pendingReceipt).toBe("stale");
+        expect(receiptsWhileLocked).toBe(0);
+        expect((await notes.getCurrentWithContent({ id: lockedId }))?.contentMd).toBe("TOKEN");
+      } finally {
+        releaseRestore.resolve();
+        await restoring;
+        pausedTopic.mockRestore();
+      }
+
       // Simulate a worker that read the old base before restore, but whose
       // target includes a newer accepted event. Sequence alone cannot fence it.
       const afterRestore = await restoreTopic.publish({
@@ -188,7 +382,7 @@ if (!databaseName) {
       await notes.getAnchoredYjsState({ noteId: raceId });
       await raceTopic.publish({
         tenantId: raceId,
-        data: { kind: "sync", payload: Buffer.from(encode("OLD")).toString("base64"), originNodeId: "test", originPeerId: null },
+        data: { kind: "sync", payload: Buffer.from(deleted("OLD")).toString("base64"), originNodeId: "test", originPeerId: null },
       });
       const oldBase = await notes.getYjsStateWithCursor({ noteId: raceId });
       await notes.restoreFromSnapshot({ noteId: raceId, yjsSnapshot: Buffer.from(encode("RESTORED")).toString("base64"), createdBy: null });

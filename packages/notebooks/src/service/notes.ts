@@ -1,5 +1,6 @@
 import { lazySync } from "@k2b/cloud";
 import type { MutationResult, PaginationParams, PermissionLevel } from "@k2b/cloud/contracts";
+import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server";
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import {
   planTableAction,
@@ -1605,6 +1606,27 @@ export const getYjsStateWithCursor = async (params: {
   };
 };
 
+/**
+ * Serialize authoritative socket delivery with store-only replacement. `deliver`
+ * must send synchronously: validation and send share the same row lock, without
+ * a network await or a second connection between them.
+ */
+export const deliverAtRestoreRevision = async (params: {
+  noteId: string;
+  restoreRevision: string;
+  deliver: () => undefined;
+}): Promise<"delivered" | "notFound" | "stale"> =>
+  sql.begin(async (tx) => {
+    const [row] = await tx<{ revision: string }[]>`
+      SELECT yjs_restore_revision::text AS revision FROM notebooks.notes
+      WHERE id = ${params.noteId}::uuid FOR SHARE
+    `;
+    if (!row) return "notFound";
+    if (row.revision !== params.restoreRevision) return "stale";
+    params.deliver();
+    return "delivered";
+  });
+
 type YjsState = NonNullable<Awaited<ReturnType<typeof getYjsStateWithCursor>>>;
 
 /**
@@ -1949,8 +1971,13 @@ export const restoreFromSnapshot = async (params: {
   noteId: string;
   yjsSnapshot: string; // base64
   createdBy: string | null;
+  signal?: AbortSignal;
 }): Promise<MutationResult<Note>> => {
   const { noteId, yjsSnapshot, createdBy } = params;
+  // Replay under the row lock has a fixed head and the platform's maximum
+  // request budget, even for callers without a request cancellation signal.
+  const deadline = AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1_000);
+  const signal = params.signal ? AbortSignal.any([params.signal, deadline]) : deadline;
 
   const existing = await getWithContent({ id: noteId });
   if (!existing) {
@@ -1960,27 +1987,6 @@ export const restoreFromSnapshot = async (params: {
   // Check if note is locked
   if (existing.lockedAt) {
     return { ok: false, error: "Cannot restore locked note", status: 403 };
-  }
-
-  const currentContent = existing.contentMd ?? "";
-  let hasContent = currentContent.trim().length > 0;
-  if (!hasContent && existing.yjsSnapshot) {
-    const currentDoc = new Y.Doc();
-    try {
-      Y.applyUpdate(currentDoc, Buffer.from(existing.yjsSnapshot, "base64"));
-      hasContent = currentDoc.getText("codemirror").toString().trim().length > 0;
-    } catch {
-      hasContent = true;
-    } finally {
-      currentDoc.destroy();
-    }
-  }
-  if (hasContent) {
-    return {
-      ok: false,
-      error: "Restore only supports new empty notes. Create a new note and restore there.",
-      status: 400,
-    };
   }
 
   // Decode new snapshot and extract markdown for note row + version history.
@@ -1998,18 +2004,59 @@ export const restoreFromSnapshot = async (params: {
   }
   const restoredTitle = deriveNoteTitle(restoredContentMd);
   const restoredDataProperties = dataPropertiesForContent(restoredContentMd);
-  // The restored snapshot replaces everything up to this real stream boundary.
-  // Preserve the zero boundary too: absence of retained events is not a new log.
+  // Anchoring may UPDATE through the pool: do it before taking the row lock.
+  const anchored = await getAnchoredYjsState({ noteId, signal });
+  if (!anchored) return { ok: false, error: "Note not found", status: 404 };
   const restoreTopic = createYjsTopic();
-  // Head before latest: every note event up to the chosen cursor is replaced.
-  const restoreHead = await restoreTopic.head();
-  const restoreLatest = await restoreTopic.latestCursor({ tenantId: noteId });
-  const restoreCursor = restoreLatest && compareStreamCursor(restoreLatest, restoreHead) > 0 ? restoreLatest : restoreHead;
-  const restoreSequence = restoreTopic.cursorSequence(restoreCursor);
-  // Unmigrated edits of a retired per-note topic predate the restore as well.
   const legacyTopic = await legacyYjsTopicInfo(noteId);
 
-  const restored = await sql.begin(async (tx): Promise<{ versionId: string } | null> => {
+  const restored = await sql.begin(async (tx): Promise<MutationResult<{ versionId: string }>> => {
+    const [current] = await tx<(DbYjsState & { locked_at: Date | null })[]>`
+      SELECT yjs_snapshot, yjs_stream_cursor, content_md, yjs_restore_revision::text,
+        yjs_history_incomplete, locked_at
+      FROM notebooks.notes WHERE id = ${noteId}::uuid FOR UPDATE
+    `;
+    if (!current) return { ok: false, error: "Note not found", status: 404 };
+    if (current.locked_at) return { ok: false, error: "Cannot restore locked note", status: 403 };
+    if (current.yjs_restore_revision !== anchored.restoreRevision)
+      return { ok: false, error: "Note snapshot changed during replay; retry from its current state", status: 409 };
+    signal.throwIfAborted();
+    // Capture the final replacement boundary only after excluding socket
+    // receipts. An edit acknowledged before this lock is in this replay;
+    // an edit published during it cannot be acknowledged on the old revision.
+    const restoreHead = await restoreTopic.head();
+    const restoreLatest = await restoreTopic.latestCursor({ tenantId: noteId });
+    const restoreCursor = restoreLatest && compareStreamCursor(restoreLatest, restoreHead) > 0 ? restoreLatest : restoreHead;
+    const restoreSequence = restoreTopic.cursorSequence(restoreCursor);
+    const live = new Y.Doc({ gc: true });
+    try {
+      try {
+        if (current.yjs_snapshot) Y.applyUpdate(live, current.yjs_snapshot, "snapshot");
+        else if (current.content_md) live.getText(SHARED_TEXT_NAME).insert(0, current.content_md);
+      } catch {
+        return { ok: false, error: "Restore only supports new empty notes. Create a new note and restore there.", status: 400 };
+      }
+      if (restoreLatest)
+        await notebooksTextLog.replay({
+          docId: noteId,
+          after: current.yjs_stream_cursor,
+          until: restoreLatest,
+          doc: live,
+          restoreRevision: current.yjs_restore_revision,
+          signal,
+        });
+      signal.throwIfAborted();
+      // Whitespace and unresolved updates are user data too. Never replace a
+      // base whose accepted content is nonempty or cannot yet be reconstructed.
+      if (live.getText(SHARED_TEXT_NAME).length || live.store.pendingStructs || live.store.pendingDs)
+        return {
+          ok: false,
+          error: "Restore only supports new empty notes. Create a new note and restore there.",
+          status: 400,
+        };
+    } finally {
+      live.destroy();
+    }
     const result = await tx`
       UPDATE notebooks.notes
       SET yjs_snapshot = ${snapshotBuffer},
@@ -2027,7 +2074,7 @@ export const restoreFromSnapshot = async (params: {
       WHERE id = ${noteId}::uuid
         AND locked_at IS NULL
     `;
-    if (result.count === 0) return null;
+    if (result.count === 0) return { ok: false, error: "Failed to restore snapshot", status: 500 };
 
     // Keep the restored row and its history entry atomic.
     const [version] = await tx<{ id: string }[]>`
@@ -2042,15 +2089,10 @@ export const restoreFromSnapshot = async (params: {
         VALUES (${version.id}::uuid, 'user', ${createdBy}::uuid)
       `;
     }
-    return { versionId: version.id };
+    return { ok: true, data: { versionId: version.id } };
   });
 
-  if (!restored) {
-    const current = await get({ id: noteId });
-    if (!current) return { ok: false, error: "Note not found", status: 404 };
-    if (current.lockedAt) return { ok: false, error: "Cannot restore locked note", status: 403 };
-    return { ok: false, error: "Failed to restore snapshot", status: 500 };
-  }
+  if (!restored.ok) return restored;
 
   // Restored content can carry a different set of refs (links, tags,
   // attachments) than was previously indexed — refresh all three.
@@ -2058,7 +2100,7 @@ export const restoreFromSnapshot = async (params: {
   await activity.record({
     notebookId: existing.notebookId,
     noteId,
-    noteVersionId: restored.versionId,
+    noteVersionId: restored.data.versionId,
     actor: createdBy ? { kind: "user", id: createdBy } : { kind: "system", id: null },
     action: "note.restored",
   });

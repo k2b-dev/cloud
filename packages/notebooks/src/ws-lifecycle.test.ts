@@ -21,6 +21,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const queued = Promise.withResolvers<void>();
   const queueEntered = Promise.withResolvers<void>();
   const replayReady = Promise.withResolvers<void>();
+  const liveSubscribed = Promise.withResolvers<void>();
   const snapshots: unknown[] = [];
   const subscribedAfter: string[] = [];
   const adoptions: unknown[] = [];
@@ -55,6 +56,10 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
         getByShortId: async () => note,
         get: async () => note,
         getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
+        deliverAtRestoreRevision: async (input: { deliver: () => undefined }) => {
+          input.deliver();
+          return "delivered";
+        },
         getAnchoredYjsState: async () => ({
           yjsState: new Uint8Array([0, 0]),
           streamCursor: "s6t.fixture.9",
@@ -93,6 +98,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       hub: () => ({
         subscribe: (config: { after: string; signal?: AbortSignal }) => {
           subscribedAfter.push(config.after);
+          liveSubscribed.resolve();
           return waitUntilAborted(config);
         },
       }),
@@ -231,6 +237,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       socket,
     );
     await replayReady.promise;
+    await liveSubscribed.promise;
     expect(subscribedAfter).toEqual(["s6t.fixture.9"]);
     handlers.onMessage?.(
       new MessageEvent("message", {

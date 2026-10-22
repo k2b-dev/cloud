@@ -2596,7 +2596,7 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         toPublicNoteResult(
-          notebooksService.note.versions.restore({ noteId, yjsSnapshot, createdBy: user?.id ?? null }),
+          notebooksService.note.versions.restore({ noteId, yjsSnapshot, createdBy: user?.id ?? null, signal: c.req.raw.signal }),
           notebook!.shortId,
           getLocale(c),
         ),

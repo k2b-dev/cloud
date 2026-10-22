@@ -759,6 +759,28 @@ const failLiveStream = async (ctx: WsContext, noteId: string, noteShortId: strin
   );
 };
 
+/** No await inside deliver: the service holds a shared row lock through send. */
+const deliverForJoinedRevision = async (ctx: WsContext, noteId: string, noteShortId: string, deliver: () => undefined) => {
+  const revision = ctx.restoreRevision;
+  if (ctx.phase !== "joined" || ctx.noteId !== noteId || revision === null) return false;
+  const result = await notebooksService.note.deliverAtRestoreRevision({
+    noteId,
+    restoreRevision: revision,
+    deliver: () => {
+      if (ctx.phase === "joined" && ctx.noteId === noteId && ctx.restoreRevision === revision) deliver();
+    },
+  });
+  if (result === "notFound") {
+    await fatal(ctx, ERROR_CODE.noteNotFound, ctx.messages.noteNotFound, noteShortId);
+    return false;
+  }
+  if (result === "stale") {
+    await requireReopen(ctx, noteShortId);
+    return false;
+  }
+  return ctx.phase === "joined";
+};
+
 const startLiveStream = (
   ctx: WsContext,
   noteId: string,
@@ -797,19 +819,41 @@ const startLiveStream = (
     const pending: PushUpdate[] = [];
     let pendingBytes = 0;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    let deliveryTail = Promise.resolve();
+    const active = () => !stopped && !abort.signal.aborted && ctx.streamAbort === abort;
+    const fail = async (error: unknown) => {
+      if (!active()) return;
+      stopped = true;
+      await failLiveStream(ctx, noteId, noteShortId, "sync", error);
+    };
     const flush = () => {
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushTimer = null;
       }
-      if (pending.length === 0) return;
-      send(ctx.socket, WS_TYPE.syncPush, { noteId: noteShortId, updates: pending.splice(0, pending.length) });
+      if (!active() || pending.length === 0) return deliveryTail;
+      const batch = pending.splice(0, pending.length);
       pendingBytes = 0;
+      // Capture batches in stream order and serialize timer/size flushes. A
+      // slower row-lock acquisition must never reorder batches or readiness.
+      deliveryTail = deliveryTail
+        .then(async () => {
+          if (!active()) return;
+          const delivered = await deliverForJoinedRevision(ctx, noteId, noteShortId, () => {
+            if (active()) send(ctx.socket, WS_TYPE.syncPush, { noteId: noteShortId, updates: batch });
+          });
+          if (!delivered) stopped = true;
+        })
+        .catch(fail);
+      return deliveryTail;
     };
 
     const scheduleFlush = () => {
       if (flushTimer) return;
-      flushTimer = setTimeout(flush, NOTIFY_FLUSH_DELAY_MS);
+      flushTimer = setTimeout(() => {
+        void flush();
+      }, NOTIFY_FLUSH_DELAY_MS);
     };
 
     try {
@@ -837,30 +881,38 @@ const startLiveStream = (
           }
         }
         if (abort.signal.aborted || ctx.streamAbort !== abort) return;
-        flush();
-        onCaughtUp(head ?? replay.after ?? noteTopic.cursorAt(0));
+        await flush();
+        if (!active()) return;
+        const delivered = await deliverForJoinedRevision(ctx, noteId, noteShortId, () => {
+          if (active()) onCaughtUp(head ?? replay.after ?? noteTopic.cursorAt(0));
+        });
+        if (!delivered || !active()) return;
         yield* noteTopic
           .hub({ tenantId: noteId })
           .subscribe({ after: head ?? replay.after ?? noteTopic.cursorAt(0), signal: abort.signal });
       };
       for await (const event of events()) {
-        if (ctx.phase !== "joined" || ctx.noteId !== noteId) break;
+        if (!active() || ctx.phase !== "joined" || ctx.noteId !== noteId) break;
         ctx.lastPublishedCursor = maxStreamCursor(ctx.lastPublishedCursor, event.cursor);
         const update = toPushUpdate(event);
         pending.push(update);
         pendingBytes += update.payload.length;
         if (pending.length >= NOTIFY_BATCH_SIZE || pendingBytes >= NOTIFY_BATCH_MAX_BYTES) {
-          flush();
+          await flush();
         } else {
           scheduleFlush();
         }
       }
-      flush();
+      await flush();
     } catch (error) {
-      if (!abort.signal.aborted) await failLiveStream(ctx, noteId, noteShortId, "sync", error);
+      await fail(error);
     } finally {
       if (flushTimer) clearTimeout(flushTimer);
-      flush();
+      // A mismatch/failure is terminal. Never flush obsolete pending bytes
+      // from finally (including a timer batch queued before the mismatch).
+      stopped = true;
+      pending.length = 0;
+      await deliveryTail;
       if (ctx.streamAbort === abort) {
         ctx.streamAbort = null;
       }
@@ -1040,19 +1092,22 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
   let replayCursor = clientCursor;
   if (!clientCursor) {
     if (snapshot.yjsState) {
-      send(ctx.socket, WS_TYPE.syncPush, {
-        noteId: payload.noteId,
-        historyIncomplete: snapshot.historyIncomplete,
-        snapshot: true,
-        restoreRevision: snapshot.restoreRevision,
-        updates: [
-          {
-            cursor: snapshot.streamCursor,
-            payload: toBase64(snapshot.yjsState),
-            originPeerId: null,
-          },
-        ],
+      const delivered = await deliverForJoinedRevision(ctx, dbNoteId, payload.noteId, () => {
+        send(ctx.socket, WS_TYPE.syncPush, {
+          noteId: payload.noteId,
+          historyIncomplete: snapshot.historyIncomplete,
+          snapshot: true,
+          restoreRevision: snapshot.restoreRevision,
+          updates: [
+            {
+              cursor: snapshot.streamCursor,
+              payload: toBase64(snapshot.yjsState!),
+              originPeerId: null,
+            },
+          ],
+        });
       });
+      if (!delivered) return;
     }
     replayCursor = snapshot.streamCursor;
   }

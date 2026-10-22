@@ -191,6 +191,7 @@ export const notebooksService = {
     isLocked: notes.isLocked,
     lock: notes.lock,
     getYjsStateWithCursor: notes.getYjsStateWithCursor,
+    deliverAtRestoreRevision: notes.deliverAtRestoreRevision,
     getAnchoredYjsState: notes.getAnchoredYjsState,
     adoptSnapshotAtHead: notes.adoptSnapshotAtHead,
     versions: {

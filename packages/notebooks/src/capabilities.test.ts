@@ -355,7 +355,12 @@ describe("notebooks capabilities", () => {
     trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
     trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
     const content = "\u0001".repeat(50_000);
-    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, contentMd: content, yjsSnapshot: null });
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({
+      ...note,
+      contentMd: content,
+      yjsSnapshot: null,
+      yjsRestoreRevision: "0",
+    });
     const operation = notebooksCapabilities.queries["note.read"];
     const first = await operation.run({ id: note.shortId, contentOffset: 0, contentLimit: 50_000 }, userContext);
     expect(first.ok).toBeTrue();
@@ -399,7 +404,7 @@ describe("notebooks capabilities", () => {
     trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
     trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
     const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
-    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null });
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" });
     const edit = trackedSpy(spyOn(noteStore, "editContent")).mockResolvedValue({
       ok: true,
       data: { note, content: note.contentMd, changed: true, beforeHash: "a", afterHash: "b", blocks: [] },
@@ -459,7 +464,7 @@ describe("notebooks capabilities", () => {
 
   test("every declared Type has a reader open-link case or an explicit reason", async () => {
     mockCommentAccess();
-    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null });
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" });
     trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
     trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
     trackedSpy(spyOn(noteStore, "resolveIdsToShortIds")).mockResolvedValue(new Map([[note.id, note.shortId]]));
@@ -788,6 +793,7 @@ describe("notebooks capabilities", () => {
     const getCurrentWithContent = trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({
       ...note,
       yjsSnapshot: "private-snapshot",
+      yjsRestoreRevision: "0",
       historyIncomplete: true,
     });
 
