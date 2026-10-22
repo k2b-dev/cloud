@@ -1438,7 +1438,7 @@ for (const { embedded, width } of [
           response.status() === 503 &&
           (!embedded || new URL(response.request().frame().url()).pathname === "/app/assistant/panel"),
       );
-      await composer.fill("/");
+      await composer.fill(embedded ? "/" : "/notes");
       await composer.click();
       releaseInitial();
       await failed;
@@ -1454,7 +1454,18 @@ for (const { embedded, width } of [
         const retry = view.getByRole("option").filter({ hasText: "Commands from apps could not be loaded" });
         await retry.waitFor();
         catalogFailed = false;
+        const recovered = page.waitForResponse(
+          (response) =>
+            response.url().includes("/capabilities/v1/catalog") &&
+            response.status() === 200 &&
+            response.request().frame() === page.mainFrame(),
+        );
         await retry.click();
+        await recovered;
+        // A later menu opening also retries a failed catalog: prove this click recovered before reopening.
+        await view.getByRole("option", { name: "Notes Choose from Notebooks", exact: true }).waitFor();
+        await retry.waitFor({ state: "hidden" });
+        expect(recoveredCatalogLoads).toBe(1);
         await composer.press("Escape");
         await composer.fill("plain");
         await composer.fill("/notes");
