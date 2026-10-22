@@ -23,7 +23,7 @@ import { chatLive } from "./live";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { openParticipant } from "./read-state";
 import { threadStates } from "./thread-state";
-import { findThread, threadNotFound } from "./threads";
+import { findThread, threadNotFound, threads } from "./threads";
 
 const conversationLimit = ratelimit({
   id: "chat.message.send.conversation",
@@ -127,10 +127,15 @@ const list = async (input: Input & { query?: unknown }) => {
       AND ${query.before !== undefined ? db`seq < ${query.before}` : query.after !== undefined ? db`seq > ${query.after}` : db`true`}
       ORDER BY seq ${query.after !== undefined ? db`ASC` : db`DESC`} LIMIT ${MESSAGE_PAGE_SIZE}`;
     if (query.after === undefined) rows.reverse();
+    const seqHead = Number(allowed.data.seq_head);
+    const full = rows.length === MESSAGE_PAGE_SIZE;
     return ok({
       items: await messageViews(db, rows, input.conversationId, input.locale),
-      seqHead: Number(allowed.data.seq_head),
+      seqHead,
       rev: Number(allowed.data.rev),
+      ...(query.after !== undefined
+        ? { from: query.after + 1, to: full ? Number(rows.at(-1)!.seq) : seqHead }
+        : { from: full ? Number(rows[0]!.seq) : 1, to: query.before !== undefined ? Math.min(query.before - 1, seqHead) : seqHead }),
     });
   });
 };
@@ -184,13 +189,19 @@ const snapshot = async (
       AND ${position !== null ? db`seq < ${position + MESSAGE_PAGE_SIZE / 2}` : db`true`}
       ORDER BY seq DESC LIMIT ${MESSAGE_PAGE_SIZE}`;
     rows.reverse();
+    const seqHead = Number(allowed.data.seq_head);
+    const list = await threads.list(input, db);
+    if (!list.ok) return list;
     return ok({
       conversation: conversation.data,
       page: {
         items: await messageViews(db, rows, input.conversationId, input.locale),
-        seqHead: Number(allowed.data.seq_head),
+        seqHead,
         rev: Number(allowed.data.rev),
+        from: rows.length === MESSAGE_PAGE_SIZE ? Number(rows[0]!.seq) : 1,
+        to: position !== null ? Math.min(position + MESSAGE_PAGE_SIZE / 2 - 1, seqHead) : seqHead,
       },
+      threads: list.data,
       focus: target?.short_id ?? null,
     });
   });

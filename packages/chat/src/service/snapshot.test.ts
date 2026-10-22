@@ -52,7 +52,7 @@ const conversation = ConversationSchema.parse({
   createdAt: "2026-10-12T00:00:00.000Z",
   lastActivityAt: "2026-10-12T00:00:00.000Z",
 });
-const page = { items: [], rev: 0, seqHead: 0 };
+const page = { items: [], rev: 0, seqHead: 0, from: 1, to: 0 };
 afterEach(() => mock.restore());
 
 test("SSR reads cursor, sidebar, then the same focused snapshot as the browser", async () => {

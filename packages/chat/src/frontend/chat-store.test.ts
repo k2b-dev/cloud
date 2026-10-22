@@ -36,7 +36,7 @@ const message = (rev: number) =>
     system: null,
     createdAt: new Date(Date.UTC(2026, 9, 12) + rev).toISOString(),
   });
-const page = (rev: number) => ({ items: [{ ...message(rev), systemText: null }], rev, seqHead: rev });
+const page = (rev: number) => ({ items: [{ ...message(rev), systemText: null }], rev, seqHead: rev, from: rev, to: rev });
 type Controls = {
   apply(data: unknown): Promise<void>;
   applyBatch(data: unknown[]): Promise<void>;
@@ -328,7 +328,7 @@ test("an in-flight metadata fetch cannot repopulate a revoked or switched chat",
   await applying;
   expect(store.openConversation?.status).toBe("no-access");
   expect(store.openConversation?.messages).toEqual([]);
-  store.open({ cursor: "next", conversation: { ...conversation, id: "ghijkl", title: "Other" }, page: { items: [], rev: 0, seqHead: 0 } });
+  store.open({ cursor: "next", conversation: { ...conversation, id: "ghijkl", title: "Other" }, page: { items: [], rev: 0, seqHead: 0, from: 1, to: 0 } });
   expect(store.openConversation?.id).toBe("ghijkl");
   expect(store.openConversation?.messages).toEqual([]);
   store.closeConversation();
@@ -670,7 +670,7 @@ for (const direction of ["older", "newer"] as const)
     const loading = direction === "older" ? store.loadOlder() : store.loadNewer();
     const repeated = direction === "older" ? store.loadOlder() : store.loadNewer();
     expect(calls).toBe(1);
-    store.open({ cursor: "other", conversation: { ...conversation, id: "ghijkl" }, page: { items: [], rev: 0, seqHead: 0 } });
+    store.open({ cursor: "other", conversation: { ...conversation, id: "ghijkl" }, page: { items: [], rev: 0, seqHead: 0, from: 1, to: 0 } });
     pending.resolve(windowPage(1, 10));
     expect(await loading).toBe(false);
     expect(await repeated).toBe(false);
@@ -711,7 +711,7 @@ test("openChat uses the winning snapshot and its focus when requests finish out 
   second.resolve({
     cursor: "second",
     conversation: { ...conversation, id: "ghijkl" },
-    page: { items: [], seqHead: 0, rev: 0 },
+    page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
     focus: message(5).id,
   });
   expect(await b).toEqual({ status: "opened", focus: message(5).id });
@@ -827,7 +827,7 @@ test("an empty window has no paging; its first live message establishes a range"
       return page(1);
     },
   });
-  store.open({ cursor: "empty", conversation, page: { items: [], seqHead: 0, rev: 0 } });
+  store.open({ cursor: "empty", conversation, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 } });
   expect(store.openConversation).toMatchObject({ messages: [], seqHead: 0, hasOlder: false, hasNewer: false });
   expect(await store.loadOlder()).toBe(false);
   expect(await store.loadNewer()).toBe(false);

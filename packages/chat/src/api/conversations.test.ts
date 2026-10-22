@@ -230,7 +230,7 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
     createdAt: textMessage.createdAt,
     lastActivityAt: textMessage.createdAt,
   });
-  const data = { conversation, page: { items: [textMessage], rev: 1, seqHead: 1 }, focus: null };
+  const data = { conversation, page: { items: [textMessage], rev: 1, seqHead: 1, from: 1, to: 1 }, focus: null };
   const order: string[] = [];
   spyOn(chatLive, "cursor").mockImplementation(async () => {
     order.push("cursor");

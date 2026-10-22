@@ -8,6 +8,8 @@ export const renderSystemMessage = (system: SystemMessage, authorName: string, l
   switch (system.code) {
     case "thread_created":
       return t.systemThreadCreated({ actor, name: system.params.thread.name });
+    case "thread_renamed":
+      return t.systemThreadRenamed({ actor, from: system.params.from, to: system.params.to });
     case "conversation_created":
       return t.systemCreated({ actor });
     case "details_changed": {

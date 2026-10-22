@@ -126,7 +126,7 @@ describe("ChatWorkspace server render", () => {
       test(`open ${permission} chat header and composer in ${locale}`, () => {
         const data = props();
         data.chatId = conversation.id;
-        data.open = { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 1 }, focus: null };
+        data.open = { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 }, focus: null };
         const html = render(locale, data);
         expect(html).toContain(conversation.title);
         expect(html).toContain(t.members({ count: 3 }));

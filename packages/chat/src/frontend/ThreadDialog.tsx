@@ -109,7 +109,7 @@ export function ThreadDialog(
           }}
           disabled={busy()}
           autofocus
-          error={duplicate() ? t().threadNameTaken({ name: name().trim(), title: props.title }) : undefined}
+          error={duplicate() ? t().threadNameExists({ name: name().trim(), title: props.title }) : undefined}
         />
         <TextInput
           label={t().threadDescription}

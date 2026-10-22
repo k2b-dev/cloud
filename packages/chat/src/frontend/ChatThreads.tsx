@@ -86,7 +86,7 @@ export function ThreadRows(props: RowsProps): JSX.Element {
           </Show>
         </Show>
         <Show when={props.canAdmin}>
-          <AppWorkspace.SidebarItem depth={1} icon="ti ti-plus" tone="action" onClick={() => props.onCreate()}>
+          <AppWorkspace.SidebarItem depth={1} icon="ti ti-plus" class="chat-threads__new" onClick={() => props.onCreate()}>
             {t().newThread}
           </AppWorkspace.SidebarItem>
         </Show>

@@ -215,7 +215,7 @@ describe("ChatWorkspace interactions", () => {
       open: open
         ? {
             conversation: { ...conversation, permission },
-            page: initial.page ?? { items: [], seqHead: 0, rev: 0 },
+            page: initial.page ?? { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
             focus: initial.focus ?? null,
           }
         : null,
@@ -263,7 +263,7 @@ describe("ChatWorkspace interactions", () => {
       author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Alex" },
     });
     await mount(true, [conversation], "info", "en", "write", {
-      page: { items: [unread], seqHead: 1, rev: 1 },
+      page: { items: [unread], seqHead: 1, rev: 1, from: 1, to: 1 },
     });
     const feed = dom.root.querySelector<HTMLElement>(".k2b-virtual-feed__viewport")!;
     Object.defineProperty(feed, "clientHeight", { configurable: true, value: 600 });
@@ -380,7 +380,7 @@ describe("ChatWorkspace interactions", () => {
     snapshots.set(other.id, {
       cursor: "c.109",
       conversation: other,
-      page: { items: [{ ...message(109), conversationId: other.id }], seqHead: 109, rev: 109 },
+      page: { items: [{ ...message(109), conversationId: other.id }], seqHead: 109, rev: 109, from: 109, to: 109 },
       focus: null,
     });
     await mount(true, [conversation, other]);
@@ -397,7 +397,7 @@ describe("ChatWorkspace interactions", () => {
     await settle();
     expect(dom.window.location.pathname).toBe("/app/chat/c/Chat02");
     // Another chat's loaded sequence must not prune this chat's uncovered send.
-    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null });
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
     await settle();
     expect(dom.root.querySelector('.k2b-message-row[data-status="sent"]')?.textContent).toContain("hi");
@@ -406,7 +406,7 @@ describe("ChatWorkspace interactions", () => {
     snapshots.set(conversation.id, {
       cursor: "c.109",
       conversation: { ...conversation, rev: 109 },
-      page: { items: Array.from({ length: 50 }, (_, index) => message(index + 60)), seqHead: 109, rev: 109 },
+      page: { items: Array.from({ length: 50 }, (_, index) => message(index + 60)), seqHead: 109, rev: 109, from: 60, to: 109 },
       focus: null,
     });
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
@@ -533,7 +533,7 @@ describe("ChatWorkspace interactions", () => {
         expect(dom.window.history.length).toBe(historyLength);
         expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(initialPanel === null);
       } finally {
-        pending.resolve(Response.json({ cursor: "c.0", conversation: other, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+        pending.resolve(Response.json({ cursor: "c.0", conversation: other, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null }));
         await settle();
       }
       expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat02");
@@ -546,7 +546,7 @@ describe("ChatWorkspace interactions", () => {
     const other = { ...conversation, id: "Chat02", title: "Other chat" };
     const pending = Promise.withResolvers<Response>();
     pendingSnapshots.set(other.id, pending.promise);
-    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null });
     await mount(true, [conversation, other], "info");
     // A panel-only return must differ from the route still showing while the next chat loads.
     dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
@@ -557,7 +557,7 @@ describe("ChatWorkspace interactions", () => {
     dom.window.history.pushState(null, "", "/app/chat/c/Chat01?panel=info");
     dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
     await settle();
-    pending.resolve(Response.json({ cursor: "c.0", conversation: other, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    pending.resolve(Response.json({ cursor: "c.0", conversation: other, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null }));
     await settle();
     expect(dom.root.querySelector(".chat-conversation__header")?.textContent).toContain("Secret board");
     expect(dom.window.location.pathname).toBe("/app/chat/c/Chat01");
@@ -574,10 +574,10 @@ describe("ChatWorkspace interactions", () => {
     await mount(true, [conversation, second, third]);
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat03"]')!.click();
-    pendingSecond.resolve(Response.json({ cursor: "c.0", conversation: second, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    pendingSecond.resolve(Response.json({ cursor: "c.0", conversation: second, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null }));
     await settle();
     expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
-    pendingThird.resolve(Response.json({ cursor: "c.0", conversation: third, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    pendingThird.resolve(Response.json({ cursor: "c.0", conversation: third, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null }));
     await settle();
     expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("false");
     expect(dom.window.location.pathname).toBe("/app/chat/c/Chat03");
@@ -593,7 +593,7 @@ describe("ChatWorkspace interactions", () => {
     await mount(true, [conversation, second, third]);
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat03"]')!.click();
-    pendingThird.resolve(Response.json({ cursor: "c.0", conversation: third, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    pendingThird.resolve(Response.json({ cursor: "c.0", conversation: third, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null }));
     await settle();
     try {
       expect(dom.window.location.pathname).toBe("/app/chat/c/Chat03");
@@ -603,7 +603,7 @@ describe("ChatWorkspace interactions", () => {
       expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat03?panel=info");
       expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
     } finally {
-      pendingSecond.resolve(Response.json({ cursor: "c.0", conversation: second, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+      pendingSecond.resolve(Response.json({ cursor: "c.0", conversation: second, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null }));
       await settle();
     }
     expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat03?panel=info");
@@ -659,7 +659,7 @@ describe("ChatWorkspace interactions", () => {
     });
   }
   test("the way up from info returns to the list in one action", async () => {
-    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null });
     await mount(false);
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
     await settle();
@@ -677,7 +677,7 @@ describe("ChatWorkspace interactions", () => {
   });
   test("leaving info opened from the chat keeps one Back action to the list", async () => {
     const t = chatMessages.resolve(["en"]).t;
-    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 }, focus: null });
     await mount(false);
     const listLength = dom.window.history.length;
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
@@ -728,7 +728,7 @@ describe("ChatWorkspace interactions", () => {
       const path = `/app/chat/c/Chat01/m/${linked.id}`;
       await mount(true, [conversation], initialPanel, "en", "write", {
         url: `${path}${initialPanel ? "?panel=info" : ""}`,
-        page: { items: [linked], seqHead: 1, rev: 1 },
+        page: { items: [linked], seqHead: 1, rev: 1, from: 1, to: 1 },
         focus: linked.id,
       });
       const infoLink = () =>

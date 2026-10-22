@@ -121,7 +121,7 @@ export const personSnapshots = async (db: typeof sql, ids: string[]) => {
 
 type NewMessage =
   | { kind: "text"; clientId: string; body: string; threadId?: string; replyToSeq?: string | bigint }
-  | { kind: "system"; system: SystemMessage };
+  | { kind: "system"; system: SystemMessage; threadId?: string };
 // The caller holds the conversation lock until commit, so numbers cannot become visible out of order.
 export const appendMessage = async (
   db: typeof sql,
@@ -150,7 +150,7 @@ export const appendMessage = async (
         ${message.kind === "text" ? message.body : null}, ${message.kind === "system" ? message.system.code : null},
         ${message.kind === "system" ? JSON.stringify(message.system.params) : null}::text::jsonb,
         ${message.kind === "text" ? db`(SELECT last_activity_at FROM chat.conversations WHERE id = ${conversation.id}::uuid)` : db`clock_timestamp()`},
-        ${message.kind === "text" ? (message.threadId ?? null) : null}::uuid, ${message.kind === "text" ? (message.replyToSeq ?? null) : null})
+        ${message.threadId ?? null}::uuid, ${message.kind === "text" ? (message.replyToSeq ?? null) : null})
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");

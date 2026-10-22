@@ -246,6 +246,7 @@ export const SystemMessageSchema = z.discriminatedUnion("code", [
     code: z.literal("thread_created"),
     params: z.strictObject({ thread: z.strictObject({ id: ThreadIdSchema, name: z.string() }) }),
   }),
+  z.strictObject({ code: z.literal("thread_renamed"), params: z.strictObject({ from: z.string(), to: z.string() }) }),
   z.object({ code: z.literal("conversation_created"), params: z.strictObject({}) }),
   z.object({
     code: z.literal("details_changed"),
@@ -301,7 +302,17 @@ export const MessageQuerySchema = z
   .refine((query) => query.before === undefined || query.after === undefined);
 export const MessageParamSchema = ConversationParamSchema.extend({ message: MessageIdSchema });
 export const ChangesQuerySchema = z.object({ afterRev: sequenceQuery(0) });
-export const MessagePageSchema = z.object({ items: z.array(MessageViewSchema), seqHead: z.number().int(), rev: z.number().int() });
+/**
+ * `from` and `to` are the positions the page covers for its thread selection: every selected message in that range is
+ * in `items`, also where other threads' messages lie between them. A client joins pages and live messages by them.
+ */
+export const MessagePageSchema = z.object({
+  items: z.array(MessageViewSchema),
+  seqHead: z.number().int(),
+  rev: z.number().int(),
+  from: z.number().int().min(1),
+  to: z.number().int().min(0),
+});
 // A stale or mistyped deep link still opens the latest history.
 export const SnapshotQuerySchema = z.strictObject({
   message: z.string().max(64).optional().catch(undefined),
@@ -311,6 +322,8 @@ export const ChatSnapshotSchema = z.object({
   cursor: z.string(),
   conversation: ConversationSchema,
   page: MessagePageSchema,
+  /** The chat's threads; without threads only General, with its count. */
+  threads: ThreadListSchema,
   /** The requested message when it exists in this chat; the page is the window around it. */
   focus: MessageIdSchema.nullable(),
 });

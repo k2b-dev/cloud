@@ -82,12 +82,14 @@ const publish = async (db: typeof sql, conversationId: string) => {
   for (const prefix of ["c", "l"])
     await chatLive.publish(db, { key: `${prefix}:${conversationId}`, data: { type: "threads", conversationId } });
 };
-const list = (input: Input) =>
-  sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
-    const allowed = await requireConversation({ ...input, required: "read" }, db);
-    if (!allowed.ok) return allowed;
-    return ok(await projectList(db, input, allowed.data.id));
-  });
+const read = async (input: Input, db: typeof sql) => {
+  const allowed = await requireConversation({ ...input, required: "read" }, db);
+  if (!allowed.ok) return allowed;
+  return ok(await projectList(db, input, allowed.data.id));
+};
+/** The chat's threads; inside a caller's transaction with `db`, for example the snapshot's. */
+const list = (input: Input, db?: typeof sql) =>
+  db ? read(input, db) : sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (transaction) => read(input, transaction));
 type Created = { thread: z.infer<typeof ThreadSchema>; created: boolean };
 const create = async (input: Input & { input: unknown }): Promise<Result<Created>> => {
   const parsed = CreateThreadSchema.safeParse(input.input);
@@ -160,7 +162,15 @@ const update = async (input: Input & { threadId: string; input: unknown }) => {
     }
     await db`UPDATE chat.threads SET name = ${name ?? row.name}, description = ${description === undefined ? row.description : description},
       archived_at = ${archived === undefined ? row.archived_at : archived ? (row.archived_at ?? new Date()) : null} WHERE id = ${row.id}::uuid`;
-    await db`UPDATE chat.conversations SET rev = rev + 1, changed_rev = rev + 1 WHERE id = ${allowed.data.id}::uuid`;
+    // A new name shows as a quiet line in the thread, so its members know why it reads differently now.
+    if (name !== undefined && name !== row.name)
+      await appendMessage(
+        db,
+        allowed.data,
+        input,
+        { kind: "system", system: { code: "thread_renamed", params: { from: row.name, to: name } }, threadId: row.id },
+      );
+    else await db`UPDATE chat.conversations SET rev = rev + 1, changed_rev = rev + 1 WHERE id = ${allowed.data.id}::uuid`;
     await publish(db, input.conversationId);
     return ok(await project(db, input, allowed.data.id, row.short_id));
   });

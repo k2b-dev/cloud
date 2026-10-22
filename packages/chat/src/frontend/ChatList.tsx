@@ -1,6 +1,8 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, Dropdown, useLocale } from "@k2b/ui";
+import { ThreadRows } from "./ChatThreads";
+import { chatHasThreads } from "./threads";
 import { For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
@@ -31,6 +33,8 @@ export default function ChatList(props: {
   onMore: () => void;
   onMarkRead: (id: string) => void;
   onMarkUnread: (id: string) => void;
+  /** The open chat's threads, shown as rows under it; the chat's own row then shows its members instead of a count. */
+  threads?: Omit<Parameters<typeof ThreadRows>[0], "chatId" | "unread">;
 }): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
@@ -38,7 +42,10 @@ export default function ChatList(props: {
   return (
     <>
       <For each={props.rows}>
-        {(row) => (
+        {(row) => {
+          const expanded = () => row.id === props.activeId && props.threads !== undefined && chatHasThreads(row);
+          return (
+          <>
           <AppWorkspace.SidebarItem
             href={chatHref(row.id)}
             navigation="enhanced"
@@ -65,22 +72,38 @@ export default function ChatList(props: {
                 </Dropdown.Root>
               </AppWorkspace.SidebarItemActions>
             }
-            description={<span class="chat-list__preview">{lastMessageLine(row, props.viewerId, locale())}</span>}
+            description={
+              <span class="chat-list__preview">
+                {expanded() ? t().members({ count: row.memberCount }) : lastMessageLine(row, props.viewerId, locale())}
+              </span>
+            }
           >
             <AppWorkspace.SidebarItemIcon icon={row.icon ?? (row.memberCount <= 2 ? "ti ti-user" : "ti ti-users")} />
-            <AppWorkspace.SidebarItemLabel marquee={false}>{row.title}</AppWorkspace.SidebarItemLabel>
+            <AppWorkspace.SidebarItemLabel marquee={false}>
+              {row.title}
+              {/* A chat with threads has more inside; open it to see them. */}
+              <Show when={chatHasThreads(row) && !expanded()}>
+                <i class="ti ti-chevron-right chat-list__threads-mark" aria-hidden="true" />
+              </Show>
+            </AppWorkspace.SidebarItemLabel>
             <AppWorkspace.SidebarItemMeta>
               <span class="chat-list__meta">
                 <time class="chat-list__time" datetime={row.lastActivityAt}>
                   {listTime(row.lastActivityAt, props.now(), config())}
                 </time>
                 <span class="chat-list__unread">
+                  {/* An open chat is being read; with its threads shown, each thread carries its own count. */}
                   <AppWorkspace.SidebarItemStatus unread={row.id === props.activeId ? undefined : unreadMark(row)} />
                 </span>
               </span>
             </AppWorkspace.SidebarItemMeta>
           </AppWorkspace.SidebarItem>
-        )}
+          <Show when={expanded() ? props.threads : undefined}>
+            {(threads) => <ThreadRows {...threads()} chatId={row.id} unread={row.unread} />}
+          </Show>
+          </>
+          );
+        }}
       </For>
       <Show when={props.hasMore}>
         <AppWorkspace.SidebarItem icon="ti ti-dots" onClick={props.onMore}>

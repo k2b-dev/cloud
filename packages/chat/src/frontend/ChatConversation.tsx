@@ -41,6 +41,8 @@ export type ChatFeedItem = {
   /** Position and ID of a stored message; a send the history does not hold yet has neither. */
   seq?: number;
   messageId?: string;
+  /** Its thread's ID, or null for General; a send the history does not hold yet has its target. */
+  thread?: string | null;
   /** The message it answers. */
   quote?: MessageRowQuote;
   /** Its thread, shown under it where several threads mix. */
