@@ -120,7 +120,6 @@ test("SSR propagates failed sidebar and snapshot reads to the page's error state
   await expect(loadChatView(context, { conversationId: "abcdef" })).rejects.toThrow("Snapshot failed");
 });
 
-
 test("SSR applies archive and Unread filters before fetching the sidebar", async () => {
   spyOn(chatLive, "cursor").mockResolvedValue("before-reads");
   const list = spyOn(conversations, "list").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });

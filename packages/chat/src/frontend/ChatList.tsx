@@ -51,7 +51,7 @@ export default function ChatList(props: {
     announcements: {
       dragStart: (active) => t().pinPickedUp({ title: active.meta.title }),
       dragOver: (_active, over) => (over ? t().pinMoveTarget({ title: over.meta.title }) : t().pinMoveCancelled),
-      drop: () => t().pinMoved,
+      drop: (active, over) => (over && active.id !== over.id ? t().pinMoved : t().pinMoveCancelled),
       cancel: () => t().pinMoveCancelled,
     },
   });
@@ -148,12 +148,8 @@ export default function ChatList(props: {
                 }
                 description={<span class="chat-list__preview">{lastMessageLine(row(), props.viewerId, locale())}</span>}
               >
-                <AppWorkspace.SidebarItemIcon
-                  icon={row().icon ?? (row().memberCount <= 2 ? "ti ti-user" : "ti ti-users")}
-                />
-                <AppWorkspace.SidebarItemLabel marquee={false}>
-                  {row().title}
-                </AppWorkspace.SidebarItemLabel>
+                <AppWorkspace.SidebarItemIcon icon={row().icon ?? (row().memberCount <= 2 ? "ti ti-user" : "ti ti-users")} />
+                <AppWorkspace.SidebarItemLabel marquee={false}>{row().title}</AppWorkspace.SidebarItemLabel>
                 <AppWorkspace.SidebarItemMeta>
                   <span class="chat-list__meta">
                     <time class="chat-list__time" datetime={row().lastActivityAt}>

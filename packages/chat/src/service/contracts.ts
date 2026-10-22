@@ -83,7 +83,7 @@ export const ConversationCursorSchema = z.object({
   id: ShortIdSchema,
   rank: z.number().int().min(0).default(2147483647),
 });
-export const SidebarSectionSchema = z.enum(["pinned", "channels", "chats"]);
+export const SidebarSectionSchema = z.enum(["pinned", "chats"]);
 export const SidebarPreferencesSchema = z.object({
   collapsed: z
     .array(SidebarSectionSchema)

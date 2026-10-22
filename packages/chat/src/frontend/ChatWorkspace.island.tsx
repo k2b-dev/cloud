@@ -9,6 +9,7 @@ import {
   FilterToggle,
   IconButton,
   IconButtonLink,
+  InlineGuidance,
   type MessageRowStatus,
   Placeholder,
   prompts,
@@ -37,7 +38,7 @@ import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList, { chatHref } from "./ChatList";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
-import { createChatStore, type OpenChat } from "./chat-store";
+import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
@@ -95,8 +96,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [listRetry, setListRetry] = createSignal<(() => void) | null>(null);
   const [listError, setListError] = createSignal<string | null>(null);
   const [listPending, setListPending] = createSignal(false);
+  let collapsePending = false;
   const [listLoading, setListLoading] = createSignal(false);
+  let activeListLoads = 0;
+  const loadList = async <T,>(work: () => Promise<T>): Promise<T> => {
+    setListLoading(++activeListLoads > 0);
+    try {
+      return await work();
+    } finally {
+      setListLoading(--activeListLoads > 0);
+    }
+  };
   const retainedUnread = new Set<string>();
+  let listIntent = 0;
+  let pendingListIntent: number | null = null;
   const listHref = (path = archived() ? "/app/chat/archive" : "/app/chat") => {
     const url = new URL(path, "https://chat.invalid");
     if (filter() === "unread") url.searchParams.set("filter", "unread");
@@ -168,7 +181,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (chat()?.id !== id) return previous;
     return conversation()?.title ?? t().noAccessTitle;
   });
-  createEffect(on(trailTitle, (title) => layout.update({ breadcrumbs: breadcrumbs(title) }), { defer: true }));
+  createEffect(
+    on(
+      () => [trailTitle(), archived(), filter()] as const,
+      ([title]) => layout.update({ breadcrumbs: breadcrumbs(title) }),
+      { defer: true },
+    ),
+  );
 
   // A sent message the loaded history covers leaves the outbox; its stored row keeps the send's key.
   const prune = () => {
@@ -341,49 +360,92 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
   };
 
-  const applyListUrl = async (url: URL) => {
-    const nextArchived = url.pathname === "/app/chat/archive" || url.searchParams.get("list") === "archive";
-    const nextFilter = url.searchParams.get("filter") === "unread" ? "unread" : "all";
-    if (nextArchived !== archived() || nextFilter !== filter()) {
-      await store?.showArchive(nextArchived, nextFilter === "unread");
-      retainedUnread.clear();
-      setArchived(nextArchived);
-      sortRows();
-    }
-    setFilter(nextFilter);
-  };
+  const applyListUrl = (url: URL) =>
+    loadList(async () => {
+      const token = ++listIntent;
+      const nextArchived = url.pathname === "/app/chat/archive" || url.searchParams.get("list") === "archive";
+      const nextFilter = url.searchParams.get("filter") === "unread" ? "unread" : "all";
+      // A newer intent must also undo a pending request whose target has not reached the signals yet.
+      const reload = pendingListIntent !== null || nextArchived !== archived() || nextFilter !== filter();
+      pendingListIntent = token;
+      try {
+        if (reload) await store?.showArchive(nextArchived, nextFilter === "unread");
+        if (token !== listIntent) return null;
+        if (reload) {
+          retainedUnread.clear();
+          setArchived(nextArchived);
+          sortRows();
+        }
+        setFilter(nextFilter);
+        return token;
+      } catch (error) {
+        if (token !== listIntent) return null;
+        throw error;
+      } finally {
+        if (pendingListIntent === token) pendingListIntent = null;
+      }
+    });
   const changeList = async (next: "all" | "unread" | "archive") => {
     if (!store || listLoading() || listPending()) return;
-    setListLoading(true);
+    if ((!archived() && filter() === next) || (next === "archive" && archived() && filter() === "all" && !route().chatId)) return;
     setListError(null);
-    const url = new URL(next === "archive" ? "/app/chat/archive" : `/app/chat${next === "unread" ? "?filter=unread" : ""}`, location.href);
+    const path =
+      next === "archive"
+        ? "/app/chat/archive"
+        : next === "unread" && archived()
+          ? `/app/chat/archive${filter() === "unread" ? "" : "?filter=unread"}`
+          : `/app/chat${next === "unread" ? "?filter=unread" : ""}`;
+    const url = new URL(path, location.href);
     try {
-      await applyListUrl(url);
+      const token = await applyListUrl(url);
+      if (token === null) return;
       const current = route();
       const target =
         next !== "archive" && current.chatId
           ? listHref(panelHref(current.chatId, current.panel, current.messageId))
           : url.pathname + url.search;
       if (next === "archive") await open({ chatId: null, messageId: null, panel: null });
-      navigate(target, { scroll: "preserve" });
+      if (token === listIntent) navigate(target, { scroll: "preserve" });
     } catch {
       setListError(t().listFailed);
       setListRetry(() => () => void changeList(next));
-    } finally {
-      setListLoading(false);
+    }
+  };
+  const refreshList = async (path?: string) => {
+    const live = store;
+    if (!live) return;
+    try {
+      if (path) {
+        if ((await applyListUrl(new URL(path, location.href))) === null) return;
+      } else await loadList(() => live.showArchive(archived(), filter() === "unread"));
+      sortRows();
+      setListError(null);
+      setListRetry(null);
+    } catch {
+      setListError(t().listFailed);
+      setListRetry(() => () => void refreshList(path));
     }
   };
   const personal = async (id: string, patch: z.infer<typeof PersonalConversationSchema>) => {
     if (!store) return;
-    if (listPending()) { toast(t().savingList); return; }
+    if (listPending()) {
+      toast(t().savingList);
+      return;
+    }
     setListPending(true);
     setListError(null);
+    setListRetry(null);
     try {
       await store.personal(id, patch);
       sortRows();
-    } catch {
-      setListError(t().personalFailed);
-      setListRetry(() => () => void personal(id, patch));
+    } catch (error) {
+      if (error instanceof ChatRequestError && error.status === 400) {
+        setListError(t().pinPositionChanged);
+        setListRetry(() => () => void refreshList());
+      } else {
+        setListError(t().personalFailed);
+        setListRetry(() => () => void personal(id, patch));
+      }
     } finally {
       setListPending(false);
     }
@@ -396,6 +458,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
     setListPending(true);
     setListError(null);
+    collapsePending = true;
     const previous = collapsed();
     const next = isOpen ? collapsed().filter((value) => value !== section) : [...new Set([...collapsed(), section])];
     setCollapsed(next);
@@ -407,20 +470,29 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setListError(t().personalFailed);
       setListRetry(() => () => void collapse(section, isOpen));
     } finally {
+      collapsePending = false;
+      setCollapsed(store.collapsed);
       setListPending(false);
     }
   };
   const more = async () => {
-    if (!store || listLoading()) return;
-    setListLoading(true);
+    const live = store;
+    if (!live || listLoading()) return;
     setListError(null);
     try {
-      await store.loadMoreSidebar();
+      await loadList(async () => {
+        const previous = listRows().map((row) => row.id);
+        await live.loadMoreSidebar();
+        setOrder([
+          ...previous,
+          ...rows()
+            .map((row) => row.id)
+            .filter((id) => !previous.includes(id)),
+        ]);
+      });
     } catch {
       setListError(t().listFailed);
       setListRetry(() => () => void more());
-    } finally {
-      setListLoading(false);
     }
   };
   const applyRoute = (next: Route) => {
@@ -527,15 +599,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (!id) return;
     const fromList = route().chatId === null;
     if ((await open({ chatId: id, messageId: null, panel: null })) !== "applied") return;
-    try {
-      const chosen = store?.openConversation?.conversation;
-      await applyListUrl(new URL(chosen?.archived ? "/app/chat/archive" : "/app/chat", location.href));
-      navigate(listHref(panelHref(id, null)), { scroll: "preserve", state: { chatFromList: fromList } });
-    } catch {
-      setListError(t().listFailed);
-      setListRetry(() => () => void openChosen(id));
-      toast.error(t().openFailed);
-    }
+    const chosen = store?.openConversation?.conversation;
+    const listPath = chosen?.archived ? "/app/chat/archive" : "/app/chat";
+    const target = new URL(panelHref(id, null), location.href);
+    if (chosen?.archived) target.searchParams.set("list", "archive");
+    // The chat has opened successfully. A failed list refresh must not leave the address naming the previous chat.
+    navigate(target.pathname + target.search, { scroll: "preserve", state: { chatFromList: fromList } });
+    await refreshList(listPath);
   };
   const newChat = async () => {
     if (!store) return;
@@ -575,7 +645,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setPanel(null);
     if (route().chatId === current.id) {
       setRoute({ chatId: current.id, messageId: null, panel: null });
-      navigate(panelHref(current.id, null), { replace: true, scroll: "preserve" });
+      navigate(listHref(panelHref(current.id, null)), { replace: true, scroll: "preserve" });
     }
   };
 
@@ -605,9 +675,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const focused = document.activeElement;
       prune();
       // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
-      const top = live.sidebar[0];
-      const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && order()[0] !== top.id;
-      setCollapsed(live.collapsed);
+      const top = live.sidebar.find((row) => row.pinnedRank === null);
+      const firstUnpinned = order().find((id) => live.sidebar.some((row) => row.id === id && row.pinnedRank === null));
+      const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && firstUnpinned !== top.id;
+      if (!collapsePending) setCollapsed(live.collapsed);
       setRows(live.sidebar);
       if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
@@ -659,7 +730,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         if (!next) return;
         // The browser already shows the new address; when its chat cannot load in place, the server renders it.
         void applyListUrl(url)
-          .then(() => open(next))
+          .then((token) => (token === null ? "superseded" : open(next)))
           .then((result) => {
             if (result === "failed") refreshCurrentPath();
           })
@@ -730,37 +801,54 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
 
   const archiveLink = () => (
-    <AppWorkspace.SidebarItem href={listHref("/app/chat/archive")} navigation="enhanced" active={archived()} icon="ti ti-archive" onNavigate={() => void changeList("archive")}>
+    <AppWorkspace.SidebarItem
+      href="/app/chat/archive"
+      navigation="enhanced"
+      active={archived()}
+      icon="ti ti-archive"
+      onNavigate={() => void changeList("archive")}
+    >
       {t().archive}
     </AppWorkspace.SidebarItem>
   );
   const listContent = (includeArchive = true) => (
     <>
-      <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>{t().newChat}</AppWorkspace.SidebarItem>
+      <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+        {t().newChat}
+      </AppWorkspace.SidebarItem>
       <div class="chat-list-filters" role="group" aria-label={t().chats}>
-        <FilterToggle label={t().allChats} icon="ti ti-messages" active={!archived() && filter() === "all"} disabled={listLoading() || listPending()} onClick={() => void changeList("all")} />
-        <FilterToggle label={t().unreadChats} icon="ti ti-mail" active={!archived() && filter() === "unread"} disabled={listLoading() || listPending()} onClick={() => void changeList("unread")} />
+        <FilterToggle
+          label={t().allChats}
+          icon="ti ti-messages"
+          active={!archived() && filter() === "all"}
+          disabled={listLoading() || listPending()}
+          onClick={() => void changeList("all")}
+        />
+        <FilterToggle
+          label={t().unreadChats}
+          icon="ti ti-mail"
+          active={filter() === "unread"}
+          disabled={listLoading() || listPending()}
+          onClick={() => void changeList("unread")}
+        />
       </div>
-      <Show when={listError()}>
-        {(error) => (
-          <div role="alert" class="chat-list-error">
-            {error()}
-            <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
-              {t().retry}
-            </Button>
-          </div>
-        )}
-      </Show>
-      <Show when={listLoading()}>
-        <p role="status" class="chat-list-status">
-          {t().loadingChats}
+      <div class="chat-list-feedback">
+        <p role="status" aria-live="polite" class="chat-list-status">
+          {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
         </p>
-      </Show>
-      <Show when={listPending()}>
-        <p role="status" class="chat-list-status">
-          {t().savingList}
-        </p>
-      </Show>
+        <Show when={listError()}>
+          {(error) => (
+            <InlineGuidance role="alert" tone="danger" class="chat-list-error">
+              {error()}
+              <Show when={listRetry()}>
+                <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
+                  {t().retry}
+                </Button>
+              </Show>
+            </InlineGuidance>
+          )}
+        </Show>
+      </div>
       <Show
         when={archived()}
         fallback={
@@ -772,7 +860,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 open={!collapsed().includes("pinned")}
                 onOpenChange={(open) => void collapse("pinned", open)}
               >
-                <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">{list(pinnedRows, true)}</ScrollArea>
+                <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">
+                  {list(pinnedRows, true)}
+                </ScrollArea>
               </AppWorkspace.SidebarSection>
             </Show>
             <AppWorkspace.SidebarSection
@@ -785,7 +875,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               <Show
                 when={listRows().some((row) => row.pinnedRank === null)}
                 fallback={
-                  <Show when={!hasMore() && !listLoading()}><Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} /></Show>
+                  <Show when={!hasMore() && !listLoading() && listRows().length === 0}>
+                    <Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} />
+                  </Show>
                 }
               >
                 {list(() => listRows().filter((row) => row.pinnedRank === null))}

@@ -181,9 +181,13 @@ test("sixteen pins scroll without a cap and pointer and keyboard drag both save"
   const ids = Array.from({ length: 16 }, (_, index) => add(`Room ${String(index + 1).padStart(2, "0")}`));
   const { page, context, errors } = await start(false, "en");
   try {
-    for (const id of ids) await pin(context, id);
+    for (const id of ids.slice(0, 15)) await pin(context, id);
     await page.reload();
     const pins = visible(page).locator(".chat-list-pins");
+    await pins.getByText("Room 15", { exact: true }).waitFor();
+    expect(await pins.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
+    await pin(context, ids[15]!);
+    await page.reload();
     await pins.getByText("Room 16", { exact: true }).waitFor();
     const box = await pins.evaluate((element) => ({
       height: element.clientHeight,
@@ -225,3 +229,221 @@ test("sixteen pins scroll without a cap and pointer and keyboard drag both save"
     await context.close();
   }
 }, 30_000);
+
+for (const mode of ["all", "unread", "archive"] as const) {
+  test(`next page appends below the current ${mode} list`, async () => {
+    const ids = Array.from({ length: 53 }, (_, index) =>
+      harness.addChat({
+        name: `Paged ${String(index + 1).padStart(2, "0")}`,
+        members: [viewer, nora],
+        count: 4,
+        end: new Date(harness.now().valueOf() + index * 1000),
+        unread: mode === "unread" ? 2 : 0,
+      }),
+    );
+    if (mode === "archive")
+      for (const id of ids) {
+        const response = await fetch(new URL(`/api/chat/conversations/${id}/personal`, harness.url), {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ archived: true }),
+        });
+        expect(response.ok).toBe(true);
+      }
+    const path = mode === "archive" ? "/app/chat/archive" : `/app/chat${mode === "unread" ? "?filter=unread" : ""}`;
+    const { page, context, errors } = await start(false, "en", path);
+    const names = () =>
+      visible(page)
+        .locator(".k2b-app-workspace__sidebar-item-label")
+        .allTextContents()
+        .then((values) => values.filter((value) => value.startsWith("Paged ")));
+    try {
+      const expected = ids.map((_, index) => `Paged ${String(index + 1).padStart(2, "0")}`).reverse();
+      expect(await names()).toEqual(expected.slice(0, 50));
+      await visible(page).getByText("Show more chats", { exact: true }).click();
+      await visible(page).getByText("Paged 01", { exact: true }).waitFor();
+      expect(await names()).toEqual(expected);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+}
+
+test("a removed pin neighbor refreshes the list and retries only the read before a new position", async () => {
+  const first = add("Alpha"),
+    second = add("Beta");
+  const { page, context, errors } = await start(false, "en");
+  try {
+    await pin(context, first);
+    await pin(context, second);
+    await page.reload();
+    await actions(page, "Beta", "en");
+    let attempts = 0;
+    await page.route(`**/api/chat/conversations/${second}/personal`, async (route) => {
+      attempts++;
+      const response = await context.request.put(new URL(`/api/chat/conversations/${first}/personal`, harness.url).href, {
+        data: { pinned: false },
+      });
+      expect(response.ok()).toBe(true);
+      await route.continue();
+    });
+    await page.getByRole("menuitem", { name: "Move up", exact: true }).click();
+    await visible(page).getByRole("alert").filter({ hasText: "Choose the position again" }).waitFor();
+    await visible(page).getByRole("button", { name: "Try again", exact: true }).click();
+    await visible(page).getByRole("alert").waitFor({ state: "hidden" });
+    expect(attempts).toBe(1);
+    expect(await order(page)).toEqual(["Beta"]);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("loading the next page keeps a previously arrived live row at the top", async () => {
+  for (let index = 0; index < 53; index++)
+    harness.addChat({
+      name: `Earlier ${index}`,
+      members: [viewer, nora],
+      count: 1,
+      end: new Date(harness.now().valueOf() - (index + 1) * 1000),
+    });
+  const { page, context, errors } = await start(false, "en");
+  try {
+    const arriving = add("Live arrival");
+    harness.receive(arriving, nora, "Arrived after the list opened");
+    await visible(page).getByText("Live arrival", { exact: true }).waitFor();
+    const names = () => visible(page).locator('a[href*="/app/chat/c/"] .k2b-app-workspace__sidebar-item-label').allTextContents();
+    const previous = await names();
+    expect(previous[0]).toBe("Live arrival");
+    await visible(page).getByText("Show more chats", { exact: true }).click();
+    await visible(page).getByText("Earlier 52", { exact: true }).waitFor();
+    expect((await names()).slice(0, previous.length)).toEqual(previous);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("Back supersedes a pending filter switch and leaves URL and list in the archive", async () => {
+  const archived = add("Archived design");
+  add("Unread design", 2);
+  await fetch(new URL(`/api/chat/conversations/${archived}/personal`, harness.url), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ archived: true }),
+  });
+  const { page, context, errors } = await start(false, "en", "/app/chat/archive");
+  let release: (() => void) | undefined;
+  try {
+    await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+    await page.waitForURL("**/app/chat/archive?filter=unread");
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let intercepted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      intercepted = resolve;
+    });
+    await page.route("**/api/chat/conversations?**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("archived") === "false" && url.searchParams.get("unread") === "false") {
+        intercepted?.();
+        await pending;
+      }
+      await route.continue();
+    });
+    await visible(page).getByRole("button", { name: "All", exact: true }).click();
+    await started;
+    await page.goBack();
+    await page.waitForURL("**/app/chat/archive");
+    release?.();
+    await visible(page).getByText("Archived design", { exact: true }).waitFor();
+    await visible(page).getByRole("button", { name: "All", exact: true }).and(page.locator(":not([disabled])")).waitFor();
+    expect(new URL(page.url()).pathname).toBe("/app/chat/archive");
+    expect(new URL(page.url()).search).toBe("");
+    expect(await visible(page).getByText("Unread design", { exact: true }).count()).toBe(0);
+    expect(errors).toEqual([]);
+  } finally {
+    release?.();
+    await context.close();
+  }
+}, 30_000);
+
+test("active filters add no duplicate history and the archive unread chip toggles in place", async () => {
+  add("Unread design", 2);
+  const { page, context, errors } = await start(false, "en");
+  try {
+    const initial = await page.evaluate(() => history.length);
+    await visible(page).getByRole("button", { name: "All", exact: true }).click();
+    expect(await page.evaluate(() => history.length)).toBe(initial);
+    await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+    await page.waitForURL("**?filter=unread");
+    const filtered = await page.evaluate(() => history.length);
+    await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+    expect(await page.evaluate(() => history.length)).toBe(filtered);
+    await page.goto(new URL("/app/chat/archive?filter=unread", harness.url).href);
+    await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+    await page.waitForURL("**/app/chat/archive");
+    expect(await visible(page).getByRole("button", { name: "Unread", exact: true }).getAttribute("aria-pressed")).toBe("false");
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+for (const failRefresh of [false, true])
+  test(`choosing an existing chat supersedes a pending list without stuck loading (refresh failure=${failRefresh})`, async () => {
+    const existing = add("Existing design", 2);
+    const { page, context, errors } = await start(false, "en", "/app/chat?filter=unread");
+    let release: (() => void) | undefined;
+    try {
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let intercepted: (() => void) | undefined;
+      const started = new Promise<void>((resolve) => {
+        intercepted = resolve;
+      });
+      let allReads = 0;
+      await page.route("**/api/chat/conversations?**", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.searchParams.get("archived") === "false" && url.searchParams.get("unread") === "false") {
+          allReads++;
+          if (allReads === 1) {
+            intercepted?.();
+            await held;
+          } else if (allReads === 2 && failRefresh) {
+            await route.fulfill({ status: 503, json: { message: "Unavailable" } });
+            return;
+          }
+        }
+        await route.continue();
+      });
+      await visible(page).getByRole("button", { name: "All", exact: true }).click();
+      await started;
+      await page.getByRole("button", { name: "New chat", exact: true }).filter({ visible: true }).click();
+      const dialog = page.getByRole("dialog", { name: "New chat", exact: true });
+      await dialog.getByRole("combobox").fill(nora.name);
+      await page.getByRole("option", { name: nora.name, exact: true }).click();
+      await dialog.getByRole("button", { name: "Start chat", exact: true }).click();
+      await dialog.getByRole("button", { name: "Open existing", exact: true }).click();
+      await page.waitForURL(`**/app/chat/c/${existing}`);
+      const entries = await page.evaluate(() => history.length);
+      release?.();
+      if (failRefresh) {
+        await visible(page).getByRole("alert").waitFor();
+        await visible(page).getByRole("button", { name: "Try again", exact: true }).click();
+        await visible(page).getByRole("alert").waitFor({ state: "hidden" });
+        expect(await page.evaluate(() => history.length)).toBe(entries);
+      }
+      await visible(page).getByRole("button", { name: "All", exact: true }).and(page.locator(":not([disabled])")).waitFor();
+      expect(await visible(page).locator(".chat-list-status").textContent()).toBe("");
+      await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+      await page.waitForURL(`**/app/chat/c/${existing}?filter=unread`);
+      expect(errors).toEqual([]);
+    } finally {
+      release?.();
+      await context.close();
+    }
+  }, 30_000);

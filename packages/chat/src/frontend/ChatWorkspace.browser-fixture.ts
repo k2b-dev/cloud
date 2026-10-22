@@ -5,6 +5,8 @@ import { z } from "zod";
 import {
   AddMembersSchema,
   ChangeSchema,
+  CONVERSATION_PAGE_SIZE,
+  ConversationQuerySchema,
   ConversationSchema,
   CreateConversationSchema,
   CreateOutcomeSchema,
@@ -377,13 +379,36 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     return { items, seqHead: all.length, rev: chat.conversation.rev };
   };
   let collapsed: string[] = [];
-  const list = (archived = false, unread = false, ids?: string[]) => ({
-    items: [...chats.values()]
+  const list = (archived = false, unread = false, ids?: string[], cursor?: z.infer<typeof ConversationQuerySchema>["cursor"]) => {
+    const items = [...chats.values()]
       .map((chat) => chat.conversation)
-      .filter((row) => row.member && row.archived === archived && (!ids || ids.includes(row.id)) && (!unread || row.unread > 0 || row.read?.unreadFromSeq != null))
-      .sort((a,b) => (a.pinnedRank ?? 2147483647) - (b.pinnedRank ?? 2147483647) || b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id)),
-    nextCursor: null,
-  });
+      .filter(
+        (row) =>
+          row.member &&
+          row.archived === archived &&
+          (!ids || ids.includes(row.id)) &&
+          (!unread || row.unread > 0 || row.read?.unreadFromSeq != null) &&
+          (!cursor ||
+            (row.pinnedRank ?? 2147483647) > cursor.rank ||
+            ((row.pinnedRank ?? 2147483647) === cursor.rank &&
+              (row.lastActivityAt < cursor.at || (row.lastActivityAt === cursor.at && row.id < cursor.id)))),
+      )
+      .sort(
+        (a, b) =>
+          (a.pinnedRank ?? 2147483647) - (b.pinnedRank ?? 2147483647) ||
+          b.lastActivityAt.localeCompare(a.lastActivityAt) ||
+          b.id.localeCompare(a.id),
+      );
+    const page = items.slice(0, CONVERSATION_PAGE_SIZE);
+    const last = page.at(-1);
+    return {
+      items: page,
+      nextCursor:
+        items.length > CONVERSATION_PAGE_SIZE && last
+          ? JSON.stringify({ at: last.lastActivityAt, id: last.id, rank: last.pinnedRank ?? 2147483647 })
+          : null,
+    };
+  };
   const snapshot = (id: string, focus: string | null) => {
     const chat = chats.get(id);
     if (!chat) return null;
@@ -464,7 +489,10 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         return Response.json({ items: items.slice(0, 10), pagination: { total: items.length, page: 1, per_page: 10, has_next: false } });
       }
       if (url.pathname === "/api/chat/preferences") {
-        if (request.method === "PUT") collapsed = SidebarPreferencesSchema.parse(await request.json()).collapsed;
+        if (request.method === "PUT") {
+          collapsed = SidebarPreferencesSchema.parse(await request.json()).collapsed;
+          deliver("me", "", { type: "preferences", collapsed });
+        }
         return Response.json({ collapsed });
       }
       const personalMatch = /^\/api\/chat\/conversations\/([^/]+)\/personal$/.exec(url.pathname);
@@ -472,6 +500,13 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         const chat = chats.get(personalMatch[1]!);
         if (!chat) return Response.json({ message: "Not found" }, { status: 404 });
         const patch = PersonalConversationSchema.parse(await request.json());
+        const target = patch.before ?? patch.after;
+        if (
+          target &&
+          (target === chat.conversation.id ||
+            ![...chats.values()].some((entry) => entry.conversation.id === target && entry.conversation.pinnedRank !== null))
+        )
+          return Response.json({ code: "BAD_INPUT", message: "The pinned list changed" }, { status: 400 });
         if (patch.archived !== undefined) chat.conversation.archived = patch.archived;
         if (patch.pinned === false) chat.conversation.pinnedRank = null;
         if (patch.pinned === true) {
@@ -481,17 +516,18 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           const old = pins.indexOf(chat);
           const remaining = pins.filter((entry) => entry !== chat);
           const index = patch.after
-              ? remaining.findIndex((entry) => entry.conversation.id === patch.after) + 1
-              : patch.before
-                ? remaining.findIndex((entry) => entry.conversation.id === patch.before)
-                : patch.before === undefined && old >= 0
-                  ? old
-                  : remaining.length;
+            ? remaining.findIndex((entry) => entry.conversation.id === patch.after) + 1
+            : patch.before
+              ? remaining.findIndex((entry) => entry.conversation.id === patch.before)
+              : patch.before === undefined && old >= 0
+                ? old
+                : remaining.length;
           remaining.splice(index, 0, chat);
           remaining.forEach((entry, rank) => {
             entry.conversation.pinnedRank = rank;
           });
         }
+        deliver("me", chat.conversation.id, { type: "personal" });
         return Response.json(chat.conversation);
       }
       if (url.pathname === "/api/chat/people" && request.method === "GET") {
@@ -523,8 +559,10 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           }),
         );
       }
-      if (url.pathname === "/api/chat/conversations" && request.method === "GET")
-        return Response.json(list(url.searchParams.get("archived") === "true", url.searchParams.get("unread") === "true", url.searchParams.get("ids")?.split(",")));
+      if (url.pathname === "/api/chat/conversations" && request.method === "GET") {
+        const query = ConversationQuerySchema.parse(Object.fromEntries(url.searchParams));
+        return Response.json(list(query.archived === "true", query.unread === "true", query.ids, query.cursor));
+      }
       if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
         const input = CreateConversationSchema.parse(await request.json());
         const replay = input.createKey && createIntents.get(input.createKey);

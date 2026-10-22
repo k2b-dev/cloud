@@ -206,7 +206,11 @@
 }
 
 /* Fifteen unchanged two-line rows fit before this personal section scrolls. */
-.chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; }
+.chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: auto; }
 .chat-list-filters { display: flex; gap: .25rem; padding: .25rem; }
 .chat-list-error, .chat-list-status { padding: .5rem; font-size: .875rem; }
 .chat-list-error { color: var(--k2b-danger-text); }
+
+/* Keep progress in one persistent slot; long recovery messages may grow instead of clipping. */
+.chat-list-feedback { display: grid; min-height: 2.25rem; }
+.chat-list-feedback > * { grid-area: 1 / 1; }

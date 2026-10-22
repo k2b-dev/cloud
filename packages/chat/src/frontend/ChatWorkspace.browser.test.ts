@@ -784,7 +784,7 @@ describe("ChatWorkspace browser read state", () => {
       const { page, errors } = await load(options, {});
       const geometry = () =>
         rows(page, name)
-          .locator("a[href]")
+          .locator('a[href*="/app/chat/c/"]')
           .evaluateAll((links) =>
             links.map((link) => {
               const time = link.querySelector("time")!.getBoundingClientRect();
@@ -798,6 +798,7 @@ describe("ChatWorkspace browser read state", () => {
       try {
         await until(() => harness.subscribed());
         const before = await geometry();
+        const stableRow = await row(page, name, dot).elementHandle();
         await page.evaluate(() => {
           window.chatNavigationMarker = "survives read from another device";
         });
@@ -814,6 +815,7 @@ describe("ChatWorkspace browser read state", () => {
           );
           await settle(page);
           expect(await geometry()).toEqual(before);
+          expect(await stableRow!.evaluate((element) => element.isConnected)).toBe(true);
           expect(await page.evaluate(() => window.chatShifts)).toBe(0);
         }
         harness.readElsewhere(chat, 104);

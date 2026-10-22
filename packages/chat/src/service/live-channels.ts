@@ -22,7 +22,10 @@ const chatReaders = async (key: string, viewers: readonly LiveViewer[]): Promise
   );
 };
 
-const canReadPersonal = (viewer: LiveViewer) => boundConversation(viewer.actor).ok && capPermission("read", viewer.actor) !== "none";
+const canReadPersonal = (viewer: LiveViewer) => {
+  const bound = boundConversation(viewer.actor);
+  return bound.ok && bound.data === null && capPermission("read", viewer.actor) !== "none";
+};
 
 export const chatLiveChannels = {
   conversation: {

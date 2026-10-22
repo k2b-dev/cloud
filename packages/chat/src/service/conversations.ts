@@ -527,7 +527,7 @@ const list = (input: ChatContext & { query?: unknown }) =>
     WHERE ${readableMemberCondition(input.accessSubject, bound.data, db)}
       AND ${ids ? db`c.short_id = ANY(${toPgTextArray(ids)}::text[])` : db`true`}
       AND (p.archived_at IS NOT NULL) = ${archived}
-      AND ${parsed.data.unread === "true" ? db`(p.unread_from_seq IS NOT NULL OR EXISTS(SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id AND m.kind = 'text' AND m.seq > ${readStartSql(db)} AND NOT (m.author_type = ${self.type} AND m.author_id = ${self.id}::uuid)))` : db`true`}
+      AND ${parsed.data.unread === "true" ? db`(p.conversation_id IS NOT NULL AND (p.unread_from_seq IS NOT NULL OR EXISTS(SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id AND m.kind = 'text' AND m.seq > ${readStartSql(db)} AND NOT (m.author_type = ${self.type} AND m.author_id = ${self.id}::uuid))))` : db`true`}
       AND ${
         cursor
           ? db`(COALESCE(p.pinned_rank, 2147483647) > ${cursor.rank} OR

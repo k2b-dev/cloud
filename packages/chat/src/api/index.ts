@@ -152,7 +152,10 @@ const app = new Hono<AuthContext>()
       const { cursor, archived, unread, ids } = c.req.valid("query");
       return respond(
         c,
-        chatService.conversations.list({ ...context(c), query: { archived, unread, ...(ids ? { ids: ids.join(",") } : {}), ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
+        chatService.conversations.list({
+          ...context(c),
+          query: { archived, unread, ...(ids ? { ids: ids.join(",") } : {}), ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) },
+        }),
       );
     },
   )

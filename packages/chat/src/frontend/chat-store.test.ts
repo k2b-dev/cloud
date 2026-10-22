@@ -433,7 +433,7 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
     {
       viewerId: "22222222-2222-4222-8222-222222222222",
       cursor: "before",
-      sidebar: { items: [conversation], nextCursor: options.nextCursor ?? null },
+      sidebar: { items: [conversation], nextCursor: null },
       open: { conversation, page: { ...page(2), items: [{ ...system, systemText: null }] } },
     },
     { api, connection },
@@ -1428,17 +1428,142 @@ test("Unread retains read rows but rechecks their authorization on membership re
 test("preferences events preserve loaded sidebar depth without querying conversations", async () => {
   const next = { ...conversation, id: "ghijkl" };
   let requests = 0;
-  const { store, connection } = fixture({
-    conversations: async () => { requests++; return { items: [next], nextCursor: null }; },
-  }, { nextCursor: "page2" });
+  const { store, connection } = fixture(
+    {
+      conversations: async () => {
+        requests++;
+        return { items: [next], nextCursor: null };
+      },
+    },
+    { nextCursor: "page2" },
+  );
   try {
-    await store.loadMore();
+    await store.loadMoreSidebar();
     const before = requests;
-    const ids = store.sidebar.map(row => row.id);
+    const ids = store.sidebar.map((row) => row.id);
     expect(ids).toEqual([conversation.id, next.id]);
     await connection.get("me").applyBatch([{ type: "preferences", collapsed: ["pinned"] }]);
     expect(store.collapsed).toEqual(["pinned"]);
-    expect(store.sidebar.map(row => row.id)).toEqual(ids);
+    expect(store.sidebar.map((row) => row.id)).toEqual(ids);
     expect(requests).toBe(before);
-  } finally { store.dispose(); }
+  } finally {
+    store.dispose();
+  }
+});
+
+test("text bursts from another list mode fetch once until membership or resync changes it", async () => {
+  let reads = 0;
+  let archived = true;
+  const hidden = { ...conversation, id: "ghijkl" };
+  const { store, connection } = fixture({
+    conversation: async (id) => (id === hidden.id ? (reads++, { ...hidden, archived }) : conversation),
+  });
+  const summary = (rev: number) => chatLiveUpdates(hidden.id, { ...message(rev), conversationId: hidden.id }, null, [])[1]!.data;
+  try {
+    for (let rev = 2; rev < 22; rev++) await connection.get("list").apply(summary(rev));
+    expect(reads).toBe(1);
+    expect(store.sidebar.map((row) => row.id)).not.toContain(hidden.id);
+    archived = false;
+    await connection.get("me").apply({ type: "membership", conversationId: hidden.id });
+    await connection.get("list").apply(summary(22));
+    expect(reads).toBe(2);
+    expect(store.sidebar.map((row) => row.id)).toContain(hidden.id);
+    await store.showArchive(true);
+    await connection.get("list").apply(summary(23));
+    expect(reads).toBe(3);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("personal writes expose refresh failures for visible retry and refresh obsolete pin targets", async () => {
+  let refreshes = 0;
+  const { store } = fixture({
+    personal: async () => conversation,
+    conversations: async () => {
+      refreshes++;
+      throw new Error("Refresh unavailable");
+    },
+  });
+  try {
+    await expect(store.personal(conversation.id, { archived: true })).rejects.toThrow("Refresh unavailable");
+    expect(refreshes).toBe(1);
+  } finally {
+    store.dispose();
+  }
+  const invalid = new ChatRequestError("Target removed", "BAD_INPUT", 400);
+  const next = fixture({
+    personal: async () => {
+      throw invalid;
+    },
+    conversations: async () => {
+      refreshes++;
+      return { items: [], nextCursor: null };
+    },
+  });
+  try {
+    await expect(next.store.personal(conversation.id, { pinned: true, before: "ghijkl" })).rejects.toBe(invalid);
+    expect(refreshes).toBe(2);
+    expect(next.store.sidebar).toEqual([]);
+  } finally {
+    next.store.dispose();
+  }
+});
+
+test("retained read rows keep activity order when a personal action refreshes Unread", async () => {
+  const older = { ...conversation, id: "ghijkl", unread: 1, lastActivityAt: "2026-10-11T00:00:00.000Z" };
+  const { store } = fixture(
+    {
+      personal: async () => conversation,
+      conversations: async (_cursor, _archived, _unread, ids) => ({ items: ids ? [conversation] : [older], nextCursor: null }),
+    },
+    { unread: true },
+  );
+  try {
+    await store.personal(conversation.id, { pinned: false });
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id, older.id]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a failed open projection leaves a list-mode switch atomic", async () => {
+  const calls: boolean[] = [];
+  let fail = true;
+  const { store, connection } = fixture({
+    conversations: async (_cursor, archived) => {
+      calls.push(!!archived);
+      return { items: archived ? [] : [conversation], nextCursor: null };
+    },
+    conversation: async () => {
+      if (fail) throw new Error("Projection unavailable");
+      return conversation;
+    },
+  });
+  try {
+    await expect(store.showArchive(true)).rejects.toThrow("Projection unavailable");
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+    fail = false;
+    await connection.get("me").apply({ type: "personal" });
+    expect(calls).toEqual([true, false]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a failed pin-target refresh preserves the definitive 400", async () => {
+  const invalid = new ChatRequestError("Target removed", "BAD_INPUT", 400);
+  const { store } = fixture({
+    personal: async () => {
+      throw invalid;
+    },
+    conversations: async () => {
+      throw new Error("Refresh unavailable");
+    },
+  });
+  try {
+    await expect(store.personal(conversation.id, { pinned: true, before: "ghijkl" })).rejects.toBe(invalid);
+  } finally {
+    store.dispose();
+  }
 });

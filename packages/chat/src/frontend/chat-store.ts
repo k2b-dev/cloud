@@ -40,6 +40,10 @@ type ConversationPage = z.infer<typeof ConversationPageSchema>;
 type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
+const compareRows = (a: Conversation, b: Conversation) =>
+  (a.pinnedRank ?? 2147483647) - (b.pinnedRank ?? 2147483647) ||
+  b.lastActivityAt.localeCompare(a.lastActivityAt) ||
+  b.id.localeCompare(a.id);
 export type ChatStoreApi = {
   personal(id: string, patch: z.infer<typeof PersonalConversationSchema>): Promise<Conversation>;
   preferences(): Promise<z.infer<typeof SidebarPreferencesSchema>>;
@@ -175,8 +179,7 @@ export const createChatStoreApi = (): ChatStoreApi => {
         await client.conversations.$get({
           query: { cursor, archived: archived ? "true" : "false", unread: unread ? "true" : "false", ids: ids?.join(",") },
         }),
-        CONVERSATION_PAGE_SIZE,
-  ConversationPageSchema,
+        ConversationPageSchema,
       ),
     conversation: async (id) =>
       parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id } }), ConversationSchema),
@@ -233,6 +236,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   let archived = snapshot.archived ?? false;
   let unread = snapshot.unread ?? false;
   let rows = [...snapshot.sidebar.items];
+  const excludedRows = new Set<string>();
   const unreadRev = new Map(rows.map((row) => [row.id, row.rev]));
   let nextCursor = snapshot.sidebar.nextCursor;
   let complete = nextCursor === null;
@@ -495,25 +499,22 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         retained.push(...page.items);
       }
     }
+    const chat = current;
+    const openRow = chat && active(chat) ? await api.conversation(chat.view.id) : undefined;
     if (disposed) return;
     archived = nextArchived;
     unread = nextUnread;
-    rows = [...loaded, ...retained];
+    excludedRows.clear();
+    rows = retained.length ? [...loaded, ...retained].sort(compareRows) : loaded;
     unreadRev.clear();
     for (const row of rows) unreadRev.set(row.id, row.rev);
     nextCursor = page.nextCursor;
     complete = nextCursor === null;
-    notify();
-    // The open chat may lie outside the first sidebar page, so its read state is refreshed on its own.
-    const chat = current;
-    if (chat && active(chat)) {
-      const row = await api.conversation(chat.view.id);
-      if (active(chat)) {
-        if (row === null) noAccess(chat);
-        else {
-          metadata(chat, row);
-          unreadRev.set(row.id, Math.max(unreadRev.get(row.id) ?? 0, row.rev));
-        }
+    if (chat && active(chat) && openRow !== undefined) {
+      if (openRow === null) noAccess(chat);
+      else {
+        metadata(chat, openRow);
+        unreadRev.set(openRow.id, Math.max(unreadRev.get(openRow.id) ?? 0, openRow.rev));
       }
     }
     notify();
@@ -521,16 +522,13 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   // Server order is last activity, then ID, both descending. Only unknown rows past an incomplete prefix stay out.
   const place = (row: Conversation) => {
     if (!row.member || row.archived !== archived) {
+      excludedRows.add(row.id);
       rows = rows.filter((other) => other.id !== row.id);
       return;
     }
+    excludedRows.delete(row.id);
     const rest = rows.filter((other) => other.id !== row.id);
-    const index = rest.findIndex(
-      (other) =>
-        (row.pinnedRank ?? 2147483647) < (other.pinnedRank ?? 2147483647) ||
-        ((row.pinnedRank ?? 2147483647) === (other.pinnedRank ?? 2147483647) &&
-          (row.lastActivityAt > other.lastActivityAt || (row.lastActivityAt === other.lastActivityAt && row.id > other.id))),
-    );
+    const index = rest.findIndex((other) => compareRows(row, other) < 0);
     if (index >= 0) rest.splice(index, 0, row);
     else if (complete || rest.length < rows.length) rest.push(row);
     rows = rest;
@@ -562,6 +560,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     notify();
   };
   const applySummary = async (summary: Summary) => {
+    // Collection events span both personal list modes; an excluded chat needs no read for each text message.
+    if (summary.kind === "text" && excludedRows.has(summary.conversationId)) return;
     let known = rows.find((row) => row.id === summary.conversationId);
     if (known && summary.rev > (unreadRev.get(known.id) ?? known.rev)) {
       const start = readStart(known.read);
@@ -579,6 +579,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       if (disposed) return;
       if (row !== null) unreadRev.set(row.id, row.rev);
       if (row === null) {
+        excludedRows.add(summary.conversationId);
         unreadRev.delete(summary.conversationId);
         rows = rows.filter((other) => other.id !== summary.conversationId);
         if (current?.view.id === summary.conversationId) noAccess(current);
@@ -650,8 +651,15 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       return saved;
     },
     personal: async (id: string, patch: Parameters<ChatStoreApi["personal"]>[1]) => {
-      const result = await api.personal(id, patch);
-      await sidebar(reloadSidebar).catch(() => {});
+      let result: Conversation;
+      try {
+        result = await api.personal(id, patch);
+      } catch (error) {
+        // Another device may have unpinned the requested neighbor. Refresh before offering a new position.
+        if (error instanceof ChatRequestError && error.status === 400) await sidebar(reloadSidebar).catch(() => {});
+        throw error;
+      }
+      await sidebar(reloadSidebar);
       return result;
     },
     showArchive: (next: boolean, nextUnread = unread) => sidebar(() => reloadSidebar(next, nextUnread)),

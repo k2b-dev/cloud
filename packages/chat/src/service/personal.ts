@@ -1,6 +1,14 @@
 import { err, fail, ok } from "@k2b/cloud/server";
 import { sql } from "bun";
-import { boundConversation, capPermission, type ChatContext, messages, requireConversation, subjectPrincipal } from "./access";
+import {
+  boundConversation,
+  capPermission,
+  type ChatContext,
+  messages,
+  principalCondition,
+  requireConversation,
+  subjectPrincipal,
+} from "./access";
 import { PersonalConversationSchema, SidebarPreferencesSchema } from "./contracts";
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
@@ -12,17 +20,22 @@ const lock = async (context: ChatContext, db: typeof sql) => {
   return self;
 };
 const publish = async (context: ChatContext, db: typeof sql) => {
-  if (context.accessSubject.type === "user") await chatLive.publish(db, { key: `p:${context.accessSubject.userId}`, data: { type: "personal" } });
+  if (context.accessSubject.type === "user")
+    await chatLive.publish(db, { key: `p:${context.accessSubject.userId}`, data: { type: "personal" } });
+};
+const allowedPersonal = (context: ChatContext) => {
+  const bound = boundConversation(context.actor);
+  return bound.ok && bound.data === null && capPermission("read", context.actor) !== "none";
 };
 const preferences = async (context: ChatContext, db: typeof sql = sql) => {
-  if (!boundConversation(context.actor).ok || capPermission("read", context.actor) === "none") return fail(err.forbidden(messages(context).forbidden));
+  if (!allowedPersonal(context)) return fail(err.forbidden(messages(context).forbidden));
   const self = subjectPrincipal(context.accessSubject);
   const [row] = await db<{ collapsed_sections: unknown }[]>`SELECT collapsed_sections FROM chat.account_prefs
     WHERE principal_type = ${self.type} AND principal_id = ${self.id}::uuid`;
   return ok(SidebarPreferencesSchema.parse({ collapsed: row?.collapsed_sections ?? [] }));
 };
 const savePreferences = async (input: ChatContext & { input: unknown }) => {
-  if (!boundConversation(input.actor).ok || capPermission("read", input.actor) === "none") return fail(err.forbidden(messages(input).forbidden));
+  if (!allowedPersonal(input)) return fail(err.forbidden(messages(input).forbidden));
   const parsed = SidebarPreferencesSchema.safeParse(input.input);
   if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
   const result = await sql.begin(async (db) => {
@@ -30,13 +43,15 @@ const savePreferences = async (input: ChatContext & { input: unknown }) => {
     await db`INSERT INTO chat.account_prefs (principal_type, principal_id, collapsed_sections)
       VALUES (${self.type}, ${self.id}::uuid, ${JSON.stringify(parsed.data.collapsed)}::text::jsonb)
       ON CONFLICT (principal_type, principal_id) DO UPDATE SET collapsed_sections = EXCLUDED.collapsed_sections`;
-    if (input.accessSubject.type === "user") await chatLive.publish(db, { key: `p:${input.accessSubject.userId}`, data: { type: "preferences", ...parsed.data } });
+    if (input.accessSubject.type === "user")
+      await chatLive.publish(db, { key: `p:${input.accessSubject.userId}`, data: { type: "preferences", ...parsed.data } });
     return preferences(input, db);
   });
   chatLive.wake();
   return result;
 };
 const update = async (input: ChatContext & { conversationId: string; input: unknown }) => {
+  if (!allowedPersonal(input)) return fail(err.forbidden(messages(input).forbidden));
   const parsed = PersonalConversationSchema.safeParse(input.input);
   if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
   const data = parsed.data;
@@ -45,6 +60,11 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
     const row = allowed.data;
+    const [membership] = await db<{ member: boolean }[]>`SELECT EXISTS(
+      SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = ${row.id}::uuid AND ca.role = 'member' AND ${principalCondition(input.accessSubject, db)}
+      AND a.permission IN ('read', 'write', 'admin')) AS member`;
+    if (!membership?.member) return fail(err.forbidden(messages(input).forbidden));
     // Validate the relative target before making any write. Archived pins keep their position in this same order.
     const target = data.before ?? data.after;
     const [neighbor] = target
@@ -54,6 +74,12 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
         WHERE p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid AND p.pinned_rank IS NOT NULL AND c.short_id = ${target}`
       : [];
     if (target && (target === input.conversationId || !neighbor)) return fail(err.badInput(messages(input).invalidInput));
+    // Match readAll's global participant lock order before a pin mutation touches multiple rows.
+    if (data.pinned === true)
+      await db`SELECT conversation_id FROM chat.participants
+      WHERE principal_type = ${self.type} AND principal_id = ${self.id}::uuid
+        AND (pinned_rank IS NOT NULL OR conversation_id = ${row.id}::uuid)
+      ORDER BY conversation_id FOR UPDATE`;
     await db`INSERT INTO chat.participants (principal_type, principal_id, conversation_id, origin, joined_seq)
       VALUES (${self.type}, ${self.id}::uuid, ${row.id}::uuid, 'ondemand', ${row.seq_head}) ON CONFLICT DO NOTHING`;
     if (data.archived !== undefined)

@@ -1453,10 +1453,7 @@ suite("chat conversations, people, and directory groups", () => {
     const pin = (id: string, patch: unknown, caller = headers) => request(caller, `/${id}/personal`, "PUT", patch);
     const results = await Promise.all(chats.map((chat) => pin(chat.shortId, { pinned: true })));
     expect(results.every((response) => response.status === 200)).toBe(true);
-    const page = () =>
-      request(headers)
-        .then((response) => response.json())
-        .then((body) => ConversationPageSchema.parse(body));
+    const page = async () => ConversationPageSchema.parse(await (await request(headers)).json());
     const original = (await page()).items.map((row) => row.id);
     expect(original).toHaveLength(18);
     expect(new Set((await page()).items.map((row) => row.pinnedRank)).size).toBe(18);
@@ -1470,7 +1467,7 @@ suite("chat conversations, people, and directory groups", () => {
     expect((await pin(last, { pinned: true, before: "ZZZZZZ" })).status).toBe(400);
     expect((await pin(last, { pinned: true, after: original[0] })).status).toBe(200);
     expect((await pin(last, { pinned: true, after: original[0] })).status).toBe(200);
-    expect((await page()).items.slice(0, 3).map((row) => row.id)).toEqual([original[0], last, original[1]]);
+    expect((await page()).items.slice(0, 3).map((row) => row.id)).toEqual([original[0]!, last, original[1]!]);
     expect((await pin(last, { pinned: true, after: last })).status).toBe(400);
     expect((await pin(last, { pinned: true, before: original[0], after: original[1] })).status).toBe(400);
     expect((await pin(last, { pinned: false })).status).toBe(200);
@@ -1495,13 +1492,19 @@ suite("chat conversations, people, and directory groups", () => {
     expect(new Set([...first.items, ...second.items].map((row) => row.id)).size).toBe(53);
     expect(ConversationPageSchema.parse(await (await request(headers, "?unread=true")).json()).items).toEqual([]);
     expect((await request(headers, `/${oldest.shortId}/personal`, "PUT", { pinned: false })).status).toBe(200);
-    expect((await request(headers, `/${oldest.shortId}/messages`, "POST", { clientId: "explicit-mark", body: "Own message" })).status).toBe(201);
+    expect((await request(headers, `/${oldest.shortId}/messages`, "POST", { clientId: "explicit-mark", body: "Own message" })).status).toBe(
+      201,
+    );
     expect((await request(headers, `/${oldest.shortId}/read`, "POST", { seq: 1 })).status).toBe(200);
     expect((await request(headers, `/${oldest.shortId}/unread`, "POST", {})).status).toBe(200);
     await sql`UPDATE chat.conversations SET last_activity_at = '2020-01-01T00:00:00Z'::timestamptz WHERE id = ${oldest.id}::uuid`;
-    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map(row => row.id)).not.toContain(oldest.shortId);
-    expect(ConversationPageSchema.parse(await (await request(headers, "?unread=true")).json()).items.map((row) => row.id)).toEqual([oldest.shortId]);
-    expect(ConversationPageSchema.parse(await (await request(headers, `?ids=${oldest.shortId}`)).json()).items.map((row) => row.id)).toEqual([oldest.shortId]);
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).not.toContain(oldest.shortId);
+    expect(ConversationPageSchema.parse(await (await request(headers, "?unread=true")).json()).items.map((row) => row.id)).toEqual([
+      oldest.shortId,
+    ]);
+    expect(
+      ConversationPageSchema.parse(await (await request(headers, `?ids=${oldest.shortId}`)).json()).items.map((row) => row.id),
+    ).toEqual([oldest.shortId]);
     const outsider = await cookie(await user());
     expect(ConversationPageSchema.parse(await (await request(outsider, `?ids=${oldest.shortId}`)).json()).items).toEqual([]);
     for (const chat of chats) expect((await request(headers, `/${chat.shortId}/personal`, "PUT", { archived: true })).status).toBe(200);
@@ -1544,7 +1547,10 @@ suite("chat conversations, people, and directory groups", () => {
       expect(response.status).toBe(200);
       const page = ConversationPageSchema.parse(await response.json());
       expect(page.items.length).toBeLessThanOrEqual(50);
-      for (const row of page.items) { expect(ids.has(row.id)).toBe(false); ids.add(row.id); }
+      for (const row of page.items) {
+        expect(ids.has(row.id)).toBe(false);
+        ids.add(row.id);
+      }
       cursor = page.nextCursor;
     } while (cursor);
     expect(ids.size).toBe(300);
@@ -1556,8 +1562,24 @@ suite("chat conversations, people, and directory groups", () => {
       expect(ConversationPageSchema.parse(await response.json()).items).toHaveLength(50);
       elapsed.push(performance.now() - start);
     }
-    elapsed.sort((a,b) => a-b);
-    console.info(`300-chat sidebar endpoint p95: ${elapsed[Math.ceil(elapsed.length * .95) - 1]!.toFixed(2)} ms (20 warm reads, local integration fixture)`);
+    elapsed.sort((a, b) => a - b);
+    console.info(
+      `300-chat sidebar endpoint p95: ${elapsed[Math.ceil(elapsed.length * 0.95) - 1]!.toFixed(2)} ms (20 warm reads, local integration fixture)`,
+    );
   });
 
+  test("Unread excludes inherited chats until their participant read position exists", async () => {
+    const owner = await user(),
+      reader = await user();
+    const chat = await fixture(owner);
+    const groupId = await group([reader]);
+    await groupGrant(chat, groupId, owner, "read");
+    expect(
+      (await request(await cookie(owner), `/${chat.shortId}/messages`, "POST", { clientId: "inherited-unread", body: "Earlier message" }))
+        .status,
+    ).toBe(201);
+    const response = await request(await cookie(reader), "?unread=true");
+    expect(response.status).toBe(200);
+    expect(ConversationPageSchema.parse(await response.json()).items).toEqual([]);
+  });
 });
