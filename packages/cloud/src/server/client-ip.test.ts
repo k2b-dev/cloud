@@ -45,3 +45,7 @@ test.each([
 ])("client address %s uses bucket %s", (ip, bucket) => {
   expect(clientIpBucket(ip)).toBe(bucket);
 });
+
+test("long scoped addresses use the same network budget without regex scanning", () => {
+  expect(clientIpBucket(`fe80::1%${"0".repeat(100_000)}`)).toBe("ip6:fe80:0:0:0::/64");
+});

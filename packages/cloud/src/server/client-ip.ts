@@ -9,10 +9,15 @@ export const clientIp = (c: Context): string =>
 export const clientIpBucket = (ip: string): string => {
   if (isIP(ip) !== 6) return `ip:${ip}`;
 
-  const address = ip.replace(/%.*$/, "").replace(/\d+\.\d+\.\d+\.\d+$/, (tail) => {
-    const value = tail.split(".").reduce((value, octet) => value * 256 + Number(octet), 0);
-    return `${(value >>> 16).toString(16)}:${(value & 0xffff).toString(16)}`;
-  });
+  let address = ip.split("%", 1)[0]!;
+  if (address.includes(".")) {
+    const tail = address.lastIndexOf(":") + 1;
+    const value = address
+      .slice(tail)
+      .split(".")
+      .reduce((value, octet) => value * 256 + Number(octet), 0);
+    address = `${address.slice(0, tail)}${(value >>> 16).toString(16)}:${(value & 0xffff).toString(16)}`;
+  }
   const [head = "", tail = ""] = address.split("::");
   const left = head ? head.split(":") : [];
   const right = tail ? tail.split(":") : [];
