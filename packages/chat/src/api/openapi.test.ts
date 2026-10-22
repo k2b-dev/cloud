@@ -140,3 +140,23 @@ test("member removal and leave require the group access outcome", async () => {
     expect(response.content["application/json"].schema.properties.keptThroughGroup).toMatchObject({ type: "boolean" });
   }
 });
+
+test("documents optional create identity and payload conflicts", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const create = spec.paths["/api/chat/conversations"]!.post!;
+  expect(create.responses["409"]).toBeDefined();
+  const body = z
+    .object({
+      content: z.object({
+        "application/json": z.object({
+          schema: z.object({
+            properties: z.record(z.string(), z.unknown()),
+            required: z.array(z.string()).optional(),
+          }),
+        }),
+      }),
+    })
+    .parse(create.requestBody);
+  expect(body.content["application/json"].schema.properties.createKey).toBeDefined();
+  expect(body.content["application/json"].schema.required ?? []).not.toContain("createKey");
+});

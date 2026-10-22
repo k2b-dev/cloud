@@ -5,6 +5,7 @@ import { PULSE_INTERNAL_INGEST_BATCH_LIMIT } from "../ingest-limits";
 import { BASE_STORE_OPERATIONS, BASE_STORE_STATES, READ_PROFILE_NAMES } from "./admin-contracts";
 import { assertStoreName, BASE_SCHEMA_VERSIONS, baseStoreNames, baseTtlStatements, DATA_TABLES, READ_VIEWS } from "./base-schema";
 import { clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
+import { MaintenanceBusy, maintenanceQuery } from "./maintenance-query";
 import { storeConnection } from "./service";
 import { hashServicePassword, randomHex } from "./setup-sql";
 import { quoteIdentifier as q, StorePrefix } from "./validation";
@@ -40,11 +41,13 @@ export class BaseStoreError extends Error {
 }
 export class BaseOperationSuperseded extends Error {}
 export const storeErrorCode = (error: unknown): string =>
-  error instanceof BaseStoreError
-    ? error.code
-    : error instanceof StoreQueryError && error.kind === "clickhouse"
-      ? `CLICKHOUSE_ERROR:${error.code}`
-      : "STORE_UNREACHABLE";
+  error instanceof MaintenanceBusy
+    ? "MAINTENANCE_BUSY"
+    : error instanceof BaseStoreError
+      ? error.code
+      : error instanceof StoreQueryError && error.kind === "clickhouse"
+        ? `CLICKHOUSE_ERROR:${error.code}`
+        : "STORE_UNREACHABLE";
 export type StoreOperation = "provision" | "clear" | "delete" | "reconcile";
 export const createBaseStore = ({
   connection = storeConnection,
@@ -52,26 +55,36 @@ export const createBaseStore = ({
   clock = () => new Date(),
   beforeStep,
   transport,
+  queryRunner = clickhouseQuery,
 }: {
   connection?: () => Promise<{ url: string; user: string; password: string } | null>;
   prefix?: string;
   transport?: QueryOptions["transport"];
+  queryRunner?: (options: QueryOptions, workload: "maintenance" | "ingest") => ReturnType<typeof clickhouseQuery>;
   clock?: () => Date;
   beforeStep?: (operation: StoreOperation, step: string) => void | Promise<void>;
 } = {}) => {
   StorePrefix.parse(prefix);
-  const query = async (query: string, params?: Record<string, string | number>, resolved?: Awaited<ReturnType<typeof connection>>) => {
+  const query = async (
+    query: string,
+    params?: Record<string, string | number>,
+    resolved?: Awaited<ReturnType<typeof connection>>,
+    workload: "maintenance" | "ingest" = "maintenance",
+  ) => {
     const value = resolved === undefined ? await connection() : resolved;
     if (!value) throw new BaseStoreError("STORE_NOT_CONFIGURED");
-    return clickhouseQuery({
-      ...value,
-      query,
-      params,
-      transport,
-      settings: { insert_deduplicate: 0, async_insert: 0 },
-      timeoutMs: 30_000,
-      maxResponseBytes: PULSE_INTERNAL_INGEST_BATCH_LIMIT * 128,
-    });
+    return queryRunner(
+      {
+        ...value,
+        query,
+        params,
+        transport,
+        settings: { insert_deduplicate: 0, async_insert: 0 },
+        timeoutMs: 30_000,
+        maxResponseBytes: PULSE_INTERNAL_INGEST_BATCH_LIMIT * 128,
+      },
+      workload,
+    );
   };
   const ctx = (row: StoreRow) => ({
     database: row.database_name,
@@ -90,10 +103,10 @@ export const createBaseStore = ({
     clock,
     query,
     /** Resolve settings before reserving a SQL connection, including on a cold cache. */
-    async prepare() {
+    async prepare(workload: "maintenance" | "ingest" = "maintenance") {
       const value = await connection();
       const query = this.query;
-      return (statement: string, params?: Record<string, string | number>) => query(statement, params, value);
+      return (statement: string, params?: Record<string, string | number>) => query(statement, params, value, workload);
     },
     /** Lock one step, then re-read. A delete can supersede a clear between any two steps. */
     async step(
@@ -187,5 +200,5 @@ export const createBaseStore = ({
   };
   return store;
 };
-export const baseStore = createBaseStore();
+export const baseStore = createBaseStore({ queryRunner: maintenanceQuery });
 export const readUserCredentials = baseStore.readUserCredentials;
