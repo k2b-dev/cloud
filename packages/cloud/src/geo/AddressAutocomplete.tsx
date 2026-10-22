@@ -50,7 +50,10 @@ export function AddressAutocomplete(props: AddressAutocompleteProps): JSX.Elemen
   };
   const [budget, setBudget] = createSignal<Budget | null>(initialBudget());
   const [phone, setPhone] = createSignal(false);
+  // The budget line names a time in the reader's browser zone; it exists only once the list can open.
+  const [mounted, setMounted] = createSignal(false);
   onMount(() => {
+    setMounted(true);
     const query = window.matchMedia("(max-width: 639px)");
     const update = () => setPhone(query.matches);
     update();
@@ -58,7 +61,11 @@ export function AddressAutocomplete(props: AddressAutocompleteProps): JSX.Elemen
     onCleanup(() => query.removeEventListener("change", update));
   });
 
-  let suggestions: GeoAddress[] = [];
+  // Options carry the id of the answer they came from, so a pick always resolves to the address it showed.
+  let suggestions = new Map<string, GeoAddress>();
+  let responses = 0;
+  // The keyboard hint belongs to a list of choices, not to an empty, failed, or budget answer.
+  const [choices, setChoices] = createSignal(false);
   let inflight: Promise<unknown> | undefined;
   const ownOption = (text: string): ComboboxOption => ({
     id: OWN,
@@ -90,6 +97,9 @@ export function AddressAutocomplete(props: AddressAutocompleteProps): JSX.Elemen
     const result = await request.finally(() => {
       if (inflight === request) inflight = undefined;
     });
+    // A superseded answer never touches the state behind the options a newer answer shows.
+    signal.throwIfAborted();
+    setChoices(result.ok && result.data.data.suggestions.length > 0);
     if (!result.ok) {
       const details = result.error.details;
       if (
@@ -102,12 +112,15 @@ export function AddressAutocomplete(props: AddressAutocompleteProps): JSX.Elemen
       }
       throw new Error(t().unavailable);
     }
-    suggestions = result.data.data.suggestions.slice(0, LIMIT);
-    if (!suggestions.length) return [];
+    responses += 1;
+    const answer = responses;
+    const found = result.data.data.suggestions.slice(0, LIMIT);
+    suggestions = new Map(found.map((address, index) => [`${answer}:${index}`, address]));
+    if (!found.length) return [];
     return withOwn(
       text,
-      suggestions.map((address, index) => ({
-        id: String(index),
+      found.map((address, index) => ({
+        id: `${answer}:${index}`,
         label: address.line1 || address.formatted,
         description: [[address.postalCode, address.city].filter(Boolean).join(" "), countryName(address.countryCode)]
           .filter(Boolean)
@@ -167,7 +180,7 @@ export function AddressAutocomplete(props: AddressAutocompleteProps): JSX.Elemen
         debounceMs={DEBOUNCE_MS}
         query={() => props.value}
         onQueryChange={props.onValueChange}
-        status={budgetStatus()}
+        status={mounted() ? budgetStatus() : undefined}
         empty={
           <span>
             <strong class="block font-medium">{t().noMatch}</strong>
@@ -176,7 +189,7 @@ export function AddressAutocomplete(props: AddressAutocompleteProps): JSX.Elemen
         }
         footer={
           <>
-            <span>{phone() || budget() ? "" : t().keyboardHint}</span>
+            <span>{phone() || budget() || !choices() ? "" : t().keyboardHint}</span>
             <span>
               <a href="https://www.geoapify.com/" target="_blank" rel="noopener noreferrer">
                 Geoapify
@@ -191,7 +204,7 @@ export function AddressAutocomplete(props: AddressAutocompleteProps): JSX.Elemen
         fetchData={fetchData}
         onSelect={(option) => {
           if (option.id === OWN) return props.onOwnEntry?.(props.value);
-          const address = suggestions[Number(option.id)];
+          const address = suggestions.get(option.id);
           if (address) props.onPick(address);
         }}
       />

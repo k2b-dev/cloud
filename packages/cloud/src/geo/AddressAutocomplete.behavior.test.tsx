@@ -175,6 +175,28 @@ describe("AddressAutocomplete", () => {
     }
   });
 
+  test("a superseded answer never changes what a visible suggestion picks", async () => {
+    const f = await setup();
+    try {
+      f.type("Alpha");
+      await waitFor(() => f.fetches.calls.length === 1, "first request");
+      f.fetches.calls[0]!.release(ok([suggestion("Alphastraße 1", "89073")]));
+      await waitFor(() => f.options().length === 2, "first options");
+      f.type("Beta");
+      await waitFor(() => f.fetches.calls.length === 2, "second request");
+      // A third query supersedes the second while it is still open.
+      f.type("Gamma");
+      await Bun.sleep(300);
+      f.fetches.calls[1]!.release(ok([suggestion("Betastraße 2", "89073")]));
+      await waitFor(() => f.fetches.calls.length === 3, "third request");
+      expect(f.options()[0]).toContain("Alphastraße 1");
+      f.dom.root.querySelector<HTMLElement>('[role="option"]')!.click();
+      expect(f.picks.map((address) => address.line1)).toEqual(["Alphastraße 1"]);
+    } finally {
+      f.cleanup();
+    }
+  });
+
   test("Escape keeps the own text; the own entry comes first on a phone", async () => {
     const f = await setup({ phone: true });
     try {
