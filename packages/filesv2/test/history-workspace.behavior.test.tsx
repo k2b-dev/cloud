@@ -426,6 +426,41 @@ describe("Files history in the workspace", () => {
     expect(inspector().textContent).toContain("Version 1");
     expect(inspector().textContent).toContain("Version 2");
   });
+  for (const next of [null, "more-children"]) {
+    test(`folder count retries a failed read and ${next ? "marks an incomplete page as a lower bound" : "counts a complete page exactly"}`, async () => {
+      const folder: FileEntry = { name: "Druckdaten", path: "Druckdaten", directory: true, size: 0, modified: NOW };
+      const first: FileEntry = { name: "Proof.pdf", path: "Druckdaten/Proof.pdf", directory: false, size: 2, modified: NOW };
+      const readme: FileEntry = { name: "README.md", path: "Druckdaten/README.md", directory: false, size: 3, modified: NOW };
+      const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&file=Druckdaten`;
+      const request = { baseId: home.id, path: folder.path, scope: "folder" as const };
+      const dom = mount(
+        snapshotOf({
+          source,
+          directory: { base: home, path: "", items: [folder], next: null },
+          detail: { base: home, entry: folder },
+          history: { source: JSON.stringify(request), page: page([]) },
+        }),
+      );
+      await flush();
+      const inspector = dom.root.querySelector("[id*='filesv2-inspector']")!;
+      const count = () => inspector.querySelector(".filesv2-inspector-count")!;
+      expect(count().textContent).toBe("Loading details…");
+      expect(query(pending("entries"))).toEqual({ path: folder.path });
+      pending("entries").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+      await flush();
+      expect(count().textContent).toBe("Contents not loaded.");
+      expect(count().getAttribute("role")).toBe("alert");
+      button(inspector, "Try again")!.click();
+      await flush();
+      pending("entries").resolve(Response.json({ base: home, path: folder.path, items: [first, readme], readme, next }));
+      await flush();
+      expect(count().textContent).toBe(next ? "at least 2 items" : "2 items");
+      // The README is already listed; it is not counted twice. A next cursor never starts an unbounded count scan.
+      expect(apiRequests.filter((request) => request.kind === "entries")).toHaveLength(2);
+      expect(apiRequests.some((request) => request.kind === "versions")).toBe(false);
+    });
+  }
+
   test("a stable folder inspector includes a visible child upload and keeps folder scope in Activity after reload", async () => {
     const folder: FileEntry = {
       name: "Kunden",

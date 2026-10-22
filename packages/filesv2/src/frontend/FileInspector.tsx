@@ -255,6 +255,29 @@ export default function FileInspector(props: {
                 );
                 return change?.actor.kind === "user" ? change.actor.name : null;
               };
+              const contentsKey = () => JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified]);
+              const contents = query.create({
+                source: contentsKey,
+                enabled: () => item().directory,
+                load: async (key, { abortSignal }) => {
+                  const response = await apiClient.bases[":baseId"].entries.$get(
+                    { param: { baseId: props.base.id }, query: { path: item().path } },
+                    { init: { signal: abortSignal } },
+                  );
+                  if (!response.ok) return apiFailure(response, h().folderContentsFailed);
+                  const page = await response.json();
+                  const paths = new Set(page.items.map((entry) => entry.path));
+                  if (page.readme) paths.add(page.readme.path);
+                  // One bounded page only. A cursor means this is a lower bound, never a total.
+                  return { key, count: paths.size, complete: !page.next };
+                },
+              });
+              const contentsLabel = () => {
+                if (contents.error()) return h().folderContentsFailed;
+                const value = contents.data();
+                if (!value || value.key !== contentsKey()) return t().loadingDetails;
+                return value.complete ? h().folderItems(value.count) : h().folderItemsAtLeast(value.count);
+              };
               const versionsId = createUniqueId();
               const [versionsOpen, setVersionsOpen] = createSignal(false);
               const versionsLabel = () =>
@@ -276,6 +299,17 @@ export default function FileInspector(props: {
                     subtitle={
                       <span>
                         {kindLabel(item())}
+                        <Show when={item().directory}>
+                          {" · "}
+                          <span class="filesv2-inspector-count" role={contents.error() ? "alert" : "status"}>
+                            {contentsLabel()}
+                          </span>
+                          <Show when={contents.error()}>
+                            <Button size="xs" variant="text" onClick={() => void contents.refresh()}>
+                              {t().retry}
+                            </Button>
+                          </Show>
+                        </Show>
                         <Show when={!item().directory}>
                           {" · "}
                           <Format.Bytes value={item().size} />
