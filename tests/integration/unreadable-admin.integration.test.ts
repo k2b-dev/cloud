@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { redis, sql } from "bun";
+import { Hono } from "hono";
 import { z } from "zod";
 import { artifactDatabase } from "../../packages/assistant/src/artifacts/database";
 import { storageSettings } from "../../packages/assistant/src/artifacts/storage-settings";
@@ -137,16 +138,22 @@ suite("#1408 application editors preserve unreadable stored settings", () => {
   test("outgoing mail: API returns per-key state, rolls back implicit full saves, and supports partial recovery", async () => {
     const key = "outgoing_mail.record_retention_days";
     const value = await unreadable(key);
-    const routes = createAdminOutgoingMailRoutes(async (c, next) => {
-      c.set("user", user);
-      await next();
-    });
+    // Core mounts this router under a parent Hono, which renders rethrown HTTP errors.
+    const routes = new Hono().route(
+      "/",
+      createAdminOutgoingMailRoutes(async (c, next) => {
+        c.set("user", user);
+        await next();
+      }),
+    );
     const save = (body: unknown) =>
       routes.request("/retention", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     expect((await (await routes.request("/retention")).json()).unreadable[key]).toBe(true);
     const record = spyOn(audit, "record").mockResolvedValue();
     try {
-      expect((await save({ contentDays: 30, recordDays: 365 })).status).toBe(409);
+      const denied = await save({ contentDays: 30, recordDays: 365 });
+      expect(denied.status).toBe(409);
+      expect(await denied.json()).toMatchObject({ code: "setting_unreadable" });
       expect((await settings.read("outgoing_mail.content_retention_days")).stored).toBe("none");
       await preserved(key, value);
       expect((await save({ contentDays: 30 })).status).toBe(200);
@@ -160,10 +167,14 @@ suite("#1408 application editors preserve unreadable stored settings", () => {
   test("concurrent partial retention patches cannot commit an invalid pair", async () => {
     await settings.set("outgoing_mail.content_retention_days", 90);
     await settings.set("outgoing_mail.record_retention_days", 365);
-    const routes = createAdminOutgoingMailRoutes(async (c, next) => {
-      c.set("user", user);
-      await next();
-    });
+    // Core mounts this router under a parent Hono, which renders rethrown HTTP errors.
+    const routes = new Hono().route(
+      "/",
+      createAdminOutgoingMailRoutes(async (c, next) => {
+        c.set("user", user);
+        await next();
+      }),
+    );
     const ready = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     // Reads remain possible; writes block until both requests have entered their write transaction.
