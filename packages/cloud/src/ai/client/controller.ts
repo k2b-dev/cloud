@@ -1570,7 +1570,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     openConversation,
     refreshActiveConversation,
     createConversation,
-    /** HTTP refusal from the last creation attempt; null also covers an unknown network outcome. */
+    /** HTTP status for the reported creation failure; null also covers an unknown network outcome. */
     creationErrorStatus,
     uncertainSubmissions,
     reconcileSubmission,
