@@ -30,7 +30,7 @@ suiteFor("clickhouse")("maintenance server admission", () => {
       const result = clickhouseQuery({
         ...connection,
         queryId,
-        query: "SELECT sleepEachRow(0.1) FROM numbers(100)",
+        query: "SELECT sleepEachRow(0.1) FROM numbers(100) SETTINGS max_block_size=10",
         timeoutMs: 15000,
       }).then(
         () => null,
