@@ -3067,6 +3067,14 @@ suite("Files service and durable bindings", () => {
     contents.delete("freeipa:users/catalog-admin/protocol.md");
     await templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" });
     expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
+    expect(
+      (await sql`SELECT action,state,actor_user_id,detail FROM filesv2.activity WHERE path_after='users/catalog-reader/copy.md'`)[0],
+    ).toMatchObject({
+      action: "file.create",
+      state: "done",
+      actor_user_id: id(reader),
+      detail: { template: template.id },
+    });
     await expect(templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
       status: 409,
     });

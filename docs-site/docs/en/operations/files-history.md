@@ -78,3 +78,32 @@ metadata and need no user-data history entry.
 The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
 keys that have not been reviewed.
+
+## Upload reservations and direct writes
+
+Files saves each upload reservation and its pending activity in one Postgres
+transaction. All private, capability, and public inbox publication paths reuse
+that reservation's activity. The guard binds session creation to the persisted
+server, root, target, byte count, write options, and idempotency key; commit and
+abort require its stored session ID. Each invocation permits one mutation and
+renews the activity heartbeat while it runs.
+
+A retained committed response finishes the upload and history together. Confirmed
+abort or expiry records `not_done`. A `412` leaves the session open, and a missing
+receipt never proves failure. Status, retry, lease, abort, and maintenance paths
+all reconcile terminal receipts. Original request context and visitor attribution
+survive recovery. Older journals are adopted with their stored person or link,
+`via = 'unknown'`, and `detail.adopted = true`.
+
+History belonging to an open upload reservation is retained even if it is final
+and unclear. Closing the reservation makes it eligible for ordinary retention.
+Direct document, template, byte creation, and Office writes have separate entries;
+without a successful response they remain uncertain. The current Filegate Node
+contract exposes no revision metadata that can prove these direct writes later.
+
+Upload keys retain the exact spelling used by their journal and Filegate
+idempotency key. The history's upload link is stored as text, including older
+keys; the migration does not rekey existing reservations. New incoming content
+carries its activity ID in Filegate metadata for later saved-version attribution.
+Direct-write scopes also bind ownership, ACLs, publication conditions, and this
+metadata marker to the persisted intent.
