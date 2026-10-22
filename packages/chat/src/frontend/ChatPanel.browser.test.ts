@@ -708,24 +708,7 @@ for (const preparation of ["resource", "image"] as const) {
             },
           });
         });
-      } else
-        await context.addInitScript(() => {
-          const read = FileReader.prototype.readAsDataURL;
-          FileReader.prototype.readAsDataURL = function (file) {
-            document.documentElement.dataset.imageReading = "true";
-            window.addEventListener(
-              "release-image",
-              () => {
-                document.documentElement.dataset.imageReleased = "true";
-                this.addEventListener("loadend", () => {
-                  document.documentElement.dataset.imageReadEnd = this.error?.message ?? "ok";
-                });
-                read.call(this, file);
-              },
-              { once: true },
-            );
-          };
-        });
+      }
       try {
         await page.goto(fixture.url + "app/fixture");
         await page.locator('html[data-fixture-ready="true"]').waitFor();
@@ -753,6 +736,31 @@ for (const preparation of ["resource", "image"] as const) {
           }, ref);
           await reading;
         } else {
+          // Install once in the loaded frame: WebKit can run init scripts in both
+          // about:blank and its replacement document, nesting a delayed reader.
+          await composer.evaluate(() => {
+            const read = FileReader.prototype.readAsDataURL;
+            FileReader.prototype.readAsDataURL = function (file) {
+              document.documentElement.dataset.imageReading = "true";
+              window.addEventListener(
+                "release-image",
+                () => {
+                  document.documentElement.dataset.imageReleased = "true";
+                  document.documentElement.dataset.imageReadCalls = String(
+                    Number(document.documentElement.dataset.imageReadCalls ?? 0) + 1,
+                  );
+                  this.addEventListener("load", () => {
+                    document.documentElement.dataset.imageLoads = String(Number(document.documentElement.dataset.imageLoads ?? 0) + 1);
+                  });
+                  this.addEventListener("loadend", () => {
+                    document.documentElement.dataset.imageReadEnd = this.error?.message ?? "ok";
+                  });
+                  read.call(this, file);
+                },
+                { once: true },
+              );
+            };
+          });
           await panel.locator('input[type="file"]').setInputFiles({
             name: "synthetic.png",
             mimeType: "image/png",
@@ -777,8 +785,11 @@ for (const preparation of ["resource", "image"] as const) {
         expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
         release();
         if (preparation === "image") {
+          expect(await panel.locator("html").getAttribute("data-image-read-calls")).toBeNull();
           await composer.evaluate(() => window.dispatchEvent(new Event("release-image")));
           await panel.locator('html[data-image-read-end="ok"]').waitFor();
+          expect(await panel.locator("html").getAttribute("data-image-read-calls")).toBe("1");
+          expect(await panel.locator("html").getAttribute("data-image-loads")).toBe("1");
         }
         await panel.getByText(preparation === "resource" ? "Synthetic note" : "synthetic.png", { exact: true }).waitFor();
         await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
@@ -912,14 +923,6 @@ for (const width of [1440, 390]) {
       if (pending === "save") fixture.assistant.addConversation("Chat2B", "Command conversation");
       const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en" });
       const attachmentDuringCreate = pending === "create" && width === 390;
-      if (attachmentDuringCreate)
-        await context.addInitScript(() => {
-          const read = FileReader.prototype.readAsDataURL;
-          FileReader.prototype.readAsDataURL = function (file) {
-            document.documentElement.dataset.imageReading = "true";
-            window.addEventListener("release-command-image", () => read.call(this, file), { once: true });
-          };
-        });
       const page = await context.newPage();
       page.setDefaultTimeout(8_000);
       let release!: () => void;
@@ -973,6 +976,14 @@ for (const width of [1440, 390]) {
       try {
         await page.goto(`${fixture.url}app/assistant${pending === "save" ? "?conversation=Chat2B" : ""}`);
         await page.locator('html[data-fixture-ready="true"]').waitFor();
+        if (attachmentDuringCreate)
+          await page.evaluate(() => {
+            const read = FileReader.prototype.readAsDataURL;
+            FileReader.prototype.readAsDataURL = function (file) {
+              document.documentElement.dataset.imageReading = "true";
+              window.addEventListener("release-command-image", () => read.call(this, file), { once: true });
+            };
+          });
         const composer = page.locator('textarea:not([aria-hidden="true"])');
         await composer.fill("Plan /");
         await composer.click();
