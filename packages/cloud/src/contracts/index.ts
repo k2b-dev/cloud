@@ -10,6 +10,7 @@ export * from "./file-provider";
 export * from "./geo";
 export * from "./geo-map";
 export * from "./geo-route";
+export * from "./geo-admin";
 export * from "./geoip";
 export * from "./notification-types";
 export * from "./outgoing-mail";
