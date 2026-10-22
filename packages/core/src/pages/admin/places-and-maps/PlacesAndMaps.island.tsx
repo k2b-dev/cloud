@@ -524,7 +524,7 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
     </Switch>
   );
 
-  const numberField = (field: GeoBudgetField, label: string, icon: string, hint: () => string) => {
+  const numberField = (field: GeoBudgetField, label: string, hint: () => string) => {
     const hintId = createUniqueId();
     const error = () => errorText(fieldErrors()[field]);
     const unreadable = () => status()?.budget.unreadable.includes(field) ?? false;
@@ -532,8 +532,7 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
       <div class="flex min-w-0 flex-col gap-1.5">
         <TextInput
           label={label}
-          icon={icon}
-          activeIcon={icon}
+          icon={false}
           inputmode="numeric"
           autocomplete="off"
           value={statusLoad() === "ready" ? values()[field] : ""}
@@ -709,6 +708,7 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
 
   return (
     <SettingsPage
+      class="@container @max-sm:[&_.k2b-settings-page__heading>p]:hidden"
       title={t().title}
       subtitle={t().lead}
       icon="ti ti-map-2"
@@ -732,14 +732,14 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
               />
               <p class="m-0 hidden min-h-9 @lg:block" aria-hidden="true" />
             </div>
-            {numberField("monthlyCredits", t().monthly, "ti ti-coins", () =>
+            {numberField("monthlyCredits", t().monthly, () =>
               t().monthlySuggestion({ daily: planDaily() === null ? "–" : number(planDaily() ?? 0) }),
             )}
             <Show when={values().plan === "custom"}>
-              {numberField("customRps", t().customRps, "ti ti-gauge", () => t().customRpsHint)}
-              {numberField("customDailyCredits", t().customDaily, "ti ti-calendar-stats", () => t().customDailyHint)}
+              {numberField("customRps", t().customRps, () => t().customRpsHint)}
+              {numberField("customDailyCredits", t().customDaily, () => t().customDailyHint)}
             </Show>
-            {numberField("personDailyCredits", t().personDaily, "ti ti-user", personHint)}
+            {numberField("personDailyCredits", t().personDaily, personHint)}
           </div>
           <div class="mt-3.5 flex min-h-10 flex-col items-start gap-2 text-[13px] @lg:flex-row @lg:flex-wrap @lg:items-center @lg:gap-3.5">
             <Button
