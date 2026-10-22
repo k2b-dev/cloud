@@ -4,7 +4,7 @@ import type { GeoFunction } from "../../contracts/geo";
 import { requestCacheRedis } from "../request-cache-redis";
 import type { GeoRedis } from "./bucket";
 
-export const GEO_ADAPTER_VERSION = "geoapify-v2";
+export const GEO_ADAPTER_VERSION = "geoapify-v3";
 export const GEO_MAX_JSON_BYTES = 256 * 1024;
 // Raw provider geometry is compacted before entering the public result/cache budget.
 export const GEO_MAX_ROUTE_RESPONSE_BYTES = 26 * GEO_MAX_JSON_BYTES;

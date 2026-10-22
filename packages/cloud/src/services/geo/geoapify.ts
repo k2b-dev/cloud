@@ -99,6 +99,7 @@ const address = (p: RawProperties, provenance: GeoProvenance): GeoAddress => ({
   point: { lat: p.lat, lon: p.lon },
   formatted: p.formatted ?? p.address_line1 ?? "",
   confidence: p.rank?.confidence ?? null,
+  buildingConfidence: p.rank?.confidence_building_level ?? null,
   provenance,
 });
 const areaFilter = (area: NonNullable<GeoAutocompleteInput["area"]>) =>
