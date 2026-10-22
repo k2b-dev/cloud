@@ -368,7 +368,7 @@
 }
 
 /* The approved detail uses plain, flush section headings and compact read-only facts. */
-.k2b-ui .k2b-app-workspace__detail .filesv2-inspector .k2b-detail-panel__body {
+.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel.filesv2-inspector .k2b-detail-panel__body {
   gap: 1rem;
 }
 .k2b-ui .filesv2-inspector-info .k2b-description-list[data-layout="rows"] .k2b-description-list__item {
@@ -379,9 +379,11 @@
 .k2b-ui .filesv2-inspector-info .k2b-description-list[data-layout="rows"] .k2b-description-list__item dt {
   padding-block-start: 0;
 }
-.k2b-ui .filesv2-inspector-versions .k2b-button.k2b-detail-panel__action {
-  min-height: 30px;
-  padding-block: 0.1875rem;
+@media not all and (any-pointer: coarse) {
+  .k2b-ui .filesv2-inspector-versions .k2b-button.k2b-detail-panel__action {
+    min-height: 30px;
+    padding-block: 0.1875rem;
+  }
 }
 
 /* Details: the preview is a compact glimpse of the approved 150px, so versions and history stay in view. Media take
