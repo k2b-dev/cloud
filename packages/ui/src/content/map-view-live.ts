@@ -5,19 +5,22 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs" with { type: "fi
 
 import { validateMapGlyphs } from "./map-view-glyphs";
 
-let glyphProtocolId = 0;
+let resourceProtocolId = 0;
 
 export function createMap(options: MapOptions, resourceFailed: () => void): Map {
   setWorkerUrl(new URL(workerUrl, import.meta.url).href);
-  // MapLibre 6 silently substitutes local glyphs when a glyph HTTP request fails. A map error
-  // listener cannot observe that failure. Use its public protocol hook to keep failure explicit,
+  // MapLibre 6 substitutes local glyphs on failure and treats HTTP 404 tiles as empty.
+  // A map error listener cannot observe either failure. Use its public protocol hook to keep failure explicit,
   // without a second request, global fetch patch, provider URL, or cross-map shared state.
-  const protocol = `k2b-map-glyph-${++glyphProtocolId}`;
+  const protocol = `k2b-map-resource-${++resourceProtocolId}`;
   const lifetime = new AbortController();
   addProtocol(protocol, async (request, cancellation) => {
     const signal = AbortSignal.any([lifetime.signal, cancellation.signal]);
     try {
-      const response = await fetch(decodeURIComponent(request.url.slice(protocol.length + 3)), {
+      const path = request.url.slice(protocol.length + 3);
+      const separator = path.indexOf("/");
+      const glyph = path.slice(0, separator) === "Glyphs";
+      const response = await fetch(decodeURIComponent(path.slice(separator + 1)), {
         method: request.method,
         headers: request.headers,
         body: request.body,
@@ -28,15 +31,20 @@ export function createMap(options: MapOptions, resourceFailed: () => void): Map 
       });
       if (!response.ok) {
         void response.body?.cancel().catch(() => {});
-        throw new Error("Map glyph resource failed");
+        throw new Error("Map resource failed");
       }
       const data = await response.arrayBuffer();
       signal.throwIfAborted();
-      validateMapGlyphs(data);
-      return { data };
+      if (glyph) validateMapGlyphs(data);
+      return {
+        data,
+        cacheControl: response.headers.get("cache-control") ?? undefined,
+        expires: response.headers.get("expires") ?? undefined,
+        etag: response.headers.get("etag") ?? undefined,
+      };
     } catch {
       if (!signal.aborted) resourceFailed();
-      throw new Error("Map glyph resource failed");
+      throw new Error("Map resource failed");
     }
   });
   const clean = () => {
@@ -49,8 +57,8 @@ export function createMap(options: MapOptions, resourceFailed: () => void): Map 
       ...options,
       transformRequest: async (url, type) => {
         const request = (await options.transformRequest?.(url, type)) ?? { url };
-        return type === "Glyphs"
-          ? { ...request, url: `${protocol}://${encodeURIComponent(new URL(request.url, location.href).href)}` }
+        return type === "Glyphs" || type === "Tile"
+          ? { ...request, url: `${protocol}://${type}/${encodeURIComponent(new URL(request.url, location.href).href)}` }
           : request;
       },
       // MapLibre would move a wide or polar fit to keep the poles out of view; the server frame cannot know that rule,

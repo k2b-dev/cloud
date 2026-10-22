@@ -331,7 +331,7 @@ function vectorTile(z: number, x: number, y: number): Uint8Array {
 }
 let vectorRequests = 0;
 let glyphRequests = 0;
-let vectorFailure = false;
+let vectorFailure: false | number = false;
 let glyphFailure = false;
 let glyphCorrupt = false;
 let glyphRedirect = false;
@@ -357,7 +357,7 @@ const server = Bun.serve({
     if (url.pathname.startsWith("/vector/")) {
       vectorRequests++;
       await tileBarrier;
-      if (vectorFailure) return new Response("Missing vector tile", { status: 500 });
+      if (vectorFailure) return new Response("Missing vector tile", { status: vectorFailure });
       const [z, x, y] = url.pathname.slice(8, -4).split("/").map(Number);
       return new Response(vectorTile(z!, x!, y!), { headers: { "Content-Type": "application/x-protobuf" } });
     }
@@ -1155,8 +1155,8 @@ for (const width of [390, 1024])
   });
 
 test("snapshot refuses missing vector tiles and glyphs, then retries through the real renderer", async () => {
-  for (const failure of ["tile", "glyph", "corrupt-glyph"]) {
-    vectorFailure = failure === "tile";
+  for (const failure of ["tile", "tile-404", "glyph", "corrupt-glyph"]) {
+    vectorFailure = failure === "tile" ? 500 : failure === "tile-404" ? 404 : false;
     glyphFailure = failure === "glyph";
     glyphCorrupt = failure === "corrupt-glyph";
     const page = await browser.newPage({ reducedMotion: "reduce" });
