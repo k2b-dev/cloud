@@ -58,7 +58,7 @@ function fixture(content: string) {
         const key = new Headers(init?.headers).get("idempotency-key");
         if (String(url).endsWith("note.create")) {
           expect(checkpoint?.pending?.kind).toBe("create");
-          expect(key).toBe(checkpoint?.pending?.key);
+          expect(key).toBe(checkpoint?.pending?.key ?? "");
           expect(input.content.length).toBeLessThanOrEqual(200_000);
           expect(hasSplitSurrogate(input.content)).toBeFalse();
           creates++;

@@ -56,7 +56,7 @@ export const aiMaps = {
         if (active) throw new AiMapConflict();
       }
       const next = await operation(before);
-      await tx`UPDATE ai.maps SET revision=${next.map.revision},snapshot=${JSON.stringify(AiMapSchema.parse(next.map))}::jsonb,retry=${next.retry ? JSON.stringify(next.retry) : null}::jsonb WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid`;
+      await tx`UPDATE ai.maps SET revision=${next.map.revision},snapshot=${JSON.stringify(AiMapSchema.parse(next.map))}::text::jsonb,retry=${next.retry ? JSON.stringify(next.retry) : null}::text::jsonb WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid`;
       return next;
     });
   },
@@ -68,8 +68,8 @@ export const aiMaps = {
       const snapshot = JSON.stringify(AiMapSchema.parse(value.map));
       const rows =
         expected === undefined
-          ? await tx`INSERT INTO ai.maps(id,conversation_id,revision,snapshot,retry) VALUES(${value.map.id}::uuid,${conversationId}::uuid,${value.map.revision},${snapshot}::jsonb,${value.retry ? JSON.stringify(value.retry) : null}::jsonb) ON CONFLICT DO NOTHING RETURNING id`
-          : await tx`UPDATE ai.maps SET revision=${value.map.revision},snapshot=${snapshot}::jsonb,retry=${value.retry ? JSON.stringify(value.retry) : null}::jsonb WHERE id=${value.map.id}::uuid AND conversation_id=${conversationId}::uuid AND revision=${expected} RETURNING id`;
+          ? await tx`INSERT INTO ai.maps(id,conversation_id,revision,snapshot,retry) VALUES(${value.map.id}::uuid,${conversationId}::uuid,${value.map.revision},${snapshot}::text::jsonb,${value.retry ? JSON.stringify(value.retry) : null}::text::jsonb) ON CONFLICT DO NOTHING RETURNING id`
+          : await tx`UPDATE ai.maps SET revision=${value.map.revision},snapshot=${snapshot}::text::jsonb,retry=${value.retry ? JSON.stringify(value.retry) : null}::text::jsonb WHERE id=${value.map.id}::uuid AND conversation_id=${conversationId}::uuid AND revision=${expected} RETURNING id`;
       if (!rows.length) throw new AiMapConflict();
     });
   },

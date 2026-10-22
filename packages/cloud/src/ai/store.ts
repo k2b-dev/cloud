@@ -1453,8 +1453,8 @@ export const aiConversations: AiConversationService = {
         const id = crypto.randomUUID();
         const snapshot = AiMapSchema.parse(typeof saved.snapshot === "string" ? JSON.parse(saved.snapshot) : saved.snapshot);
         const next = { ...snapshot, id, conversationId: target.short_id };
-        await tx`INSERT INTO ai.maps(id,conversation_id,revision,snapshot,retry) VALUES(${id}::uuid,${target.id}::uuid,${snapshot.revision},${JSON.stringify(next)}::jsonb,${saved.retry ? JSON.stringify(saved.retry) : null}::jsonb)`;
-        await tx`UPDATE ai.messages SET message=jsonb_set(message,'{result,map}',${JSON.stringify({ ...next })}::jsonb) WHERE conversation_id=${target.id}::uuid AND role='tool_result' AND message->>'name'='map' AND message->'result'->'map'->>'id'=${saved.id}`;
+        await tx`INSERT INTO ai.maps(id,conversation_id,revision,snapshot,retry) VALUES(${id}::uuid,${target.id}::uuid,${snapshot.revision},${JSON.stringify(next)}::text::jsonb,${saved.retry ? JSON.stringify(saved.retry) : null}::text::jsonb)`;
+        await tx`UPDATE ai.messages SET message=jsonb_set(message,'{result,map}',${JSON.stringify({ ...next })}::text::jsonb) WHERE conversation_id=${target.id}::uuid AND role='tool_result' AND message->>'name'='map' AND message->'result'->'map'->>'id'=${saved.id}`;
       }
       return rowToConversation(target);
     });

@@ -20,6 +20,8 @@ const fixture = async () => {
   const conversation = await aiConversations.createConversation({ ownerUserId: owner });
   const map = { ...mapFixture(), id: crypto.randomUUID(), conversationId: conversation.shortId };
   await aiMaps.save(conversation.id, owner, { map });
+  const [stored] = await sql`SELECT jsonb_typeof(snapshot) AS kind FROM ai.maps WHERE id=${map.id}::uuid`;
+  expect(stored.kind).toBe("object");
   return {
     owner,
     conversation,
@@ -48,7 +50,7 @@ suite("Assistant durable map isolation", () => {
     const f = await fixture();
     try {
       const insert = async (seq: number, message: unknown, role: string) =>
-        sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message) VALUES(${createAiShortId()},${f.conversation.id}::uuid,${seq},'message',${role},${JSON.stringify(message)}::jsonb)`;
+        sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message) VALUES(${createAiShortId()},${f.conversation.id}::uuid,${seq},'message',${role},${JSON.stringify(message)}::text::jsonb)`;
       await insert(1, { role: "user", content: [{ type: "text", text: "Keep this question" }] }, "user");
       await insert(2, { role: "tool_result", callId: "map-first", name: "map", result: aiMapToolResult(f.map, true) }, "tool_result");
       await insert(3, { role: "assistant", content: [{ type: "text", text: "Keep this answer" }] }, "assistant");
@@ -85,7 +87,7 @@ suite("Assistant durable map isolation", () => {
         },
         1,
       );
-      await sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message) VALUES(${createAiShortId()},${f.conversation.id}::uuid,1,'message','assistant',${JSON.stringify({ role: "assistant", content: [{ type: "tool_call", id: "map-aborted", name: "map", args: {} }] })}::jsonb)`;
+      await sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message) VALUES(${createAiShortId()},${f.conversation.id}::uuid,1,'message','assistant',${JSON.stringify({ role: "assistant", content: [{ type: "tool_call", id: "map-aborted", name: "map", args: {} }] })}::text::jsonb)`;
       const history = await aiConversations.listMessages({ conversationId: f.conversation.id });
       expect(history[0]?.meta?.toolInterimResults?.["map-aborted"]).toHaveProperty("map.id", f.map.id);
       const fork = await aiConversations.forkConversation({ sourceConversationId: f.conversation.id, ownerUserId: f.owner, throughSeq: 1 });
