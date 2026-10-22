@@ -15,22 +15,30 @@ export async function activityFilegate(): Promise<{ url: string; token: string; 
   const token = randomUUID();
   let ownsVolume = false;
   let ownsContainer = false;
-  async function docker(...args: string[]) {
-    const child = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe" });
+  let ownsInitializer = false;
+  const startup = AbortSignal.timeout(20_000);
+  async function command(args: string[], signal: AbortSignal, allowMissing = false) {
+    const child = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe", signal });
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    if (code !== 0) throw new Error(`Activity Filegate fixture: ${stderr.trim()}`);
+    if (code !== 0 && !(allowMissing && /No such (container|volume)/i.test(stderr)))
+      throw new Error(`Activity Filegate fixture: ${stderr.trim()}`);
     return stdout.trim();
   }
+  const docker = (...args: string[]) => command(args, startup);
   async function stop() {
     try {
+      if (ownsInitializer) {
+        await command(["rm", "--force", `${name}-init`], AbortSignal.timeout(5_000), true);
+        ownsInitializer = false;
+      }
       if (ownsContainer) {
-        await docker("rm", "--force", name);
+        await command(["rm", "--force", name], AbortSignal.timeout(5_000), true);
         ownsContainer = false;
       }
     } finally {
       try {
         if (ownsVolume) {
-          await docker("volume", "rm", volume);
+          await command(["volume", "rm", volume], AbortSignal.timeout(5_000), true);
           ownsVolume = false;
         }
       } finally {
@@ -61,11 +69,14 @@ roots:
     index: false
 `,
     );
-    await docker("volume", "create", volume);
     ownsVolume = true;
+    await docker("volume", "create", volume);
+    ownsInitializer = true;
     await docker(
       "run",
       "--rm",
+      "--name",
+      `${name}-init`,
       "--network",
       "none",
       "-v",
@@ -76,6 +87,9 @@ roots:
       "-c",
       "mkdir -p /data/cloud /data/freeipa /data/state; chmod 700 /data/cloud; chmod 755 /data/freeipa",
     );
+    ownsInitializer = false;
+    // Docker can create the named container before reporting a startup failure.
+    ownsContainer = true;
     await docker(
       "run",
       "-d",
@@ -110,22 +124,26 @@ roots:
       "--config",
       "/config/conf.yaml",
     );
-    ownsContainer = true;
     const url = `http://${await docker("port", name, "4000/tcp")}`;
     const client = new Filegate({ baseUrl: url, token });
     const deadline = Date.now() + 15_000;
     for (;;) {
       try {
-        await client.system();
+        const system = await client.system(startup);
+        if (system.version !== "7.0.0") throw new Error("Unexpected Filegate fixture version");
         break;
       } catch (error) {
-        if (Date.now() >= deadline) throw error;
+        if (startup.aborted || Date.now() >= deadline) throw error;
         await Bun.sleep(250);
       }
     }
     return { url, token, stop };
   } catch (error) {
-    await stop();
+    try {
+      await stop();
+    } catch (cleanup) {
+      throw new AggregateError([error, cleanup], "Activity Filegate startup and cleanup failed");
+    }
     throw error;
   }
 }
