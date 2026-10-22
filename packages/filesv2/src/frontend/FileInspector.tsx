@@ -427,6 +427,10 @@ export default function FileInspector(props: {
                       versions={versions}
                       versionsId={versionsId}
                       versionsOpen={versionsOpen()}
+                      onShowVersions={() => {
+                        setVersionsOpen(true);
+                        requestAnimationFrame(() => document.getElementById(versionsId)?.scrollIntoView({ block: "nearest" }));
+                      }}
                     />
                   </DetailPanel.Body>
                 </>
@@ -511,6 +515,7 @@ function EntryHistory(props: {
   versions: Versions;
   versionsId: string;
   versionsOpen: boolean;
+  onShowVersions: () => void;
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
@@ -635,7 +640,12 @@ function EntryHistory(props: {
         {(history) => (
           <ItemHistory
             env={history().env}
-            actions={{ ...history().actions, version: versionOf, onRestoreVersion: restorePrevious }}
+            actions={{
+              ...history().actions,
+              version: versionOf,
+              onRestoreVersion: restorePrevious,
+              ...(!props.entry.directory ? { onShowVersions: props.onShowVersions } : {}),
+            }}
             directory={props.entry.directory}
             source={source()}
             initial={
