@@ -664,7 +664,8 @@ describe("ChatWorkspace browser read state", () => {
           await dialog.waitFor();
           await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
           expect(many.every((chat) => harness.props({ chat }).open!.conversation.unread === 2)).toBe(true);
-          expect(await rows(second.page, name).locator("[data-unread]").count()).toBe(51);
+          // The first page has 50 rows; mark-all must also clear the unloaded 51st chat.
+          expect(await rows(second.page, name).locator("[data-unread]").count()).toBe(50);
           await readAllAction(second.page, name);
           await dialog.getByRole("button", { name: "Mark all read", exact: true }).click();
           await second.page.waitForFunction(() => document.querySelectorAll("[data-unread]").length === 0);

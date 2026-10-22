@@ -360,13 +360,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
   };
 
-  const applyListUrl = (url: URL) =>
+  const applyListUrl = (url: URL, refresh = false) =>
     loadList(async () => {
       const token = ++listIntent;
       const nextArchived = url.pathname === "/app/chat/archive" || url.searchParams.get("list") === "archive";
       const nextFilter = url.searchParams.get("filter") === "unread" ? "unread" : "all";
       // A newer intent must also undo a pending request whose target has not reached the signals yet.
-      const reload = pendingListIntent !== null || nextArchived !== archived() || nextFilter !== filter();
+      const reload = refresh || pendingListIntent !== null || nextArchived !== archived() || nextFilter !== filter();
       pendingListIntent = token;
       try {
         if (reload) await store?.showArchive(nextArchived, nextFilter === "unread");
@@ -416,14 +416,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (!live) return;
     try {
       if (path) {
-        if ((await applyListUrl(new URL(path, location.href))) === null) return;
+        if ((await applyListUrl(new URL(path, location.href), true)) === null) return;
       } else await loadList(() => live.showArchive(archived(), filter() === "unread"));
       sortRows();
       setListError(null);
       setListRetry(null);
     } catch {
       setListError(t().listFailed);
-      setListRetry(() => () => void refreshList(path));
+      setListRetry(() => () => void refreshList(path ? location.pathname + location.search : undefined));
     }
   };
   const personal = async (id: string, patch: z.infer<typeof PersonalConversationSchema>) => {
