@@ -519,7 +519,7 @@ describe("Files administration history", () => {
     const dialog = dom.document.querySelector("dialog")!;
     dialog.querySelector<HTMLButtonElement>('[role="combobox"]')!.click();
     await flush();
-    buttonNamed(dom.document.body, "Find more storage …")!.click();
+    buttonNamed(dialog, "Find more storage …")!.click();
     await settle();
     const picker = [...dom.document.querySelectorAll("dialog")].at(-1)!;
     buttonNamed(picker, "Load more storage")!.click();
