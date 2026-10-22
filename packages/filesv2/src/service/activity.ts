@@ -23,7 +23,7 @@ export type FilesCall =
   | { kind: "visitor"; shareId: string; requestId: string | null }
   | { kind: "system"; job: string };
 export type UserFilesCall = Extract<FilesCall, { kind: "user" }>;
-export type ActivityAction = "folder.create";
+export type ActivityAction = "folder.create" | "item.rename" | "item.move" | "item.copy";
 export type Intent = {
   action: ActivityAction;
   serverUrl: string;
@@ -41,6 +41,7 @@ export type Intent = {
   revisionBefore?: string | null;
   versionId?: string | null;
   batchId?: string | null;
+  onConflict?: "error" | "rename";
   detail?: Record<string, unknown>;
 };
 export type Finished = {
@@ -55,9 +56,6 @@ export type Finished = {
 export const PENDING_MIGRATION = Object.freeze([
   "files.upload_session",
   "files.write_bytes",
-  "files.rename",
-  "files.move",
-  "files.copy",
   "files.ensure_trash",
   "files.version_comment",
   "files.version_restore",
@@ -84,9 +82,6 @@ export type Mutation =
 export const PENDING_MIGRATION_METHODS: Readonly<Record<PendingMigrationKey, readonly Mutation[]>> = Object.freeze({
   "files.upload_session": ["createSession", "commitSession", "abortSession"],
   "files.write_bytes": ["put"],
-  "files.rename": ["transfer"],
-  "files.move": ["transfer"],
-  "files.copy": ["transfer"],
   "files.ensure_trash": ["mkdir"],
   "files.version_comment": ["updateVersion"],
   "files.version_restore": ["restore"],
@@ -115,6 +110,7 @@ export async function filegateMutation<T>(
   method: Mutation,
   path: string,
   run: () => Promise<T>,
+  transfer?: { root: string; path: string; move: boolean; onConflict: string },
 ): Promise<T> {
   const scope = scopes.getStore();
   if (!scope || (scope.kind === "activity" && scope.closed)) throw new FilesError("activity_scope_missing", 500);
@@ -124,15 +120,19 @@ export async function filegateMutation<T>(
     throw new FilesError("activity_scope_mismatch", 500);
   if (scope.kind === "activity") {
     const intent = scope.intent;
-    if (
-      intent.serverUrl !== serverUrl ||
-      intent.root !== root ||
-      intent.action !== "folder.create" ||
-      method !== "mkdir" ||
-      !intent.pathAfter ||
-      !(path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`))
-    )
-      throw new FilesError("activity_scope_mismatch", 500);
+    const matches =
+      intent.action === "folder.create"
+        ? method === "mkdir" && !!intent.pathAfter && (path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`))
+        : (intent.action === "item.rename" || intent.action === "item.move" || intent.action === "item.copy") &&
+          scope.sent === 0 &&
+          method === "transfer" &&
+          !!transfer &&
+          path === intent.pathBefore &&
+          transfer.root === (intent.rootAfter ?? intent.root) &&
+          transfer.path === intent.pathAfter &&
+          transfer.move === (intent.action !== "item.copy") &&
+          transfer.onConflict === (intent.onConflict ?? "error");
+    if (intent.serverUrl !== serverUrl || intent.root !== root || !matches) throw new FilesError("activity_scope_mismatch", 500);
     scope.sent++;
   }
   try {
@@ -155,6 +155,8 @@ const log = logger("filesv2:activity");
 function certainNoChange(scope: Extract<GuardScope, { kind: "activity" }>, error: unknown): boolean {
   if (scope.sent === 0) return (error instanceof FilesError || error instanceof FilegateError) && [403, 404].includes(error.status);
   return (
+    // Tree copies may prepare ancestors before refusing publication; no receipt proves rollback.
+    scope.intent.action !== "item.copy" &&
     scope.sent === 1 &&
     error === scope.refused &&
     error instanceof FilegateError &&
@@ -173,7 +175,11 @@ export async function fileAction<T>(
   const intent = { ...input };
   const id = Bun.randomUUIDv7();
   const userId = call.kind === "user" ? (call.actor.kind === "user" ? call.actor.user.id : (call.actor.delegatedUser?.id ?? null)) : null;
-  const detail = { ...intent.detail, ...(call.kind === "system" ? { job: call.job } : {}) };
+  const detail = {
+    ...intent.detail,
+    ...(intent.onConflict ? { on_conflict: intent.onConflict } : {}),
+    ...(call.kind === "system" ? { job: call.job } : {}),
+  };
   // An independently committed intent is the prerequisite for every external effect.
   await sql`INSERT INTO filesv2.activity(id,state,action,server_url,root,root_after,base_id,base_after_id,item_id,item_after_id,directory,name,path_before,path_after,size,revision_before,version_id,actor_kind,actor_user_id,via,calling_app,origin,invocation_id,request_id,batch_id,share_id,detail)
     VALUES(${id}::uuid,'pending',${intent.action},${intent.serverUrl},${intent.root},${intent.rootAfter ?? null},${intent.baseId}::uuid,${intent.baseAfterId ?? null}::uuid,${intent.itemId ?? null},${intent.itemAfterId ?? null},${intent.directory},${intent.name},${intent.pathBefore ?? null},${intent.pathAfter ?? null},${intent.size ?? null},${intent.revisionBefore ?? null},${intent.versionId ?? null},${call.kind},${userId}::uuid,${call.kind === "user" ? call.via : call.kind === "visitor" ? "link" : "system"},${call.kind === "user" ? call.callingApp : null},${call.kind === "user" ? call.origin : null},${call.kind === "user" ? call.invocationId : null},${call.kind !== "system" ? call.requestId : null},${intent.batchId ?? null}::uuid,${call.kind === "visitor" ? call.shareId : null}::uuid,${detail}::jsonb)`;
@@ -222,6 +228,8 @@ type RecoveryRow = {
   state: "pending" | "unclear";
   server_url: string;
   root: string;
+  root_after: string | null;
+  path_before: string | null;
   path_after: string | null;
   final: boolean;
 };
@@ -243,19 +251,26 @@ export async function recoverActivity(input: {
     input.signal?.throwIfAborted();
     await input.heartbeat?.();
     input.signal?.throwIfAborted();
-    let observed: Record<string, unknown> = { state: "unavailable" };
-    if (input.config && !input.config.unreadable && input.config.url === row.server_url && row.path_after !== null) {
-      try {
-        const node = await input.connect(input.config).root(row.root).stat(row.path_after);
-        observed = { exists: true, directory: node.directory, ...(node.id ? { id: node.id } : {}) };
-      } catch (error) {
-        if (error instanceof FilegateError && error.status === 404) observed = { exists: false, directory: false };
+    const observe = async (root: string, path: string): Promise<Record<string, unknown>> => {
+      if (input.config && !input.config.unreadable && input.config.url === row.server_url) {
+        try {
+          const node = await input.connect(input.config).root(root).stat(path);
+          return { exists: true, directory: node.directory, ...(node.id ? { id: node.id } : {}) };
+        } catch (error) {
+          if (error instanceof FilegateError && error.status === 404) return { exists: false, directory: false };
+        }
       }
-    }
-    // folder.create: only its response proves completion. Appearance may come from another writer.
+      return { state: "unavailable" };
+    };
+    const observations = {
+      ...(row.path_before !== null ? { observed_before: await observe(row.root, row.path_before) } : {}),
+      ...(row.path_after !== null ? { observed_after: await observe(row.root_after ?? row.root, row.path_after) } : {}),
+    };
+    // Folder creation, same-root moves and copies have no retained operation receipt.
+    // Appearance alone never proves completion, even when the source has disappeared.
     await sql`UPDATE filesv2.activity SET state='unclear',
       next_check_at=CASE WHEN ${row.final} THEN 'infinity'::timestamptz ELSE next_check_at END,
-      detail=detail || ${{ observed_after: observed, ...(row.final ? { final: true } : {}) }}::jsonb
+      detail=detail || ${{ ...observations, ...(row.final ? { final: true } : {}) }}::jsonb
       WHERE id=${row.id}::uuid AND state=${row.state}`;
     checked++;
   }

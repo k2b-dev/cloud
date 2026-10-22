@@ -134,7 +134,12 @@ export class FilesRoot {
     return this.#mutate("abortSession", args[0], () => this.#client.abortSession(...args));
   }
   transfer(...args: Parameters<RootClient["transfer"]>) {
-    return this.#mutate("transfer", args[0], () => this.#client.transfer(...args));
+    return filegateMutation(this.serverUrl, this.name, "transfer", args[0], () => this.#client.transfer(...args), {
+      root: args[1],
+      path: args[2],
+      move: args[3]?.move ?? false,
+      onConflict: args[3]?.onConflict ?? "error",
+    });
   }
   restore(...args: Parameters<RootClient["restore"]>) {
     return this.#mutate("restore", args[0], () => this.#client.restore(...args));

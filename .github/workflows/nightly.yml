@@ -349,5 +349,6 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/install
+      - run: bun run --cwd packages/ui build
       - run: bun run check dependencies
       - run: bun audit --audit-level=high
