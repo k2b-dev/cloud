@@ -176,6 +176,8 @@ provider body, or key in these rows. See
 Administrator changes on **Administration → Places and maps** are recorded as
 `core.geo.key_set` (metadata `replaced`), `core.geo.key_removed`, and
 `core.geo.budget_changed` (the saved plan and limits), all `allowed`, in the
-same transaction as the settings write. The page names the person of the
-latest such event. A refused or unverified key records nothing and never
-appears in an event.
+same transaction as the settings write. The page names a person only when
+the event belongs to the write that produced the stored value; a later write
+without such an event shows the date alone. A refused or unverified key
+records nothing and never appears in an event. Saving a standard plan resets
+unreadable custom-plan values and lists them under `resets`.
