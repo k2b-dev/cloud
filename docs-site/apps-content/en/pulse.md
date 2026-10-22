@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Collect telemetry and query each base with read-only SQL.
 tags: [pulse, telemetry, metrics]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Pulse
@@ -93,6 +93,14 @@ tabs. Each rule has a ten-second SQL deadline and uses only free execution
 slots, without consuming the question quota. A missed check is an error, never
 an assumed success. Work is bounded per tick: at most 60 due rules and 2,000
 sources; a backlog continues on later ticks.
+
+Starting with this release, alert SQL has a separate budget of 240 admitted
+checks per clock hour per base, shared by all replicas. Editing or replacing a rule does not
+reset this budget. With all 20 rules running every five minutes, immediate
+checks after edits can exhaust the budget before the hour ends. Refused
+admission consumes no check; an admitted query that fails still counts. When the budget is exhausted, due checks report an error
+and subsequent scheduled checks can resume in the next hour. Interactive SQL
+keeps its own hourly quota.
 
 Firing, escalation, missing data, errors, and recovery notify the base's admins
 through Cloud; browser and email delivery are recommended and respect their
