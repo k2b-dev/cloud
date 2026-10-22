@@ -457,21 +457,45 @@ describe(`MessageRow in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test("a tap where the hidden actions sit runs none of them; it focuses the message and shows them", async () => {
+  test('a tap where the hidden "…" sits runs nothing and leaves it hidden; a long press opens the menu as a sheet', async () => {
     const page = await open({ width: 390, touch: true });
     try {
-      const reply = rowOf(page, "m4").getByRole("button", { name: "Reply" });
-      const box = (await reply.boundingBox())!;
-      const center = [box.x + box.width / 2, box.y + box.height / 2] as const;
-      expect(await opacity(page, "m4")).toBe("0");
+      const trigger = rowOf(page, "m3").locator(".k2b-message-row__menu");
+      const box = (await trigger.boundingBox())!;
+      expect(await opacity(page, "m3")).toBe("0");
 
-      await page.touchscreen.tap(...center);
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
       expect(await replied(page)).toBe(0);
-      expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("m4");
-      expect(await opacity(page, "m4")).toBe("1");
+      expect(await opacity(page, "m3")).toBe("0");
+      expect(await page.locator("dialog[open]").count()).toBe(0);
 
-      await page.touchscreen.tap(...center);
-      expect(await replied(page)).toBe(1);
+      // Playwright taps only as a whole; the held pointer's lifecycle runs as GestureMenu receives it.
+      const text = (await rowOf(page, "m3").locator(".k2b-message-row__text").boundingBox())!;
+      await page.evaluate(
+        async (point) => {
+          const target = document.elementFromPoint(point.x, point.y)!;
+          const init = {
+            pointerType: "touch",
+            isPrimary: true,
+            pointerId: 1,
+            bubbles: true,
+            cancelable: true,
+            clientX: point.x,
+            clientY: point.y,
+          };
+          target.dispatchEvent(new PointerEvent("pointerdown", init));
+          await new Promise((resolve) => setTimeout(resolve, 650));
+          target.dispatchEvent(new PointerEvent("pointerup", init));
+          target.dispatchEvent(new Event("touchend", { bubbles: true, cancelable: true }));
+        },
+        { x: text.x + 8, y: text.y + text.height / 2 },
+      );
+      const sheet = page.locator("dialog[open]");
+      await sheet.waitFor();
+      // The sheet has no keyboard, so it shows no shortcut.
+      expect(await sheet.locator(".k2b-kbd").evaluateAll((caps) => caps.filter((cap) => cap.checkVisibility()).length)).toBe(0);
+      await sheet.getByRole("menuitem", { name: /^Reply/ }).click();
+      await page.waitForFunction(() => ((window as unknown as { replied?: number }).replied ?? 0) === 1);
     } finally {
       await page.close();
     }

@@ -618,6 +618,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     // Only the FIFO personal live channel applies write results; HTTP responses never change local state.
     markRead: (id: string, seq: number) => api.read(id, seq),
     markUnread: (id: string, message?: string) => api.markUnread(id, message),
+    /** The ID of the chat's message at `seq`, read from the server, or null when it is gone. */
+    messageAt: async (id: string, seq: number) =>
+      (await api.messages(id, { before: seq + 1 }))?.items.find((message) => message.seq === seq)?.id ?? null,
     readAll: (confirmed: boolean) => api.readAll(confirmed),
     get sidebar(): readonly Conversation[] {
       return rows;

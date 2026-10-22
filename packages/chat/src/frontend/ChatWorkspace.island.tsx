@@ -25,7 +25,7 @@ import {
   MESSAGE_MAX_CODE_POINTS,
   MessageBodySchema,
   type MessagePageSchema,
-  type ReadState,
+  type ReadUpdateSchema,
   readStart,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
@@ -40,6 +40,8 @@ import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { panelHref, parseRoute, type Route } from "./route";
+
+type ReadUpdate = z.infer<typeof ReadUpdateSchema>;
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Store = ReturnType<typeof createChatStore>;
@@ -290,37 +292,49 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (!(await changeRead(() => store?.markUnread(id))) && open) paused = false;
       return;
     }
-    // "Mark unread from here" in the open chat: the marker moves at once, a failure puts everything back.
-    const before = { marker: marker(), read: conversation()?.read ?? null };
+    // "Mark unread from here" in the open chat: the marker moves at once, a failure puts everything back. Every step
+    // after an await checks that the chat is still open, so a late answer or a retry from another chat never moves
+    // the marker of the chat on screen.
+    const isOpen = () => openChat()?.id === id;
+    const wasPaused = paused;
     if (open) paused = true;
-    // Let earlier reads finish before the server applies the unread mark.
+    // Let earlier reads finish before the server applies the unread mark, so Undo starts from their state.
     if (open && reporter?.chatId === id) await reporter.reporter.settled();
-    setMarker(from.key);
+    const before = isOpen()
+      ? { marker: marker(), unreadFrom: conversation()?.read?.unreadFromSeq ?? null, paused: wasPaused }
+      : { marker: null, unreadFrom: null, paused: false, closed: true as const };
+    if (isOpen()) setMarker(from.key);
+    let result: ReadUpdate | undefined;
     try {
-      await store?.markUnread(id, from.messageId);
+      result = await store?.markUnread(id, from.messageId);
     } catch {
-      if (openChat()?.id === id) setMarker(before.marker);
-      if (open) paused = false;
+      if (isOpen() && !("closed" in before)) {
+        setMarker(before.marker);
+        paused = before.paused;
+      }
       toast.error(t().readStateFailed, { action: { label: t().retry, onClick: () => void markUnread(id, from) } });
       return;
     }
     toast(t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName }), {
       iconClass: "ti ti-mail",
-      action: { label: t().undo, onClick: () => void undoUnread(id, before) },
+      action: { label: t().undo, onClick: () => void undoUnread(id, { ...before, lastReadSeq: result?.lastReadSeq ?? null }) },
     });
   };
-  // Undo puts the read state and the marker back as they were before "Mark unread from here".
-  const undoUnread = async (id: string, before: { marker: string | null; read: ReadState | null }) => {
-    const unreadFrom = before.read?.unreadFromSeq ?? null;
-    const message = unreadFrom === null ? undefined : openChat()?.messages.find((candidate) => candidate.seq === unreadFrom);
-    const restored = await changeRead(() =>
-      message
-        ? store?.markUnread(id, message.id)
-        : store?.markRead(id, Math.max(before.read?.lastReadSeq ?? 0, before.read?.joinedSeq ?? 0)),
-    );
-    if (!restored || openChat()?.id !== id) return;
+  // Undo puts back the read state from before "Mark unread from here": a boundary that existed is set again, found
+  // through the server when its message is not loaded; otherwise the chat is read up to where it was.
+  const undoUnread = async (
+    id: string,
+    before: { marker: string | null; unreadFrom: number | null; paused: boolean; lastReadSeq: number | null; closed?: true },
+  ) => {
+    const restored = await changeRead(async () => {
+      if (before.unreadFrom === null) return store?.markRead(id, before.lastReadSeq ?? Number.MAX_SAFE_INTEGER);
+      const message = await store?.messageAt(id, before.unreadFrom);
+      if (!message) throw new Error("The earlier unread boundary is gone");
+      return store?.markUnread(id, message);
+    });
+    if (!restored || openChat()?.id !== id || before.closed) return;
     setMarker(before.marker);
-    paused = false;
+    paused = before.paused;
   };
   const copy = (item: ChatFeedItem) =>
     void clipboard.copy(item.body).then(
