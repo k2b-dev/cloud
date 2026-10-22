@@ -89,7 +89,25 @@ const messages = i18n.define({
       inspectNotebook: "Inspect notebook",
       noNotebooks: "No writable notebook found.",
       saved: "Saved in Notebook",
-      unknownSave: "The save outcome is unclear. Check the notebook before saving again.",
+      previousSave: "This map has an earlier save receipt. Open the notebook to find the note before starting another save.",
+      resumeSave: "Resume save",
+      reconcileSave: "Check save outcome",
+      partialNote: "Open partial note",
+      saveProgress: "Map save progress",
+      saveLoading: "Preparing save …",
+      saveCancelled: "Saving stopped. Any saved part is kept. You can resume here.",
+      savePaused: "This save is unfinished. Resume to check the note and continue.",
+      saveStorage: "Save progress could not be stored in this browser. Allow local storage and try again before continuing.",
+      saveLockUnavailable: "This browser cannot protect the save across tabs. Use a browser with Web Locks support.",
+      saveLocked: "This map is being saved in another tab. Wait for it to finish, then check again.",
+      saveOwnerChanged: "The signed-in account has changed. Reload the page before saving.",
+      saveFailed: "The map could not be saved. Try again or open the notebook to check it.",
+      saveSourceChanged: "The map source has changed. Reload the map. Open any partial note before starting another save.",
+      saveContentChanged: "The note has changed. Open it to review your changes; this save cannot continue.",
+      saveInvalid: "The saved progress or map source cannot be used. Open the notebook to recover any saved part.",
+      saveTooLarge: "The map title cannot fit in a save request. Shorten it before saving.",
+      saveAppendUnknown: "The last part may still be saving. Check the outcome again later. It will not be sent twice.",
+      unknownSave: "The note may have been created. Open the notebook to recover it. This save will not be sent again.",
     },
     de: {
       places: "Orte",
@@ -177,9 +195,66 @@ const messages = i18n.define({
       inspectNotebook: "Notebook prüfen",
       noNotebooks: "Kein beschreibbares Notebook gefunden.",
       saved: "Im Notebook gespeichert",
-      unknownSave: "Ob die Notiz gespeichert wurde, ist unklar. Prüfe das Notebook vor einem weiteren Speichern.",
+      previousSave:
+        "Für diese Karte liegt ein früherer Speicherbeleg vor. Öffne das Notebook, um die Notiz zu finden, bevor du erneut speicherst.",
+      resumeSave: "Speichern fortsetzen",
+      reconcileSave: "Speicherstand prüfen",
+      partialNote: "Teilweise gespeicherte Notiz öffnen",
+      saveProgress: "Fortschritt beim Speichern der Karte",
+      saveLoading: "Speichern wird vorbereitet …",
+      saveCancelled: "Speichern gestoppt. Bereits gespeicherte Teile bleiben erhalten. Du kannst hier fortsetzen.",
+      savePaused: "Das Speichern ist noch nicht abgeschlossen. Beim Fortsetzen wird die Notiz geprüft.",
+      saveStorage:
+        "Der Fortschritt konnte in diesem Browser nicht gespeichert werden. Erlaube lokalen Speicher und versuche es erneut, bevor du fortsetzt.",
+      saveLockUnavailable:
+        "Dieser Browser kann das Speichern nicht über mehrere Tabs absichern. Verwende einen Browser mit Web-Locks-Unterstützung.",
+      saveLocked: "Diese Karte wird in einem anderen Tab gespeichert. Warte, bis er fertig ist, und prüfe erneut.",
+      saveOwnerChanged: "Das angemeldete Konto hat sich geändert. Lade die Seite vor dem Speichern neu.",
+      saveFailed: "Die Karte konnte nicht gespeichert werden. Versuche es erneut oder prüfe das Notebook.",
+      saveSourceChanged:
+        "Die Kartenquelle hat sich geändert. Lade die Karte neu. Öffne eine teilweise gespeicherte Notiz, bevor du erneut speicherst.",
+      saveContentChanged:
+        "Die Notiz hat sich geändert. Öffne sie, um deine Änderungen zu prüfen. Dieser Speichervorgang kann nicht fortgesetzt werden.",
+      saveInvalid:
+        "Der gespeicherte Fortschritt oder die Kartenquelle ist nicht verwendbar. Öffne das Notebook, um bereits gespeicherte Teile zu finden.",
+      saveTooLarge: "Der Kartentitel passt nicht in eine Speicheranfrage. Kürze ihn vor dem Speichern.",
+      saveAppendUnknown:
+        "Der letzte Teil wird möglicherweise noch gespeichert. Prüfe den Stand später erneut. Er wird nicht doppelt gesendet.",
+      unknownSave:
+        "Die Notiz wurde möglicherweise erstellt. Öffne das Notebook, um sie zu finden. Dieser Speichervorgang wird nicht erneut gesendet.",
     },
   },
 });
 
 export const mapMessages = (locale: string) => messages.resolve([locale]).t;
+
+/** Helper codes are internal; owning capabilities may supply a final human message. */
+export const mapSaveMessage = (locale: string, code?: string, message?: string): string => {
+  const t = mapMessages(locale);
+  switch (code) {
+    case "source_changed":
+      return t.saveSourceChanged;
+    case "checkpoint_failed":
+    case "persistence_failed":
+      return t.saveStorage;
+    case "content_changed":
+    case "note_moved":
+    case "unexpected_receipt":
+      return t.saveContentChanged;
+    case "invalid_checkpoint":
+    case "invalid_title":
+      return t.saveInvalid;
+    case "request_too_large":
+      return t.saveTooLarge;
+    case "create_outcome_unknown":
+      return t.unknownSave;
+    case "append_outcome_unknown":
+      return t.saveAppendUnknown;
+    case "cancelled":
+      return t.saveCancelled;
+    case "save_failed":
+      return t.saveFailed;
+    default:
+      return message || t.savePaused;
+  }
+};

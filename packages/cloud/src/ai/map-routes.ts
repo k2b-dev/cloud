@@ -51,7 +51,7 @@ export const aiMapRoutes = new Hono<AuthContext>()
     const value = await aiMaps.read(conversation.id, params.data.mapId);
     if (!value) return c.notFound();
     c.header("Cache-Control", "private, no-store");
-    return c.json({ content: aiMapNotebookContent(value.map), revision: value.map.revision });
+    return c.json({ content: aiMapNotebookContent(value.map), revision: value.map.revision, ownerUserId: ctx.ownerUserId });
   })
   .post("/:conversationId/maps/:mapId/action", auth.requireOAuthScope("write", "admin"), v("json", AiMapActionSchema), async (c) => {
     const ctx = await resolveAiChatRequestContext(c);

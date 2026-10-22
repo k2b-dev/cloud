@@ -4,12 +4,15 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
+import { z } from "zod";
 import type { GeoPlaceSearchInput } from "../contracts/geo";
 import { mapAddress, mapFixture, mapGeoFixture, mapSuccess, mapTime } from "./map.test-fixture";
 import { AiMapActionSchema, AiMapCommandSchema, type AiMapToolResult, aiMapToolResult } from "./map-contracts";
 import { type AiMapContext, applyAiMap } from "./map-service";
 import type { AiMapStored } from "./map-store";
 export async function startMapBrowserFixture() {
+  const notes = new Map<string, string>();
+  const hash = (text: string) => `sha256:${new Bun.CryptoHasher("sha256").update(text).digest("hex")}`;
   const fixtureDir = await mkdtemp(join(tmpdir(), "assistant-map-"));
   const ui = resolve(import.meta.dir, "../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -235,20 +238,50 @@ export async function startMapBrowserFixture() {
         }
         if (path.endsWith("/export")) {
           const { aiMapNotebookContent } = await import("./map-notebook");
-          return Response.json({ content: aiMapNotebookContent(before.map), revision: before.map.revision });
+          return Response.json({
+            content: aiMapNotebookContent(before.map),
+            revision: before.map.revision,
+            ownerUserId: "fictional-owner",
+          });
         }
         return Response.json({ map: before.map, canAdmin: name.includes("admin") });
       }
       if (path === "/api/capabilities/v1/queries/notebooks/notebook.list")
-        return Response.json({ data: [{ id: "demoBook", name: "Fiktive Reiseplanung" }] });
+        return Response.json({ data: [{ id: "Book01", name: "Fiktive Reiseplanung" }] });
+      const saveScenario = new URL(request.headers.get("referer") ?? "http://localhost").searchParams.get("scenario") ?? "places";
       if (path === "/api/capabilities/v1/actions/notebooks/note.create") {
-        commands.push(await request.json());
-        if (request.headers.get("referer")?.includes("unknown-save"))
+        const body = z
+          .object({ input: z.object({ notebookId: z.string(), content: z.string().max(200_000) }) })
+          .parse(await request.json());
+        commands.push(body);
+        if (saveScenario.includes("unknown-save"))
           return Response.json({ code: "CAPABILITY_UNAVAILABLE", message: "Outcome unclear" }, { status: 503 });
-        return Response.json({
-          data: { id: "demoNote", notebookId: "demoBook" },
-          links: [{ rel: "open", href: "/app/notebooks/demoBook/notes/demoNote" }],
-        });
+        notes.set(saveScenario, body.input.content);
+        return Response.json({ data: { id: "Note01", notebookId: "Book01" } });
+      }
+      if (path === "/api/capabilities/v1/queries/notebooks/note.read") {
+        return Response.json({ data: { id: "Note01", notebookId: "Book01", contentHash: hash(notes.get(saveScenario) ?? "") } });
+      }
+      if (path === "/api/capabilities/v1/actions/notebooks/note.edit") {
+        const body = z
+          .object({
+            input: z.object({
+              noteId: z.string(),
+              ifContentHash: z.string(),
+              operations: z
+                .array(z.object({ kind: z.literal("append"), content: z.string().max(10_000), separator: z.literal("none") }))
+                .max(20),
+            }),
+          })
+          .parse(await request.json());
+        commands.push(body);
+        const content = notes.get(saveScenario) ?? "";
+        const beforeHash = hash(content);
+        if (beforeHash !== body.input.ifContentHash)
+          return Response.json({ code: "CONTENT_CONFLICT", message: "Note changed" }, { status: 409 });
+        const next = content + body.input.operations.map((op) => op.content).join("");
+        notes.set(saveScenario, next);
+        return Response.json({ data: { beforeHash, afterHash: hash(next) } });
       }
       const asset = assets.get(path.slice(1));
       if (asset) return new Response(asset, { headers: { "content-type": "text/javascript" } });
@@ -267,7 +300,7 @@ export async function startMapBrowserFixture() {
     server.stop(true);
     await rm(fixtureDir, { recursive: true, force: true });
   };
-  return { server, stop, calls, commands, placeSearches, states, geo, get };
+  return { server, stop, calls, commands, placeSearches, states, geo, get, notes };
 }
 if (import.meta.main) {
   const fixture = await startMapBrowserFixture();

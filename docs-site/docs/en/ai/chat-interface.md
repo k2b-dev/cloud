@@ -632,12 +632,29 @@ searches for that name within the selected category and route corridor. Navigati
 opens the destination in an external navigation app; Cloud does not provide live
 turn-by-turn navigation.
 
-**Save as Notebook** asks for a writable notebook and creates a note through its
-existing capability. Each place group becomes a shared `:::map` block; the full
-route is kept in a route block. Saving does not call the geographic provider.
-If the complete map exceeds Notebook's note-size limit, saving reports an error
-and keeps the chat map available; it does not shorten the route.
-If the write outcome is unclear, inspect the notebook before saving again.
+**Save as Notebook** asks for a writable notebook. Each place group becomes a
+shared `:::map` block, and the complete accepted route is kept in a route block.
+Large maps are saved in parts without shortening geometry or changing the
+source. Saving does not call the geographic provider. The export omits `savedAt`
+because the map has no durable save timestamp: opening-hours reads refresh the
+viewing time, which must not change a resumable export. Notebook labels the
+provenance date as the calculation date.
+
+Confirmed progress and a link to any known partial note stay visible. **Cancel**
+stops further requests and keeps saved parts. **Resume save** checks the note
+before continuing; **Check save outcome** reconciles an uncertain append.
+If the last part is still unresolved, check again later; it is never sent twice.
+A changed map source or edited note stops the save and exposes recovery links.
+An uncertain create cannot be repeated, even after 24 hours: open the selected
+notebook to find the possible note. A receipt left by an earlier save flow also
+opens Notebook recovery instead of creating another note.
+
+Progress survives reload in this browser, separately for each signed-in owner,
+conversation, map and revision. Completed receipts are retained to prevent a
+second save of that source. Browser local storage and Web Locks support are
+required; unavailable storage or another tab saving the same source produces
+visible feedback before another write. Clearing browser data also removes
+these receipts, so check the notebook before starting over.
 
 A missing Geo configuration or exhausted allowance shows a short explanation
 without starting a map or provider query. Budget messages include their reset
