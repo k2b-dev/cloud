@@ -518,13 +518,9 @@ describe("Filesv2 progressive navigation", () => {
     const footerLabels = [...footer.querySelectorAll<HTMLElement>("button, a")].map((item) => item.textContent?.trim());
     expect(footerLabels).toEqual(["Search"]);
     const places = dom.root.querySelector(".k2b-app-workspace__sidebar-section")!;
-    expect([...places.querySelectorAll<HTMLElement>("button, a")].map((item) => item.textContent?.trim())).toEqual([
-      "All storage",
-      "Recent",
-      "Favorites",
-      "Shares",
-      "Activity",
-    ]);
+    expect(
+      [...places.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar-item-label")].map((item) => item.textContent?.trim()),
+    ).toEqual(["All storage", "Recent", "Favorites", "Shares", "Activity"]);
     expect(link("Activity").getAttribute("href")).toBe("/app/filesv2?view=activity&base=home");
     const search = footer.querySelector<HTMLButtonElement>("button")!;
     expect(search.getAttribute("title")).toBe("Search files");
