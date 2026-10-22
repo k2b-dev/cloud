@@ -21,7 +21,14 @@ import {
 import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
-import { type ConversationPageSchema, type ConversationSchema, type MessagePageSchema, readStart } from "../service/contracts";
+import {
+  type ConversationPageSchema,
+  type ConversationSchema,
+  MESSAGE_MAX_CODE_POINTS,
+  MessageBodySchema,
+  type MessagePageSchema,
+  readStart,
+} from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import { openAddPeopleDialog } from "./AddPeopleDialog";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
@@ -102,6 +109,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const savedTexts = new Map<string, string>();
   const [draftConflicts, setDraftConflicts] = createSignal<Record<string, string>>({});
   const [draft, setDraft] = createSignal("");
+  const draftError = createMemo(() => {
+    const body = draft();
+    if (!body.trim() || MessageBodySchema.safeParse(body).success) return undefined;
+    return body.includes("\u0000")
+      ? t().messageInvalidCharacters
+      : t().messageTooLong({ limit: MESSAGE_MAX_CODE_POINTS.toLocaleString(locale()) });
+  });
   const [draftStorageFailed, setDraftStorageFailed] = createSignal(false);
   const [composerReady, setComposerReady] = createSignal(!props.embedded);
   const unsavedDrafts = new Set<string>();
@@ -585,7 +599,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
-    if (!current || !outbox || !text.trim() || draftStorageFailed() || draftConflicts()[current.id] !== undefined || pendingOpen !== 0)
+    if (
+      !current ||
+      !outbox ||
+      !MessageBodySchema.safeParse(text).success ||
+      draftStorageFailed() ||
+      draftConflicts()[current.id] !== undefined ||
+      pendingOpen !== 0
+    )
       return false;
     // The composer has cleared its draft, but the outbox does not own it until history is ready.
     pendingSends++;
@@ -843,11 +864,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         hint={
                           current().permission === "read"
                             ? t().readOnly
-                            : liveStopped()
-                              ? t().liveStopped
-                              : waiting()
-                                ? t().messagesWaiting
-                                : undefined
+                            : draftError()
+                              ? draftError()
+                              : liveStopped()
+                                ? t().liveStopped
+                                : waiting()
+                                  ? t().messagesWaiting
+                                  : undefined
                         }
                         draft={draft()}
                         onDraftChange={changeDraft}

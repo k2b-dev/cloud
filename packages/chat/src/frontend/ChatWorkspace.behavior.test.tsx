@@ -290,6 +290,33 @@ describe("ChatWorkspace interactions", () => {
     expect(readPosts).toEqual([1]);
     expect(consoleErrors).toEqual([]);
   });
+  test("invalid message bodies keep their text in the composer without entering the send queue", async () => {
+    await mount(true);
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    const hint = () => dom.root.querySelector(".k2b-chat-composer__hint-text")?.textContent ?? "";
+    for (const body of ["a".repeat(20_001), "😀".repeat(20_001), "hello\u0000world"]) {
+      field.value = body;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      button("Send message").click();
+      await settle();
+      expect(field.value === body).toBe(true);
+      expect(posted).toEqual([]);
+      expect(dom.root.querySelector(".k2b-message-row")).toBeNull();
+      expect(hint()).toBe(body.includes("\u0000") ? "Remove the unsupported character." : "Shorten to at most 20,000 characters.");
+    }
+    const valid = "😀".repeat(20_000);
+    field.value = valid;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(hint()).toBe("");
+    button("Send message").click();
+    await settle();
+    expect(posted).toHaveLength(1);
+    expect(posted[0]?.body).toBe(valid);
+    expect(field.value).toBe("");
+    answer(Response.json(message(1, valid), { status: 201 }));
+    await settle();
+    expect(consoleErrors).toEqual([]);
+  });
   test("failed send retries the same client ID and body, then shows one sent row", async () => {
     await mount(true);
     const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;

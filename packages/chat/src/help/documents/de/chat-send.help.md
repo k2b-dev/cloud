@@ -31,6 +31,7 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 :::reference
 - **Shift+Enter** beginnt eine neue Zeile.
 - Auf dem Smartphone beginnt **Enter** eine neue Zeile. **Nachricht senden** sendet die Nachricht.
+- Eine Nachricht darf höchstens 20.000 Zeichen haben. Ist sie zu lang, bleibt der Text mit einem Hinweis im Feld. Kürze ihn und sende ihn erneut.
 :::
 
 ## Prüfen, ob die Nachricht gesendet wurde {icon="check"}

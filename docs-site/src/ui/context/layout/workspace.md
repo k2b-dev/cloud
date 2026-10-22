@@ -86,8 +86,17 @@ Grids table is the reference for tables.
 Place `AppWorkspace.Head` as a **direct child** of `AppWorkspace`, after the
 sidebar and before `Content`. Its existing head renders at that position, so
 object navigation precedes view controls in both reading and keyboard order.
-Callers without an explicit slot retain the automatic head. Individual parts may be islands. Give
-the chips `showValue`, keep secondary actions quiet, and put the one filled
+Callers without an explicit slot retain the automatic head. Individual parts may be islands.
+
+For a split list/reader page, set `Head.mobilePane` to the list region's ID.
+Below 48rem, the head and its shared Details control appear only while that
+region is active. `Main.mobilePane` remains the single selection source; the
+server and hydrated page use the same region markers. Unsplit Mains, desktop,
+and tablet keep their head. A reader must provide its own visible way back and
+a Details control with `aria-controls={appWorkspaceDetailElementId(detailId)}`;
+closing details returns focus to that control while the head is hidden.
+
+Give the chips `showValue`, keep secondary actions quiet, and put the one filled
 action in `primary`.
 
 ```tsx
@@ -128,6 +137,7 @@ state of their own belong in an island in `filters` with their own Reset.
 
 ```ts
 type AppWorkspaceHeadProps = {
+  mobilePane?: string;
   views?: JSX.Element;
   filters?: JSX.Element;
   filtered?: boolean;
