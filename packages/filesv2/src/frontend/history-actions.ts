@@ -519,15 +519,23 @@ export function missingCase(entry: ActivityEntry): MissingCase | null {
 export type SearchHit = { key: string; entries: ActivityEntry[]; lead: ActivityEntry };
 
 /**
- * Groups search entries by item: the stable ID where a full side has one, otherwise the visible name. Renames keep
- * one group because the stable ID survives them; without an ID a renamed item appears as two hits, which is honest.
+ * Group only identities established by visible scope. A public base on a full side ties its root/binding to
+ * the current server; an unbound historical snapshot cannot establish that scope. Missing evidence stays separate.
  */
 export function searchHits(entries: readonly ActivityEntry[], query: string): SearchHit[] {
   const hits = new Map<string, SearchHit>();
   for (const entry of entries) {
-    let id: string | null = null;
-    for (const side of [entry.after, entry.before]) if (side.visibility === "full" && side.itemId) id ??= side.itemId;
-    const key = id ? `id:${id}` : `name:${(subjectName(entry) ?? entry.id).toLocaleLowerCase()}`;
+    let key = `entry:${entry.id}`;
+    for (const side of [entry.after, entry.before]) {
+      if (side.visibility === "full" && side.root && side.baseId && side.publicBaseId) {
+        key = JSON.stringify([side.root, side.baseId, side.publicBaseId, side.itemId ? "id" : "path", side.itemId || side.path]);
+        break;
+      }
+      if (side.visibility === "disappearance" && side.publicBaseId && side.relativePath != null) {
+        key = JSON.stringify(["disappearance", side.publicBaseId, side.path, side.relativePath]);
+        break;
+      }
+    }
     const hit = hits.get(key);
     if (hit) hit.entries.push(entry);
     else hits.set(key, { key, entries: [entry], lead: entry });

@@ -95,3 +95,16 @@ test("Activity filters survive the address unchanged and invalid values are refu
   expect(parseActivityFilters(new URLSearchParams("q=%20%20"))).toEqual({});
   expect(showsOverview(new URLSearchParams("view=activity"), 3)).toBe(false);
 });
+
+test("Activity folder scope survives reload and exact scope remains exact", async () => {
+  const { activityUrl, parseActivityFilters } = await import("./urls");
+  for (const scope of [undefined, "item", "folder"] as const) {
+    for (const path of ["Docs", ""]) {
+      const filters = { baseId: "base", path, ...(scope ? { scope } : {}) };
+      expect(parseActivityFilters(new URL(activityUrl(filters), "https://files.test").searchParams)).toEqual(filters);
+    }
+  }
+  for (const bad of ["base=b&path=Docs&scope=tree", "base=b&scope=folder", "path=Docs&scope=folder"]) {
+    expect(parseActivityFilters(new URLSearchParams(bad))).toBeNull();
+  }
+});

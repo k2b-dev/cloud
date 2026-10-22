@@ -435,7 +435,7 @@ function EntryHistory(props: {
     toast.success(t().versionRestored);
     props.onChanged(props.entry.path);
   };
-  const request = () => itemHistoryRequest(props.base, { path: props.entry.path, resourceId: props.entry.resourceId ?? props.resourceId });
+  const request = () => itemHistoryRequest(props.base, { ...props.entry, resourceId: props.entry.resourceId ?? props.resourceId });
   const source = () => JSON.stringify([props.base.locationKey ?? null, itemHistorySource(request())]);
   const now = () => props.history?.env.now ?? new Date().toISOString();
   const period = createMemo(() => sharePeriod(now()));
@@ -531,7 +531,7 @@ function EntryHistory(props: {
               history().initial?.source === itemHistorySource(request()) ? { source: source(), page: history().initial!.page } : null
             }
             load={(cursor, signal) => loadItemHistory(request(), cursor, signal, h().historyFailed)}
-            activityHref={history().activityHref(props.base.id, props.entry.path)}
+            activityHref={history().activityHref(props.base.id, props.entry.path, props.entry.directory ? "folder" : "item")}
             onChanged={() => props.onChanged(props.entry.path)}
           />
         )}

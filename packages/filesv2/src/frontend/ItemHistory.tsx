@@ -108,12 +108,13 @@ export default function ItemHistory(props: ItemHistoryProps) {
                 <For each={shown()}>
                   {(row) => (
                     <li>
+                      {/* A folder includes descendants, so each row names its actual subject. */}
                       <HistoryRow
                         row={row}
                         env={props.env}
                         actions={props.actions}
-                        context="item"
-                        directory={props.directory}
+                        context={props.directory ? "activity" : "item"}
+                        directory={props.directory ? undefined : false}
                         dated={false}
                         variant="detail"
                         onChanged={changed}
