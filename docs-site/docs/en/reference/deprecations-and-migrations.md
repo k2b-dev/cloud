@@ -5,10 +5,20 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # Deprecations and migrations
+
+## Application mail content grants
+
+`mail.content(id, context)` adds audited plain-text and attachment-name reads.
+Existing grants stay at metadata, and `mail.list` still omits foreign bodies.
+Upgrade Core's additive schema before application libraries and admin clients.
+Older clients replace selected sources with metadata access; a Core code
+rollback alone does not revoke stored content grants. See the
+[upgrade and rollback sequence](/en/docs/operations/outgoing-mail#upgrade-and-rollback)
+for the required order and explicit downgrade.
 
 ## Mail send requires a content fingerprint
 
