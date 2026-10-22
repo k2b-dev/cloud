@@ -109,12 +109,12 @@ test("the street field suggests after a pause, picks with the keyboard and marks
     await street.press("Enter");
     expect(await street.inputValue()).toBe("Frauenstraße 28");
     expect(await page.getByRole("textbox", { name: /Postleitzahl/ }).inputValue()).toBe("89073");
-    await expect(hint.textContent()).resolves.toContain("Aus Vorschlag übernommen");
+    expect(await hint.textContent()).toContain("Aus Vorschlag übernommen");
     await settled(page);
     expect(await hint.boundingBox()).toEqual(hintBox);
 
     await page.getByRole("textbox", { name: /Postleitzahl/ }).fill("89079");
-    await expect(hint.textContent()).resolves.toContain("Adresse geändert");
+    expect(await hint.textContent()).toContain("Adresse geändert");
     await settled(page);
     expect(await hint.boundingBox()).toEqual(hintBox);
 
