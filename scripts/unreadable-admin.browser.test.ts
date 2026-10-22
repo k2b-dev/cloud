@@ -118,12 +118,12 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
         await page.getByLabel("Last ID", { exact: true }).fill("200100");
         await page.getByRole("checkbox", { name: "I have reserved this range for Cloud", exact: true }).check();
       }
-      if (surface === "outgoing") await page.getByLabel("Keep text for (days)", { exact: true }).fill("60");
+      if (surface === "outgoing") await page.getByRole("spinbutton", { name: "Keep text for (days)", exact: true }).fill("60");
       if (surface === "directory") {
         await page.getByRole("combobox", { name: /^Suggest recipients/ }).click();
         await page.getByRole("option", { name: /Suggest alternate contacts/ }).click();
       }
-      if (surface === "logs") await page.getByLabel("Retention (days)", { exact: true }).fill("45");
+      if (surface === "logs") await page.getByRole("spinbutton", { name: "Retention (days)", exact: true }).fill("45");
       const save = page.getByRole("button", { name: surface === "linux" ? "Check and save setup" : "Save", exact: true });
       await save.click();
       const replacement = page.getByRole("checkbox", { name: /^Replace stored value/ });
@@ -139,10 +139,11 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
         expect(await page.getByLabel("Login shell", { exact: true }).inputValue()).toBe("/bin/zsh");
         expect(await page.getByRole("checkbox", { name: "I have reserved this range for Cloud", exact: true }).isChecked()).toBe(true);
       }
-      if (surface === "outgoing") expect(await page.getByLabel("Keep text for (days)", { exact: true }).inputValue()).toBe("60");
+      if (surface === "outgoing")
+        expect(await page.getByRole("spinbutton", { name: "Keep text for (days)", exact: true }).inputValue()).toBe("60");
       if (surface === "directory")
         expect(await page.getByRole("combobox", { name: /^Suggest recipients/ }).textContent()).toContain("Suggest alternate contacts");
-      if (surface === "logs") expect(await page.getByLabel("Retention (days)", { exact: true }).inputValue()).toBe("45");
+      if (surface === "logs") expect(await page.getByRole("spinbutton", { name: "Retention (days)", exact: true }).inputValue()).toBe("45");
       await replacement.check();
       if (surface === "logs") await Promise.all([page.waitForNavigation(), save.click()]);
       else await save.click();
