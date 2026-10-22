@@ -281,6 +281,7 @@ suite("Files service and durable bindings", () => {
             onConflict: z.enum(["error", "overwrite", "rename"]).optional(),
             ownership: z.object({ uid: z.number().optional(), gid: z.number().optional(), mode: z.string().optional() }).optional(),
             precondition: z.object({ ifMatch: z.string().optional(), ifNoneMatch: z.literal(true).optional() }).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
             idempotencyKey: z.string().optional(),
           })
           .parse(init?.body ? JSON.parse(String(init.body)) : {});
@@ -333,7 +334,12 @@ suite("Files service and durable bindings", () => {
           const execution = executionHeader
             ? z.object({ uid: z.number(), gid: z.number(), groups: z.array(z.number()).optional() }).parse(JSON.parse(executionHeader))
             : undefined;
-          const options = { onConflict: input.onConflict, ownership: input.ownership, precondition: input.precondition };
+          const options = {
+            onConflict: input.onConflict,
+            ownership: input.ownership,
+            precondition: input.precondition,
+            metadata: input.metadata,
+          };
           sessions.set(id, {
             id,
             root,
@@ -3113,6 +3119,14 @@ suite("Files service and durable bindings", () => {
     contents.delete("freeipa:users/catalog-admin/protocol.md");
     await templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" });
     expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
+    expect(
+      (await sql`SELECT action,state,actor_user_id,detail FROM filesv2.activity WHERE path_after='users/catalog-reader/copy.md'`)[0],
+    ).toMatchObject({
+      action: "file.create",
+      state: "done",
+      actor_user_id: id(reader),
+      detail: { template: template.id },
+    });
     await expect(templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
       status: 409,
     });

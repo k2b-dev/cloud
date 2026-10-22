@@ -82,6 +82,7 @@ export async function migrate(): Promise<void> {
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_trash_base ON filesv2.trash(base_id,deleted_at) WHERE state='trashed'`.simple();
   await sql`ALTER TABLE filesv2.uploads ADD COLUMN IF NOT EXISTS share_id UUID`.simple();
+  await sql`ALTER TABLE filesv2.uploads ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
   // Public shares: a bundle of entries for download or a folder that accepts anonymous uploads. Both stay inside one base.
   await sql`CREATE TABLE IF NOT EXISTS filesv2.shares (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -122,6 +123,8 @@ export async function migrate(): Promise<void> {
   await migrateTemplates();
   await migrateTrash();
   await migrateSharing();
+  await sql`ALTER TABLE filesv2.trash ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
+  await sql`ALTER TABLE filesv2.trash ADD COLUMN IF NOT EXISTS restore_activity_recorded boolean NOT NULL DEFAULT false`.simple();
   await migrateActivity();
   await migrateShareAccess();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();

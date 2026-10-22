@@ -6,6 +6,7 @@ import {
   type AccountIdentityUser,
   accountIdentities,
   accounts,
+  audit,
   coreSettings,
   logger,
 } from "@k2b/cloud/services";
@@ -52,7 +53,7 @@ import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "..
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
-import { fileAction, pendingMigration, purgeActivity, recoverActivity, type UserFilesCall } from "./activity";
+import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, type UserFilesCall, uploadAction } from "./activity";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -479,28 +480,74 @@ export function createFilesService(
   }
   /** Whole-document writes from Cloud: a direct lease, one PUT, and the resulting node. */
   async function writeBytes(
+    call: UserFilesCall,
     current: Awaited<ReturnType<typeof authorized>> & { target: string },
     body: Blob,
     onConflict: "error" | "overwrite",
+    templateId?: string,
   ): Promise<Node> {
     if (current.info.managed && onConflict === "overwrite" && !current.node.revision) throw new FilesError("write_conflict", 409);
     if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
-    return pendingMigration("files.write_bytes", () =>
-      current.root.put(
-        current.target,
-        body,
-        {
-          onConflict,
-          ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
-          precondition: current.info.managed
-            ? onConflict === "error"
-              ? { ifNoneMatch: true }
-              : { ifMatch: current.node.revision! }
-            : undefined,
-        },
-        AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
-      ),
+    const writeOptions = {
+      onConflict,
+      ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
+      precondition: current.info.managed
+        ? onConflict === "error"
+          ? { ifNoneMatch: true as const }
+          : { ifMatch: current.node.revision! }
+        : undefined,
+    };
+    return fileAction(
+      call,
+      {
+        action: onConflict === "overwrite" ? "file.edit" : "file.create",
+        serverUrl: current.state.config.url,
+        root: current.root.name,
+        baseId: current.inspection.binding!.id,
+        directory: false,
+        name: current.target.split("/").at(-1)!,
+        pathAfter: current.target,
+        pathBefore: onConflict === "overwrite" ? current.target : null,
+        itemId: onConflict === "overwrite" && current.info.stableIds ? current.node.id : null,
+        revisionBefore: onConflict === "overwrite" ? current.node.revision : null,
+        size: body.size,
+        writeOptions,
+        detail: templateId ? { template: templateId } : undefined,
+      },
+      () =>
+        current.root.put(
+          current.target,
+          body,
+          { ...writeOptions, metadata: { activity: currentActivityId() } },
+          AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
+        ),
+      async (_tx, node) => {
+        if (node.root !== current.root.name || node.path !== current.target || node.directory || node.size !== body.size)
+          throw new FilesError("unavailable", 503);
+        return { itemAfterId: current.info.stableIds ? node.id : null, revisionAfter: node.revision, size: node.size };
+      },
     );
+  }
+
+  function versionIntent(
+    current: Awaited<ReturnType<typeof authorized>>,
+    action: "version.comment" | "version.restore" | "version.restore_copy" | "version.delete",
+    versionId: string,
+  ): Intent {
+    return {
+      action,
+      serverUrl: current.state.config.url,
+      root: current.root.name,
+      baseId: current.inspection.binding!.id,
+      itemId: current.info.stableIds ? current.node.id : null,
+      directory: false,
+      name: current.relative.split("/").at(-1)!,
+      pathBefore: current.target,
+      pathAfter: current.target,
+      revisionBefore: current.node.revision,
+      versionId,
+      size: current.node.size,
+    };
   }
 
   async function createFolder(call: UserFilesCall, current: Awaited<ReturnType<typeof writableParent>>, batchId?: string) {
@@ -740,6 +787,7 @@ export function createFilesService(
       !sameUploadExecution(session.execution ?? null, row.execution)
     )
       throw new FilesError("upload_changed", 409);
+    if (session.state === "committed" && !session.result) throw new FilesError("upload_changed", 409);
     if (session.result) uploadResult(current, row, session.result);
   }
   /** A commit whose response was lost is recognised from Filegate's session record; repeats are idempotent. */
@@ -771,7 +819,7 @@ export function createFilesService(
     }
     if (session.received !== session.size) throw new FilesError("upload_incomplete");
     signal?.throwIfAborted();
-    const node = await pendingMigration("files.upload_session", () => root.commitSession(sessionId));
+    const node = await uploadAction(row.id, () => root.commitSession(sessionId));
     const result = uploadResult(current, row, node);
     await uploads.finish(row.id, "committed", node);
     return result;
@@ -786,6 +834,7 @@ export function createFilesService(
     if (row.server_url !== current.state.config.url) throw new FilesError("configuration_changed", 409);
     if (!sameUploadExecution(row.execution, executionFor(current))) throw new FilesError("upload_changed", 409);
     await checkUploadTarget(current);
+    await uploads.history(row.id);
     if (row.state === "open" && !uploadSessionId(row)) row = await ensureUploadSession(current, row);
     return { row, current };
   }
@@ -802,7 +851,7 @@ export function createFilesService(
     if (!uploadSessionId(row)) {
       // Filegate retains creation keys for seven days. Never recreate an ambiguous old transfer after GC.
       if (Date.now() - row.created_at.getTime() >= UPLOAD_RECOVERY_MS || !row.write_options) throw new FilesError("receipt_unknown", 409);
-      const created = await pendingMigration("files.upload_session", () =>
+      const created = await uploadAction(row.id, () =>
         current.root.createSession(joinPath(current.target, current.name), row.size, {
           ...row.write_options,
           idempotencyKey: row.id,
@@ -812,11 +861,13 @@ export function createFilesService(
       );
       checkUploadSession(current, { ...row, filegate_session_id: created.session.id }, created.session);
       await uploads.attachSession(row.id, created.session);
-      row = { ...row, filegate_session_id: created.session.id };
+      if (created.session.state !== "open") await uploads.finish(row.id, created.session.state, created.session.result ?? null);
+      row = { ...row, filegate_session_id: created.session.id, state: created.session.state, result: created.session.result ?? null };
     }
     return row;
   }
   async function openUpload(current: Awaited<ReturnType<typeof writableParent>>, row: Upload): Promise<UploadSession> {
+    await uploads.history(row.id);
     if (row.state !== "open")
       return {
         id: row.id,
@@ -947,9 +998,7 @@ export function createFilesService(
         const target = joinPath(candidate.path, "trash");
         try {
           const node = await current.root.stat(candidate.path);
-          await pendingMigration("files.ensure_trash", () =>
-            current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) }),
-          );
+          await current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) });
         } catch (error) {
           if (!(error instanceof FilegateError && error.status === 409)) throw error;
           if (!(await current.root.stat(target)).directory) throw new FilesError("not_directory", 409);
@@ -1270,18 +1319,21 @@ export function createFilesService(
         ownership: existing ? undefined : ownershipFor(current, false),
         precondition: current.info.managed ? (existing ? { ifMatch: existing.revision! } : { ifNoneMatch: true as const }) : undefined,
       };
-      const row = await uploads.reservePrivate({
-        id: input.idempotencyKey,
-        base_id: current.inspection.binding!.id,
-        user_id: current.state.self.user.id,
-        root: current.inspection.candidate.root,
-        server_url: current.state.config.url,
-        path: current.relative,
-        size: input.size,
-        write_options: writeOptions,
-        expected_revision: input.expectedRevision ?? null,
-        execution: executionFor(current),
-      });
+      const row = await uploads.reservePrivate(
+        {
+          id: input.idempotencyKey,
+          base_id: current.inspection.binding!.id,
+          user_id: current.state.self.user.id,
+          root: current.inspection.candidate.root,
+          server_url: current.state.config.url,
+          path: current.relative,
+          size: input.size,
+          write_options: writeOptions,
+          expected_revision: input.expectedRevision ?? null,
+          execution: executionFor(current),
+        },
+        { call, target, previous: existing },
+      );
       return openUpload(current, row);
     },
     async uploadLease(call: UserFilesCall, input: { baseId: string; id: string }): Promise<UploadLease> {
@@ -1458,9 +1510,19 @@ export function createFilesService(
         comment: input.comment || undefined,
         author: input.comment ? current.state.self.user.username : undefined,
       };
+      const options = { pinned: existing.pinned, metadata };
       return versionEntry(
-        await pendingMigration("files.version_comment", () =>
-          current.root.updateVersion(current.target, input.id, { pinned: existing.pinned, metadata }),
+        await fileAction(
+          call,
+          { ...versionIntent(current, "version.comment", input.id), versionOptions: options },
+          () =>
+            current.root.updateVersion(current.target, input.id, {
+              ...options,
+              metadata: { ...metadata, comment_activity: currentActivityId() },
+            }),
+          async (_tx, version) => {
+            if (version.id !== input.id) throw new FilesError("unavailable", 503);
+          },
         ),
       );
     },
@@ -1469,43 +1531,97 @@ export function createFilesService(
       const current = await versionFile(actor, input.baseId, input.path, true);
       return publish(current.root.name, async () => {
         const fresh = await versionFile(actor, input.baseId, input.path, true);
-        const node = await pendingMigration("files.version_restore", () => fresh.root.restore(fresh.target, input.id));
+        if (
+          fresh.root.name !== current.root.name ||
+          fresh.state.config.url !== current.state.config.url ||
+          fresh.inspection.binding!.id !== current.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const node = await fileAction(
+          call,
+          versionIntent(fresh, "version.restore", input.id),
+          () => fresh.root.restore(fresh.target, input.id),
+          async (_tx, node) => {
+            if (
+              node.root !== fresh.root.name ||
+              node.path !== fresh.target ||
+              node.directory ||
+              (fresh.info.stableIds && node.id !== fresh.node.id)
+            )
+              throw new FilesError("unavailable", 503);
+            return { itemAfterId: fresh.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
+          },
+        );
         return { base: fresh.inspection.summary, entry: fileEntry(fresh.inspection.summary, fresh.relative, node) };
       });
     },
     async restoreVersionAs(call: UserFilesCall, input: { baseId: string; path: string; id: string; name: string }): Promise<EntryResult> {
       const actor = call.actor;
-      const current = await versionFile(actor, input.baseId, input.path, false);
-      const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
-      if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative)
-        throw new FilesError("invalid_path");
-      const destination = await writableParent(actor, input.baseId, relative);
-      if (JSON.stringify(executionFor(current)) !== JSON.stringify(executionFor(destination)))
-        throw new FilesError("configuration_changed", 409);
-      if (
-        current.state.config.url !== destination.state.config.url ||
-        current.inspection.binding?.id !== destination.inspection.binding?.id
-      )
-        throw new FilesError("configuration_changed", 409);
-      const node = await pendingMigration("files.version_restore_copy", () =>
-        current.root.copyVersion(current.target, input.id, destination.root.name, joinPath(destination.target, destination.name), {
-          onConflict: "error",
+      const prepared = await versionFile(actor, input.baseId, input.path, false);
+      return publish(prepared.root.name, async () => {
+        const current = await versionFile(actor, input.baseId, input.path, false);
+        if (
+          current.root.name !== prepared.root.name ||
+          current.state.config.url !== prepared.state.config.url ||
+          current.inspection.binding!.id !== prepared.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
+        if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative)
+          throw new FilesError("invalid_path");
+        const destination = await writableParent(actor, input.baseId, relative);
+        if (
+          JSON.stringify(executionFor(current)) !== JSON.stringify(executionFor(destination)) ||
+          current.state.config.url !== destination.state.config.url ||
+          current.inspection.binding!.id !== destination.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const target = joinPath(destination.target, destination.name);
+        const options = {
+          onConflict: "error" as const,
           ownership: ownershipFor(destination, false),
           targetExecution: targetExecution(destination),
-        }),
-      );
-      if (node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
-        throw new FilesError("unavailable", 503);
-      return {
-        base: current.inspection.summary,
-        entry: fileEntry(destination.inspection.summary, userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node),
-      };
+        };
+        const node = await fileAction(
+          call,
+          {
+            ...versionIntent(current, "version.restore_copy", input.id),
+            rootAfter: destination.root.name,
+            baseAfterId: destination.inspection.binding!.id,
+            pathAfter: target,
+            copyOptions: options,
+          },
+          () => current.root.copyVersion(current.target, input.id, destination.root.name, target, options),
+          async (_tx, node) => {
+            if (node.root !== destination.root.name || node.path !== target || node.directory) throw new FilesError("unavailable", 503);
+            return { itemAfterId: destination.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
+          },
+        );
+        return { base: destination.inspection.summary, entry: fileEntry(destination.inspection.summary, relative, node) };
+      });
     },
     async deleteVersion(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<void> {
       const actor = call.actor;
       await requireAdmin(actor);
       const current = await versionFile(actor, input.baseId, input.path, true);
-      await pendingMigration("files.version_delete", () => current.root.deleteVersion(current.target, input.id));
+      await fileAction(
+        call,
+        versionIntent(current, "version.delete", input.id),
+        () => current.root.deleteVersion(current.target, input.id),
+        async (tx) => {
+          await audit.record(
+            {
+              action: "filesv2.version.delete",
+              outcome: "allowed",
+              actor: { userId: current.state.self.user.id },
+              target: { type: "filesv2.version", id: input.id, label: current.target },
+              requestId: call.requestId,
+              metadata: { root: current.root.name },
+            },
+            tx,
+          );
+        },
+      );
     },
     async versionDownload(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<DownloadLease> {
       const actor = call.actor;
@@ -1572,14 +1688,14 @@ export function createFilesService(
     },
     async createFromBytes(
       call: UserFilesCall,
-      input: { baseId: string; path: string },
+      input: { baseId: string; path: string; templateId?: string },
       bytes: Uint8Array<ArrayBuffer>,
     ): Promise<EntryResult> {
       const actor = call.actor;
       if (bytes.byteLength > TEMPLATE_LIMIT) throw new FilesError("preview_too_large", 400);
       const current = await writableParent(actor, input.baseId, input.path);
       const target = joinPath(current.target, current.name);
-      const node = await writeBytes({ ...current, target }, new Blob([bytes]), "error");
+      const node = await writeBytes(call, { ...current, target }, new Blob([bytes]), "error", input.templateId);
       return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, current.relative, node) };
     },
     /** A new document starts in the administrator's format; the extension is appended here. */
@@ -1595,7 +1711,7 @@ export function createFilesService(
       } catch (error) {
         if (!(error instanceof FilegateError && error.status === 404)) throw error;
       }
-      const node = await writeBytes({ ...current, target }, await documentTemplate(extension), "error");
+      const node = await writeBytes(call, { ...current, target }, await documentTemplate(extension), "error");
       return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, relative, node) };
     },
     async editorFileInfo(token: string, id: string, requestId: string | null = null) {
@@ -1657,7 +1773,7 @@ export function createFilesService(
         )
           return { conflict: true };
         try {
-          const node = await writeBytes(latest, body, "overwrite");
+          const node = await writeBytes(latest.call, latest, body, "overwrite");
           const modified = wopiTimestamp(node.modified);
           if (!modified) throw new FilesError("unavailable", 503);
           return { modified };
@@ -1683,7 +1799,7 @@ export function createFilesService(
         return;
       }
       try {
-        await pendingMigration("files.upload_session", () => current.root.abortSession(sessionId));
+        await uploadAction(row.id, () => current.root.abortSession(sessionId));
       } catch (error) {
         // An abort may race a commit. Only a retained terminal receipt proves the outcome.
         const receipt = await privateReceipt(current.root, row, sessionId);
@@ -1762,9 +1878,14 @@ export function createFilesService(
       if (!sessionId) throw new FilesError("receipt_unknown", 409);
       const session = await privateReceipt(current.root, row, sessionId);
       checkUploadSession(current, row, session);
-      if (session.state === "committed" && session.result)
+      if (session.state === "committed" && session.result) {
+        await uploads.finish(row.id, "committed", session.result);
         return { state: "completed" as const, entry: uploadResult(current, row, session.result) };
-      if (session.state === "aborted" || session.state === "expired") return { state: "aborted" as const };
+      }
+      if (session.state === "aborted" || session.state === "expired") {
+        await uploads.finish(row.id, session.state, null);
+        return { state: "aborted" as const };
+      }
       return { state: "open" as const };
     },
     async capabilityUpload(

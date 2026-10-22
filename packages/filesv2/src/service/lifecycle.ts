@@ -19,10 +19,10 @@ import type { bindings, NewBinding } from "../data/bases";
 import { type NewOperation, type Operation, operations, withRootLock } from "../data/operations";
 import {
   type FilesCall,
+  fileAction,
   filegateException,
   journalAction,
   type LifecycleMkdir,
-  pendingMigration,
   systemCall,
   type UserFilesCall,
 } from "./activity";
@@ -866,9 +866,42 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const actor = call.actor;
       const loc = await location(actor, input);
       if (input.confirmPath !== loc.target) throw new FilesError("confirmation_mismatch");
-      if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
-      if (!(await loc.root.info()).versioning.enabled) throw new FilesError("versioning_disabled");
-      await pendingMigration("lifecycle.admin_delete_version", () => loc.root.deleteVersion(loc.target, input.id));
+      const node = await loc.root.stat(loc.target);
+      if (node.directory) throw new FilesError("not_file");
+      const info = await loc.root.info();
+      if (!info.versioning.enabled) throw new FilesError("versioning_disabled");
+      const binding = await deps.bindings.path(loc.root.name, loc.base);
+      await fileAction(
+        call,
+        {
+          action: "version.delete",
+          serverUrl: loc.config.url,
+          root: loc.root.name,
+          baseId: binding?.id ?? null,
+          itemId: info.stableIds ? node.id : null,
+          directory: false,
+          name: loc.target.split("/").at(-1)!,
+          pathBefore: loc.target,
+          pathAfter: loc.target,
+          size: node.size,
+          revisionBefore: node.revision,
+          versionId: input.id,
+        },
+        () => loc.root.deleteVersion(loc.target, input.id),
+        async (tx) => {
+          await audit.record(
+            {
+              action: "filesv2.version.delete",
+              outcome: "allowed",
+              actor: { userId: loc.actorId },
+              target: { type: "filesv2.version", id: input.id, label: loc.target },
+              requestId: call.requestId,
+              metadata: { root: loc.root.name },
+            },
+            tx,
+          );
+        },
+      );
       return { deleted: true };
     },
     async adminDelete(call: UserFilesCall, input: AdminLocator & { confirmPath: string }): Promise<OperationResult> {

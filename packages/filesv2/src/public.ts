@@ -117,7 +117,17 @@ export const publicApi = new Hono<AuthContext>()
     ),
   )
   .post("/inbox/:token/api/uploads", v("json", PublicUploadInputSchema), async (c) =>
-    respond(c, ok(await filesService.publicInboxUpload(c.req.param("token") ?? "", c.req.valid("json"), shareAccessCookie(c)))),
+    respond(
+      c,
+      ok(
+        await filesService.publicInboxUpload(
+          c.req.param("token") ?? "",
+          c.req.valid("json"),
+          shareAccessCookie(c),
+          c.req.header("x-request-id")?.slice(0, 64) ?? null,
+        ),
+      ),
+    ),
   )
   .post("/inbox/:token/api/uploads/:id/lease", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) =>
     respond(c, ok(await filesService.publicInboxLease(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c)))),

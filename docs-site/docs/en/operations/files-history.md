@@ -23,8 +23,8 @@ groups. A large copy can hold it for the duration of the transfer (up to the
 ten-minute call budget). Other publications wait up to five seconds, then
 return the existing retryable `operation_busy` error. Copies can likewise
 return busy while another publication holds that root. External writers and
-a lost lock lease remain outside this coordination guarantee. Later
-steps extend history to other changes.
+a lost lock lease remain outside this coordination guarantee. Uploads, trash,
+versions, storage lifecycle, and administration are also recorded as described below.
 
 An independently committed `pending` row precedes the Filegate write. Only a
 successful response and committed finish mark it `done`. A certain refusal
@@ -84,14 +84,13 @@ policy. The finish records only a completed response at the intended path
 Activity scopes and write accounting stay private to the history module. The
 facade asks that module to check each mutation; callers can read only the
 activity ID. The guard uses a copy of the committed intent, so changing the
-caller's object cannot redirect an authorized write. The temporary migration
-permissions are immutable as well.
+caller's object cannot redirect an authorized write.
 
-Unconverted writes use named `PENDING_MIGRATION` entries. That list may only
-shrink. Each entry permits only its listed facade methods, and the number of
-places that use an entry may only shrink as well. A separate `lifecycle.probe` exception permits only owner-probe folder
-creation and removal. Statistics refresh and index rebuild change derived
-metadata and need no user-data history entry.
+All user-data writers now use activity scopes; `PENDING_MIGRATION` and its method
+table are empty. The classification test prevents new bypass keys or call sites.
+A separate `lifecycle.probe` exception permits only owner-probe folder creation
+and removal. Statistics refresh and index rebuild change derived metadata and
+need no user-data history entry.
 
 The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
@@ -147,3 +146,66 @@ not treated as proof that nothing changed. Existing unfinished operations from
 before this rollout receive an adopted history entry with their original
 actor and dates. An ordinary create or restore target, or a missing delete
 source, cannot prove their completion; such operations remain unresolved.
+
+## Trash, versions, and permanent deletion
+
+The trash journal and its pending history entry are committed before Files creates
+the internal trash directory or moves an item. Restoration has a separate entry.
+A batch shares one batch ID, with one entry per selected top-level item. Completing
+the journal and history is atomic; retries retain the original call context.
+
+A missing source and the matching item at `trash/<uuid>` can confirm a trash
+operation. The UUID belongs to that journal. This evidence assumes an external
+writer has not reproduced that exact private target and snapshot. Restoration
+uses an ordinary destination, so its appearance alone does not prove completion.
+If its response or completion write is lost, the journal stays unresolved, even
+when the file is visible at the intended location. Listing and retry do not repeat
+the move or infer success from the destination.
+
+Each version comment, restore, copy, and deletion gets an entry. A comment's saved
+version carries `metadata.comment_activity`, leaving its content activity marker
+intact. Maintenance checks both the version ID and marker before confirming the
+comment. History stores an options fingerprint instead of copying comment text
+or author names. Other version mutations need their successful response; a missing
+version is not a deletion receipt, since pruning can also remove versions.
+
+Permanent deletion commits its intent with the operations journal. Success commits
+the journal, history, and `filesv2.delete` audit event together. Version deletion
+commits history with a `filesv2.version.delete` audit event. An audit failure leaves
+the operation unresolved. A missing target after a lost delete response is not
+proof of completion and never triggers another deletion.
+
+Retention preserves entries attached to an open trash or deletion journal. Older
+journals adopt their stored actor with an unknown channel when first contacted.
+Durable markers prevent terminal history from reappearing after its retention
+period. Old journals without a known storage server remain unresolved.
+
+## Upload reservations and direct writes
+
+Files saves each upload reservation and its pending activity in one Postgres
+transaction. All private, capability, and public inbox publication paths reuse
+that reservation's activity. The guard binds session creation to the persisted
+server, root, target, byte count, write options, and idempotency key; commit and
+abort require its stored session ID. Each invocation permits one mutation and
+renews the activity heartbeat while it runs.
+
+A retained committed response finishes the upload and history together. Confirmed
+abort or expiry records `not_done`. A `412` leaves the session open, and a missing
+receipt never proves failure. Status, retry, lease, abort, and maintenance paths
+all reconcile terminal receipts. Original request context and visitor attribution
+survive recovery. Older journals are adopted with their stored person or link,
+`via = 'unknown'`, and `detail.adopted = true`.
+
+History belonging to an open upload reservation is retained even if it is final
+and unclear. Closing the reservation makes it eligible for ordinary retention.
+Direct document, template, byte creation, and Office writes have separate entries;
+a lost response remains uncertain. A certain refusal records `failed`, including a
+revision conflict when saving a document. The current Filegate Node
+contract exposes no revision metadata that can prove these direct writes later.
+
+Upload keys retain the exact spelling used by their journal and Filegate
+idempotency key. The history's upload link is stored as text, including older
+keys; the migration does not rekey existing reservations. New incoming content
+carries its activity ID in Filegate metadata for later saved-version attribution.
+Direct-write scopes also bind ownership, ACLs, publication conditions, and this
+metadata marker to the persisted intent.
