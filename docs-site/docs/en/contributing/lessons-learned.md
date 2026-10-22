@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Lessons learned
@@ -23,6 +23,8 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Discarded outbound bodies keep running | A redirect or rejected response settles the operation but drains an endless body after releasing its timer or abort listener. | Tests: Cloud `fetch-file-tool.test.ts`, `public-http.test.ts` and `allowed-network-fetch.test.ts`, plus Mail `remote-content.test.ts`, `onboarding-discovery.test.ts` and `list-subscriptions.test.ts`, check destruction of both request and response with endless discarded bodies ([#1188](https://github.com/k2b-dev/cloud/issues/1188)). |
+| Partial outbound deadlines | DNS runs outside the budget, each redirect or address retry restarts it, or periodic bytes defeat an inactivity timeout. | Tests: shared `network-transport.test.ts`, Cloud file download and Web Push tests, and Mail remote image, discovery and unsubscribe tests cover stalled DNS, late lookup answers, connection stalls, slow endless bodies, shared redirect/address budgets and caller cancellation cleanup ([#1189](https://github.com/k2b-dev/cloud/issues/1189)). |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |

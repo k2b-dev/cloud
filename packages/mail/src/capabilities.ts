@@ -4388,6 +4388,7 @@ const actionDefinitions = {
       const subscriptionName = subscription.data.name;
       return mapResult(
         await listSubscriptions.requestUnsubscribe({
+          signal: context.signal,
           context: requestContext(context),
           mailboxId: scope.data.id,
           input: { listKey: input.listKey, href: input.href },

@@ -300,7 +300,7 @@ suite("mailing-list subscriptions", () => {
     if (!denied.ok) expect(denied.error.status).toBe(403);
   });
 
-  test("executes a verified one-click endpoint only once", async () => {
+  test("records a DNS deadline failure, permits retry, and sends a verified one-click request only once", async () => {
     let requestCount = 0;
     const current = await listSubscriptions({ context: ownerContext, mailboxId });
     expect(current.ok).toBe(true);
@@ -318,6 +318,26 @@ suite("mailing-list subscriptions", () => {
       listKey: subscription.listKey,
       href: subscription.unsubscribe.href,
     };
+    const timedOut = await requestUnsubscribe(
+      { context: ownerContext, mailboxId, input },
+      { timeoutMs: 10, lookup: () => new Promise(() => {}), request },
+    );
+    expect(timedOut.ok).toBe(false);
+    if (!timedOut.ok) expect(timedOut.error.message).toBe("Unsubscribe request timed out");
+    expect(requestCount).toBe(0);
+    const [failed] = await sql<{ state: string; last_error_code: string }[]>`
+      SELECT state, last_error_code FROM mail.list_subscriptions
+      WHERE mailbox_id = ${mailboxId}::uuid AND list_key = ${input.listKey}
+    `;
+    expect(failed).toEqual({ state: "failed", last_error_code: "ONE_CLICK_REQUEST_TIMEOUT" });
+    const [activity] = await sql<{ outcome: string; metadata: { errorCode: string } }[]>`
+      SELECT outcome, metadata FROM mail.activity_events
+      WHERE mailbox_id = ${mailboxId}::uuid AND action = 'mailing_list.unsubscribe'
+        AND metadata->>'listKey' = ${input.listKey}
+    `;
+    expect(activity?.outcome).toBe("failed");
+    expect(activity?.metadata.errorCode).toBe("ONE_CLICK_REQUEST_TIMEOUT");
+
     const first = await requestUnsubscribe({ context: ownerContext, mailboxId, input }, { request, lookup });
     const second = await requestUnsubscribe({ context: ownerContext, mailboxId, input }, { request, lookup });
     expect(first.ok).toBe(true);
