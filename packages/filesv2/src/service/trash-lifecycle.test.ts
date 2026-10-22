@@ -308,6 +308,31 @@ describe("recoverable trash lifecycle", () => {
     });
     expect([...f.rows.values()][0]?.state).toBe("trashed");
   });
+  test("restore refuses a replacement in the recorded trash slot before changing the journal", async () => {
+    const f = fixture();
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
+    const id = removed.entries[0]!.id;
+    const journal = structuredClone(f.rows.get(id)!);
+    f.nodes.set(`home/alice/trash/${id}`, { ...node(`home/alice/trash/${id}`), size: 99 });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({ code: "source_changed" });
+    expect(f.rows.get(id)).toEqual(journal);
+    expect(f.nodes.has("home/alice/report.txt")).toBe(false);
+    expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
+  });
+  test("a restore cancelled while waiting never changes the journal or publishes", async () => {
+    const f = fixture();
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
+    const id = removed.entries[0]!.id;
+    const journal = structuredClone(f.rows.get(id)!);
+    const controller = new AbortController();
+    f.setBeforeLock(async () => controller.abort(new Error("client left")));
+    await expect(f.service.restoreTrash({ ...testCall(actor), requestAbort: controller.signal }, { baseId: base.id, id })).rejects.toThrow(
+      "client left",
+    );
+    expect(f.rows.get(id)).toEqual(journal);
+    expect(f.nodes.has("home/alice/report.txt")).toBe(false);
+    expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
+  });
   test("completed restores replay only while the freshly authorized destination still matches", async () => {
     const f = fixture();
     const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });

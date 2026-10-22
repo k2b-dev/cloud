@@ -951,3 +951,5 @@ not a way around the stream budget. `cld filesv2 get <file>` obtains
 a lease and saves the file without printing the private URL; the explicit
 `cld capabilities query filesv2 content.download` command returns the lease.
 See [App capabilities](/en/docs/platform/capabilities) for discovery and consent.
+
+Restoring from the trash checks the recorded item again before starting a new restore. If another item has replaced it, Files leaves the trash untouched and asks you to refresh. A restore cancelled while waiting for the storage lock does not move the item.

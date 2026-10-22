@@ -391,6 +391,21 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
     expect(await sql`SELECT id FROM audit.events`).toHaveLength(0);
   });
 
+  test("history restore refuses a stable-identity replacement in the trash before recording a restore intent", async () => {
+    const file = await fixture("trash-replaced.txt");
+    const removed = await remove(service, file);
+    const id = removed.entries[0]!.id;
+    const journal = await trash.get(id, bindingId);
+    const deletion = await onlyRow();
+    await root().remove(`${home}/trash/${id}`);
+    const replacement = await root().put(`${home}/trash/${id}`, new Blob([content]));
+    expect(replacement.id).not.toBe(file.before.id);
+    await expect(service.restoreTrash(callFor("restore"), { baseId: baseId(), id })).rejects.toMatchObject({ code: "source_changed" });
+    expect(await trash.get(id, bindingId)).toEqual(journal);
+    expect(await rows()).toEqual([deletion]);
+    expect((await root().stat(`${home}/trash/${id}`)).id).toBe(replacement.id);
+    await expect(root().stat(file.target)).rejects.toMatchObject({ status: 404 });
+  });
   test("restore records a separate original-caller action and completes its journal and history together", async () => {
     const file = await fixture("restore.txt");
     const removed = await remove(service, file);

@@ -90,7 +90,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
       throw error;
     }
   }
-  async function reconcile(current: TrashLocation, row: TrashRow, execute: boolean): Promise<Node | null> {
+  async function reconcile(current: TrashLocation, row: TrashRow, execute: boolean, signal?: AbortSignal): Promise<Node | null> {
     if (row.root !== current.rootName || (row.server_url !== null && row.server_url !== current.serverUrl))
       throw new FilesError("binding_changed", 409);
     const activity = await store.history(row.id);
@@ -120,6 +120,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
           receipt = await run(activity.id, async () => {
             if (!restoring) await current.ensureTrash();
             await current.check(targetAbsolute.split("/").slice(0, -1).join("/") || ".", 3);
+            signal?.throwIfAborted();
             return current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" });
           });
           answered = true;
@@ -307,12 +308,18 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         state: "trashed",
       };
     },
-    async restoreTrash(call: UserFilesCall, input: { baseId: string; id: string; path?: string }): Promise<EntryResult> {
+    async restoreTrash(
+      call: UserFilesCall & { requestAbort?: AbortSignal },
+      input: { baseId: string; id: string; path?: string },
+    ): Promise<EntryResult> {
+      call.requestAbort?.throwIfAborted();
       const actor = call.actor;
       const located = await authorize(actor, input.baseId, "", "read");
+      call.requestAbort?.throwIfAborted();
       return locked(
         located.rootName,
         async () => {
+          call.requestAbort?.throwIfAborted();
           const current = await authorize(actor, input.baseId, "", "read");
           sameLocation(located, current);
           let row = input.id.startsWith("fs:")
@@ -330,6 +337,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
               if (!input.path) throw new FilesError("restore_destination_required");
               userPath(input.path);
               await authorize(actor, input.baseId, input.path, "write-parent");
+              call.requestAbort?.throwIfAborted();
               row = await store.create({
                 id: crypto.randomUUID(),
                 base_id: current.bindingId,
@@ -365,16 +373,19 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
           sameLocation(current, destination);
           if (row.state !== "restoring") {
             const node = await current.root.stat(joinPath(current.basePath, row.trashed));
+            if (!sameTrashNode(row.snapshot, node)) throw new FilesError("source_changed", 409);
             await current.check(joinPath(current.basePath, row.trashed), node.directory ? 5 : 4);
             if (await stat(current.root, joinPath(current.basePath, path))) throw new FilesError("path_conflict", 409);
+            call.requestAbort?.throwIfAborted();
             await store.restoring(row.id, path, node, current.serverUrl, { call, basePath: current.basePath });
             row = { ...row, state: "restoring", restore_path: path, snapshot: node, server_url: current.serverUrl };
           }
-          const restored = await reconcile(current, row, true);
+          call.requestAbort?.throwIfAborted();
+          const restored = await reconcile(current, row, true, call.requestAbort);
           if (!restored) throw new FilesError("operation_unresolved", 409);
           return { base: destination.base, entry: fileEntry(destination.base, path, restored) };
         },
-        rootLockWait(),
+        call.requestAbort ? AbortSignal.any([rootLockWait(), call.requestAbort]) : rootLockWait(),
       );
     },
   };
