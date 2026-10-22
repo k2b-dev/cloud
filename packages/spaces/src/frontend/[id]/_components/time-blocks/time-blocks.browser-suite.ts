@@ -524,8 +524,9 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("10:15");
         expect(await dialog.textContent()).toContain("bis 11:00");
         expect(f.posts).toEqual([]);
-        await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
+        await dialog.getByLabel("Beginn", { exact: true }).fill("10:07");
         await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
+        expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("10:07");
         await dialog.getByLabel("Dauer", { exact: true }).fill("0");
         await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         expect(await dialog.textContent()).toContain("Gib eine Dauer größer als 0 Minuten ein");
@@ -856,6 +857,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
       expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(820);
       const start = dialog.getByLabel("Beginn", { exact: true });
+      expect(await start.inputValue()).toBe("10:00");
       await start.focus();
       await page.keyboard.press("ControlOrMeta+A");
       await page.keyboard.type("11:15");
