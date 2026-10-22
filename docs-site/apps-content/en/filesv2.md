@@ -579,6 +579,8 @@ remain visible after access checks even without a Cloud record; an unknown
 original location requires an explicit restore path. Restore never overwrites
 an existing destination. Pending or ambiguous moves remain visible for review.
 
+Restoring from the trash checks the recorded item again before starting a new restore. If another item has replaced it, Files leaves the trash untouched and asks you to refresh. A restore cancelled while waiting for the storage lock does not move the item.
+
 Multi-entry moves, copies, and trash actions report results per item. Selecting
 a folder and one of its children processes the folder once. Successful items
 remain completed when another item fails; retry only the failed items. A batch
@@ -1050,4 +1052,3 @@ Administrators can export history as CSV or JSON Lines. Each export is limited
 to one calendar year and 100,000 entries, and is recorded in the security audit.
 For filters, cancellation and privacy considerations, see
 [Files history operations](/en/docs/operations/files-history#export-history-for-administration).
-Restoring from the trash checks the recorded item again before starting a new restore. If another item has replaced it, Files leaves the trash untouched and asks you to refresh. A restore cancelled while waiting for the storage lock does not move the item.

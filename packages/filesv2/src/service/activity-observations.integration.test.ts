@@ -17,7 +17,9 @@ import {
 } from "../data/activity-observations";
 import { bindings } from "../data/bases";
 import { migrate } from "../migrate";
+import { entryRefId } from "../resource-ref";
 import { createActivityObservations } from "./activity-observations";
+import { signEditorToken } from "./collabora";
 import type { readConfiguration } from "./configuration";
 import { connectFilegate } from "./filegate-facade";
 import { createFilesService } from "./index";
@@ -39,12 +41,15 @@ suite("contact observations with real Filegate and private history", () => {
   if (testActor.kind !== "user") throw new Error("Expected user fixture");
   const call = testCall({ ...testActor, user: { ...testActor.user, id: userId } });
   const baseId = `cloud:users:${userId}`;
-  function files(connect = (configuration: Config, signal?: AbortSignal) => connectFilegate(configuration, undefined, signal)) {
+  function files(
+    connect = (configuration: Config, signal?: AbortSignal) => connectFilegate(configuration, undefined, signal),
+    posix: { uidNumber: number; primaryGidNumber: number } | null = null,
+  ) {
     return createFilesService({
       identities: {
         ...accountIdentities,
         self: async () => ({
-          user: { id: userId, username: "alice", provider: "local", profile: "user", posix: null },
+          user: { id: userId, username: "alice", provider: posix ? "ipa" : "local", profile: "user", posix },
           availability: { localLinuxEnabled: true, freeipaEnabled: true },
         }),
         groups: async () => ({ items: [], nextCursor: null }),
@@ -56,7 +61,7 @@ suite("contact observations with real Filegate and private history", () => {
       writeConfiguration: async () => {},
       resetConfiguration: async () => {},
       publicOrigin: async () => "https://cloud.test",
-      userById: async () => null,
+      userById: async (id) => (id === userId && call.actor.kind === "user" ? call.actor.user : null),
       transfer: fetch,
       connect,
     });
@@ -362,6 +367,212 @@ suite("contact observations with real Filegate and private history", () => {
     expect(await knownIdentityActivity({ ...target(), stableId: replacement.id })).toBeNull();
     expect(await service().check({ ...target(), stableId: replacement.id })).toBe(false);
     expect(await observations()).toHaveLength(1);
+  });
+  test.each(["entry", "item", "path"] as const)(
+    "opening %s history observes one authorized item and deduplicates repeat contact",
+    async (surface) => {
+      const node = await client.root("cloud").stat(path);
+      const evidence = await confirmed(node);
+      await put("cloud", path, "external history contact");
+      const reader = files();
+      // A global history read must not compare all visible entries.
+      await reader.activity(call);
+      expect(await observations()).toHaveLength(0);
+      const open = () =>
+        surface === "entry"
+          ? reader.activityForEntry(call, `n:${baseId}:${node.id}`)
+          : reader.activity(call, surface === "item" ? { baseId, itemId: node.id } : { baseId, path: "file.txt" });
+      const page = await open();
+      expect(page.items.some((entry) => entry.action === "item.differs")).toBe(true);
+      expect((await observations())[0]).toMatchObject({ action: "item.differs", detail: { known_activity_id: evidence } });
+      await open();
+      expect(await observations()).toHaveLength(1);
+    },
+  );
+  test.each(["entry", "path"] as const)("opening missing %s history uses only its readable parent", async (surface) => {
+    await confirmed(await client.root("cloud").stat(path));
+    await client.root("cloud").remove(path);
+    const reader = files();
+    const ref = entryRefId(baseId, "file.txt");
+    if (!ref) throw new Error("Expected inline fixture reference");
+    const page = surface === "entry" ? await reader.activityForEntry(call, ref) : await reader.activity(call, { baseId, path: "file.txt" });
+    expect(page.items.some((entry) => entry.action === "item.missing")).toBe(true);
+    expect(await observations()).toHaveLength(1);
+    expect((await observations())[0]).toMatchObject({ action: "item.missing", path_before: path, path_after: null });
+  });
+  test("stable history contacts follow a fresh same-binding location and reject a move beyond it", async () => {
+    const node = await client.root("cloud").stat(path);
+    await confirmed(node);
+    const destination = `${home}/history-move-${Bun.randomUUIDv7()}.txt`;
+    await client.root("cloud").transfer(path, "cloud", destination, { move: true });
+    const reader = files();
+    const page = await reader.activityForEntry(call, `n:${baseId}:${node.id}`);
+    expect(page.items.some((entry) => entry.action === "item.elsewhere")).toBe(true);
+    expect((await observations())[0]).toMatchObject({ action: "item.elsewhere", path_before: path, path_after: destination });
+    const outside = `${otherHome}/history-outside-${Bun.randomUUIDv7()}.txt`;
+    await client.root("cloud").transfer(destination, "cloud", outside, { move: true });
+    expect(await reader.activityForEntry(call, `n:${baseId}:${node.id}`)).toMatchObject({ items: [], next: null });
+    expect(await reader.activity(call, { baseId, itemId: node.id, q: "history-outside" })).toMatchObject({ items: [], next: null });
+    expect(await observations()).toHaveLength(1);
+  });
+  test("history contact neither adopts unknown storage nor creates a baseline or durable reference", async () => {
+    await put("cloud", path, "unknown external item");
+    const reader = files();
+    await reader.activity(call, { baseId, path: "file.txt" });
+    expect(await observations()).toHaveLength(0);
+    const refs = await sql`SELECT * FROM filesv2.entry_references ORDER BY id`;
+    const claims = await sql`SELECT * FROM filesv2.bases ORDER BY id`;
+    const previous = config;
+    try {
+      // Existing folder with no active claim must remain unadopted, even with auto-create enabled.
+      config = { ...config, cloud: { ...config.cloud, autoCreate: true } };
+      await sql`UPDATE filesv2.bases SET lifecycle='retired' WHERE id=${cloudBinding}::uuid`;
+      const retired = await sql`SELECT * FROM filesv2.bases ORDER BY id`;
+      const ref = entryRefId(baseId, "file.txt");
+      if (!ref) throw new Error("Expected inline fixture reference");
+      expect(await reader.activityForEntry(call, ref)).toMatchObject({ items: [], next: null });
+      expect(await reader.activity(call, { baseId, path: "file.txt" })).toMatchObject({ items: [], next: null });
+      expect(await sql`SELECT * FROM filesv2.bases ORDER BY id`).toEqual(retired);
+      expect(await sql`SELECT * FROM filesv2.entry_references ORDER BY id`).toEqual(refs);
+      expect(await sql`SELECT id FROM filesv2.activity`).toHaveLength(0);
+    } finally {
+      config = previous;
+      await sql`UPDATE filesv2.bases SET lifecycle='active' WHERE id=${cloudBinding}::uuid`;
+    }
+    expect(await sql`SELECT * FROM filesv2.bases ORDER BY id`).toEqual(claims);
+  });
+  test("history contact requires actual leaf read or missing-parent read permissions", async () => {
+    const unix = { uidNumber: 12345, primaryGidNumber: 12346 };
+    const root = client.root("freeipa");
+    const ipaBaseId = `freeipa:users:${userId}`;
+    const node = await put("freeipa", path);
+    await confirmed(node);
+    await put("freeipa", path, "external restricted item");
+    try {
+      await sql`UPDATE filesv2.bases SET uid_number=${unix.uidNumber},gid_number=${unix.primaryGidNumber} WHERE id=${ipaBinding}::uuid`;
+      await root.setOwnership(home, { uid: unix.uidNumber, gid: unix.primaryGidNumber, dirMode: "0700" });
+      await root.setOwnership(path, { uid: unix.uidNumber, gid: unix.primaryGidNumber, mode: "0200" });
+      const reader = files(undefined, unix);
+      const ref = entryRefId(ipaBaseId, "file.txt");
+      if (!ref) throw new Error("Expected inline fixture reference");
+      expect(await reader.activityForEntry(call, ref)).toMatchObject({ items: [], next: null });
+      expect(await reader.activity(call, { baseId: ipaBaseId, path: "file.txt", q: "file.txt" })).toMatchObject({ items: [], next: null });
+      expect(await observations()).toHaveLength(0);
+      await root.remove(path);
+      await root.setOwnership(home, { dirMode: "0300" }); // Traversable/writable, but not readable.
+      expect(await reader.activityForEntry(call, ref)).toMatchObject({ items: [], next: null });
+      expect(await observations()).toHaveLength(0);
+      await root.setOwnership(home, { dirMode: "0700" });
+      await reader.activityForEntry(call, ref);
+      expect((await observations())[0]).toMatchObject({ action: "item.missing" });
+    } finally {
+      await root.setOwnership(home, { uid: 0, gid: 0, dirMode: "0700" });
+      await sql`UPDATE filesv2.bases SET uid_number=NULL,gid_number=NULL WHERE id=${ipaBinding}::uuid`;
+    }
+  });
+  test("history contacts honor cancellation before observation or candidate reads", async () => {
+    const node = await client.root("cloud").stat(path);
+    await confirmed(node);
+    await put("cloud", path, "cancelled history contact");
+    const controller = new AbortController();
+    controller.abort(new Error("fixture cancelled"));
+    const reader = files();
+    const abortedCall = { ...call, requestAbort: controller.signal };
+    await expect(reader.activityForEntry(abortedCall, `n:${baseId}:${node.id}`)).rejects.toThrow("fixture cancelled");
+    await expect(reader.activity(abortedCall, { baseId, path: "file.txt" })).rejects.toThrow("fixture cancelled");
+    expect(await observations()).toHaveLength(0);
+  });
+  test.each(["entry", "path"] as const)("cancelling %s history during the actual authority read prevents observation", async (surface) => {
+    const node = await client.root("cloud").stat(path);
+    await confirmed(node);
+    await put("cloud", path, "external change during cancelled contact");
+    const controller = new AbortController();
+    let reads = 0;
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        if (url.pathname.endsWith("/stat") && url.searchParams.get("path") === path && ++reads === 2)
+          controller.abort(new Error("cancelled during authority"));
+        return fetch(input, init);
+      },
+      { preconnect: fetch.preconnect },
+    );
+    const reader = files((configuration, signal) => connectFilegate(configuration, transport, signal));
+    const abortedCall = { ...call, requestAbort: controller.signal };
+    const result =
+      surface === "entry"
+        ? reader.activityForEntry(abortedCall, `n:${baseId}:${node.id}`)
+        : reader.activity(abortedCall, { baseId, path: "file.txt" });
+    await expect(result).rejects.toThrow("cancelled during authority");
+    expect(reads).toBe(2);
+    expect(await observations()).toHaveLength(0);
+  });
+  test("a real Office direct-write 412 settles its refusal before observing the external writer", async () => {
+    const officePath = `${home}/race-${Bun.randomUUIDv7()}.odt`;
+    const relative = officePath.slice(home.length + 1);
+    const initial = await put("cloud", officePath, "office baseline");
+    const evidence = await confirmed(initial);
+    let publication: string | undefined;
+    let interleaved = false;
+    let publicationStatus: number | undefined;
+    let external: Node | undefined;
+    let precondition: unknown;
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+        if (method === "POST" && url.pathname.endsWith("/uploads/direct")) {
+          const options: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+          const response = await fetch(input, init);
+          if (options && typeof options === "object" && "path" in options && options.path === officePath) {
+            precondition = "precondition" in options ? options.precondition : undefined;
+            const lease: unknown = await response.clone().json();
+            if (lease && typeof lease === "object" && "url" in lease && typeof lease.url === "string")
+              publication = client.transferUrl(lease.url);
+          }
+          return response;
+        }
+        if (method === "PUT" && url.href === publication && !interleaved) {
+          interleaved = true;
+          const [pending] = await sql`SELECT state FROM filesv2.activity WHERE action='file.edit'`;
+          expect(pending).toMatchObject({ state: "pending" });
+          // Actual external publication after the conditional lease and all pre-write observations,
+          // before Files sends its bytes. The unwrapped client bypasses only Cloud, not Filegate.
+          external = await put("cloud", officePath, "actual external writer wins");
+          const response = await fetch(input, init);
+          publicationStatus = response.status;
+          return response;
+        }
+        return fetch(input, init);
+      },
+      { preconnect: fetch.preconnect },
+    );
+    const previous = config;
+    try {
+      config = { ...config, collabora: { ...config.collabora, url: "https://office.example.test" } };
+      const token = signEditorToken({ userId, baseId, path: relative, expiresAt: observedAt.getTime() + 60_000 });
+      const ref = entryRefId(baseId, relative);
+      if (!ref) throw new Error("Expected inline fixture reference");
+      const result = await files((configuration, signal) => connectFilegate(configuration, transport, signal)).editorSave(token, ref, {
+        timestamp: null,
+        read: async () => new Blob(["stale Office content"]),
+      });
+      expect(result).toEqual({ conflict: true });
+      expect(interleaved).toBe(true);
+      expect(precondition).toEqual({ ifMatch: initial.revision });
+      expect(publicationStatus).toBe(412);
+      expect(await (await client.root("cloud").contentRaw(officePath)).text()).toBe("actual external writer wins");
+      const [edit] = await sql`SELECT state,error_code,finished_at,via FROM filesv2.activity WHERE action='file.edit'`;
+      expect(edit).toMatchObject({ state: "failed", error_code: "write_conflict", finished_at: expect.any(Date), via: "office" });
+      expect(await observations()).toHaveLength(1);
+      expect((await observations())[0]).toMatchObject({
+        action: "item.differs",
+        path_before: officePath,
+        detail: { known_activity_id: evidence, observed_after: { revision: external?.revision } },
+      });
+    } finally {
+      config = previous;
+    }
   });
   test("identity lookup checks source and destination barriers and current configuration", async () => {
     const node = await client.root("cloud").stat(path);

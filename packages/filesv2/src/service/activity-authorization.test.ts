@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { accountIdentities } from "@k2b/cloud/services";
 import { testActor, testCall } from "../../test/files-call";
+import * as observationData from "../data/activity-observations";
 import { type Binding, bindings } from "../data/bases";
 import * as operationModule from "../data/operations";
 import * as referencesModule from "../data/references";
@@ -8,16 +9,23 @@ import { shares } from "../data/shares";
 import { parseEntryRefId } from "../resource-ref";
 import { withActivityReadBudget } from "./activity-read-budget";
 import type { ActivityReaderDependencies } from "./activity-reader";
+import * as activityReaderModule from "./activity-reader";
 import { FilesError } from "./errors";
 import { connectFilegate } from "./filegate-facade";
 
 const readerActivity = mock(async (..._args: unknown[]) => ({ items: [] }));
 let readerDeps: ActivityReaderDependencies | undefined;
 mock.module("./activity-reader", () => ({
+  ...activityReaderModule,
   createActivityReader: (deps: ActivityReaderDependencies) => {
     readerDeps = deps;
     return { activity: readerActivity, movementChain: mock(), shareAccess: mock() };
   },
+}));
+// This authorization-only fixture has no retained Cloud baseline. Real comparisons use the Filegate integration fixture.
+mock.module("../data/activity-observations", () => ({
+  ...observationData,
+  knownIdentityActivity: async () => null,
 }));
 mock.module("../data/operations", () => ({
   ...operationModule,

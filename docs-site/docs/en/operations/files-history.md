@@ -127,8 +127,11 @@ keys that have not been reviewed.
 ## Interpret changes discovered on contact
 
 Files compares the current item with the last confirmed Cloud change when the
-item is opened, before a document save, and during maintenance. It records a
-changed revision or size, a missing item, or a stable ID found at another path.
+item or its history is opened, before a document save, and during maintenance.
+Opening history for a specific item compares that item after checking current
+read access; a missing path requires a readable parent. The global history view
+does not trigger comparisons of all its entries. Files records a changed revision
+or size, a missing item, or a stable ID found at another path.
 The entry gives the time Files noticed the difference. It does not identify who
 changed the item, when the change happened, or what caused it.
 
@@ -167,13 +170,6 @@ Protect the downloaded file separately: Files retention cannot delete copies
 an administrator has downloaded. Operators should agree access and retention
 with the responsible privacy representatives, including a works council where
 applicable, before using history in a workplace.
-The file inspector sends the revision it displayed when restoring a version in
-place. Files compares it again under its publication lock and returns
-`version_restore_changed` (409) if it changed; reload before retrying. This check
-coordinates Cloud writes. Filegate does not provide a conditional restore, so
-it cannot prevent a filesystem writer from changing the file between the check
-and the restore.
-
 ## Read visible history
 
 The Files history API, `cld filesv2 history`, and the `activity.list`,
@@ -340,6 +336,13 @@ intact. Maintenance checks both the version ID and marker before confirming the
 comment. History stores an options fingerprint instead of copying comment text
 or author names. Other version mutations need their successful response; a missing
 version is not a deletion receipt, since pruning can also remove versions.
+
+The file inspector sends the revision it displayed when restoring a version in
+place. Files compares it again under its publication lock and returns
+`version_restore_changed` (409) if it changed; reload before retrying. This check
+coordinates Cloud writes. Filegate does not provide a conditional restore, so
+it cannot prevent a filesystem writer from changing the file between the check
+and the restore.
 
 Permanent deletion commits its intent with the operations journal. Success commits
 the journal, history, and `filesv2.delete` audit event together. Version deletion

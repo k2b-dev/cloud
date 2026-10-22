@@ -61,7 +61,7 @@ import { createActivityActions } from "./activity-actions";
 import { createActivityExportService } from "./activity-export";
 import { createActivityObservations } from "./activity-observations";
 import { type ActivityReadBudget, readStep, withActivityReadBudget } from "./activity-read-budget";
-import { type ActivityReadCall, createActivityReader } from "./activity-reader";
+import { type ActivityReadCall, createActivityReader, parseActivityInput } from "./activity-reader";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -172,6 +172,71 @@ export function createFilesService(
       throw new FilesError("activity_cannot_record", 503, { cause: error });
     }
   }
+  const emptyActivityPage = (): ActivityPage => ({
+    items: [],
+    next: null,
+    visibleCount: 0,
+    batches: [],
+    exhausted: true,
+    scanLimitReached: false,
+    searchLimitReached: false,
+  });
+  /** One explicitly addressed contact, after read-only authority; never enumerate a folder or mint a reference. */
+  async function historyContact(
+    call: ActivityReadCall,
+    input: Pick<ActivityInput, "baseId" | "itemId" | "path">,
+    budget: ActivityReadBudget,
+    state: Awaited<ReturnType<typeof context>>,
+  ): Promise<boolean> {
+    if (!input.baseId || (input.itemId === undefined && input.path === undefined)) return true;
+    const base = await authorizedBase(call.actor, input.baseId, state, true, budget);
+    let path = input.path;
+    let resolved: Node | undefined;
+    const itemId = input.itemId;
+    if (itemId !== undefined) {
+      if (base.info.stableIds !== true) return false;
+      try {
+        resolved = await budget.run(() => base.service.resolve(itemId));
+      } catch (error) {
+        if (error instanceof FilegateError && [400, 404, 409].includes(error.status)) return false;
+        throw error;
+      }
+      if (resolved.id !== input.itemId || resolved.root !== base.item.root || !resolved.path.startsWith(`${base.item.path}/`)) return false;
+      const relative = userPath(resolved.path.slice(base.item.path.length + 1));
+      if (path !== undefined && userPath(path) !== relative) return false;
+      path = relative;
+    }
+    if (path === undefined) return false;
+    path = userPath(path);
+    const target = joinPath(base.item.path, path);
+    // The unscoped stat distinguishes absence from an existing unreadable leaf; it grants no authority.
+    const node = await budget
+      .run(() => base.service.stat(target))
+      .catch((error: unknown) => {
+        if (error instanceof FilegateError && error.status === 404) return null;
+        throw error;
+      });
+    if (node) {
+      const current = await authorizedPath(base, path, undefined, budget);
+      if (current.node.path !== target || (resolved && current.node.id !== resolved.id)) return false;
+      await budget.run(() =>
+        observeContact(current, target, {
+          stableId: current.info.stableIds ? current.node.id : undefined,
+          signal: budget.signal,
+        }),
+      );
+    } else {
+      if (resolved || !path) return false;
+      const parent = path.split("/").slice(0, -1).join("/");
+      const current = await authorizedPath(base, parent, undefined, budget);
+      if (!current.node.directory) return false;
+      await budget.run(() => observeContact(current, target, { signal: budget.signal }));
+    }
+    return true;
+  }
+  const deniedHistoryContact = (error: unknown) =>
+    (error instanceof FilesError || error instanceof FilegateError || error instanceof AccountIdentityError) &&
+    [403, 404].includes(error.status);
   async function allGroups(actor: RequestActor, budget?: ActivityReadBudget): Promise<Group[]> {
     const result: Group[] = [];
     const deadline = Date.now() + 10_000;
@@ -1201,10 +1266,17 @@ export function createFilesService(
   return {
     ...lifecycle,
     /** Private history-reader hook: authorize the current item before comparing any stored endpoint. */
-    async observeActivityContact(call: UserFilesCall, id: string, signal?: AbortSignal): Promise<void> {
-      signal?.throwIfAborted();
-      const current = await located(call.actor, id);
-      await observeContact(current, current.target, { stableId: current.info.stableIds ? current.node.id : undefined, signal });
+    async observeActivityContact(call: ActivityReadCall, id: string, signal?: AbortSignal): Promise<void> {
+      const requestAbort = signal && call.requestAbort ? AbortSignal.any([signal, call.requestAbort]) : (signal ?? call.requestAbort);
+      await withActivityReadBudget(requestAbort, async (budget) => {
+        const state = await context(call.actor, budget);
+        if (state.config.unreadable) throw new FilesError("configuration_unreadable", 409);
+        const stable = parseStableEntryRefId(id);
+        const location = stable ?? (await budget.run(() => resolveEntryRefId(id)));
+        if (!location) throw new FilesError("not_found", 404);
+        const filter = stable ? { baseId: stable.baseId, itemId: stable.fileId } : location;
+        if (!(await historyContact(call, filter, budget, state))) throw new FilesError("not_found", 404);
+      });
     },
     exportActivity: activityExport.export,
     previewActivityExport: activityExport.preview,
@@ -1215,7 +1287,23 @@ export function createFilesService(
     moveActivityBack: activityActions.moveBack,
     recheckActivity: activityActions.recheck,
     ...activityReader,
-    /** Authorize the ref's current item or missing path's parent before any history candidate scan. */
+    async activity(call: ActivityReadCall, rawInput: ActivityInput = {}): Promise<ActivityPage> {
+      const input = parseActivityInput(rawInput);
+      // Global history remains a read: only an explicitly scoped item is a contact.
+      if (!input.baseId || (input.itemId === undefined && input.path === undefined)) return activityReader.activity(call, input);
+      return withActivityReadBudget(call.requestAbort, async (budget) => {
+        const state = await context(call.actor, budget);
+        if (state.config.unreadable) throw new FilesError("configuration_unreadable", 409);
+        try {
+          if (!(await historyContact(call, input, budget, state))) return emptyActivityPage();
+        } catch (error) {
+          if (deniedHistoryContact(error)) return emptyActivityPage();
+          throw error;
+        }
+        return activityReader.activity({ ...call, requestAbort: budget.signal }, input);
+      });
+    },
+    /** Authorize the ref's current item or missing path's parent before observation and candidate SQL. */
     async activityForEntry(
       call: ActivityReadCall,
       id: string,
@@ -1224,65 +1312,19 @@ export function createFilesService(
       return withActivityReadBudget(call.requestAbort, async (budget) => {
         const state = await context(call.actor, budget);
         if (state.config.unreadable) throw new FilesError("configuration_unreadable", 409);
-        const empty: ActivityPage = {
-          items: [],
-          next: null,
-          visibleCount: 0,
-          batches: [],
-          exhausted: true,
-          scanLimitReached: false,
-          searchLimitReached: false,
-        };
         let filter: Pick<ActivityInput, "baseId" | "itemId" | "path">;
         try {
           const stable = parseStableEntryRefId(id);
           const location = stable ?? (await budget.run(() => resolveEntryRefId(id)));
-          if (!location) return empty;
-          // Same read-only base/path checks as the reader: no claim, provisioning or reference writes.
-          const base = await authorizedBase(call.actor, location.baseId, state, true, budget);
-          if (stable) {
-            if (base.info.stableIds !== true) return empty;
-            let node: Node;
-            try {
-              node = await budget.run(() => base.service.resolve(stable.fileId));
-            } catch (error) {
-              if (error instanceof FilegateError && [400, 404, 409].includes(error.status)) return empty;
-              throw error;
-            }
-            if (node.id !== stable.fileId || node.root !== base.item.root || !node.path.startsWith(`${base.item.path}/`)) return empty;
-            const path = userPath(node.path.slice(base.item.path.length + 1));
-            const current = await authorizedPath(base, path, undefined, budget);
-            if (current.node.id !== stable.fileId || current.node.path !== node.path) return empty;
-            filter = { baseId: stable.baseId, itemId: stable.fileId };
-          } else {
-            // A path ref has no identity evidence: an unreadable existing leaf is never a disappearance.
-            if (!("path" in location)) return empty;
-            const path = userPath(location.path);
-            const target = joinPath(base.item.path, path);
-            const node = await budget
-              .run(() => base.service.stat(target))
-              .catch((error: unknown) => {
-                if (error instanceof FilegateError && error.status === 404) return null;
-                throw error;
-              });
-            if (node) {
-              const current = await authorizedPath(base, path, undefined, budget);
-              if (current.node.path !== target) return empty;
-            } else {
-              if (!path) return empty; // A base's parent is outside its authority.
-              const parent = path.split("/").slice(0, -1).join("/");
-              const current = await authorizedPath(base, parent, undefined, budget);
-              if (!current.node.directory) return empty;
-            }
-            filter = { baseId: location.baseId, path };
-          }
+          if (!location) return emptyActivityPage();
+          if (stable) filter = { baseId: stable.baseId, itemId: stable.fileId };
+          else if ("path" in location) filter = { baseId: location.baseId, path: userPath(location.path) };
+          else return emptyActivityPage();
+          parseActivityInput({ ...input, ...filter });
+          if (!(await historyContact(call, filter, budget, state))) return emptyActivityPage();
         } catch (error) {
-          // Unknown and forbidden anchors have the same terminal page, without candidate SQL.
-          if (
-            (error instanceof FilesError || error instanceof FilegateError || error instanceof AccountIdentityError) &&
-            [403, 404].includes(error.status)
-          )
-            return empty;
+          // Unknown and forbidden anchors keep the same terminal page, without candidate SQL.
+          if (deniedHistoryContact(error)) return emptyActivityPage();
           throw error;
         }
         return activityReader.activity({ ...call, requestAbort: budget.signal }, { ...input, ...filter });
