@@ -71,7 +71,7 @@ jobs:
           changed=$(git diff --name-only "$BASE" HEAD)
           printf '%s\n' "$changed"
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
-          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|nats-ci\.conf|pull-images\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
+          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|nats-ci\.conf|pull-images\.sh|retry\.sh|start-playwright\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
           # Workspaces with tests that `bun run test --browser` runs: they start a browser through
           # packages/ui/test/browser.ts and need no integration targets. Some import tests/fixtures/.
           browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
@@ -176,10 +176,10 @@ jobs:
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
       - name: Fetch the Bun runtime that the standalone CLI test compiles into cld
         # `bun build --compile` downloads the release target's runtime (37 MB)
-        # on first use. Fetched here, a slow registry fails this step by name
-        # instead of the test's 60 s budget.
-        timeout-minutes: 3
-        run: CLD_TARGETS=linux_x64 CLD_OUTPUT_DIR="$RUNNER_TEMP/cld-runtime" bun run packages/cloud-cli/scripts/build.ts
+        # on first use. Retry the prefetch here, outside the test's 60 s budget;
+        # the test then reuses Bun's cached target runtime.
+        timeout-minutes: 7
+        run: CLD_TARGETS=linux_x64 CLD_OUTPUT_DIR="$RUNNER_TEMP/cld-runtime" .github/retry.sh timeout 120s bun run packages/cloud-cli/scripts/build.ts
       - run: bun run test --shard ${{ matrix.shard }}/3
         env:
           # Unit tests of encrypted settings and grants derive keys from the application secret.
@@ -208,19 +208,12 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Start WebKit in the Playwright image
-        run: |
-          set -euo pipefail
-          version=$(jq -r '.workspaces.catalog.playwright' package.json)
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" "mcr.microsoft.com/playwright:v$version-noble"
-          docker run --detach --name playwright --network host --init --ipc=host --user pwuser --workdir /home/pwuser \
-            "mcr.microsoft.com/playwright:v$version-noble" npx -y "playwright@$version" run-server --port 3333 --host 127.0.0.1
+        run: .github/start-playwright.sh
       - run: bun ci
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ui-dist
           path: packages/ui/dist
-      - name: Wait for the Playwright server
-        run: timeout 120s bash -c 'until docker logs playwright 2>&1 | grep -q "Listening on"; do sleep 1; done'
       - run: bun run test --browser --shard ${{ matrix.shard }}/2
       - if: always()
         run: |
