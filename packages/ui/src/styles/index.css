@@ -5646,6 +5646,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1rem;
 }
 
+/* With a description below the label, the shortcut stays on the label's line. */
+.k2b-ui .k2b-dropdown__item:has(> .k2b-dropdown__copy > small) > .k2b-kbd {
+  align-self: flex-start;
+}
+
 /* A phone sheet has no keyboard, so its entries show no shortcuts. */
 .k2b-ui .k2b-gesture-menu__sheet-menu .k2b-kbd {
   display: none;

@@ -799,13 +799,16 @@ describe("ChatWorkspace browser read state", () => {
           harness.messageId(chat, 5),
         );
 
-        // The success names whose message it starts at and offers "Undo", which puts everything back.
+        // The success names whose message it starts at and offers "Undo", which puts everything back. Meanwhile the
+        // chat counts as unread in the list.
         const done = page.locator(".k2b-toast").filter({ hasText: "Unread from Nora’s message" });
         await done.waitFor();
+        if (name === "desktop") await row(page, name, chat).locator('[data-unread="count"]').waitFor();
         await done.getByRole("button", { name: "Undo", exact: true }).click();
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === null);
         await marker(page).waitFor({ state: "detached" });
         expect(harness.props({ chat }).open!.conversation.unread).toBe(0);
+        if (name === "desktop") await row(page, name, chat).locator("[data-unread]").waitFor({ state: "detached" });
 
         if (name === "desktop") {
           // Alt+click (Option+click) runs it directly.
