@@ -434,22 +434,31 @@ page. `networks.incomplete` also covers expired and unclassified accesses;
 when true, do not present `known` as the exact count for the whole period.
 
 `timeline.items` holds at most 50 latest UTC buckets with `date`,
-`granularity` (`hour` or `day`), `pages`, `downloads`, `passwordFailed`,
+`granularity` (`hour` or `day`), `pages`, `pageNetworks`, `downloads`, `passwordFailed`,
 `knownNetworks`, and `overflow`. Hourly detail covers at most 30 days;
 expired or rolled-up days use daily rows. A day containing any expired or
 rolled-up data is combined into one daily row. Daily rows have null
 `knownNetworks` and retain no overflow evidence. Unclassified hourly access
 also gives null `knownNetworks`; hourly overflow marks a lower bound.
+
+Each row's required nullable `pageNetworks` counts distinct networks with
+page views in that bucket, excluding download-only and password-only
+networks. It is null for daily rows or hourly unknown/overflow page views.
+Unknown/overflow activity without page views does not invalidate it; an
+hourly row without page views returns zero. Use the row's `pages` and
+non-null `pageNetworks` for a bucket's page-view sentence; when null, show
+only the page count. `knownNetworks` still covers all access kinds.
+
 Pass `timeline.next` unchanged to `shares access --timeline-after '<next>'`
 with the same dates. Timeline and network cursors are independent; neither
 changes the period totals. There are no visitor identities or per-request
 timestamps in this response.
 
-`pageNetworks` is the exact number of networks with page views, excluding
-networks with only downloads or password failures. It is null when expired,
-rolled-up, or unclassified page views prevent an exact count. Use `pages`
-and non-null `pageNetworks` for a period sentence about page views; do not
-substitute the count of all access networks.
+The top-level `pageNetworks` is the exact number of networks with page views,
+excluding networks with only downloads or password failures. It is null when
+expired, rolled-up, overflow, or unclassified page views prevent an exact
+count. Use top-level `pages` and non-null `pageNetworks` for a whole-window
+sentence about page views; do not substitute the count of all access networks.
 
 Assistant and other capability clients use `activity.list`, `activity.get`, `activity.chain`
 and `share.access` with the same current-user authorization. Capability

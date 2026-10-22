@@ -183,7 +183,7 @@ an expired cursor returns `share_access_cursor_expired`/409. Refresh the first
 page. Ordering uses current totals, so concurrent access can reorder networks.
 
 `timeline.items` returns up to 50 latest UTC aggregates with `date` (bucket
-start), `granularity` (`hour` or `day`), `pages`, `downloads`, `passwordFailed`,
+start), `granularity` (`hour` or `day`), `pages`, `pageNetworks`, `downloads`, `passwordFailed`,
 `knownNetworks`, and `overflow`. These are bucket times, never individual
 request times. Hourly rows cover at most the last 30 days. Older data appears
 as daily rows, including while rollup is pending. If any part of a UTC day has
@@ -193,6 +193,16 @@ accesses; otherwise it counts known networks, with `overflow` marking a lower
 bound. Daily rows retain no overflow evidence. Follow `timeline.next` with
 `timelineAfter` and the same dates to read older aggregates. Both cursors are
 independent. Reads create no activity or audit action.
+
+Each row's required nullable `pageNetworks` counts distinct networks with
+page views in that bucket, independently of network pagination. Download-only
+and password-only networks do not contribute. An hourly row returns null
+when a page view has an unknown or overflow network; unknown or overflow
+activity without page views does not invalidate the count. Hourly rows with
+no page views return zero. Daily rows always return null, including while
+rollup is pending. For a bucket's page-view sentence, use that row's `pages`
+and non-null `pageNetworks`; when null, show only the page count.
+`knownNetworks` continues to cover all access kinds.
 
 Administrators use `GET /api/filesv2/admin/activity/bases?q=…&after=…` for
 history filter labels. It returns `{items,next}` with at most 50 recorded

@@ -186,6 +186,8 @@ export type ShareAccessPeriod = {
   date: string;
   granularity: "hour" | "day";
   pages: number;
+  /** Exact distinct networks with page views; null for daily rows or unknown/overflow page evidence. */
+  pageNetworks: number | null;
   downloads: number;
   passwordFailed: number;
   /** Null for daily aggregates or accesses without a classified network. */
