@@ -2559,6 +2559,11 @@
 
 .notebook-map-export__preview { padding: 28px; margin-top: 12px; background: #fff; color: #1f2937; border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-control); font: 12px/1.5 var(--k2b-font-sans); }
 .notebook-map-export__preview .notebook-map__pins { min-height: 0; }
+.notebook-map[data-map-print] .notebook-map__pin { display: block; min-height: 0; padding: 4px 0; cursor: auto; }
+.notebook-map[data-map-print] .notebook-map__number { display: inline-grid; margin-inline-end: 8px; }
+.notebook-map[data-map-print] .notebook-map__name { white-space: normal; overflow: visible; }
+.notebook-map[data-map-print] .notebook-map__link { max-width: none; margin-inline-start: 8px; overflow: visible; white-space: normal; }
+.notebook-map[data-map-print] .notebook-map__link > span { overflow: visible; }
 .notebook-map-export__slot { width: 100%; display: grid; align-items: center; margin-bottom: 8px; border-radius: var(--k2b-radius-control); background: #f1f5f9; }
 .notebook-map-export__slot .k2b-map-view { width: 100%; }
 
