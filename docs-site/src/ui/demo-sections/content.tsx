@@ -270,7 +270,7 @@ const MapViewDemo = () => {
             {marker.mark} {marker.label}
           </Button>
         ))}
-        <Button variant="outline" loading={capturing()} disabled={!ready()} onClick={() => void capture()}>
+        <Button variant="secondary" loading={capturing()} disabled={!ready()} onClick={() => void capture()}>
           Capture map image
         </Button>
       </div>

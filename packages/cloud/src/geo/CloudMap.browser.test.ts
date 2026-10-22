@@ -153,7 +153,7 @@ for (const width of [390, 768, 1440])
           const capture = await window.cloudMapHandle!.snapshot();
           return { type: capture.data.type, width: capture.width, height: capture.height };
         }),
-      ).toEqual({ type: "image/png", width: width - 32, height: 280 });
+      ).toEqual({ type: "image/png", width: width - 48, height: 280 }); // Body margins plus main padding.
     } finally {
       await page.close();
     }

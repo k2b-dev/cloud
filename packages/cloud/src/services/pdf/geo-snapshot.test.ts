@@ -17,7 +17,7 @@ function form(data: Uint8Array = png) {
     "mapSnapshots",
     JSON.stringify({ version: 1, revision: expected.revision, images: [{ ...expected.maps[0], width: 200, height: 100 }] }),
   );
-  upload.set(geoMapSnapshotPart("block-1"), new Blob([data], { type: "image/png" }), "../../untrusted-name.png");
+  upload.set(geoMapSnapshotPart("block-1"), new Blob([Uint8Array.from(data)], { type: "image/png" }), "../../untrusted-name.png");
   return upload;
 }
 

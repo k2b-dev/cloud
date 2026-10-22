@@ -11,7 +11,7 @@ import { launchBrowser, settled } from "../../test/browser";
 import type { Button as ButtonComponent } from "../actions/Button";
 import type { MapView as MapViewComponent } from "./MapView";
 import { mapStyle } from "./map-style";
-import type { MapViewHandle, MapViewMarker, MapViewStyle } from "./map-view-types";
+import type { MapViewArea, MapViewHandle, MapViewLine, MapViewMarker, MapViewStyle } from "./map-view-types";
 
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-map-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: directory });
@@ -97,7 +97,7 @@ function fixtureTree(
         return hidden() ? undefined : ownLocation();
       },
       onLocate: () => setOwnLocation({ point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 }),
-      get lines() {
+      get lines(): MapViewLine[] {
         return hidden()
           ? []
           : options.empty || options.polar || options.dateline
@@ -123,7 +123,7 @@ function fixtureTree(
                   },
                 ];
       },
-      get areas() {
+      get areas(): MapViewArea[] {
         return hidden()
           ? []
           : options.empty || options.polar || options.dateline || options.vector
@@ -275,7 +275,7 @@ const intField = (tag: number, n: number) => [...varint(tag * 8), ...varint(n)];
 const bytesField = (tag: number, data: number[]) => [...varint(tag * 8 + 2), ...varint(data.length), ...data];
 const stringField = (tag: number, text: string) => bytesField(tag, Array.from(new TextEncoder().encode(text)));
 const zigzag = (n: number) => (n < 0 ? -n * 2 - 1 : n * 2);
-function vectorTile(z: number, x: number, y: number): Uint8Array {
+function vectorTile(z: number, x: number, y: number): Uint8Array<ArrayBuffer> {
   const point = (lon: number, lat: number) => [
     Math.round((((lon + 180) / 360) * 2 ** z - x) * 4096),
     Math.round((((1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2) * 2 ** z - y) * 4096),
@@ -1075,19 +1075,27 @@ async function capturePixels(page: Page) {
     const pins = Array.from(document.querySelectorAll<HTMLElement>(".k2b-map-view__pin"), (pin) => {
       const rect = pin.getBoundingClientRect(),
         root = pin.closest(".k2b-map-view")!.getBoundingClientRect();
-      const x = Math.round(rect.x + rect.width / 2 - root.x),
-        y = Math.round(rect.y + rect.height / 2 - root.y);
-      const pixel = (dx: number, dy: number) => Array.from(ctx.getImageData(x + dx, y + dy, 1, 1).data);
+      const cx = rect.x + rect.width / 2 - root.x,
+        cy = rect.y + rect.height / 2 - root.y;
+      const x = Math.round(cx),
+        y = Math.round(cy);
       colorContext.clearRect(0, 0, 1, 1);
       colorContext.fillStyle = getComputedStyle(pin).boxShadow.match(/(?:rgba?|color|oklch|oklab)\([^)]*\)/)![0];
       colorContext.fillRect(0, 0, 1, 1);
       const expectedRing = Array.from(colorContext.getImageData(0, 0, 1, 1).data);
+      // Inspect the ring's solid middle, not one rounded coordinate on its antialiased outer edge.
+      let ringPixels = 0;
+      const radius = rect.width / 2;
+      for (let py = Math.floor(cy - radius); py <= Math.ceil(cy + radius); py++)
+        for (let px = Math.floor(cx - radius); px <= Math.ceil(cx + radius); px++) {
+          if (Math.abs(Math.hypot(px + 0.5 - cx, py + 0.5 - cy) - (radius - 1)) > 0.6) continue;
+          const actual = ctx.getImageData(px, py, 1, 1).data;
+          if (expectedRing.every((channel, index) => Math.abs(actual[index]! - channel) < 8)) ringPixels++;
+        }
       return {
-        expectedRing,
+        ringPixels,
         id: pin.dataset.id,
         mark: pin.textContent,
-        center: pixel(0, 0),
-        ring: pixel(11, 0),
         text: Array.from(ctx.getImageData(x - 6, y - 7, 12, 14).data),
       };
     });
@@ -1098,6 +1106,7 @@ async function capturePixels(page: Page) {
       size: result.data.size,
       routePixels,
       land: count(241, 239, 233),
+      darkLand: count(26, 31, 38),
       water: count(207, 227, 243),
       road: count(255, 255, 255),
       label: count(82, 82, 91, 8),
@@ -1138,7 +1147,7 @@ for (const width of [390, 1024])
       expect(result.routePixels).toBeGreaterThan(100);
       expect(result.pins.map((pin) => pin.mark).sort()).toEqual(["1", "2", "A", "B"]);
       for (const pin of result.pins) {
-        expect(pin.ring.slice(0, 3)).toEqual(Array.from(result.pins.find((value) => value.id === "a")!.ring.slice(0, 3)));
+        expect(pin.ringPixels, `${pin.mark} ring pixels`).toBeGreaterThan(10);
         const white = pin.text.filter(
           (_, index) => index % 4 === 0 && pin.text[index]! > 245 && pin.text[index + 1]! > 245 && pin.text[index + 2]! > 245,
         ).length;
@@ -1266,8 +1275,8 @@ test("dark map snapshots preserve the basemap and actual numbered-pin ring tone"
       page.evaluate(() => document.documentElement.classList.add("dark")),
     ]);
     const result = await capturePixels(page);
-    for (const pin of result.pins)
-      for (let channel = 0; channel < 3; channel++) expect(Math.abs(pin.ring[channel]! - pin.expectedRing[channel]!)).toBeLessThan(12);
+    expect(result.darkLand).toBeGreaterThan(10000);
+    for (const pin of result.pins) expect(pin.ringPixels, `${pin.mark} dark ring pixels`).toBeGreaterThan(10);
     if (process.env.MAP_SNAPSHOT_EVIDENCE_DIR) {
       const png = await page.evaluate(async () => Array.from(new Uint8Array(await (await window.mapHandle.snapshot()).data.arrayBuffer())));
       await Bun.write(resolve(process.env.MAP_SNAPSHOT_EVIDENCE_DIR, "map-capture-dark-768.png"), new Uint8Array(png));

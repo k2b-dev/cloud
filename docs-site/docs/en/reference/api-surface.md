@@ -499,6 +499,9 @@ for consent, ordering, and the rule that refs never grant access.
 
 ### Map snapshot uploads
 
+`@k2b/cloud/geo/ui` exports `CloudMap`, `CloudMapAttribution` and
+`CloudMapProps`. `CloudMap` forwards the browser `MapViewHandle` ref for capture.
+
 `@k2b/cloud/contracts/geo-snapshot` exports `GeoMapSnapshotManifestSchema`,
 `GeoMapSnapshotImageSchema`, `GeoMapSnapshotIdSchema`, `GeoMapSnapshotManifest`,
 `geoMapSnapshotPart`, `geoMapSnapshotFingerprint` and the `GEO_SNAPSHOT_MAX_*`
