@@ -313,7 +313,7 @@ export function AccessRow(props: { share: ShareView; period: ShareAccessPeriod; 
     const period = props.period;
     if (period.pages > 0) {
       const count = period.pageNetworks;
-      return count === null ? h().accessPages(period.pages) : h().accessPagesNetworks(period.pages, count);
+      return count === null ? h().accessPages(period.pages) : h().accessPagesNetworks({ pages: period.pages, networks: count });
     }
     if (period.downloads > 0) return h().accessDownloads.replace("{count}", String(period.downloads));
     return h().accessPasswords.replace("{count}", String(period.passwordFailed));
